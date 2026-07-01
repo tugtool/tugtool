@@ -169,26 +169,6 @@ describe("deriveDevCardBannerSpec — breakage only", () => {
     }
   });
 
-  it("attachment_rejected surfaces as an error banner", () => {
-    const at = 1_700_000_000_500;
-    const spec = deriveDevCardBannerSpec(
-      baseSnap({
-        lastError: {
-          cause: "attachment_rejected",
-          message: "Unsupported file type: foo.pdf.",
-          at,
-        },
-      }),
-      { dismissedAt: null },
-    );
-    expect(spec).toEqual({
-      kind: "error",
-      cause: "attachment_rejected",
-      message: "Unsupported file type: foo.pdf.",
-      at,
-    });
-  });
-
   it("resume_failed never surfaces (intercepted upstream by useDevCardObserver)", () => {
     const spec = deriveDevCardBannerSpec(
       baseSnap({

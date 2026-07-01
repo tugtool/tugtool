@@ -857,26 +857,6 @@ export class CodeSessionStore {
   }
 
   /**
-   * Surface a transient attachment-rejection error on the card's
-   * banner. Called by the drop / paste pipelines when
-   * `downsampleImage` returns a discriminated error (oversized image
-   * after JPEG-quality-60 fallback, unsupported source MIME, or a
-   * decode failure on a corrupt / exotic source).
-   *
-   * Routes through the same `lastError` channel transport / wire
-   * errors use; the existing `dev-card-banner-spec` and
-   * `dev-card.tsx` label map render it as an inline banner. The
-   * banner self-dismisses on the user's next successful submit
-   * (the `lastError: null` reset in the turn-complete commit path).
-   *
-   * No-ops when the store has been disposed.
-   */
-  publishAttachmentError(message: string): void {
-    if (this._disposed) return;
-    this.dispatch({ type: "attachment_rejected", message });
-  }
-
-  /**
    * System notification: the per-card binding has been (re-)acked by
    * the supervisor and the wire is fully settled. Dispatched by the
    * `cardSessionBindingStore` subscriber in `dev-session-restore.ts`

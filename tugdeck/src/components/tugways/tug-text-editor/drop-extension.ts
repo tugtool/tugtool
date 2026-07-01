@@ -74,13 +74,13 @@ import {
 import {
   addAtomsEffect,
   getAtomsInState,
-  removeAtomById,
 } from "./atom-decoration";
 import { CARET_HEIGHT_FACTOR, readRowHeightFromGhost } from "./caret-layer";
 import type { DropHandler } from "@/lib/tug-text-types";
 import {
   downsampleImage,
   type DownsampleError,
+  type DownsampleResult,
 } from "@/lib/image-downsample";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
 
@@ -170,9 +170,8 @@ type DropMixedItem =
  *
  * Used by gallery cards / standalone harness where no
  * `AtomBytesStore` is wired. The bytes-store-aware path (the live
- * editor) routes through `processAttachmentFiles` which builds the
- * same item shape but also mints atom ids and starts async
- * byte-fill jobs.
+ * editor) routes through `processAttachmentFiles`, which preflights
+ * (decodes) each image and builds the same item shape with real bytes.
  */
 function defaultFilesToMixedItems(files: FileList): DropMixedItem[] {
   const out: DropMixedItem[] = [];
@@ -601,11 +600,10 @@ const tugDropCaretTheme = EditorView.baseTheme({
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a `DownsampleError` into a user-facing string suitable for
- * the `attachment_rejected` banner. The discriminated shape lets us
- * tailor copy per failure mode; the resulting messages match the
- * surface entries in [Table T01]
- * (`roadmap/dev-atoms.md#t01-failure-modes`).
+ * Convert a `DownsampleError` into a calm, user-facing string for the
+ * host's attachment-error notice (the Dev card raises a pane bulletin).
+ * The discriminated shape lets us tailor copy per failure mode; each
+ * message names the file so the user knows exactly what didn't attach.
  *
  * Exported for the paste handler (in `clipboard-filters.ts`) which
  * uses the same convention.
@@ -616,13 +614,13 @@ export function describeDownsampleError(
 ): string {
   switch (err.kind) {
     case "unsupported-format":
-      return `Image format unsupported: ${err.mediaType}`;
+      return `Can't attach ${filename}: ${err.mediaType}: unsupported image type`;
     case "too-large-after-fallback": {
       const mb = (err.byteSize / 1024 / 1024).toFixed(1);
-      return `Image too large after compression: ${filename} (${mb} MB)`;
+      return `Can't attach ${filename}: image too large (${mb} MB)`;
     }
     case "decode-failed":
-      return `Could not decode image: ${filename}`;
+      return `Can't attach ${filename}: unsupported image type`;
   }
 }
 
@@ -640,205 +638,157 @@ function mintAtomId(): string {
 }
 
 /**
- * Per-file classification result. `kind === "skeleton-image"` means
- * the file has an image extension and will produce an atom + bytes
- * (after async downsample); the skeleton atom is inserted
- * synchronously and bytes land later. `kind === "filename-text"`
- * means the file is non-image and its basename will land as plain
- * text in the same insertion transaction.
+ * Preflight outcome for one dropped / pasted file. Every file resolves
+ * to exactly one of these BEFORE the document is touched:
+ *  - `atom`  — a valid image; its bytes are already downsampled and
+ *    ready to land in the store, so the inserted atom is never pending.
+ *  - `text`  — a non-image file (basename verbatim), or a rejected
+ *    image degraded to its filename; `error` carries the reason to
+ *    surface when present.
  */
-type ClassifiedDrop =
-  | { kind: "skeleton-image"; file: File; atom: AtomSegment }
-  | { kind: "filename-text"; text: string };
+type ResolvedDrop =
+  | { kind: "atom"; result: DownsampleResult }
+  | { kind: "text"; text: string; error?: string };
 
 /**
- * Synchronously decide what each file should become. Image-extension
- * files mint an atom id and build the skeleton atom here so the
- * caller can insert it immediately; non-image files emit a text
- * entry carrying the basename so the same insertion transaction can
- * splice it into the doc verbatim.
- *
- * Order is preserved — caller can flatten this list to mixed-item
- * shape and feed it straight to {@link insertMixedAt}.
+ * Preflight one file. Non-image extensions resolve straight to filename
+ * text with no decode. Image extensions are downsampled here — success
+ * becomes an `atom` (bytes in hand), and any rejection (unsupported /
+ * oversize / undecodable) or thrown error degrades to filename text
+ * carrying the reason, so a bad image lands exactly like a `.zip` drop
+ * rather than vanishing.
  */
-function classifyDroppedFiles(files: readonly File[]): ClassifiedDrop[] {
-  const out: ClassifiedDrop[] = [];
-  for (const file of files) {
-    if (isImageFile(file)) {
-      out.push({
-        kind: "skeleton-image",
-        file,
-        atom: {
-          kind: "atom",
-          type: "image",
-          label: file.name,
-          value: file.name,
-          id: mintAtomId(),
-        },
-      });
-    } else {
-      out.push({ kind: "filename-text", text: file.name });
-    }
+async function resolveDroppedFile(file: File): Promise<ResolvedDrop> {
+  if (!isImageFile(file)) {
+    return { kind: "text", text: file.name };
   }
-  return out;
+  try {
+    const outcome = await downsampleImage(file);
+    if (outcome.ok) {
+      return { kind: "atom", result: outcome.result };
+    }
+    return {
+      kind: "text",
+      text: file.name,
+      error: describeDownsampleError(outcome.error, file.name),
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "unknown error";
+    return {
+      kind: "text",
+      text: file.name,
+      error: `Attachment processing failed: ${file.name} (${reason})`,
+    };
+  }
 }
 
 /**
- * Convert user-dropped or user-pasted files into atoms + filename
- * text — instant skeleton insertion at the drop position, then async
- * byte-fill in the background for the image entries.
+ * Convert user-dropped or user-pasted files into atoms + filename text
+ * in a SINGLE document mutation.
  *
- * The synchronous half:
- *  1. Classify each file. Image extensions become skeleton-image
- *     entries (mint id, build atom segment); everything else
- *     becomes a filename-text entry carrying the basename.
- *  2. Flatten to {@link DropMixedItem}s and dispatch one transaction
- *     via {@link insertMixedAt}: each image takes one `U+FFFC`
- *     paired with the skeleton atom; each non-image takes its
- *     basename verbatim; consecutive items are joined with a single
- *     space. The user sees the full mixed insertion at the drop
- *     point synchronously.
+ * Preflight first, mutate once: every file is resolved to its final
+ * form — a valid image (bytes decoded and ready), a non-image filename,
+ * or a rejected image degraded to filename text — BEFORE anything is
+ * inserted. Only then do we mint `image-N` labels, stage the bytes, and
+ * dispatch one `insertMixedAt` transaction. There is no optimistic
+ * skeleton and no async repair pass, so:
+ *  - the insertion is a single history entry — one undo removes the
+ *    whole drop cleanly, with no skeleton or tofu resurrected (the
+ *    repair-transaction undo hazard is gone by construction), and
+ *  - a rejected image never flashes a pending chip; it simply lands as
+ *    its filename, with the reason surfaced via `onError`.
  *
- * The asynchronous half runs in the background, one job per
- * skeleton-image entry. Filename-text entries have no async work —
- * they're plain prose in the doc once the transaction commits.
- *  - Image: `downsampleImage(file)` → on success, `bytesStore.put`
- *    populates the entry; the bytes-store's `subscribe` notification
- *    fires `syncPendingAttributes`, which mutates the atom widget's
- *    `data-pending` attribute off via direct DOM. On failure,
- *    `removeAtomById` deletes the skeleton atom and the error
- *    surfaces via `onError`.
+ * The image atoms carry the unified `image-N` name (numbered after the
+ * image atoms already in the doc), not the original filename: the name
+ * can't cross the wire (the image content block carries none), so the
+ * editor speaks the same `image-N` the transcript synthesizer mints.
+ * Only surviving images consume an ordinal; a rejected image degrades
+ * to text and takes none.
  *
- * The view's liveness is checked through `view.dom.isConnected`
- * before dispatching the failure-path deletion — if the editor
- * unmounted while we were processing, the deletion is suppressed
- * (the doc is gone anyway).
+ * Bytes are put into the store BEFORE insertion so each atom renders
+ * fully on first paint. `view.dom.isConnected` is re-checked after the
+ * decode await — if the editor unmounted while we were decoding, the
+ * insertion is skipped (the doc is gone anyway).
  *
- * Returns `void` synchronously; the async work is fire-and-forget.
- * Callers don't need to `await`.
- *
- * Exported so the paste handler in `clipboard-filters.ts` can share
- * the same pipeline.
+ * Returns a `Promise` (the decode is awaited); callers fire-and-forget
+ * with `void`. Exported so the paste handler in `clipboard-filters.ts`
+ * shares the same pipeline.
  */
-export function processAttachmentFiles(
+export async function processAttachmentFiles(
   view: EditorView,
   files: readonly File[],
   insertPos: number,
   bytesStore: AtomBytesStore,
   onError: (message: string) => void,
-): void {
+): Promise<void> {
   if (files.length === 0) return;
 
-  // Step 1 — synchronous classification. Image-extension files yield
-  // skeleton-image entries; everything else yields filename-text.
-  const classified = classifyDroppedFiles(files);
-  if (classified.length === 0) return;
-
-  // Step 1.5 — mint the unified `image-N` name at attach time, numbered
-  // by the atom's position among ALL image atoms in the doc (existing
-  // count + this batch's order). The original filename is intentionally
-  // dropped: it can't cross the wire (the image content block carries no
-  // name), so the editor speaks the same `image-N` the transcript
-  // synthesizer mints — one name, born here, carried through unchanged.
-  // This seeds the common append case flash-free; the editor's renumber
-  // pass keeps the labels contiguous across later deletes / mid-inserts.
-  let imageOrdinal = getAtomsInState(view.state).filter(
+  // Count existing image atoms up front so `image-N` numbering picks up
+  // after them. Read before the await — positions can't have shifted
+  // since the drop, and we only need the count.
+  const existingImageCount = getAtomsInState(view.state).filter(
     (p) => p.segment.type === "image",
   ).length;
-  for (const entry of classified) {
-    if (entry.kind === "skeleton-image") {
+
+  // Preflight — resolve every file (decoding images) before touching the
+  // document. Order is preserved.
+  const resolved = await Promise.all(files.map(resolveDroppedFile));
+
+  // The editor may have unmounted while we were decoding.
+  if (!view.dom.isConnected) return;
+
+  // Build the insertion plan: valid images become atoms with a freshly
+  // minted id + `image-N` label and stage their bytes; everything else
+  // is filename text. Ordinals advance only for surviving images.
+  let imageOrdinal = existingImageCount;
+  const bytesToPut: Array<{ id: string; result: DownsampleResult }> = [];
+  const items: DropMixedItem[] = resolved.map((entry) => {
+    if (entry.kind === "atom") {
       imageOrdinal += 1;
+      const id = mintAtomId();
       const name = `image-${imageOrdinal}`;
-      entry.atom.label = name;
-      entry.atom.value = name;
+      bytesToPut.push({ id, result: entry.result });
+      return {
+        kind: "atom" as const,
+        segment: { kind: "atom", type: "image", label: name, value: name, id },
+      };
     }
-  }
+    return { kind: "text" as const, text: entry.text };
+  });
 
-  // Step 2 — flatten to mixed items + one-transaction insert. Atoms
-  // and text interleave in input order with single-space separators.
-  const items: DropMixedItem[] = classified.map((entry) =>
-    entry.kind === "skeleton-image"
-      ? { kind: "atom" as const, segment: entry.atom }
-      : { kind: "text" as const, text: entry.text },
-  );
-  insertMixedAt(view, insertPos, items);
-
-  // Step 3.5.5 — fix for "skeleton sometimes fails to appear in a
-  // brand-new empty editor". When the user drops a file before
-  // having clicked into the editor (the common case on a freshly-
-  // opened card), the editor isn't focused and CM6 may not have
-  // run its initial measure pass — the widget gets minted in the
-  // decoration set but the layout doesn't paint it. Force both:
-  //
-  //  - `view.focus()` puts DOM focus on `contentDOM` so the
-  //    editor becomes the active responder. Idempotent when
-  //    already focused.
-  //  - `view.requestMeasure(...)` queues a measure pass that
-  //    triggers the widget's `toDOM` and a layout flush, ensuring
-  //    the chip paints in the same frame as the insertion.
-  //
-  // Both calls are no-ops in the common case (already-focused +
-  // already-measured editor); they only matter for the
-  // empty-editor drop path the v1 design missed.
-  view.focus();
-  view.requestMeasure({ read: () => null });
-
-  // Step 3 — fire-and-forget async byte-fill, one job per
-  // skeleton-image entry. Filename-text entries have no async work.
-  for (const entry of classified) {
-    if (entry.kind === "skeleton-image") {
-      void runAttachmentJob(view, entry, bytesStore, onError);
-    }
-  }
-}
-
-/**
- * Run the async half of a single attachment job. Downsamples the
- * image and populates the bytes-store on success (which notifies
- * the pending-sync plugin → the atom widget transitions out of
- * pending appearance), or removes the skeleton atom on failure
- * (which surfaces via `onError` in the same call).
- *
- * Defensive try / catch around the await: a synchronous throw from
- * `downsampleImage` would otherwise reject the spawning Promise
- * unhandled. Wrap so the user gets a clean banner message and the
- * skeleton atom is cleaned up.
- */
-async function runAttachmentJob(
-  view: EditorView,
-  job: { kind: "skeleton-image"; file: File; atom: AtomSegment },
-  bytesStore: AtomBytesStore,
-  onError: (message: string) => void,
-): Promise<void> {
-  const id = job.atom.id;
-  // Defensive — every skeleton path mints an id; this branch is
-  // unreachable at runtime but keeps TypeScript honest about the
-  // optional field.
-  if (id === undefined) return;
-
-  try {
-    const outcome = await downsampleImage(job.file);
-    if (!outcome.ok) {
-      // Remove skeleton, surface error.
-      if (view.dom.isConnected) removeAtomById(view, id);
-      onError(describeDownsampleError(outcome.error, job.file.name));
-      return;
-    }
-    bytesStore.put(id, {
-      content: outcome.result.content,
-      mediaType: outcome.result.mediaType,
-      // Carry the downsample pipeline's already-baked thumbnail
-      // through to the bytes-store so the post-submit synthesizer
-      // sees a fully-populated entry and doesn't re-bake. Per
-      // [Step 5c](roadmap/dev-atoms.md#step-5c) — Step 6's strip
-      // renderer reads `thumbnailDataUrl` unconditionally.
-      thumbnailDataUrl: outcome.result.thumbnailDataUrl,
+  // Stage bytes BEFORE the insertion so each atom widget reads a
+  // fully-populated store entry at its first `toDOM` — never a pending
+  // chip. `thumbnailDataUrl` rides along so the post-submit synthesizer
+  // doesn't re-bake (Step 6's strip renderer reads it unconditionally).
+  for (const b of bytesToPut) {
+    bytesStore.put(b.id, {
+      content: b.result.content,
+      mediaType: b.result.mediaType,
+      thumbnailDataUrl: b.result.thumbnailDataUrl,
     });
-  } catch (err) {
-    // Pipeline threw — surface generically, remove the skeleton.
-    if (view.dom.isConnected) removeAtomById(view, id);
-    const reason = err instanceof Error ? err.message : "unknown error";
-    onError(`Attachment processing failed: ${job.file.name} (${reason})`);
+  }
+
+  // Single transaction: atoms + text interleaved in input order.
+  if (items.length > 0) {
+    // Clamp against the live doc — defensive, in case the doc shrank
+    // during the decode await.
+    const pos = Math.min(insertPos, view.state.doc.length);
+    insertMixedAt(view, pos, items);
+
+    // Empty-editor drop fix: when a file is dropped before the editor
+    // has been focused/measured, CM6 mints the widget but may not paint
+    // it. `focus()` makes the editor the active responder; the measure
+    // pass flushes the widget's `toDOM`. Both are no-ops once the editor
+    // is focused + measured.
+    view.focus();
+    view.requestMeasure({ read: () => null });
+  }
+
+  // Surface any rejection reasons (coalesced by the host's bulletin id).
+  for (const entry of resolved) {
+    if (entry.kind === "text" && entry.error !== undefined) {
+      onError(entry.error);
+    }
   }
 }
 
@@ -903,19 +853,20 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  * `getBytesStore` and `onAttachmentError` are the bytes-store-aware
  * additions (Step 2 of `roadmap/dev-atoms.md`). When `getBytesStore`
  * returns a live `AtomBytesStore`, the drop pipeline runs through
- * the async `processAttachmentFiles` path: image-extension files are
- * downsampled, given a stable UUID, and stashed in the store; the
- * resulting atoms carry the id. Non-image files insert their
- * basename as plain text in the same transaction. When `getBytesStore`
- * returns `null` (gallery cards, prompt-entry instances unrelated to
- * a dev session), the synchronous `defaultFilesToMixedItems` path
- * runs — image atoms come back with `value: filename` and no bytes;
- * non-image entries still ride as filename text.
+ * the `processAttachmentFiles` path: each image is preflighted
+ * (downsampled) before insertion — valid images are given a stable
+ * UUID and stashed in the store, rejected images degrade to filename
+ * text — then the final atoms + text land in one transaction.
+ * Non-image files insert their basename as plain text. When
+ * `getBytesStore` returns `null` (gallery cards, prompt-entry
+ * instances unrelated to a dev session), the synchronous
+ * `defaultFilesToMixedItems` path runs — image atoms come back with
+ * `value: filename` and no bytes; non-image entries ride as filename
+ * text.
  *
- * `onAttachmentError(message)` publishes a downsample-rejection
- * message to the host's banner channel. Routes to
- * `CodeSessionStore.publishAttachmentError` in production; tests can
- * pass a spy.
+ * `onAttachmentError(message)` hands a downsample-rejection message
+ * to the host, which surfaces it as a calm card-scoped notice (the
+ * Dev card raises a pane bulletin); tests can pass a spy.
  *
  * A host-supplied `getDropHandler()` still wins over the default —
  * the gallery card uses that escape hatch to inject deterministic
@@ -1047,12 +998,11 @@ export function tugDropExtension(
           return true;
         }
 
-        // Bytes-store-aware path: synchronously classifies files,
-        // inserts skeleton atoms + filename text at the drop point,
-        // and spawns fire-and-forget async byte-fill jobs for the
-        // image entries. Non-image files arrive in the same
-        // transaction as plain filename prose.
-        processAttachmentFiles(
+        // Bytes-store-aware path: preflights every file (decoding
+        // images) and then inserts the final atoms + filename text at
+        // the drop point in one transaction. Fire-and-forget — the
+        // decode is awaited inside, the drop handler returns now.
+        void processAttachmentFiles(
           view,
           Array.from(files),
           insertPos,

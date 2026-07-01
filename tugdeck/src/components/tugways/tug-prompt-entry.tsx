@@ -122,6 +122,7 @@ import { selectionGuard } from "./selection-guard";
 import { deckTrace } from "@/deck-trace";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
 
@@ -594,6 +595,16 @@ export interface TugPromptEntryProps {
   localCommandTargetId?: string;
   /** Store owning Claude Code turn state for this card. */
   codeSessionStore: CodeSessionStore;
+  /**
+   * Host handler for an attachment that could not be accepted (drop or
+   * paste of an unsupported / oversize / undecodable image, or a submit
+   * attempted while an attachment is still processing). The message is
+   * user-facing and names the file. Hosts surface it as a calm,
+   * card-scoped notice — the Dev card raises a pane bulletin — never the
+   * session-error banner. Omit for standalone hosts (the gallery); the
+   * message is then routed to the dev log.
+   */
+  onAttachmentError?: (message: string) => void;
   /** Session metadata (model name, version). Accepted for T3.4.c; unused in T3.4.b. */
   sessionMetadataStore: SessionMetadataStore;
   /** Prompt history (recall on arrow up/down). Forwarded to TugTextEditor. */
@@ -875,6 +886,7 @@ export const TugPromptEntry = React.forwardRef<
     id,
     localCommandTargetId,
     codeSessionStore,
+    onAttachmentError,
     sessionMetadataStore,
     historyStore,
     completionProviders,
@@ -977,11 +989,21 @@ export const TugPromptEntry = React.forwardRef<
     () => codeSessionStore.getAtomBytesStore(),
     [codeSessionStore],
   );
+  // Attachment rejection is transient input validation, not a session
+  // fault: it must never write `lastError` (that lights the entry's red
+  // errored ring and routes the session-lost banner). Hand the message to
+  // the host, which surfaces a calm card-scoped notice (the Dev card
+  // raises a pane bulletin). Standalone hosts that omit the handler get a
+  // dev-log line so the message is never silently swallowed.
   const publishAttachmentError = useCallback(
     (message: string): void => {
-      codeSessionStore.publishAttachmentError(message);
+      if (onAttachmentError !== undefined) {
+        onAttachmentError(message);
+      } else {
+        tugDevLogStore.warn("prompt-entry", message);
+      }
     },
-    [codeSessionStore],
+    [onAttachmentError],
   );
 
   // Z4C — the compose-phase attachment-preview zone. The image atoms in
@@ -1135,7 +1157,7 @@ export const TugPromptEntry = React.forwardRef<
         dropOffsetAtCoords(view, event.clientX, event.clientY) ??
         view.state.doc.length;
       clearDropCaret(view);
-      processAttachmentFiles(
+      void processAttachmentFiles(
         view,
         files,
         pos,

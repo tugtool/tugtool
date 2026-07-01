@@ -342,7 +342,6 @@ const CAUSE_LABELS: Record<BannerErrorCause, string> = {
   wire_error: "Protocol error",
   session_unknown: "Session unknown",
   session_not_owned: "Session not owned",
-  attachment_rejected: "Attachment rejected",
 };
 
 
@@ -2277,19 +2276,14 @@ export function DevCardBody({
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
   // still dead. The user recovers by closing and reopening the card.
-  // Two causes are excluded from this dead-session classification:
-  //  - `resume_failed`: the card observer unmounts the bound body on
-  //    that cause (the picker sheet re-renders instead).
-  //  - `attachment_rejected`: transient input-validation feedback
-  //    (drop / paste of an unsupported file, oversize image, etc.).
-  //    The session is otherwise healthy; the next submit can proceed
-  //    without retry. Escalating it to the session-dead overlay was a
-  //    Step 3 v1 defect surfaced by live testing (Step 3.5.1 in
-  //    `roadmap/dev-atoms.md`).
+  // `resume_failed` is excluded from this dead-session classification:
+  // the card observer unmounts the bound body on that cause (the picker
+  // sheet re-renders instead). Attachment rejections never reach
+  // `lastError` at all — they surface as a card bulletin, so they neither
+  // disable the entry nor light its errored ring.
   const sessionErrored =
     codeSnap.lastError !== null &&
     codeSnap.lastError.cause !== "resume_failed" &&
-    codeSnap.lastError.cause !== "attachment_rejected" &&
     // A logged-out / missing-CLI gate is not a dead session — it routes to
     // the calm auth banner, not the red session-dead overlay.
     !(
@@ -3616,6 +3610,19 @@ export function DevCardBody({
               onResumeTyping={() => cycle.exit()}
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}
+              // A rejected drop / paste (unsupported, oversize, or
+              // undecodable image) is transient input validation, not a
+              // session fault. Surface it as a calm, dismissible bulletin
+              // above the entry — never the red session-lost banner, and
+              // never `lastError` (which would light the entry's errored
+              // ring). A stable id coalesces repeat rejections into one
+              // notice instead of stacking.
+              onAttachmentError={(message) =>
+                paneBulletinRef.current?.caution(message, {
+                  id: "attachment-error",
+                  sticky: true,
+                })
+              }
               sessionMetadataStore={sessionMetadataStore}
               historyStore={historyStore}
               completionProviders={completionProviders}

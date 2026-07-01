@@ -652,11 +652,11 @@ export interface TugTextEditorProps
   /**
    * Callback invoked when the drop / paste downsample pipeline
    * rejects a file (oversize image, unsupported source format,
-   * decode failure). The string is a user-facing message suitable
-   * for a banner.
+   * decode failure). The string is a calm, user-facing message.
    *
-   * Defaults to a no-op. Dev-card prompt-entry passes
-   * `CodeSessionStore.publishAttachmentError`. Per
+   * Defaults to a no-op. The prompt entry forwards this to its own
+   * `onAttachmentError` host handler, which surfaces the message as a
+   * card-scoped bulletin (never the session-error banner). Per
    * [Table T01](roadmap/dev-atoms.md#t01-failure-modes).
    */
   onAttachmentError?: (message: string) => void;
