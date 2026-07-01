@@ -62,6 +62,18 @@ describe("sparkline feed", () => {
     expect(meterSum(store)).toBeGreaterThan(0);
   });
 
+  it("a task_progress tick moves the meter (background agent has no other signal)", () => {
+    const { store, conn } = makeStore();
+    expect(meterSum(store)).toBe(0);
+    emit(conn, {
+      type: "task_progress",
+      task_id: "ag1",
+      tool_use_id: "toolu_ag",
+      last_tool_name: "Grep",
+    });
+    expect(meterSum(store)).toBeGreaterThan(0);
+  });
+
   it("a SUBAGENT tool_result still feeds the meter (unchanged path)", () => {
     const { store, conn } = makeStore();
     emit(conn, {

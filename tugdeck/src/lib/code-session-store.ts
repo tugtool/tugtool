@@ -1491,6 +1491,12 @@ export class CodeSessionStore {
       // claude processes a tool result), so a constant beat here keeps
       // the line off the floor during active-but-textless API work.
       this.throughputMeter.record(STREAMING_USAGE_UNITS, now);
+    } else if (t === "task_progress") {
+      // A backgrounded agent step. Its tool calls don't stream to the
+      // parent, so this is the ONLY activity signal while it runs — a
+      // beat here keeps the sparkline alive instead of flat-lining the
+      // moment the launch turn ends.
+      this.throughputMeter.record(SUBAGENT_ACTIVITY_UNITS, now);
     }
   }
 

@@ -535,6 +535,23 @@ export class PulseVoice {
       case "output_truncated":
         state.directLine = "Response truncated";
         return null;
+      // A backgrounded agent made progress. Its own tool calls do NOT
+      // stream to the parent (unlike a foreground subagent), so this
+      // per-step frame — carrying the agent's most recent tool — is the
+      // ONLY thing keeping the strip alive while it works. Without it the
+      // pulse freezes on "Done" the instant the launch turn ends.
+      case "task_progress": {
+        const label =
+          state.agentLabels.get(frame.tool_use_id) ??
+          (typeof frame.subagent_type === "string" && frame.subagent_type.length > 0
+            ? frame.subagent_type
+            : "Agent");
+        state.directLine =
+          typeof frame.last_tool_name === "string" && frame.last_tool_name
+            ? `${label} · ${frame.last_tool_name}`
+            : `${label} working…`;
+        return null;
+      }
       default:
         return null;
     }

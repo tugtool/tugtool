@@ -328,6 +328,34 @@ describe("PulseVoice — the monologue", () => {
     );
   });
 
+  test("a backgrounded agent's task_progress keeps the pulse alive", () => {
+    const voice = new PulseVoice();
+    // Launch sets the agent label.
+    voice.onFrame(
+      "s1",
+      toolUse("Agent", { subagent_type: "Explore", description: "map deps" }, { id: "toolu_ag" }),
+      0,
+    );
+    voice.flush(1_100);
+    // A progress tick narrates the agent's latest tool — the only per-step
+    // signal a background agent streams to the parent.
+    voice.onFrame(
+      "s1",
+      {
+        type: "task_progress",
+        session_id: "s",
+        task_id: "toolu_ag",
+        tool_use_id: "toolu_ag",
+        description: "map deps",
+        subagent_type: "Explore",
+        last_tool_name: "Grep",
+        ipc_version: 2,
+      } as OutboundMessage,
+      2_000,
+    );
+    expect(voice.flush(3_200)[0]?.text).toBe("Explore · Grep");
+  });
+
   test("subagent work surfaces through the agent's tool calls", () => {
     const voice = new PulseVoice();
     // Launching the agent is announced...
