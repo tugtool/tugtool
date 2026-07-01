@@ -41,7 +41,10 @@ import React, {
 } from "react";
 
 import { animate } from "@/components/tugways/tug-animator";
-import { TugSparkline } from "@/components/tugways/tug-sparkline";
+import {
+  sparklineCurves,
+  TugSparkline,
+} from "@/components/tugways/tug-sparkline";
 import {
   TugPopover,
   TugPopoverContent,
@@ -67,11 +70,25 @@ export const MIN_DWELL_MS = 1_800;
 /** Cross-fade length (raw ms; TugAnimator scales by the timing dial). */
 export const XFADE_MS = 600;
 /**
- * Sparkline full-scale, in streamed chars per 1s bin. Fixed (no autoscale) so
- * the line never rescales vertically: ~75 tok/s ≈ 300 chars/s of output reads
- * near full height, faster bursts clamp at the top, lulls read low.
+ * Sparkline full-scale, in streamed chars per 1s. Fixed (no autoscale) so the
+ * line never rescales vertically. The ceiling sits ~4× above typical output
+ * (~75 tok/s ≈ 300 chars/s) so real bursts have headroom before the curve rolls
+ * off; SPARKLINE_CURVE spends most of the height on the low/mid band below it.
  */
-const SPARKLINE_FULL_SCALE_CHARS = 300;
+const SPARKLINE_FULL_SCALE_CHARS = 1200;
+
+/**
+ * Vertical response curve. `gamma(0.6)` is a power curve, steep through the
+ * low/mid band so ordinary activity spreads across the height and varies
+ * visibly, then concave into the top so a burst reads tall and rolls off just
+ * shy of the ceiling instead of slamming into a flat clip. Reads roughly:
+ * 150 c/s → 0.30, 300 → 0.46, 500 → 0.61, 800 → 0.78, 1200+ → full.
+ *
+ * To retune: lower the exponent for an even steeper low end, raise it toward 1
+ * for a flatter one; or swap to `sparklineCurves.soft(k)` if extreme spikes
+ * must never clip at all (see {@link sparklineCurves}).
+ */
+const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 
 /** What the strip is showing: a pulse line or the placeholder. */
 interface DisplayEntry {
@@ -329,6 +346,7 @@ export function DevPulseStrip({
         getSeries={getSeries}
         binMs={THROUGHPUT_BIN_MS}
         fullScale={SPARKLINE_FULL_SCALE_CHARS}
+        curve={SPARKLINE_CURVE}
         width={64}
         height={22}
         className="dev-pulse-strip-spark"

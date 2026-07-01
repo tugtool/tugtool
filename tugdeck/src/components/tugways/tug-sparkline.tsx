@@ -50,6 +50,58 @@ const EPOCH_S = 120;
 /** Window over which the plotted rate is summed (a rolling per-second rate). */
 const RATE_WINDOW_MS = 1_000;
 
+/**
+ * Response curve: maps the rate as a fraction of full scale (`x = rate /
+ * fullScale`, ≥ 0 and MAY exceed 1) to a display height. The caller clamps the
+ * result into `[0, 1]`, so a curve may either reach 1 exactly at `x = 1` (a
+ * hard ceiling: everything past `fullScale` clips flat) or asymptote toward 1
+ * and never clip. This is the ONE place the vertical shape lives — swap the
+ * curve to retune the feel without touching any geometry, motion, or data.
+ *
+ * `curve(0)` must be 0 so silence reads a flat baseline. What we want here is
+ * strong differentiation across the LOW/MID band (ordinary activity should use
+ * most of the height and vary visibly) while the TOP rolls off gently so a
+ * burst reads tall without slamming into a flat clip.
+ */
+export type SparklineCurve = (x: number) => number;
+
+/**
+ * The curve library. To try a different feel, point the caller's `curve` prop
+ * at another entry (or add one here). `x` is `rate / fullScale`.
+ *
+ *  - `linear`   — no shaping; a fast burst clips the instant it passes full
+ *                 scale. The original behavior.
+ *  - `gamma(g)` — power curve `x^g`. `g < 1` is STEEP through the low/mid band
+ *                 (great differentiation there) and concave into the top, which
+ *                 rounds off just below full scale. Reaches 1 at `x = 1`, so
+ *                 pick `fullScale` above real bursts for headroom. Smaller `g`
+ *                 = steeper low end. This is the current feel.
+ *  - `log(knee)`— logarithmic: equal height per DOUBLING of rate. Spends its
+ *                 steepness on the very-low end and flattens the mid band, so
+ *                 large `knee` reads FLAT for ordinary activity — usually the
+ *                 wrong trade here. Kept for comparison.
+ *  - `soft(k)`  — saturating soft-knee `1 − e^(−k·x)`. NEVER clips (asymptotes
+ *                 to 1); slope `k` at the origin sets low/mid steepness. Here
+ *                 `fullScale` is a characteristic scale, not a ceiling. Use
+ *                 when even extreme spikes must stay on-screen without a flat
+ *                 top — at the cost of bursts differentiating less up high.
+ */
+export const sparklineCurves = {
+  linear: ((x) => x) as SparklineCurve,
+  gamma:
+    (g: number): SparklineCurve =>
+    (x) =>
+      Math.pow(x, g),
+  log:
+    (knee: number): SparklineCurve =>
+    (x) =>
+      Math.log1p(x * knee) / Math.log1p(knee),
+  soft:
+    (k: number): SparklineCurve =>
+    (x) =>
+      1 - Math.exp(-k * x),
+};
+
 interface TickPoint {
   /** Sample time, ms — fixed forever once written. */
   t: number;
@@ -61,6 +113,7 @@ export function TugSparkline({
   getSeries,
   binMs,
   fullScale,
+  curve = sparklineCurves.linear,
   width = 64,
   height = 22,
   className,
@@ -70,8 +123,10 @@ export function TugSparkline({
   getSeries: (nowMs: number) => number[];
   /** Bin width in ms (used to size the rolling-rate window). */
   binMs: number;
-  /** Rate (per RATE_WINDOW_MS) mapped to full height; larger clamps. Fixed. */
+  /** Rate (per RATE_WINDOW_MS) that reaches full height; larger clamps. Fixed. */
   fullScale: number;
+  /** Vertical response curve; see {@link sparklineCurves}. Default: linear. */
+  curve?: SparklineCurve;
   width?: number;
   height?: number;
   className?: string;
@@ -109,14 +164,17 @@ export function TugSparkline({
 
     const yOf = (v: number): number => baselineY - v * amplitude;
 
-    // The current rolling rate: sum of the most recent `rateBins` buckets.
+    // The current rolling rate: sum of the most recent `rateBins` buckets,
+    // taken as a fraction of full scale, shaped by `curve`, then clamped. The
+    // clamp is OUTSIDE the curve so a saturating curve can take x > 1 and roll
+    // off gently instead of being pre-clipped at full scale.
     const sampleRate = (now: number): number => {
       const vals = getSeries(now);
       let sum = 0;
       for (let i = Math.max(0, vals.length - rateBins); i < vals.length; i++) {
         sum += vals[i];
       }
-      return Math.min(1, sum / fullScale);
+      return Math.min(1, Math.max(0, curve(sum / fullScale)));
     };
 
     const xOf = (t: number): number => width + ((t - t0) / 1000) * pxPerSec;
@@ -198,7 +256,7 @@ export function TugSparkline({
         anim.cancel();
       }
     };
-  }, [getSeries, binMs, fullScale, width, height, pxPerSec, epochPx]);
+  }, [getSeries, binMs, fullScale, curve, width, height, pxPerSec, epochPx]);
 
   return (
     <div
