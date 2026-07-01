@@ -10,6 +10,72 @@ of the current one-line summary (live) and inconsistent, grows-each-reload snaps
 
 ---
 
+### Kickoff for a fresh session (read this first) {#kickoff}
+
+> Orientation notes from the author to whoever implements this. The design is below;
+> this is how to get your bearings fast and avoid re-doing the investigation.
+
+**What's already landed on `main` (do NOT rebuild it):** the reducer child-routing
+foundation and the resume splice. Commit `a8ce58e28` added the reducer routing
+(`applyJobChildToolUse` / `applyJobChildResult` / `applyJobAgentStructured`,
+`jobExistsForParent`, `jobIdForChild`, `isAsyncLaunchEcho`) + `select-jobs.ts` +
+`live-subagent-children.test.ts` (4 pass). The resume splice
+(`synthesizeSubagentChildFrames`, `spliceSubagentChildren`,
+`composeAgentStructuredResult`, `readSubagentTranscripts`) is on `main` too. Note
+`a8ce58e28`'s commit *message* says "live-tail" but it did **not** touch tugcode — the
+tailer does not exist yet. `grep -rl subagentTail tugcode/src` returns nothing; that's
+your Step 3/4.
+
+**Read, in this order, to get oriented:** (1) this plan end-to-end; (2)
+[`live-subagent-content-handoff.md`](live-subagent-content-handoff.md) — the prior
+investigation, still accurate on the symptoms + the two traps; (3) the code anchors
+below. Then start at [#step-1].
+
+**Verified code anchors (grep the symbol — line numbers drift):**
+- Live async echo → `session.ts` `routeTopLevelEvent` `case "user"`: reads
+  `event.tool_use_result` (**snake_case** — the JSONL uses camelCase `toolUseResult`);
+  the real echo carries `agentId`, `outputFile` (= `…/tasks/<agentId>.output`, the live
+  file per [P02]), `isAsync`/`status: "async_launched"`, and the linked parent
+  `tool_use_id`. This is your tailer start-trigger ([#step-4]).
+- Live job insert → `reducer.ts` `handleToolResult`, via
+  `parseBackgroundLaunchResult(mutated.result)` matching the `tool_result` **output
+  string** `"Async agent launched successfully.\nagentId: …"`. Gated `!isReplaying` —
+  which is exactly why reload starts with an empty ledger and why [P08] exists.
+- Inter-turn child routing → `reducer.ts` `handleToolUse` / `handleToolResult` /
+  `handleToolUseStructured`, each routing to the job *before* the content-bearing bail.
+- The [P08] re-hydration seam → `reducer.ts` `handleTaskProgress` (phase-independent) +
+  `select-jobs.ts` `applyJobProgress`. `TaskProgressEvent` carries `taskId` (= `jobId`)
+  + `toolUseId` (the launching Agent call).
+- Block → `blocks/task-tool-block.tsx` (currently reads only `childToolCallsByParent`
+  and renders `AgentWorkingBody`; that's [#step-2]).
+- The cycle → `dev-assistant-renderer-dispatch.ts` imports all ~20 block components at
+  module-eval and runs the registration loop at bottom-of-file; `agent-transcript-block`
+  imports `dispatchToolCallState` from it → the cycle removing `AgentWorkingBody`
+  detonates ([P03], [#step-1]).
+
+**Three traps that will cost you a day if you miss them:**
+1. **Do [#step-1] (cycle fix) first, standalone, green in isolation.** Canary:
+   `cd tugdeck && bun test task-tool-block.test.ts` must pass **run alone** (the full
+   suite masks the cycle because another file loads dispatch first).
+2. **Verify with a REAL running background agent** (`just app-debug`, launch one, watch),
+   never a completed fixture — the live-streaming and reload-mid-run symptoms only exist
+   while an agent is actually running. Fixtures can't reveal them.
+3. **Reload-mid-run is the sharp edge** ([Q03] → [P08]/[P09], Risk [R03]). The job
+   ledger is empty after replay, so a still-running tailer's children get dropped until
+   the job re-hydrates. This is decided, not open — but it's the thing most likely to be
+   subtly wrong. Test it explicitly.
+
+**Commands:** deck — `cd tugdeck && bun test` + `bunx vite build` (memory: the debug app
+loads the rollup bundle, so `vite build` before declaring a deck change done); tugcode
+(compiled binary — rebuild for any live check) — `cd tugcode && bun test`, then
+`just app-debug`; workspace — `cd tugrust && cargo nextest run`. Warnings are errors.
+
+**Scope discipline:** two `.tsx` files (`dev-card.tsx`, `tug-prompt-entry.tsx`) were
+already dirty in the tree when this plan was committed (unrelated inflight work) — leave
+them alone.
+
+---
+
 ### Plan Metadata {#plan-metadata}
 
 | Field | Value |
