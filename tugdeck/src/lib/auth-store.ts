@@ -46,6 +46,15 @@ export interface AuthSnapshot {
    * Cleared when a new attempt starts or a later result logs in.
    */
   signInFailed: boolean;
+  /** True between sending `claude_logout` and its `claude_logout_result`. */
+  loggingOut: boolean;
+  /**
+   * Last logout error, or `null`. Set when `claude auth logout` failed or the
+   * request timed out — the user is told it didn't work rather than being
+   * silently left logged in. Cleared when the error is dismissed or a new
+   * logout starts.
+   */
+  logoutError: string | null;
   /** True while a Tug-managed `install_claude` is running. */
   installing: boolean;
   /**
@@ -67,6 +76,8 @@ const INITIAL: AuthSnapshot = {
   account: null,
   signingIn: false,
   signInFailed: false,
+  loggingOut: false,
+  logoutError: null,
   installing: false,
   verifyingInstall: false,
   installError: null,
@@ -138,6 +149,48 @@ class AuthStore {
     this.notify();
   }
 
+  /** Mark a logout attempt in flight (clears any prior logout error). */
+  setLoggingOut(loggingOut: boolean): void {
+    this._snapshot = {
+      ...this._snapshot,
+      loggingOut,
+      logoutError: loggingOut ? null : this._snapshot.logoutError,
+    };
+    this.notify();
+  }
+
+  /**
+   * Apply a `claude_logout_result`: ends the in-flight logout, and on failure
+   * records the error so it can be surfaced (the login state itself is settled
+   * by the `claude_auth_result` that follows).
+   */
+  applyLogoutResult(ok: boolean, error: string | null): void {
+    this._snapshot = {
+      ...this._snapshot,
+      loggingOut: false,
+      logoutError: ok ? null : (error ?? "logout failed"),
+    };
+    this.notify();
+  }
+
+  /** A logout attempt exceeded the wait budget (no result frame arrived). */
+  markLogoutTimedOut(): void {
+    if (!this._snapshot.loggingOut) return;
+    this._snapshot = {
+      ...this._snapshot,
+      loggingOut: false,
+      logoutError: "Logout timed out.",
+    };
+    this.notify();
+  }
+
+  /** Clear a surfaced logout error (the user dismissed it). */
+  clearLogoutError(): void {
+    if (this._snapshot.logoutError === null) return;
+    this._snapshot = { ...this._snapshot, logoutError: null };
+    this.notify();
+  }
+
   /** Apply a `claude_auth_result`: records login state and clears `signingIn`. */
   applyResult(
     loggedIn: boolean,
@@ -205,6 +258,14 @@ export function applyAuthResultPayload(payload: Record<string, unknown>): void {
 /** Apply a `claude_install_result` CONTROL payload (`{ok, error}`). */
 export function applyInstallResultPayload(payload: Record<string, unknown>): void {
   authStore.applyInstallResult(
+    payload.ok === true,
+    typeof payload.error === "string" ? payload.error : null,
+  );
+}
+
+/** Apply a `claude_logout_result` CONTROL payload (`{ok, error}`). */
+export function applyLogoutResultPayload(payload: Record<string, unknown>): void {
+  authStore.applyLogoutResult(
     payload.ok === true,
     typeof payload.error === "string" ? payload.error : null,
   );

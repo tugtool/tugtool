@@ -144,17 +144,17 @@ const ISOLATED_STEPS: SetupStepModel[] = [
   },
   {
     key: "active",
-    label: "Sign in to Claude",
+    label: "Log in to Claude",
     detail: "Tug runs sessions with your Claude subscription.",
     status: "active",
-    cta: { label: "Sign In" },
+    cta: { label: "Log In" },
   },
   {
     key: "busy",
-    label: "Sign in to Claude",
-    detail: "Use your browser to sign in…",
+    label: "Log in to Claude",
+    detail: "Use your browser to log in…",
     status: "busy",
-    cta: { label: "Signing in…" },
+    cta: { label: "Logging in…" },
   },
   {
     key: "error",
@@ -165,7 +165,7 @@ const ISOLATED_STEPS: SetupStepModel[] = [
   },
   {
     key: "done",
-    label: "Signed in as ken@example.com",
+    label: "Logged in as ken@example.com",
     detail: "Claude Max plan",
     status: "done",
   },
@@ -193,8 +193,8 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "installing", label: "Installing" },
   { key: "install_failed", label: "Install failed" },
   { key: "signed_out", label: "Signed out" },
-  { key: "signing_in", label: "Signing in" },
-  { key: "signin_failed", label: "Sign-in failed" },
+  { key: "signing_in", label: "Logging in" },
+  { key: "signin_failed", label: "Log-in failed" },
   { key: "ready_to_open", label: "Ready to open" },
   { key: "complete", label: "Complete" },
   { key: "transport_down", label: "Transport down" },
@@ -216,7 +216,7 @@ function buildFlow(
   });
   const signin = (overrides: Partial<SetupStepModel>): SetupStepModel => ({
     key: "signin",
-    label: "Sign in to Claude",
+    label: "Log in to Claude",
     status: "pending",
     ...overrides,
   });
@@ -279,7 +279,7 @@ function buildFlow(
           signin({
             status: "active",
             detail: "Tug runs sessions with your Claude subscription.",
-            cta: { label: "Sign In", onClick: () => go("signing_in") },
+            cta: { label: "Log In", onClick: () => go("signing_in") },
           }),
           open({}),
         ],
@@ -290,8 +290,8 @@ function buildFlow(
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({
             status: "busy",
-            detail: "Use your browser to sign in…",
-            cta: { label: "Signing in…", onClick: () => {} },
+            detail: "Use your browser to log in…",
+            cta: { label: "Logging in…", onClick: () => {} },
           }),
           open({}),
         ],
@@ -302,7 +302,7 @@ function buildFlow(
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({
             status: "error",
-            detail: "Sign-in didn't finish. The browser may have been closed.",
+            detail: "Log-in didn't finish. The browser may have been closed.",
             cta: { label: "Try Again", onClick: () => go("signing_in") },
           }),
           open({}),
@@ -312,7 +312,7 @@ function buildFlow(
       return {
         steps: [
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max plan" }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
           open({
             status: "active",
             detail: "Open a Dev card to get started",
@@ -324,7 +324,7 @@ function buildFlow(
       return {
         steps: [
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
-          signin({ status: "done", label: "Signed in as ken@example.com", detail: "Claude Max plan" }),
+          signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
           open({ status: "done", detail: "Opening Dev card…" }),
         ],
       };

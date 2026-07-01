@@ -46,7 +46,8 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
-import { applyAuthResultPayload, applyInstallResultPayload } from "./lib/auth-store";
+import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
+import { requestLogout } from "./lib/logout-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
@@ -279,6 +280,20 @@ export function initActionDispatch(
   // re-probe arrives separately as claude_auth_result).
   registerAction("claude_install_result", (payload) => {
     applyInstallResultPayload(payload);
+  });
+
+  // claude_logout_result: outcome of `claude_logout` (the re-probe arrives
+  // separately as claude_auth_result). On failure this carries the error the
+  // TugLogout orchestrator surfaces.
+  registerAction("claude_logout_result", (payload) => {
+    applyLogoutResultPayload(payload);
+  });
+
+  // logout: app-level "Log out…" trigger from the File menu (like show-card,
+  // not the per-card run-card-command — logout must work with no card open).
+  // Bumps the logout-request nonce; TugLogout runs the confirm → logout flow.
+  registerAction("logout", () => {
+    requestLogout();
   });
 
   // reload: Reload page with dedup guard.

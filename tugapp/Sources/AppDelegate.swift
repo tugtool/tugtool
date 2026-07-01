@@ -499,6 +499,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         settingsItem.identifier = NSUserInterfaceItemIdentifier("app.settings")
         self.settingsMenuItem = settingsItem
         appMenu.addItem(settingsItem)
+        // Log Out… — app-level account action, right below Settings. Sends the
+        // app-level `logout` control frame (not a per-card command), so it works
+        // even with no card open; tugdeck's TugLogout runs the confirm → logout
+        // flow. Enabled always (validateMenuItem default); a no-op when already
+        // logged out (TugLogout guards on the auth state).
+        let logoutItem = NSMenuItem(title: "Log Out...", action: #selector(logOut(_:)), keyEquivalent: "")
+        logoutItem.identifier = NSUserInterfaceItemIdentifier("app.logout")
+        appMenu.addItem(logoutItem)
         appMenu.addItem(NSMenuItem.separator())
 
         // Services submenu
@@ -814,6 +822,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func showSettings(_ sender: Any?) {
         sendControl("show-card", params: ["component": "settings"])
+    }
+
+    @objc func logOut(_ sender: Any?) {
+        sendControl("logout")
     }
 
     @objc func showAbout(_ sender: Any?) {

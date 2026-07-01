@@ -157,6 +157,32 @@ pub async fn dispatch_action(
                 broadcast_auth_result(cat, state, tug_session_id);
             });
         }
+        "claude_logout" => {
+            // Drive `claude auth logout`. Report the command's own success as a
+            // `claude_logout_result` (so a failed logout surfaces an error
+            // rather than a silent no-op), then re-probe and broadcast the
+            // resulting auth state — logged out on success — which reopens
+            // TugSetup for the user to log back in.
+            info!("dispatch_action: claude logout requested");
+            let cat = stream_outputs
+                .get(&FeedId::CONTROL)
+                .map(|(tx, _)| tx.clone());
+            tokio::spawn(async move {
+                let (ok, error) = crate::feeds::claude_auth::logout().await;
+                if let Some(cat) = &cat {
+                    let body = serde_json::json!({
+                        "action": "claude_logout_result",
+                        "ok": ok,
+                        "error": error,
+                    });
+                    if let Ok(bytes) = serde_json::to_vec(&body) {
+                        let _ = cat.send(Frame::new(FeedId::CONTROL, bytes));
+                    }
+                }
+                let state = crate::feeds::claude_auth::probe().await;
+                broadcast_auth_result(cat, state, None);
+            });
+        }
         other => {
             info!("dispatch_action: broadcasting client action: {}", other);
             if let Some((tx, _)) = stream_outputs.get(&FeedId::CONTROL) {

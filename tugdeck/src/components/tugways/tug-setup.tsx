@@ -9,7 +9,7 @@
  * The steps, driven by the app-level {@link authStore} (one `claude auth
  * status` probe surfaced via `check_auth`) plus the deck's card count:
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
- *   2. Signed in to Claude — browser OAuth shell-out.
+ *   2. Logged in to Claude — browser OAuth shell-out.
  *   3. Open your first session — pops the first Dev card.
  *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
@@ -266,36 +266,36 @@ export function TugSetup(): ReactElement {
         : { key: "install", status: "done", label: "Claude Code installed", detail: "Claude Code is ready." };
 
   const signInStep: Step = claudeMissing
-    ? { key: "signin", status: "pending", label: "Sign in to Claude" }
+    ? { key: "signin", status: "pending", label: "Log in to Claude" }
     : signingIn
       ? {
           key: "signin",
           status: "busy",
-          label: "Sign in to Claude",
-          detail: "Use your browser to sign in…",
-          cta: { label: "Signing in…", onClick: handleSignIn },
+          label: "Log in to Claude",
+          detail: "Use your browser to log in…",
+          cta: { label: "Logging in…", onClick: handleSignIn },
         }
       : effectiveLoggedIn
         ? {
             key: "signin",
             status: "done",
-            label: account?.email ? `Signed in as ${account.email}` : "Signed in to Claude",
+            label: account?.email ? `Logged in as ${account.email}` : "Logged in to Claude",
             detail: subscriptionLabel(account?.subscriptionType),
           }
         : signInFailed
           ? {
               key: "signin",
               status: "error",
-              label: "Sign in to Claude",
-              detail: "Sign-in didn't finish. The browser may have been closed.",
+              label: "Log in to Claude",
+              detail: "Log-in didn't finish. The browser may have been closed.",
               cta: { label: "Try Again", onClick: handleSignIn },
             }
           : {
               key: "signin",
               status: "active",
-              label: "Sign in to Claude",
+              label: "Log in to Claude",
               detail: "Tug runs sessions with your Claude subscription.",
-              cta: { label: "Sign In", onClick: handleSignIn },
+              cta: { label: "Log In", onClick: handleSignIn },
             };
 
   const openStep: Step = effectiveLoggedIn
@@ -310,7 +310,7 @@ export function TugSetup(): ReactElement {
 
   const probingSteps: Step[] = [
     { key: "install", status: "busy", label: "Install Claude Code", detail: "Looking for Claude Code…" },
-    { key: "signin", status: "pending", label: "Sign in to Claude" },
+    { key: "signin", status: "pending", label: "Log in to Claude" },
     { key: "open", status: "pending", label: "Start a Claude Code session" },
   ];
 

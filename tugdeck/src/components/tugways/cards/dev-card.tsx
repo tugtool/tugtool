@@ -162,6 +162,7 @@ import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { useHostFacts } from "@/lib/host-facts-store";
+import { requestLogout } from "@/lib/logout-store";
 import { putDevRecentProjects } from "@/settings-api";
 import {
   useSessionLedger,
@@ -2055,14 +2056,14 @@ function renderDevCardBanner(
         variant="error"
         tone="caution"
         minMountedMs={0}
-        label={missing ? "Claude Code required" : "Sign in to Claude"}
+        label={missing ? "Claude Code required" : "Log in to Claude"}
         message={
           missing
             ? "Tug needs the Claude Code CLI. Install it, then reopen this card."
-            : "Tug runs sessions with your Claude subscription. Sign in to continue."
+            : "Tug runs sessions with your Claude subscription. Log in to continue."
         }
         detailIcon={missing ? "alert-triangle" : "key"}
-        detailTitle={missing ? "Claude Code required" : "Sign in to Claude"}
+        detailTitle={missing ? "Claude Code required" : "Log in to Claude"}
         footer={
           missing ? (
             <TugPushButton
@@ -2077,7 +2078,7 @@ function renderDevCardBanner(
               onClick={onSignIn}
               disabled={signingIn}
             >
-              {signingIn ? "Finish in your browser…" : "Sign In"}
+              {signingIn ? "Finish in your browser…" : "Log In"}
             </TugPushButton>
           )
         }
@@ -2087,7 +2088,7 @@ function renderDevCardBanner(
             ? "Install Claude Code from claude.com/download, then close and reopen this card."
             : signingIn
               ? "Complete sign-in in the browser window that opened. This card resumes automatically."
-              : "A browser window will open to sign in to your Anthropic account."}
+              : "A browser window will open to log in to your Anthropic account."}
         </p>
       </TugPaneBanner>
     );
@@ -3195,6 +3196,10 @@ export function DevCardBody({
       renameSheet.renameTo(name);
       paneBulletinRef.current?.success(`Session renamed to “${name}”`);
     },
+    // `/logout` — app-level. Hands off to the deck-root TugLogout orchestrator
+    // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
+    // the same nonce the File-menu "Log out…" bumps, so there's one flow.
+    logout: () => requestLogout(),
   };
 
   const {

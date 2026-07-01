@@ -125,6 +125,23 @@ pub async fn login() -> AuthState {
     probe().await
 }
 
+/// Drive `claude auth logout` and return `(ok, error_message)`. Unlike
+/// [`login`], the command's own success matters: a failed logout must surface
+/// as an error rather than a silent no-op, so the caller (`claude_logout`) can
+/// tell the user it didn't work instead of pretending they're logged out. The
+/// caller re-probes afterward to broadcast the authoritative auth state.
+pub async fn logout() -> (bool, Option<String>) {
+    match claude_command(&["auth", "logout"]).output().await {
+        Ok(out) if out.status.success() => (true, None),
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let detail = stderr.trim().lines().last().unwrap_or("logout failed");
+            (false, Some(detail.to_string()))
+        }
+        Err(e) => (false, Some(e.to_string())),
+    }
+}
+
 /// Run the official Claude Code installer (`curl -fsSL https://claude.ai/
 /// install.sh | bash`) and return `(ok, error_message)`. The native installer
 /// drops `claude` in `~/.local/bin` without editing the shell PATH; Tug finds

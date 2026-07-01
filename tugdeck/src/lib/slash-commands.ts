@@ -144,6 +144,10 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Summarize and compact the conversation to free up context",
     takesArgs: true,
   },
+  {
+    name: "logout",
+    description: "Log out of Claude and return to setup",
+  },
 ] as const satisfies readonly LocalSlashCommandSpec[];
 
 /** A registered local-command name. */

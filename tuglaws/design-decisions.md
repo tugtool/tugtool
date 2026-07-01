@@ -339,36 +339,38 @@ A zone's *location* is contract; its *occupant* is not — every zone is a gener
 ```
    (first launch) ──▶ PROBING  "Checking your setup…"
                           │
-   STEP 1 ── Claude Code installed
-     active (Install) ─▶ busy (Installing) ─▶ done
-                    └─▶ error (Retry Install) ─┘
+   STEP 1 ── Install Claude Code   (label flips to "Claude Code installed" on done)
+     active (Install) ─▶ busy (Installing…) ─▶ done ✓
+                    └─▶ error (Retry) ─┘
                           │ done
-   STEP 2 ── Sign in to Claude
-     active (Sign In) ─▶ busy (Waiting…) ─▶ done
+   STEP 2 ── Log in to Claude
+     active (Log In) ─▶ busy (Logging in…) ─▶ done ✓
                     └─▶ error (Try Again) ─┘
                           │ done
-   STEP 3 ── Open your first session   (success/transition button)
+   STEP 3 ── Start a Claude Code session   (success/transition button)
      active (Open a Dev Card) ─▶ opens first card ─▶ wizard dismisses
 
-   Takeover (replaces body):  TRANSPORT DOWN  "Reconnecting…"
-   Sibling app-modal (wins):  VERSION TOO OLD → TugVersionGate ([#step-7])
+   Transport down (replaces body): a "Reconnecting…" step row
+   Sibling app-modal (wins):       VERSION TOO OLD → TugVersionGate ([#step-7])
 ```
 
-**Per-state copy (what we show & say).** Label is the requirement/direction; detail is the state/progress/completion line:
+**Per-state copy (what we show & say).** Label is the requirement/direction; detail is the state/progress/completion line. A `busy` step keeps a **disabled** CTA (not hidden) so the row doesn't empty out; a `done` step swaps the CTA for a green success check (✓):
 
 | Step | Status | Dot (role/state) | Label | Detail | CTA |
 |---|---|---|---|---|---|
-| — | probing | agent / running | Claude Code installed | "Looking for Claude Code…" | — |
-| 1 | active | action / running | Claude Code installed | "Tug will install it for you." | **Install Claude Code** |
-| 1 | busy | agent / running | Claude Code installed | "Installing Claude Code…" | — |
-| 1 | error | danger / aborted | Claude Code installed | "Install failed: \<error\>" | **Retry Install** |
-| 1 | done | success / completed | Claude Code installed | "Claude Code is ready." | — |
-| 2 | active | action / running | Sign in to Claude | "Tug runs sessions with your Claude subscription." | **Sign In** |
-| 2 | busy | agent / running | Sign in to Claude | "Finish signing in in your browser…" | — |
-| 2 | error | danger / aborted | Sign in to Claude | "Sign-in didn't finish. The browser may have been closed." | **Try Again** |
-| 2 | done | success / completed | Signed in as \<email\> | "\<subscription\> subscription." | — |
-| 3 | active | action / running | Open your first session | "Open your first Dev card to start." | **Open a Dev Card** |
-| 3 | done | success / completed | Open your first session | "Opening your first session…" | — |
-| — | transport down | caution / running | Reconnecting… | "Lost the connection to Tug. Setup will resume automatically." | — |
+| — | probing | agent / running | Install Claude Code | "Looking for Claude Code…" | — |
+| 1 | active | action / running | Install Claude Code | "Tug will install it for you." | **Install** |
+| 1 | busy | agent / running | Install Claude Code | "This can take a moment." | *Installing…* (disabled) |
+| 1 | error | danger / aborted | Install Claude Code | "Install failed: \<error\>" | **Retry** |
+| 1 | done | success / completed | Claude Code installed | "Claude Code is ready." | ✓ |
+| 2 | active | action / running | Log in to Claude | "Tug runs sessions with your Claude subscription." | **Log In** |
+| 2 | busy | agent / running | Log in to Claude | "Use your browser to log in…" | *Logging in…* (disabled) |
+| 2 | error | danger / aborted | Log in to Claude | "Log-in didn't finish. The browser may have been closed." | **Try Again** |
+| 2 | done | success / completed | Logged in as \<email\> | "Claude \<Tier\> plan" | ✓ |
+| 3 | active | action / running | Start a Claude Code session | "Open a Dev card to get started" | **Open a Dev Card** |
+| 3 | done | success / completed | Start a Claude Code session | "Opening Dev card…" | ✓ |
+| — | transport down | agent / running | Reconnecting… | "Lost the connection to Tug. Setup will resume automatically." | — |
+
+**Verbiage.** Tug uses the consistent **"Log in" / "Log out"** pair for the account action (the `claude` CLI itself says "Sign in"/"Log out" — inconsistent; Tug does not follow it). The `subscriptionLabel` helper (`tug-setup-copy.ts`, unit-tested) formalizes the tier as "Claude Max plan" etc. **Logout** reopens this same wizard: an app-level "Log out…" (File menu + `/logout`) confirms via TugAlert, interrupts every in-progress turn, runs `claude_logout`, and flips `authStore` logged-out so TugSetup returns to the Log-in step (a failed/timed-out logout surfaces a "Couldn't log out" alert and leaves the user logged in). The `TugLogout` orchestrator (deck-root sibling) owns that flow.
 
 **Resolved design questions.** **(1) "Open your first session" is a success/transition button, not a probed step** — its CTA opens the first Dev card and the wizard dismisses. That first card seeds its **Project Path to the user's home directory** (a sensible from-the-drop default; the user re-points it afterward). **(2) The step row is bespoke** (above) — `BlockChrome` was evaluated and rejected. **(3) Probing / first-launch:** on a user's *first* launch TugSetup shows **up front and immediately** (it does not wait to probe behind a blank deck). This is governed by a persisted **first-launch flag** stored via tugbank defaults (`/api/defaults/…`, never `localStorage`); the flag is set once the user has launched the first time, so subsequent launches fall through to the normal probe-then-decide path. **(4) Transport-down** replaces the wizard body with a calm "Reconnecting…" takeover rather than a dead wizard; **version-too-old** is the sibling app-modal `TugVersionGate` ([#step-7], Spec S02) which takes precedence over TugSetup. The unhappy-path states (install-fail, sign-in cancel/timeout, transport-down) are designed in [#step-10]; this decision fixes their copy and visual grammar. [D02], [D104], [L02], [L06]
