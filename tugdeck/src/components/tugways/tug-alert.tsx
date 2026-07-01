@@ -332,31 +332,30 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       setOpen(nextOpen);
     }
 
-    // Button onClick handlers. Normal path: dispatch through the
-    // chain, which walks back to the alert's own responder handler.
-    // No-provider fallback: call the primary handler directly.
+    // Button onClick handlers. Dispatch through the chain (for keyboard/
+    // responder consistency) AND resolve directly. The direct call is what
+    // makes a click reliable: when this alert is an app-level singleton (e.g.
+    // the deck-root one TugLogout opens), the chain's first responder is a
+    // card, not this alert, so `sendToFirstResponder` never reaches the
+    // handler and only Radix's built-in Action/Cancel close fires — which
+    // resolves `false` for *both* buttons. `resolveAndClose` is idempotent, so
+    // if the chain did reach the handler first, the direct call is a no-op.
     function onConfirmClick() {
-      if (!manager) {
-        handleConfirmAction();
-        return;
-      }
-      manager.sendToFirstResponder({
+      manager?.sendToFirstResponder({
         action: TUG_ACTIONS.CONFIRM_DIALOG,
         sender: senderId,
         phase: "discrete",
       });
+      handleConfirmAction();
     }
 
     function onCancelClick() {
-      if (!manager) {
-        handleCancelAction();
-        return;
-      }
-      manager.sendToFirstResponder({
+      manager?.sendToFirstResponder({
         action: TUG_ACTIONS.CANCEL_DIALOG,
         sender: senderId,
         phase: "discrete",
       });
+      handleCancelAction();
     }
 
     return (

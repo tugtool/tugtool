@@ -14,6 +14,8 @@ import type { TugAlertHandle } from "@/components/tugways/tug-alert";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
+import { useDeckManager } from "@/deck-manager-context";
+import { cardServicesStore } from "@/lib/card-services-store";
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.75rem",
@@ -42,6 +44,55 @@ function GalleryAlertInner() {
   // Ref-based section
   const alertRef = React.useRef<TugAlertHandle>(null);
   const [refResult, setRefResult] = React.useState("none");
+
+  // App-level repro (TugLogout's exact shape): an effect-driven confirm on the
+  // deck-root singleton, followed by the real interrupt-loop over deck cards.
+  // This is the path the File-menu "Log Out…" / `/logout` take — the existing
+  // demos above invoke via a card button onClick, which is subtly different.
+  // The reported outcome isolates whether a click resolves the confirm and
+  // whether the interrupt loop throws — no guessing.
+  const deck = useDeckManager();
+  const [reproNonce, setReproNonce] = React.useState(0);
+  const [reproResult, setReproResult] = React.useState("none");
+  React.useEffect(() => {
+    if (reproNonce === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const confirmed = await showAlert({
+        title: "Log out of Claude? (repro)",
+        message:
+          "Effect-driven confirm on the deck-root singleton — the same path the File menu / /logout use.",
+        confirmLabel: "Log Out",
+        cancelLabel: "Cancel",
+        confirmRole: "danger",
+      });
+      if (cancelled) {
+        setReproResult("aborted — effect cleanup set cancelled=true");
+        return;
+      }
+      if (!confirmed) {
+        setReproResult("resolved FALSE (confirm click did not resolve true)");
+        return;
+      }
+      // The real interrupt-loop shape (count only — no actual interrupt): a
+      // throw here is what would strand the real logout before it sends.
+      try {
+        let interruptible = 0;
+        for (const card of deck.getSnapshot().cards) {
+          const services = cardServicesStore.getServices(card.id);
+          if (services?.codeSessionStore.getSnapshot().canInterrupt) interruptible++;
+        }
+        setReproResult(
+          `resolved TRUE — interrupt loop OK, ${interruptible} interruptible card(s)`,
+        );
+      } catch (err) {
+        setReproResult(`resolved TRUE — interrupt loop THREW: ${String(err)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reproNonce, showAlert, deck]);
 
   async function handleBasicAlert() {
     const confirmed = await showAlert({
@@ -173,6 +224,30 @@ function GalleryAlertInner() {
         </div>
         <div style={resultStyle}>
           Result: <strong>{refResult}</strong>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 6. App-level effect-driven confirm (logout repro) ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">App-Level Confirm (Logout Repro)</TugLabel>
+        <div style={labelStyle}>
+          Effect-driven showAlert on the deck-root singleton + the real
+          interrupt-loop — the exact TugLogout path (File menu / /logout).
+        </div>
+        <div style={{ display: "flex" }}>
+          <TugPushButton
+            emphasis="filled"
+            role="danger"
+            size="sm"
+            onClick={() => setReproNonce((n) => n + 1)}
+          >
+            Simulate Logout Confirm
+          </TugPushButton>
+        </div>
+        <div style={resultStyle}>
+          Result: <strong>{reproResult}</strong>
         </div>
       </div>
 

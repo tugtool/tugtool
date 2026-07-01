@@ -57,16 +57,22 @@ export function TugLogout(): null {
         confirmRole: "danger",
       });
       if (cancelled || !confirmed) return;
-      // Immediately stop every in-progress turn — they can't continue once
-      // logged out.
-      for (const card of deck.getSnapshot().cards) {
-        const services = cardServicesStore.getServices(card.id);
-        if (services?.codeSessionStore.getSnapshot().canInterrupt) {
-          services.codeSessionStore.interrupt();
-        }
-      }
+      // Fire the logout first so nothing below can block the critical path.
       authStore.setLoggingOut(true);
       getConnection()?.sendControlFrame("claude_logout");
+      // Best-effort: stop every in-progress turn — they can't continue once
+      // logged out. Guarded so a card without a live session can't throw and
+      // strand the logout.
+      try {
+        for (const card of deck.getSnapshot().cards) {
+          const services = cardServicesStore.getServices(card.id);
+          if (services?.codeSessionStore.getSnapshot().canInterrupt) {
+            services.codeSessionStore.interrupt();
+          }
+        }
+      } catch {
+        // A card without an interruptible session — ignore; logout proceeds.
+      }
     })();
     return () => {
       cancelled = true;
