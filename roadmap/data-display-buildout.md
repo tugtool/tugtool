@@ -38,7 +38,7 @@ This plan fixes both. First it makes tugcast's feed registration **trait-mediate
 
 > Make these falsifiable.
 
-- **Trait layer is live, not vestigial:** every server→client feed (TERMINAL, FILESYSTEM, FILETREE, GIT, SESSION_STATE, SESSION_SIDEBAND, CODE_OUTPUT, PULSE, ACTIVITY) registers through the trait-mediated API; grep confirms no feed pushes onto a raw `broadcast::Sender` outside the abstraction.
+- **Trait layer is live, not vestigial:** every server→client feed (TERMINAL, FILESYSTEM, FILETREE, GIT, SESSION_STATE, SESSION_SIDEBAND, CODE_OUTPUT, PULSE, ACTIVITY) registers through the trait-mediated API; grep confirms no feed pushes onto a raw `broadcast::Sender` outside the abstraction, modulo the two named exemptions in [P19] (CONTROL; the FILETREE/GIT_DIFF response fan-in senders).
 - **Exactly one interpreter:** the deck contains zero `CODE_OUTPUT`-derived activity math (`recordThroughput`, `throughputMeter`, its constants/maps gone); tugcode is the sole producer of activity counts, pinned by a fixture unit test.
 - **Model on the wire:** a raw `ACTIVITY` dump (Dev panel / frame capture) shows per-session channel samples independent of the deck.
 - **Flatlines fixed:** a `tugplug` skill and a post-`AskUserQuestion` resume each drive the sparkline off baseline (`verify`).
@@ -169,9 +169,9 @@ Anchors are explicit, kebab-case; plan-local decisions use `[P01]`; steps cite d
 
 #### [P02] Channels + rate/gauge aggregation (DECIDED) {#p02-channels}
 
-**Decision:** `text | tokens | tools | subagents` (rate) and `cpu | memory | disk` (gauge). Each has an `ActivityMeter` + descriptor `{unit, hue, fullScale, curve, kind}`. `rate` channels sum the rolling window to a per-second rate; `gauge` channels plot the latest bin value. Channels may be absent.
+**Decision:** `text | tokens | tools | subagents` (rate) and `cpu | memory | disk` (gauge). Each has an `ActivityMeter` + descriptor `{unit, hue, fullScale, curve, kind}`. `rate` channels sum the rolling window to a per-second rate. `gauge` channels use **sample-and-hold**: the meter holds the last observed value for a TTL (~2× the gauge sample interval) and returns it for empty bins within the TTL, decaying to zero only when samples stop — never the zero-filled empty bin. Channels may be absent.
 
-**Rationale:** CPU%/bytes-per-sec are already rates/levels — summing them over the window would over-count; the distinction lives in the descriptor.
+**Rationale:** CPU%/bytes-per-sec are already rates/levels — summing them over the window would over-count. And gauges arrive at 1 Hz into 250 ms bins, so three of every four bins are empty; "latest bin value" with zero-fill would strobe the CPU line between its real value and zero. Sample-and-hold reads the true level between samples and still decays to baseline when a session goes quiet or closes.
 
 #### [P03] High-churn series out of React state (DECIDED) {#p03-out-of-react}
 
@@ -243,9 +243,9 @@ Anchors are explicit, kebab-case; plan-local decisions use `[P01]`; steps cite d
 
 #### [P19] Trait-mediated registration; no feed bypasses the abstraction (DECIDED) {#p19-trait-mediated}
 
-**Decision:** Every server→client feed registers through a trait-mediated API — `StreamFeed` (app/workspace broadcast), `SnapshotFeed` (watch), or `SessionScopedFeed` (per-session) — reconciling `FileTree`'s signature and routing `StatCollector`'s registration through the same surface. No feed pushes onto a raw `broadcast::Sender` outside the abstraction.
+**Decision:** Every server→client feed registers through a trait-mediated API — `StreamFeed` (app/workspace broadcast, including PULSE), `SnapshotFeed` (watch), or `SessionScopedFeed` (per-session) — reconciling `FileTree`'s signature and routing `StatCollector`'s registration through the same surface. No feed pushes onto a raw `broadcast::Sender` outside the abstraction, with exactly two **named exemptions**: CONTROL (router-internal, bidirectional, carries router-emitted error frames) and the multi-producer snapshot-broadcast response senders (FILETREE/GIT_DIFF request→response fan-in — a distinct transport by design).
 
-**Rationale:** The user-visible debt is a dead trait layer bypassed by the real feeds; the fix is to make the layer actually carry every feed.
+**Rationale:** The user-visible debt is a dead trait layer bypassed by the real feeds; the fix is to make the layer actually carry every feed. The two exemptions are structural (router plumbing and response fan-in), not feeds dodging the abstraction — naming them makes the no-bypass assertion precise and checkable.
 
 **Implications:** `LagPolicy` and any replay buffer become feed-owned; the router holds/spawns feeds through the registration; conversions are sequenced safest-first ([R05]).
 
@@ -255,9 +255,9 @@ Anchors are explicit, kebab-case; plan-local decisions use `[P01]`; steps cite d
 
 **Rationale:** A reused PID has a different start time, so this reduces misattribution to nil rather than tracking it as a risk.
 
-#### [P21] Cutover parity by construction (DECIDED) {#p21-parity}
+#### [P21] Cutover parity + enumerated enhancements (DECIDED) {#p21-parity}
 
-**Decision:** The counting logic is **relocated whole** from the deck's `recordThroughput` into tugcode (same field reads, same units), and pinned by a tugcode fixture unit test replaying captured `CODE_OUTPUT` and asserting per-channel units — before the deck path is deleted. The producer is verified on the wire (Step 8) before the consumer cutover (Step 9).
+**Decision:** The counting logic is relocated from the deck's `recordThroughput` into tugcode with **parity for every existing signal** (text/thinking deltas, `tool_input_progress` byte deltas, subagent bursts and results, foreground results, `task_progress`) plus exactly **two enumerated enhancements** (token deltas replace the flat `streaming_usage` pip; a foreground `tool_use` burst is added) — all itemized per-row in Spec S04. A tugcode fixture unit test replays captured claude stream-json events through `dispatchEventToTurn` and asserts the S04 per-channel units — so the test pins the *spec*, not a false byte-identical-parity claim — before the deck path is deleted. The producer is verified on the wire (Step 8) before the consumer cutover (Step 9).
 
 ---
 
@@ -302,7 +302,7 @@ type ActivityChannel = "text"|"tokens"|"tools"|"subagents"|"cpu"|"memory"|"disk"
 interface ActivityChannelDescriptor { unit: string; hue: string; fullScale: number; curve: SparklineCurve; kind: "rate"|"gauge"; }
 class SessionActivityStore {
   record(session, channel, units, atMs): void;         // 1:1 with ACTIVITY frame [P15]
-  series(session, channel, nowMs): number[];           // aggregated per kind [P02]
+  series(session, channel, nowMs): number[];           // rate: window-summed; gauge: sample-and-hold w/ TTL [P02]
   raw(session, channel): { value; unit } | null;
   compositeSeries(session, nowMs): number[]; intensity(session, nowMs): number; dominant(session, nowMs): ActivityChannel|null;
   channels(session): ActivityChannel[]; clearSession(session): void;
@@ -330,14 +330,18 @@ class SessionActivityStore {
 
 #### Spec S04: tugcode `activity_delta` counting {#s04-counting}
 
-Relocated from the deck's `recordThroughput`, same field reads/units, computed in `dispatchEventToTurn`, accumulated in `ActiveTurn`:
+Relocated from the deck's `recordThroughput`, computed in `dispatchEventToTurn`, accumulated in `ActiveTurn`. Rows marked **(parity)** replicate the deck's exact field reads and units; rows marked **(enhancement)** are deliberate changes pinned by the same fixture test ([P21]):
 
-| Frame | Read | Units → channel |
-|---|---|---|
-| `assistant_text`/`thinking_text` (partial) | `text.length` | → `text` |
-| `streaming_usage` | `output_tokens` Δ per `msg_id` | → `tokens` |
-| `tool_use` (has `parent_tool_use_id`) | fixed burst, dedupe by id | → `subagents` |
-| `tool_use`/`tool_result`/`task_progress` (foreground) | fixed burst / capped output len | → `tools` |
+| Frame | Read | Units → channel | |
+|---|---|---|---|
+| `assistant_text`/`thinking_text` (partial) | `text.length` | → `text` | (parity) |
+| `tool_input_progress` | `bytes` Δ per `tool_use_id` (a forming Write/Edit — the richest signal) | → `text` | (parity) |
+| `streaming_usage` | `output_tokens` Δ per `msg_id` | → `tokens` | (enhancement — replaces the flat 60-unit pip) |
+| `tool_use` (has `parent_tool_use_id`) | fixed burst, dedupe by `tool_use_id` | → `subagents` | (parity) |
+| `tool_result` (has `parent_tool_use_id`) | capped `output.length` | → `subagents` | (parity) |
+| `tool_result` (foreground) | capped `output.length` | → `tools` | (parity) |
+| `tool_use` (foreground) | fixed burst | → `tools` | (enhancement — deck never counted it) |
+| `task_progress` | fixed burst | → `tools` | (parity) |
 
 Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture test ([P21]).
 
@@ -409,14 +413,14 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Trait-mediated registration; convert TERMINAL/FS/FT/GIT | pending | — |
+| #step-1 | Trait-mediated registration; convert TERMINAL/FS/FT/GIT/PULSE | pending | — |
 | #step-2 | `SessionScopedFeed` + convert SESSION_STATE | pending | — |
 | #step-3 | Convert SESSION_SIDEBAND (rewrap-preserving) | pending | — |
 | #step-4 | Convert CODE_OUTPUT (replay + input-ownership) | pending | — |
 | #step-5 | Route STATS registration; foundation checkpoint | pending | — |
 | #step-6 | `FeedId::ACTIVITY` as a native SessionScopedFeed | pending | — |
-| #step-7 | tugcode `activity_delta` (single interpreter) | pending | — |
-| #step-8 | tugcast divert `activity_delta` → ACTIVITY | pending | — |
+| #step-7 | tugcast divert `activity_delta` → ACTIVITY | pending | — |
+| #step-8 | tugcode `activity_delta` (single interpreter) | pending | — |
 | #step-9 | Deck store consumes ACTIVITY; delete deck derivation | pending | — |
 | #step-10 | Compact: dominant color + composite intensity | pending | — |
 | #step-11 | Retain `(pid, start_time)` per session | pending | — |
@@ -426,23 +430,24 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 | #step-15 | Expanded Activity card | pending | — |
 | #step-16 | Integration checkpoint | pending | — |
 
-#### Step 1: Trait-mediated registration; convert TERMINAL/FS/FT/GIT {#step-1}
+#### Step 1: Trait-mediated registration; convert TERMINAL/FS/FT/GIT/PULSE {#step-1}
 
-**Commit:** `tugcast(feeds): trait-mediated feed registration; convert terminal/fs/filetree/git`
+**Commit:** `tugcast(feeds): trait-mediated feed registration; convert terminal/fs/filetree/git/pulse`
 
 **References:** [P19] trait-mediated, Risk R05, (#tugcast-usage)
 
-**Artifacts:** a registration API where feeds self-register (lag policy feed-owned); `StreamFeed`/`SnapshotFeed` reconciled to carry the already-trait feeds through the router; `FileTree` signature reconciled (widen or a `WorkspaceScopedFeed` variant).
+**Artifacts:** a registration API where feeds self-register (lag policy feed-owned); `StreamFeed`/`SnapshotFeed` reconciled to carry the already-trait feeds through the router; `FileTree` signature reconciled (widen or a `WorkspaceScopedFeed` variant); the PULSE bridge converted (app-scoped broadcast — exactly `StreamFeed`-shaped, the cheapest conversion in the set).
 
 **Tasks:**
 - [ ] Introduce the registration surface; move `LagPolicy` to feed-owned.
 - [ ] Convert TERMINAL (Bootstrap), FILESYSTEM, GIT; reconcile FILETREE (watch + response broadcast).
+- [ ] Convert PULSE (the pulse bridge publishes through the abstraction instead of a raw `pulse_tx`).
 
 **Tests:**
 - [ ] Unit: each converted feed still produces its frames through the API.
 
 **Checkpoint:**
-- [ ] `cargo nextest run` passes; terminal/fs/filetree/git behave identically in the real app (`verify`).
+- [ ] `cargo nextest run` passes; terminal/fs/filetree/git/pulse behave identically in the real app (`verify`).
 
 ---
 
@@ -523,7 +528,7 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 **Tasks:**
 - [ ] Route the STATS aggregate + individual feeds through the unified snapshot registration (StatCollector model unchanged).
-- [ ] Grep-assert no server→client feed pushes a raw `broadcast::Sender` outside the abstraction.
+- [ ] Grep-assert no server→client feed pushes a raw `broadcast::Sender` outside the abstraction, modulo the two named [P19] exemptions (CONTROL; the FILETREE/GIT_DIFF response fan-in senders).
 
 **Tests:**
 - [ ] Aggregate: all pre-existing feeds behave identically (Part A is behavior-neutral).
@@ -554,45 +559,47 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 ---
 
-#### Step 7: tugcode `activity_delta` (single interpreter) {#step-7}
+#### Step 7: tugcast divert `activity_delta` → ACTIVITY {#step-7}
+
+**Depends on:** #step-6
+
+**Commit:** `tugcast(data-display): divert activity_delta onto the ACTIVITY feed`
+
+**References:** [P13], [P15], Spec S02, (#data-flow)
+
+**Artifacts:** a `merger_task` branch that recognizes `type=="activity_delta"`, splices `tug_session_id`, re-tags `FeedId::ACTIVITY`, and diverts (not copies) it off CODE_OUTPUT. Ordered **before** the tugcode emitter (#step-8) deliberately: the divert is a harmless no-op until the producer exists, whereas the reverse order would leak transitional `activity_delta` frames onto CODE_OUTPUT and into the shared ReplayBuffer.
+
+**Tasks:**
+- [ ] Add the divert branch using the payload inspector, mirroring the sideband rewrap.
+
+**Tests:**
+- [ ] Unit: an `activity_delta` line lands on ACTIVITY, session-tagged, and never on CODE_OUTPUT (fed a synthetic line — the live producer arrives in #step-8).
+
+**Checkpoint:**
+- [ ] `cargo nextest run` passes.
+
+---
+
+#### Step 8: tugcode `activity_delta` (single interpreter) {#step-8}
+
+**Depends on:** #step-7
 
 **Commit:** `tugcode(data-display): emit activity_delta from dispatchEventToTurn`
 
 **References:** [P13] single interpreter, [P06], [P07], [P21] parity, [Q06] flush, Spec S04
 
-**Artifacts:** `ActivityDelta` interface + `OutboundMessage` member; per-turn activity bins on `ActiveTurn`; a 250 ms `SessionManager` flush (turn-scoped, trailing flush on turn end) emitting behind `!turn.suppressEmit`.
+**Artifacts:** `ActivityDelta` interface + `OutboundMessage` member; per-turn activity bins on `ActiveTurn`; a 250 ms `SessionManager` flush (turn-scoped, trailing flush on turn end) emitting behind `!turn.suppressEmit`. With the divert (#step-7) already live, no `activity_delta` ever rides CODE_OUTPUT.
 
 **Tasks:**
 - [ ] Relocate the counting (Spec S04) into `dispatchEventToTurn`; accumulate in `ActiveTurn`.
 - [ ] Add the flush timer ([Q06]); emit `activity_delta`.
 
 **Tests:**
-- [ ] Unit (tugcode): captured `CODE_OUTPUT` fixtures (Write / skill / AskUserQuestion) → expected per-channel units ([P21]).
+- [ ] Unit (tugcode): captured claude stream-json fixtures (Write / skill / AskUserQuestion turns) fed through `dispatchEventToTurn` → expected per-channel units ([P21], Spec S04).
 - [ ] Unit: no `activity_delta` emitted while `suppressEmit` (replay-safe).
 
 **Checkpoint:**
 - [ ] tugcode rebuilt; `bun test` passes.
-
----
-
-#### Step 8: tugcast divert `activity_delta` → ACTIVITY {#step-8}
-
-**Depends on:** #step-6, #step-7
-
-**Commit:** `tugcast(data-display): divert activity_delta onto the ACTIVITY feed`
-
-**References:** [P13], [P15], Spec S02, (#data-flow)
-
-**Artifacts:** a `merger_task` branch that recognizes `type=="activity_delta"`, splices `tug_session_id`, re-tags `FeedId::ACTIVITY`, and diverts (not copies) it off CODE_OUTPUT.
-
-**Tasks:**
-- [ ] Add the divert branch using the payload inspector, mirroring the sideband rewrap.
-
-**Tests:**
-- [ ] Unit: an `activity_delta` line lands on ACTIVITY, session-tagged, and never on CODE_OUTPUT.
-
-**Checkpoint:**
-- [ ] `cargo nextest run` passes.
 - [ ] Real app: a raw `ACTIVITY` dump shows per-session samples during a live turn (model-on-the-wire criterion).
 
 ---
@@ -612,7 +619,7 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 - [ ] Point the strip at the store; delete deck derivation entirely.
 
 **Tests:**
-- [ ] Unit: meter rate sums the window; gauge returns latest; store record/series/composite.
+- [ ] Unit: meter rate sums the window; gauge sample-and-holds across empty bins within its TTL and decays to zero after it; store record/series/composite.
 
 **Checkpoint:**
 - [ ] `bunx vite build` + `bun test`; grep confirms no `throughputMeter`/`recordThroughput`.
@@ -643,7 +650,8 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 #### Step 11: Retain `(pid, start_time)` per session {#step-11}
 
-**Depends on:** #step-1
+<!-- No dependencies: PID capture touches agent_bridge/agent_supervisor, not the
+     registration API — it can proceed in parallel with Part A. -->
 
 **Commit:** `tugcast(data-display): retain tugcode child (pid, start_time) per session`
 
@@ -664,7 +672,7 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 #### Step 12: OS subtree sampler → CPU/memory into ACTIVITY {#step-12}
 
-**Depends on:** #step-8, #step-11
+**Depends on:** #step-9, #step-11
 
 **Commit:** `tugcast(data-display): per-session subtree CPU/memory into ACTIVITY`
 
