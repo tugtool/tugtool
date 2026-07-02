@@ -32,12 +32,12 @@ export interface MemoryDestination {
 
 /**
  * Encode an absolute cwd into Claude Code's project-directory naming
- * convention (`/` → `-`). Mirrors `encodeProjectDir` in tugcode
- * (`session.ts` / `context-breakdown.ts`), so the auto-memory folder resolves
- * to the same directory Claude Code writes.
+ * convention (every character outside `[A-Za-z0-9-]` → `-`). Mirrors
+ * `encodeProjectDir` in tugcode (`session.ts` / `context-breakdown.ts`), so
+ * the auto-memory folder resolves to the same directory Claude Code writes.
  */
 export function encodeProjectDir(absDir: string): string {
-  return absDir.replace(/\//g, "-");
+  return absDir.replace(/[^A-Za-z0-9-]/g, "-");
 }
 
 /**

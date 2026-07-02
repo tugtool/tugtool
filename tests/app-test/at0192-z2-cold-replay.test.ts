@@ -55,10 +55,13 @@ const SID = "a7c0d1ea-0000-4000-8000-00000000c0c0";
 /**
  * Encode an absolute project dir the way claude names its per-project
  * subdir under `~/.claude/projects/` — mirrors tugcode's
- * `encodeProjectDir` (`'/' → '-'`). Kept inline so the app-test graph
- * does not import tugcode.
+ * `encodeProjectDir` (every character outside `[A-Za-z0-9-]` → `-`;
+ * a `'/'`-only mapping breaks the fixture path the moment the resolved
+ * project dir carries a dot or underscore, e.g. a `.tugtree` worktree).
+ * Kept inline so the app-test graph does not import tugcode.
  */
-const encodeProjectDir = (absDir: string): string => absDir.replace(/\//g, "-");
+const encodeProjectDir = (absDir: string): string =>
+  absDir.replace(/[^A-Za-z0-9-]/g, "-");
 
 // The cost-only smoke fixture: two clean turns, each carrying `message.usage`
 // and a real `message.model`. The last turn's resident window is
@@ -227,7 +230,7 @@ describe.skipIf(!SHOULD_RUN)(
         // The effort chip's ACTIVE value (the visible variant; alternates are
         // aria-hidden width sizers).
         const EFFORT_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="effort-chip"] [data-slot="effort-value"] [data-tug-stable="active"]');
+          const el = document.querySelector('[data-card-id="A"] [data-slot="effort-chip"] [data-tug-stable="active"] [data-slot="effort-value"]');
           return el ? (el.textContent || '').trim() : '';
         })()`;
 

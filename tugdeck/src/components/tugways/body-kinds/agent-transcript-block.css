@@ -22,8 +22,6 @@
  *    is a `text` paragraph or a nested tool block; a nested block's own
  *    chrome separates against the well by contrast, as top-level blocks
  *    do against the transcript column.
- *  - `.tugx-agent-footer` — a thin token-summary strip; renders in
- *    both standalone and embedded modes.
  *
  * Token sources:
  *  - Shared block-surface scaffold (frame, header / footer strip)
@@ -183,10 +181,22 @@ body {
 /* A text entry — the subagent's prose answer. Pre-wrapped so source
  * line breaks survive; wraps rather than overflowing the frame. */
 /* @tug-renders-on: --tugx-agent-well-bg */
+/* A text entry hosts a real markdown render (`TugMarkdownBlock`), so
+ * the wrapper does NOT pre-wrap — the markdown blocks own their own
+ * flow, exactly as top-level assistant prose does.
+ *
+ * Voice convention: inside a tool block, MONOSPACE is the default
+ * voice (commands, paths, raw output — the well's `.tugx-agent`
+ * `--tugx-block-code-font` cascade). Markdown PROSE — an agent's
+ * narrative / report — is the exception: it reads in the transcript's
+ * sans prose voice, exactly like top-level assistant text, so this
+ * wrapper resets the family out of the well's code cascade. Inline
+ * `code` / fenced blocks inside the markdown re-opt into mono via the
+ * markdown block's own rules, so the two voices nest correctly. */
 .tugx-agent-text {
   color: var(--tugx-agent-text-color);
+  font-family: var(--tug-font-family-sans);
   line-height: 1.5;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -217,28 +227,4 @@ body {
  * `.tugx-agent-tool`). Applies at every nesting depth. */
 .tugx-agent-tool .tool-block-chrome {
   margin: 0;
-}
-
-/* ---------- Footer ---------- */
-
-/* Thin token-summary strip. Renders in both standalone and embedded
- * modes — the cost figure is body-kind data, not chrome. Mirrors the
- * shared strip shape (same tint + hairline divider, on top). */
-.tugx-agent-footer {
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-block-strip-gap);
-  padding: var(--tugx-block-strip-padding);
-  background: var(--tugx-block-strip-bg);
-  border-top: 1px solid var(--tugx-block-strip-border);
-  color: var(--tugx-block-strip-color);
-  font-family: var(--tugx-block-strip-font);
-  font-size: var(--tugx-block-strip-size);
-}
-
-/* @tug-renders-on: --tugx-block-strip-bg */
-.tugx-agent-tokens {
-  white-space: nowrap;
-  color: var(--tugx-agent-meta-color);
-  font-variant-numeric: tabular-nums;
 }

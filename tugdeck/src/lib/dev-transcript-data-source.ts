@@ -97,6 +97,7 @@ import type {
 } from "@/lib/code-session-store";
 import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import type { ContextWindowStep } from "@/lib/code-session-store/end-state";
+import { agentTokensForTurn } from "@/lib/code-session-store/select-jobs";
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 
 // ---------------------------------------------------------------------------
@@ -155,6 +156,17 @@ export interface DevRowDescriptor {
    * merged turn, and in-flight rows. Negative at a `/compact` turn.
    */
   perTurnTokens?: number;
+  /**
+   * Total tokens spent by the subagents this turn launched — computed
+   * by `agentTokensForTurn` from the job ledger (live, climbing with
+   * `task_progress` ticks) or the turn-attached structured results
+   * (reload). Kept SEPARATE from `perTurnTokens`: subagents burn their
+   * tokens in their own contexts, which never enter the main session's
+   * window — Z1B shows the two figures side by side rather than one
+   * misleading sum. Set only where `perTurnTokens` is set; `0` when the
+   * turn launched no agents.
+   */
+  agentTokens?: number;
   /**
    * Set for every in-flight row (`user` and `assistant`). Carries the
    * substrate's `ActiveTurnSnapshot` so the cell can read the live
@@ -796,17 +808,27 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     // Assistant row. The signed per-turn token delta is a bracket
     // quantity (window(N) − window(N−1), carry-forward over any
     // zero-usage turn), so it rides only the bracket's last assistant
-    // row ([P02]).
+    // row ([P02]). Subagent spend rides ALONGSIDE it, never folded in:
+    // an agent's tokens burn in a separate context that never enters
+    // the main session's window, so Z1B shows the main figure and the
+    // agent figure as distinct readouts (`agentTokensForTurn` — the
+    // composed/streaming agent totals, climbing live via
+    // `task_progress` ticks, durable on reload).
     const windows = this.contextWindows(snap);
+    const basePerTurn = slot.isLastAssistantOfTurn
+      ? windows[slot.turnIndex]?.perTurn
+      : undefined;
     return {
       kind: "assistant",
       turn,
       messageStart: group.start,
       messageEnd: group.end,
       isLastAssistantOfTurn: slot.isLastAssistantOfTurn,
-      perTurnTokens: slot.isLastAssistantOfTurn
-        ? windows[slot.turnIndex]?.perTurn
-        : undefined,
+      perTurnTokens: basePerTurn,
+      agentTokens:
+        basePerTurn !== undefined
+          ? agentTokensForTurn(turn.messages, snap.jobs)
+          : undefined,
       turnKey: turn.turnKey,
     };
   }
@@ -862,7 +884,8 @@ export function sameTranscriptRowData(
     a.messageEnd === b.messageEnd &&
     a.isLastAssistantOfTurn === b.isLastAssistantOfTurn &&
     a.queued === b.queued &&
-    a.perTurnTokens === b.perTurnTokens
+    a.perTurnTokens === b.perTurnTokens &&
+    a.agentTokens === b.agentTokens
   );
 }
 

@@ -57,10 +57,10 @@ import {
 import {
   KIND_RENDERERS,
   dispatch,
-  hasBespokeWrapper,
   type DispatchContext,
   type RenderInput,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+import { hasBespokeWrapper } from "@/components/tugways/cards/dev-assistant-renderer-registrations";
 
 // ---------------------------------------------------------------------------
 // selectPermissionBodyKind

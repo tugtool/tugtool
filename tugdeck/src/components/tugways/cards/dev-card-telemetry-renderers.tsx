@@ -54,6 +54,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import {
   computeRichContextBreakdown,
+  deriveJobExtendedActiveMs,
   deriveSessionTotals,
   deriveTimeCellMs,
   turnHasTiming,
@@ -86,6 +87,7 @@ import { useJobsState } from "@/lib/code-session-store/hooks/use-jobs-state";
 import {
   countJobs,
   jobsCellPose,
+  jobsOwnedByTurn,
 } from "@/lib/code-session-store/select-jobs";
 import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
@@ -541,27 +543,45 @@ export const DevTelemetryStatusRow = React.forwardRef<
       [sessionMetadataStore],
     ),
   );
-  // Live 1Hz heartbeat — ticks only while phase is non-terminal, so
-  // the TIME cell's in-flight readout advances at the granularity
-  // the user perceives. `tickAt` is the helper's input, not a
-  // render-affecting value itself; `deriveTimeCellMs` folds it into
-  // its union-pause math.
-  const tickAt = useLifecycleTick(snap.phase);
+  // Jobs ledger — read early because the TIME cell folds background
+  // work into its clock (a request whose agent still runs between
+  // turns keeps counting) as well as feeding the JOBS cell below.
+  const jobsLedger = useJobsState(codeSessionStore);
+
+  const lastTurn =
+    snap.transcript.length > 0
+      ? snap.transcript[snap.transcript.length - 1]
+      : null;
+  // Background jobs launched by the last committed turn — the work
+  // that keeps the request "in progress" after the turn commits.
+  const lastTurnJobs =
+    lastTurn !== null ? jobsOwnedByTurn(lastTurn.messages, jobsLedger) : [];
+  const lastTurnJobsRunning = lastTurnJobs.some((j) => j.status === "running");
+  // Live 1Hz heartbeat — ticks while phase is non-terminal, AND while
+  // the last turn's background work is still running (the TIME cell
+  // keeps counting between turns then). `tickAt` is the helper's
+  // input, not a render-affecting value itself; `deriveTimeCellMs`
+  // folds it into its union-pause math.
+  const tickAt = useLifecycleTick(snap.phase, undefined, lastTurnJobsRunning);
   // Subscribe to the persisted state-change log so the indicator's
   // popover surfaces the live row stream. Returns the idle snapshot
   // when no card has bound to a session id, so the subscription is
   // cheap even before the popover opens.
   const stateChangeSnap = useSessionStateChanges(snap.tugSessionId);
 
-  const lastTurn =
-    snap.transcript.length > 0
-      ? snap.transcript[snap.transcript.length - 1]
-      : null;
-  // TIME cell: live in-flight clock when a turn is in flight, or
-  // the last committed turn's activeMs as the post-commit fallback.
-  // `deriveTimeCellMs` short-circuits to the fallback path when
-  // `activeTurn === null`.
-  const lastCommittedActiveMs = lastTurn !== null ? lastTurn.activeMs : 0;
+  // TIME cell: live in-flight clock when a turn is in flight; after
+  // commit, the last turn's activeMs extended across its background
+  // work — climbing while a launched agent still runs, frozen at the
+  // request's true total once it finishes.
+  const lastCommittedActiveMs =
+    lastTurn !== null
+      ? deriveJobExtendedActiveMs({
+          turnActiveMs: lastTurn.activeMs,
+          turnEndedAt: lastTurn.endedAt,
+          jobs: lastTurnJobs,
+          nowMs: tickAt,
+        })
+      : 0;
   const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
   // Per-turn TIME is durable-only (overlaid from `turn_telemetry`, [P03]); a
   // turn restored without a row carries the zero-placeholder. Show the honest
@@ -690,7 +710,6 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // the dot keeps pulsing while the session idles; `jobsCellPose` is a
   // pure function of the ledger only. The `aborted` pose (danger)
   // surfaces a failed job until the user clears it or new work starts.
-  const jobsLedger = useJobsState(codeSessionStore);
   const jobCounts = countJobs(jobsLedger);
   // `total` excludes scheduled rows, so the `finished/total` fraction
   // reads only executing/done work. A lone pending wakeup has total 0

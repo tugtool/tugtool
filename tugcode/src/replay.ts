@@ -2174,9 +2174,15 @@ function resolveWindow(
  * Collect the `Agent` `tool_use.id`s that were launched in the BACKGROUND —
  * a `user` entry whose `toolUseResult` is the async-launch echo (`isAsync ===
  * true` or `status === "async_launched"`). The linkage id is the entry's first
- * `tool_result` block's `tool_use_id`. Only these agents get their transcripts
- * spliced; a foreground agent's children/answer already live inline in the
- * main JSONL.
+ * `tool_result` block's `tool_use_id`.
+ *
+ * The child SPLICE is not gated on this set — every parent with a
+ * `subagents/` transcript is spliced (foreground children live only
+ * there too). This set gates the narrower echo-structured drop: an
+ * async parent's persisted `tool_use_structured` is just the empty
+ * launch echo and must not clobber the splice's composed answer,
+ * whereas a foreground parent's structured frame is the REAL result
+ * and must survive.
  */
 function collectAsyncAgentToolUseIds(
   parsedEntries: ReadonlyArray<JsonlEntry | null>,
@@ -2508,19 +2514,22 @@ export async function* translateJsonlSession(
         await yieldToEventLoop();
         sliceStartedAt = now();
       }
-      // Splice a background agent's persisted children directly after its
-      // parent `Agent` tool_use — mid-turn, so the reducer attaches them to
+      // Splice an agent's persisted children directly after its parent
+      // `Agent` tool_use — mid-turn, so the reducer attaches them to
       // the open turn (`handleToolUse` resolves the turn via `pendingTurn`,
-      // not `msg_id`). Gated to BACKGROUND agents (`asyncAgentToolUseIds`) so
-      // a foreground agent's inline result is never disturbed. A windowed-out
-      // Agent never emits its tool_use here, so it yields no children
-      // (window-safe by construction). Nested agents resolve recursively
-      // inside `spliceSubagentChildren`.
-      if (
-        msg.type === "tool_use" &&
-        asyncAgentToolUseIds.has(msg.tool_use_id) &&
-        subagentsByParent.has(msg.tool_use_id)
-      ) {
+      // not `msg_id`). EVERY parent with a `subagents/` transcript is
+      // spliced — foreground agents included: the main JSONL carries only
+      // the Agent call and its final result, never the child tool calls
+      // (verified on 2.1.198), so without the splice a reload loses every
+      // foreground child block the live stream showed. A foreground
+      // parent's REAL `tool_use_structured` (full content + stats) lands
+      // after the splice and last-write-wins over the splice's composed
+      // one, so its inline result is never degraded; only the async echo's
+      // empty structured frame is dropped (`asyncAgentToolUseIds` above).
+      // A windowed-out Agent never emits its tool_use here, so it yields
+      // no children (window-safe by construction). Nested agents resolve
+      // recursively inside `spliceSubagentChildren`.
+      if (msg.type === "tool_use" && subagentsByParent.has(msg.tool_use_id)) {
         for (const child of spliceSubagentChildren(
           msg.tool_use_id,
           subagentsByParent,

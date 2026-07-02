@@ -4674,15 +4674,50 @@ function handleTaskUpdated(
 /**
  * `task_progress` — fold a running agent's latest tool + cumulative
  * usage onto its ledger row. {@link applyJobProgress} no-ops when the
- * row is unknown (foreground agent — never inserted) or terminal (a
- * late tick must not disturb the final snapshot), returning the same
- * `jobs` reference so an ignored tick produces no state change.
+ * row is terminal (a late tick must not disturb the final snapshot),
+ * returning the same `jobs` reference so an ignored tick produces no
+ * state change.
+ *
+ * An **orphan background** tick — one whose `taskId` matches no ledger
+ * row and whose launching call is NOT in the live turn's scratch —
+ * re-hydrates a `running` agent job first (when not replaying). Replay
+ * deliberately never populates the jobs ledger, so after a reload a
+ * still-running background agent has no row; its tailer's inter-turn
+ * children would then find `jobExistsForParent === false` and be
+ * dropped. Only agents emit `task_progress`, and the frame carries
+ * both the `taskId` (= the job id) and the launching Agent call's
+ * `toolUseId` — everything the insert needs. `insertJob` keeps this
+ * idempotent with the launch-echo / `task_started` inserts. The
+ * scratch guard keeps a *foreground* agent's mid-turn ticks (whose
+ * launching call is still open in the live turn) from minting a
+ * phantom job.
  */
 function handleTaskProgress(
   state: CodeSessionState,
   event: TaskProgressEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
-  const jobs = applyJobProgress(state.jobs, event);
+  let jobs = state.jobs;
+  const known = jobs.some((j) => j.jobId === event.taskId);
+  if (!known && state.phase !== "replaying") {
+    const turnKey = state.pendingTurn?.turnKey;
+    const scratchEntry =
+      turnKey !== undefined ? state.scratch.get(turnKey) : undefined;
+    const launchingLive =
+      scratchEntry?.toolCallIndex.has(event.toolUseId) === true;
+    if (!launchingLive) {
+      jobs = insertJob(jobs, {
+        jobId: event.taskId,
+        source: "claude",
+        kind: "agent",
+        toolUseId: event.toolUseId,
+        description: event.description,
+        status: "running",
+        startedAtMs: Date.now(),
+        endedAtMs: null,
+      });
+    }
+  }
+  jobs = applyJobProgress(jobs, event);
   if (jobs === state.jobs) {
     return { state, effects: [] };
   }

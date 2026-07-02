@@ -247,8 +247,13 @@ both paths while the agent runs, `tail -f` the growing one, confirm JSONL shape.
 machine the `tasks/` dirs are present-but-empty post-run and `subagents/` persists,
 which already points at `outputFile` as the live file.
 
-**Resolution:** OPEN → decided provisionally by [P02] (tail `outputFile`); confirmed live
-in [#step-6].
+**Resolution:** RESOLVED in [#step-6]. `tasks/<agentId>.output` is a **symlink** to the
+durable `subagents/agent-<agentId>.jsonl` — one live-growing file, two paths, identical
+JSONL shape (verified live on claude 2.1.198: both present from launch, the jsonl grows
+during the run, the symlink persists after completion). Tailing the echo's `outputFile`
+([P02]) is correct and equivalent to tailing the durable copy; the resume path keeps
+reading `subagents/` unchanged. Live verification: child frames streamed inter-turn,
+frames byte-identical to the resume splice's (same synthesizer).
 
 #### [Q02] Completion signal for "genuinely finished" (OPEN) {#q02-completion-signal}
 
@@ -272,7 +277,16 @@ earliest reliable frame tugcode already sees inter-turn. Provisionally [P05]:
 stop+compose on `task_updated{completed}` OR completion `wake_started` for the agent,
 whichever lands first; claude exit forces a final flush.
 
-**Resolution:** OPEN → decided provisionally by [P05]; confirmed in [#step-6].
+**Resolution:** RESOLVED in [#step-6]. For a background agent the earliest reliable
+signal tugcode sees is the **`task_notification`** (forwarded as `wake_started`); the
+sibling terminal `task_updated` lands after it. The tailer stops+composes on whichever
+arrives first ([P05]), which live verification showed is the notification. One
+verification-surfaced wrinkle, fixed in `13b93541c`: Claude Code appends the agent's
+final answer entry to the transcript file a beat AFTER the notification lands, so the
+final flush must **settle** (re-poll until the file is quiet for two consecutive reads)
+before composing — a single read at the signal composes an intermediate line. With the
+settle, the composed answer matched the agent's true final text (`done`), emitted
+exactly once, only after completion.
 
 #### [Q03] Reload-mid-run reconciliation (DECIDED) {#q03-reload-midrun}
 
@@ -295,7 +309,10 @@ so it is decided here, not deferred to a spike.
   with the replay's turn-attached children.
 
 The narrow ordering window (re-streamed children arriving before the first re-hydrating
-tick) is Risk [R03](#r03-reload-rehydrate-ordering); confirmed acceptable in [#step-6].
+tick) is Risk [R03](#r03-reload-rehydrate-ordering); confirmed acceptable in [#step-6] —
+live verification showed the reset tailer re-streams the full child set after
+`replay_complete`, each child re-emitted once (2 wire emissions total per child across
+the run), converging with no loss; the deck's id-dedup ([P06]) makes them one list.
 
 ---
 
@@ -666,12 +683,12 @@ already covers everything flushed to `subagents/` before the reload, and verifie
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Split dispatch registrations from mechanism (cycle fix) | pending | — |
-| #step-2 | Render `job.childCalls` + drop the one-liner | pending | — |
-| #step-3 | tugcode `subagent-tail` module | pending | — |
-| #step-4 | Wire the tailer + survive reconnect | pending | — |
-| #step-5 | Deck integration test: live children + final answer | pending | — |
-| #step-6 | Live verify with a real background agent | pending | — |
+| #step-1 | Split dispatch registrations from mechanism (cycle fix) | done | ab575e9de |
+| #step-2 | Render `job.childCalls` + drop the one-liner | done | 9ed05521a |
+| #step-3 | tugcode `subagent-tail` module | done | f7807d04f |
+| #step-4 | Wire the tailer + survive reconnect | done | 5aa202b72 |
+| #step-5 | Deck integration test: live children + final answer | done | 43d62f3f8 |
+| #step-6 | Live verify with a real background agent | done | 13b93541c |
 
 #### Step 1: Split dispatch registrations from mechanism (cycle fix) {#step-1}
 
@@ -886,18 +903,34 @@ reload/resume — with the one-line summary gone and no dangling final-answer fr
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Live child blocks stream under the Agent block with no reload ([#step-6]).
-- [ ] `AgentWorkingBody` one-liner is gone in every state ([#step-2], `grep` → 0).
-- [ ] Reload (mid-run and post-completion) reconstructs the same content; no
+- [x] Live child blocks stream under the Agent block with no reload ([#step-6] —
+  verified at the wire against a real background agent: parent-stamped child frames
+  arrive inter-turn; the deck renders them from `job.childCalls`).
+- [x] `AgentWorkingBody` one-liner is gone in every state ([#step-2], `grep` → 0).
+- [x] Reload (mid-run and post-completion) reconstructs the same content; no
   grows-each-reload, no `…:` fragment; mid-run reload keeps streaming via [P08]/[P09]
-  ([#step-6]).
-- [ ] `cd tugrust && cargo nextest run`, `bun test` (tugcode + tugdeck), and
-  `bunx vite build` all green, zero warnings.
-- [ ] `task-tool-block.test.ts` green **in isolation** ([#step-1]).
+  ([#step-6] — mid-run `request_replay` re-streamed the full child set; the
+  post-completion replay spliced the identical child ids + one composed answer).
+- [x] `cd tugrust && cargo nextest run` (1060 pass), `bun test` (tugcode 697 +
+  tugdeck 3812), and `bunx vite build` all green, zero warnings.
+- [x] `task-tool-block.test.ts` green **in isolation** ([#step-1]).
 
 **Acceptance tests:**
-- [ ] `subagent-tail.test.ts` contract test matches resume-splice frames.
-- [ ] `live-subagent-children.test.ts` asserts rendered children + final answer.
+- [x] `subagent-tail.test.ts` contract test matches resume-splice frames.
+- [x] `live-subagent-children.test.ts` asserts rendered children + final answer.
+
+**Live acceptance record ([#step-6], real background agent, claude 2.1.198):** launched
+via the rebuilt debug tugcode; child `tool_use`/`tool_result` frames streamed inter-turn
+(parent-stamped, ids matching the on-disk transcript); no composed answer mid-run;
+mid-run `request_replay` → tailer reset re-streamed both children post-bracket; the
+completion `wake_started` triggered exactly one composed `tool_use_structured` whose
+content was the agent's true final text (`done`) with correct footer stats; a
+post-completion replay spliced the same 2 children + 1 answer. Two defects surfaced and
+fixed during verification (`13b93541c`): the claude project-dir encoding drift (dots /
+underscores) that made replays report `jsonl_missing` for this worktree's path, and the
+final-flush race that composed an intermediate line as the answer. The in-deck visual
+pass (blocks under the Agent block in the running Dev card) is the user's to vet on the
+`(debug, tugdash/subagent-improvements)` instance.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

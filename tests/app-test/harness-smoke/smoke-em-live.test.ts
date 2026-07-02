@@ -135,8 +135,9 @@ describe.skipIf(!SHOULD_RUN || !TUGCODE_LIVE)(
         await app.writeTugcodeStdin(
           JSON.stringify({
             type: "user_message",
-            text: "Reply with the single word: ack.",
-            attachments: [],
+            content: [
+              { type: "text", text: "Reply with the single word: ack." },
+            ],
           }),
         );
         // Live model end-to-end can be slow; allow 60s.

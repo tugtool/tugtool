@@ -718,6 +718,72 @@ export function jobsCellPose(
 }
 
 /**
+ * The jobs launched by a turn — every ledger row whose launching
+ * `toolUseId` is one of the turn's `tool_use` messages. The TIME cell
+ * uses this to keep the request clock counting across the turn's
+ * still-running background work.
+ */
+export function jobsOwnedByTurn(
+  messages: ReadonlyArray<{ kind: string; toolUseId?: string }>,
+  jobs: readonly JobItem[],
+): readonly JobItem[] {
+  if (jobs.length === 0) return [];
+  const ids = new Set<string>();
+  for (const m of messages) {
+    if (m.kind === "tool_use" && typeof m.toolUseId === "string") {
+      ids.add(m.toolUseId);
+    }
+  }
+  if (ids.size === 0) return [];
+  return jobs.filter((j) => ids.has(j.toolUseId));
+}
+
+/** Narrow an agent structured result's `totalTokens`, else `undefined`. */
+function structuredTotalTokens(value: unknown): number | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const t = (value as Record<string, unknown>).totalTokens;
+  return typeof t === "number" && Number.isFinite(t) && t >= 0 ? t : undefined;
+}
+
+/**
+ * Total tokens spent by the subagents a turn launched — the figure
+ * Z1B folds into the turn's token count so "#aN tokens" covers the
+ * whole response, not just the parent turn's own window delta (a
+ * background agent burns its tokens in a separate context that never
+ * enters the parent window, so the window walk alone under-reports).
+ *
+ * Per Agent `tool_use` in the turn, the best available source wins:
+ *  1. the job's composed `agentStructuredResult.totalTokens` (live,
+ *     genuine completion),
+ *  2. the job's latest `task_progress` usage (live, still running —
+ *     the figure climbs as ticks land),
+ *  3. the call's own `structuredResult.totalTokens` (reload — the
+ *     resume splice composes it onto the turn; the async-launch echo
+ *     carries no `totalTokens`, so a mid-run launch echo contributes
+ *     nothing rather than something wrong).
+ */
+export function agentTokensForTurn(
+  messages: ReadonlyArray<ToolUseMessage | { kind: string }>,
+  jobs: readonly JobItem[],
+): number {
+  let total = 0;
+  for (const m of messages) {
+    if (m.kind !== "tool_use") continue;
+    const call = m as ToolUseMessage;
+    const name = call.toolName.toLowerCase();
+    if (name !== "agent" && name !== "task") continue;
+    const job = jobs.find((j) => j.toolUseId === call.toolUseId);
+    const tokens =
+      structuredTotalTokens(job?.agentStructuredResult) ??
+      job?.progress?.totalTokens ??
+      structuredTotalTokens(call.structuredResult) ??
+      0;
+    total += tokens;
+  }
+  return total;
+}
+
+/**
  * Footer summary with zero-bucket drop — `"1 running, 1 watching,
  * 2 done, 1 failed"` (completed reads "done", stopped reads
  * "stopped"). Live watchers are split out of the running bucket as

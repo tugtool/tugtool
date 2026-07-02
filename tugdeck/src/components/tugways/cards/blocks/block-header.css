@@ -84,6 +84,13 @@ body {
   border-bottom: 1px solid var(--tugx-block-strip-border);
 }
 
+/* Nothing below the header at all (no body, no footer — e.g. a background
+ * Agent whose child calls haven't streamed in yet): there is nothing to
+ * divide, so the expanded header paints no bottom hairline either. */
+.tool-block-chrome[data-empty-body] > .tool-call-header:not([data-collapsed="true"]) {
+  border-bottom: none;
+}
+
 /* When a notice band follows the header, the notice owns the header→notice
  * divider (its own `border-top`), so the header drops its bottom border to
  * avoid a doubled 1px rule. This also gives the collapsed state a divider it

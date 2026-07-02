@@ -27,6 +27,7 @@ import {
   TaskToolBlock,
   agentNestedCallCount,
   composeAgentTranscriptData,
+  mergeChildToolCalls,
   narrowAgentInput,
   narrowAgentStructured,
 } from "../task-tool-block";
@@ -316,14 +317,14 @@ describe("agentNestedCallCount", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Working-body trigger — the body shows AgentWorkingBody iff the
-// composed transcript has zero entries (the wrapper keys on entry count,
-// not status, so a streaming run with live children renders them and the
-// placeholder never flashes over real content).
+// Body decision boundary — the body mounts the transcript iff the
+// composed data has entries (the wrapper keys on entry count, not
+// status, so a streaming run renders its children the moment the first
+// one arrives; zero entries → no body at all, header only).
 // ---------------------------------------------------------------------------
 
-describe("working-body decision boundary (transcript entry count)", () => {
-  test("a streaming run with only metadata composes zero entries → working body", () => {
+describe("body decision boundary (transcript entry count)", () => {
+  test("a streaming run with only metadata composes zero entries → no body", () => {
     const data = composeAgentTranscriptData(
       { subagentType: "Explore" },
       narrowAgentStructured({ status: "in_progress" }),
@@ -331,11 +332,71 @@ describe("working-body decision boundary (transcript entry count)", () => {
     expect(data?.entries.length).toBe(0);
   });
 
-  test("the first live child call yields an entry → the transcript replaces the placeholder", () => {
+  test("the first live child call yields an entry → the transcript mounts", () => {
     const data = composeAgentTranscriptData({ subagentType: "Explore" }, {}, [
       childCall("grep-1", "Grep"),
     ]);
     expect((data?.entries.length ?? 0) > 0).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Child-source convergence — turn-attached and job-fed children merge
+// into one id-deduped list, and an inline wire tool_use that repeats a
+// child call's id is dropped in favor of the richer child record.
+// ---------------------------------------------------------------------------
+
+describe("mergeChildToolCalls", () => {
+  test("returns undefined when both sources are absent", () => {
+    expect(mergeChildToolCalls(undefined, undefined)).toBeUndefined();
+  });
+
+  test("merges overlapping sources into one entry per toolUseId, first wins", () => {
+    const turnLinked = [childCall("a", "Grep"), childCall("b", "Read")];
+    const jobCalls = [childCall("b", "Read"), childCall("c", "Bash")];
+    const merged = mergeChildToolCalls(turnLinked, jobCalls);
+    expect(merged?.map((c) => c.toolUseId)).toEqual(["a", "b", "c"]);
+    // The turn-attached record wins for the overlapping id.
+    expect(merged?.[1]).toBe(turnLinked[1]);
+  });
+
+  test("passes a single source through unchanged", () => {
+    const jobCalls = [childCall("x", "Bash")];
+    expect(mergeChildToolCalls(undefined, jobCalls)?.length).toBe(1);
+  });
+});
+
+describe("composeAgentTranscriptData dedup", () => {
+  test("overlapping turn-linked + job children yield one entry per toolUseId", () => {
+    const merged = mergeChildToolCalls(
+      [childCall("a", "Grep"), childCall("b", "Read")],
+      [childCall("a", "Grep"), childCall("c", "Bash")],
+    );
+    const data = composeAgentTranscriptData({}, {}, merged);
+    expect(data?.entries.length).toBe(3);
+  });
+
+  test("duplicate ids within one child list collapse to one entry", () => {
+    const data = composeAgentTranscriptData({}, {}, [
+      childCall("a", "Grep"),
+      childCall("a", "Grep"),
+    ]);
+    expect(data?.entries.length).toBe(1);
+  });
+
+  test("an inline wire tool_use repeating a child call's id is dropped", () => {
+    const structured = narrowAgentStructured({
+      content: [
+        { type: "tool_use", id: "a", name: "Grep", input: {} },
+        { type: "text", text: "done" },
+      ],
+    });
+    const data = composeAgentTranscriptData({}, structured, [
+      childCall("a", "Grep"),
+    ]);
+    // One child entry + the text answer; the repeated tool_use dropped.
+    expect(data?.entries.length).toBe(2);
+    expect(data?.entries[1]).toEqual({ kind: "text", text: "done" });
   });
 });
 

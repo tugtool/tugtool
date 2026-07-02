@@ -47,7 +47,7 @@
 import { describe, it, expect } from "bun:test";
 
 import { TOOL_VISIBILITY_POLICY } from "../dev-tool-visibility-policy";
-import { BESPOKE_TOOL_NAMES } from "../dev-assistant-renderer-dispatch";
+import { BESPOKE_TOOL_NAMES } from "../dev-assistant-renderer-registrations";
 
 // ---------------------------------------------------------------------------
 // Canonical v2.1.148 tool registry

@@ -33,20 +33,32 @@
  * one level deeper. `depth` arrives on `ToolBlockProps` and is
  * threaded straight to the body kind.
  *
+ * Child calls come from two converging sources, deduped by
+ * `toolUseId` at render time:
+ *   - `childToolCallsByParent.get(toolUseId)` — turn-attached children
+ *     (streamed inline for a foreground agent; spliced onto the
+ *     committed turn by the resume path on reload).
+ *   - `job.childCalls` — the live inter-turn children of a
+ *     backgrounded agent, routed onto the job ledger by the reducer as
+ *     the tugcode tailer streams them.
+ * The final answer prefers `job.agentStructuredResult` (composed on
+ * genuine completion, live) over the launching call's
+ * `structuredResult` prop (which for a background agent is just the
+ * async-launch echo).
+ *
  * Body selection is keyed on whether the transcript has entries, not on
  * `status`:
  *   - entries present (live child calls and/or the final answer) →
  *     the embedded `AgentTranscriptBlock`, even mid-stream.
- *   - no entries yet AND streaming → `<AgentWorkingBody />`, so the
- *     expanded body has calm height in the zero-entries window instead
- *     of collapsing to a one-pixel marker.
+ *   - no entries yet → no body (header only). Real child blocks fill
+ *     the window as they stream in; there is no summary placeholder.
  *   - `status === "error"` → the body is dropped; the chrome paints the
  *     error band from the plain-text `tool_result.output`.
  *
- * Registration: `dev-assistant-renderer-dispatch.ts` imports this
+ * Registration: `dev-assistant-renderer-registrations.ts` imports this
  * module and calls `registerToolBlock("agent", TaskToolBlock)` from
- * its own bottom-of-file initialization — the historical `task` name
- * resolves here via the `task → agent` alias ([D16]).
+ * its registration loop — the historical `task` name resolves here via
+ * the `task → agent` alias ([D16]).
  *
  * Laws:
  *  - [L06] no React state for appearance; chrome owns DOM attributes;
@@ -75,7 +87,6 @@ import {
   type AgentTranscriptData,
   type AgentTranscriptEntry,
 } from "@/components/tugways/body-kinds/agent-transcript-block";
-import { AgentWorkingBody } from "@/components/tugways/body-kinds/agent-working-body";
 
 import type { ToolUseMessage } from "@/lib/code-session-store";
 import { useJobForToolUse } from "@/lib/code-session-store/hooks/use-job-for-tool-use";
@@ -211,17 +222,44 @@ export function agentNestedCallCount(
 }
 
 /**
+ * Merge a subagent's child tool calls from its two possible sources —
+ * the turn-attached set (`childToolCallsByParent.get(toolUseId)`,
+ * populated inline for a foreground agent and by the resume splice on
+ * reload) and the job-fed set (`job.childCalls`, populated inter-turn
+ * by the live tailer) — deduping by `toolUseId`, first occurrence
+ * wins. A reload mid-run is the one case both sources carry the same
+ * call; the id-dedup fuses them into one list.
+ */
+export function mergeChildToolCalls(
+  turnLinked: ReadonlyArray<ToolUseMessage> | undefined,
+  jobCalls: ReadonlyArray<ToolUseMessage> | undefined,
+): ReadonlyArray<ToolUseMessage> | undefined {
+  if (turnLinked === undefined && jobCalls === undefined) return undefined;
+  const seen = new Set<string>();
+  const merged: ToolUseMessage[] = [];
+  for (const call of [...(turnLinked ?? []), ...(jobCalls ?? [])]) {
+    if (seen.has(call.toolUseId)) continue;
+    seen.add(call.toolUseId);
+    merged.push(call);
+  }
+  return merged;
+}
+
+/**
  * Compose the `AgentTranscriptData` payload `AgentTranscriptBlock`
  * consumes.
  *
  * Entries come from two sources ([#step-17-5]):
  *  - `childToolCalls` — the subagent's *intermediate* tool calls,
  *    linked by the reducer via `parentToolUseId` and resolved by the
- *    transcript view's `groupToolCallsByParent`. These render first,
- *    in producer order.
+ *    transcript view's `groupToolCallsByParent` (merged with the job
+ *    ledger's live children via `mergeChildToolCalls`). These render
+ *    first, in producer order, deduped by `toolUseId`.
  *  - `structured.content[]` — the subagent's *final* answer (text
  *    blocks) plus any inline `tool_use` content blocks. Junk blocks
- *    drop; this follows the intermediate calls.
+ *    drop; this follows the intermediate calls. An inline `tool_use`
+ *    whose id already appeared as a child call is dropped — the child
+ *    call is the richer record (it carries the result).
  *
  * `agentType` falls back to the input's `subagent_type` when the
  * structured result hasn't supplied it yet. Returns `undefined` when
@@ -234,12 +272,19 @@ export function composeAgentTranscriptData(
   structured: AgentStructuredResult,
   childToolCalls?: ReadonlyArray<ToolUseMessage>,
 ): AgentTranscriptData | undefined {
-  const childEntries: AgentTranscriptEntry[] = (childToolCalls ?? []).map(
-    (toolCall) => ({ kind: "tool_use", toolCall }),
-  );
+  const seenIds = new Set<string>();
+  const childEntries: AgentTranscriptEntry[] = [];
+  for (const toolCall of childToolCalls ?? []) {
+    if (seenIds.has(toolCall.toolUseId)) continue;
+    seenIds.add(toolCall.toolUseId);
+    childEntries.push({ kind: "tool_use", toolCall });
+  }
   const wireEntries = (structured.content ?? [])
     .map(narrowContentEntry)
-    .filter((e): e is AgentTranscriptEntry => e !== undefined);
+    .filter((e): e is AgentTranscriptEntry => e !== undefined)
+    .filter(
+      (e) => e.kind !== "tool_use" || !seenIds.has(e.toolCall.toolUseId),
+    );
   const entries = [...childEntries, ...wireEntries];
   const agentType = structured.agentType ?? input.subagentType;
   const data: AgentTranscriptData = {
@@ -279,21 +324,29 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   session,
 }) => {
   // The launched background job (if any) for this call. A backgrounded
-  // agent streams no entries to the parent, so its live `task_progress`
-  // here is the only content its body gets while it runs.
+  // agent's children and composed final answer arrive inter-turn on the
+  // job ledger — the live counterpart of the turn-attached sources.
   const job = useJobForToolUse(session, toolUseId);
   const agentInput = React.useMemo(() => narrowAgentInput(input), [input]);
+  // The final answer + footer stats. `job.agentStructuredResult` is the
+  // live composed answer (emitted only on genuine completion); the
+  // launching call's `structuredResult` prop is the reload-path value —
+  // for a background agent the prop alone is just the async-launch echo.
+  const jobStructured = job?.agentStructuredResult;
   const structured = React.useMemo(
-    () => narrowAgentStructured(structuredResult),
-    [structuredResult],
+    () => narrowAgentStructured(jobStructured ?? structuredResult),
+    [jobStructured, structuredResult],
   );
-  // This subagent's own intermediate tool calls — the reducer-linked
+  // This subagent's own intermediate tool calls — the turn-attached
   // children whose `parentToolUseId` is this call's `toolUseId`
-  // ([#step-17-5]). The full map is threaded on to `AgentTranscriptBlock`
+  // ([#step-17-5]), merged with the job ledger's live children and
+  // deduped by id. The full map is threaded on to `AgentTranscriptBlock`
   // so deeper subagents resolve theirs.
+  const jobChildCalls = job?.childCalls;
   const childToolCalls = React.useMemo(
-    () => childToolCallsByParent?.get(toolUseId),
-    [childToolCallsByParent, toolUseId],
+    () =>
+      mergeChildToolCalls(childToolCallsByParent?.get(toolUseId), jobChildCalls),
+    [childToolCallsByParent, toolUseId, jobChildCalls],
   );
   const transcriptData = React.useMemo(
     () => composeAgentTranscriptData(agentInput, structured, childToolCalls),
@@ -338,20 +391,15 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
   // Errored subagent runs carry the failure message in `textOutput`;
   // surface it through the chrome's error band rather than the body.
   // Body, keyed on whether the transcript has anything to show — never
-  // on `status` alone, so a still-streaming run with live child calls
-  // renders them and the working placeholder never flashes over real
-  // content. Error → none (the chrome's error band is the primary
-  // content). Entries present → the embedded AgentTranscriptBlock.
-  // Otherwise, while streaming, the working placeholder gives the
-  // expanded body calm height in the zero-entries window (a finished
-  // run always carries at least its final text entry, so the
-  // placeholder can't linger past completion).
+  // on `status` alone, so a still-streaming run renders its child
+  // calls the moment the first one arrives. Error → none (the chrome's
+  // error band is the primary content). Entries present → the embedded
+  // AgentTranscriptBlock. Otherwise no body at all — the header stands
+  // alone until real child blocks fill the window.
   const hasEntries =
     transcriptData !== undefined && transcriptData.entries.length > 0;
-  let body: React.ReactNode;
-  if (status === "error") {
-    body = null;
-  } else if (hasEntries) {
+  let body: React.ReactNode = null;
+  if (status !== "error" && hasEntries) {
     body = (
       <AgentTranscriptBlock
         data={transcriptData}
@@ -363,14 +411,6 @@ export const TaskToolBlock: React.FC<ToolBlockProps> = ({
         componentStatePreservationKey={`${toolUseId}-body`}
       />
     );
-  } else if (status === "streaming" || job?.status === "running") {
-    // Spinning up (`streaming`), OR a backgrounded async agent whose
-    // LAUNCH tool already completed (`status` is `ready`) yet whose job
-    // is still running — its work never streams entries to the parent,
-    // so the job's live `task_progress` is the body's only content.
-    body = <AgentWorkingBody progress={job?.progress} />;
-  } else {
-    body = null;
   }
 
   return (

@@ -2163,9 +2163,14 @@ pub fn default_claude_projects_root() -> PathBuf {
 }
 
 /// Encode a project_dir into the directory name claude code uses under
-/// `~/.claude/projects/`. claude's convention replaces `/` and `.` in the
-/// absolute path with `-`, producing a flat name that's filesystem-safe
-/// and hashable. Mirrors what's been observed on macOS installs.
+/// `~/.claude/projects/`. claude's convention replaces every character
+/// outside `[A-Za-z0-9-]` in the absolute path with `-` — slashes and
+/// dots, but also underscores and anything else exotic — producing a
+/// flat name that's filesystem-safe and hashable. Verified against
+/// `~/.claude/projects/` on claude 2.1.198 (a worktree path like
+/// `.tugtree/tugdash__foo` lands on disk as `--tugtree-tugdash--foo`;
+/// the earlier `/`-and-`.`-only mapping missed the underscores and hid
+/// every such project's sessions from the picker).
 ///
 /// **Do not call this directly with a user-supplied path** — claude
 /// derives the directory name from the *canonical* cwd, so a path typed
@@ -2176,7 +2181,7 @@ pub fn default_claude_projects_root() -> PathBuf {
 pub fn encode_claude_project_name(project_dir: &str) -> String {
     project_dir
         .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
         .collect()
 }
 
@@ -3286,7 +3291,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_claude_project_name_replaces_slashes_and_dots() {
+    fn encode_claude_project_name_replaces_every_non_alphanumeric() {
         assert_eq!(
             encode_claude_project_name("/Users/ken/src/foo.bar"),
             "-Users-ken-src-foo-bar"
@@ -3295,6 +3300,14 @@ mod tests {
             encode_claude_project_name("/u/src/tugtool"),
             "-u-src-tugtool"
         );
+        // Underscores (and anything else outside [A-Za-z0-9-]) collapse
+        // too — claude's on-disk naming for a dash worktree, verified on
+        // 2.1.198.
+        assert_eq!(
+            encode_claude_project_name("/repo/.tugtree/tugdash__subagent-improvements"),
+            "-repo--tugtree-tugdash--subagent-improvements"
+        );
+        assert_eq!(encode_claude_project_name("/tmp/a b"), "-tmp-a-b");
     }
 
     // ── trash mechanics (move + sweep) ───────────────────────────────────────

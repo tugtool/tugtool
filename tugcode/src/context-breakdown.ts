@@ -258,11 +258,11 @@ export interface ComputeStaticCategoriesOptions {
 
 /**
  * Encode an absolute cwd into Claude Code's project-directory naming
- * convention (`/` → `-`). Mirrors `encodeProjectDir` in
- * `tugcode/src/session.ts`.
+ * convention (every character outside `[A-Za-z0-9-]` → `-`). Mirrors
+ * `encodeProjectDir` in `tugcode/src/session.ts`.
  */
 function encodeProjectDir(absDir: string): string {
-  return absDir.replace(/\//g, "-");
+  return absDir.replace(/[^A-Za-z0-9-]/g, "-");
 }
 
 /**

@@ -107,6 +107,9 @@ import {
   dispatch as dispatchRenderInput,
   dispatchToolCallState,
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+// Side-effect import: runs the tool-block registration loop so every
+// bespoke wrapper is in the registry before the first resolveToolBlock.
+import "@/components/tugways/cards/dev-assistant-renderer-registrations";
 import {
   ToolBlockExpansionContext,
   ToolBlockHistoryCollapse,
@@ -980,6 +983,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                         participant="assistant"
                         turn={turn}
                         perTurnTokens={row.perTurnTokens}
+                        agentTokens={row.agentTokens}
                         bodyText={copyMarkdown}
                       />
                     ) : null}

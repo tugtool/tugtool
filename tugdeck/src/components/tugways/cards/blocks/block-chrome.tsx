@@ -25,8 +25,7 @@
  *   - `streaming` — the tool input is partial; the wrapper passes an
  *     empty body (`null`) into `children`. The header dot pulses
  *     in-flight — the single streaming signal ([D02]). (The Agent
- *     block is the lone exception: it fills the long working window
- *     with its own `AgentWorkingBody`.)
+ *     block fills the window with real child blocks as they stream.)
  *   - `ready`    — steady-state render. The dot reads success.
  *   - `error`    — `tool_result.is_error === true`. The header's
  *     lifecycle dot reads danger; everything else (name, result, body)
@@ -400,9 +399,9 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   // present — e.g. an errored Edit whose body is `null`, its message carried
   // by the always-visible notice — the whole-block chevron has nothing to
   // show, so it renders disabled (visible, non-interactive).
-  const hasExpandableContent =
-    (children !== null && children !== undefined && children !== false) ||
-    footerBadges !== undefined;
+  const hasBody =
+    children !== null && children !== undefined && children !== false;
+  const hasExpandableContent = hasBody || footerBadges !== undefined;
   const disclosure =
     blockCollapse !== null
       ? {
@@ -422,6 +421,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
       data-variant={variant}
       data-caution={caution?.reason ?? undefined}
       data-block-collapsed={blockCollapsed ? "true" : undefined}
+      data-empty-body={hasExpandableContent ? undefined : "true"}
       data-tool-use-id={toolUseId}
       className={cn("tool-block-chrome", className)}
     >
@@ -445,11 +445,16 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
       {notice !== undefined ? <BlockNoticeBand {...notice} /> : null}
       {blockCollapsed ? null : (
         <BlockFoldSuppressedContext.Provider value={blockCollapse !== null}>
-          <div className="tool-block-chrome-body" data-slot="tool-block-body">
-            <ChromeActionsTargetContext.Provider value={actionsTarget}>
-              {children}
-            </ChromeActionsTargetContext.Provider>
-          </div>
+          {/* Mounted only when a body exists — an empty region under the
+              header would still claim the header's bottom divider and
+              paint a stray hairline (see [data-empty-body] in the CSS). */}
+          {hasBody ? (
+            <div className="tool-block-chrome-body" data-slot="tool-block-body">
+              <ChromeActionsTargetContext.Provider value={actionsTarget}>
+                {children}
+              </ChromeActionsTargetContext.Provider>
+            </div>
+          ) : null}
           {footerBadges !== undefined ? (
             <div className="tool-block-chrome-footer" data-slot="tool-block-footer">
               {footerBadges}

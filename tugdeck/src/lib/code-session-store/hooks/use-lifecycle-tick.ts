@@ -52,22 +52,29 @@ export function isLivePhase(phase: CodeSessionPhase): boolean {
  * in-flight turn sees the static (post-commit) data path naturally
  * via the helper's `pendingUserMessage === null` short-circuit.
  *
+ * `alsoWhile` extends the live window past the turn lifecycle: a
+ * caller whose readout must keep ticking between turns (the TIME
+ * cell while a background agent launched by the last turn is still
+ * running) passes `true` and the heartbeat stays alive even in a
+ * terminal phase. Default `false` preserves the turn-bounded
+ * behavior.
+ *
  * `intervalMs` is configurable for tests; production callers should
  * leave it at the default 1000ms.
  */
 export function useLifecycleTick(
   phase: CodeSessionPhase,
   intervalMs: number = DEFAULT_INTERVAL_MS,
+  alsoWhile: boolean = false,
 ): number {
-  const [tickAt, setTickAt] = useState<number>(() =>
-    isLivePhase(phase) ? Date.now() : 0,
-  );
+  const live = isLivePhase(phase) || alsoWhile;
+  const [tickAt, setTickAt] = useState<number>(() => (live ? Date.now() : 0));
 
   useEffect(() => {
-    if (!isLivePhase(phase)) {
-      // Don't read time in the terminal-phase branch — the caller
-      // doesn't need a fresh value, and reading would force a render
-      // every time the phase flips back to idle.
+    if (!live) {
+      // Don't read time in the dormant branch — the caller doesn't
+      // need a fresh value, and reading would force a render every
+      // time the phase flips back to idle.
       setTickAt(0);
       return undefined;
     }
@@ -81,7 +88,7 @@ export function useLifecycleTick(
     return () => {
       clearInterval(id);
     };
-  }, [phase, intervalMs]);
+  }, [live, intervalMs]);
 
   return tickAt;
 }

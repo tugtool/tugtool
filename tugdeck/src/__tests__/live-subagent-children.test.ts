@@ -17,6 +17,12 @@ import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FeedId } from "@/protocol";
+import {
+  composeAgentTranscriptData,
+  mergeChildToolCalls,
+  narrowAgentInput,
+  narrowAgentStructured,
+} from "@/components/tugways/cards/blocks/task-tool-block";
 
 const TUG = "tug-live-subagent";
 const IPC_VERSION = 2;
@@ -173,6 +179,84 @@ describe("live subagent children — inter-turn routing to the job", () => {
     expect(sr?.content).toHaveLength(1);
   });
 
+  it("re-hydrates a running agent job from an orphan task_progress after reload", () => {
+    const { store, conn } = makeStore();
+    // Fresh store, empty ledger — the post-reload state (replay never
+    // populates jobs). The still-running agent's tick re-hydrates it.
+    emit(conn, {
+      type: "task_progress",
+      task_id: AGENT_ID,
+      tool_use_id: AGENT_TU,
+      description: "Find block renderer dependencies",
+      last_tool_name: "Bash",
+      usage: { total_tokens: 1200, tool_uses: 3 },
+      ipc_version: IPC_VERSION,
+    });
+    const jobs = store.getSnapshot().jobs;
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].jobId).toBe(AGENT_ID);
+    expect(jobs[0].toolUseId).toBe(AGENT_TU);
+    expect(jobs[0].kind).toBe("agent");
+    expect(jobs[0].status).toBe("running");
+    expect(jobs[0].progress?.lastToolName).toBe("Bash");
+
+    // The re-hydrated job owns the tailer's re-streamed children.
+    emitChild(conn, "toolu_r1", "ls", "file.ts");
+    expect(store.getSnapshot().jobs[0].childCalls).toHaveLength(1);
+
+    // A subsequent terminal update flips it as usual.
+    emit(conn, {
+      type: "task_updated",
+      task_id: AGENT_ID,
+      status: "completed",
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs[0].status).toBe("completed");
+  });
+
+  it("a replaying-phase orphan tick inserts nothing", () => {
+    const { store, conn } = makeStore();
+    emit(conn, {
+      type: "replay_started",
+      session_id: TUG,
+      ipc_version: IPC_VERSION,
+    });
+    emit(conn, {
+      type: "task_progress",
+      task_id: AGENT_ID,
+      tool_use_id: AGENT_TU,
+      description: "Find block renderer dependencies",
+      last_tool_name: "Bash",
+      usage: { total_tokens: 100 },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs).toHaveLength(0);
+  });
+
+  it("a foreground agent's mid-turn tick does not mint a phantom job", () => {
+    const { store, conn } = makeStore();
+    // A live turn with an open (foreground) Agent call in scratch.
+    store.send("explore", []);
+    emit(conn, {
+      type: "tool_use",
+      msg_id: "m-fg-agent",
+      tool_use_id: "toolu_fg_agent",
+      tool_name: "Agent",
+      input: { description: "look around", subagent_type: "Explore" },
+      ipc_version: IPC_VERSION,
+    });
+    emit(conn, {
+      type: "task_progress",
+      task_id: "fg-task-1",
+      tool_use_id: "toolu_fg_agent",
+      description: "look around",
+      last_tool_name: "Read",
+      usage: { total_tokens: 50 },
+      ipc_version: IPC_VERSION,
+    });
+    expect(store.getSnapshot().jobs).toHaveLength(0);
+  });
+
   it("does not create phantom children for a foreground agent (no job)", () => {
     const { store, conn } = makeStore();
     // No background launch → no job. A parent-linked child with no job must
@@ -188,5 +272,107 @@ describe("live subagent children — inter-turn routing to the job", () => {
       ipc_version: IPC_VERSION,
     });
     expect(store.getSnapshot().jobs).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Derived transcript — the exact composition the Agent block renders,
+// run over the REAL store's job ledger: launch echo → streamed children
+// → composed final answer, through mergeChildToolCalls +
+// composeAgentTranscriptData (the block's own helpers).
+// ---------------------------------------------------------------------------
+
+describe("live subagent children — the derived Agent-block transcript", () => {
+  /** The composed final answer the tailer emits on genuine completion. */
+  const COMPOSED_ANSWER = {
+    agentType: "Explore",
+    status: "completed",
+    content: [{ type: "text", text: "## Summary\nFound 42 files." }],
+    totalToolUseCount: 2,
+    totalTokens: 35700,
+    totalDurationMs: 61234,
+  };
+
+  /** Derive what TaskToolBlock renders from the live store snapshot. */
+  function deriveTranscript(store: CodeSessionStore) {
+    const job = store
+      .getSnapshot()
+      .jobs.find((j) => j.toolUseId === AGENT_TU);
+    const input = narrowAgentInput({
+      description: "Find block renderer dependencies",
+      subagent_type: "Explore",
+    });
+    // Live path: no turn-attached children (the launch echo's own
+    // structuredResult is just the async echo, so the job's composed
+    // result wins — mirroring `job?.agentStructuredResult ?? structuredResult`).
+    const children = mergeChildToolCalls(undefined, job?.childCalls);
+    const structured = narrowAgentStructured(job?.agentStructuredResult);
+    return composeAgentTranscriptData(input, structured, children);
+  }
+
+  it("streamed children + the composed answer yield the full rendered transcript", () => {
+    const { store, conn } = makeStore();
+    launchBackgroundAgent(store, conn);
+    emitChild(conn, "toolu_c1", "find . -name '*.ts'", "a.ts\nb.ts");
+
+    // Mid-run: child entries render, but NO final answer — the tailer
+    // has not composed yet, so the job carries no structured result.
+    const midRun = deriveTranscript(store);
+    expect(midRun?.entries).toHaveLength(1);
+    expect(midRun?.entries[0].kind).toBe("tool_use");
+    expect(midRun?.status).toBeUndefined();
+    expect(
+      midRun?.entries.some((e) => e.kind === "text"),
+    ).toBe(false);
+
+    emitChild(conn, "toolu_c2", "grep -r Block .", "match1\nmatch2");
+    emit(conn, {
+      type: "tool_use_structured",
+      tool_use_id: AGENT_TU,
+      tool_name: "Agent",
+      structured_result: COMPOSED_ANSWER,
+      ipc_version: IPC_VERSION,
+    });
+
+    const done = deriveTranscript(store);
+    expect(done).toBeDefined();
+    // Two child tool calls, in producer order, then the final answer.
+    expect(done!.entries).toHaveLength(3);
+    expect(done!.entries[0]).toMatchObject({
+      kind: "tool_use",
+      toolCall: { toolUseId: "toolu_c1", toolName: "Bash", status: "done" },
+    });
+    expect(done!.entries[1]).toMatchObject({
+      kind: "tool_use",
+      toolCall: { toolUseId: "toolu_c2", toolName: "Bash" },
+    });
+    expect(done!.entries[2]).toEqual({
+      kind: "text",
+      text: "## Summary\nFound 42 files.",
+    });
+    // Footer stats from the composed result.
+    expect(done!.status).toBe("completed");
+    expect(done!.toolUseCount).toBe(2);
+    expect(done!.totalTokens).toBe(35700);
+    expect(done!.durationMs).toBe(61234);
+    expect(done!.agentType).toBe("Explore");
+  });
+
+  it("a redelivered child (live/resume overlap) does not duplicate a rendered entry", () => {
+    const { store, conn } = makeStore();
+    launchBackgroundAgent(store, conn);
+    emitChild(conn, "toolu_c1", "find .", "out");
+
+    const job = store.getSnapshot().jobs[0];
+    // The resume splice's turn-attached copy of the same child — the
+    // reload-mid-run overlap the block's merge must fuse.
+    const turnAttachedCopy = (job.childCalls ?? []).map((c) => ({ ...c }));
+    const merged = mergeChildToolCalls(turnAttachedCopy, job.childCalls);
+    const data = composeAgentTranscriptData({}, {}, merged);
+    expect(data?.entries).toHaveLength(1);
+    expect(data?.entries[0]).toMatchObject({
+      kind: "tool_use",
+      toolCall: { toolUseId: "toolu_c1" },
+    });
   });
 });

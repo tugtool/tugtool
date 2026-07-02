@@ -42,9 +42,16 @@ fn base_data_dir() -> PathBuf {
 }
 
 /// Flatten an absolute path into a single directory-name slug by replacing each
-/// path separator with `-` (Claude Code's `.claude/projects/` scheme). A
-/// leading separator becomes a leading `-`, e.g. `/Users/a/src/tug` →
-/// `-Users-a-src-tug`.
+/// path separator with `-`. A leading separator becomes a leading `-`, e.g.
+/// `/Users/a/src/tug` → `-Users-a-src-tug`.
+///
+/// This is Tug's OWN state-dir naming, not Claude Code's
+/// `~/.claude/projects/` scheme — claude additionally collapses dots,
+/// underscores, and every other non-`[A-Za-z0-9-]` character to `-`
+/// (see `encode_claude_project_name` in tugcast). Do not copy this
+/// function for anything that must resolve claude's on-disk layout;
+/// and do not "fix" it to match — existing per-project state dirs are
+/// keyed by this exact form.
 fn project_slug(repo_root: &Path) -> String {
     repo_root.to_string_lossy().replace(['/', '\\'], "-")
 }

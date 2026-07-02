@@ -60,6 +60,7 @@ import {
   translateJsonlSession,
 } from "./replay.ts";
 import { ContextBreakdownEmitter } from "./context-breakdown.ts";
+import { SubagentTailer } from "./subagent-tail.ts";
 import { isSessionHeldByOtherProcess } from "./terminal-liveness.ts";
 
 /**
@@ -201,20 +202,24 @@ export const DEFAULT_CLAUDE_PROJECTS_ROOT =
 
 /**
  * Encode an absolute project directory the way claude names its
- * per-project subdirectory under `~/.claude/projects/`. The encoding
- * is a simple `'/' → '-'` replacement run over the absolute path —
- * the leading `-` arises because the absolute path begins with `/`.
+ * per-project subdirectory under `~/.claude/projects/`. Claude
+ * replaces every character outside `[A-Za-z0-9-]` with `-` — not just
+ * slashes: dots and underscores collapse too (a `/` → `-`-only
+ * encoding misses e.g. a `.tugtree/tugdash__foo` worktree path, and
+ * the resulting miss makes every replay report `jsonl_missing`). The
+ * leading `-` arises because the absolute path begins with `/`.
  *
- * Examples (verified against `~/.claude/projects/` on dev machines):
+ * Examples (verified against `~/.claude/projects/` on dev machines,
+ * claude 2.1.198):
  *
  *   `/Users/foo`               → `-Users-foo`
  *   `/private/tmp/py-calc`     → `-private-tmp-py-calc`
- *   `/Users/foo/src/tugtool`   → `-Users-foo-src-tugtool`
+ *   `/repo/.tugtree/a__b`      → `-repo--tugtree-a--b`
  *
  * Exported for unit tests.
  */
 export function encodeProjectDir(absDir: string): string {
-  return absDir.replace(/\//g, "-");
+  return absDir.replace(/[^A-Za-z0-9-]/g, "-");
 }
 
 /**
@@ -1083,6 +1088,61 @@ export function buildTaskUpdatedMessage(
     ...(typeof endTime === "number" ? { end_time: endTime } : {}),
     ipc_version: 2,
   };
+}
+
+/**
+ * The trio a background-agent async-launch echo hands tugcode — enough
+ * to start a {@link SubagentTailer} with no directory scan or sidecar
+ * parse: the launching `Agent` call's id (stamps every child frame),
+ * the agent id (the tailer map key, also the task id of its lifecycle
+ * frames), and the live-growing transcript path.
+ */
+export interface AsyncLaunch {
+  parentToolUseId: string;
+  agentId: string;
+  outputFile: string;
+}
+
+/**
+ * Narrow a raw claude stdout event to an {@link AsyncLaunch}, or
+ * `undefined` for anything that isn't a background-agent launch echo.
+ *
+ * The echo is a `user` event whose **live** `tool_use_result` field
+ * (snake_case — the persisted JSONL's camelCase `toolUseResult` is the
+ * replay path's concern) carries `isAsync: true` /
+ * `status: "async_launched"` plus `agentId` + `outputFile`, and whose
+ * `message.content` holds the linked `tool_result` block naming the
+ * launching `Agent` call. All four fields must be present — a
+ * foreground result, or a drifted echo missing the linkage, yields
+ * `undefined` and no tailer starts.
+ */
+export function extractAsyncLaunch(
+  event: Record<string, unknown>,
+): AsyncLaunch | undefined {
+  if (event.type !== "user") return undefined;
+  const result = event.tool_use_result;
+  if (result === null || typeof result !== "object") return undefined;
+  const r = result as Record<string, unknown>;
+  if (r.isAsync !== true && r.status !== "async_launched") return undefined;
+  const agentId = r.agentId;
+  const outputFile = r.outputFile;
+  if (typeof agentId !== "string" || agentId.length === 0) return undefined;
+  if (typeof outputFile !== "string" || outputFile.length === 0) {
+    return undefined;
+  }
+  const message = event.message as Record<string, unknown> | undefined;
+  const content = message?.content;
+  if (!Array.isArray(content)) return undefined;
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (
+      block.type === "tool_result" &&
+      typeof block.tool_use_id === "string" &&
+      block.tool_use_id.length > 0
+    ) {
+      return { parentToolUseId: block.tool_use_id, agentId, outputFile };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -2692,6 +2752,16 @@ export class SessionManager {
    * site — `task_notification` arrives strictly between turns.
    */
   private isInWake: boolean = false;
+  /**
+   * Live tailers for running background agents, keyed by `agentId`
+   * (= the agent's task id on its lifecycle frames). Started from the
+   * async-launch echo ({@link extractAsyncLaunch}), stopped with a
+   * final flush on the agent's terminal `task_updated` /
+   * `task_notification` or on claude teardown, and rewound to offset 0
+   * by `runReplay` so a reconnecting deck re-receives the full child
+   * set (the deck's id-keyed dedup absorbs the overlap).
+   */
+  private subagentTailers = new Map<string, SubagentTailer>();
   /** Configurable JSONL archive root; defaults to ~/.claude/projects. */
   private claudeProjectsRoot: string;
   /** Configurable JSONL reader; default uses `Bun.file`. */
@@ -3047,6 +3117,9 @@ export class SessionManager {
     // The session is changing (respawn / fork / truncate) — drop the cached
     // `/rewind` preview JSONL so the next preview re-reads ([#step-7-3]).
     this.rewindPreviewJsonl = null;
+    // Claude exit forces each live background-agent tailer's final
+    // flush: drain what its file holds and compose the final answer.
+    await this.stopAllSubagentTailers();
     if (this.claudeProcess) {
       try {
         // Close stdin to signal EOF (graceful shutdown).
@@ -3961,6 +4034,15 @@ export class SessionManager {
       if (inflight !== null) {
         inflight.suppressEmit = false;
       }
+      // Rewind every live background-agent tailer to offset 0 so its
+      // next poll re-streams the agent's full child set to the
+      // freshly-rebuilt deck. Done after the bracket closes so the
+      // re-streamed frames land post-replay, where the re-hydrated job
+      // can own them; the deck's id-keyed dedup absorbs the overlap
+      // with the replay's turn-attached children.
+      for (const tailer of this.subagentTailers.values()) {
+        tailer.resetForReplay();
+      }
       try {
         await iter.return?.({ count: 0 });
       } catch {
@@ -4309,6 +4391,13 @@ export class SessionManager {
       console.log(`Skipping non-JSON line: ${line}`);
       return;
     }
+    // Background-agent tailer lifecycle. Observed here — not in the
+    // per-turn or inter-turn dispatchers — because the launch echo
+    // arrives in-turn while the completion signals can land in either
+    // tier; this is the one site that sees every event. Purely
+    // observational: it never consumes the line, and it never throws
+    // into the drain.
+    this.observeSubagentLifecycle(event);
     // Intercept the `initialize` control-response before any turn
     // routing — it arrives turn-free (no active turn), so it must be
     // caught here rather than in `routeTopLevelEvent` (which only runs
@@ -4422,6 +4511,82 @@ export class SessionManager {
     // sequence. The emitter is silent when not initialized or when
     // the event is not a trigger.
     this.maybeEmitContextBreakdown(event);
+  }
+
+  /**
+   * Start / stop live background-agent tailers from the raw claude
+   * event stream. Three signals:
+   *
+   *  - **Launch** — the async-launch echo ({@link extractAsyncLaunch})
+   *    starts a {@link SubagentTailer} on the echo's `outputFile`,
+   *    keyed by `agentId`. The tailer's frames go straight to
+   *    `writeLine` with seqs from the shared live counter, exactly like
+   *    any other live frame.
+   *  - **Genuine completion** — a terminal `system/task_updated`
+   *    (`completed` / `failed` / `stopped`) or a
+   *    `system/task_notification` (the wake trigger) for the agent's
+   *    task id stops its tailer with a final flush, which drains any
+   *    remaining lines and composes the parent's final answer.
+   *  - Anything else is ignored. Foreground agents never emit the
+   *    async echo, so they never get a tailer.
+   *
+   * Best-effort: nothing here may throw into the stdout drain.
+   */
+  private observeSubagentLifecycle(event: Record<string, unknown>): void {
+    try {
+      const launch = extractAsyncLaunch(event);
+      if (launch !== undefined && !this.subagentTailers.has(launch.agentId)) {
+        const tailer = new SubagentTailer({
+          parentToolUseId: launch.parentToolUseId,
+          agentId: launch.agentId,
+          outputFile: launch.outputFile,
+          emit: (frame) => writeLine(frame),
+          nextSeq: () => this.nextSeq(),
+        });
+        this.subagentTailers.set(launch.agentId, tailer);
+        tailer.start();
+        return;
+      }
+      if (event.type !== "system") return;
+      let taskId: string | undefined;
+      if (event.subtype === "task_updated") {
+        const patch =
+          typeof event.patch === "object" && event.patch !== null
+            ? (event.patch as Record<string, unknown>)
+            : null;
+        const status = patch?.status;
+        if (
+          status === "completed" ||
+          status === "failed" ||
+          status === "stopped"
+        ) {
+          taskId = typeof event.task_id === "string" ? event.task_id : undefined;
+        }
+      } else if (event.subtype === "task_notification") {
+        taskId = typeof event.task_id === "string" ? event.task_id : undefined;
+      }
+      if (taskId === undefined) return;
+      const tailer = this.subagentTailers.get(taskId);
+      if (tailer === undefined) return;
+      this.subagentTailers.delete(taskId);
+      void tailer.stop(true);
+    } catch {
+      // Tailer bookkeeping must never kill the drain.
+    }
+  }
+
+  /**
+   * Stop every live tailer with a final flush — claude is going away
+   * (respawn / fork / shutdown), so whatever the agents' files hold now
+   * is all the deck will ever get from this process. Awaited so the
+   * composed final answers are written before stdout ownership changes.
+   */
+  private async stopAllSubagentTailers(): Promise<void> {
+    const tailers = Array.from(this.subagentTailers.values());
+    this.subagentTailers.clear();
+    for (const tailer of tailers) {
+      await tailer.stop(true);
+    }
   }
 
   /**

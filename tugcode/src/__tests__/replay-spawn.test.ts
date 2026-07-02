@@ -256,6 +256,17 @@ describe("encodeProjectDir", () => {
     // helper boundary; just document the literal behavior.
     expect(encodeProjectDir("relative/path")).toBe("relative-path");
   });
+
+  test("dots and underscores encode to dashes, matching claude's on-disk naming", () => {
+    // Claude replaces every character outside [A-Za-z0-9-] with `-`.
+    // A slash-only encoding misses dotfiles/underscored dirs (e.g. a
+    // `.tugtree` worktree) and every replay of such a project reports
+    // jsonl_missing. Verified against ~/.claude/projects on 2.1.198.
+    expect(
+      encodeProjectDir("/Users/foo/src/tugtool/.tugtree/tugdash__subagent-improvements"),
+    ).toBe("-Users-foo-src-tugtool--tugtree-tugdash--subagent-improvements");
+    expect(encodeProjectDir("/tmp/a.b_c d")).toBe("-tmp-a-b-c-d");
+  });
 });
 
 describe("jsonlPathFor", () => {

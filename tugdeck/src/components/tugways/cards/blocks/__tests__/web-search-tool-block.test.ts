@@ -24,7 +24,7 @@ import {
   narrowWebSearchInput,
   parseSearchResults,
 } from "../web-search-tool-block";
-import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-dispatch";
+import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-registrations";
 
 // ---------------------------------------------------------------------------
 // narrowWebSearchInput

@@ -27,10 +27,13 @@ import {
   narrowTaskStartedFrame,
   narrowTaskUpdatedFrame,
   narrowTaskProgressFrame,
+  agentTokensForTurn,
+  jobsOwnedByTurn,
   parseBackgroundLaunchResult,
   terminalJobStatusFromWire,
   type JobItem,
 } from "../select-jobs";
+import type { ToolUseMessage } from "../types";
 
 function job(overrides: Partial<JobItem> & { jobId: string }): JobItem {
   return {
@@ -565,5 +568,89 @@ describe("watching bucket", () => {
         ]),
       ),
     ).toBe("1 done");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// jobsOwnedByTurn / agentTokensForTurn
+// ---------------------------------------------------------------------------
+
+function agentCall(
+  toolUseId: string,
+  structuredResult: unknown = null,
+): ToolUseMessage {
+  return {
+    kind: "tool_use",
+    messageKey: `fixture-${toolUseId}`,
+    createdAt: 0,
+    toolUseId,
+    toolName: "Agent",
+    input: {},
+    status: "done",
+    result: null,
+    structuredResult,
+    toolWallMs: null,
+  };
+}
+
+describe("jobsOwnedByTurn", () => {
+  test("selects only the jobs whose launching call is in the turn", () => {
+    const jobs = [
+      job({ jobId: "a", toolUseId: "toolu_mine" }),
+      job({ jobId: "b", toolUseId: "toolu_other_turn" }),
+    ];
+    const owned = jobsOwnedByTurn([agentCall("toolu_mine")], jobs);
+    expect(owned.map((j) => j.jobId)).toEqual(["a"]);
+  });
+
+  test("empty for a turn with no tool calls or an empty ledger", () => {
+    expect(jobsOwnedByTurn([], [job({ jobId: "a" })])).toEqual([]);
+    expect(jobsOwnedByTurn([agentCall("toolu_x")], [])).toEqual([]);
+  });
+});
+
+describe("agentTokensForTurn", () => {
+  test("prefers the job's composed result, then progress, then the turn structuredResult", () => {
+    const messages = [
+      agentCall("toolu_composed"),
+      agentCall("toolu_ticking"),
+      agentCall("toolu_reload", { totalTokens: 500 }),
+    ];
+    const jobs = [
+      job({
+        jobId: "c",
+        kind: "agent",
+        toolUseId: "toolu_composed",
+        agentStructuredResult: { status: "completed", totalTokens: 1_000 },
+        progress: { totalTokens: 900 },
+      }),
+      job({
+        jobId: "t",
+        kind: "agent",
+        toolUseId: "toolu_ticking",
+        progress: { totalTokens: 250 },
+      }),
+    ];
+    expect(agentTokensForTurn(messages, jobs)).toBe(1_750);
+  });
+
+  test("a mid-run launch echo with no job contributes nothing", () => {
+    // The async echo carries no totalTokens; before the first tick the
+    // honest figure is zero, not a fabrication.
+    expect(
+      agentTokensForTurn(
+        [agentCall("toolu_launch", { status: "async_launched" })],
+        [],
+      ),
+    ).toBe(0);
+  });
+
+  test("non-agent calls are ignored", () => {
+    const bash: ToolUseMessage = {
+      ...agentCall("toolu_bash"),
+      toolName: "Bash",
+      structuredResult: { totalTokens: 999 },
+    };
+    expect(agentTokensForTurn([bash], [])).toBe(0);
   });
 });

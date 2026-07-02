@@ -83,6 +83,7 @@ import {
 import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
 import type { ChildToolCallsMap } from "@/components/tugways/cards/blocks/types";
 import { toolCallToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 import {
   BlockActionsCluster,
@@ -209,7 +210,6 @@ const EMPTY_CHILDREN: ChildToolCallsMap = new Map();
 const DATA_SLOT_ROOT = "agent-transcript-body";
 const DATA_SLOT_HEADER = "agent-transcript-header";
 const DATA_SLOT_ENTRIES = "agent-transcript-entries";
-const DATA_SLOT_FOOTER = "agent-transcript-footer";
 const DATA_SLOT_ACTIONS = "agent-transcript-actions";
 
 // ---------------------------------------------------------------------------
@@ -267,20 +267,6 @@ export function composeAgentDurationLabel(
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-/** Compose the footer token-spend label. `undefined` when unknown. */
-export function composeAgentTokenLabel(
-  totalTokens: number | undefined,
-): string | undefined {
-  if (
-    totalTokens === undefined ||
-    !Number.isFinite(totalTokens) ||
-    totalTokens < 0
-  ) {
-    return undefined;
-  }
-  return `${totalTokens.toLocaleString()} tokens`;
-}
-
 /**
  * Serialize a subagent transcript to plain text for the Copy
  * affordance — an identity line, then each entry: text verbatim, a
@@ -329,8 +315,11 @@ interface AgentEntryViewProps {
 }
 
 /**
- * Render one transcript entry. A `text` entry renders as pre-wrapped
- * prose; a `tool_use` entry routes back through the same dispatch at
+ * Render one transcript entry. A `text` entry renders as real markdown
+ * (`TugMarkdownBlock`) — the agent's prose and final answer are
+ * markdown exactly like top-level assistant text, so they get the same
+ * pretty rendering, not a pre-wrapped monospace dump. A `tool_use`
+ * entry routes back through the same dispatch at
  * `depth + 1` so it gets its real per-tool block ([D17]) — and the
  * subagent-nesting map rides along so a nested `Agent` resolves its
  * own children ([#step-17-5]).
@@ -357,7 +346,14 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
         data-slot="agent-transcript-text"
         data-agent-entry-kind="text"
       >
-        {entry.text}
+        {/* Static-mode markdown: parsed once at mount. The parent keys
+            this entry on the text length, so a changed answer (e.g. the
+            real structured result replacing a composed one on reload)
+            remounts and re-parses. */}
+        <TugMarkdownBlock
+          key={`md-${entry.text.length}`}
+          initialText={entry.text}
+        />
       </div>
     );
   }
@@ -500,7 +496,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
 
   const durationLabel = composeAgentDurationLabel(data.durationMs);
   const toolCountLabel = composeAgentToolCountLabel(data.toolUseCount);
-  const tokenLabel = composeAgentTokenLabel(data.totalTokens);
   const nestedCallCount = countNestedToolCalls(data);
 
   // The nested-calls fold cue — the transcript's body-specific fold,
@@ -608,16 +603,6 @@ export const AgentTranscriptBlock: React.FC<AgentTranscriptBlockProps> = ({
         </div>
       )}
 
-      {tokenLabel !== undefined ? (
-        <div className="tugx-agent-footer" data-slot={DATA_SLOT_FOOTER}>
-          <span
-            className="tugx-agent-tokens"
-            data-slot="agent-transcript-tokens"
-          >
-            {tokenLabel}
-          </span>
-        </div>
-      ) : null}
     </div>
   );
 };

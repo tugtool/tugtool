@@ -733,6 +733,58 @@ export function deriveTimeCellMs(
   return live ?? postCommitFallbackMs;
 }
 
+/**
+ * The narrow job slice {@link deriveJobExtendedActiveMs} consumes —
+ * status + end stamp of a background job launched by the turn whose
+ * clock is being extended. The caller filters the ledger down to the
+ * jobs owned by that turn's tool calls.
+ */
+export interface JobTimeSlice {
+  status: string;
+  endedAtMs: number | null;
+}
+
+/**
+ * Extend a committed turn's TIME readout across its background work.
+ *
+ * A turn that launches a background agent commits while the agent is
+ * still running — but from the user's seat the *request* is still in
+ * progress, so the TIME cell must keep counting rather than freeze at
+ * the launching turn's `activeMs`. This composes the post-commit
+ * figure:
+ *
+ *   - a job launched by the turn is still `running` →
+ *     `activeMs + (nowMs − turnEndedAt)` — the clock keeps climbing.
+ *   - every such job is terminal → `activeMs + (latestJobEnd −
+ *     turnEndedAt)` — the clock freezes at the request's true total,
+ *     never snapping back to the bare turn figure.
+ *   - the turn launched no background work → `activeMs` unchanged
+ *     (today's behavior).
+ *
+ * Pure: the caller supplies `nowMs` (the 1 Hz tick) and the
+ * already-filtered job slices; negative spans clamp to zero so clock
+ * skew between `endedAt` and job stamps can't run the readout
+ * backwards.
+ */
+export function deriveJobExtendedActiveMs(args: {
+  turnActiveMs: number;
+  turnEndedAt: number;
+  jobs: ReadonlyArray<JobTimeSlice>;
+  nowMs: number;
+}): number {
+  const { turnActiveMs, turnEndedAt, jobs, nowMs } = args;
+  if (jobs.length === 0) return turnActiveMs;
+  const running = jobs.some((j) => j.status === "running");
+  if (running) {
+    return turnActiveMs + Math.max(0, nowMs - turnEndedAt);
+  }
+  let latestEnd = 0;
+  for (const j of jobs) {
+    if (j.endedAtMs !== null && j.endedAtMs > latestEnd) latestEnd = j.endedAtMs;
+  }
+  return turnActiveMs + Math.max(0, latestEnd - turnEndedAt);
+}
+
 export function deriveInflightActiveMs(
   snap: CodeSessionSnapshot,
   nowMs: number,

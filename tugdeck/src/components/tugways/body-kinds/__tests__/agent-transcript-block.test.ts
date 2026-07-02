@@ -9,8 +9,8 @@
  *    auto-expansion of nested subagent transcripts.
  *  - `countNestedToolCalls` / `composeNestedCallsLabel` — the
  *    fold-cue's "+N nested calls" label.
- *  - `composeAgentToolCountLabel` / `composeAgentDurationLabel` /
- *    `composeAgentTokenLabel` — the header / footer annotations.
+ *  - `composeAgentToolCountLabel` / `composeAgentDurationLabel` —
+ *    the header annotations.
  *  - `composeAgentTranscriptText` — the Copy affordance's
  *    serialization.
  *
@@ -23,7 +23,6 @@ import { describe, expect, test } from "bun:test";
 import {
   AGENT_MAX_DEPTH,
   composeAgentDurationLabel,
-  composeAgentTokenLabel,
   composeAgentToolCountLabel,
   composeAgentTranscriptText,
   composeNestedCallsLabel,
@@ -152,22 +151,6 @@ describe("composeAgentDurationLabel", () => {
     expect(composeAgentDurationLabel(undefined)).toBeUndefined();
     expect(composeAgentDurationLabel(-1)).toBeUndefined();
     expect(composeAgentDurationLabel(Number.NaN)).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// composeAgentTokenLabel
-// ---------------------------------------------------------------------------
-
-describe("composeAgentTokenLabel", () => {
-  test("formats with locale grouping", () => {
-    expect(composeAgentTokenLabel(0)).toBe("0 tokens");
-    expect(composeAgentTokenLabel(15_700)).toBe("15,700 tokens");
-  });
-
-  test("undefined / invalid token counts yield no label", () => {
-    expect(composeAgentTokenLabel(undefined)).toBeUndefined();
-    expect(composeAgentTokenLabel(-5)).toBeUndefined();
   });
 });
 

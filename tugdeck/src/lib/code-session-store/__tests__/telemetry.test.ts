@@ -16,6 +16,7 @@ import {
   liveTurnActiveMs,
   unionPauseMs,
   deriveInflightActiveMs,
+  deriveJobExtendedActiveMs,
   deriveTimeCellMs,
   computeTimeSummary,
   computeTokensSummary,
@@ -928,5 +929,47 @@ describe("turnHasTiming", () => {
     // A turn restored from JSONL alone, no `turn_telemetry` overlay → all-zero
     // timing + null ttft. TIME must read `—`, not a fabricated `0:00`.
     expect(turnHasTiming({ wallClockMs: 0, activeMs: 0, ttftMs: null })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveJobExtendedActiveMs — the TIME cell across background work
+// ---------------------------------------------------------------------------
+
+describe("deriveJobExtendedActiveMs", () => {
+  const base = { turnActiveMs: 9_300, turnEndedAt: 100_000 };
+
+  it("returns the bare activeMs when the turn launched no background work", () => {
+    expect(
+      deriveJobExtendedActiveMs({ ...base, jobs: [], nowMs: 250_000 }),
+    ).toBe(9_300);
+  });
+
+  it("keeps climbing while a launched job is still running", () => {
+    const jobs = [{ status: "running", endedAtMs: null }];
+    expect(
+      deriveJobExtendedActiveMs({ ...base, jobs, nowMs: 160_000 }),
+    ).toBe(9_300 + 60_000);
+    expect(
+      deriveJobExtendedActiveMs({ ...base, jobs, nowMs: 161_000 }),
+    ).toBe(9_300 + 61_000);
+  });
+
+  it("freezes at the request total once every job is terminal", () => {
+    const jobs = [
+      { status: "completed", endedAtMs: 130_000 },
+      { status: "completed", endedAtMs: 145_000 },
+    ];
+    // Latest job end wins; the readout never snaps back to bare activeMs.
+    expect(
+      deriveJobExtendedActiveMs({ ...base, jobs, nowMs: 999_000 }),
+    ).toBe(9_300 + 45_000);
+  });
+
+  it("clamps a skewed job-end stamp instead of running backwards", () => {
+    const jobs = [{ status: "completed", endedAtMs: 99_000 }];
+    expect(
+      deriveJobExtendedActiveMs({ ...base, jobs, nowMs: 999_000 }),
+    ).toBe(9_300);
   });
 });

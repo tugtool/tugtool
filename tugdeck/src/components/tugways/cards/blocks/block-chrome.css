@@ -227,5 +227,4 @@ body {
 
 /* No rule needed: per [D02] the header's pulsing dot is the single
  * in-flight signal, so a streaming tool keeps an empty body (the
- * wrapper passes `null`). The lone exception is the Agent block, whose
- * own `AgentWorkingBody` fills its long working window. */
+ * wrapper passes `null`) until real content arrives. */

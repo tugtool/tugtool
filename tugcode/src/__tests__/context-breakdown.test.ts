@@ -301,7 +301,7 @@ describe("computeStaticCategories", () => {
       join(cwd, "CLAUDE.md"),
       "project-level memory content here ".repeat(30),
     );
-    const encoded = cwd.replace(/\//g, "-");
+    const encoded = cwd.replace(/[^A-Za-z0-9-]/g, "-");
     const memoryDir = join(home, ".claude", "projects", encoded, "memory");
     mkdirSync(memoryDir, { recursive: true });
     writeFileSync(join(memoryDir, "MEMORY.md"), "MEMORY index entry ".repeat(40));

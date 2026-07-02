@@ -137,6 +137,14 @@ export interface DevZ1BProps {
    */
   perTurnTokens?: number;
   /**
+   * Total tokens spent by the subagents this turn launched — a
+   * separate readout from `perTurnTokens` because agent tokens burn
+   * in their own contexts and never enter the main session's window.
+   * Rendered as an additional `N agent tokens` segment only when
+   * positive; `undefined` / `0` renders nothing extra.
+   */
+  agentTokens?: number;
+  /**
    * The markdown the copy-button affordance writes to the clipboard.
    * The user half passes the submitted message text; the assistant half
    * passes the full turn serialized by `turnEntryToMarkdown` (every
@@ -161,6 +169,7 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
   participant,
   turn,
   perTurnTokens,
+  agentTokens,
   bodyText,
 }) => {
   const isUserHalf = participant === "user";
@@ -203,6 +212,7 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
           reason={reason}
           turn={turn}
           perTurnTokens={perTurnTokens}
+          agentTokens={agentTokens}
         />
       ) : null}
       {showCopy ? (
@@ -295,17 +305,24 @@ function endStateBadgeIcon(reason: TurnEndReason): React.ReactNode {
  * the identifier above. A `•` separator sits between each pair of
  * items (badge / time / tokens) — the same glyph as the trailing
  * `•` before COPY, so the whole row reads with one separator.
+ *
+ * When the turn launched subagents, a second token segment breaks
+ * their spend out (`N agent tokens`) — separate from the main figure
+ * because agent tokens never enter the session's context window; one
+ * summed number would misread against the Z2 CONTEXT cell.
  */
 function EndStateDisplay({
   participant,
   reason,
   turn,
   perTurnTokens,
+  agentTokens,
 }: {
   participant: DevZ1BParticipant;
   reason: TurnEndReason;
   turn: TurnEntry | undefined;
   perTurnTokens: number | undefined;
+  agentTokens: number | undefined;
 }): React.ReactElement {
   const badge = endStateBadgeFor(reason);
   return (
@@ -337,6 +354,16 @@ function EndStateDisplay({
           <TugLabel size="xs">
             {`${formatTokensCaps(perTurnTokens ?? 0)} tokens`}
           </TugLabel>
+          {agentTokens !== undefined && agentTokens > 0 ? (
+            <>
+              <TugLabel size="xs" emphasis="calm" aria-hidden>
+                •
+              </TugLabel>
+              <TugLabel size="xs" data-slot="dev-z1b-agent-tokens">
+                {`${formatTokensCaps(agentTokens)} agent tokens`}
+              </TugLabel>
+            </>
+          ) : null}
         </>
       ) : null}
     </span>
