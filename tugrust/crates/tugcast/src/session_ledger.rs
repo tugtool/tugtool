@@ -2181,7 +2181,13 @@ pub fn default_claude_projects_root() -> PathBuf {
 pub fn encode_claude_project_name(project_dir: &str) -> String {
     project_dir
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
