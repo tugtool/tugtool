@@ -464,13 +464,13 @@ where `turnEndReason` is derived from `state.interruptInFlight`. So the reason m
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Route auth gate → authStore | pending | — |
-| #step-2 | Retire per-card auth banner | pending | — |
-| #step-3 | `interruptReason` sidecar | pending | — |
-| #step-4 | Z1B logout end-state copy | pending | — |
-| #step-5 | Interrupt-first logout + tag | pending | — |
-| #step-6 | TugSetup "Continue working" | pending | — |
-| #step-7 | Gallery coverage + integration | pending | — |
+| #step-1 | Route auth gate → authStore | done | df318b492 |
+| #step-2 | Retire per-card auth banner | done | 46ce7eae5 |
+| #step-3 | `interruptReason` sidecar | done | 42f056bbe |
+| #step-4 | Z1B logout end-state copy | done | 7d5eda62f |
+| #step-5 | Interrupt-first logout + tag | done | 12af1bfd4 |
+| #step-6 | TugSetup "Continue working" | done | 8b98dc970 |
+| #step-7 | Gallery coverage + integration | done | 11109332c |
 
 #### Step 1: Route the per-session auth gate into authStore {#step-1}
 

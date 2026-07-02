@@ -21,15 +21,19 @@
  * - `restore_canceled` — user clicked Cancel in `DevRestoring`.
  * - `restore_timed_out` — restore-registry timeout elapsed without
  *   either a binding or an errored response.
+ * - `signed_out` — the per-session auth gate found the CLI logged out
+ *   (or missing) at spawn: the card unbinds so the app-modal TugSetup
+ *   owns re-login and the picker owns per-card resume.
  *
- * All three categories are retryable (the picker renders a Retry
- * button when `staleTugSessionId` + `staleProjectDir` are populated),
- * but each surfaces different copy to the user.
+ * All categories are retryable (the picker renders a Retry button when
+ * `staleTugSessionId` + `staleProjectDir` are populated), but each
+ * surfaces different copy to the user.
  */
 export type PickerNoticeCategory =
   | "resume_failed"
   | "restore_canceled"
-  | "restore_timed_out";
+  | "restore_timed_out"
+  | "signed_out";
 
 export interface PickerNotice {
   category: PickerNoticeCategory;

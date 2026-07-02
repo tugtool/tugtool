@@ -43,12 +43,13 @@ export interface EndStateBadge {
 /**
  * Map a `TurnEndReason` to its end-state badge text + tone:
  *
- * | turnEndReason     | text          | role     |
- * |-------------------|---------------|----------|
- * | `complete`        | "OK"          | inherit  |
- * | `interrupted`     | "interrupted" | caution  |
- * | `error`           | "error"       | danger   |
- * | `transport_lost`  | "lost"        | caution  |
+ * | turnEndReason     | interruptReason | text                 | role     |
+ * |-------------------|-----------------|----------------------|----------|
+ * | `complete`        | —               | "OK"                 | inherit  |
+ * | `interrupted`     | (none)          | "Interrupted"        | caution  |
+ * | `interrupted`     | `logout`        | "Stopped — logged out" | caution  |
+ * | `error`           | —               | "Error"              | danger   |
+ * | `transport_lost`  | —               | "Lost"               | caution  |
  *
  * `complete` returns `role: "inherit"` so the OK badge paints in
  * the surrounding text colour and blends into the row's rhythm —
@@ -59,13 +60,24 @@ export interface EndStateBadge {
  * as "look at this" rather than "this failed."  `interrupted` is
  * also `caution` because the user initiated the stop; it isn't a
  * system error.
+ *
+ * `interruptReason` refines the `interrupted` label: a turn stopped by
+ * the app-level logout flow (`"logout"`) reads "Stopped — logged out"
+ * instead of a bare "Interrupted", keeping the same `caution` tone. It
+ * is the one helper both the Z1B footer and the telemetry popover call,
+ * so both surfaces stay in sync ([D19]).
  */
-export function endStateBadgeFor(reason: TurnEndReason): EndStateBadge {
+export function endStateBadgeFor(
+  reason: TurnEndReason,
+  interruptReason?: "logout",
+): EndStateBadge {
   switch (reason) {
     case "complete":
       return { text: "OK", role: "inherit" };
     case "interrupted":
-      return { text: "Interrupted", role: "caution" };
+      return interruptReason === "logout"
+        ? { text: "Stopped — logged out", role: "caution" }
+        : { text: "Interrupted", role: "caution" };
     case "error":
       return { text: "Error", role: "danger" };
     case "transport_lost":

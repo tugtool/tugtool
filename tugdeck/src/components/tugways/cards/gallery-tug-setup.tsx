@@ -33,6 +33,7 @@ import {
   type TugProgressIndicatorRole,
   type TugProgressIndicatorState,
 } from "@/components/tugways/tug-progress-indicator";
+import { pendingOpenStepCopy } from "@/components/tugways/tug-setup-copy";
 import "./gallery.css";
 import "./gallery-tug-setup.css";
 
@@ -184,6 +185,7 @@ type Scenario =
   | "signing_in"
   | "signin_failed"
   | "ready_to_open"
+  | "continue_working"
   | "complete"
   | "transport_down";
 
@@ -196,6 +198,7 @@ const SCENARIOS: { key: Scenario; label: string }[] = [
   { key: "signing_in", label: "Logging in" },
   { key: "signin_failed", label: "Log-in failed" },
   { key: "ready_to_open", label: "Ready to open" },
+  { key: "continue_working", label: "Continue working" },
   { key: "complete", label: "Complete" },
   { key: "transport_down", label: "Transport down" },
 ];
@@ -318,6 +321,22 @@ function buildFlow(
             detail: "Open a Dev card to get started",
             cta: { label: "Open a Dev Card", onClick: () => go("complete") },
           }),
+        ],
+      };
+    case "continue_working":
+      // Logged out with cards still open (the logout-with-work case): the
+      // third step previews the return to work via the real
+      // `pendingOpenStepCopy` helper — re-login auto-closes the wizard back
+      // to those cards, so there is no active CTA here. [P04]
+      return {
+        steps: [
+          install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
+          signin({
+            status: "active",
+            detail: "Tug runs sessions with your Claude subscription.",
+            cta: { label: "Log In", onClick: () => go("complete") },
+          }),
+          open({ status: "pending", ...pendingOpenStepCopy(3) }),
         ],
       };
     case "complete":

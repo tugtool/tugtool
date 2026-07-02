@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { subscriptionLabel } from "../tug-setup-copy";
+import { subscriptionLabel, pendingOpenStepCopy } from "../tug-setup-copy";
 
 describe("subscriptionLabel", () => {
   test("maps each known tier to its formal label (no trailing period)", () => {
@@ -35,5 +35,24 @@ describe("subscriptionLabel", () => {
     expect(subscriptionLabel("startup")).toBe("Claude Startup plan");
     // Never a bare lowercase token or a trailing period.
     expect(subscriptionLabel("scale")).toBe("Claude Scale plan");
+  });
+});
+
+describe("pendingOpenStepCopy", () => {
+  test("zero cards → first-run wording, no detail", () => {
+    expect(pendingOpenStepCopy(0)).toEqual({
+      label: "Start a Claude Code session",
+    });
+  });
+
+  test("cards open → 'Continue working' preview with a pluralized count", () => {
+    expect(pendingOpenStepCopy(1)).toEqual({
+      label: "Continue working",
+      detail: "You'll return to your 1 open card.",
+    });
+    expect(pendingOpenStepCopy(3)).toEqual({
+      label: "Continue working",
+      detail: "You'll return to your 3 open cards.",
+    });
   });
 });

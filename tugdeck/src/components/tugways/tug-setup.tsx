@@ -48,7 +48,7 @@ import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { readSetupSeen, readSetupSuppressed, putSetupSeen } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
-import { subscriptionLabel } from "./tug-setup-copy";
+import { subscriptionLabel, pendingOpenStepCopy } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
 import {
   TugProgressIndicator,
@@ -315,7 +315,10 @@ export function TugSetup(): ReactElement {
         detail: "Open a Dev card to get started",
         cta: { label: "Open a Dev Card", onClick: handleOpenSession },
       }
-    : { key: "open", status: "pending", label: "Start a Claude Code session" };
+    : // Pending (logged-out) preview: with cards already open — the
+      // logout-with-work case — this reads "Continue working" and re-login
+      // auto-closes the wizard back to them, rather than nudging a new card.
+      { key: "open", status: "pending", ...pendingOpenStepCopy(cardCount) };
 
   const probingSteps: Step[] = [
     { key: "install", status: "busy", label: "Install Claude Code", detail: "Looking for Claude Code…" },

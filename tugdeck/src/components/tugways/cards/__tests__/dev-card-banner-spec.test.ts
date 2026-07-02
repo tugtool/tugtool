@@ -182,6 +182,22 @@ describe("deriveDevCardBannerSpec — breakage only", () => {
     );
     expect(spec.kind).toBe("none");
   });
+
+  it("the auth gate never surfaces a card banner (routes to TugSetup + picker)", () => {
+    for (const message of ["auth_required", "claude_missing"]) {
+      const spec = deriveDevCardBannerSpec(
+        baseSnap({
+          lastError: {
+            cause: "session_state_errored",
+            message,
+            at: 1_700_000_000_000,
+          },
+        }),
+        { dismissedAt: null },
+      );
+      expect(spec).toEqual({ kind: "none" });
+    }
+  });
 });
 
 describe("deriveDevCardBannerSpec — transient conditions no longer banner", () => {

@@ -440,7 +440,10 @@ function DevPopoverRowGrid({
  * would dominate).
  */
 function TurnEndStateBadge({ turn }: { turn: TurnEntry }): React.ReactElement {
-  const badge: EndStateBadge = endStateBadgeFor(turn.turnEndReason);
+  const badge: EndStateBadge = endStateBadgeFor(
+    turn.turnEndReason,
+    turn.interruptReason,
+  );
   return (
     <TugBadge emphasis="ghost" role={badge.role} size="sm">
       {badge.text}

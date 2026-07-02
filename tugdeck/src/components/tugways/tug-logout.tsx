@@ -57,22 +57,25 @@ export function TugLogout(): null {
         confirmRole: "danger",
       });
       if (cancelled || !confirmed) return;
-      // Fire the logout first so nothing below can block the critical path.
-      authStore.setLoggingOut(true);
-      getConnection()?.sendControlFrame("claude_logout");
-      // Best-effort: stop every in-progress turn — they can't continue once
-      // logged out. Guarded so a card without a live session can't throw and
-      // strand the logout.
+      // Interrupt every in-progress turn FIRST — stop turns cleanly before
+      // the auth machinery pulls the rug, so no turn is mid-flight when the
+      // login is revoked. Tagged "logout" so each committed turn's end-state
+      // reads "Stopped — logged out". Kept synchronous and guarded (no await
+      // before the logout frame) so a card without a live session can't throw
+      // and strand the critical path.
       try {
         for (const card of deck.getSnapshot().cards) {
           const services = cardServicesStore.getServices(card.id);
           if (services?.codeSessionStore.getSnapshot().canInterrupt) {
-            services.codeSessionStore.interrupt();
+            services.codeSessionStore.interrupt("logout");
           }
         }
       } catch {
         // A card without an interruptible session — ignore; logout proceeds.
       }
+      // Then run the logout: flip the in-flight flag and send the frame.
+      authStore.setLoggingOut(true);
+      getConnection()?.sendControlFrame("claude_logout");
     })();
     return () => {
       cancelled = true;

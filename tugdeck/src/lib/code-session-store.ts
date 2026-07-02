@@ -996,9 +996,9 @@ export class CodeSessionStore {
    *     wire's `turn_complete(error)` commits a `TurnEntry` carrying
    *     whatever scratch has accumulated with `result: "interrupted"`.
    */
-  interrupt(): void {
+  interrupt(reason?: "logout"): void {
     if (this._disposed) return;
-    this.dispatch({ type: "interrupt_action" });
+    this.dispatch({ type: "interrupt_action", reason });
   }
 
   /**

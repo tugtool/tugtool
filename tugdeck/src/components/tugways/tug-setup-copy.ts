@@ -34,3 +34,28 @@ export function subscriptionLabel(
       return `Claude ${(type ?? "").trim().replace(/^\w/, (c) => c.toUpperCase())} plan`;
   }
 }
+
+/**
+ * Copy for the third setup step while it is still *pending* (the user isn't
+ * logged in yet). When the deck already has open cards — the logout-with-work
+ * case — the step previews the return to that work ("Continue working") rather
+ * than nudging a brand-new session; on re-login the wizard auto-closes back to
+ * those cards. A zero-card deck keeps the first-run wording. [P04]/[D105]
+ *
+ * Pure so the branch is unit-testable without the CSS-bearing `.tsx`. Only the
+ * pending (logged-out) copy varies here; the logged-in "Open a Dev Card" active
+ * step is owned by the component.
+ */
+export function pendingOpenStepCopy(cardCount: number): {
+  label: string;
+  detail?: string;
+} {
+  if (cardCount > 0) {
+    const plural = cardCount === 1 ? "card" : "cards";
+    return {
+      label: "Continue working",
+      detail: `You'll return to your ${cardCount} open ${plural}.`,
+    };
+  }
+  return { label: "Start a Claude Code session" };
+}

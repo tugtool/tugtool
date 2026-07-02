@@ -699,6 +699,17 @@ export interface CodeSessionState {
    */
   interruptInFlight: boolean;
   /**
+   * Why the in-flight CASE B interrupt fired, when it wasn't a plain
+   * user Stop. `"logout"` is stashed by `handleInterrupt` when the
+   * app-level logout flow stops turns, and read by `buildTurnEntry` so
+   * the committed turn's end-state reads "Stopped — logged out";
+   * `handleTurnComplete` clears it alongside {@link interruptInFlight}.
+   * `null` for an ordinary user-initiated stop. The interrupted
+   * `TurnEntry` is committed at `turn_complete`, not at interrupt, so
+   * the reason must bridge across the round-trip on state.
+   */
+  pendingInterruptReason: "logout" | null;
+  /**
    * Wall-clock ms when `handleInterrupt` opened the current
    * CASE B interrupt round-trip; `null` while no interrupt is in
    * flight. Companion to {@link interruptInFlight} (which is the
@@ -858,6 +869,7 @@ export function createInitialState(
     firstToolUseAt: null,
     costAtSubmit: null,
     interruptInFlight: false,
+    pendingInterruptReason: null,
     interruptInFlightSegmentStartedAt: null,
     awaitingApprovalIntervals: [],
     transportDowntimeIntervals: [],
@@ -980,6 +992,7 @@ function handleSend(
       firstAssistantDeltaAt: null,
       firstToolUseAt: null,
       interruptInFlight: false,
+      pendingInterruptReason: null,
       interruptInFlightSegmentStartedAt: null,
       awaitingApprovalIntervals: [],
       transportDowntimeIntervals: [],
@@ -1058,6 +1071,7 @@ function withoutPendingTurnScratch(
 
 function handleInterrupt(
   state: CodeSessionState,
+  reason?: "logout",
 ): { state: CodeSessionState; effects: Effect[] } {
   // Idle / errored: no in-flight turn to interrupt. Drop silently so
   // accidental calls from stale UI state don't spam the server with
@@ -1163,6 +1177,9 @@ function handleInterrupt(
         // cleanliness.
         costAtSubmit: null,
         interruptInFlight: false,
+        // CASE A commits no TurnEntry, so there is no row to carry a
+        // logout marker — clear it for cleanliness.
+        pendingInterruptReason: null,
         // Per-turn interval projections: clear alongside the scalar
         // accumulators so the next turn starts with empty pause
         // history. CASE A doesn't open an interrupt segment (the UI
@@ -1228,6 +1245,10 @@ function handleInterrupt(
       prevPhase: null,
       queuedSends: [],
       interruptInFlight: true,
+      // Bridge the interrupt reason across the round-trip: the interrupted
+      // TurnEntry is committed later at `turn_complete`, so stash it here
+      // for `buildTurnEntry` to read (cleared in `handleTurnComplete`).
+      pendingInterruptReason: reason ?? null,
       interruptInFlightSegmentStartedAt: interruptOpenedAt,
       ...closeAwaitingApprovalInterval(state, interruptOpenedAt),
     },
@@ -2287,6 +2308,7 @@ function resetPerTurnTelemetry(): Pick<
   | "firstToolUseAt"
   | "costAtSubmit"
   | "interruptInFlight"
+  | "pendingInterruptReason"
   | "liveTurnUsage"
   | "apiRetry"
   | "refusalFallback"
@@ -2303,6 +2325,10 @@ function resetPerTurnTelemetry(): Pick<
     firstToolUseAt: null,
     costAtSubmit: null,
     interruptInFlight: false,
+    // Cleared with `interruptInFlight`: the interrupted turn has committed
+    // (buildTurnEntry read the reason off the pre-reset state), so the
+    // bridge closes for the next turn.
+    pendingInterruptReason: null,
     // The committed `cost_update` is authoritative; the live
     // accumulation is dropped so the cells fall back to the just-
     // committed turn's figures with no double-count.
@@ -2423,6 +2449,13 @@ function buildTurnEntry(
       : {}),
     messages,
     result: effectiveReason === "complete" ? "success" : "interrupted",
+    // Logout sidecar: a turn stopped by the app-level logout flow carries
+    // `interruptReason: "logout"` so its end-state reads "Stopped — logged
+    // out". Only on a live interrupt (the replay path leaves
+    // `pendingInterruptReason` null, so JSONL never revives the marker).
+    ...(effectiveReason === "interrupted" && state.pendingInterruptReason !== null
+      ? { interruptReason: state.pendingInterruptReason }
+      : {}),
     endedAt,
     wallClockMs: telemetry.wallClockMs,
     awaitingApprovalMs: telemetry.awaitingApprovalMs,
@@ -4907,7 +4940,7 @@ export function reduce(
     case "respond_question":
       return handleRespondQuestion(state, event);
     case "interrupt_action":
-      return handleInterrupt(state);
+      return handleInterrupt(state, event.reason);
     case "set_permission_mode":
       return handleSetPermissionMode(state, event);
     case "set_model":

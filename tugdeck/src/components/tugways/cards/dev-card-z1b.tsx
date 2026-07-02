@@ -324,7 +324,7 @@ function EndStateDisplay({
   perTurnTokens: number | undefined;
   agentTokens: number | undefined;
 }): React.ReactElement {
-  const badge = endStateBadgeFor(reason);
+  const badge = endStateBadgeFor(reason, turn?.interruptReason);
   return (
     <span
       className="dev-z1b-end-state"

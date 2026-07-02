@@ -104,15 +104,7 @@ import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-s
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
-import { deriveDevCardBannerSpec, humanizeErrorSummary, type AuthBannerVariant } from "./dev-card-banner-spec";
-
-// TEMP dev affordance (dev builds only): flip to "auth_required" or
-// "claude_missing" to force the Claude sign-in banner while logged in, so the
-// auth UI can be iterated under HMR without actually signing out. Leave `false`
-// for normal use; the real end-to-end test runs on a logged-out Lab-A VM. The
-// `import.meta.env.DEV` guard at the use site folds this out of production
-// builds, so a stray non-false value here can never reach a shipped app.
-const DEV_FORCE_AUTH_BANNER: AuthBannerVariant | false = false;
+import { deriveDevCardBannerSpec, humanizeErrorSummary } from "./dev-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
@@ -1174,6 +1166,10 @@ function noticeText(notice: PickerNotice): string {
       return notice.staleProjectDir !== undefined
         ? `Restoring the previous session for ${notice.staleProjectDir} took too long. The server may be unreachable — you can Retry or start a new session below.`
         : notice.message;
+    case "signed_out":
+      return notice.message === "claude_missing"
+        ? "Claude Code isn’t available. Finish setup, then pick a session below."
+        : "You were signed out of Claude. Log back in, then resume or start a session below.";
     default:
       return notice.message;
   }
@@ -2040,58 +2036,7 @@ interface DevCardBodyProps {
 function renderDevCardBanner(
   spec: ReturnType<typeof deriveDevCardBannerSpec>,
   setDismissedAt: (at: number) => void,
-  onSignIn: () => void,
-  signingIn: boolean,
 ): React.ReactElement {
-  if (spec.kind === "auth") {
-    // Not breakage — an actionable sign-in / install prompt. Caution tone
-    // (amber), not the red session-dead lock. `auth_required` offers Sign In
-    // (which drives `claude auth login` in the browser); `claude_missing`
-    // gives install guidance.
-    const missing = spec.variant === "claude_missing";
-    return (
-      <TugPaneBanner
-        visible={true}
-        variant="error"
-        tone="caution"
-        minMountedMs={0}
-        label={missing ? "Claude Code required" : "Log in to Claude"}
-        message={
-          missing
-            ? "Tug needs the Claude Code CLI. Install it, then reopen this card."
-            : "Tug runs sessions with your Claude subscription. Log in to continue."
-        }
-        detailIcon={missing ? "alert-triangle" : "key"}
-        detailTitle={missing ? "Claude Code required" : "Log in to Claude"}
-        footer={
-          missing ? (
-            <TugPushButton
-              emphasis="outlined"
-              onClick={() => setDismissedAt(spec.at)}
-            >
-              Dismiss
-            </TugPushButton>
-          ) : (
-            <TugPushButton
-              emphasis="filled"
-              onClick={onSignIn}
-              disabled={signingIn}
-            >
-              {signingIn ? "Finish in your browser…" : "Log In"}
-            </TugPushButton>
-          )
-        }
-      >
-        <p>
-          {missing
-            ? "Install Claude Code from claude.com/download, then close and reopen this card."
-            : signingIn
-              ? "Complete sign-in in the browser window that opened. This card resumes automatically."
-              : "A browser window will open to log in to your Anthropic account."}
-        </p>
-      </TugPaneBanner>
-    );
-  }
   if (spec.kind === "error") {
     // `spec.message` is the backend detail. For a crashed session it is
     // multi-line: a short first-line summary (e.g. `crash_budget_exhausted`)
@@ -2268,44 +2213,20 @@ export function DevCardBody({
   // `useDevCardObserver` is about to clear the binding and route that
   // cause through the picker.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const bannerSpec =
-    import.meta.env.DEV && DEV_FORCE_AUTH_BANNER
-      ? ({ kind: "auth", variant: DEV_FORCE_AUTH_BANNER, at: 0 } as const)
-      : deriveDevCardBannerSpec(codeSnap, { dismissedAt });
+  const bannerSpec = deriveDevCardBannerSpec(codeSnap, { dismissedAt });
 
   // Once the session hits any non-recoverable error, disable the entry —
   // the dismiss gesture only hides the banner, the underlying session is
   // still dead. The user recovers by closing and reopening the card.
-  // `resume_failed` is excluded from this dead-session classification:
-  // the card observer unmounts the bound body on that cause (the picker
-  // sheet re-renders instead). Attachment rejections never reach
-  // `lastError` at all — they surface as a card bulletin, so they neither
-  // disable the entry nor light its errored ring.
+  // `resume_failed` and the auth gate (`auth_required` / `claude_missing`)
+  // are excluded upstream: the card observer unbinds the bound body on
+  // those causes (the picker sheet re-renders instead), so they never
+  // reach this dead-session classification. Attachment rejections never
+  // reach `lastError` at all — they surface as a card bulletin, so they
+  // neither disable the entry nor light its errored ring.
   const sessionErrored =
     codeSnap.lastError !== null &&
-    codeSnap.lastError.cause !== "resume_failed" &&
-    // A logged-out / missing-CLI gate is not a dead session — it routes to
-    // the calm auth banner, not the red session-dead overlay.
-    !(
-      codeSnap.lastError.cause === "session_state_errored" &&
-      (codeSnap.lastError.message === "auth_required" ||
-        codeSnap.lastError.message === "claude_missing")
-    );
-
-  // Drives `claude auth login` (browser OAuth) via tugcast's `claude_sign_in`
-  // action; tugcast re-probes on the child's exit and broadcasts the result.
-  const [signingIn, setSigningIn] = useState(false);
-  const handleSignIn = useCallback(() => {
-    const connection = getConnection();
-    if (!connection) {
-      console.warn("DevCardBody: connection unavailable for sign-in");
-      return;
-    }
-    setSigningIn(true);
-    connection.sendControlFrame("claude_sign_in", {
-      tug_session_id: codeSnap.tugSessionId,
-    });
-  }, [codeSnap.tugSessionId]);
+    codeSnap.lastError.cause !== "resume_failed";
 
   // Keyboard-focus-cycling ([P09]/[P10]). ⌥⇥ trades the editor's Tab for
   // a trapped tour of the card's chrome zones (the submit is the
@@ -3704,7 +3625,7 @@ export function DevCardBody({
         false`; the component runs its exit animation and then
         unmounts via its internal `mounted` state.
       */}
-      {renderDevCardBanner(bannerSpec, setDismissedAt, handleSignIn, signingIn)}
+      {renderDevCardBanner(bannerSpec, setDismissedAt)}
       </div>
     </CardContentResponderScope>
   );

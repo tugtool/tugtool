@@ -74,8 +74,12 @@ function GalleryAlertInner() {
         setReproResult("resolved FALSE (confirm click did not resolve true)");
         return;
       }
-      // The real interrupt-loop shape (count only — no actual interrupt): a
-      // throw here is what would strand the real logout before it sends.
+      // The real interrupt-first loop shape (count only — no actual
+      // interrupt fired on this shared gallery deck): the real TugLogout
+      // path calls `interrupt("logout")` on each interruptible card BEFORE
+      // sending `claude_logout`, tagging the committed turn so its Z1B reads
+      // "Stopped — logged out". A throw here is what would strand the real
+      // logout before it sends.
       try {
         let interruptible = 0;
         for (const card of deck.getSnapshot().cards) {
@@ -83,7 +87,7 @@ function GalleryAlertInner() {
           if (services?.codeSessionStore.getSnapshot().canInterrupt) interruptible++;
         }
         setReproResult(
-          `resolved TRUE — interrupt loop OK, ${interruptible} interruptible card(s)`,
+          `resolved TRUE — interrupt-first loop OK, would interrupt("logout") ${interruptible} card(s)`,
         );
       } catch (err) {
         setReproResult(`resolved TRUE — interrupt loop THREW: ${String(err)}`);

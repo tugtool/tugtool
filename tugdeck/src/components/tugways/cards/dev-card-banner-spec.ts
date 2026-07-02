@@ -39,20 +39,9 @@ export type BannerErrorCause = Exclude<
   "resume_failed"
 >;
 
-/**
- * Which Claude-auth obstacle the card hit. `auth_required` = `claude` is
- * present but the user is signed out; `claude_missing` = the CLI isn't
- * installed. Both arrive as a `session_state_errored` whose `message` is the
- * detail tugcast's pre-spawn auth gate stamped, but they are NOT breakage —
- * they are an actionable sign-in/install prompt, so they get their own calm
- * banner kind rather than the red error lock.
- */
-export type AuthBannerVariant = "auth_required" | "claude_missing";
-
 /** Discriminated union returned by `deriveDevCardBannerSpec`. */
 export type DevCardBannerSpec =
   | { kind: "none" }
-  | { kind: "auth"; variant: AuthBannerVariant; at: number }
   | {
       kind: "error";
       cause: BannerErrorCause;
@@ -97,18 +86,16 @@ export function deriveDevCardBannerSpec(
     snap.lastError.cause !== "resume_failed" &&
     snap.lastError.at !== ctx.dismissedAt
   ) {
-    // A logged-out / missing-CLI gate is not breakage — surface the calm
-    // sign-in/install banner instead of the red session-dead lock.
+    // A logged-out / missing-CLI gate is not a card-local concern: the
+    // observer unbinds the card to its picker and the app-modal TugSetup
+    // owns re-login (single login surface). Never surface it as a banner —
+    // return `none` so no red error lock flashes before the unbind lands.
     if (
       snap.lastError.cause === "session_state_errored" &&
       (snap.lastError.message === "auth_required" ||
         snap.lastError.message === "claude_missing")
     ) {
-      return {
-        kind: "auth",
-        variant: snap.lastError.message,
-        at: snap.lastError.at,
-      };
+      return { kind: "none" };
     }
     return {
       kind: "error",

@@ -349,6 +349,15 @@ export interface TurnEntry {
    * migration; remove once all callers have moved.
    */
   result: "success" | "interrupted";
+  /**
+   * Why an interrupted turn was stopped, when it wasn't a plain user Stop.
+   * `"logout"` marks a turn stopped by the app-level logout flow so its
+   * Z1B end-state reads "Stopped — logged out" rather than a bare
+   * "Interrupted". Absent for a normal interrupt and for every non-
+   * interrupted turn. Live-only: the replay path never revives it (the
+   * marker is not persisted to JSONL).
+   */
+  interruptReason?: "logout";
   endedAt: number;
 
   /**

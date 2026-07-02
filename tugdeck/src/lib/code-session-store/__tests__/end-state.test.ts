@@ -53,6 +53,22 @@ describe("endStateBadgeFor", () => {
     });
   });
 
+  it("maps a logout interrupt → caution (Stopped — logged out)", () => {
+    expect(endStateBadgeFor("interrupted", "logout")).toEqual({
+      text: "Stopped — logged out",
+      role: "caution",
+    });
+  });
+
+  it("ignores interruptReason for non-interrupted reasons", () => {
+    // The refinement only applies to `interrupted`; a logout marker on any
+    // other reason (which the reducer never produces) leaves the label alone.
+    expect(endStateBadgeFor("complete", "logout")).toEqual({
+      text: "OK",
+      role: "inherit",
+    });
+  });
+
   it("maps error → danger (Error)", () => {
     expect(endStateBadgeFor("error")).toEqual({
       text: "Error",
