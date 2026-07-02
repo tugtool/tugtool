@@ -590,6 +590,8 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 **Artifacts:** `ActivityDelta` interface + `OutboundMessage` member; per-turn activity bins on `ActiveTurn`; a 250 ms `SessionManager` flush (turn-scoped, trailing flush on turn end) emitting behind `!turn.suppressEmit`. With the divert (#step-7) already live, no `activity_delta` ever rides CODE_OUTPUT.
 
+**Precondition (landed):** the lane-partition fix (`ade430a1f`) keys `ActiveTurn` stream state by `parent_tool_use_id ?? null`, so `msg_id` stamping is lane-correct — build the accumulator on the lane structure (channel split from the lane key; token deltas per lane-correct `msg_id`), and base the counting fixtures on `lane-partition-interleave.test.ts`'s interleaved sequences.
+
 **Tasks:**
 - [ ] Relocate the counting (Spec S04) into `dispatchEventToTurn`; accumulate in `ActiveTurn`.
 - [ ] Add the flush timer ([Q06]); emit `activity_delta`.
