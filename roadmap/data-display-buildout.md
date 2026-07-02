@@ -1,8 +1,8 @@
 <!-- devise-skeleton v4 -->
 
-## Session Activity API — a multi-channel telemetry substrate for compact and expanded data displays {#data-display-buildout}
+## Session Activity API — a trait-mediated tugcast feed driving compact and expanded data displays {#data-display-buildout}
 
-**Purpose:** Replace the pulse sparkline's single "streamed characters" meter with an app-scoped, session-scoped, multi-channel **Session Activity API** — text, tokens, tools, subagents, CPU, memory, disk — that the compact pulse-bar sparkline consumes today and a future expanded Activity card consumes tomorrow, so the display stays lively across *every* kind of session work, not just Write/Edit.
+**Purpose:** Land a properly-abstracted `SessionScopedFeed` in tugcast (fixing the dead-trait / per-session-duplication debt for good), then build a single unified `ACTIVITY` feed on it — derived by the **one** authoritative stream interpreter (tugcode), routed by tugcast, consumed by a pure-consumer deck — carrying every dimension of per-session work (text, tokens, tools, subagents, CPU, memory, disk) to drive the compact pulse sparkline today and an expanded Activity card tomorrow.
 
 ---
 
@@ -13,7 +13,7 @@
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-07-01 |
+| Last updated | 2026-07-02 |
 
 ---
 
@@ -21,73 +21,78 @@
 
 #### Context {#context}
 
-What reads as "Pulse" in the Dev card is two independent pipelines rendered side by side: a **label** (from the `tugpulse` daemon narrating stream-json frames) and a **sparkline** (fed by a local `ThroughputMeter` in `code-session-store.ts` that counts streamed characters per second off the `CODE_OUTPUT` feed). The two share no data. The sparkline moves richly only for **Write/Edit**, because those are the only tools that emit `tool_input_progress` byte-delta frames (`session.ts` early-returns for any tool without a file path). Skills (`tugplug` `<plugin>:<skill>`), post-`AskUserQuestion` resumes, heavy thinking, and subagent orchestration produce only tiny fixed "keep-alive" pips or nothing — so the line flatlines through most real work.
+The pulse sparkline plots "characters the foreground model streamed," derived **in the browser** off `CODE_OUTPUT`, so it flatlines for everything that isn't a Write/Edit (skills, `AskUserQuestion` resumes, thinking, subagents). Two structural problems sit underneath: (1) the activity model is deck-only — recomputed per card, invisible to any non-deck consumer; and (2) tugcast, the facility *designed* to be the conduit for channels from disparate sources, is under-used and carries real design debt — its `StreamFeed`/`SnapshotFeed` traits are vestigial (the big feeds bypass them and push raw channels), and every per-session feed reinvents `tug_session_id` splicing on the cast plus a hand-authored filter on the deck.
 
-The fix is not more keep-alive hacks. The sparkline plots "characters the foreground model streamed" and mislabels it "how hard is this session working." Those are different quantities. This plan builds a proper telemetry substrate — a multi-channel, per-session **Session Activity API** — measuring real signals (token velocity, tool cadence, subagent activity, and OS-level CPU/memory/disk for the session's process subtree). The compact pulse sparkline becomes the first thin consumer; the same API is the basis for an expanded Activity card. The OS-level signals are attributed by **process subtree**, never by working directory, so two sessions in the same directory never bleed together.
+This plan fixes both. First it makes tugcast's feed registration **trait-mediated** and introduces a real, router-integrated **`SessionScopedFeed`** abstraction, converting *every* server→client feed through it so nothing bypasses the trait layer. Then it builds one unified **`ACTIVITY`** feed on that foundation. Crucially, derivation lives at the **single authoritative interpreter** — tugcode's `dispatchEventToTurn`, the one place claude's stream is already parsed — which emits `activity_delta` frames; tugcast diverts them onto `ACTIVITY` (exactly as it already rewraps `SESSION_SIDEBAND`); the deck records them. There is no second interpreter, so the two-parsers drift risk does not exist. OS signals (CPU/memory/disk) are sampled cast-side over the session's process **subtree** (never the working directory) and ride the same feed.
 
 #### Strategy {#strategy}
 
-- Build the **substrate first** ([P01], [P02]): an app-scoped `SessionActivityStore` keyed by `tug_session_id`, holding one `ActivityMeter` per channel. Port the existing throughput signal onto it behavior-neutrally before adding anything new.
-- **Deck-local channels next** ([P06], [P07]) — token velocity, tool cadence, subagent activity — cost zero backend work and kill the flatline cases immediately.
-- **Enrich the compact view** ([P04], [P05]) — dominant-channel color + a composite intensity line that stays alive whenever *any* real work happens.
-- **Then the backend instrument** ([P08]–[P11]): capture the tugcode child PID (keystone), add a per-session resource sampler walking the PID subtree, ship it on a new `SESSION_RESOURCE` feed, and consume CPU/memory/disk as further channels.
-- **Finally the expanded rep** ([P12]): an Activity card that renders per-channel series and raw readouts over the same API.
-- Keep all high-churn series **out of React state** ([P03]) — read imperatively on the consumer's own timer, painting straight to SVG, exactly as the sparkline does today ([L02], [L06]).
+- **Part A — pay down the tugcast debt first.** Make feed registration trait-mediated and introduce `SessionScopedFeed` ([P14], [P19]); convert feeds safest-first — the already-trait feeds (TERMINAL/FS/GIT) + FileTree reconciliation, then `SESSION_STATE`, then `SESSION_SIDEBAND` (rewrap invariant), then `CODE_OUTPUT` (replay buffer + input-ownership) — each behind its own parity/isolation checkpoint so no regression escapes ([R04], [R05]). This is required work, not a follow-on.
+- **Part B — build `ACTIVITY` on the clean foundation.** Allocate `FeedId::ACTIVITY = 0x42` ([P16]); the feed is a native `SessionScopedFeed` client.
+- **Derive once, at the origin.** tugcode accumulates per-turn activity in `ActiveTurn` and flushes `activity_delta` frames on a 250 ms bin behind `!suppressEmit` ([P13], [P21]); tugcast diverts them to `ACTIVITY`; the deck's `recordThroughput` is deleted.
+- **Deck is a pure consumer** ([P01]–[P04]) — the wire frame maps 1:1 to `store.record(session, channel, units, at)`.
+- **Enrich compact** ([P05]) then **add the OS instrument** ([P08]–[P11], [P20]) folded into the same feed, then the **expanded Activity card** ([P12]).
+- Keep high-churn series **out of React state** ([P03]); only `enabled`/channel-membership pass through the snapshot ([L02], [L06]).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 > Make these falsifiable.
 
-- Invoking a `tugplug` skill (e.g. `/tugplug:vet`) drives the pulse sparkline visibly off the baseline for the duration of the skill's work (previously flat). Verify in the real app via the `verify` skill.
-- A turn that resumes after answering an `AskUserQuestion` (thinking-heavy, textless) drives the sparkline off the baseline. Verify in the real app.
-- Running a Bash `cargo build` inside a session produces a distinct CPU hump on the resource channels that is **absent** from a second, idle session bound to the same project directory. Verify with two sessions in `/u/src/tugtool`.
-- The compact sparkline fill color changes with the dominant activity kind (thinking/tokens vs writing/text vs subprocess/CPU). Verify visually across a scripted turn.
-- `SessionActivityStore` unit tests: `record`/`series`/`compositeSeries`/`dominant`/`intensity` return correct values for constructed sample sequences (`cargo`/`bun test`, no mock-store render tests).
-- `bunx vite build` succeeds and the debug app reaches the Dev card without hanging at splash ([verify-with-vite-build]).
+- **Trait layer is live, not vestigial:** every server→client feed (TERMINAL, FILESYSTEM, FILETREE, GIT, SESSION_STATE, SESSION_SIDEBAND, CODE_OUTPUT, PULSE, ACTIVITY) registers through the trait-mediated API; grep confirms no feed pushes onto a raw `broadcast::Sender` outside the abstraction.
+- **Exactly one interpreter:** the deck contains zero `CODE_OUTPUT`-derived activity math (`recordThroughput`, `throughputMeter`, its constants/maps gone); tugcode is the sole producer of activity counts, pinned by a fixture unit test.
+- **Model on the wire:** a raw `ACTIVITY` dump (Dev panel / frame capture) shows per-session channel samples independent of the deck.
+- **Flatlines fixed:** a `tugplug` skill and a post-`AskUserQuestion` resume each drive the sparkline off baseline (`verify`).
+- **Session isolation:** a Bash `cargo build` produces a CPU hump absent from a second idle session in the same directory; a PID reused after a session closes is **not** attributed (start-time guard) — provable by a Rust unit test.
+- **No refactor regression:** `CODE_OUTPUT` after conversion still isolates two concurrent sessions and still recovers a lagging client via replay — driven by an integration checkpoint.
+- `SessionScopedFeed` round-trip routing unit test passes; `cargo nextest run`, `bunx vite build`, `bun test`, `bun run audit:theme-contrast` all pass (warnings are errors).
 
 #### Scope {#scope}
 
-1. App-scoped `SessionActivityStore` + generalized `ActivityMeter` + per-channel descriptors (the API).
-2. Deck-local producer channels: text (ported), tokens, tools, subagents.
-3. Compact-view upgrade: dominant-channel color + composite intensity line in `DevPulseStrip`/`TugSparkline`.
-4. Pulse **label** coverage for skills, `AskUserQuestion`, and a generic-tool fallback (`tugpulse` voice).
-5. Backend: tugcode child-PID capture; per-session `SESSION_RESOURCE` sampler (CPU, memory); disk I/O via `proc_pid_rusage`.
-6. Deck resource channels: consume `SESSION_RESOURCE` into cpu/memory/disk channels.
-7. Expanded **Activity card** (small-multiples) as the first non-compact consumer.
+1. Trait-mediated feed registration; `SessionScopedFeed` (cast) + `subscribeSessionFeed` (deck); convert **all** server→client feeds through it.
+2. `FeedId::ACTIVITY = 0x42`; the feed as a native `SessionScopedFeed`.
+3. tugcode `activity_delta`: `ActiveTurn` accumulator + 250 ms flush; the single authoritative counter.
+4. tugcast divert of `activity_delta` → `ACTIVITY`.
+5. Deck `SessionActivityStore` + `ActivityMeter` (rate/gauge), pure consumer; delete deck derivation.
+6. Compact view: dominant color + composite intensity.
+7. OS subtree sampler (CPU/memory/disk) with `(pid, start_time)` reuse-guard, folded into `ACTIVITY`.
+8. Pulse **label** coverage (skills / AskUserQuestion / generic tool).
+9. Expanded **Activity card**.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
-- App-wide "all sessions" activity overview card — the first Activity card is session-bound ([Q04]).
-- Overlaid stacked-band single-SVG rendering — the first expanded card is small-multiples; stacked bands are a follow-on ([P12]).
-- Linux per-process disk I/O — macOS-first; Linux disk deferred ([Q03]).
-- Persisting activity history across reloads — the meters are live, rolling, and ephemeral (like today's throughput meter).
-- Changing the pulse **label** dwell/cross-fade behavior or the `tugpulse` daemon transport.
+- **Unifying `StatCollector` into `SnapshotFeed`** — `StatCollector` (timer-polled process-global stats) is a legitimate distinct model; its *registration surface* is routed through the unified path, but the two trait models are not merged ([P19]).
+- **Input feeds (client→server) trait-mediation** — `register_input` is already uniform; the abstraction targets server→client feeds.
+- **Deck-side activity derivation / a separate `SESSION_RESOURCE` feed** — removed / folded into `ACTIVITY`.
+- **Ledger/history/hydration for activity** — ephemeral, rolling; no SQLite table, no `list_*` CONTROL verb ([P15]).
+- Overlaid stacked-band card rendering; app-wide overview; Linux disk I/O — follow-ons ([Q03], [Q04], [P12]).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- `sysinfo` (already a workspace dependency, already sampling in `process_info.rs`).
-- `libc` (already a workspace dependency) for the `proc_pid_rusage` binding.
-- The existing `PULSE` feed / `PulseStore` app-scope pattern as the template for an app-scoped store fed by both frames and per-session routers.
+- The `SESSION_SIDEBAND` rewrap in `merger_task` (`agent_supervisor.rs`) as the precedent for diverting a frame type onto another feed.
+- `ActiveTurn` (`session.ts`) + `suppressEmit` as the accumulator and replay gate; `writeLine`/`OutboundMessage` (`ipc.ts`/`types.ts`) as the (unguarded) outbound path.
+- `splice_tug_session_id` (`feeds/code.rs`) to generalize into `SessionScopedFeed`; `FeedStore`'s filter for `subscribeSessionFeed`.
+- `sysinfo 0.34` (`Process::start_time()`, `parent()`, `cpu_usage()`, `memory()` confirmed) and `libc` (`proc_pid_rusage`).
 
 #### Constraints {#constraints}
 
-- **WARNINGS ARE ERRORS** — the Rust workspace enforces `-D warnings`; fix all warnings in-step.
-- tugdeck laws: one `root.render()` [L01]; external state via `useSyncExternalStore` only [L02]; appearance via CSS/DOM never React state [L06]; motion via WAAPI not rAF/timer frame loops [L13].
-- Platform: macOS (`darwin`) is the target for OS-level sampling.
-- The high-churn series must not trigger React re-renders (they update at 4 Hz+); only the enabled flag / channel registry may pass through the store snapshot.
-- Verify tugdeck changes with `bunx vite build` before declaring done ([verify-with-vite-build]).
+- **WARNINGS ARE ERRORS** across the workspace.
+- tugdeck laws: [L01] one render; [L02] external state via `useSyncExternalStore`; [L06] appearance via CSS/DOM; [L13] WAAPI motion.
+- `FeedId` is hand-mirrored (Rust `protocol.rs` ↔ TS `protocol.ts`) with byte-assertion tests; a new byte touches both + `name()`.
+- CPU accuracy needs **two** `sysinfo` refreshes; enumerate a subtree by refreshing all processes and walking `parent()` links.
+- Platform: macOS for OS sampling.
+- Verify deck changes with `bunx vite build`; rebuild the tugcode binary after tugcode changes.
 
 #### Assumptions {#assumptions}
 
-- `CodeSessionStore` is one-instance-per-session (confirmed: single `tugSessionId` field, single `throughputMeter`), so it is a valid per-session producer that feeds the app-scoped store with `this.tugSessionId`.
-- `streaming_usage.usage.output_tokens` is cumulative within a `msg_id` and resets across message ids (confirmed in `types.ts` doc), so a per-`msg_id` delta yields a token-velocity signal ([Q01] resolved).
-- The tugcode process's subtree (claude + Bash tool subprocesses) equals "everything this session did"; neither tugcode nor claude opens a new process group, so attribution must be a PID-parentage subtree walk, not pgid ([P08]).
+- Every activity signal already passes through `dispatchEventToTurn` with the turn in scope, so counting can be added there without a second parse.
+- Replayed frames never generate activity (the JSONL translator emits no `streaming_usage`/`tool_input_progress`/`task_progress`; replayed text is `is_partial:false`), and `suppressEmit` gates any concurrent live delta — so activity is replay-safe with zero cast-side work.
+- The tugcode subtree (claude + Bash subprocesses) equals "what this session did"; attribution is a PID-parentage walk validated by process start time, not cwd or pgid.
 
 ---
 
 ### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
 
-Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cite decisions/specs/anchors, never line numbers.
+Anchors are explicit, kebab-case; plan-local decisions use `[P01]`; steps cite decisions/specs/anchors, never line numbers.
 
 ---
 
@@ -95,64 +100,62 @@ Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cit
 
 #### [Q01] Token-velocity source field (DECIDED) {#q01-token-source}
 
-**Question:** Which field of `streaming_usage.usage` yields a per-interval token rate?
+**Resolution:** DECIDED ([P06]). `usage.output_tokens` is cumulative within a `msg_id`; tugcode tracks last per `msg_id`, records `max(0, cur − last)`, seeds on new id.
 
-**Why it matters:** The token channel is the single best "working hard while textless" signal; getting the delta wrong makes it flat or spiky-wrong.
+#### [Q05] Interpreter drift between deck and cast (DECIDED — eliminated) {#q05-interpreter-drift}
 
-**Resolution:** DECIDED (see [P06]). `usage.output_tokens` is cumulative within a `msg_id` (per `types.ts` `StreamingUsage` doc: "reflects the latest frame and does not accumulate across `msg_id`s"). Track last value keyed by `msg_id`; delta = `max(0, current − last)`; on a new `msg_id`, seed last to the first observed value (no phantom spike). Fall back to a small fixed beat if `output_tokens` is absent.
+**Question:** How do we stop a cast-side re-interpreter of `CODE_OUTPUT` from drifting against the deck's?
 
-#### [Q02] Resource-sampler cadence and subtree-walk cost (OPEN) {#q02-sampler-cadence}
+**Resolution:** DECIDED — there is **no second interpreter**. Derivation lives only in tugcode's `dispatchEventToTurn` ([P13]); tugcast routes opaquely; the deck records. Parity is by construction ([P21]) and pinned by a fixture unit test in tugcode.
 
-**Question:** At what interval do we sample the per-session PID subtree, and is a full `sysinfo` refresh per tick acceptable with several concurrent sessions?
+#### [Q06] tugcode activity flush mechanism (DECIDED) {#q06-flush-timer}
 
-**Why it matters:** Too frequent or too broad a refresh burns CPU measuring CPU.
+**Question:** How does tugcode bin/flush `activity_delta` (no periodic tick exists in the stream path today)?
 
-**Options (if known):**
-- 1 Hz, refresh only the session's subtree PIDs (`ProcessesToUpdate::Some`) — default.
-- 2 Hz for finer humps at higher cost.
+**Resolution:** DECIDED — a dedicated 250 ms `setInterval` on `SessionManager`, **active only during a live turn**, flushing the `ActiveTurn` accumulator and emitting `activity_delta` behind `!suppressEmit`, with a trailing flush + clear on turn end so the final decaying bin is emitted. 250 ms matches the meter bin so the deck math is unchanged.
 
-**Plan to resolve:** Spike in Step 6 — measure the sampler's own CPU with 3 concurrent sessions each running a `cargo build`; pick the coarsest cadence that still shows a legible hump.
+#### [Q02] Sampler cadence and subtree-walk cost (OPEN) {#q02-sampler-cadence}
 
-**Resolution:** OPEN — default 1 Hz; confirm in Step 6 checkpoint.
+**Question:** OS sample interval and the cost of a full-process `sysinfo` refresh (needed to build the parent map) with several sessions.
+
+**Plan to resolve:** Step 12 spike — 3 concurrent `cargo build` sessions; measure the sampler's own CPU against a **hard budget of ≤2% of one core**; pick the coarsest cadence (default 1 Hz) that still shows a legible hump; gate refresh to when ≥1 session has a live PID.
+
+**Resolution:** OPEN — resolved by the Step 12 budget checkpoint.
 
 #### [Q03] Cross-platform disk I/O (DEFERRED) {#q03-disk-crossplat}
 
-**Question:** How is per-process disk I/O read on Linux?
+**Resolution:** DEFERRED — `proc_pid_rusage` is macOS-only; the disk channel is absent elsewhere (store/card tolerate absent channels).
 
-**Why it matters:** `proc_pid_rusage` is macOS-only; `sysinfo`'s per-process disk API is Linux-oriented but coarse.
+#### [Q04] Activity card scope (DEFERRED) {#q04-card-scope}
 
-**Resolution:** DEFERRED — target is `darwin`. The disk channel degrades to absent on non-macOS (the API and card already tolerate absent channels, [P02]). Revisit if/when Tug ships on Linux.
-
-#### [Q04] Activity card scope: session-bound vs app-wide (DEFERRED) {#q04-card-scope}
-
-**Question:** Should the expanded Activity card show one session or all sessions?
-
-**Why it matters:** App-wide needs an all-sessions selector over the store; session-bound reuses the card's existing session binding.
-
-**Resolution:** DEFERRED — the first Activity card ([P12]) is session-bound, reusing the dev card's `tugSessionId`. The app-scoped store already supports an app-wide view later without a redesign.
+**Resolution:** DEFERRED — first card is session-bound; the app-scoped store supports an all-sessions view later.
 
 ---
 
 ### Risks and Mitigations {#risks}
 
-| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
-|------|--------|------------|------------|--------------------|
-| Subtree-walk sampler burns CPU | med | med | Refresh only subtree PIDs; 1 Hz default ([Q02]) | Sampler >2% CPU with 3 sessions |
-| Stale/reused PID after session death | med | low | Drop the PID on session close; treat missing process as zero ([P08]) | Ghost CPU on a closed session |
-| Sparkline visual regression | med | low | Step 1 is behavior-neutral; composite defaults to text-only until channels added ([P01]) | Line differs from baseline in Step 1 |
-| Dominant-color flicker | low | med | Hysteresis: keep current dominant until a challenger leads by a margin over N samples ([P05]) | Visible color strobing |
+> Each risk is driven to its floor at the source; residuals are stated honestly.
 
-**Risk R01: Sampler measures its own overhead** {#r01-sampler-overhead}
+| Risk | Impact | Likelihood | Mitigation → floor | Residual |
+|------|--------|------------|--------------------|----------|
+| Interpreter drift | med | **none** | Single interpreter in tugcode ([P13], [Q05]); fixture test ([P21]) | A new tugcode frame type needs a counting rule in one place |
+| Cutover regresses sparkline | med | **low→none** | Verify on the wire before deleting deck path; counting moved whole, not rewritten | Mechanical deletion caught by parity checkpoint |
+| Replay double-counts | med | **none** | Emit behind `!suppressEmit`; translator emits no activity frames | None |
+| PID reuse misattributes | med | **none** | `(pid, start_time)` capture + `start_time()` validation ([P20]) | One-tick window only if a PID is reused *and* start times collide (implausible) |
+| `CODE_OUTPUT` conversion regresses | high | low | Convert last, behind isolation + lag/replay-recovery checkpoint ([R04]) | Bounded to the conversion step; caught by tests |
+| Sampler CPU cost | med | low | One shared `System`, 1 Hz, gated to live PIDs, hard ≤2%/core budget ([Q02]) | Proportional to subtree size (honest floor) |
 
-- **Risk:** A per-session `sysinfo` refresh each tick could dominate the very CPU number it reports.
-- **Mitigation:** Scope `ProcessesToUpdate::Some(&subtree)`; 1 Hz; one shared `System` across sessions; spike in Step 6.
-- **Residual risk:** Very large subtrees (a session spawning hundreds of subprocesses) still cost a proportional walk.
+**Risk R04: `CODE_OUTPUT` trait conversion** {#r04-code-output-conversion}
 
-**Risk R02: PID reuse** {#r02-pid-reuse}
+- **Risk:** `CODE_OUTPUT` bundles the shared `ReplayBuffer`, cross-session broadcast (deck-filtered, [D06]/[D11]), the merger fan-in, and `CODE_INPUT` `InputOwnership` keyed by `Some(tug_session_id)`. A botched conversion could leak frames across sessions or break lag recovery.
+- **Mitigation:** It is the **last** conversion (Step 4), after `SessionScopedFeed` is proven on `SESSION_STATE`/`SESSION_SIDEBAND`; `SessionScopedFeed` preserves splice + replay-buffer + input-ownership semantics exactly; the Step-4 checkpoint drives two concurrent sessions plus a forced lag and asserts isolation + replay recovery.
+- **Residual:** Bounded to Step 4; any regression fails the checkpoint before commit.
 
-- **Risk:** The OS reuses a dead session's PID for an unrelated process, misattributing its CPU.
-- **Mitigation:** Clear the captured PID on session close ([P08]); the sampler skips sessions with no live PID and reports zero when the root process is gone.
-- **Residual risk:** A brief misread in the window between death and cleanup; bounded to one sample.
+**Risk R05: Refactor blast radius** {#r05-refactor-blast-radius}
+
+- **Risk:** Trait-mediating every feed touches terminal/fs/ft/git/session/code producers.
+- **Mitigation:** Safest-first sequence (already-trait feeds → `SESSION_STATE` → `SESSION_SIDEBAND` → `CODE_OUTPUT`); each conversion is behavior-neutral with its own parity checkpoint; Step 5 asserts no raw bypass remains.
+- **Residual:** Schedule cost — the feature (Part B) does not start until the foundation lands.
 
 ---
 
@@ -160,205 +163,192 @@ Anchors are explicit and kebab-case; plan-local decisions use `[P01]`; steps cit
 
 #### [P01] App-scoped `SessionActivityStore` keyed by session id (DECIDED) {#p01-app-scoped-store}
 
-**Decision:** Introduce a single app-scoped `SessionActivityStore` keyed by `tug_session_id`, mirroring `PulseStore`'s app-scope, rather than hanging meters off each `CodeSessionStore`.
+**Decision:** One app-scoped store keyed by `tug_session_id` (mirroring `PulseStore`), holding per-channel meters; fed by one `ACTIVITY` subscription.
 
-**Rationale:**
-- Multiple consumers — the compact strip, the expanded Activity card, and the Dev panel — must read a session's activity **without** holding that session's frame router.
-- Both producer kinds converge cleanly: per-session `CodeSessionStore` instances push deck-local channels with `this.tugSessionId`; a single frame subscription pushes OS channels tagged with `tug_session_id`.
+**Rationale:** The compact strip, the Activity card, and the Dev panel read a session's activity without holding its router.
 
-**Implications:** A getter `getSessionActivityStore()` (like `getPulseStore()`); `CodeSessionStore` no longer owns `throughputMeter`; consumers depend on the store, not the router.
+#### [P02] Channels + rate/gauge aggregation (DECIDED) {#p02-channels}
 
-#### [P02] Multi-channel model: one `ActivityMeter` per channel + descriptor (DECIDED) {#p02-channels}
+**Decision:** `text | tokens | tools | subagents` (rate) and `cpu | memory | disk` (gauge). Each has an `ActivityMeter` + descriptor `{unit, hue, fullScale, curve, kind}`. `rate` channels sum the rolling window to a per-second rate; `gauge` channels plot the latest bin value. Channels may be absent.
 
-**Decision:** Model activity as a fixed enum of channels — `text | tokens | tools | subagents | cpu | memory | disk` — each backed by its own `ActivityMeter` (the generalized `ThroughputMeter`: fixed-width rolling bins retaining raw units) plus a static descriptor `{ unit, hue, fullScale, curve }`.
+**Rationale:** CPU%/bytes-per-sec are already rates/levels — summing them over the window would over-count; the distinction lives in the descriptor.
 
-**Rationale:**
-- The existing meter already retains raw units per bin; generalizing it costs a rename and a descriptor.
-- Channels may be **absent** (OS channels on non-macOS, or before the resource feed connects); consumers iterate live channels rather than assuming all seven.
+#### [P03] High-churn series out of React state (DECIDED) {#p03-out-of-react}
 
-**Implications:** New `activity-meter.ts` (generalizes `throughput-meter.ts`); `SessionActivityStore` lazily creates channels on first `record`; the descriptor is the single place hue/scale/curve live.
-
-#### [P03] High-churn series stay out of React state (DECIDED) {#p03-out-of-react}
-
-**Decision:** Series data is read imperatively (`store.series(session, channel, nowMs)`) on the consumer's own timer and painted straight to SVG; only the `enabled` flag and the set of live channels pass through `useSyncExternalStore`.
-
-**Rationale:** Follows the current `throughputMeter` design and [L02]/[L06] — 4 Hz+ updates must never drive React re-renders.
-
-**Implications:** The store exposes plain methods for series/raw/dominant/intensity (not snapshot fields) and a small snapshot for enabled/channel-membership only.
+**Decision:** Series read imperatively on the consumer's timer, painted to SVG; only `enabled`/membership go through `useSyncExternalStore` ([L02], [L06]).
 
 #### [P04] Composite for compact, per-channel for expanded (DECIDED) {#p04-composite-vs-channels}
 
-**Decision:** The store exposes both `compositeSeries(session, nowMs)` (a normalized, weighted max/sum across channels, clamped) for the compact one-line view and `series(session, channel, nowMs)` + `raw(session, channel)` for the expanded per-channel view.
-
-**Rationale:** The compact strip needs one always-alive line; the expanded card needs the breakdown. Computing both in the store keeps consumers dumb.
-
-**Implications:** `intensity()` (scalar 0..1 headline) and `dominant()` (argmax channel) are derived in the store, not the view.
+**Decision:** Store exposes `compositeSeries`/`intensity`/`dominant` (compact) and `series`/`raw` per channel (expanded).
 
 #### [P05] Color by dominant channel via CSS data-attribute (DECIDED) {#p05-color-by-dominant}
 
-**Decision:** `TugSparkline` takes an optional `getColorChannel(nowMs)` callback and, during its existing sample loop, stamps a `data-activity-channel` attribute on its root; theme CSS maps that attribute to a hue token. Dominant selection uses hysteresis to avoid flicker.
-
-**Rationale:** Appearance stays in CSS/DOM, not React state ([L06]); the sparkline already runs a timer, so no new loop; theme hues live in the theme-engine token files.
-
-**Implications:** New per-channel hue tokens in `tugdeck/styles/themes/*.css`; `TugSparkline` gains a color hook but stays data-source agnostic.
+**Decision:** `TugSparkline` stamps `data-activity-channel` from `getColorChannel(nowMs)` in its sample loop; theme CSS maps to a hue; dominant uses hysteresis.
 
 #### [P06] Token velocity from `output_tokens` delta per `msg_id` (DECIDED) {#p06-token-velocity}
 
-**Decision:** The `tokens` channel records `max(0, output_tokens − last[msg_id])` per `streaming_usage` frame, seeding `last[msg_id]` on first sight of a new message id. See [Q01].
+**Decision:** `tokens` records `max(0, output_tokens − last[msg_id])`, computed **in tugcode** ([P13]).
 
-**Rationale:** `output_tokens` is cumulative within a message and authoritative; it fires between tool rounds and during textless thinking — exactly the flatline cases.
+#### [P07] Tool/subagent cadence as decaying bursts (DECIDED) {#p07-cadence}
 
-**Implications:** `recordThroughput` tracks a small `msg_id → lastOutputTokens` map; replaces the fixed `STREAMING_USAGE_UNITS` pip.
-
-#### [P07] Tool/subagent cadence as burst records that decay in the window (DECIDED) {#p07-cadence}
-
-**Decision:** Each `tool_use` / `tool_result` / `task_progress` records a fixed unit burst into `tools` (foreground) or `subagents` (has `parent_tool_use_id`); the meter's rolling window makes a flurry of calls read as a hump that decays naturally.
-
-**Rationale:** No separate decay logic needed — the fixed-window meter already fades old bins. A burst of rapid skill/subagent calls becomes visible activity.
-
-**Implications:** Replaces the per-event fixed pips currently collapsed into the single throughput meter; weights tuned per channel via the descriptor `fullScale`.
+**Decision:** Each `tool_use`/`tool_result`/`task_progress` records a fixed unit burst into `tools` (foreground) or `subagents` (`parent_tool_use_id`), computed in tugcode; the rolling window decays it.
 
 #### [P08] OS attribution roots at the tugcode child PID subtree (DECIDED) {#p08-pid-subtree}
 
-**Decision:** Per-session OS sampling walks the PID subtree rooted at the session's **tugcode** child process (which tugcast spawns), summing over claude and all Bash tool subprocesses.
+**Decision:** Sample the PID subtree rooted at the session's tugcode child (claude + Bash subprocesses), enumerated by `sysinfo` `parent()` links.
 
-**Rationale:** The subtree is exactly "what this session did," is session-scoped by process parentage (not cwd — satisfying the hard requirement), and tugcast already spawns that child so it can retain the PID. pgid cannot distinguish sessions (tugcast shares one group). Rooting at tugcode (vs claude) avoids an extra PID lookup; bridge overhead is negligible and can be refined later.
+**Rationale:** Session-scoped by parentage, not cwd; pgid can't distinguish sessions; tugcast spawns that child.
 
-**Implications:** `AgentSupervisor` must retain the spawned child PID per session (currently discarded); the sampler reads the session registry.
+#### [P09] OS signals ride the unified `ACTIVITY` feed (DECIDED) {#p09-unified-feed}
 
-#### [P09] New `SESSION_RESOURCE` feed, per-session, tagged by session id (DECIDED) {#p09-resource-feed}
+**Decision:** CPU/memory/disk are additional producers onto `ACTIVITY` (no separate resource feed).
 
-**Decision:** Add `FeedId::SESSION_RESOURCE = 0x81` (tugcast_core + `protocol.ts` mirror) carrying `{ tug_session_id, cpu_pct, rss_bytes, disk_read_bps, disk_write_bps, sampled_at }`; the deck `FeedStore` session filter routes it like `CODE_OUTPUT`/`PULSE`.
+#### [P10] Sampler is a dedicated task feeding `ACTIVITY`, not a `StatCollector` (DECIDED) {#p10-sampler-task}
 
-**Rationale:** The existing `STATS` framework is process-global (samples tugcast itself); per-session data needs its own feed carrying the session tag. `0x81` sits next to `PULSE` (`0x80`).
-
-**Implications:** New `parseSessionResourceFrame` in `protocol.ts`; the resource sampler broadcasts frames, not a `StatSnapshot` aggregate.
-
-#### [P10] Resource sampler is a dedicated per-session task, not a global `StatCollector` (DECIDED) {#p10-sampler-task}
-
-**Decision:** Implement the sampler as a dedicated task (new `feeds/session_resource.rs`) with a handle to the `AgentSupervisor` session registry, iterating live sessions each tick — not as a `StatCollector` (which is single-process by contract).
-
-**Rationale:** `StatCollector::collect()` has no session context; per-session sampling needs the registry and emits one frame per session.
-
-**Implications:** Wired where `StatsRunner` is spawned; shares one `sysinfo::System`; honors the cancellation token.
+**Decision:** A task with a handle to the session registry iterates live sessions; its gauge samples are published on `ACTIVITY` via `SessionScopedFeed`.
 
 #### [P11] Disk I/O via `libc::proc_pid_rusage(RUSAGE_INFO_V2)` (DECIDED) {#p11-disk-rusage}
 
-**Decision:** Read per-PID disk bytes on macOS via a small `libc` binding to `proc_pid_rusage` (`ri_diskio_bytesread` / `ri_diskio_byteswritten`), summed over the subtree and differenced across ticks to a bytes/sec rate.
+**Decision:** macOS per-PID disk bytes summed over the subtree, differenced across ticks to bytes/sec; zero elsewhere.
 
-**Rationale:** `sysinfo`'s per-process disk API is Linux-oriented; `proc_pid_rusage` is the reliable macOS source. `libc` is already a dependency.
+#### [P12] First expanded rep is small-multiples (DECIDED) {#p12-activity-card}
 
-**Implications:** A `#[cfg(target_os = "macos")]` binding; disk fields are `Option`/zero on other platforms ([Q03]).
+**Decision:** The Activity card renders one labeled `TugSparkline` + raw readout per live channel; stacked bands are a follow-on.
 
-#### [P12] First expanded rep is small-multiples; stacked bands are follow-on (DECIDED) {#p12-activity-card}
+#### [P13] Single authoritative interpreter: tugcode emits `activity_delta` (DECIDED) {#p13-single-interpreter}
 
-**Decision:** The Activity card renders one labeled `TugSparkline` + raw readout (`raw()`) per live channel (small-multiples), reusing the primitive. Overlaid stacked-band single-SVG rendering is a follow-on.
+**Decision:** All stream-derived channels are counted **only** in tugcode's `dispatchEventToTurn` (the one existing parser), accumulated in `ActiveTurn`, and emitted as `activity_delta` frames; tugcast diverts them onto `ACTIVITY` (as it rewraps `SESSION_SIDEBAND`); the deck records. The deck's `recordThroughput` is deleted.
 
-**Rationale:** Small-multiples reuse the existing sparkline and land the "larger representation" quickly; stacked bands are a rendering refinement over the same API.
+**Rationale:** Eliminates the two-interpreters drift risk at the source ([Q05]); makes the activity model a wire contract any consumer can tap; kills per-card recompute. tugcode already owns the frame semantics, so the counting has one home.
 
-**Implications:** New `activity-card.tsx`/`.css`; no new data plumbing beyond the store API.
+**Implications:** New `activity_delta` `OutboundMessage` (no outbound allowlist to satisfy); tugcast gains a divert branch in `merger_task`; the deck reducer is untouched (it keeps full semantic reduction; it just stops counting).
+
+#### [P14] `SessionScopedFeed` — a real, router-integrated abstraction (DECIDED) {#p14-session-scoped-feed}
+
+**Decision:** Introduce `SessionScopedFeed` as a first-class, router-integrated trait/registration (not just helper fns): it owns splice-on-emit (generalizing `splice_tug_session_id`), the merger fan-in registration, and the per-feed lag policy / replay buffer; the deck counterpart is `subscribeSessionFeed` (a `FeedStore` wrapper carrying the `d.tug_session_id === session` predicate). `ACTIVITY` is a native client; `SESSION_STATE`/`SESSION_SIDEBAND`/`CODE_OUTPUT` are converted onto it.
+
+**Rationale:** The existing `StreamFeed`/`SnapshotFeed` traits have no room for session tagging, fan-in, or replay — which is exactly why the big feeds bypass them. This is the shape that lets the trait layer actually mediate per-session feeds.
+
+#### [P15] `ACTIVITY` frame = binned per-session channel-sample; no ledger (DECIDED) {#p15-frame-shape}
+
+**Decision:** tugcode emits one `activity_delta` per active turn per 250 ms bin: `{ type, channels: { <channel>: units } }`; tugcast splices `tug_session_id` and re-tags it `ACTIVITY`; the deck maps it 1:1 to `store.record`. Ephemeral — no SQLite ledger, no `list_*` CONTROL verb; a reconnecting deck starts fresh (the sparkline seeds a flat baseline).
+
+#### [P16] Fresh `FeedId::ACTIVITY = 0x42` (DECIDED) {#p16-feed-byte}
+
+**Decision:** Allocate `0x42` (adjacent to `CODE_OUTPUT 0x40`/`CODE_INPUT 0x41`, apt for a code-derived feed); Rust const + `name()` + byte test, TS mirror. Reserved `SHELL`/`TUG_FEED` bytes untouched.
+
+#### [P17] Transport: session-tagged broadcast, `LagPolicy::Warn`, self-healing (DECIDED) {#p17-transport}
+
+**Decision:** `ACTIVITY` is a broadcast `SessionScopedFeed` with `LagPolicy::Warn`. The deck needs the sample *stream* (not a latest-only watch). Volume is low (≤4 Hz/session + 1 Hz OS); a dropped rate-bin is a negligible gap and a dropped gauge self-heals on the next tick.
+
+#### [P19] Trait-mediated registration; no feed bypasses the abstraction (DECIDED) {#p19-trait-mediated}
+
+**Decision:** Every server→client feed registers through a trait-mediated API — `StreamFeed` (app/workspace broadcast), `SnapshotFeed` (watch), or `SessionScopedFeed` (per-session) — reconciling `FileTree`'s signature and routing `StatCollector`'s registration through the same surface. No feed pushes onto a raw `broadcast::Sender` outside the abstraction.
+
+**Rationale:** The user-visible debt is a dead trait layer bypassed by the real feeds; the fix is to make the layer actually carry every feed.
+
+**Implications:** `LagPolicy` and any replay buffer become feed-owned; the router holds/spawns feeds through the registration; conversions are sequenced safest-first ([R05]).
+
+#### [P20] PID-reuse elimination via `(pid, start_time)` (DECIDED) {#p20-pid-start-time}
+
+**Decision:** Capture the tugcode child's `(pid, start_time)` at spawn; the sampler validates the live process's `start_time()` equals the captured value before attributing any subtree, and treats a mismatch/missing process as zero.
+
+**Rationale:** A reused PID has a different start time, so this reduces misattribution to nil rather than tracking it as a risk.
+
+#### [P21] Cutover parity by construction (DECIDED) {#p21-parity}
+
+**Decision:** The counting logic is **relocated whole** from the deck's `recordThroughput` into tugcode (same field reads, same units), and pinned by a tugcode fixture unit test replaying captured `CODE_OUTPUT` and asserting per-channel units — before the deck path is deleted. The producer is verified on the wire (Step 8) before the consumer cutover (Step 9).
 
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
 
+#### tugcast usage, debt, and remedies {#tugcast-usage}
+
+- **Debt remedied:** the dead `StreamFeed`/`SnapshotFeed` traits and the per-session splice+filter duplication. Part A makes registration trait-mediated ([P19]) and adds `SessionScopedFeed` ([P14]) so per-session feeds stop reinventing tagging; `ACTIVITY` is the first native client and `SESSION_STATE`/`SESSION_SIDEBAND`/`CODE_OUTPUT` are converted onto it.
+- **Used well:** the open `u8` namespace ([P16]); the `merger_task` type-divert precedent ([P13]); broadcast transport for a sample stream ([P17]).
+- **Deliberately not merged:** `StatCollector` stays a distinct model (its registration surface is unified, its trait is not) — merging it into `SnapshotFeed` is over-reach ([P19] non-goal).
+- **Deliberately skipped:** ledger + CONTROL hydration — activity is ephemeral ([P15]).
+
 #### End-to-end data flow {#data-flow}
 
 ```
-PRODUCERS                          SessionActivityStore (app-scoped [P01])         CONSUMERS
-─────────                          ───────────────────────────────────────        ─────────
-CodeSessionStore.recordThroughput  Map<tugSessionId, SessionActivity>              DevPulseStrip (compact):
-  (per-session, CODE_OUTPUT tap)     SessionActivity = Map<channel, ActivityMeter>   getSeries → compositeSeries()
-  → text  (partial deltas)           + descriptors {unit,hue,fullScale,curve}        getColorChannel → dominant()
-  → tokens(output_tokens delta)    ── derived ──────────────────────────────       Activity card (expanded [P12]):
-  → tools (event bursts)             series(s,ch,now)   raw(s,ch)                     per-channel series() + raw()
-  → subagents(parent bursts)         compositeSeries(s,now)  intensity(s,now)        TugDevPanel telemetry (raw)
-                                      dominant(s,now)  channels(s)
-conn.onFrame(SESSION_RESOURCE)      ─────────────────────────────────────────
-  (app-scoped, [P09])                snapshot (useSyncExternalStore [P03]):
-  → cpu / memory / disk              { enabled, sessions→channel-membership }
+tugcode (SINGLE interpreter [P13])          tugcast (routes)              deck (pure consumer)
+─────────────────────────────────          ───────────────              ────────────────────
+dispatchEventToTurn → ActiveTurn bin        merger_task diverts          subscribeSessionFeed [P14]
+  text/tokens/tools/subagents               activity_delta → ACTIVITY     → store.record(session,
+  → activity_delta (250ms) [Q06,P15]        (splice tug_session_id)          channel, units, at) [P15]
+                                     ┌─ FeedId::ACTIVITY 0x42 ─┐          descriptors/composite/dominant
+OS subtree sampler [P08,P10,P11,P20] ┘  (SessionScopedFeed [P14])         → DevPulseStrip (compact)
+  cpu/memory/disk (gauge [P02])                                          → Activity card (expanded [P12])
 ```
 
-#### Process tree and session attribution {#process-tree}
+#### Process tree and attribution {#process-tree}
 
 ```
-tugexec → tugcast (own pgid; setpgid) → tugcode (one per session; tugcast spawns) → claude → bash tool subprocesses
+tugexec → tugcast → tugcode (per session; tugcast spawns) → claude → bash subprocesses
 ```
 
-- Root the subtree at the tugcode child PID ([P08]). tugcast currently type-erases and drops that child handle; Step 5 retains `child.id()` in the session registry.
-- Reconstruct the subtree via `sysinfo` parent-PID links from the root PID; sum `cpu_usage()`, `memory()`, and `proc_pid_rusage` disk bytes over it.
-- Two sessions in one directory are distinct subtrees → clean separation (the whole point).
+Root at the tugcode child `(pid, start_time)` ([P08], [P20]); enumerate the subtree via `sysinfo` `parent()`; sum cpu/memory/disk. Two same-directory sessions are distinct subtrees.
 
 ---
 
 ### Specification {#specification}
 
-#### Public API surface — `SessionActivityStore` (deck) {#public-api}
-
-**Spec S01: SessionActivityStore** {#s01-store-api}
+#### Spec S01: SessionActivityStore (deck) {#s01-store-api}
 
 ```ts
-type ActivityChannel =
-  | "text" | "tokens" | "tools" | "subagents"   // deck-local producers
-  | "cpu"  | "memory" | "disk";                  // SESSION_RESOURCE feed
-
-interface ActivityChannelDescriptor {
-  unit: "chars/s" | "tok/s" | "events" | "%cpu" | "bytes" | "bytes/s";
-  hue: string;          // theme-token name → CSS maps data-activity-channel
-  fullScale: number;    // rate at full height (per rolling window)
-  curve: SparklineCurve;
-}
-
+type ActivityChannel = "text"|"tokens"|"tools"|"subagents"|"cpu"|"memory"|"disk";
+interface ActivityChannelDescriptor { unit: string; hue: string; fullScale: number; curve: SparklineCurve; kind: "rate"|"gauge"; }
 class SessionActivityStore {
-  record(session: string, channel: ActivityChannel, units: number, atMs: number): void;
-  series(session: string, channel: ActivityChannel, nowMs: number): number[]; // oldest→newest
-  raw(session: string, channel: ActivityChannel): { value: number; unit: string } | null;
-  compositeSeries(session: string, nowMs: number): number[]; // normalized max across channels [P04]
-  intensity(session: string, nowMs: number): number;         // scalar 0..1 headline
-  dominant(session: string, nowMs: number): ActivityChannel | null; // hysteretic [P05]
-  channels(session: string): ActivityChannel[];              // live channels only
-  clearSession(session: string): void;                       // on session close [R02]
-  subscribe(cb: () => void): () => void;                     // membership/enabled only [P03]
-  getSnapshot(): { enabled: boolean; sessions: ReadonlyMap<string, readonly ActivityChannel[]> };
+  record(session, channel, units, atMs): void;         // 1:1 with ACTIVITY frame [P15]
+  series(session, channel, nowMs): number[];           // aggregated per kind [P02]
+  raw(session, channel): { value; unit } | null;
+  compositeSeries(session, nowMs): number[]; intensity(session, nowMs): number; dominant(session, nowMs): ActivityChannel|null;
+  channels(session): ActivityChannel[]; clearSession(session): void;
+  subscribe(cb): () => void; getSnapshot(): { enabled; sessions };  // membership/enabled only [P03]
 }
 ```
 
-- `series`/`compositeSeries`/`raw`/`intensity`/`dominant` are **plain methods**, read off React's render path ([P03]).
-- Composite = per-sample max of each channel's normalized rate (`curve(sum/fullScale)` clamped), so silence reads flat and any active channel keeps the line up.
-
-#### Output schema — `SESSION_RESOURCE` wire frame {#resource-wire}
-
-**Spec S02: SESSION_RESOURCE payload** {#s02-resource-payload}
+#### Spec S02: ACTIVITY wire frame {#s02-activity-payload}
 
 ```jsonc
-{
-  "tug_session_id": "c745a4d7…",
-  "cpu_pct": 143.2,          // sum over subtree; may exceed 100 (multi-core)
-  "rss_bytes": 512000000,    // resident set of the subtree
-  "disk_read_bps": 10485760, // bytes/sec since last sample (macOS; 0 elsewhere)
-  "disk_write_bps": 2097152,
-  "sampled_at": "2026-07-01T19:02:57Z"
-}
+// from tugcode as activity_delta; tugcast splices tug_session_id + re-tags FeedId::ACTIVITY
+{ "tug_session_id": "c745a4d7…", "at": "…", "channels": {
+  "text": 312, "tokens": 47, "tools": 1,               // rate: accumulated this bin
+  "cpu_pct": 143.2, "rss_bytes": 512000000,            // gauge (from cast sampler)
+  "disk_read_bps": 10485760, "disk_write_bps": 2097152 } }
 ```
 
-`FeedId::SESSION_RESOURCE = 0x81` (Rust `tugcast_core` + `protocol.ts` mirror). Parsed by `parseSessionResourceFrame`; routed by the existing session filter.
+`FeedId::ACTIVITY = 0x42` (Rust + TS mirror). Parsed by `parseActivityFrame`; routed by `subscribeSessionFeed`.
 
-#### Terminology {#terminology}
+#### Spec S03: SessionScopedFeed {#s03-session-scoped-feed}
 
-- **Channel** — one measured dimension of session activity ([P02]).
-- **Composite intensity** — normalized cross-channel headline for the compact line ([P04]).
-- **Dominant channel** — the channel leading the current window; drives fill color ([P05]).
-- **Subtree** — the process tree rooted at the session's tugcode child ([P08]).
+- **Cast:** a router-integrated abstraction owning splice-on-emit (generalizing `splice_tug_session_id`), merger fan-in registration, and per-feed lag policy / replay buffer. `SESSION_STATE`/`SESSION_SIDEBAND`/`CODE_OUTPUT`/`ACTIVITY` are clients.
+- **Deck:** `subscribeSessionFeed(conn, feedId, sessionId, onSample)` — a `FeedStore` wrapper with the `d.tug_session_id === sessionId` predicate.
+- **Test:** producers for sessions A/B; two consumers each receive only their own frames.
+
+#### Spec S04: tugcode `activity_delta` counting {#s04-counting}
+
+Relocated from the deck's `recordThroughput`, same field reads/units, computed in `dispatchEventToTurn`, accumulated in `ActiveTurn`:
+
+| Frame | Read | Units → channel |
+|---|---|---|
+| `assistant_text`/`thinking_text` (partial) | `text.length` | → `text` |
+| `streaming_usage` | `output_tokens` Δ per `msg_id` | → `tokens` |
+| `tool_use` (has `parent_tool_use_id`) | fixed burst, dedupe by id | → `subagents` |
+| `tool_use`/`tool_result`/`task_progress` (foreground) | fixed burst / capped output len | → `tools` |
+
+Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture test ([P21]).
 
 #### State Zone Mapping (tugdeck/tugways) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| Per-channel series / composite / intensity | local-data (high-churn) | imperative store methods; read on the consumer's timer, painted to SVG | [L02], [L06], [P03] |
-| Dominant-channel fill color | appearance | `data-activity-channel` attr stamped in the sparkline sample loop; theme CSS maps to hue | [L06], [P05] |
-| `enabled` flag + live-channel membership | local-data (low-churn) | store snapshot via `useSyncExternalStore` | [L02] |
-| Activity card layout / channel rows | structure | React render from `channels()` | [L02] |
-| Sparkline scroll | appearance/motion | WAAPI translateX (unchanged) | [L13] |
+| Per-channel series / composite / intensity | local-data (high-churn) | imperative store methods; read on timer; painted to SVG | [L02], [L06], [P03] |
+| Dominant-channel fill color | appearance | `data-activity-channel` stamped in sample loop; theme CSS | [L06], [P05] |
+| `enabled` + channel membership | local-data (low-churn) | store snapshot via `useSyncExternalStore` | [L02] |
+| Activity card rows | structure | React render from `channels()` | [L02] |
 
 ---
 
@@ -368,345 +358,441 @@ class SessionActivityStore {
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/lib/activity-meter.ts` | Generalized rolling-bin meter (evolves `throughput-meter.ts`) |
-| `tugdeck/src/lib/session-activity-store.ts` | App-scoped multi-channel store + descriptors + hooks ([P01], [P02]) |
-| `tugdeck/src/components/tugways/cards/activity-card.tsx` (+ `.css`) | Expanded small-multiples consumer ([P12]) |
-| `tugrust/crates/tugcast/src/feeds/session_resource.rs` | Per-session PID-subtree resource sampler ([P10]) |
+| `tugcast/src/feeds/session_scoped.rs` | `SessionScopedFeed` abstraction + producer ([P14], Spec S03) |
+| `tugcast/src/feeds/activity/mod.rs` | `ACTIVITY` feed producer + OS-sampler integration ([P09]) |
+| `tugcast/src/feeds/activity/resource.rs` | OS subtree sampler, `(pid,start_time)` guard ([P10], [P11], [P20]) |
+| `tugdeck/src/lib/session-feed.ts` | `subscribeSessionFeed` consumer helper ([P14]) |
+| `tugdeck/src/lib/activity-meter.ts` | Rate/gauge rolling-bin meter ([P02]) |
+| `tugdeck/src/lib/session-activity-store.ts` | App-scoped store ([P01], Spec S01) |
+| `tugdeck/src/components/tugways/cards/activity-card.tsx` (+ `.css`) | Expanded consumer ([P12]) |
 
 #### Symbols to add / modify {#symbols}
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `ActivityMeter` | class | `lib/activity-meter.ts` | Generalized `ThroughputMeter`; raw-unit bins + descriptor |
-| `SessionActivityStore`, `getSessionActivityStore` | class/fn | `lib/session-activity-store.ts` | Spec S01 |
-| `ActivityChannel`, `ActivityChannelDescriptor` | type | `lib/session-activity-store.ts` | [P02] |
-| `recordThroughput` | method | `lib/code-session-store.ts` | Route to channels; drop `throughputMeter` field ([P06], [P07]) |
-| `DevPulseStrip` | component | `cards/dev-pulse-strip.tsx` | Consume composite + dominant color ([P04], [P05]) |
-| `TugSparkline` | component | `tugways/tug-sparkline.tsx` | Add `getColorChannel`; stamp `data-activity-channel` ([P05]) |
-| `FeedId::SESSION_RESOURCE` | enum variant | tugcast_core + `tugdeck/src/protocol.ts` | `0x81` ([P09]) |
-| `parseSessionResourceFrame` | fn | `tugdeck/src/protocol.ts` | Spec S02 |
-| `SessionEntry.child` (PID) | field | tugcast `agent_supervisor.rs` / `agent_bridge.rs` | Populate the currently-dead field ([P08]) |
-| `SessionResourceSampler` | struct/task | `feeds/session_resource.rs` | Subtree walk; CPU/mem/disk ([P10], [P11]) |
-| `proc_pid_rusage` binding | fn | `feeds/session_resource.rs` (`#[cfg(macos)]`) | Disk bytes ([P11]) |
-| activity-channel hue tokens | CSS | `tugdeck/styles/themes/*.css` | Per-channel hues ([P05]) |
-| Voice tool cases | fn | `tugcode/src/pulse/voice.ts` | Skills / AskUserQuestion / generic fallback |
+| `SessionScopedFeed` + registration | trait/API | `feeds/session_scoped.rs`, `router.rs` | [P14], [P19] |
+| feed registrations | wiring | `main.rs`, `workspace_registry.rs`, `agent_supervisor.rs` | Convert TERMINAL/FS/FT/GIT/SESSION_STATE/SESSION_SIDEBAND/CODE_OUTPUT ([P19]) |
+| `FeedId::ACTIVITY` | const `0x42` | `tugcast-core/protocol.rs` + `name()` + test; `tugdeck/protocol.ts` | [P16] |
+| `ActivityDelta` | interface + union member | `tugcode/types.ts` | [P13], no outbound guard |
+| `ActiveTurn` activity bin + flush | fields/method + `setInterval` | `tugcode/session.ts` (`dispatchEventToTurn`, `SessionManager`) | Spec S04, [Q06] |
+| `activity_delta` divert | branch | `agent_supervisor.rs` `merger_task` | [P13] |
+| `(pid, start_time)` capture | field | `agent_bridge.rs`/`agent_supervisor.rs` `SessionEntry` | [P20] |
+| `proc_pid_rusage` binding | fn `#[cfg(macos)]` | `feeds/activity/resource.rs` | [P11] |
+| `SessionActivityStore`/`ActivityMeter`/`ActivityChannel` | class/type | deck `lib/*` | Spec S01, [P02] |
+| `parseActivityFrame` | fn | `tugdeck/protocol.ts` | Spec S02 |
+| `recordThroughput`, `throughputMeter`, unit consts, `_toolInputBytes`, `_subagentToolSeen`, `ThroughputMeter` | **delete** | `code-session-store.ts`, `throughput-meter.ts` | [P13] |
+| `DevPulseStrip` / `TugSparkline` | component | deck | composite + `getColorChannel` ([P04], [P05]) |
+| activity-channel hue tokens | CSS | `styles/themes/*.css` | [P05] |
+| Voice tool cases | fn | `tugcode/src/pulse/voice.ts` | skills/AskUserQuestion/generic |
 
 ---
 
 ### Test Plan Concepts {#test-plan-concepts}
 
-#### Test Categories {#test-categories}
-
 | Category | Purpose | When |
 |----------|---------|------|
-| **Unit** | `ActivityMeter` bin math; `SessionActivityStore` record/series/composite/intensity/dominant; token-delta per `msg_id`; hysteresis | Core logic |
-| **Unit (Rust)** | `session_resource` subtree sum; `proc_pid_rusage` binding returns bytes; PID-capture populates registry | Backend logic |
-| **Contract** | `SESSION_RESOURCE` frame round-trips through `parseSessionResourceFrame` (Spec S02) | Wire schema |
-| **Real-app (verify)** | Skill / AskUserQuestion drive the line; two-session CPU isolation; color shifts | End-to-end |
+| **Unit (Rust)** | `SessionScopedFeed` round-trip routing; per-feed conversion parity; subtree sum; `(pid,start_time)` reuse rejection; `proc_pid_rusage` | Foundation + OS |
+| **Unit (tugcode)** | `activity_delta` counting vs fixtures ([P21], Spec S04); flush/bin behavior; `suppressEmit` gating | Single-interpreter |
+| **Unit (deck)** | `ActivityMeter` rate vs gauge; store record/series/composite/dominant/hysteresis | Presentation |
+| **Contract** | `ACTIVITY` round-trips `parseActivityFrame` (Spec S02) | Wire |
+| **Real-app (verify)** | Flatlines fixed; two-session CPU + PID-reuse isolation; color; `CODE_OUTPUT` isolation + replay recovery after conversion | End-to-end |
 
-#### What stays out of tests {#test-non-goals}
-
-- No jsdom render tests of `DevPulseStrip`/`TugSparkline`/`activity-card` — banned pattern; verified in the real app instead ([real-not-fake]).
-- No mock-store assertion tests — the store is exercised with real constructed sample sequences, and end-to-end in the app.
-- Linux disk I/O — deferred ([Q03]); not tested.
+**Out of tests:** jsdom render tests; mock-store assertions; Linux disk ([Q03]).
 
 ---
 
 ### Execution Steps {#execution-steps}
 
-> Commit after all checkpoints pass. Deck changes verify with `bunx vite build`; Rust with `cargo nextest run` (warnings are errors).
+> Commit after checkpoints pass. Deck: `bunx vite build`. Rust: `cargo nextest run`. tugcode: rebuild the binary.
 
 #### Step Status Ledger {#step-status-ledger}
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Activity substrate; port throughput to `text` | pending | — |
-| #step-2 | Deck-local channels: tokens, tools, subagents | pending | — |
-| #step-3 | Compact view: dominant color + composite intensity | pending | — |
-| #step-4 | Pulse labels: skills, AskUserQuestion, generic tool | pending | — |
-| #step-5 | Retain tugcode child PID per session | pending | — |
-| #step-6 | `SESSION_RESOURCE` feed + CPU/memory sampler | pending | — |
-| #step-7 | Consume `SESSION_RESOURCE` into cpu/memory channels | pending | — |
-| #step-8 | Session disk-I/O via `proc_pid_rusage` | pending | — |
-| #step-9 | Expanded Activity card | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Trait-mediated registration; convert TERMINAL/FS/FT/GIT | pending | — |
+| #step-2 | `SessionScopedFeed` + convert SESSION_STATE | pending | — |
+| #step-3 | Convert SESSION_SIDEBAND (rewrap-preserving) | pending | — |
+| #step-4 | Convert CODE_OUTPUT (replay + input-ownership) | pending | — |
+| #step-5 | Route STATS registration; foundation checkpoint | pending | — |
+| #step-6 | `FeedId::ACTIVITY` as a native SessionScopedFeed | pending | — |
+| #step-7 | tugcode `activity_delta` (single interpreter) | pending | — |
+| #step-8 | tugcast divert `activity_delta` → ACTIVITY | pending | — |
+| #step-9 | Deck store consumes ACTIVITY; delete deck derivation | pending | — |
+| #step-10 | Compact: dominant color + composite intensity | pending | — |
+| #step-11 | Retain `(pid, start_time)` per session | pending | — |
+| #step-12 | OS subtree sampler → CPU/memory into ACTIVITY | pending | — |
+| #step-13 | Disk I/O via `proc_pid_rusage` | pending | — |
+| #step-14 | Pulse labels: skills, AskUserQuestion, generic | pending | — |
+| #step-15 | Expanded Activity card | pending | — |
+| #step-16 | Integration checkpoint | pending | — |
 
-#### Step 1: Activity substrate; port throughput to `text` {#step-1}
+#### Step 1: Trait-mediated registration; convert TERMINAL/FS/FT/GIT {#step-1}
 
-**Commit:** `tugdeck(data-display): SessionActivityStore substrate; port throughput to text channel`
+**Commit:** `tugcast(feeds): trait-mediated feed registration; convert terminal/fs/filetree/git`
 
-**References:** [P01] app-scoped store, [P02] channels, [P03] out-of-React, [P04] composite, Spec S01, (#public-api, #data-flow)
+**References:** [P19] trait-mediated, Risk R05, (#tugcast-usage)
 
-**Artifacts:**
-- New `lib/activity-meter.ts` (generalize `throughput-meter.ts`), `lib/session-activity-store.ts`.
-- `code-session-store.ts`: `recordThroughput` routes the existing text/tool-input signals into `getSessionActivityStore().record(this.tugSessionId, "text", …)`; remove the `throughputMeter` field.
-- `dev-pulse-strip.tsx`: `getSeries` reads `store.compositeSeries(session, now)` (composite = text-only for now, so visually identical).
+**Artifacts:** a registration API where feeds self-register (lag policy feed-owned); `StreamFeed`/`SnapshotFeed` reconciled to carry the already-trait feeds through the router; `FileTree` signature reconciled (widen or a `WorkspaceScopedFeed` variant).
 
 **Tasks:**
-- [ ] Create `ActivityMeter` from `ThroughputMeter` (raw-unit bins + per-instance descriptor); keep the bin-width constant (rename `THROUGHPUT_BIN_MS` → `ACTIVITY_BIN_MS`, re-export for the strip).
-- [ ] Implement `SessionActivityStore` (Spec S01): lazy per-channel meters, `record`, `series`, `compositeSeries`, `intensity`, `dominant` (stub single-channel), `channels`, `clearSession`, `subscribe`/`getSnapshot`; add `getSessionActivityStore()`.
-- [ ] Move all current `throughputMeter.record(...)` calls to `store.record(session, "text", …)` (behavior-neutral: keep the same units for now); wire `clearSession` into session close.
-- [ ] Point `DevPulseStrip` at the store; delete the `throughputMeter` field.
+- [ ] Introduce the registration surface; move `LagPolicy` to feed-owned.
+- [ ] Convert TERMINAL (Bootstrap), FILESYSTEM, GIT; reconcile FILETREE (watch + response broadcast).
 
 **Tests:**
-- [ ] Unit: `ActivityMeter` bin advance/zero-fill/series matches the old `ThroughputMeter` tests.
-- [ ] Unit: `SessionActivityStore.record`/`series`/`compositeSeries` for a constructed sequence.
+- [ ] Unit: each converted feed still produces its frames through the API.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bunx vite build` succeeds.
-- [ ] `bun test` passes; the sparkline in the real app behaves as before for a Write-heavy turn (visual parity).
+- [ ] `cargo nextest run` passes; terminal/fs/filetree/git behave identically in the real app (`verify`).
 
 ---
 
-#### Step 2: Deck-local channels: tokens, tools, subagents {#step-2}
+#### Step 2: `SessionScopedFeed` + convert SESSION_STATE {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `tugdeck(data-display): token/tool/subagent activity channels`
+**Commit:** `tugcast(feeds): SessionScopedFeed abstraction; convert SESSION_STATE`
 
-**References:** [P06] token velocity, [P07] cadence, [Q01] resolved, (#terminology)
+**References:** [P14] abstraction, [P19], Spec S03, (#session-scoped-feed)
 
-**Artifacts:**
-- `recordThroughput` records: `tokens` from `streaming_usage.usage.output_tokens` delta per `msg_id`; `tools` from foreground `tool_use`/`tool_result`/`task_progress` bursts; `subagents` from `parent_tool_use_id` bursts. Removes the old fixed `STREAMING_USAGE_UNITS`/`SUBAGENT_ACTIVITY_UNITS` collapse into a single meter.
-- Channel descriptors (`fullScale`/hue/curve) for the four deck-local channels.
+**Artifacts:** `feeds/session_scoped.rs` (splice-on-emit + fan-in + lag policy); deck `subscribeSessionFeed`; SESSION_STATE converted (lowest-risk per-session feed).
 
 **Tasks:**
-- [ ] Add a `msg_id → lastOutputTokens` map; record `max(0, cur − last)`, seeding on new `msg_id` ([P06]).
-- [ ] Record tool/subagent/task bursts into the right channel ([P07]).
-- [ ] Tune per-channel `fullScale` so ordinary work uses the mid band (text ≈ current 1200 chars/s; tokens ≈ ~120 tok/s; tools/subagents burst-scaled).
+- [ ] Implement `SessionScopedFeed` generalizing `splice_tug_session_id`; integrate with router registration + merger fan-in.
+- [ ] Implement `subscribeSessionFeed` generalizing `acceptFrame`.
+- [ ] Convert SESSION_STATE onto it.
 
 **Tests:**
-- [ ] Unit: token-delta resets across `msg_id` and never goes negative.
-- [ ] Unit: N tool bursts within the window produce a decaying hump in `series("tools")`.
+- [ ] Unit (Rust): producers A/B; consumers each receive only their session (Spec S03).
+- [ ] Unit (deck): `subscribeSessionFeed` filters by session.
 
 **Checkpoint:**
-- [ ] `bunx vite build` + `bun test` pass.
-- [ ] Real app: `/tugplug:vet <file>` and a post-`AskUserQuestion` resume each visibly drive the sparkline off baseline (`verify` skill).
+- [ ] `cargo nextest run` + `bunx vite build` pass; session state parity in the real app.
 
 ---
 
-#### Step 3: Compact view: dominant color + composite intensity {#step-3}
+#### Step 3: Convert SESSION_SIDEBAND (rewrap-preserving) {#step-3}
 
 **Depends on:** #step-2
 
-**Commit:** `tugdeck(data-display): dominant-hued fill + composite intensity in pulse sparkline`
+**Commit:** `tugcast(feeds): convert SESSION_SIDEBAND onto SessionScopedFeed`
 
-**References:** [P04] composite, [P05] color-by-dominant, State Zone Mapping (#state-zone-mapping)
+**References:** [P14], [P19], Risk R05
 
-**Artifacts:**
-- `TugSparkline`: optional `getColorChannel(nowMs)`; stamps `data-activity-channel` on its root in the sample loop.
-- `dev-pulse-strip.tsx`: passes `getColorChannel = () => store.dominant(session, now)`; plots `compositeSeries`.
-- Per-channel hue tokens in `tugdeck/styles/themes/*.css`; sparkline line/area CSS reads them via the data-attribute.
+**Artifacts:** SESSION_SIDEBAND on `SessionScopedFeed`, preserving the `system_metadata`/`session_capabilities`/`rate_limit` rewrap **and** the retained-slot replay on reconnect.
 
 **Tasks:**
-- [ ] Add `getColorChannel` to `TugSparkline`; stamp the attribute imperatively ([L06]).
-- [ ] Implement `dominant()` hysteresis (keep current unless a challenger leads by a margin for K samples) ([R02]-adjacent flicker guard).
-- [ ] Add hue tokens to all six themes; validate with `bun run audit:theme-contrast`.
+- [ ] Move the merger rewrap + `latest_metadata` retention behind the abstraction without changing wire behavior.
 
 **Tests:**
-- [ ] Unit: `dominant()` hysteresis holds through a single-sample challenger and flips after a sustained lead.
+- [ ] Unit: the three sideband types still publish; retained slot replays on a fresh subscribe.
 
 **Checkpoint:**
-- [ ] `bunx vite build` + `bun run audit:theme-contrast` pass.
-- [ ] Real app: fill color differs between a thinking-heavy stretch and a Write-heavy stretch, with no strobing (`verify`).
+- [ ] `cargo nextest run` passes; metadata/capabilities/rate-limit still arrive and replay-on-reconnect intact (`verify`).
 
 ---
 
-#### Step 4: Pulse labels: skills, AskUserQuestion, generic tool {#step-4}
+#### Step 4: Convert CODE_OUTPUT (replay + input-ownership) {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `tugcast(feeds): convert CODE_OUTPUT onto SessionScopedFeed`
+
+**References:** [P14], [P19], Risk R04, (#r04-code-output-conversion)
+
+**Artifacts:** CODE_OUTPUT on `SessionScopedFeed`, preserving the shared `ReplayBuffer`, cross-session broadcast, merger fan-in, and `CODE_INPUT` `InputOwnership`.
+
+**Tasks:**
+- [ ] Move splice + replay buffer + fan-in behind the abstraction; keep input-ownership keying intact.
+
+**Tests:**
+- [ ] Unit: two sessions' frames stay isolated; a lagging client gets a replay bracket.
+
+**Checkpoint:**
+- [ ] `cargo nextest run` passes.
+- [ ] Real app: two concurrent sessions stay isolated; a forced lag recovers via replay ([R04]).
+
+---
+
+#### Step 5: Route STATS registration; foundation checkpoint {#step-5}
+
+**Depends on:** #step-1, #step-2, #step-3, #step-4
+
+**Commit:** `tugcast(feeds): route STATS through unified registration; assert no raw bypass`
+
+**References:** [P19] (StatCollector kept distinct), (#success-criteria)
+
+**Tasks:**
+- [ ] Route the STATS aggregate + individual feeds through the unified snapshot registration (StatCollector model unchanged).
+- [ ] Grep-assert no server→client feed pushes a raw `broadcast::Sender` outside the abstraction.
+
+**Tests:**
+- [ ] Aggregate: all pre-existing feeds behave identically (Part A is behavior-neutral).
+
+**Checkpoint:**
+- [ ] `cargo nextest run` + `bunx vite build`; full app smoke (`just app-test`) — no feed regressions.
+
+---
+
+#### Step 6: `FeedId::ACTIVITY` as a native SessionScopedFeed {#step-6}
+
+**Depends on:** #step-2
+
+**Commit:** `tugcast(data-display): ACTIVITY feed (0x42) as a native SessionScopedFeed`
+
+**References:** [P16] byte, [P14], [P17] transport, Spec S02
+
+**Artifacts:** `FeedId::ACTIVITY = 0x42` (Rust + `name()` + test; TS mirror); `feeds/activity/mod.rs` producer registered as a `SessionScopedFeed` (empty until Steps 8/12 feed it).
+
+**Tasks:**
+- [ ] Add the byte both sides; register the feed with `Warn` lag policy.
+
+**Tests:**
+- [ ] Rust byte-assertion test passes (mirror in sync).
+
+**Checkpoint:**
+- [ ] `cargo nextest run` + `bunx vite build` pass.
+
+---
+
+#### Step 7: tugcode `activity_delta` (single interpreter) {#step-7}
+
+**Commit:** `tugcode(data-display): emit activity_delta from dispatchEventToTurn`
+
+**References:** [P13] single interpreter, [P06], [P07], [P21] parity, [Q06] flush, Spec S04
+
+**Artifacts:** `ActivityDelta` interface + `OutboundMessage` member; per-turn activity bins on `ActiveTurn`; a 250 ms `SessionManager` flush (turn-scoped, trailing flush on turn end) emitting behind `!turn.suppressEmit`.
+
+**Tasks:**
+- [ ] Relocate the counting (Spec S04) into `dispatchEventToTurn`; accumulate in `ActiveTurn`.
+- [ ] Add the flush timer ([Q06]); emit `activity_delta`.
+
+**Tests:**
+- [ ] Unit (tugcode): captured `CODE_OUTPUT` fixtures (Write / skill / AskUserQuestion) → expected per-channel units ([P21]).
+- [ ] Unit: no `activity_delta` emitted while `suppressEmit` (replay-safe).
+
+**Checkpoint:**
+- [ ] tugcode rebuilt; `bun test` passes.
+
+---
+
+#### Step 8: tugcast divert `activity_delta` → ACTIVITY {#step-8}
+
+**Depends on:** #step-6, #step-7
+
+**Commit:** `tugcast(data-display): divert activity_delta onto the ACTIVITY feed`
+
+**References:** [P13], [P15], Spec S02, (#data-flow)
+
+**Artifacts:** a `merger_task` branch that recognizes `type=="activity_delta"`, splices `tug_session_id`, re-tags `FeedId::ACTIVITY`, and diverts (not copies) it off CODE_OUTPUT.
+
+**Tasks:**
+- [ ] Add the divert branch using the payload inspector, mirroring the sideband rewrap.
+
+**Tests:**
+- [ ] Unit: an `activity_delta` line lands on ACTIVITY, session-tagged, and never on CODE_OUTPUT.
+
+**Checkpoint:**
+- [ ] `cargo nextest run` passes.
+- [ ] Real app: a raw `ACTIVITY` dump shows per-session samples during a live turn (model-on-the-wire criterion).
+
+---
+
+#### Step 9: Deck store consumes ACTIVITY; delete deck derivation {#step-9}
+
+**Depends on:** #step-8
+
+**Commit:** `tugdeck(data-display): SessionActivityStore consumes ACTIVITY; remove throughput derivation`
+
+**References:** [P01], [P02], [P13], [P21], Spec S01, Spec S02
+
+**Artifacts:** `activity-meter.ts` (rate/gauge), `session-activity-store.ts`, `parseActivityFrame`; app-scoped `subscribeSessionFeed(ACTIVITY)` → `store.record`; `DevPulseStrip` reads `compositeSeries`. **Delete** `recordThroughput`/`throughputMeter`/constants/maps/`ThroughputMeter`.
+
+**Tasks:**
+- [ ] Build the meter + store; subscribe; `clearSession` on close.
+- [ ] Point the strip at the store; delete deck derivation entirely.
+
+**Tests:**
+- [ ] Unit: meter rate sums the window; gauge returns latest; store record/series/composite.
+
+**Checkpoint:**
+- [ ] `bunx vite build` + `bun test`; grep confirms no `throughputMeter`/`recordThroughput`.
+- [ ] Real app: Write-turn parity **and** `/tugplug:vet` + a post-`AskUserQuestion` resume drive the line (`verify`).
+
+---
+
+#### Step 10: Compact: dominant color + composite intensity {#step-10}
+
+**Depends on:** #step-9
+
+**Commit:** `tugdeck(data-display): dominant-hued fill + composite intensity`
+
+**References:** [P04], [P05], (#state-zone-mapping)
+
+**Artifacts:** `TugSparkline.getColorChannel` stamps `data-activity-channel`; strip passes `dominant`; hue tokens in all themes.
+
+**Tasks:**
+- [ ] Color hook + `dominant()` hysteresis; hue tokens; `audit:theme-contrast`.
+
+**Tests:**
+- [ ] Unit: hysteresis holds through a single-sample challenger.
+
+**Checkpoint:**
+- [ ] `bunx vite build` + `audit:theme-contrast`; color differs across thinking vs writing, no strobing (`verify`).
+
+---
+
+#### Step 11: Retain `(pid, start_time)` per session {#step-11}
+
+**Depends on:** #step-1
+
+**Commit:** `tugcast(data-display): retain tugcode child (pid, start_time) per session`
+
+**References:** [P08], [P20] reuse-guard, Risk R02
+
+**Artifacts:** capture `child.id()` + start time at spawn into `SessionEntry`; clear on close; accessor for the sampler.
+
+**Tasks:**
+- [ ] Capture and store `(pid, start_time)`; expose the accessor; clear on teardown.
+
+**Tests:**
+- [ ] Unit: a reused PID with a different start time is rejected (not attributed).
+
+**Checkpoint:**
+- [ ] `cargo nextest run` passes.
+
+---
+
+#### Step 12: OS subtree sampler → CPU/memory into ACTIVITY {#step-12}
+
+**Depends on:** #step-8, #step-11
+
+**Commit:** `tugcast(data-display): per-session subtree CPU/memory into ACTIVITY`
+
+**References:** [P08], [P09], [P10], [P20], [Q02] budget, Risk R01, Spec S02
+
+**Artifacts:** `feeds/activity/resource.rs` — one shared `System`, refresh-all + `parent()` subtree walk gated to sessions with a validated live PID; sum `cpu_usage()`/`memory()`; emit gauges on ACTIVITY via the activity producer.
+
+**Tasks:**
+- [ ] Subtree walk with `(pid,start_time)` validation ([P20]); emit `cpu_pct`/`rss_bytes` gauges.
+- [ ] Spike [Q02]: 3 concurrent builds; enforce ≤2%/core budget; lock cadence.
+
+**Tests:**
+- [ ] Unit: subtree sum over a constructed parent map; dead/mismatched root ⇒ zero.
+
+**Checkpoint:**
+- [ ] `cargo nextest run` + `bunx vite build`; sampler self-CPU within budget.
+- [ ] Real app: a `cargo build` session shows a CPU hump absent from a second idle same-dir session (`verify`).
+
+---
+
+#### Step 13: Disk I/O via `proc_pid_rusage` {#step-13}
+
+**Depends on:** #step-12
+
+**Commit:** `tugcast(data-display): session disk-I/O via proc_pid_rusage`
+
+**References:** [P11], [P02] gauge, [Q03], Spec S02
+
+**Artifacts:** `#[cfg(macos)]` `proc_pid_rusage(RUSAGE_INFO_V2)` binding; subtree disk bytes differenced to bytes/sec gauges; deck `disk` descriptor.
+
+**Tasks:**
+- [ ] Add the binding + per-tick differencing; emit disk gauges; deck records `disk`.
+
+**Tests:**
+- [ ] Unit (macos): monotonic counters; non-negative differencing.
+
+**Checkpoint:**
+- [ ] `cargo nextest run` + `bunx vite build`; a large-write Bash step shows a disk hump (`verify`).
+
+---
+
+#### Step 14: Pulse labels: skills, AskUserQuestion, generic {#step-14}
 
 **Commit:** `tugcode(data-display): pulse labels for skills, AskUserQuestion, generic tools`
 
-**References:** [P07] (label parity with the new tool channels), (#context)
+**References:** [P07], (#context)
 
-**Artifacts:**
-- `tugcode/src/pulse/voice.ts`: `onFrame`/`narrateTool` cases for `AskUserQuestion` (e.g. "Asking…"/"Question answered"), `tugplug` `<plugin>:<skill>` tool names ("Running <skill>…"), and a generic non-file tool fallback (verb from the tool name) so the strip stops holding a stale line or "None".
+**Artifacts:** `voice.ts` cases for `AskUserQuestion`, `<plugin>:<skill>`, and a generic non-file tool fallback.
 
 **Tasks:**
-- [ ] Map skill tool names (`<plugin>:<skill>`) and `AskUserQuestion` to labels; add a generic fallback for otherwise-unhandled tools.
-- [ ] Confirm these tool frames are on `PULSE_FORWARD_ALLOWLIST` in `tugcast/src/feeds/pulse.rs`; extend if a needed type is filtered.
+- [ ] Map the labels; confirm/extend `PULSE_FORWARD_ALLOWLIST`.
 
 **Tests:**
-- [ ] Unit (tugcode): `voice.ts` emits a non-empty `PulseLine` for a skill `tool_use`, an `AskUserQuestion`, and an arbitrary tool.
+- [ ] Unit (tugcode): non-empty `PulseLine` for a skill, an AskUserQuestion, and an arbitrary tool.
 
 **Checkpoint:**
-- [ ] tugcode rebuilt (compiled binary) and `bun test` passes.
-- [ ] Real app: invoking `/tugplug:vet` shows a label other than "None".
+- [ ] tugcode rebuilt; `/tugplug:vet` shows a label other than "None".
 
 ---
 
-#### Step 5: Retain tugcode child PID per session {#step-5}
+#### Step 15: Expanded Activity card {#step-15}
 
-**Commit:** `tugcast(data-display): retain tugcode child PID per session`
-
-**References:** [P08] PID subtree, [P10] sampler task, Risk R02, (#process-tree)
-
-**Artifacts:**
-- tugcast `agent_bridge.rs`: capture `child.id()` at spawn; thread it into the `AgentSupervisor` `SessionEntry.child`/PID field (currently initialized and never set).
-- Clear the PID on session close ([R02]).
-
-**Tasks:**
-- [ ] Capture the spawned tugcode child PID and store it keyed by `tug_session_id`.
-- [ ] Expose a read accessor for the sampler (Step 6) — `session_id → root PID`.
-- [ ] Clear on session teardown.
-
-**Tests:**
-- [ ] Unit (Rust): spawning a session records a non-zero PID; closing it clears the entry.
-
-**Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` passes (no warnings).
-
----
-
-#### Step 6: `SESSION_RESOURCE` feed + CPU/memory sampler {#step-6}
-
-**Depends on:** #step-5
-
-**Commit:** `tugcast(data-display): per-session CPU/memory resource feed (SESSION_RESOURCE)`
-
-**References:** [P08], [P09] resource feed, [P10] sampler task, Spec S02, [Q02] cadence, Risk R01
-
-**Artifacts:**
-- `FeedId::SESSION_RESOURCE = 0x81` in tugcast_core; mirror + `parseSessionResourceFrame` in `protocol.ts` (Spec S02).
-- New `feeds/session_resource.rs`: a task (not a `StatCollector`) reading the session registry, walking each session's PID subtree via one shared `sysinfo::System`, summing `cpu_usage()` + `memory()`, broadcasting one `SESSION_RESOURCE` frame per session at 1 Hz.
-
-**Tasks:**
-- [ ] Add the FeedId (Rust + TS) and the parser.
-- [ ] Implement the subtree walk (parent-PID reconstruction from the root PID) and the sampler task; wire it in alongside `StatsRunner` with the cancellation token.
-- [ ] Spike [Q02]: measure sampler CPU with 3 concurrent `cargo build` sessions; lock the cadence.
-
-**Tests:**
-- [ ] Unit (Rust): subtree sum over a constructed parent/child PID map; a session with a dead root reports zero.
-- [ ] Contract (TS): a Spec-S02 payload round-trips through `parseSessionResourceFrame`.
-
-**Checkpoint:**
-- [ ] `cargo nextest run` + `bunx vite build` pass.
-- [ ] Sampler self-CPU stays within the [Q02] budget in the spike.
-
----
-
-#### Step 7: Consume `SESSION_RESOURCE` into cpu/memory channels {#step-7}
-
-**Depends on:** #step-1, #step-6
-
-**Commit:** `tugdeck(data-display): consume SESSION_RESOURCE into cpu/memory channels`
-
-**References:** [P01], [P02], [P09], Spec S01, (#data-flow)
-
-**Artifacts:**
-- App-scoped subscription (in `SessionActivityStore` init or where feeds are wired): `conn.onFrame(FeedId.SESSION_RESOURCE, …)` → `store.record(tug_session_id, "cpu"|"memory", …)`; store `raw()` values for readouts.
-- Descriptors for `cpu`/`memory` (hue, fullScale).
-
-**Tasks:**
-- [ ] Subscribe once, app-scoped, and record into the store keyed by the frame's `tug_session_id`.
-- [ ] Feed `cpu` into the composite/dominant so a Bash build lights up the compact line and shifts its color.
-
-**Tests:**
-- [ ] Unit: recording a `SESSION_RESOURCE`-shaped sample updates `series("cpu")`/`raw("cpu")`.
-
-**Checkpoint:**
-- [ ] `bunx vite build` passes.
-- [ ] Real app (success criterion): a `cargo build` session shows a CPU hump absent from a second idle session in the same directory (`verify`).
-
----
-
-#### Step 8: Session disk-I/O via `proc_pid_rusage` {#step-8}
-
-**Depends on:** #step-6
-
-**Commit:** `tugcast(data-display): session disk-I/O sampling via proc_pid_rusage`
-
-**References:** [P11] disk rusage, [Q03] deferred cross-platform, Spec S02
-
-**Artifacts:**
-- `#[cfg(target_os = "macos")]` `libc::proc_pid_rusage(RUSAGE_INFO_V2)` binding in `session_resource.rs`; sum `ri_diskio_bytesread`/`byteswritten` over the subtree, difference across ticks → `disk_read_bps`/`disk_write_bps` in the frame; zero on other platforms.
-- Deck: record `disk` channel from the now-populated fields (descriptor added).
-
-**Tasks:**
-- [ ] Add the macOS binding and subtree disk-byte accumulation with per-tick differencing.
-- [ ] Populate the S02 disk fields; deck records the `disk` channel.
-
-**Tests:**
-- [ ] Unit (Rust, macos): the binding returns monotonic byte counters for the current process; differencing yields a non-negative rate.
-
-**Checkpoint:**
-- [ ] `cargo nextest run` + `bunx vite build` pass.
-- [ ] Real app (macOS): a `dd`/large-write Bash step produces a disk-channel hump (`verify`).
-
----
-
-#### Step 9: Expanded Activity card {#step-9}
-
-**Depends on:** #step-2, #step-7
+**Depends on:** #step-9, #step-12
 
 **Commit:** `tugdeck(data-display): expanded Activity card over the activity API`
 
-**References:** [P12] activity card, [P04] per-channel, Spec S01, State Zone Mapping (#state-zone-mapping)
+**References:** [P12], [P04], Spec S01
 
-**Artifacts:**
-- New `cards/activity-card.tsx` (+ `.css`): iterates `store.channels(session)`, rendering per channel a labeled `TugSparkline` (`series(session, channel)`) + a raw readout (`raw()`), hued per descriptor.
+**Artifacts:** `activity-card.tsx` — per-channel labeled `TugSparkline` + `raw` readout, hued per descriptor, bound to the dev card's session.
 
 **Tasks:**
-- [ ] Build the small-multiples card bound to the dev card's `tugSessionId` ([Q04]).
-- [ ] Register/mount it where cards are registered; reuse existing Tug layout/components (no hand-rolled tabs/rows).
-- [ ] `enabled`/channel-membership via `useSyncExternalStore`; series read imperatively ([P03]).
+- [ ] Small-multiples card; register/mount; reuse Tug components; membership via `useSyncExternalStore`.
 
 **Tests:**
-- [ ] Unit: `channels(session)` reflects exactly the recorded channels (drives the card's row set).
+- [ ] Unit: `channels(session)` drives the row set.
 
 **Checkpoint:**
-- [ ] `bunx vite build` passes.
-- [ ] Real app: the Activity card shows live per-channel lines during a mixed turn (thinking → writing → build) (`verify`).
+- [ ] `bunx vite build`; live per-channel lines during a mixed turn (`verify`).
 
 ---
 
-#### Step 10: Integration checkpoint {#step-10}
+#### Step 16: Integration checkpoint {#step-16}
 
-**Depends on:** #step-3, #step-4, #step-7, #step-8, #step-9
+**Depends on:** #step-5, #step-10, #step-13, #step-14, #step-15
 
 **Commit:** `N/A (verification only)`
 
-**References:** (#success-criteria, #data-flow)
+**References:** (#success-criteria, #data-flow, #tugcast-usage)
 
 **Tasks:**
-- [ ] Confirm the compact strip (composite + color) and the expanded card read the same store with no divergence.
-- [ ] Confirm two sessions in one directory stay isolated across all channels.
+- [ ] Confirm every feed registers through the abstraction (no raw bypass).
+- [ ] Confirm one interpreter (no deck activity math), model-on-wire, two-session + PID-reuse isolation, CODE_OUTPUT replay recovery.
 
 **Tests:**
-- [ ] Aggregate real-app run exercising skill work, an AskUserQuestion turn, a Bash build, and a Write, watching both the compact strip and the Activity card.
+- [ ] Aggregate real-app run: skill, AskUserQuestion, Bash build, Write — compact strip + Activity card + raw ACTIVITY dump.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run` and `cd tugdeck && bunx vite build && bun test` all pass.
-- [ ] All #success-criteria verified in the real app via `just app-test` / `verify`.
+- [ ] `cargo nextest run` + `bunx vite build && bun test`; all #success-criteria verified (`just app-test` / `verify`).
 
 ---
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A `SessionActivityStore` API driving a lively, color-coded, multi-channel compact pulse sparkline and an expanded per-channel Activity card, with session-scoped CPU/memory/disk sampled from the process subtree.
+**Deliverable:** A trait-mediated tugcast feed layer (dead-trait debt paid, `SessionScopedFeed` carrying every per-session feed) hosting a unified `ACTIVITY` feed — derived by tugcode alone, routed by tugcast, consumed by a pure-consumer deck — that drives a lively, color-coded compact sparkline and an expanded Activity card with session-scoped, PID-reuse-safe CPU/memory/disk.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Skills, AskUserQuestion resumes, thinking, and subagent work all move the compact sparkline (real app).
-- [ ] The compact fill color reflects the dominant activity kind, without strobing.
-- [ ] A Bash build shows CPU (and disk on macOS) humps isolated to the originating session.
-- [ ] The Activity card renders live per-channel lines + raw readouts over the same API.
-- [ ] `cargo nextest run`, `bunx vite build`, `bun test`, and `bun run audit:theme-contrast` all pass.
-
-**Acceptance tests:**
-- [ ] Store unit suite (record/series/composite/intensity/dominant/token-delta/hysteresis).
-- [ ] Rust unit suite (subtree sum, PID capture, disk binding) + `SESSION_RESOURCE` contract test.
-- [ ] Real-app `verify` run covering all #success-criteria.
+- [ ] No server→client feed bypasses the trait abstraction (grep-clean).
+- [ ] Exactly one activity interpreter (tugcode); deck derivation deleted.
+- [ ] Activity model visible on the `ACTIVITY` wire feed.
+- [ ] Skills / AskUserQuestion / thinking / subagents move the sparkline; dominant color shifts without strobing.
+- [ ] Bash build shows CPU (+ macOS disk) humps isolated to the session; reused PIDs rejected.
+- [ ] `CODE_OUTPUT` post-conversion isolates sessions and recovers a lagging client.
+- [ ] Activity card renders live per-channel over the same store.
+- [ ] `cargo nextest run`, `bunx vite build`, `bun test`, `audit:theme-contrast` pass.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Overlaid stacked-band single-SVG rendering for the Activity card ([P12]).
-- [ ] App-wide "all sessions" activity overview ([Q04]).
+- [ ] Overlaid stacked-band Activity card rendering ([P12]).
+- [ ] App-wide "all sessions" overview ([Q04]).
 - [ ] Linux per-process disk I/O ([Q03]).
-- [ ] Root the subtree at the claude PID (excluding bridge overhead) if it proves material ([P08]).
+- [ ] Root the subtree at the claude PID if bridge overhead proves material ([P08]).
+- [ ] Optional capped in-memory `ACTIVITY` tail for reconnect hydration if fresh-start proves jarring ([P15]).
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Substrate parity | Step 1: sparkline visually unchanged for Write turns |
-| Flatlines fixed | Step 2/7: skill + AskUserQuestion + build all move the line |
-| Session isolation | Step 7: two same-dir sessions, CPU hump on one only |
-| Expanded rep | Step 9: Activity card live per-channel |
+| Debt paid | Step 5: no raw feed bypass; behavior-neutral |
+| One interpreter | Step 9: no deck activity math; parity + flatlines fixed |
+| Model on the wire | Step 8: raw ACTIVITY dump |
+| Isolation safe | Step 12: two same-dir sessions; PID-reuse rejected |
+| Refactor safe | Step 4: CODE_OUTPUT isolation + replay recovery |
