@@ -34,12 +34,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use tugcast_core::{FeedId, Frame};
+use tugcast_core::{FeedId, Frame, StreamFeed};
 
 use crate::session_ledger::SessionLedger;
 
@@ -163,20 +164,51 @@ pub fn resolve_tugpulse_path(tugcode_path: &std::path::Path) -> PathBuf {
 /// Everything the bridge task needs. `enabled` is consulted per
 /// spawn-opportunity (a forwardable frame arriving with no live
 /// daemon), so a toggle flip takes effect without a tugcast restart.
+/// The PULSE broadcast sender is not part of the config — the bridge
+/// is a [`StreamFeed`], so the router hands it the channel at `run`.
 pub struct PulseBridgeConfig {
     pub spawner: Arc<dyn PulseSpawner>,
     pub enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     pub ledger: Option<Arc<SessionLedger>>,
-    pub pulse_tx: broadcast::Sender<Frame>,
     /// The shared CODE_OUTPUT broadcast — the bridge subscribes inside
     /// its task (receivers can't be cloned) and taps every frame.
     pub code_tx: broadcast::Sender<Frame>,
 }
 
-/// Spawn the bridge task. It lives until `cancel` fires (killing any
-/// live daemon via keepalive drop).
-pub fn spawn_pulse_bridge(config: PulseBridgeConfig, cancel: CancellationToken) {
-    tokio::spawn(pulse_bridge_task(config, cancel));
+/// The PULSE feed: a [`StreamFeed`] wrapping the daemon bridge. The
+/// router creates the (small) broadcast channel, records the `Warn`
+/// lag policy, and spawns the bridge loop — which lives until `cancel`
+/// fires (killing any live daemon via keepalive drop).
+pub struct PulseBridge {
+    config: PulseBridgeConfig,
+}
+
+impl PulseBridge {
+    pub fn new(config: PulseBridgeConfig) -> Self {
+        Self { config }
+    }
+}
+
+#[async_trait]
+impl StreamFeed for PulseBridge {
+    fn feed_id(&self) -> FeedId {
+        FeedId::PULSE
+    }
+
+    fn name(&self) -> &str {
+        "pulse"
+    }
+
+    /// Commentary is small and bursty; the tail a reconnecting deck
+    /// needs comes from the `list_pulse_lines` CONTROL read, not feed
+    /// replay — so the default `Warn` lag policy and a small channel.
+    fn channel_capacity(&self) -> usize {
+        64
+    }
+
+    async fn run(self: Box<Self>, tx: broadcast::Sender<Frame>, cancel: CancellationToken) {
+        pulse_bridge_task(self.config, tx, cancel).await;
+    }
 }
 
 /// Internal: events from the daemon-stdout reader task.
@@ -219,7 +251,11 @@ fn forwardable_session(payload: &[u8], muted: &mut HashSet<String>) -> Option<St
     }
 }
 
-async fn pulse_bridge_task(config: PulseBridgeConfig, cancel: CancellationToken) {
+async fn pulse_bridge_task(
+    config: PulseBridgeConfig,
+    pulse_tx: broadcast::Sender<Frame>,
+    cancel: CancellationToken,
+) {
     let mut daemon_stdin: Option<Box<dyn AsyncWrite + Send + Unpin>> = None;
     let mut daemon_keepalive: Option<Box<dyn Send>> = None;
     let (event_tx, mut event_rx) = mpsc::channel::<DaemonEvent>(64);
@@ -305,7 +341,7 @@ async fn pulse_bridge_task(config: PulseBridgeConfig, cancel: CancellationToken)
             maybe_event = event_rx.recv() => {
                 match maybe_event {
                     Some(DaemonEvent::Line(line)) => {
-                        handle_pulse_line(&config, &line);
+                        handle_pulse_line(&config, &pulse_tx, &line);
                     }
                     Some(DaemonEvent::Died) => {
                         warn!("pulse bridge: daemon stdout closed");
@@ -349,7 +385,7 @@ fn spawn_stdout_reader(
 /// Parse one daemon stdout line; persist + broadcast it. Non-`pulse`
 /// or malformed lines are logged and dropped — wire delivery and
 /// persistence must never panic on daemon output.
-fn handle_pulse_line(config: &PulseBridgeConfig, line: &str) {
+fn handle_pulse_line(config: &PulseBridgeConfig, pulse_tx: &broadcast::Sender<Frame>, line: &str) {
     let parsed: serde_json::Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(err) => {
@@ -380,9 +416,7 @@ fn handle_pulse_line(config: &PulseBridgeConfig, line: &str) {
             warn!(error = %err, "pulse bridge: ledger write failed");
         }
     }
-    let _ = config
-        .pulse_tx
-        .send(Frame::new(FeedId::PULSE, line.as_bytes().to_vec()));
+    let _ = pulse_tx.send(Frame::new(FeedId::PULSE, line.as_bytes().to_vec()));
 }
 
 #[cfg(test)]
@@ -436,16 +470,13 @@ mod tests {
         let (pulse_tx, _keep) = broadcast::channel(8);
         let (code_tx, _keep_code) = broadcast::channel(8);
         let cancel = CancellationToken::new();
-        spawn_pulse_bridge(
-            PulseBridgeConfig {
-                spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
-                enabled: Arc::new(|| false),
-                ledger: None,
-                pulse_tx,
-                code_tx: code_tx.clone(),
-            },
-            cancel.clone(),
-        );
+        let bridge = PulseBridge::new(PulseBridgeConfig {
+            spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
+            enabled: Arc::new(|| false),
+            ledger: None,
+            code_tx: code_tx.clone(),
+        });
+        tokio::spawn(Box::new(bridge).run(pulse_tx, cancel.clone()));
         tokio::time::sleep(Duration::from_millis(50)).await;
         code_tx.send(tool_result_frame("s1", "hello")).unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -471,16 +502,13 @@ mod tests {
         let (pulse_tx, mut pulse_rx) = broadcast::channel(8);
         let (code_tx, _keep_code) = broadcast::channel(8);
         let cancel = CancellationToken::new();
-        spawn_pulse_bridge(
-            PulseBridgeConfig {
-                spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
-                enabled: Arc::new(|| true),
-                ledger: None,
-                pulse_tx,
-                code_tx: code_tx.clone(),
-            },
-            cancel.clone(),
-        );
+        let bridge = PulseBridge::new(PulseBridgeConfig {
+            spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
+            enabled: Arc::new(|| true),
+            ledger: None,
+            code_tx: code_tx.clone(),
+        });
+        tokio::spawn(Box::new(bridge).run(pulse_tx, cancel.clone()));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // A non-allowlisted frame type is dropped at the tap…
@@ -545,16 +573,13 @@ mod tests {
         let (pulse_tx, _keep) = broadcast::channel(8);
         let (code_tx, _keep_code) = broadcast::channel(16);
         let cancel = CancellationToken::new();
-        spawn_pulse_bridge(
-            PulseBridgeConfig {
-                spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
-                enabled: Arc::new(|| true),
-                ledger: None,
-                pulse_tx,
-                code_tx: code_tx.clone(),
-            },
-            cancel.clone(),
-        );
+        let bridge = PulseBridge::new(PulseBridgeConfig {
+            spawner: Arc::clone(&spawner) as Arc<dyn PulseSpawner>,
+            enabled: Arc::new(|| true),
+            ledger: None,
+            code_tx: code_tx.clone(),
+        });
+        tokio::spawn(Box::new(bridge).run(pulse_tx, cancel.clone()));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // s1 enters replay: its frames are muted; s2 still flows.

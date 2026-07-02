@@ -22,8 +22,8 @@ use thiserror::Error;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tugcast_core::SnapshotFeed;
 use tugcast_core::protocol::{FeedId, Frame};
+use tugcast_core::spawn_snapshot_feed;
 
 use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
@@ -205,26 +205,17 @@ impl WorkspaceEntry {
         );
         let git_feed = GitFeed::new(project_dir.clone(), workspace_key.arc());
 
-        // Spawn the four tasks with cancel-clone, mirroring main.rs.
+        // Spawn the watcher task directly (it is an event source, not a
+        // router feed) and the three snapshot feeds through the trait
+        // helper — the one way a SnapshotFeed gets its task.
         let fw_cancel = cancel.clone();
         let file_watcher_task = tokio::spawn(async move {
             file_watcher.run(fs_broadcast_tx, fw_cancel).await;
         });
 
-        let fs_cancel = cancel.clone();
-        let filesystem_task = tokio::spawn(async move {
-            fs_feed.run(fs_watch_tx, fs_cancel).await;
-        });
-
-        let ft_cancel = cancel.clone();
-        let filetree_task = tokio::spawn(async move {
-            ft_feed.run(ft_watch_tx, ft_cancel).await;
-        });
-
-        let git_cancel = cancel.clone();
-        let git_task = tokio::spawn(async move {
-            git_feed.run(git_watch_tx, git_cancel).await;
-        });
+        let filesystem_task = spawn_snapshot_feed(Box::new(fs_feed), fs_watch_tx, cancel.clone());
+        let filetree_task = spawn_snapshot_feed(Box::new(ft_feed), ft_watch_tx, cancel.clone());
+        let git_task = spawn_snapshot_feed(Box::new(git_feed), git_watch_tx, cancel.clone());
 
         Arc::new(Self {
             workspace_key,

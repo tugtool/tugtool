@@ -31,12 +31,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use tugbank_core::TugbankClient;
 use tugbank_core::notify as tugbank_notify;
-use tugcast_core::{FeedId, Frame, StreamFeed};
+use tugcast_core::{FeedId, Frame};
 use tugcore::instance as tug_instance;
 
 use crate::auth::new_shared_auth_state;
@@ -47,7 +47,7 @@ use crate::feeds::agent_supervisor::{
 use crate::feeds::filetree::FileTreeQuery;
 #[cfg(debug_assertions)]
 use crate::feeds::stats::BuildStatusCollector;
-use crate::feeds::stats::{ProcessInfoCollector, StatsRunner, TokenUsageCollector};
+use crate::feeds::stats::{ProcessInfoCollector, TokenUsageCollector};
 use crate::feeds::terminal::{self, TerminalFeed};
 use crate::feeds::workspace_registry::WorkspaceRegistry;
 use crate::router::{BROADCAST_CAPACITY, FeedRouter};
@@ -270,16 +270,22 @@ async fn main() {
         None
     };
 
-    // Create broadcast channel for terminal output
-    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-
-    // Create code channels
-    let (code_tx, _) = broadcast::channel(feeds::code::CODE_BROADCAST_CAPACITY);
+    // Create the CODE_OUTPUT feed. The lag-recovery replay buffer lives
+    // on the handle (P4): every frame published through it is buffered,
+    // shared across sessions per [D06]; the tugdeck-side filter provides
+    // isolation on replay per [D11].
+    let code_output_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::CODE_OUTPUT,
+        feeds::code::CODE_BROADCAST_CAPACITY,
+        crate::router::LagPolicy::Replay(crate::router::ReplayBuffer::new(1000)),
+    );
     let (code_input_tx, code_input_rx) = mpsc::channel(256);
 
-    // Create terminal feed
-    let feed = TerminalFeed::new(cli.session.clone());
-    let input_tx = feed.input_sender();
+    // Create terminal feed. Its broadcast channel is created — and its
+    // task spawned — by `register_stream_feed` below; only the input
+    // sender is needed ahead of registration.
+    let terminal_feed = TerminalFeed::new(cli.session.clone());
+    let input_tx = terminal_feed.input_sender();
 
     // Make the watch directory absolute. PathResolver inside FileWatcher
     // handles all further resolution (symlinks, synthetic firmlinks, APFS
@@ -320,6 +326,27 @@ async fn main() {
             None
         }
     };
+
+    // App-test launches suppress the TugSetup wizard: the harness marker
+    // (TUGAPP_TEST_SOCKET, inherited app → tugexec → tugcast) seeds the
+    // tugbank default the deck reads synchronously at mount, so a fresh
+    // per-instance bank never opens the blocking first-run wizard under a
+    // focus-driven test. TUGAPP_TEST_KEEP_SETUP opts a TugSetup-specific
+    // test back in — seeded `false` explicitly so a reused bank cannot
+    // leak suppression into it. Written before the server accepts
+    // connections, so the deck can never load ahead of the seed.
+    if std::env::var_os("TUGAPP_TEST_SOCKET").is_some() {
+        let keep_setup = std::env::var_os("TUGAPP_TEST_KEEP_SETUP").is_some();
+        if let Some(bank) = bank_client.as_ref() {
+            if let Err(e) = bank.set(
+                "dev.tugtool.app",
+                "suppress-setup",
+                tugbank_core::Value::Bool(!keep_setup),
+            ) {
+                warn!(error = %e, "failed to seed app-test suppress-setup default");
+            }
+        }
+    }
 
     let notify_socket_path = tugbank_notify::socket_path();
 
@@ -468,15 +495,17 @@ async fn main() {
         resources::source_tree().join("target"),
     )) as Arc<dyn crate::feeds::stats::StatCollector>;
 
-    // Create watch channels for stats feeds
-    let (stats_agg_tx, stats_agg_rx) = watch::channel(Frame::new(FeedId::STATS, vec![]));
-    let (stats_proc_tx, stats_proc_rx) =
-        watch::channel(Frame::new(FeedId::STATS_PROCESS_INFO, vec![]));
-    let (stats_token_tx, stats_token_rx) =
-        watch::channel(Frame::new(FeedId::STATS_TOKEN_USAGE, vec![]));
+    // Stats run through the unified stats surface: the subsystem creates
+    // its own channels and spawns its tasks; the router receives only the
+    // watch receivers (registered with the other snapshot watches below).
+    // BuildStatusCollector is dev-only, so release skips the push and
+    // `collectors.len()` still matches senders inside `StatsRunner::run`.
+    #[allow(unused_mut)]
+    let mut stats_collectors: Vec<Arc<dyn crate::feeds::stats::StatCollector>> =
+        vec![process_info, token_usage];
     #[cfg(debug_assertions)]
-    let (stats_build_tx, stats_build_rx) =
-        watch::channel(Frame::new(FeedId::STATS_BUILD_STATUS, vec![]));
+    stats_collectors.push(build_status);
+    let stats_watch_rxs = feeds::stats::spawn_stats_feeds(stats_collectors, cancel.clone());
 
     // Create shutdown channel for control commands
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<u8>(1);
@@ -500,13 +529,6 @@ async fn main() {
         None
     };
 
-    // Start terminal feed in background task
-    let feed_cancel = cancel.clone();
-    let terminal_tx_for_router = terminal_tx.clone();
-    tokio::spawn(async move {
-        feed.run(terminal_tx, feed_cancel).await;
-    });
-
     // Start the tugbank notification socket listener.
     // Receives domain-change datagrams and calls refresh_domain() with debounce.
     if let Some(ref client) = bank_client {
@@ -522,8 +544,7 @@ async fn main() {
     // on replay relies on the client-side session filter per [D06]/[D11]:
     // the buffer is shared across sessions, and clients subscribed to
     // SESSION_STATE/SESSION_SIDEBAND filter frames by `tug_session_id`.
-    use crate::router::{LagPolicy, ReplayBuffer};
-    let code_replay = ReplayBuffer::new(1000);
+    use crate::router::LagPolicy;
 
     // Resolve tugcode path for the supervisor's default spawner factory.
     let tugcode_path = feeds::agent_bridge::resolve_tugcode_path(cli.tugcode_path.as_deref());
@@ -534,13 +555,22 @@ async fn main() {
         );
     }
 
-    // Construct the multi-session supervisor. Broadcast channels for the
-    // session-scoped feeds (SESSION_STATE, SESSION_SIDEBAND) are created
-    // here and registered with the router below. The supervisor publishes
-    // CONTROL error frames onto the same broadcast that `register_stream`
-    // wires for FeedId::CONTROL so clients observe them in-band.
-    let (session_state_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
-    let (session_sideband_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    // Construct the multi-session supervisor. SESSION_STATE is a
+    // SessionScopedFeed (created here, registered with the router below);
+    // SESSION_SIDEBAND's broadcast channel is created here and registered
+    // below. The supervisor publishes CONTROL error frames onto the same
+    // broadcast that `register_stream` wires for FeedId::CONTROL so
+    // clients observe them in-band.
+    let session_state_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::SESSION_STATE,
+        BROADCAST_CAPACITY,
+        LagPolicy::Warn,
+    );
+    let session_sideband_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::SESSION_SIDEBAND,
+        BROADCAST_CAPACITY,
+        LagPolicy::Warn,
+    );
 
     // Per [D15], tugbank unavailability is still a fatal startup error
     // because other tugcast subsystems (defaults, recents, layout) need it.
@@ -661,9 +691,9 @@ async fn main() {
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
     let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
-        session_state_tx.clone(),
-        session_sideband_tx.clone(),
-        code_tx.clone(),
+        session_state_feed.clone(),
+        session_sideband_feed.clone(),
+        code_output_feed.clone(),
         client_action_tx.clone(),
         sessions_recorder,
         Some(Arc::clone(&ledger)),
@@ -677,9 +707,9 @@ async fn main() {
     // taps the shared CODE_OUTPUT broadcast for the allowlisted frame
     // subset, lazily spawns/supervises the tugpulse daemon (gated on
     // the `pulse/enabled` tugbank default, ON by default), and the
-    // daemon's lines land in the capped ledger + the PULSE broadcast
-    // below.
-    let (pulse_tx, _) = broadcast::channel(64);
+    // daemon's lines land in the capped ledger + the PULSE broadcast.
+    // A StreamFeed: its channel, lag policy, and task come from
+    // `register_stream_feed` below.
     let tugpulse_path = feeds::pulse::resolve_tugpulse_path(&tugcode_path);
     let pulse_enabled: Arc<dyn Fn() -> bool + Send + Sync> = {
         let bank = bank_client.clone();
@@ -698,16 +728,12 @@ async fn main() {
             }
         })
     };
-    feeds::pulse::spawn_pulse_bridge(
-        feeds::pulse::PulseBridgeConfig {
-            spawner: Arc::new(feeds::pulse::TugpulseSpawner { tugpulse_path }),
-            enabled: pulse_enabled,
-            ledger: Some(Arc::clone(&ledger)),
-            pulse_tx: pulse_tx.clone(),
-            code_tx: code_tx.clone(),
-        },
-        cancel.clone(),
-    );
+    let pulse_bridge = feeds::pulse::PulseBridge::new(feeds::pulse::PulseBridgeConfig {
+        spawner: Arc::new(feeds::pulse::TugpulseSpawner { tugpulse_path }),
+        enabled: pulse_enabled,
+        ledger: Some(Arc::clone(&ledger)),
+        code_tx: code_output_feed.sender(),
+    });
 
     let supervisor = Arc::new(supervisor);
 
@@ -744,35 +770,27 @@ async fn main() {
         shared_dev_state.clone(),
     );
 
-    // Register stream outputs (broadcast feeds, server → client). The
-    // CODE_OUTPUT Replay buffer stays shared across sessions per [D06];
-    // correctness on replay relies on the tugdeck-side filter per [D11].
-    feed_router.register_stream(
-        FeedId::TERMINAL_OUTPUT,
-        terminal_tx_for_router,
-        LagPolicy::Bootstrap,
-    );
-    feed_router.register_stream(
-        FeedId::CODE_OUTPUT,
-        code_tx.clone(),
-        LagPolicy::Replay(code_replay),
-    );
+    // Register stream feeds through the trait-mediated path — each feed
+    // self-describes its id, lag policy, and channel capacity, and the
+    // router creates the channel and spawns the task.
+    feed_router.register_stream_feed(Box::new(terminal_feed), cancel.clone());
+    // PULSE commentary lines fan out to every connected deck; the tail
+    // a reconnecting deck needs comes from the `list_pulse_lines`
+    // CONTROL read, not feed replay ([P09]).
+    feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
+
+    feed_router.register_session_feed(&code_output_feed);
+    // CONTROL stays a channel-registered stream: router-internal,
+    // bidirectional, and the sink for router-emitted error frames — one
+    // of the two named exemptions from the feed abstraction.
     feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
     // SESSION_STATE / SESSION_SIDEBAND are broadcast streams (not snapshot
     // watches) per [D14]: a single watch slot would clobber concurrent
     // per-session updates. Per-session replay on reconnect is handled
     // event-driven inside `AgentSupervisor::handle_control("spawn_session")`
     // — there is no snapshot-watch registration for either feed.
-    feed_router.register_stream(FeedId::SESSION_STATE, session_state_tx, LagPolicy::Warn);
-    feed_router.register_stream(
-        FeedId::SESSION_SIDEBAND,
-        session_sideband_tx,
-        LagPolicy::Warn,
-    );
-    // PULSE commentary lines fan out to every connected deck; the tail
-    // a reconnecting deck needs comes from the `list_pulse_lines`
-    // CONTROL read, not feed replay ([P09]).
-    feed_router.register_stream(FeedId::PULSE, pulse_tx, LagPolicy::Warn);
+    feed_router.register_session_feed(&session_state_feed);
+    feed_router.register_session_feed(&session_sideband_feed);
 
     // Register input sinks (client → server backends). CODE_INPUT points
     // at the supervisor's dispatcher (spawned above); the dispatcher
@@ -812,17 +830,12 @@ async fn main() {
     // produces the same snapshot. Per-card workspaces write only to
     // the broadcast (their watches are never registered with the
     // router), so they don't double-publish.
-    #[allow(unused_mut)]
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
         bootstrap.ft_watch_rx.clone(),
         bootstrap.git_watch_rx.clone(),
-        stats_agg_rx,
-        stats_proc_rx,
-        stats_token_rx,
     ];
-    #[cfg(debug_assertions)]
-    snapshot_watches.push(stats_build_rx);
+    snapshot_watches.extend(stats_watch_rxs);
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
@@ -837,28 +850,9 @@ async fn main() {
 
     // Filesystem, filetree, and git feed tasks are owned by the
     // WorkspaceRegistry's bootstrap entry — spawned inside
-    // `WorkspaceEntry::new` above.
-
-    // Start stats feeds in background task. BuildStatusCollector and its
-    // watch sender are dev-only; release skips the push so collectors.len()
-    // still matches senders.len() inside StatsRunner::run. `mut` is only
-    // needed in debug; release is allowed to leave it unused.
-    let stats_cancel = cancel.clone();
-    #[allow(unused_mut)]
-    let mut collectors: Vec<Arc<dyn crate::feeds::stats::StatCollector>> =
-        vec![process_info, token_usage];
-    #[cfg(debug_assertions)]
-    collectors.push(build_status);
-    #[allow(unused_mut)]
-    let mut stats_senders = vec![stats_proc_tx, stats_token_tx];
-    #[cfg(debug_assertions)]
-    stats_senders.push(stats_build_tx);
-    let stats_runner = StatsRunner::new(collectors);
-    tokio::spawn(async move {
-        stats_runner
-            .run(stats_agg_tx, stats_senders, stats_cancel)
-            .await;
-    });
+    // `WorkspaceEntry::new` above; their tasks (and the stats subsystem's,
+    // spawned by `spawn_stats_feeds` above) all run through the feed
+    // abstraction's spawn paths.
 
     // The TCP listener is already bound above (right after CLI parse)
     // so the auth state and auth_url could use the actually-bound port.

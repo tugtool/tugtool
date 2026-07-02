@@ -4,19 +4,22 @@
 //! Receives queries via mpsc, scores them with the fuzzy scorer, and responds
 //! with top-N scored results via a watch channel.
 //!
-//! This is a custom async task, NOT a `SnapshotFeed` implementor — the trait
-//! can't express the dual-input nature of query + file events.
+//! A `SnapshotFeed` implementor: the trait's consuming `run(self: Box<Self>)`
+//! carries the feed's owned mutable state (index, query receiver, secret
+//! filter) directly — the dual inputs (query channel + file events) are
+//! constructor-injected fields, not extra `run` parameters.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use tugcast_core::types::{FsEvent, ScoredResult};
-use tugcast_core::{FeedId, FileTreeSnapshot, Frame};
+use tugcast_core::{FeedId, FileTreeSnapshot, Frame, SnapshotFeed};
 
 use super::code::splice_workspace_key;
 use super::fuzzy_scorer::score_file_path;
@@ -112,9 +115,20 @@ impl FileTreeFeed {
     fn sweep_secrets(files: BTreeSet<String>, filter: &SecretFilter) -> BTreeSet<String> {
         files.into_iter().filter(|p| !filter.is_secret(p)).collect()
     }
+}
 
-    /// Run the feed loop. Custom async task — not SnapshotFeed.
-    pub async fn run(mut self, watch_tx: watch::Sender<Frame>, cancel: CancellationToken) {
+#[async_trait]
+impl SnapshotFeed for FileTreeFeed {
+    fn feed_id(&self) -> FeedId {
+        FeedId::FILETREE
+    }
+
+    fn name(&self) -> &str {
+        "filetree"
+    }
+
+    /// Run the feed loop.
+    async fn run(mut self: Box<Self>, watch_tx: watch::Sender<Frame>, cancel: CancellationToken) {
         let mut event_rx = self.event_tx.subscribe();
 
         // Send empty initial response.
@@ -181,7 +195,9 @@ impl FileTreeFeed {
             }
         }
     }
+}
 
+impl FileTreeFeed {
     /// Check if an FsEvent touches a .gitignore file.
     fn is_gitignore_change(event: &FsEvent) -> bool {
         let path = match event {
@@ -724,7 +740,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let feed_cancel = cancel.clone();
         let feed_task = tokio::spawn(async move {
-            feed.run(watch_tx, feed_cancel).await;
+            Box::new(feed).run(watch_tx, feed_cancel).await;
         });
 
         // The initial snapshot is published as the first action of run().

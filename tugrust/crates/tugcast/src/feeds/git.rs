@@ -228,7 +228,7 @@ impl SnapshotFeed for GitFeed {
         "git"
     }
 
-    async fn run(&self, tx: watch::Sender<Frame>, cancel: CancellationToken) {
+    async fn run(self: Box<Self>, tx: watch::Sender<Frame>, cancel: CancellationToken) {
         info!(dir = ?self.repo_dir, "git feed started");
 
         let mut interval = time::interval(Duration::from_secs(POLL_INTERVAL_SECS));
@@ -720,7 +720,7 @@ mod tests {
 
         // Spawn feed in background
         let feed_task = tokio::spawn(async move {
-            feed.run(tx, cancel_clone).await;
+            Box::new(feed).run(tx, cancel_clone).await;
         });
 
         // Wait for first poll
@@ -818,7 +818,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let feed_task = tokio::spawn(async move {
-            feed.run(tx, cancel_clone).await;
+            Box::new(feed).run(tx, cancel_clone).await;
         });
 
         rx.changed().await.unwrap();
@@ -872,7 +872,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
         let task = tokio::spawn(async move {
-            feed.run(tx, cancel_clone).await;
+            Box::new(feed).run(tx, cancel_clone).await;
         });
 
         // No repo yet: the feed must emit nothing — the watch stays at its

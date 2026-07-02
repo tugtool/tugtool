@@ -413,11 +413,11 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Trait-mediated registration; convert TERMINAL/FS/FT/GIT/PULSE | pending | — |
-| #step-2 | `SessionScopedFeed` + convert SESSION_STATE | pending | — |
-| #step-3 | Convert SESSION_SIDEBAND (rewrap-preserving) | pending | — |
-| #step-4 | Convert CODE_OUTPUT (replay + input-ownership) | pending | — |
-| #step-5 | Route STATS registration; foundation checkpoint | pending | — |
+| #step-1 | Trait-mediated registration; convert TERMINAL/FS/FT/GIT/PULSE | done | d3bb15ac6 |
+| #step-2 | `SessionScopedFeed` + convert SESSION_STATE | done | 64f20f0e1 |
+| #step-3 | Convert SESSION_SIDEBAND (rewrap-preserving) | done | bdd42a10e |
+| #step-4 | Convert CODE_OUTPUT (replay + input-ownership) | done | 02af5ed93 |
+| #step-5 | Route STATS registration; foundation checkpoint | done | 023f9cdeb |
 | #step-6 | `FeedId::ACTIVITY` as a native SessionScopedFeed | pending | — |
 | #step-7 | tugcast divert `activity_delta` → ACTIVITY | pending | — |
 | #step-8 | tugcode `activity_delta` (single interpreter) | pending | — |

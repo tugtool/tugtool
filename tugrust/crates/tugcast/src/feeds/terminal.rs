@@ -4,7 +4,6 @@
 //! terminal I/O over WebSocket frames.
 
 use std::os::unix::io::AsRawFd;
-use std::sync::Mutex;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -14,7 +13,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use tugcast_core::{FeedId, Frame, StreamFeed};
+use tugcast_core::{FeedId, Frame, LagPolicy, StreamFeed};
 
 /// Size of the PTY read buffer
 const READ_BUF_SIZE: usize = 8192;
@@ -159,7 +158,9 @@ pub async fn capture_pane(session: &str) -> Result<Vec<u8>, TmuxError> {
 pub struct TerminalFeed {
     session: String,
     input_tx: mpsc::Sender<Frame>,
-    input_rx: Mutex<Option<mpsc::Receiver<Frame>>>,
+    /// Owned outright — `run(self: Box<Self>)` consumes the feed, so
+    /// single-run semantics are type-enforced (no take-pattern needed).
+    input_rx: mpsc::Receiver<Frame>,
 }
 
 impl TerminalFeed {
@@ -170,7 +171,7 @@ impl TerminalFeed {
         Self {
             session,
             input_tx,
-            input_rx: Mutex::new(Some(input_rx)),
+            input_rx,
         }
     }
 
@@ -190,17 +191,18 @@ impl StreamFeed for TerminalFeed {
         "terminal"
     }
 
-    async fn run(&self, tx: broadcast::Sender<Frame>, cancel: CancellationToken) {
-        // Take the input receiver (can only run once)
-        let mut input_rx = match self.input_rx.lock().unwrap().take() {
-            Some(rx) => rx,
-            None => {
-                error!("terminal feed run() called multiple times");
-                return;
-            }
-        };
+    fn lag_policy(&self) -> LagPolicy {
+        LagPolicy::Bootstrap
+    }
 
-        info!(session = %self.session, "starting terminal feed");
+    async fn run(self: Box<Self>, tx: broadcast::Sender<Frame>, cancel: CancellationToken) {
+        let Self {
+            session,
+            input_tx: _,
+            mut input_rx,
+        } = *self;
+
+        info!(session = %session, "starting terminal feed");
 
         // Open PTY
         let (pty, pts) = match pty_process::open() {
@@ -222,7 +224,7 @@ impl StreamFeed for TerminalFeed {
             .args(tmux_server_args())
             .arg("attach-session")
             .arg("-t")
-            .arg(&self.session)
+            .arg(&session)
             .spawn(pts)
         {
             Ok(child) => child,

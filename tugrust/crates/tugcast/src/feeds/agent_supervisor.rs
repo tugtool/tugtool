@@ -46,7 +46,10 @@ use super::agent_bridge::{
 };
 use super::code::parse_tug_session_id;
 use super::session_metadata::{is_rate_limit_event, is_session_capabilities, is_system_metadata};
+use super::session_scoped::SessionScopedFeed;
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
+#[cfg(test)]
+use tugcast_core::LagPolicy;
 
 /// Capacity of per-session CODE_INPUT buffering queues.
 pub const BOUNDED_QUEUE_CAP: usize = 256;
@@ -483,7 +486,7 @@ pub trait SessionsRecorder: Send + Sync {
     ///
     /// Returns the deleted row's content for logging, or `None` if
     /// there were no pending rows for the session. The frame has
-    /// already been broadcast on `code_output_tx` before this fires
+    /// already been broadcast on the code_output feed before this fires
     /// (forward-before-mutate), so a `LedgerError` here is a
     /// telemetry warn, not a user-visible failure.
     fn delete_oldest_pending_for_session(
@@ -987,16 +990,18 @@ pub enum ControlError {
 pub struct AgentSupervisor {
     /// Per-session ledger (see [`LedgerEntry`]).
     pub ledger: Ledger,
-    /// Broadcast sender for `SESSION_STATE` frames.
-    pub session_state_tx: broadcast::Sender<Frame>,
-    /// Broadcast sender for `SESSION_SIDEBAND` frames. Broadcast — not watch —
-    /// per [D14] so concurrent per-session metadata updates cannot clobber
-    /// one another.
-    pub session_sideband_tx: broadcast::Sender<Frame>,
+    /// The SESSION_STATE feed — a session-scoped publishing surface
+    /// (splice discipline + lag policy live on the handle).
+    pub session_state: SessionScopedFeed,
+    /// The SESSION_SIDEBAND feed. Broadcast — not watch — per [D14] so
+    /// concurrent per-session metadata updates cannot clobber one another.
+    pub session_sideband: SessionScopedFeed,
     /// Per-client session affinity, used by the P5 authorization cross-check.
     pub client_sessions: Arc<Mutex<HashMap<ClientId, HashSet<TugSessionId>>>>,
-    /// Shared supervisor-wide CODE_OUTPUT broadcast sender.
-    pub code_output_tx: broadcast::Sender<Frame>,
+    /// The shared supervisor-wide CODE_OUTPUT feed. Publishing through
+    /// the handle keeps the lag-recovery replay buffer fed ([D06]: the
+    /// buffer is cross-session; the deck filter provides isolation [D11]).
+    pub code_output: SessionScopedFeed,
     /// Outbound CONTROL broadcast sender — used for `session_unknown`,
     /// `session_backpressure`, and other supervisor-emitted error frames.
     pub control_tx: broadcast::Sender<Frame>,
@@ -1702,9 +1707,9 @@ impl AgentSupervisor {
     /// [`AgentSupervisor::merger_task`] with the returned receiver.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        session_state_tx: broadcast::Sender<Frame>,
-        session_sideband_tx: broadcast::Sender<Frame>,
-        code_output_tx: broadcast::Sender<Frame>,
+        session_state: SessionScopedFeed,
+        session_sideband: SessionScopedFeed,
+        code_output: SessionScopedFeed,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         spawner_factory: SpawnerFactory,
@@ -1713,9 +1718,9 @@ impl AgentSupervisor {
         cancel: CancellationToken,
     ) -> (Self, mpsc::Receiver<MergerRegistration>) {
         Self::new_with_ledger(
-            session_state_tx,
-            session_sideband_tx,
-            code_output_tx,
+            session_state,
+            session_sideband,
+            code_output,
             control_tx,
             sessions_recorder,
             None,
@@ -1732,9 +1737,9 @@ impl AgentSupervisor {
     /// get `None`.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_ledger(
-        session_state_tx: broadcast::Sender<Frame>,
-        session_sideband_tx: broadcast::Sender<Frame>,
-        code_output_tx: broadcast::Sender<Frame>,
+        session_state: SessionScopedFeed,
+        session_sideband: SessionScopedFeed,
+        code_output: SessionScopedFeed,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
@@ -1746,10 +1751,10 @@ impl AgentSupervisor {
         let (merger_register_tx, merger_register_rx) = mpsc::channel(64);
         let sup = Self {
             ledger: Arc::new(Mutex::new(HashMap::new())),
-            session_state_tx,
-            session_sideband_tx,
+            session_state,
+            session_sideband,
             client_sessions: Arc::new(Mutex::new(HashMap::new())),
-            code_output_tx,
+            code_output,
             control_tx,
             sessions_recorder,
             session_ledger,
@@ -2102,7 +2107,7 @@ impl AgentSupervisor {
                     // Broadcast SESSION_STATE errored so any observer of
                     // this session sees the failure, not just the client
                     // whose CONTROL frame we're about to reject.
-                    let _ = self.session_state_tx.send(build_session_state_frame(
+                    self.session_state.publish_tagged(build_session_state_frame(
                         &tug_session_id,
                         "errored",
                         Some(reason),
@@ -2257,7 +2262,7 @@ impl AgentSupervisor {
                             holder = %holder_owned,
                             "spawn_session: resume rejected — session live on another card"
                         );
-                        let _ = self.session_state_tx.send(build_session_state_frame(
+                        self.session_state.publish_tagged(build_session_state_frame(
                             &tug_session_id,
                             "errored",
                             Some("session_live_elsewhere"),
@@ -2326,7 +2331,7 @@ impl AgentSupervisor {
                     session = %tug_session_id,
                     "spawn_session: resume rejected — session live in terminal"
                 );
-                let _ = self.session_state_tx.send(build_session_state_frame(
+                self.session_state.publish_tagged(build_session_state_frame(
                     &tug_session_id,
                     "errored",
                     Some("session_live_in_terminal"),
@@ -2397,18 +2402,20 @@ impl AgentSupervisor {
         // `state="live"` and `card_id`). Pre-handshake spawns don't
         // appear in any picker — by then the user has already chosen.
 
-        let _ =
-            self.session_state_tx
-                .send(build_session_state_frame(&tug_session_id, "pending", None));
+        self.session_state.publish_tagged(build_session_state_frame(
+            &tug_session_id,
+            "pending",
+            None,
+        ));
 
         if let Some(frame) = replay_frame {
-            let _ = self.session_sideband_tx.send(frame);
+            self.session_sideband.publish_tagged(frame);
         }
         if let Some(frame) = capabilities_frame {
-            let _ = self.session_sideband_tx.send(frame);
+            self.session_sideband.publish_tagged(frame);
         }
         if let Some(frame) = rate_limit_frame {
-            let _ = self.session_sideband_tx.send(frame);
+            self.session_sideband.publish_tagged(frame);
         }
 
         // Eager spawn: transition Idle→Spawning and launch the tugcode
@@ -2577,9 +2584,11 @@ impl AgentSupervisor {
 
         // Phase 5: publish `closed`. (The `Arc<Mutex<LedgerEntry>>` we hold
         // is dropped at the end of this scope.)
-        let _ =
-            self.session_state_tx
-                .send(build_session_state_frame(tug_session_id, "closed", None));
+        self.session_state.publish_tagged(build_session_state_frame(
+            tug_session_id,
+            "closed",
+            None,
+        ));
 
         // Phase 6: transition the ledger row to `closed`. Pre-handshake
         // sessions never reached `session_init` and have no row, so the
@@ -3685,12 +3694,16 @@ impl AgentSupervisor {
             tug_session_id = %tug_session_id,
         );
 
-        let _ =
-            self.session_state_tx
-                .send(build_session_state_frame(tug_session_id, "closed", None));
-        let _ =
-            self.session_state_tx
-                .send(build_session_state_frame(tug_session_id, "pending", None));
+        self.session_state.publish_tagged(build_session_state_frame(
+            tug_session_id,
+            "closed",
+            None,
+        ));
+        self.session_state.publish_tagged(build_session_state_frame(
+            tug_session_id,
+            "pending",
+            None,
+        ));
     }
 
     /// CODE_INPUT dispatcher task. Consumes CODE_INPUT frames from a single
@@ -3977,7 +3990,7 @@ impl AgentSupervisor {
                     // The inbound frame is already tagged `CODE_OUTPUT` by
                     // `relay_session_io` so this send passes through
                     // unchanged.
-                    let _ = self.code_output_tx.send(frame.clone());
+                    self.code_output.publish_tagged(frame.clone());
                     // Per-session system_metadata capture + broadcast per
                     // [D14]. CRITICAL: rewrap as `FeedId::SESSION_SIDEBAND`
                     // before publishing / storing. `Frame::encode()`
@@ -4000,7 +4013,7 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_metadata = Some(meta_frame.clone());
                         }
-                        let _ = self.session_sideband_tx.send(meta_frame);
+                        self.session_sideband.publish_tagged(meta_frame);
                     } else if is_session_capabilities(&frame.payload) {
                         // Turn-free `initialize` capabilities ([#step-2a]).
                         // Rewrap onto SESSION_SIDEBAND (same rationale as
@@ -4022,7 +4035,7 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_capabilities = Some(cap_frame.clone());
                         }
-                        let _ = self.session_sideband_tx.send(cap_frame);
+                        self.session_sideband.publish_tagged(cap_frame);
                     } else if is_rate_limit_event(&frame.payload) {
                         // Per-turn subscription-quota broadcast ([#step-3]).
                         // Rewrap onto SESSION_SIDEBAND (same rationale as
@@ -4046,7 +4059,7 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_rate_limit = Some(rl_frame.clone());
                         }
-                        let _ = self.session_sideband_tx.send(rl_frame);
+                        self.session_sideband.publish_tagged(rl_frame);
                     }
                     // Forward-before-mutate: the wire-side broadcast above
                     // is the user-visible signal and must not be delayed
@@ -4237,7 +4250,7 @@ impl AgentSupervisor {
             if entry.spawn_state == SpawnState::Spawning {
                 entry.spawn_state = SpawnState::Errored;
                 drop(entry);
-                let _ = self.session_state_tx.send(build_session_state_frame(
+                self.session_state.publish_tagged(build_session_state_frame(
                     tug_session_id,
                     "errored",
                     Some("merger_unavailable"),
@@ -4279,13 +4292,15 @@ impl AgentSupervisor {
         // so only the dispatcher owns the send side after this point.
         drop(input_tx);
 
-        let _ =
-            self.session_state_tx
-                .send(build_session_state_frame(tug_session_id, "spawning", None));
+        self.session_state.publish_tagged(build_session_state_frame(
+            tug_session_id,
+            "spawning",
+            None,
+        ));
 
         // Launch the real bridge in a detached task.
         let spawner = (self.spawner_factory)();
-        let state_tx = self.session_state_tx.clone();
+        let state_tx = self.session_state.sender();
         let tug_session_id_owned = tug_session_id.clone();
         let entry_arc_bridge = entry_arc.clone();
         // Per-session workspace path. Read from the ledger entry so
@@ -4531,9 +4546,9 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
     let registry = Arc::new(WorkspaceRegistry::new_for_test());
     let cancel = CancellationToken::new();
     let (sup, register_rx) = AgentSupervisor::new(
-        state_tx,
-        meta_tx,
-        code_tx,
+        SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+        SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+        SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
         control_tx,
         recorder,
         factory,
@@ -4708,9 +4723,9 @@ mod tests {
             ..config
         };
         let (sup, register_rx) = AgentSupervisor::new(
-            state_tx,
-            meta_tx,
-            code_tx,
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
             control_tx,
             recorder,
             spawner_factory,
@@ -5074,9 +5089,9 @@ mod tests {
         let recorder: Arc<dyn SessionsRecorder> =
             Arc::new(LedgerSessionsRecorder::new(Arc::clone(&ledger)));
         let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
-            state_tx,
-            meta_tx,
-            code_tx,
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
             control_tx,
             recorder,
             Some(Arc::clone(&ledger)),
@@ -6246,7 +6261,7 @@ mod tests {
         let ((sup, _state_rx, _meta_rx, _control_rx), register_rx) =
             make_supervisor_with_spawner(stall_spawner_factory());
         let sup = Arc::new(sup);
-        let mut code_rx = sup.code_output_tx.subscribe();
+        let mut code_rx = sup.code_output.subscribe();
         let cancel = CancellationToken::new();
         let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
 
@@ -6349,7 +6364,7 @@ mod tests {
 
         // Feed-id correctness pin: the merger rewraps system_metadata
         // payloads with `FeedId::SESSION_SIDEBAND` before publishing onto
-        // `session_sideband_tx`. `Frame::encode` uses `frame.feed_id` as
+        // the session_sideband feed. `Frame::encode` uses `frame.feed_id` as
         // the first wire byte, so any client-side filter keyed on
         // `FeedId::SESSION_SIDEBAND` depends on this. A regression that
         // left the feed_id as CODE_OUTPUT would silently break tugdeck's
@@ -6460,7 +6475,7 @@ mod tests {
 
         let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
         let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(4);
-        let state_tx = sup.session_state_tx.clone();
+        let state_tx = sup.session_state.sender();
         let mut state_rx = state_tx.subscribe();
         let cancel = CancellationToken::new();
 
@@ -6570,7 +6585,7 @@ mod tests {
 
         let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
         let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(4);
-        let state_tx = sup.session_state_tx.clone();
+        let state_tx = sup.session_state.sender();
         let cancel = CancellationToken::new();
 
         let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
@@ -6742,7 +6757,7 @@ mod tests {
 
         let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
         let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(16);
-        let state_tx = sup.session_state_tx.clone();
+        let state_tx = sup.session_state.sender();
         let cancel = CancellationToken::new();
 
         let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
@@ -7291,9 +7306,9 @@ mod tests {
         let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let cancel = CancellationToken::new();
         let (sup, mut register_rx) = AgentSupervisor::new(
-            state_tx,
-            meta_tx,
-            code_tx,
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
             control_tx,
             recorder,
             stall_spawner_factory(),
@@ -7390,9 +7405,9 @@ mod tests {
             ..AgentSupervisorConfig::default()
         };
         let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
-            state_tx,
-            meta_tx,
-            code_tx,
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
             control_tx,
             recorder,
             Some(Arc::clone(&ledger)),

@@ -46,7 +46,7 @@ import { useVersionGateOpen, deriveTugSetupOpen } from "@/lib/macos-support";
 import { useAppTransportState } from "@/lib/transport-state-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
-import { readSetupSeen, putSetupSeen } from "@/settings-api";
+import { readSetupSeen, readSetupSuppressed, putSetupSeen } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
 import { subscriptionLabel } from "./tug-setup-copy";
 import { TugPushButton } from "./tug-push-button";
@@ -183,6 +183,15 @@ export function TugSetup(): ReactElement {
     const client = getTugbankClient();
     return client ? !readSetupSeen(client) : false;
   });
+
+  // App-test suppression, read once at mount like `firstRun`: tugcast seeds
+  // the flag when the app-test harness launched this instance, so the
+  // blocking wizard never opens under a focus/selection-driven test. A
+  // TugSetup-specific test opts back in via the harness (flag seeded false).
+  const [suppressed] = useState(() => {
+    const client = getTugbankClient();
+    return client ? readSetupSuppressed(client) : false;
+  });
   useEffect(() => {
     if (firstRun) putSetupSeen(true);
   }, [firstRun]);
@@ -210,7 +219,7 @@ export function TugSetup(): ReactElement {
   const gateOpen = useVersionGateOpen();
   const open = deriveTugSetupOpen(
     gateOpen,
-    forced !== false || notReady || needsFirstSession || probing,
+    !suppressed && (forced !== false || notReady || needsFirstSession || probing),
   );
 
   const handleInstall = (): void => {

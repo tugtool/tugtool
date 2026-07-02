@@ -1511,6 +1511,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     env: {
       ...process.env,
       ...(opts.persistInTestMode ? { TUGAPP_PERSIST_IN_TEST_MODE: "1" } : {}),
+      ...(opts.keepSetup ? { TUGAPP_TEST_KEEP_SETUP: "1" } : {}),
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,
       TUG_INSTANCE_ID: instanceId,

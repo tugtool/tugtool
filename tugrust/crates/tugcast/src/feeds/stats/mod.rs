@@ -41,6 +41,31 @@ pub trait StatCollector: Send + Sync {
     fn interval(&self) -> Duration;
 }
 
+/// Spawn the stats subsystem — the unified registration surface for the
+/// STATS feeds. Creates one watch channel per collector plus the
+/// aggregate, spawns [`StatsRunner`]'s tasks under `cancel`, and returns
+/// the watch receivers (aggregate first, then one per collector in
+/// order) for the router's snapshot registration. The `StatCollector`
+/// trait stays its own model — timer-polled, process-global — but its
+/// channels and task spawn no longer leak into `main.rs` wiring.
+pub fn spawn_stats_feeds(
+    collectors: Vec<Arc<dyn StatCollector>>,
+    cancel: CancellationToken,
+) -> Vec<watch::Receiver<Frame>> {
+    let (agg_tx, agg_rx) = watch::channel(Frame::new(FeedId::STATS, vec![]));
+    let mut senders = Vec::with_capacity(collectors.len());
+    let mut receivers = Vec::with_capacity(collectors.len() + 1);
+    receivers.push(agg_rx);
+    for collector in &collectors {
+        let (tx, rx) = watch::channel(Frame::new(collector.feed_id(), vec![]));
+        senders.push(tx);
+        receivers.push(rx);
+    }
+    let runner = StatsRunner::new(collectors);
+    tokio::spawn(async move { runner.run(agg_tx, senders, cancel).await });
+    receivers
+}
+
 /// Manages lifecycle of multiple stat collectors and produces aggregate feed.
 pub struct StatsRunner {
     collectors: Vec<Arc<dyn StatCollector>>,

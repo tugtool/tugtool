@@ -63,7 +63,7 @@ impl SnapshotFeed for FilesystemFeed {
         "filesystem"
     }
 
-    async fn run(&self, tx: watch::Sender<Frame>, cancel: CancellationToken) {
+    async fn run(self: Box<Self>, tx: watch::Sender<Frame>, cancel: CancellationToken) {
         let mut rx = self.event_tx.subscribe();
         info!(dir = ?self.watch_dir, "filesystem feed started");
 
@@ -157,7 +157,7 @@ mod tests {
         // Spawn the FilesystemFeed in the background
         let feed_cancel = cancel.clone();
         let feed_task = tokio::spawn(async move {
-            feed.run(fs_watch_tx, feed_cancel).await;
+            Box::new(feed).run(fs_watch_tx, feed_cancel).await;
         });
 
         // Wait for watcher to initialize
@@ -224,7 +224,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let feed_cancel = cancel.clone();
         let feed_task = tokio::spawn(async move {
-            feed.run(fs_watch_tx, feed_cancel).await;
+            Box::new(feed).run(fs_watch_tx, feed_cancel).await;
         });
 
         // Give the feed a moment to subscribe before we publish.

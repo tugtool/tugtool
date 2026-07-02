@@ -493,4 +493,15 @@ export interface LaunchTugAppOptions {
    * tugcore::instance and Swift InstanceConfig both read it.
    */
   instanceId?: string;
+
+  /**
+   * Keep the TugSetup wizard live in this launch. By default the harness
+   * suppresses it: every app-test instance boots a fresh per-instance
+   * tugbank, which reads as a first run, and the blocking wizard would
+   * steal focus from every focus/selection-driven test. tugcast seeds a
+   * `suppress-setup` tugbank default when it sees the harness marker;
+   * setting `keepSetup: true` sets `TUGAPP_TEST_KEEP_SETUP=1` so the
+   * seed flips to `false` — for tests that explicitly test TugSetup.
+   */
+  keepSetup?: boolean;
 }

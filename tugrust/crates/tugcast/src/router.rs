@@ -11,7 +11,7 @@
 //! Input dispatch enforces single-writer-per-FeedId: the first client to send
 //! on an input FeedId claims it; subsequent clients receive an error frame.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,6 +26,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time;
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use tugcast_core::{
@@ -38,95 +39,20 @@ use crate::feeds::agent_supervisor::{AgentSupervisor, ControlError, ControlOutco
 use crate::feeds::code::parse_tug_session_id;
 use crate::feeds::terminal;
 
-/// Broadcast channel capacity for stream feeds
-pub const BROADCAST_CAPACITY: usize = 4096;
+/// Broadcast channel capacity for stream feeds (re-exported so existing
+/// `crate::router::BROADCAST_CAPACITY` callers keep working — the constant
+/// itself lives with the feed traits in tugcast-core).
+pub use tugcast_core::DEFAULT_BROADCAST_CAPACITY as BROADCAST_CAPACITY;
+/// Lag policy + replay buffer live in tugcast-core so the `StreamFeed` trait
+/// can self-describe its recovery behavior; re-exported here for the
+/// router-side callers that consume them.
+pub use tugcast_core::{LagPolicy, ReplayBuffer};
 
 /// Heartbeat interval (send heartbeat every 15 seconds)
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Heartbeat timeout (close connection if no heartbeat received within 45 seconds)
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(45);
-
-// ---------------------------------------------------------------------------
-// ReplayBuffer
-// ---------------------------------------------------------------------------
-
-/// Shared replay buffer for lag recovery on stream feeds.
-///
-/// The producer pushes frames; on lag the router replays the buffer contents
-/// to the client. Thread-safe via `Arc<Mutex<_>>`.
-#[derive(Clone)]
-pub struct ReplayBuffer {
-    frames: Arc<Mutex<VecDeque<Frame>>>,
-    capacity: usize,
-}
-
-impl ReplayBuffer {
-    /// Create a new replay buffer with the given maximum capacity.
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            frames: Arc::new(Mutex::new(VecDeque::with_capacity(capacity))),
-            capacity,
-        }
-    }
-
-    /// Push a frame into the buffer, evicting the oldest if at capacity.
-    #[allow(dead_code)]
-    pub fn push(&self, frame: Frame) {
-        let mut buf = self.frames.lock().unwrap();
-        if buf.len() >= self.capacity {
-            buf.pop_front();
-        }
-        buf.push_back(frame);
-    }
-
-    /// Return a snapshot (clone) of all buffered frames.
-    pub fn snapshot(&self) -> Vec<Frame> {
-        self.frames.lock().unwrap().iter().cloned().collect()
-    }
-
-    /// Number of frames currently in the buffer.
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.frames.lock().unwrap().len()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// LagPolicy
-// ---------------------------------------------------------------------------
-
-/// What the router should do when a client falls behind on a stream feed.
-#[derive(Debug, Clone)]
-pub enum LagPolicy {
-    /// Re-enter BOOTSTRAP state to recover (e.g. terminal output).
-    Bootstrap,
-    /// Replay from a shared ring buffer, then resume live streaming.
-    Replay(ReplayBuffer),
-    /// Log a warning and continue — the client may miss frames.
-    Warn,
-}
-
-// Manual PartialEq: compare variant tags only (ReplayBuffer is not meaningfully comparable).
-impl PartialEq for LagPolicy {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (LagPolicy::Bootstrap, LagPolicy::Bootstrap)
-                | (LagPolicy::Replay(_), LagPolicy::Replay(_))
-                | (LagPolicy::Warn, LagPolicy::Warn)
-        )
-    }
-}
-impl Eq for LagPolicy {}
-
-// Manual Debug for ReplayBuffer (doesn't derive Debug because of Mutex).
-impl std::fmt::Debug for ReplayBuffer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let len = self.frames.lock().map(|b| b.len()).unwrap_or(0);
-        write!(f, "ReplayBuffer({}/{})", len, self.capacity)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // InputOwnership — single-writer-per-(FeedId, tug_session_id) enforcement (P5)
@@ -234,6 +160,37 @@ impl FeedRouter {
         lag_policy: LagPolicy,
     ) {
         self.stream_outputs.insert(feed_id, (tx, lag_policy));
+    }
+
+    /// Register **and spawn** a stream feed — the trait-mediated path.
+    ///
+    /// The feed self-describes its registration: the router creates the
+    /// broadcast channel at the feed's declared capacity, records the feed's
+    /// own lag policy, and spawns `run` with the channel's sender. Returns a
+    /// sender clone for producers that also publish onto the feed's channel
+    /// from outside the feed task (most callers ignore it).
+    pub(crate) fn register_stream_feed(
+        &mut self,
+        feed: Box<dyn tugcast_core::StreamFeed>,
+        cancel: CancellationToken,
+    ) -> broadcast::Sender<Frame> {
+        let (tx, _) = broadcast::channel(feed.channel_capacity());
+        self.stream_outputs
+            .insert(feed.feed_id(), (tx.clone(), feed.lag_policy()));
+        let run_tx = tx.clone();
+        tokio::spawn(async move { feed.run(run_tx, cancel).await });
+        tx
+    }
+
+    /// Register a session-scoped stream feed: the feed's own channel and
+    /// lag policy enter client delivery; producers publish through their
+    /// `SessionScopedFeed` clones (splice-on-emit lives there, not here).
+    pub(crate) fn register_session_feed(
+        &mut self,
+        feed: &crate::feeds::session_scoped::SessionScopedFeed,
+    ) {
+        self.stream_outputs
+            .insert(feed.feed_id(), (feed.sender(), feed.lag_policy()));
     }
 
     /// Register an input sink (client → server backend).
@@ -1207,6 +1164,45 @@ mod tests {
         assert_ne!(LagPolicy::Bootstrap, r1);
     }
 
+    // ---- Session-feed registration ----
+
+    /// The lag-recovery contract, pinned at the layer `handle_client`'s
+    /// replay path reads: registering a Replay-policy session feed puts
+    /// the SAME buffer behind the router's stream entry, and frames
+    /// published through the handle land in it — a lagging client's
+    /// `snapshot()` replays real frames, not an empty buffer.
+    #[test]
+    fn register_session_feed_shares_replay_buffer_with_publisher() {
+        use crate::feeds::session_scoped::SessionScopedFeed;
+
+        let buffer = ReplayBuffer::new(8);
+        let feed =
+            SessionScopedFeed::new(FeedId::CODE_OUTPUT, 8, LagPolicy::Replay(buffer.clone()));
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel(1);
+        let mut router = FeedRouter::new(
+            "test".to_string(),
+            crate::auth::new_shared_auth_state(0),
+            shutdown_tx,
+            crate::dev::new_shared_dev_state(),
+        );
+        router.register_session_feed(&feed);
+
+        feed.publish("session-a", br#"{"type":"assistant_text"}"#);
+        feed.publish("session-b", br#"{"type":"tool_use"}"#);
+
+        let (_, policy) = router.stream_outputs.get(&FeedId::CODE_OUTPUT).unwrap();
+        let LagPolicy::Replay(routed_buffer) = policy else {
+            panic!("CODE_OUTPUT must register with a Replay policy");
+        };
+        let frames = routed_buffer.snapshot();
+        assert_eq!(frames.len(), 2, "published frames feed lag recovery");
+        assert!(
+            frames[0]
+                .payload
+                .starts_with(br#"{"tug_session_id":"session-a","#)
+        );
+    }
+
     // ---- InputOwnership (P5) ----
 
     #[test]
@@ -1630,6 +1626,7 @@ mod tests {
             AgentSupervisor, AgentSupervisorConfig, NoopSessionsRecorder, SessionsRecorder,
             SpawnerFactory,
         };
+        use crate::feeds::session_scoped::SessionScopedFeed;
         use crate::feeds::workspace_registry::WorkspaceRegistry;
         use tokio::sync::mpsc;
 
@@ -1642,9 +1639,13 @@ mod tests {
         let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let router_cancel = CancellationToken::new();
         let (sup, register_rx) = AgentSupervisor::new(
-            state_tx,
-            session_sideband_tx,
-            code_tx,
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(
+                FeedId::SESSION_SIDEBAND,
+                session_sideband_tx,
+                LagPolicy::Warn,
+            ),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
             control_tx,
             recorder,
             factory,

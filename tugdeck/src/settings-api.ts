@@ -275,6 +275,20 @@ export function readSetupSeen(client: TugbankClient): boolean {
 }
 
 /**
+ * Read the app-test setup-suppression flag from the TugbankClient cache.
+ * Seeded by tugcast at startup when the app-test harness marker is present
+ * (before the server accepts connections, so it is readable at deck mount):
+ * `true` keeps the blocking TugSetup wizard closed so focus/selection-driven
+ * tests never race it; a TugSetup-specific test opts back in through the
+ * harness, which seeds `false`. Stored under `dev.tugtool.app` /
+ * `suppress-setup` (Value::Bool); absent on normal launches.
+ */
+export function readSetupSuppressed(client: TugbankClient): boolean {
+  const entry = client.get("dev.tugtool.app", "suppress-setup");
+  return entry?.kind === "bool" && entry.value === true;
+}
+
+/**
  * Persist the first-launch flag to tugbank under `dev.tugtool.app` /
  * `setup-seen`. Fire-and-forget, mirroring `putTheme`.
  */
