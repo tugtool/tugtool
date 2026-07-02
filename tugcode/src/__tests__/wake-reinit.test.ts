@@ -87,6 +87,7 @@ describe("SessionManager — system/init re-init detector via handleClaudeLine",
       gotResult: false,
       messageBlocks: new Map(),
       updateBlockStateFromMessages: () => {},
+      laneFor: () => ({ msgId: null, rev: 0, partialText: "", messageBlocks: new Map() }),
     }; // stub turn
     expect((manager as any).sessionInitSeen).toBe(false);
 
@@ -106,6 +107,7 @@ describe("SessionManager — system/init re-init detector via handleClaudeLine",
       gotResult: false,
       messageBlocks: new Map(),
       updateBlockStateFromMessages: () => {},
+      laneFor: () => ({ msgId: null, rev: 0, partialText: "", messageBlocks: new Map() }),
     };
 
     // Claude emits compact_boundary mid-turn, then re-emits system/init.

@@ -2229,45 +2229,113 @@ interface ToolUseBlockState {
   toolStructuredResult?: Record<string, unknown>;
 }
 
-export class ActiveTurn {
+/**
+ * Per-lane stream state for one concurrent claude stream within a turn.
+ *
+ * A turn's stdout multiplexes the main loop's stream with any background
+ * subagents' streams; every event is tagged with `parent_tool_use_id`
+ * (present on all 5 message types per PN-8) — absent/empty for the main
+ * loop, the launching tool_use id for a subagent. Each such source is a
+ * **lane**, keyed `parent_tool_use_id ?? null`, and each lane runs its
+ * own `message_start` → deltas → `message_delta` cycle with its own
+ * `message.id`s. Sharing one pointer across lanes lets a subagent's
+ * `message_start` re-stamp the main loop's in-flight deltas with the
+ * subagent's msg_id — the reducer then mints a spurious second Message
+ * mid-block (the "I / 'll wait…" transcript split).
+ */
+interface LaneState {
   /**
    * Sliding pointer to the most recent claude `message.id` seen on this
-   * turn's stream. Updated on every `message_start` (via
+   * lane's stream. Updated on every `message_start` (via
    * `mapStreamEvent.messageId`) and on every top-level `assistant`
    * snapshot (via `routeTopLevelEvent.messageId`). Used by
    * `dispatchEventToTurn` to populate `msg_id` on frames whose claude
    * stream event doesn't carry one directly (`content_block_delta`,
-   * `content_block_start`). `null` before claude's first id-bearing
-   * event — degenerate-state emit sites
-   * (`signalEofToActiveTurn`, `emitInflightTurnFromActiveTurn`)
-   * treat null as "nothing claude-keyable to emit yet."
+   * `content_block_start`). `null` before the lane's first id-bearing
+   * event.
    *
-   * Multi-message claude turns (text → tool_use → tool_result → second
-   * text) overwrite this pointer on the second `message.id`. Each
+   * Multi-message cycles (text → tool_use → tool_result → second text)
+   * overwrite this pointer on the second `message.id`. Each
    * `message.id` is its own thing on the wire; the reducer renders them
    * as separate panels keyed by id.
    */
-  currentMessageId: string | null = null;
+  msgId: string | null;
+  /** Streaming-text revision counter, bumped per stream-event delta. */
+  rev: number;
+  /** Accumulated streaming text for this lane. */
+  partialText: string;
   /**
-   * Per-message content blocks observed during this turn, in arrival
-   * order. Keyed by msg_id (a turn may span multiple msgIds via
+   * Per-message content blocks observed on this lane, in arrival
+   * order. Keyed by msg_id (a lane may span multiple msgIds via
    * tool-use-loop iterations); each value is the ordered list of blocks
    * for that message.
    *
-   * Populated by `updateBlockStateFromMessages` (called from
-   * `dispatchEventToTurn` after each routed/streamed batch), and read by
-   * `emitInflightTurnFromActiveTurn` to reconstruct the per-block event
-   * stream for mid-turn replay ([D07] § Mid-turn replay snapshot).
-   *
-   * Why this lives on ActiveTurn rather than being inferred from
-   * `partialText`: the wire emits text in discrete blocks separated by
-   * tool calls. `partialText` concatenates everything since the turn
-   * began (no block boundaries preserved); for a faithful replay
-   * snapshot we need the per-block structure too. The reducer-side
-   * sequence substrate ([D07]) consumes block-aware events on the live
-   * path; the snapshot path must produce the same shape.
+   * Why this lives here rather than being inferred from `partialText`:
+   * the wire emits text in discrete blocks separated by tool calls.
+   * `partialText` concatenates everything since the lane began (no
+   * block boundaries preserved); for a faithful replay snapshot we need
+   * the per-block structure too.
    */
-  messageBlocks: Map<string, BlockState[]> = new Map();
+  messageBlocks: Map<string, BlockState[]>;
+}
+
+/** The main-loop lane key; subagent lanes key by their launching tool_use id. */
+const MAIN_LANE: string | null = null;
+
+export class ActiveTurn {
+  /**
+   * Per-lane stream state, keyed `parent_tool_use_id ?? null` (see
+   * {@link LaneState}). The main lane (`null`) is created eagerly so
+   * the accessors below always have a target; subagent lanes are
+   * created on their first event via {@link laneFor}.
+   */
+  private readonly lanes: Map<string | null, LaneState> = new Map([
+    [
+      MAIN_LANE,
+      { msgId: null, rev: 0, partialText: "", messageBlocks: new Map() },
+    ],
+  ]);
+
+  /**
+   * Resolve (creating on first touch) the lane for one event's
+   * `parent_tool_use_id ?? null`.
+   */
+  laneFor(laneKey: string | null): LaneState {
+    let lane = this.lanes.get(laneKey);
+    if (lane === undefined) {
+      lane = { msgId: null, rev: 0, partialText: "", messageBlocks: new Map() };
+      this.lanes.set(laneKey, lane);
+    }
+    return lane;
+  }
+
+  /**
+   * The MAIN lane's sliding `message.id` pointer (see
+   * {@link LaneState.msgId}). Turn-scoped consumers — the terminal
+   * emits on `gotResult`, `signalEofToActiveTurn`, and
+   * `emitInflightTurnFromActiveTurn` — key on the main loop's message,
+   * never a subagent's, so the accessor reads the main lane. `null`
+   * before claude's first id-bearing event — degenerate-state emit
+   * sites treat null as "nothing claude-keyable to emit yet."
+   */
+  get currentMessageId(): string | null {
+    return this.laneFor(MAIN_LANE).msgId;
+  }
+  set currentMessageId(value: string | null) {
+    this.laneFor(MAIN_LANE).msgId = value;
+  }
+  /**
+   * The MAIN lane's per-message content blocks (see
+   * {@link LaneState.messageBlocks}). Read by
+   * `emitInflightTurnFromActiveTurn` to reconstruct the per-block event
+   * stream for mid-turn replay ([D07] § Mid-turn replay snapshot) —
+   * which deliberately replays only the main lane: subagent content is
+   * re-derived from the subagent JSONL on the deck side, and replaying
+   * it here would inject agent-lane blocks into the main transcript.
+   */
+  get messageBlocks(): Map<string, BlockState[]> {
+    return this.laneFor(MAIN_LANE).messageBlocks;
+  }
   /**
    * Index from `tool_use_id` to the matching ToolUseBlockState in
    * {@link messageBlocks}. Maintained alongside `messageBlocks` by
@@ -2304,10 +2372,24 @@ export class ActiveTurn {
    * the mid-turn snapshot's `add_user_message.promptUuid`.
    */
   promptUuid: string | null = null;
-  /** Streaming-text revision counter, bumped per stream-event delta. */
-  rev: number = 0;
-  /** Accumulated streaming text; emitted as a final `assistant_text` on `gotResult`. */
-  partialText: string = "";
+  /** The MAIN lane's streaming-text revision counter (see {@link LaneState.rev}). */
+  get rev(): number {
+    return this.laneFor(MAIN_LANE).rev;
+  }
+  set rev(value: number) {
+    this.laneFor(MAIN_LANE).rev = value;
+  }
+  /**
+   * The MAIN lane's accumulated streaming text (see
+   * {@link LaneState.partialText}); emitted as a final `assistant_text`
+   * on `gotResult` and as `turn_cancelled.partial_result` on interrupt.
+   */
+  get partialText(): string {
+    return this.laneFor(MAIN_LANE).partialText;
+  }
+  set partialText(value: string) {
+    this.laneFor(MAIN_LANE).partialText = value;
+  }
   /** True once the drain has seen claude's terminal `result` event for this turn. */
   gotResult: boolean = false;
   /**
@@ -2387,11 +2469,22 @@ export class ActiveTurn {
    * either written to the wire (live) or suppressed (during runReplay's
    * bracket); either way the block state must update so the snapshot is
    * ready if the bracket fires.
+   *
+   * `laneKey` is the batch's `parent_tool_use_id ?? null` — blocks
+   * mirror into that lane's map so a subagent's blocks never collide
+   * with (or leak into) the main lane's mid-turn snapshot.
+   * `toolCallByToolUseId` stays turn-global: tool_use ids are unique
+   * across lanes, and `tool_result` correlation events don't re-state
+   * which lane minted the block.
    */
-  updateBlockStateFromMessages(messages: ReadonlyArray<OutboundMessage>): void {
+  updateBlockStateFromMessages(
+    messages: ReadonlyArray<OutboundMessage>,
+    laneKey: string | null = MAIN_LANE,
+  ): void {
+    const laneBlocks = this.laneFor(laneKey).messageBlocks;
     for (const msg of messages) {
       if (msg.type === "content_block_start") {
-        const blocks = this.messageBlocks.get(msg.msg_id) ?? [];
+        const blocks = laneBlocks.get(msg.msg_id) ?? [];
         // Idempotent: if a block with this index already exists, leave
         // it alone. Mirrors the reducer-side `handleContentBlockStart`
         // idempotence ([D07] § Mid-turn replay snapshot).
@@ -2432,9 +2525,9 @@ export class ActiveTurn {
         blocks.push(entry);
         // Keep blocks sorted by index for predictable iteration.
         blocks.sort((a, b) => a.index - b.index);
-        this.messageBlocks.set(msg.msg_id, blocks);
+        laneBlocks.set(msg.msg_id, blocks);
       } else if (msg.type === "assistant_text" || msg.type === "thinking_text") {
-        const blocks = this.messageBlocks.get(msg.msg_id);
+        const blocks = laneBlocks.get(msg.msg_id);
         const block = blocks?.find((b) => b.index === msg.block_index);
         if (block === undefined) {
           // Text delta without a matching minted block — either
@@ -2507,14 +2600,16 @@ export class ActiveTurn {
    *
    * Correlation lives here, not in `mapStreamEvent`: the delta carries only
    * `block_index`, and the block was minted (with its tool_use_id / name) by
-   * the preceding `content_block_start` via `updateBlockStateFromMessages`.
+   * the preceding `content_block_start` via `updateBlockStateFromMessages`
+   * — in the lane the delta arrived on, so `laneKey` selects the same map.
    */
   recordToolInputDelta(
     msgId: string,
     blockIndex: number,
     fragment: string,
+    laneKey: string | null = MAIN_LANE,
   ): ToolInputProgress | null {
-    const blocks = this.messageBlocks.get(msgId);
+    const blocks = this.laneFor(laneKey).messageBlocks.get(msgId);
     const block = blocks?.find((b) => b.index === blockIndex);
     if (block === undefined || block.kind !== "tool_use") return null;
 
@@ -4855,10 +4950,24 @@ export class SessionManager {
     turn: ActiveTurn,
     event: Record<string, unknown>,
   ): void {
+    // Resolve the event's lane BEFORE any mapping: a turn's stdout
+    // multiplexes the main loop with background subagents' streams,
+    // and each runs its own message cycle with its own `message.id`s.
+    // All per-message pointer state (msgId / rev / partialText /
+    // messageBlocks) is lane-scoped so a subagent's `message_start`
+    // can never re-stamp the main loop's in-flight deltas (or vice
+    // versa) with the wrong msg_id.
+    const rawLaneId = event.parent_tool_use_id;
+    const laneKey: string | null =
+      typeof rawLaneId === "string" && rawLaneId.length > 0
+        ? rawLaneId
+        : null;
+    const lane = turn.laneFor(laneKey);
+
     const ctx: EventMappingContext = {
-      msgId: turn.currentMessageId ?? "",
+      msgId: lane.msgId ?? "",
       seq: turn.seq,
-      rev: turn.rev,
+      rev: lane.rev,
     };
 
     // Tier 1: route the top-level message type. The turn's last
@@ -4871,13 +4980,13 @@ export class SessionManager {
       turn.lastMessageDeltaUsage ?? turn.lastMessageStartUsage,
     );
 
-    // Slide the per-turn pointer to claude's most recent `message.id`.
+    // Slide the lane's pointer to claude's most recent `message.id`.
     // Top-level `assistant` snapshots carry it directly; nothing rejects,
-    // nothing freezes. Multi-message turns simply move the pointer to
+    // nothing freezes. Multi-message cycles simply move the pointer to
     // the new id when the next `message_start` (below) arrives.
     if (routeResult.messageId !== undefined) {
-      turn.currentMessageId = routeResult.messageId;
-      ctx.msgId = turn.currentMessageId;
+      lane.msgId = routeResult.messageId;
+      ctx.msgId = lane.msgId;
     }
 
     // `/rewind` anchor ([#step-7-1]). The live user-echo reveals the
@@ -4904,34 +5013,37 @@ export class SessionManager {
           routeResult.parentToolUseId;
       }
       // Gate site 1/7: suppressEmit holds back live forwarding while
-      // runReplay's bracket is on the wire. State mutations
-      // (turn.currentMessageId, turn.rev, turn.partialText,
-      // turn.messageBlocks) continue regardless — the snapshot emission
-      // in emitInflightTurnFromActiveTurn reads them.
+      // runReplay's bracket is on the wire. State mutations (the lane's
+      // msgId / rev / partialText / messageBlocks) continue regardless —
+      // the snapshot emission in emitInflightTurnFromActiveTurn reads
+      // them.
       if (!turn.suppressEmit) writeLine(ipcMsg);
     }
-    // Mirror routed messages onto per-block state for mid-turn replay
-    // snapshot ([D07] § Mid-turn replay snapshot). Runs regardless of
-    // suppressEmit so the snapshot has up-to-date block state if the
-    // bracket fires.
-    turn.updateBlockStateFromMessages(routeResult.messages);
+    // Mirror routed messages onto the lane's per-block state for
+    // mid-turn replay snapshot ([D07] § Mid-turn replay snapshot). Runs
+    // regardless of suppressEmit so the snapshot has up-to-date block
+    // state if the bracket fires.
+    turn.updateBlockStateFromMessages(routeResult.messages, laneKey);
 
     // Tier 2: delegate stream_event inner payload to mapStreamEvent().
     if (routeResult.streamEvent) {
       const streamResult = mapStreamEvent(
         routeResult.streamEvent,
         ctx,
-        turn.partialText,
+        lane.partialText,
       );
-      // Slide the pointer when `message_start` reveals a new id. claude
-      // emits this before any content-bearing event of the message, so
-      // by the time `content_block_delta` lands, ctx.msgId is already
-      // claude's. Multi-message turns: a second `message_start` simply
-      // moves the pointer to the new id; the prior message's frames are
-      // already on the wire under its own id.
+      // Slide the lane's pointer when `message_start` reveals a new id.
+      // claude emits this before any content-bearing event of the
+      // message, so by the time `content_block_delta` lands, ctx.msgId
+      // is already claude's. Multi-message cycles: a second
+      // `message_start` simply moves the pointer to the new id; the
+      // prior message's frames are already on the wire under its own
+      // id. Lane-scoped: a background subagent's `message_start` slides
+      // only ITS lane, so the main loop's in-flight deltas keep their
+      // msg_id (and vice versa).
       if (streamResult.messageId !== undefined) {
-        turn.currentMessageId = streamResult.messageId;
-        ctx.msgId = turn.currentMessageId;
+        lane.msgId = streamResult.messageId;
+        ctx.msgId = lane.msgId;
       }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
@@ -4948,9 +5060,9 @@ export class SessionManager {
         // snapshot already minted.
         if (!turn.suppressEmit) writeLine(ipcMsg);
       }
-      // Mirror streamed messages onto per-block state. Same rationale
-      // as the routeResult call above.
-      turn.updateBlockStateFromMessages(streamResult.messages);
+      // Mirror streamed messages onto the lane's per-block state. Same
+      // rationale as the routeResult call above.
+      turn.updateBlockStateFromMessages(streamResult.messages, laneKey);
 
       // Tool-input progress: claude streams a tool's argument JSON as
       // `input_json_delta` fragments. The block state (minted by the
@@ -4973,22 +5085,34 @@ export class SessionManager {
             ctx.msgId,
             innerIndex,
             innerDelta.partial_json,
+            laneKey,
           );
-          if (progress !== null && !turn.suppressEmit) writeLine(progress);
+          if (progress !== null) {
+            // Tag subagent-lane progress like every other subagent
+            // frame so the deck routes it under the Agent block.
+            if (routeResult.parentToolUseId) {
+              (progress as unknown as Record<string, unknown>).parent_tool_use_id =
+                routeResult.parentToolUseId;
+            }
+            if (!turn.suppressEmit) writeLine(progress);
+          }
         }
       }
 
-      turn.rev = streamResult.newRev;
-      turn.partialText = streamResult.partialText;
-      // Latch this iteration's `usage`. The latest `message_delta` is
-      // the turn's last tool-loop iteration; `routeTopLevelEvent` reads
-      // the latched value at the terminal `result` to build
-      // `cost_update.usage`.
-      if (streamResult.messageStartUsage !== undefined) {
-        turn.lastMessageStartUsage = streamResult.messageStartUsage;
-      }
-      if (streamResult.messageDeltaUsage !== undefined) {
-        turn.lastMessageDeltaUsage = streamResult.messageDeltaUsage;
+      lane.rev = streamResult.newRev;
+      lane.partialText = streamResult.partialText;
+      // Latch this iteration's `usage` — MAIN lane only. The latched
+      // pair feeds the turn's terminal `cost_update.usage` and the
+      // mid-turn snapshot's `streaming_usage` re-emit, both of which
+      // describe the main loop; a background subagent's message cycle
+      // must not clobber them.
+      if (laneKey === null) {
+        if (streamResult.messageStartUsage !== undefined) {
+          turn.lastMessageStartUsage = streamResult.messageStartUsage;
+        }
+        if (streamResult.messageDeltaUsage !== undefined) {
+          turn.lastMessageDeltaUsage = streamResult.messageDeltaUsage;
+        }
       }
     }
 
