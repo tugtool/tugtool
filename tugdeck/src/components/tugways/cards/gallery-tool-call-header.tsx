@@ -26,6 +26,7 @@ import {
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
 import { BlockHeader } from "./blocks/block-header";
+import { ToolCallMetaProvider } from "./blocks/collapse-context";
 
 const PHASES: ReadonlyArray<ToolCallPhase> = [
   "idle",
@@ -142,6 +143,53 @@ export const GalleryBlockHeader: React.FC = () => {
             target={<code>**/*.ts</code>}
             summary={{ kind: "count", count: 1, noun: "file" }}
           />
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      <section className="gallery-tch-section">
+        <TugLabel>Timing — its own pipe section, right of the summary</TugLabel>
+        <div className="gallery-tch-stack">
+          {/* The timing sits in a separate pipe-delimited section, so a
+              summary and a duration read side by side: `summary │ duration`.
+              A live in-flight clock needs a `pending` meta with a start in
+              the past; a landed block freezes to `toolWallMs`. */}
+          <ToolCallMetaProvider
+            toolUseId="gallery-write-live"
+            toolName="Write"
+            status="pending"
+            startedAtMs={Date.now() - 20_000}
+            toolWallMs={null}
+          >
+            <BlockHeader {...demoControls}
+              phase="in_flight"
+              toolName="Write"
+              target={<code>tugdeck/src/lib/markdown/enhance-img.ts</code>}
+              summary={{ kind: "text", text: "128 lines" }}
+            />
+          </ToolCallMetaProvider>
+          <ToolCallMetaProvider
+            toolUseId="gallery-edit-done"
+            toolName="Edit"
+            status="done"
+            startedAtMs={0}
+            toolWallMs={640}
+          >
+            <BlockHeader {...demoControls}
+              phase="success"
+              toolName="Edit"
+              target={
+                <TugAtomChip
+                  type="file"
+                  label={formatAtomLabel(SAMPLE_PATH, "filename")}
+                  value={SAMPLE_PATH}
+                  className="tug-atom-chip"
+                />
+              }
+              summary={{ kind: "diff", added: 42, removed: 7 }}
+            />
+          </ToolCallMetaProvider>
         </div>
       </section>
 

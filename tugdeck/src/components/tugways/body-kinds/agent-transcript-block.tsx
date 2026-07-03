@@ -378,6 +378,7 @@ const AgentEntryView: React.FC<AgentEntryViewProps> = ({
           toolName={call.toolName}
           status={call.status}
           startedAtMs={call.createdAt}
+          toolWallMs={call.toolWallMs}
         >
           <ToolBlockHistoryCollapse
             toolUseId={call.toolUseId}

@@ -337,6 +337,7 @@ export function synthesizeSubagentChildFrames(
               ? (block.input as object)
               : {},
           parent_tool_use_id: parentId,
+          timestamp: parseEntryTimestamp(entry),
           ipc_version: IPC_VERSION,
         };
         out.push(toolUse);
@@ -350,6 +351,7 @@ export function synthesizeSubagentChildFrames(
           tool_use_id: toolUseId,
           output: coerceToolResultContent(block.content),
           is_error: block.is_error === true,
+          timestamp: parseEntryTimestamp(entry),
           ipc_version: IPC_VERSION,
         };
         out.push(toolResult);
@@ -1354,6 +1356,7 @@ function handleUserEntry(
         tool_use_id: toolUseId,
         output,
         is_error: isError,
+        timestamp: parseEntryTimestamp(entry),
         ipc_version: IPC_VERSION,
       };
       toolResultFrames.push(toolResult);
@@ -1731,6 +1734,7 @@ function handleAssistantEntry(
           typeof block.input === "object" && block.input !== null
             ? (block.input as object)
             : {},
+        timestamp: parseEntryTimestamp(entry),
         ipc_version: IPC_VERSION,
       };
       out.push(toolUse);

@@ -77,6 +77,77 @@ function ToolElapsedClock(): React.ReactElement | null {
   if (meta === null) return null;
   return <>{formatTimeMinutesSeconds(Math.max(0, now - meta.startedAtMs))}</>;
 }
+
+/**
+ * Format a completed call's recorded wall time. Sub-second calls read in
+ * milliseconds (`750ms`) — the only honest resolution at that scale, and
+ * finer than the live clock's 1 Hz whole-second tick can offer. Once the
+ * call crosses a full second the readout switches to the `Mm SSs` shape
+ * ({@link formatTimeMinutesSeconds}) and never shows milliseconds again,
+ * matching the in-flight clock's format so a call reads consistently
+ * whether it finished in 300ms or three minutes.
+ */
+function formatToolWallTime(ms: number): string {
+  return ms < 1_000
+    ? `${Math.round(Math.max(0, ms))}ms`
+    : formatTimeMinutesSeconds(ms);
+}
+
+/**
+ * The header's timing section — its own pipe-delimited slot at the
+ * trailing edge, right of the result summary. While the call is in flight
+ * it shows the LIVE {@link ToolElapsedClock}; once it lands the clock
+ * freezes to the recorded wall time ({@link ToolCallMeta.toolWallMs}), so
+ * a resting block still reports how long the call took — the same `0m 20s`
+ * shape either way ({@link formatTimeMinutesSeconds}), so the value never
+ * changes format when it freezes.
+ *
+ * The live tick lives inside {@link ToolElapsedClock}, mounted ONLY on the
+ * in-flight branch, so a committed/replayed block pays no 1 Hz re-render.
+ * Renders nothing outside a provider (standalone / gallery) or when a call
+ * has no recorded wall time (its turn ended before the result landed).
+ */
+function HeaderTiming({
+  phase,
+}: {
+  phase: ToolCallPhase;
+}): React.ReactElement | null {
+  const meta = useToolCallMeta();
+  if (meta === null) return null;
+  if (phase === "in_flight") {
+    return (
+      <span
+        className="tool-call-header-timing"
+        data-slot="tool-call-header-elapsed"
+      >
+        <TugBadge
+          emphasis="ghost"
+          role="inherit"
+          size="sm"
+          className="tool-call-header-timing-badge"
+        >
+          <ToolElapsedClock />
+        </TugBadge>
+      </span>
+    );
+  }
+  if (meta.toolWallMs === null) return null;
+  return (
+    <span
+      className="tool-call-header-timing"
+      data-slot="tool-call-header-duration"
+    >
+      <TugBadge
+        emphasis="ghost"
+        role="inherit"
+        size="sm"
+        className="tool-call-header-timing-badge"
+      >
+        {formatToolWallTime(meta.toolWallMs)}
+      </TugBadge>
+    </span>
+  );
+}
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import {
@@ -235,26 +306,15 @@ export const BlockHeader = React.forwardRef<
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
       <span className="tool-call-header-detail">{target}</span>
-      {/* Trailing slot. While the call is in flight it shows a LIVE
-          elapsed clock — the only honest "this is still working" signal
-          for a long silent tool (a 3-minute Bash emits nothing on the
-          wire until it returns). Once the call lands, the elapsed gives
-          way to the quiet one-line result summary (a ghost TugBadge),
-          rendered identically collapsed/expanded. The summary's role
-          still carries pass/fail signal: nonzero exit reads danger,
-          exit 0 success, every other kind neutral `inherit`. */}
-      {phase === "in_flight" ? (
-        <span className="tool-call-header-summary" data-slot="tool-call-header-elapsed">
-          <TugBadge
-            emphasis="ghost"
-            role="inherit"
-            size="sm"
-            className="tool-call-header-elapsed-badge"
-          >
-            <ToolElapsedClock />
-          </TugBadge>
-        </span>
-      ) : summary !== undefined ? (
+      {/* Result summary — the quiet one-line "what did this do?" (N lines,
+          a diff stat, a match count, an exit code) in its OWN
+          pipe-delimited section. Shown whenever a summary exists, in BOTH
+          the in-flight and landed states, so a streaming Write's growing
+          line count reads LEFT of the live clock rather than waiting for
+          the call to land. Rendered identically collapsed/expanded. The
+          summary's role still carries pass/fail signal: nonzero exit reads
+          danger, exit 0 success, every other kind neutral `inherit`. */}
+      {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
             // Diff stat — two outlined badges with neutral borders and
@@ -273,6 +333,12 @@ export const BlockHeader = React.forwardRef<
           )}
         </span>
       ) : null}
+      {/* Timing — its own pipe-delimited section at the trailing edge. A
+          LIVE elapsed clock while the call is in flight (the only honest
+          "still working" signal for a long silent tool — a 3-minute Bash
+          emits nothing on the wire until it returns), frozen to the
+          recorded wall time once it lands. See {@link HeaderTiming}. */}
+      <HeaderTiming phase={phase} />
       {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
       <span className="tool-call-header-actions">
         {/* Body-specific, expanded-only controls (Find, view-mode,

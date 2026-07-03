@@ -647,6 +647,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
           toolName={message.toolName}
           status={message.status}
           startedAtMs={message.createdAt}
+          toolWallMs={message.toolWallMs}
         >
           <ToolBlockHistoryCollapse
             toolUseId={message.toolUseId}

@@ -178,6 +178,13 @@ export interface ToolUseEvent {
   seq?: number;
   parent_tool_use_id?: string;
   tug_session_id?: string;
+  /**
+   * Original JSONL entry time (epoch ms) of this call's `tool_use` block.
+   * Present only on the resume/replay path (tugcode's translator stamps
+   * it); live frames omit it. Paired with {@link ToolResultEvent.timestamp}
+   * it lets the reducer recover the call's wall time on resume.
+   */
+  timestamp?: number;
   [key: string]: unknown;
 }
 
@@ -193,6 +200,12 @@ export interface ToolResultEvent {
   output?: unknown;
   is_error?: boolean;
   tug_session_id?: string;
+  /**
+   * Original JSONL entry time (epoch ms) of this call's `tool_result`
+   * block. Replay-only, paired with {@link ToolUseEvent.timestamp} to
+   * recover the call's wall time on resume; live frames omit it.
+   */
+  timestamp?: number;
   [key: string]: unknown;
 }
 

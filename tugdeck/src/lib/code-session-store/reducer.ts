@@ -1506,12 +1506,17 @@ function handleContentBlockStart(
   // moment the user-visible block appears.
   let toolUseStartedAt = state.toolUseStartedAt;
   if (toolUseId !== undefined && !state.toolUseStartedAt.has(toolUseId)) {
-    // Live turns (including wakes) — capture wall-clock. Replay turns
-    // don't produce real-time anchors, but the matching
-    // `handleToolResult` only computes `toolWallMs` when not replaying,
-    // so a captured replay anchor is harmless.
+    // Capture the call's start anchor. Live turns have no `timestamp` on
+    // the wire event, so the wall-clock `now` is the anchor. Replay frames
+    // carry the original JSONL entry time (`event.timestamp`, epoch ms) —
+    // use it so `handleToolResult` recovers the real recorded wall time
+    // (`tool_result.timestamp − tool_use.timestamp`) rather than a
+    // meaningless replay-instant delta.
     toolUseStartedAt = new Map(state.toolUseStartedAt);
-    toolUseStartedAt.set(toolUseId, now);
+    toolUseStartedAt.set(
+      toolUseId,
+      typeof event.timestamp === "number" ? event.timestamp : now,
+    );
   }
 
   return {
@@ -1808,12 +1813,15 @@ function handleToolUse(
     nextMessages = [...entry.messages, minted];
     nextToolCallIndex = new Map(entry.toolCallIndex);
     nextToolCallIndex.set(toolUseId, arrayIdx);
-    // The defensive mint must also capture the wall-clock anchor so
+    // The defensive mint must also capture the start anchor so
     // `handleToolResult` can compute `toolWallMs`. The normal mint
     // path in `handleContentBlockStart` does this; the defensive
-    // path mirrors it.
+    // path mirrors it. This is also the path replayed tool calls take
+    // (tugcode emits `tool_use` directly, with no `content_block_start`),
+    // so prefer the frame's original JSONL time when present.
     if (!state.toolUseStartedAt.has(toolUseId)) {
-      defensiveStartCapture = now;
+      defensiveStartCapture =
+        typeof event.timestamp === "number" ? event.timestamp : now;
     }
   } else {
     const existing = entry.messages[arrayIdx];
@@ -1943,9 +1951,16 @@ function handleToolResult(
   const isWaking = state.phase === "waking";
   const now = Date.now();
   const startedAt = state.toolUseStartedAt.get(toolUseId);
+  // Wall time = result anchor − start anchor. Live frames omit
+  // `event.timestamp`, so the pair is (Date.now(), Date.now()-at-mint);
+  // replay frames carry the original JSONL times, so the same subtraction
+  // recovers the recorded duration. Either way the start anchor must be
+  // known — a call whose `tool_use` we never saw keeps its prior value.
+  const resultAt =
+    typeof event.timestamp === "number" ? event.timestamp : now;
   const toolWallMs =
-    !isReplaying && typeof startedAt === "number"
-      ? Math.max(0, now - startedAt)
+    typeof startedAt === "number"
+      ? Math.max(0, resultAt - startedAt)
       : existing.toolWallMs;
 
   const mutated: ToolUseMessage = {

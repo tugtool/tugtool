@@ -137,6 +137,14 @@ export interface ToolUse {
    * child under its parent Agent from this field.
    */
   parent_tool_use_id?: string;
+  /**
+   * Original JSONL entry time (epoch ms) of the call's `tool_use` block.
+   * Set only on the resume/replay path so the reducer can reconstruct the
+   * call's wall time (`tool_result.timestamp − tool_use.timestamp`) from
+   * the persisted transcript. Live frames omit it — the reducer's own
+   * clock anchors cover the live case.
+   */
+  timestamp?: number;
   ipc_version: number;
 }
 
@@ -145,6 +153,12 @@ export interface ToolResult {
   tool_use_id: string;
   output: string;
   is_error: boolean;
+  /**
+   * Original JSONL entry time (epoch ms) of the `tool_result` block.
+   * Replay-only, paired with {@link ToolUse.timestamp} to recover the
+   * call's wall time on resume; live frames omit it.
+   */
+  timestamp?: number;
   ipc_version: number;
 }
 

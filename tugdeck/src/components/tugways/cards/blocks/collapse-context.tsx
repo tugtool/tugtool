@@ -81,6 +81,15 @@ export interface ToolCallMeta {
    * `status === "pending"` (a committed/replayed call is not live).
    */
   startedAtMs: number;
+  /**
+   * Recorded wall time of the completed call — the `ToolUseMessage`'s
+   * `toolWallMs` (ms between `tool_use` and the matching `tool_result`).
+   * `null` while pending (the live clock covers that) and for a call
+   * whose turn ended before its result landed. Once set, the header
+   * freezes its timing to this figure so a resting block still reports
+   * how long it took.
+   */
+  toolWallMs: number | null;
 }
 
 export const ToolCallMetaContext = React.createContext<ToolCallMeta | null>(
@@ -103,11 +112,12 @@ export function ToolCallMetaProvider({
   toolName,
   status,
   startedAtMs,
+  toolWallMs,
   children,
 }: ToolCallMeta & { children: React.ReactNode }): React.ReactElement {
   const meta = React.useMemo<ToolCallMeta>(
-    () => ({ toolUseId, toolName, status, startedAtMs }),
-    [toolUseId, toolName, status, startedAtMs],
+    () => ({ toolUseId, toolName, status, startedAtMs, toolWallMs }),
+    [toolUseId, toolName, status, startedAtMs, toolWallMs],
   );
   return (
     <ToolCallMetaContext.Provider value={meta}>

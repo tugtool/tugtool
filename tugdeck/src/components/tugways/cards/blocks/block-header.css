@@ -112,6 +112,7 @@ body {
 .tool-call-header-dot,
 .tool-call-header-name,
 .tool-call-header-summary,
+.tool-call-header-timing,
 .tool-call-header-actions {
   flex: 0 0 auto;
   min-height: var(--tugx-toolheader-line);
@@ -229,70 +230,58 @@ body {
   top: 0.5px;
 }
 
-/* Result summary — a ghost TugBadge bracketed by separator pipes. The badge
- * is borderless now (no box-in-a-box), so BOTH flanking pipes live on THIS
- * box — `border-inline` for the rules, `padding-inline` for the inner gaps —
- * which is the only way the left and right gaps stay equal by construction
- * (a single shared source on both sides). The result reads
- * detail │ summary │ controls with one `sep-gap` of breathing room on every
- * side. When a summary precedes the actions cluster, that cluster drops its
- * own left rule (below) so the two pipes never double up. The pipes exist
- * only when a summary renders (the slot is conditionally mounted), so they
- * never dangle. */
-.tool-call-header-summary {
+/* Trailing pipe-sections — the result summary, the timing, and the
+ * controls cluster each read as `… │ section` with equal breathing room on
+ * both sides of the rule. Each section owns ONLY its own LEFT rule (never a
+ * right pipe), so a run of sections composes without doubling:
+ * detail │ summary │ timing │ controls, any subset of the middle two. The
+ * symmetric `sep-gap` is built from two halves: the parent flex row-gap plus
+ * a `sep-gap − row-gap` left margin sum to a full `sep-gap` from the
+ * preceding content to the rule, and `padding-left: sep-gap` matches it from
+ * the rule to this section's own content. Because every section carries the
+ * same left rule, the divider between any two adjacent sections is a SINGLE
+ * line with `sep-gap` on each side by construction — no adjacency special
+ * cases. */
+.tool-call-header-summary,
+.tool-call-header-timing,
+.tool-call-header-actions {
+  margin-left: calc(
+    var(--tugx-toolheader-sep-gap) - var(--tugx-toolheader-row-gap)
+  );
+  padding-left: var(--tugx-toolheader-sep-gap);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Result summary — a ghost TugBadge (borderless: no box-in-a-box), or a
+ * `+N` / `−M` diff pair. The left rule + gap come from the shared
+ * pipe-section rule above. */
+.tool-call-header-summary,
+.tool-call-header-timing {
   white-space: nowrap;
   /* inline-flex with a tight gap so a two-badge diff summary (`+N` / `−M`)
    * stays a clean pair; single-badge summaries are unaffected. */
-  display: inline-flex;
-  align-items: center;
   gap: var(--tug-space-2xs);
-  /* Bracketing pipes — both on this box so the inner gaps are symmetric. */
-  padding-inline: var(--tugx-toolheader-sep-gap);
-  border-inline: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   /* Same 1px optical nudge as the detail so the badge sits on the line
    * with the name. `top` (relative) leaves the layout box untouched. */
   position: relative;
   top: 1px;
 }
 
-/* The in-flight elapsed clock. Tabular figures so the 1 Hz tick never
- * reflows the header, matching the Z2 status row's TIME cell. The `sm`
- * badge size already matches the `N lines` result summary. */
-.tool-call-header-elapsed-badge {
+/* The timing badge — the live elapsed clock or the frozen wall time.
+ * Tabular figures so the 1 Hz tick never reflows the header, matching the
+ * Z2 status row's TIME cell. The `sm` badge size already matches the
+ * `N lines` result summary. */
+.tool-call-header-timing-badge {
   font-variant-numeric: tabular-nums;
 }
 
-/* When a summary's right pipe already divides the result from the controls,
- * the actions cluster drops its own left rule (and the padding that paired
- * with it) so there's a SINGLE rule there. It keeps a margin equal to
- * `sep-gap − row-gap`, which the parent flex row-gap then tops up to a full
- * `sep-gap` between the summary's right pipe and the buttons — the same gap
- * the standalone actions rule carries with NO summary present. Without it the
- * pipe would sit only `row-gap` from the buttons and visibly hop rightward the
- * moment a summary appears. With no summary, the actions rule stands on its own
- * (detail │ controls) via the rule below. */
-.tool-call-header-summary + .tool-call-header-actions {
-  margin-left: calc(
-    var(--tugx-toolheader-sep-gap) - var(--tugx-toolheader-row-gap)
-  );
-  padding-left: 0;
-  border-left: none;
-}
-
 /* Trailing actions — the controls cluster at the row's trailing edge (the
- * body-specific portal · Copy · chevron). Its own left rule divides the
- * controls from whatever precedes them when there is NO summary
- * (detail │ controls), with equal gaps on each side
- * (`--tugx-toolheader-sep-gap`). When a summary IS present, the summary box
- * already carries the right pipe, so this cluster sheds its rule and spacing
- * (see the `.tool-call-header-summary + &` rule above) to avoid a doubled
- * line. The cluster always carries Copy + chevron in the app, so the rule
- * never dangles. */
+ * body-specific portal · Copy · chevron). Its left rule + gap come from the
+ * shared pipe-section rule above; it adds only the inter-button gap. The
+ * cluster always carries Copy + chevron in the app, so the rule never
+ * dangles (the permission-dialog exception is handled below). */
 .tool-call-header-actions {
   gap: var(--tugx-toolheader-actions-gap);
-  margin-left: var(--tugx-toolheader-sep-gap);
-  padding-left: var(--tugx-toolheader-sep-gap);
-  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
 /* Drop the divider when the cluster has nothing to divide off — no Copy, no
