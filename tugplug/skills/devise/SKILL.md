@@ -23,6 +23,13 @@ The document it produces is a standard tugplan in the devise-skeleton format, so
 **You are the author.** Do not spawn sub-agents (`Task`). Do the research and the
 writing in-thread.
 
+**The plan must stand alone.** Assume the session that implements the plan is **not**
+this one — a fresh session with none of your investigation context, file reads, or
+conversation history. Everything the implementer needs must be *in the document*:
+the file paths and symbol names you found, the behaviors and conventions you
+discovered, the reasoning behind each decision. Never write a plan that only works
+because the author is about to implement it.
+
 ## Input
 
 `/tugplug:devise <idea> [→ <output-path>]` — a free-text description of what to build,
@@ -83,12 +90,25 @@ Author the plan at the output path you were given (or asked for) following the
 Prefer a tight, real plan over an exhaustive one. Every step should be executable
 with a clear commit boundary and a falsifiable checkpoint.
 
+**Write for a cold reader.** Transcribe your investigation into the plan rather than
+alluding to it: name the exact files, functions, types, and messages a step touches;
+state the current behavior a change replaces; record non-obvious findings (gotchas,
+ordering constraints, existing conventions) in Deep Dives or the step itself. If a
+step's Tasks would make an implementer go re-derive something you already learned
+this session, the plan is incomplete — put the finding in the document.
+
 ### 4. Self-check
 
 Re-read the plan against the skeleton: required sections present, anchors unique,
 `**Depends on:**` lines point at real step anchors, every step has a commit boundary
 and a falsifiable checkpoint. Conformance is a convention you uphold by authorship and
 review — fix anything off before handing off.
+
+Then run the **cold-reader test**: could a fresh session, given only this document and
+the repository, implement every step without asking you anything? Hunt for references
+that lean on session context — "as discovered above", "the function we looked at",
+steps that name a change but not its location — and replace each with the concrete
+paths, symbols, and findings.
 
 ### 5. Hand off
 
@@ -106,6 +126,8 @@ which the user owns).
 - **Conform to the skeleton.** `tuglaws/devise-skeleton.md` is the format contract,
   upheld by authorship and review.
 - **Ground the plan in the real code.** Read before you design.
+- **Standalone always.** The plan must be implementable from any session with zero
+  conversation context — bake every investigation finding into the document.
 - **Don't over-ask.** Clarify only design-changing unknowns.
 - **Don't auto-implement.** `devise` produces the document; `implement` runs it.
 - **Don't auto-enter Plan mode** (`EnterPlanMode`) — just write the plan document.
