@@ -81,9 +81,9 @@ describe("formatTimeMinutesSeconds", () => {
     expect(formatTimeMinutesSeconds(599_000)).toBe("9m 59s");
   });
 
-  it("surfaces hours once a span crosses the hour mark", () => {
-    expect(formatTimeMinutesSeconds(3_600_000)).toBe("1h 0m 00s");
-    expect(formatTimeMinutesSeconds(3_667_000)).toBe("1h 1m 07s");
+  it("surfaces hours once a span crosses the hour mark, with zero-padded minutes", () => {
+    expect(formatTimeMinutesSeconds(3_600_000)).toBe("1h 00m 00s");
+    expect(formatTimeMinutesSeconds(3_667_000)).toBe("1h 01m 07s");
     expect(formatTimeMinutesSeconds(9_000_000)).toBe("2h 30m 00s");
   });
 

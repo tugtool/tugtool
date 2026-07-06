@@ -56,11 +56,13 @@
 .dev-telemetry-status-cell[data-priority="state"] {
   --tugx-dev-status-cell-width: 20ch;
 }
-/* TIME / TOKENS are narrowed to make room for the JOBS cell — worst
-   realistic content (`4h 30m 00s` = 10ch, `−208.3K` = 8ch) clears
-   12ch comfortably. */
+/* TIME / TOKENS are narrowed to make room for the JOBS cell. TIME is
+   held one column wider so the width-stabilized hour-plus format
+   (`4h 30m 00s` = 10ch, minutes zero-padded past an hour) sits with a
+   little breathing room; TOKENS' worst content (`−208.3K` = 8ch)
+   clears 12ch comfortably. */
 .dev-telemetry-status-cell[data-priority="time"] {
-  --tugx-dev-status-cell-width: 12ch;
+  --tugx-dev-status-cell-width: 13ch;
 }
 .dev-telemetry-status-cell[data-priority="tokens"] {
   --tugx-dev-status-cell-width: 12ch;

@@ -159,11 +159,13 @@ export function formatTimeAlwaysHours(ms: number): string {
 
 /**
  * Conditional-hours time format — `Mm SSs` for any span under an
- * hour, `Hh Mm SSs` once a single span crosses the hour mark. The
+ * hour, `Hh MMm SSs` once a single span crosses the hour mark. The
  * status row's TIME cell uses this so the common case (turns lasting
  * seconds or a few minutes) reads without a vestigial leading `0h`;
  * an hour-plus turn still surfaces its hours component. Always
- * includes a zero-padded seconds component.
+ * includes a zero-padded seconds component; once past an hour the
+ * minutes component is zero-padded too, so the hour-plus display holds
+ * a stable width as the minutes tick.
  */
 export function formatTimeMinutesSeconds(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0m 00s";
@@ -172,7 +174,7 @@ export function formatTimeMinutesSeconds(ms: number): string {
   const m = Math.floor((totalSec % 3_600) / 60);
   if (totalSec < 3_600) return `${m}m ${s}s`;
   const h = Math.floor(totalSec / 3_600);
-  return `${h}h ${m}m ${s}s`;
+  return `${h}h ${m.toString().padStart(2, "0")}m ${s}s`;
 }
 
 /** Format a USD cost as `$0.0123` (4 decimals when small, 2 when ≥ $1). */
