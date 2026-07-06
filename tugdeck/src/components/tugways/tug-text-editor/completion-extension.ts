@@ -3,11 +3,15 @@
  *
  * Detects a registered trigger character (`@`, `/`, etc. — supplied by
  * the host via `completionProviders`), opens a popup of matching
- * items, tracks the query string between the trigger and the caret,
- * navigates with arrow keys / Page / Home / End, and on Enter or Tab
- * inserts the chosen item as a tug atom — replacing the trigger +
- * query range with U+FFFC and a matching `AtomWidget` decoration in
- * a single transaction.
+ * items, tracks the query string across the whole trigger *token*
+ * (trigger through the end of the word the caret sits in — see
+ * "Word-savvy" below), navigates with arrow keys / Page / Home / End,
+ * and on Enter or Tab inserts the chosen item as a tug atom —
+ * replacing the trigger + query range with U+FFFC and a matching
+ * `AtomWidget` decoration in a single transaction. One asymmetry:
+ * Tab on a highlighted *directory* descends into it
+ * ({@link descendIntoDirectory}) instead of accepting, keeping the
+ * session alive to continue below that directory.
  *
  * Architecture:
  *
@@ -29,14 +33,24 @@
  *     adapter and manages the active provider's async-result
  *     subscription.
  *
- *   - **Rejoin**: when inactive, a transaction that changed doc or
- *     selection (and is not itself a cancel) scans backward from the
- *     caret for a registered trigger char. The scan stops at
- *     whitespace, U+FFFC, or doc start — so accepted atoms cannot
- *     rejoin. If found, `activateEffect` fires with the existing
- *     between-anchor-and-caret text as the query. This makes
- *     clicking back into an unaccepted `@foo` (or typing more chars
- *     within one) reopen the popup.
+ *   - **Word-savvy queries**: the query is the text from the trigger
+ *     through the end of the token the caret sits in
+ *     ({@link scanForwardForTokenEnd} — stops at whitespace, U+FFFC,
+ *     or doc end), NOT trigger-to-caret. The caret's position inside
+ *     the token is an editing detail, never a filter boundary: editing
+ *     mid-token filters on (and accepting replaces) the whole token,
+ *     so an accept can never strand a tail fragment after the atom.
+ *
+ *   - **Rejoin**: when inactive, an edit (`docChanged`) or a
+ *     user-originated caret move (`isUserEvent("select")` — click,
+ *     arrow) that lands the caret inside — or immediately before, at a
+ *     token boundary — a literal trigger…run reopens the popup with
+ *     the whole token as the query. The backward scan stops at
+ *     whitespace, U+FFFC, or doc start, so accepted atoms cannot
+ *     rejoin. Programmatic transactions (history recall, restore)
+ *     carry no `select` userEvent and are additionally stamped with
+ *     {@link suppressCompletionDetection}, so they never reopen the
+ *     popup.
  *
  *   - **Keys**: a `Prec.highest` `domEventHandlers` keymap intercepts
  *     Tab / Enter / Arrows / Page / Home / End / Escape only when the
@@ -353,13 +367,61 @@ export function scanBackForTrigger(
 }
 
 /**
+ * Walk forward from `pos` to the end of the token containing it:
+ * the first whitespace, atom character (U+FFFC), or doc end. Returns
+ * the offset one past the token's last character (== `pos` when `pos`
+ * already sits at a token boundary).
+ *
+ * This is the forward complement of {@link scanBackForTrigger} and the
+ * heart of word-savvy completion: queries and accepts span the whole
+ * token, never just the trigger-to-caret prefix.
+ */
+export function scanForwardForTokenEnd(
+  doc: { sliceString: (from: number, to: number) => string; length: number },
+  pos: number,
+): number {
+  let i = pos;
+  while (i < doc.length) {
+    const ch = doc.sliceString(i, i + 1);
+    if (ch === TUG_ATOM_CHAR || /\s/.test(ch)) break;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Whether `pos` is a token start: doc start, or preceded by whitespace
+ * or an atom character. Gates the caret-parked-on-trigger cases — a
+ * trigger char glued to preceding text (`x/cmd`, `foo@bar`) does not
+ * begin a token when approached from its own offset.
+ */
+export function beginsTokenAt(
+  doc: { sliceString: (from: number, to: number) => string },
+  pos: number,
+): boolean {
+  if (pos === 0) return true;
+  const prev = doc.sliceString(pos - 1, pos);
+  return prev === TUG_ATOM_CHAR || /\s/.test(prev);
+}
+
+/**
  * Compute the typeahead query from the active session and current
  * doc/caret state, returning either the new query string, `"cancel"`
  * if the session should end, or `"unchanged"` if nothing changed.
  *
+ * The query spans the trigger through the end of the token the caret
+ * sits in ({@link scanForwardForTokenEnd}) — word-savvy, not
+ * caret-bounded. The caret is valid anywhere in `[anchor, tokenEnd]`;
+ * sitting exactly ON the trigger is allowed only while the trigger
+ * begins a token (the promotion case: deleting leading text so a
+ * `/command` now heads the doc parks the caret at offset 0).
+ *
  * Cancel conditions:
  *   - Selection is non-empty (user dragged a range).
- *   - Caret is at or before the trigger anchor (user backspaced past it).
+ *   - The trigger character is no longer at the anchor (deleted).
+ *   - Caret is before the trigger anchor (user backspaced past it).
+ *   - Caret is on the trigger but the trigger no longer begins a token
+ *     (user typed text immediately before it).
  *   - The query text would contain a newline.
  */
 export function deriveQueryUpdate(
@@ -369,10 +431,26 @@ export function deriveQueryUpdate(
 ): { kind: "unchanged" } | { kind: "cancel" } | { kind: "query"; value: string } {
   if (!state.active) return { kind: "unchanged" };
   if (selection.from !== selection.to) return { kind: "cancel" };
-  const queryStart = state.anchorOffset + 1;
-  if (selection.head < queryStart) return { kind: "cancel" };
   if (selection.head > doc.length) return { kind: "cancel" };
-  const query = doc.sliceString(queryStart, selection.head);
+  if (
+    doc.sliceString(state.anchorOffset, state.anchorOffset + 1) !==
+    state.trigger
+  ) {
+    return { kind: "cancel" };
+  }
+  if (selection.head < state.anchorOffset) return { kind: "cancel" };
+  if (
+    selection.head === state.anchorOffset &&
+    !beginsTokenAt(doc, state.anchorOffset)
+  ) {
+    return { kind: "cancel" };
+  }
+  const queryStart = state.anchorOffset + 1;
+  const queryEnd = scanForwardForTokenEnd(
+    doc,
+    Math.max(selection.head, queryStart),
+  );
+  const query = doc.sliceString(queryStart, queryEnd);
   if (query.includes("\n")) return { kind: "cancel" };
   if (query === state.query) return { kind: "unchanged" };
   return { kind: "query", value: query };
@@ -380,20 +458,28 @@ export function deriveQueryUpdate(
 
 /**
  * Inspect a transaction in the inactive state to decide whether the
- * user just *edited* inside a literal trigger…run that was never
- * accepted as an atom — rejoining typeahead with the existing text as
- * the query.
+ * user just moved into (or edited inside) a literal trigger…run that
+ * was never accepted as an atom — rejoining typeahead with the whole
+ * token as the query.
  *
- * Gated on `tr.docChanged` (and not a cancel): only an actual edit
- * within the run reopens the popup. A pure caret move — clicking or
- * arrowing into an existing run — does NOT reopen. This is deliberate:
- * a finished line swapped in whole (history recall, restore) commonly
- * ends in a trigger run (`/command`, trailing `@file`), and reopening
- * the popup on the subsequent click/arrow would let the now-active
- * popup's high-precedence keymap swallow the next Enter / Shift+Return
- * as an accept instead of a submit. Typing one more char within the
- * run still reopens it (a doc change), which is the case that matters
- * for live composition.
+ * Fires on doc changes AND on user-originated selection moves
+ * (`isUserEvent("select")` — pointer clicks arrive as
+ * `select.pointer`, arrow motion as `select`). Picking up an edit
+ * anywhere in an unaccepted `@foo` — backspacing into it, clicking
+ * into it, arrowing into it — must reopen the popup. Programmatic
+ * selection or doc changes (history recall, restore) carry no `select`
+ * userEvent and stamp {@link suppressCompletionDetection}, so they
+ * never reopen it; the Enter-swallowing hazard that once justified an
+ * edits-only gate is handled where it belongs, by that annotation and
+ * by {@link completionConsumesEnter}.
+ *
+ * Two anchor discoveries:
+ *   1. Backward scan from the caret ({@link scanBackForTrigger}) —
+ *      the caret is inside or at the end of the token.
+ *   2. Caret parked exactly ON a trigger that begins a token — the
+ *      promotion case: deleting the leading text of `x/cmd` leaves
+ *      the caret at offset 0 before `/cmd`, which must engage slash
+ *      completion.
  */
 export function detectRejoin(
   tr: Transaction,
@@ -409,14 +495,24 @@ export function detectRejoin(
   for (const eff of tr.effects) {
     if (eff.is(cancelEffect)) return null;
   }
-  if (!tr.docChanged) return null;
+  if (!tr.docChanged && !tr.isUserEvent("select")) return null;
   const sel = tr.state.selection.main;
   if (sel.from !== sel.to) return null;
-  const found = scanBackForTrigger(tr.state.doc, sel.head, providers);
+  let found = scanBackForTrigger(tr.state.doc, sel.head, providers);
+  if (!found) {
+    const at = tr.state.doc.sliceString(sel.head, sel.head + 1);
+    if (
+      lookupCompletionProvider(providers, at) !== undefined &&
+      beginsTokenAt(tr.state.doc, sel.head)
+    ) {
+      found = { trigger: at, anchorOffset: sel.head };
+    }
+  }
   if (!found) return null;
   const provider = lookupCompletionProvider(providers, found.trigger);
   if (!provider) return null;
-  const query = tr.state.doc.sliceString(found.anchorOffset + 1, sel.head);
+  const queryEnd = scanForwardForTokenEnd(tr.state.doc, found.anchorOffset + 1);
+  const query = tr.state.doc.sliceString(found.anchorOffset + 1, queryEnd);
   return {
     provider,
     trigger: found.trigger,
@@ -612,14 +708,26 @@ function completionExtender(
     const providers = getProviders();
     const detected = detectTriggerInsertion(tr, providers);
     if (detected !== null) {
-      const filtered = detected.provider("");
+      // Word-savvy activation: a trigger typed immediately before an
+      // existing word adopts that word as the query (`@` in front of
+      // `index.ts` opens filtering on "index.ts"). At a token boundary
+      // the scan returns the anchor itself and the query is "".
+      const queryEnd = scanForwardForTokenEnd(
+        tr.state.doc,
+        detected.anchorOffset + 1,
+      );
+      const query = tr.state.doc.sliceString(
+        detected.anchorOffset + 1,
+        queryEnd,
+      );
+      const filtered = detected.provider(query);
       return {
         effects: [
           activateEffect.of({
             trigger: detected.trigger,
             anchorOffset: detected.anchorOffset,
             provider: detected.provider,
-            query: "",
+            query,
             filtered,
           }),
         ],
@@ -711,7 +819,10 @@ export function subscribeCompletionState(
 
 /**
  * Insert the chosen completion as a tug atom. Replaces the trigger
- * character + query range with U+FFFC plus a separating space (unless
+ * character + query range — the WHOLE token, since the query spans
+ * trigger-to-token-end ({@link deriveQueryUpdate}); accepting from a
+ * mid-token caret consumes the full word and can never strand a tail
+ * fragment after the atom — with U+FFFC plus a separating space (unless
  * one already follows), attaches the matching `AtomWidget` decoration
  * via `addAtomsEffect`, sets the caret past the space so the next
  * keystroke doesn't glue onto the atom, and cancels the typeahead
@@ -751,6 +862,39 @@ export function acceptCompletionAt(view: EditorView, index?: number): void {
     scrollIntoView: true,
     userEvent: "input.tug-completion",
   });
+}
+
+/**
+ * Descend into the highlighted directory completion instead of
+ * accepting it: rewrite the trigger token's query to the directory's
+ * full path (`@src` → `@src/`) and keep the session alive, so the
+ * next keystroke — or the refreshed result list — continues below
+ * that directory. Every fuzzy file picker teaches Tab-as-descend for
+ * directories; Enter (and click) still atomize.
+ *
+ * Returns `false` — leaving the keystroke to the accept path — when
+ * typeahead is inactive, the highlighted item is not a directory, or
+ * the query already equals the directory path (a second Tab on an
+ * already-descended token would otherwise be a no-op loop; falling
+ * through to accept gives the "I really mean this directory" reading).
+ */
+export function descendIntoDirectory(view: EditorView, index?: number): boolean {
+  const state = view.state.field(completionField);
+  if (!state.active || state.filtered.length === 0) return false;
+  const idx = index ?? state.selectedIndex;
+  if (idx < 0 || idx >= state.filtered.length) return false;
+  const item = state.filtered[idx]!;
+  if (item.atom.type !== "directory") return false;
+  if (state.query === item.atom.value) return false;
+  const from = state.anchorOffset + 1;
+  const to = from + state.query.length;
+  view.dispatch({
+    changes: { from, to, insert: item.atom.value },
+    selection: { anchor: from + item.atom.value.length },
+    scrollIntoView: true,
+    userEvent: "input.tug-completion",
+  });
+  return true;
 }
 
 /**
@@ -930,10 +1074,20 @@ const tugCompletionKeymap = Prec.highest(
         event.key === "End";
       if (consumes) event.stopPropagation();
       switch (event.key) {
-        case "Enter":
-        case "Tab": {
+        case "Enter": {
           event.preventDefault();
           acceptCompletionAt(view);
+          return true;
+        }
+        case "Tab": {
+          event.preventDefault();
+          // Tab descends into a highlighted directory (keeps the
+          // session alive, query becomes `dir/`); on anything else —
+          // or a second Tab on an already-descended directory — it
+          // accepts like Enter.
+          if (!descendIntoDirectory(view)) {
+            acceptCompletionAt(view);
+          }
           return true;
         }
         case "Escape": {

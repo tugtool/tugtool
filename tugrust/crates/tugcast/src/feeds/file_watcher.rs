@@ -69,17 +69,18 @@ impl FileWatcher {
         broadcast::channel(BROADCAST_CAPACITY).0
     }
 
-    /// Walk the directory tree and return a sorted set of relative file paths.
+    /// Walk the directory tree and return a sorted set of relative paths —
+    /// files as-is, directories with a trailing `/`.
     ///
     /// Uses `ignore::WalkBuilder` for proper nested `.gitignore` support.
-    /// Skips `.git/` directories. Returns at most `WALK_CAP` files.
+    /// Skips `.git/` directories. Returns at most `WALK_CAP` entries.
     ///
     /// Returns `(paths, truncated)` where `truncated` is true if the cap was hit.
     pub fn walk(&self) -> (BTreeSet<String>, bool) {
         self.walk_with_cap(WALK_CAP)
     }
 
-    /// Walk the directory tree with an explicit file count cap.
+    /// Walk the directory tree with an explicit entry count cap.
     ///
     /// This is the implementation backing `walk()`. Exposed for testing so that
     /// the truncation path can be exercised without creating 50,000 real files.
@@ -104,11 +105,7 @@ impl FileWatcher {
                 }
             };
 
-            // Skip directories (we only want files)
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                continue;
-            }
-
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
             let path = entry.path();
 
             // Strip the watch directory prefix to get the relative path
@@ -116,6 +113,11 @@ impl FileWatcher {
                 Some(rel) => rel,
                 None => continue,
             };
+
+            // The walk root itself relativizes to "" — not an entry.
+            if relative.is_empty() {
+                continue;
+            }
 
             // Skip .git/ contents (WalkBuilder should handle this via git_ignore,
             // but be explicit for safety)
@@ -128,7 +130,7 @@ impl FileWatcher {
                 break;
             }
 
-            files.insert(relative);
+            files.insert(dir_form(relative, is_dir));
         }
 
         (files, truncated)
@@ -231,7 +233,21 @@ impl FileWatcher {
     }
 }
 
-/// Walk a directory and return a sorted set of relative file paths.
+/// The index form of a relative path: directories carry a trailing `/`
+/// so a single `BTreeSet<String>` holds both kinds and every consumer
+/// (scorer, secret filter, client) can tell them apart.
+pub(crate) fn dir_form(relative: String, is_dir: bool) -> String {
+    if is_dir {
+        let mut s = relative;
+        s.push('/');
+        s
+    } else {
+        relative
+    }
+}
+
+/// Walk a directory and return a sorted set of relative paths — files
+/// as-is, directories with a trailing `/`.
 ///
 /// Standalone function for use by FileTreeFeed's re-walk on `.gitignore`
 /// change. Creates a PathResolver internally for path resolution.
@@ -250,12 +266,13 @@ pub fn walk_directory(dir: &Path) -> (BTreeSet<String>, bool) {
         .build();
 
     for entry in walker.flatten() {
-        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-            continue;
-        }
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
         let Some(relative) = resolver.to_relative(entry.path()) else {
             continue;
         };
+        if relative.is_empty() {
+            continue;
+        }
         if relative.starts_with(".git/") || relative == ".git" {
             continue;
         }
@@ -263,7 +280,7 @@ pub fn walk_directory(dir: &Path) -> (BTreeSet<String>, bool) {
             truncated = true;
             break;
         }
-        files.insert(relative);
+        files.insert(dir_form(relative, is_dir));
     }
 
     (files, truncated)
@@ -440,8 +457,45 @@ mod tests {
         assert!(files.contains("Cargo.toml"), "should contain Cargo.toml");
         assert!(files.contains("src/main.rs"), "should contain src/main.rs");
         assert!(files.contains("src/lib.rs"), "should contain src/lib.rs");
-        // Directories should not be included
-        assert!(!files.contains("src"), "should not contain directory entry");
+        // Directories are indexed in their trailing-slash form only.
+        assert!(!files.contains("src"), "bare dir name must not appear");
+        assert!(files.contains("src/"), "dir should appear with trailing slash");
+    }
+
+    #[test]
+    fn test_walk_indexes_directories_with_trailing_slash() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_path_buf();
+
+        fs::create_dir_all(root.join("src/nested")).unwrap();
+        fs::write(root.join("src/nested/a.rs"), "").unwrap();
+
+        let watcher = FileWatcher::new(root);
+        let (files, _) = watcher.walk();
+
+        assert!(files.contains("src/"));
+        assert!(files.contains("src/nested/"));
+        assert!(files.contains("src/nested/a.rs"));
+        // The walk root itself is not an entry.
+        assert!(!files.contains("/"));
+        assert!(!files.contains(""));
+    }
+
+    #[test]
+    fn test_walk_excludes_gitignored_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_path_buf();
+
+        fs::write(root.join(".gitignore"), "target/\n").unwrap();
+        fs::create_dir(root.join("target")).unwrap();
+        fs::write(root.join("target/binary"), "").unwrap();
+        fs::create_dir(root.join("src")).unwrap();
+
+        let watcher = FileWatcher::new(root);
+        let (files, _) = watcher.walk();
+
+        assert!(files.contains("src/"));
+        assert!(!files.contains("target/"), "ignored dir must not be indexed");
     }
 
     #[test]

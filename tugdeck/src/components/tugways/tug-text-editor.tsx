@@ -154,6 +154,7 @@ import {
 } from "./tug-text-editor/inline-command-completion";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
+import { commandAtomDemotionFilter } from "./tug-text-editor/atom-integrity";
 import { atomBindExt } from "./tug-text-editor/atom-bind";
 import {
   clipboardExtension,
@@ -1114,6 +1115,10 @@ function buildExtensions(
     atomDecorationField,
     atomInvertedEffects,
     atomicRangesExt,
+    // A command atom is a command only while it leads the document —
+    // an edit that pushes it off position 0 demotes the chip to its
+    // literal `/name` text in the same transaction.
+    commandAtomDemotionFilter,
     // Bind each atom to its abutting punctuation so a wrap can't strand
     // a comma (etc.) on the next row — atoms are replaced elements, which
     // would otherwise carry a break opportunity on both edges.

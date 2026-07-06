@@ -23,6 +23,8 @@ export interface ScoredResult {
   path: string;
   score: number;
   matches: [number, number][];
+  /** True for a directory entry (path also carries a trailing `/`). */
+  is_dir?: boolean;
 }
 
 /** Snapshot of the current file tree query response. */
@@ -156,12 +158,14 @@ export class FileTreeStore {
       }
 
       // If the snapshot matches the current query, map fresh results.
+      // Directory entries become `directory` atoms (folder glyph,
+      // trailing-slash value) and gate the popup's Tab-descend.
       if (this._snapshot.query === query) {
         lastValidResults = this._snapshot.results.map((r) => ({
           label: r.path,
           atom: {
             kind: "atom" as const,
-            type: "file",
+            type: r.is_dir ? "directory" : "file",
             label: r.path,
             value: r.path,
           },

@@ -112,22 +112,21 @@ impl SecretFilter {
 
     /// True if `relative_path` matches any built-in or `.tugattachignore`
     /// pattern. `relative_path` is workspace-relative with forward
-    /// slashes (the shape the BTreeSet stores).
+    /// slashes (the shape the BTreeSet stores); a directory entry
+    /// carries a trailing `/` and is matched with `is_dir: true` so a
+    /// directory pattern like `local-secrets/` excludes the directory
+    /// entry itself, not just its children.
     ///
-    /// Uses `matched_path_or_any_parents` so a directory pattern like
-    /// `local-secrets/` correctly excludes files *inside* the directory
-    /// (`local-secrets/api.txt`). Without ancestor matching, only the
-    /// directory entry itself would match — but `walk_directory` only
-    /// surfaces files, not directories, so the directory pattern
-    /// without ancestor walking would be effectively dead.
-    ///
-    /// Queries with `is_dir: false` — the feed only indexes regular
-    /// files. The ancestor walk still tests parent directories
-    /// correctly because gitignore's directory patterns trigger on
-    /// the parent's own (computed) match.
+    /// Uses `matched_path_or_any_parents` so a directory pattern also
+    /// excludes files *inside* the directory (`local-secrets/api.txt`)
+    /// — the ancestor walk tests parent directories on the way up.
     pub fn is_secret(&self, relative_path: &str) -> bool {
+        let (path, is_dir) = match relative_path.strip_suffix('/') {
+            Some(stripped) => (stripped, true),
+            None => (relative_path, false),
+        };
         self.matcher
-            .matched_path_or_any_parents(relative_path, /* is_dir */ false)
+            .matched_path_or_any_parents(path, is_dir)
             .is_ignore()
     }
 

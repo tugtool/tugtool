@@ -142,6 +142,16 @@ export interface SynthesizeResult {
 // Defaults
 // ---------------------------------------------------------------------------
 
+/**
+ * Atom type for a replayed `@`-mention. The wire doesn't carry the
+ * original type, but a directory mention's value always ends in `/`
+ * (tugcast's index form), so directory chips round-trip; everything
+ * else defaults to `"file"`.
+ */
+function mentionAtomType(value: string): string {
+  return value.endsWith("/") ? "directory" : "file";
+}
+
 function defaultMintAtomId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -222,7 +232,7 @@ export function synthesizeUserMessageFromBlocks(
         echoText += TUG_ATOM_CHAR;
         echoAtoms.push({
           kind: "atom",
-          type: "file",
+          type: mentionAtomType(seg.value),
           label: seg.value,
           value: seg.value,
         });
@@ -258,11 +268,13 @@ export function synthesizeUserMessageFromBlocks(
         // command) is not preserved on the wire; we default to
         // `"file"` since that's the overwhelmingly common case for
         // `@`-mention completions and the chip's icon falls back
-        // gracefully if the value is actually a URL or command.
+        // gracefully if the value is actually a URL or command. A
+        // trailing `/` marks a directory mention, which does
+        // round-trip.
         textBuf += TUG_ATOM_CHAR;
         atoms.push({
           kind: "atom",
-          type: "file",
+          type: mentionAtomType(seg.value),
           label: seg.value,
           value: seg.value,
         });

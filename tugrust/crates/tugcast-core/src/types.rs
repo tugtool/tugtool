@@ -162,6 +162,11 @@ pub struct ScoredResult {
     /// Byte-offset ranges `[start, end)` of matched characters for highlighting.
     /// Empty for off-board results.
     pub matches: Vec<(usize, usize)>,
+    /// True when the entry is a directory. Directory paths also carry a
+    /// trailing `/`, but this flag is the contract — clients must not
+    /// parse the path shape.
+    #[serde(default)]
+    pub is_dir: bool,
 }
 
 /// File tree query response.

@@ -322,11 +322,14 @@ pub fn score_file_path(query: &str, path: &str) -> Option<ScoredMatch> {
         return Some(m);
     }
 
-    // Try basename first.
-    let basename_byte_start = path.rfind('/').map_or(0, |i| i + 1);
-    let basename = &path[basename_byte_start..];
+    // Try basename first. A directory entry carries a trailing `/`;
+    // its basename is the last real segment, so trim before splitting
+    // — otherwise every directory would lose the basename tier.
+    let trimmed = path.trim_end_matches('/');
+    let basename_byte_start = trimmed.rfind('/').map_or(0, |i| i + 1);
+    let basename = &trimmed[basename_byte_start..];
     // Convert byte offset to UTF-16 offset for position adjustment.
-    let basename_utf16_start: usize = path[..basename_byte_start]
+    let basename_utf16_start: usize = trimmed[..basename_byte_start]
         .chars()
         .map(|c| c.len_utf16())
         .sum();

@@ -228,26 +228,59 @@ impl FileTreeFeed {
     /// freshly-dropped `.env` never sneaks into the completion index.
     /// Removal paths are unconditional — if a path was somehow in the
     /// set, a remove event always evicts it.
+    ///
+    /// Event paths never carry the trailing-`/` directory marker (they
+    /// come from `notify` verbatim), so insertions probe the live
+    /// filesystem to classify, and removals evict both spellings plus
+    /// — for a removed directory — every indexed child, since the
+    /// watcher is not guaranteed to emit per-child events.
     fn apply_events(&mut self, events: &[FsEvent]) {
         for event in events {
             match event {
                 FsEvent::Created { path } => {
-                    if !self.secret_filter.is_secret(path) {
-                        self.files.insert(path.clone());
-                    }
+                    self.insert_path(path);
                 }
                 FsEvent::Removed { path } => {
-                    self.files.remove(path);
+                    self.remove_path(path);
                 }
                 FsEvent::Renamed { from, to } => {
-                    self.files.remove(from);
-                    if !self.secret_filter.is_secret(to) {
-                        self.files.insert(to.clone());
-                    }
+                    self.remove_path(from);
+                    self.insert_path(to);
                 }
                 FsEvent::Modified { .. } => {
                     // File saves don't change the file list.
                 }
+            }
+        }
+    }
+
+    /// Insert an event path in its index form (trailing `/` for a
+    /// directory), unless the secret filter rejects it.
+    fn insert_path(&mut self, path: &str) {
+        let entry = if self.current_root.join(path).is_dir() {
+            format!("{path}/")
+        } else {
+            path.to_string()
+        };
+        if !self.secret_filter.is_secret(&entry) {
+            self.files.insert(entry);
+        }
+    }
+
+    /// Evict an event path — both file and directory spellings — and,
+    /// for a directory, everything indexed beneath it.
+    fn remove_path(&mut self, path: &str) {
+        self.files.remove(path);
+        let dir = format!("{path}/");
+        if self.files.remove(&dir) {
+            let children: Vec<String> = self
+                .files
+                .range(dir.clone()..)
+                .take_while(|p| p.starts_with(&dir))
+                .cloned()
+                .collect();
+            for child in children {
+                self.files.remove(&child);
             }
         }
     }
@@ -342,12 +375,17 @@ impl FileTreeFeed {
                         if self.secret_filter.is_secret(name) {
                             continue;
                         }
+                        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
                         let full_path = if parent_dir == "/" {
                             format!("/{name}")
                         } else {
                             format!("{parent_dir}/{name}")
                         };
-                        entries.push(full_path);
+                        entries.push(if is_dir {
+                            format!("{full_path}/")
+                        } else {
+                            full_path
+                        });
                     }
                 }
             }
@@ -360,27 +398,33 @@ impl FileTreeFeed {
             query: query.to_string(),
             results: entries
                 .into_iter()
-                .map(|path| ScoredResult {
-                    path,
-                    score: 0,
-                    matches: vec![],
+                .map(|path| {
+                    let is_dir = path.ends_with('/');
+                    ScoredResult {
+                        path,
+                        score: 0,
+                        matches: vec![],
+                        is_dir,
+                    }
                 })
                 .collect(),
             truncated: self.truncated,
         }
     }
 
-    /// Empty query: return root-level files (no `/` in path).
+    /// Empty query: return root-level entries (no `/` except a
+    /// directory's trailing marker).
     fn empty_query(&self) -> FileTreeSnapshot {
         let results: Vec<ScoredResult> = self
             .files
             .iter()
-            .filter(|p| !p.contains('/'))
+            .filter(|p| !p.trim_end_matches('/').contains('/'))
             .take(MAX_RESULTS)
             .map(|p| ScoredResult {
                 path: p.clone(),
                 score: 0,
                 matches: vec![],
+                is_dir: p.ends_with('/'),
             })
             .collect();
 
@@ -402,6 +446,7 @@ impl FileTreeFeed {
                     path: path.clone(),
                     score: m.score,
                     matches: m.matches,
+                    is_dir: path.ends_with('/'),
                 })
             })
             .collect();
@@ -532,6 +577,7 @@ mod tests {
                 path: "src/lib/session-metadata-store.ts".to_string(),
                 score: 72,
                 matches: vec![(0, 1), (8, 9), (17, 18)],
+                is_dir: false,
             }],
             truncated: false,
         };
@@ -712,6 +758,104 @@ mod tests {
         assert!(names.contains(&"ordinary.txt"));
         assert!(!names.contains(&".env"));
         assert!(!names.contains(&"server.pem"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Directory entries
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_query_includes_root_level_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut files = BTreeSet::new();
+        files.insert("README.md".to_string());
+        files.insert("src/".to_string());
+        files.insert("src/main.rs".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        let response = feed.empty_query();
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        assert!(paths.contains(&"README.md"));
+        assert!(paths.contains(&"src/"), "root-level dir belongs in empty query");
+        assert!(!paths.contains(&"src/main.rs"), "nested file is not root-level");
+        let dir = response.results.iter().find(|r| r.path == "src/").unwrap();
+        assert!(dir.is_dir);
+        let file = response.results.iter().find(|r| r.path == "README.md").unwrap();
+        assert!(!file.is_dir);
+    }
+
+    #[test]
+    fn scored_query_matches_directories_by_basename() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut files = BTreeSet::new();
+        files.insert("roadmap/".to_string());
+        files.insert("roadmap/dev-atoms.md".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        let response = feed.scored_query("roadmap");
+        let dir = response
+            .results
+            .iter()
+            .find(|r| r.path == "roadmap/")
+            .expect("directory should match its own name");
+        assert!(dir.is_dir);
+    }
+
+    #[test]
+    fn tugattachignore_directory_pattern_excludes_the_directory_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".tugattachignore"), "local-secrets/\n").unwrap();
+
+        let mut files = BTreeSet::new();
+        files.insert("local-secrets/".to_string());
+        files.insert("local-secrets/api.txt".to_string());
+        files.insert("locale.ts".to_string());
+
+        let feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        let response = feed.scored_query("local");
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        assert!(paths.contains(&"locale.ts"));
+        assert!(!paths.contains(&"local-secrets/"), "dir entry itself must be filtered");
+        assert!(!paths.contains(&"local-secrets/api.txt"));
+    }
+
+    #[test]
+    fn removed_directory_evicts_children() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut files = BTreeSet::new();
+        files.insert("src/".to_string());
+        files.insert("src/a.rs".to_string());
+        files.insert("src/deep/".to_string());
+        files.insert("src/deep/b.rs".to_string());
+        files.insert("srcfile.rs".to_string());
+
+        let mut feed = test_feed_rooted(tmp.path().to_path_buf(), files);
+        feed.apply_events(&[FsEvent::Removed {
+            path: "src".to_string(),
+        }]);
+
+        let response = feed.scored_query("src");
+        let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(paths, vec!["srcfile.rs"], "dir and all children evicted");
+    }
+
+    #[test]
+    fn created_directory_indexes_with_trailing_slash() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("newdir")).unwrap();
+
+        let mut feed = test_feed_rooted(tmp.path().to_path_buf(), BTreeSet::new());
+        feed.apply_events(&[FsEvent::Created {
+            path: "newdir".to_string(),
+        }]);
+
+        let response = feed.empty_query();
+        let dir = response
+            .results
+            .iter()
+            .find(|r| r.path == "newdir/")
+            .expect("created dir should index in trailing-slash form");
+        assert!(dir.is_dir);
     }
 
     /// W1: FileTreeFeed splices `workspace_key` as the first field of every

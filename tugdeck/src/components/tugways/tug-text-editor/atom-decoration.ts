@@ -187,6 +187,28 @@ export const regenerateAtomsEffect = StateEffect.define<null>();
  */
 export const replaceAtomsEffect = StateEffect.define<readonly PositionedAtom[]>();
 
+/** One atom demotion: which decoration to drop and how to undo it. */
+export interface DemotedAtom {
+  /** Start offset of the decoration to drop, in the transaction's
+   *  FINAL coordinates. */
+  position: number;
+  /** The atom as it stood in the transaction's START state — the
+   *  record `atomInvertedEffects` re-adds when the demotion is
+   *  undone. */
+  original: PositionedAtom;
+}
+
+/**
+ * Drop the atom decorations named by `position`. Needed by edits that
+ * turn an atom back into literal text (command demotion): replacing
+ * the U+FFFC with a longer string makes the replace-decoration
+ * *stretch* over the inserted text under auto-mapping rather than
+ * collapse, so neither the field's mapping nor the collapse-detection
+ * in `atomInvertedEffects` sees a deletion — removal and its undo both
+ * need this explicit record.
+ */
+export const removeAtomsEffect = StateEffect.define<readonly DemotedAtom[]>();
+
 // ---------------------------------------------------------------------------
 // atomDecorationField
 // ---------------------------------------------------------------------------
@@ -212,6 +234,11 @@ export const atomDecorationField = StateField.define<DecorationSet>({
         });
       } else if (effect.is(replaceAtomsEffect)) {
         next = Decoration.set(effect.value.map(toAtomRange));
+      } else if (effect.is(removeAtomsEffect)) {
+        const positions = new Set(effect.value.map((d) => d.position));
+        next = next.update({
+          filter: (from) => !positions.has(from),
+        });
       } else if (effect.is(regenerateAtomsEffect)) {
         next = regenerateWidgets(next, tr.state);
       }
@@ -405,6 +432,15 @@ export const atomInvertedEffects: Extension = invertedEffects.of((tr) => {
       }
     }
   });
+  // Demotions (atom → literal text) replace the U+FFFC rather than
+  // delete it, so the collapse test above never sees them; the
+  // `removeAtomsEffect` carries the original atom record for exactly
+  // this — re-add it when the demoting transaction is undone.
+  for (const effect of tr.effects) {
+    if (effect.is(removeAtomsEffect)) {
+      removed.push(...effect.value.map((d) => d.original));
+    }
+  }
   if (removed.length > 0) {
     result.push(addAtomsEffect.of(removed));
   }

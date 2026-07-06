@@ -79,16 +79,32 @@ describe("suppressCompletionDetection", () => {
     expect(next.field(completionField).active).toBe(false);
   });
 
-  test("moving the caret into a recalled `/command` does NOT reopen the popup", () => {
-    // The remaining half of the recall-submit bug: after a suppressed
-    // whole-doc swap, clicking / arrowing into the restored trigger run
-    // is a pure selection change. Rejoin is gated on `docChanged`, so it
-    // must not reopen — otherwise the popup would steal the next submit.
+  test("a PROGRAMMATIC caret move into a recalled `/command` does NOT reopen the popup", () => {
+    // A selection change with no `select` userEvent is not the user
+    // aiming their caret — restore/recall plumbing must never reopen
+    // the popup and let it steal the next submit.
     const recalled = replaceDoc(makeState(), "/permissions", true);
     expect(recalled.field(completionField).active).toBe(false);
 
     const moved = recalled.update({ selection: EditorSelection.cursor(5) }).state;
     expect(moved.field(completionField).active).toBe(false);
+  });
+
+  test("a USER caret move (click / arrow) into a recalled `/command` DOES reopen the popup", () => {
+    // Picking up an edit anywhere in an unaccepted trigger run must
+    // re-engage completion. User selection transactions carry the
+    // `select` userEvent (`select.pointer` for clicks).
+    const recalled = replaceDoc(makeState(), "/permissions", true);
+    expect(recalled.field(completionField).active).toBe(false);
+
+    const clicked = recalled.update({
+      selection: EditorSelection.cursor(5),
+      userEvent: "select.pointer",
+    }).state;
+    const field = clicked.field(completionField);
+    expect(field.active).toBe(true);
+    // Word-savvy: the query is the whole token, not trigger-to-caret.
+    expect(field.query).toBe("permissions");
   });
 
   test("typing within a recalled `/command` still reopens the popup", () => {
@@ -245,9 +261,9 @@ describe("completionQueryMatchesSelection — Space accepts only on an exact mat
 
 describe("popup survives a char to the right of the caret", () => {
   test("inserting a closing char after the caret does not cancel the popup", () => {
-    // Repositioning the caret so a non-whitespace character sits immediately
-    // to its right must NOT dismiss the popup — the query is read from the
-    // trigger to the caret, never from what follows.
+    // A non-whitespace character to the right of the caret must NOT
+    // dismiss the popup — it is part of the token, so word-savvy
+    // derivation folds it into the query instead.
     const active = replaceDoc(makeState(), "/permissions", false);
     expect(active.field(completionField).active).toBe(true);
 
@@ -259,6 +275,8 @@ describe("popup survives a char to the right of the caret", () => {
     }).state;
 
     expect(withRightChar.doc.toString()).toBe('/permissions"');
-    expect(withRightChar.field(completionField).active).toBe(true);
+    const field = withRightChar.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.query).toBe('permissions"');
   });
 });
