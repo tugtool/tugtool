@@ -196,3 +196,29 @@ export function parsePersistedEffort(entry: TaggedValue | undefined): string | n
 
 /** tugbank domain for per-card effort persistence per [D07]. */
 export const EFFORT_DOMAIN = "dev.effort";
+
+/**
+ * tugbank domain/key for the *global* default effort level — the level a
+ * brand-new card (one with nothing persisted under {@link EFFORT_DOMAIN})
+ * adopts on mount. Set from the Settings card's "Dev Card" tab; distinct from
+ * the per-card domain so changing the global default never disturbs an open
+ * card that already carries its own remembered level. Mirrors the
+ * permission-mode default domain.
+ */
+export const EFFORT_DEFAULT_DOMAIN = "dev.tugtool.effort";
+export const EFFORT_DEFAULT_KEY = "default";
+
+/**
+ * The effort level a freshly-mounted card should align its session to: its own
+ * per-card persisted level when present, otherwise the global default. `null`
+ * when neither is set — the caller then leaves the session at whatever level it
+ * spawned with (no respawn). The per-card value always wins, so a card that has
+ * been used keeps its remembered level regardless of the global default.
+ * Mirrors `resolveSeedPermissionMode`.
+ */
+export function resolveSeedEffort(
+  persisted: string | null,
+  globalDefault: string | null,
+): string | null {
+  return persisted ?? globalDefault;
+}

@@ -39,9 +39,12 @@ import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
   DEFAULT_EFFORT_LEVEL,
+  EFFORT_DEFAULT_DOMAIN,
+  EFFORT_DEFAULT_KEY,
   EFFORT_DOMAIN,
   parsePersistedEffort,
   resolveEffortSupport,
+  resolveSeedEffort,
 } from "@/lib/effort";
 
 /**
@@ -96,6 +99,16 @@ export function useEffort({
     null,
   );
 
+  // The deck-wide default a card with nothing persisted of its own adopts on
+  // mount (set from the Settings card). Per-card persistence always wins, so
+  // this only seeds genuinely fresh cards. Mirrors `use-permission-mode.ts`.
+  const defaultEffort = useTugbankValue<string | null>(
+    EFFORT_DEFAULT_DOMAIN,
+    EFFORT_DEFAULT_KEY,
+    parsePersistedEffort,
+    null,
+  );
+
   // Pre-armed by a manual `setEffort` so the mount-restore effect below never
   // overrides a change the user just made.
   const sentRef = useRef(false);
@@ -114,17 +127,19 @@ export function useEffort({
     [cardId, codeSessionStore, sessionMetadataStore],
   );
 
-  // Mount-restore ([D07]). Once the NEW-mode capabilities land (the `models[]`
-  // readiness signal) and a persisted level has loaded, re-apply it if the
+  // Mount-restore + fresh-seed ([D07]). Once the NEW-mode capabilities land (the
+  // `models[]` readiness signal) and a seed level has resolved — the card's own
+  // per-card level if any, else the deck-wide default — re-apply it if the
   // active model supports it and it differs from the *effective* live level.
   // Fires at most once per mount (`sentRef`). A resumed session has no
   // capabilities, so this never fires for it (no respawn). A manual change
   // pre-arms `sentRef`.
+  const seedEffort = resolveSeedEffort(persistedEffort, defaultEffort);
   const liveEffort = snapshot.effort;
   const { models, model } = snapshot;
   useEffect(() => {
     if (sentRef.current) return;
-    if (persistedEffort === null) return;
+    if (seedEffort === null) return;
     // Readiness: either live capabilities (a new-mode session is up) OR a
     // resolved model id (a resumed session's `system_metadata` has replayed).
     // Before EITHER lands we can't tell support and shouldn't race the spawn.
@@ -132,23 +147,23 @@ export function useEffort({
     const support = resolveEffortSupport(models, model);
     if (
       !support.supported ||
-      !(support.levels as string[]).includes(persistedEffort)
+      !(support.levels as string[]).includes(seedEffort)
     ) {
-      // Persisted level doesn't apply to this model — leave it, don't respawn.
+      // Seed level doesn't apply to this model — leave it, don't respawn.
       sentRef.current = true;
       return;
     }
     // Compare against the EFFECTIVE level (the chip's `effort ?? default`), so a
-    // card whose persisted level equals the session default (e.g. persisted
-    // `high` on a fresh session already running at the `high` default) does NOT
-    // trigger a needless respawn ([R07]).
+    // card whose seed level equals the session default (e.g. seed `high` on a
+    // fresh session already running at the `high` default) does NOT trigger a
+    // needless respawn ([R07]).
     const effectiveLive = liveEffort ?? DEFAULT_EFFORT_LEVEL;
-    if (persistedEffort !== effectiveLive) {
-      setEffort(persistedEffort);
+    if (seedEffort !== effectiveLive) {
+      setEffort(seedEffort);
     } else {
       sentRef.current = true;
     }
-  }, [persistedEffort, models, model, liveEffort, setEffort]);
+  }, [seedEffort, models, model, liveEffort, setEffort]);
 
   return { setEffort };
 }

@@ -43,6 +43,8 @@ import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
+import { useModel } from "@/lib/use-model";
+import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
 import { useDiffSheet } from "./diff-sheet";
 import { useSkillsSheet } from "./skills-sheet";
@@ -2674,9 +2676,42 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
-  const modelPicker = useModelPicker({
+  // Model set path + per-card persistence/restore ([D07]). `setModel` sends
+  // `model_change`, optimistically reflects on the chip, and persists per card;
+  // the picker (chip press / `/model`) funnels through it, and a fresh card
+  // adopts the deck-wide default (Settings card) on mount. Since model is not
+  // carried on the spawn frame, this seeds both new and resumed cards.
+  const model = useModel({
+    cardId,
     codeSessionStore,
     sessionMetadataStore,
+  });
+
+  // Always-current model catalog: whenever this card's `session_capabilities`
+  // reports claude's live `models[]`, persist it so the picker fallback, the
+  // Settings default dropdown, and resumed / just-launched cards read the real
+  // list instead of a hardcoded constant ([model-catalog.ts]). A resumed
+  // session carries no capabilities (empty list) — `persistModelCatalog`
+  // no-ops on empty so it never clobbers the cached catalog with nothing.
+  const liveModels = useSyncExternalStore(
+    sessionMetadataStore.subscribe,
+    useCallback(
+      () => sessionMetadataStore.getSnapshot().models,
+      [sessionMetadataStore],
+    ),
+  );
+  const persistedCatalogRef = useRef<string>("");
+  useEffect(() => {
+    if (liveModels.length === 0) return;
+    const serialized = JSON.stringify(liveModels);
+    if (serialized === persistedCatalogRef.current) return;
+    persistedCatalogRef.current = serialized;
+    persistModelCatalog(liveModels);
+  }, [liveModels]);
+
+  const modelPicker = useModelPicker({
+    sessionMetadataStore,
+    onSelectModel: model.setModel,
     showSheet: cardPickerSheet.showSheet,
     commitDisposition: DEV_CYCLE_PICKER_COMMIT_DISPOSITION,
   });

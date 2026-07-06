@@ -510,6 +510,62 @@ export function putDefaultPermissionMode(mode: string): void {
   });
 }
 
+// ── Default effort ──────────────────────────────────────────────────────────
+
+/**
+ * PUT the global default effort level to tugbank (fire-and-forget). The value
+ * is a bare level string (e.g. `"high"`) under `dev.tugtool.effort/default`.
+ * New cards adopt it on mount; see `resolveSeedEffort` and `use-effort.ts`.
+ */
+export function putDefaultEffort(level: string): void {
+  fetch("/api/defaults/dev.tugtool.effort/default", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: level }),
+  }).catch((err) => {
+    console.warn("[settings] PUT defaultEffort failed:", err);
+  });
+}
+
+// ── Live model catalog ──────────────────────────────────────────────────────
+
+/**
+ * PUT the live model catalog to tugbank (fire-and-forget). The value is the
+ * `session_capabilities.models` array claude reported on its most recent
+ * `initialize` handshake, under `dev.tugtool.models/catalog`. This is the
+ * always-current source the picker fallback and the Settings default dropdown
+ * read so a resumed / session-less / just-launched card never shows a stale
+ * hand-maintained list. See `model-catalog.ts`.
+ */
+export function putModelCatalog(models: unknown): void {
+  fetch("/api/defaults/dev.tugtool.models/catalog", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: models }),
+  }).catch((err) => {
+    console.warn("[settings] PUT modelCatalog failed:", err);
+  });
+}
+
+// ── Default model ───────────────────────────────────────────────────────────
+
+/**
+ * PUT the global default model selector to tugbank (fire-and-forget). The value
+ * is a bare selector string (`"default"` / `"sonnet"` / `"haiku"`) under
+ * `dev.tugtool.model/default`. New cards adopt it on mount; see
+ * `resolveSeedModel` and `use-model.ts`. `"default"` means the account default
+ * (no forced model).
+ */
+export function putDefaultModel(selector: string): void {
+  fetch("/api/defaults/dev.tugtool.model/default", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: selector }),
+  }).catch((err) => {
+    console.warn("[settings] PUT defaultModel failed:", err);
+  });
+}
+
 // ── Split pane layouts ──────────────────────────────────────────────────────
 
 /**

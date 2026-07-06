@@ -22,6 +22,7 @@ import {
   parsePersistedEffort,
   resolveEffortDisplay,
   resolveEffortSupport,
+  resolveSeedEffort,
 } from "@/lib/effort";
 
 const CAPABILITY_MODELS: CapabilityModel[] = [
@@ -168,5 +169,19 @@ describe("resolveEffortDisplay", () => {
     const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-haiku-4-5", null);
     expect(d.supported).toBe(false);
     expect(d.level).toBeNull();
+  });
+});
+
+describe("resolveSeedEffort", () => {
+  test("per-card persisted level wins over the global default", () => {
+    expect(resolveSeedEffort("max", "high")).toBe("max");
+  });
+
+  test("falls back to the global default when nothing is persisted", () => {
+    expect(resolveSeedEffort(null, "high")).toBe("high");
+  });
+
+  test("is null when neither is set (leave the session untouched)", () => {
+    expect(resolveSeedEffort(null, null)).toBeNull();
   });
 });

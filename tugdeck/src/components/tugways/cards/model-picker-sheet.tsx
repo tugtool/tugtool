@@ -44,12 +44,12 @@ import {
   type TugListViewDataSource,
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
-import type { CodeSessionStore } from "@/lib/code-session-store";
 import type {
   CapabilityModel,
   SessionMetadataStore,
 } from "@/lib/session-metadata-store";
-import { resolvePickerModels, selectorToModelId } from "@/lib/model-picker-data";
+import { resolvePickerModels } from "@/lib/model-picker-data";
+import { readModelCatalog } from "@/lib/model-catalog";
 
 // ---------------------------------------------------------------------------
 // useModelPicker — the shared, card-hosted model sheet
@@ -57,8 +57,12 @@ import { resolvePickerModels, selectorToModelId } from "@/lib/model-picker-data"
 
 /** Args for {@link useModelPicker}. */
 export interface UseModelPickerArgs {
-  /** Store that sends the `model_change` frame to tugcode → claude. */
-  codeSessionStore: CodeSessionStore;
+  /**
+   * Apply a picked model selector — the single set path from {@link useModel}
+   * that sends the `model_change` frame, optimistically reflects the chip, and
+   * persists the choice per card. A no-op pick (same model) never reaches here.
+   */
+  onSelectModel: (selector: string) => void;
   /** Metadata store supplying the live model + the `initialize` model list. */
   sessionMetadataStore: SessionMetadataStore;
   /**
@@ -92,7 +96,7 @@ export interface ModelPickerController {
  * `initialize` list when present, else the static fallback.
  */
 export function useModelPicker({
-  codeSessionStore,
+  onSelectModel,
   sessionMetadataStore,
   showSheet,
   commitDisposition,
@@ -102,6 +106,7 @@ export function useModelPicker({
     const { options, activeValue } = resolvePickerModels(
       snapshot.models,
       snapshot.model,
+      readModelCatalog(),
     );
     void showSheet({
       title: "Model",
@@ -115,10 +120,9 @@ export function useModelPicker({
           activeValue={activeValue}
           onConfirm={(picked) => {
             if (picked !== null && picked !== activeValue) {
-              codeSessionStore.setModel(picked);
-              // Optimistic chip update — claude answers with a control_response,
-              // not a fresh system_metadata, so reflect the pick immediately.
-              sessionMetadataStore.applyModel(selectorToModelId(picked));
+              // The single set path ([use-model.ts]): sends `model_change`,
+              // optimistically reflects the chip, and persists the pick per card.
+              onSelectModel(picked);
             }
             close(picked ?? undefined);
           }}
@@ -126,7 +130,7 @@ export function useModelPicker({
         />
       ),
     });
-  }, [showSheet, sessionMetadataStore, codeSessionStore, commitDisposition]);
+  }, [showSheet, sessionMetadataStore, onSelectModel, commitDisposition]);
 
   return { openModelPicker };
 }

@@ -95,8 +95,10 @@ export function selectorToModelId(value: string): string {
 /**
  * Resolve the picker's option list and active row from a metadata snapshot.
  *
- * Options: the live `initialize` capability list when non-empty, else
- * `KNOWN_MODELS`. The resolved model is never injected as an extra row.
+ * Options: the live `initialize` capability list when non-empty, else the
+ * caller-supplied `fallback` — the persisted live catalog via
+ * `readModelCatalog()` in production ([model-catalog.ts]), or `KNOWN_MODELS`
+ * for pure unit tests. The resolved model is never injected as an extra row.
  *
  * Active row: `system_metadata.model` is a resolved id (`claude-sonnet-4-6`,
  * `claude-opus-4-8[1m]`, …) while the options are selectors, so it is mapped
@@ -108,8 +110,9 @@ export function selectorToModelId(value: string): string {
 export function resolvePickerModels(
   models: CapabilityModel[],
   activeModel: string | null,
+  fallback: CapabilityModel[] = KNOWN_MODELS,
 ): PickerModels {
-  const options = models.length > 0 ? models : KNOWN_MODELS;
+  const options = models.length > 0 ? models : fallback;
   if (options.length === 0) return { options, activeValue: null };
 
   if (activeModel !== null) {
