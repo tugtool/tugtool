@@ -45,6 +45,7 @@ import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-p
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
+import { ensureAtomFontsLoaded } from "./lib/tug-atom-fonts";
 import { deserialize } from "./serialization";
 import { attachTugTestSurface } from "./test-surface";
 import { installHmrBridge } from "./hmr-bridge";
@@ -228,6 +229,13 @@ if (!container) {
 
   // Capture the baseline sentinel for theme change detection.
   initThemeTokens();
+
+  // Preload the atom SVG font faces now, once the theme's @font-face rules
+  // are in the document. Fetch + base64-encode runs off the atom-creation
+  // path so the first atom renders in the embedded font instead of a
+  // generic fallback that later flips. Idempotent with the editor
+  // settings store's own call.
+  void ensureAtomFontsLoaded();
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored
