@@ -241,6 +241,13 @@ describe.skipIf(!SHOULD_RUN)(
             ),
             "chip stays present (never hides)",
           ).toBe(true);
+          // Width stability across the unsupported transition: the chip
+          // reserves the full canonical level set, so dropping to `-` (an
+          // effort-unsupported model) must not collapse its width.
+          expect(
+            await chipWidth(app),
+            "chip must not reflow when the value drops to `-`",
+          ).toBe(widthAtHigh);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {

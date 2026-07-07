@@ -43,7 +43,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
-import { formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
+import { EFFORT_LEVELS, formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
 import { readModelCatalog } from "@/lib/model-catalog";
 
 export interface EffortChipProps {
@@ -98,11 +98,15 @@ export function EffortChip({
   );
   const effectiveEffort = display.level;
   const content = formatEffortLabel(effectiveEffort);
-  // Width-stabilize against the `-` placeholder plus every supported level
-  // label so switching among them never reflows the chip ([R01]).
+  // Width-stabilize against the `-` placeholder plus the FULL canonical
+  // level set — not just the active model's supported levels, which are
+  // empty for an effort-unsupported model (haiku): sizing to those would
+  // collapse the chip to the `-` width the moment such a model goes active.
+  // EFFORT_LEVELS is the wire enum of the `--effort` flag, not model data,
+  // so the reserved width is constant across every model ([R01]).
   const sizerLabels = [
     formatEffortLabel(null),
-    ...display.levels.map((level) => formatEffortLabel(level)),
+    ...EFFORT_LEVELS.map((level) => formatEffortLabel(level)),
   ];
 
   const title = !display.supported
