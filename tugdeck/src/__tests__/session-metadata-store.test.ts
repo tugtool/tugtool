@@ -728,16 +728,45 @@ describe("SessionMetadataStore reconciliation (optimistic overrides)", () => {
     store.dispose();
   });
 
-  test("a model override does not survive a system_metadata that omits model", () => {
-    // Matches the prior wholesale-replace behavior: a system_metadata frame is
-    // authoritative for model, so it drops the optimistic override even when it
-    // carries no model (→ null), rather than letting a stale override linger.
+  test("a model override SURVIVES a system_metadata that omits model", () => {
+    // A frame that carries no model says nothing about the model — the
+    // turn-free synthetic session_init and sparse replay rows are exactly
+    // such frames, and they land right after a fresh card's seed pick. If
+    // they dropped the override, a just-picked model would flash and snap
+    // back to the spawn model until the next real turn. Only a frame that
+    // actually CARRIES a model supersedes the optimistic value.
     const feedStore = new MockFeedStore();
     const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
 
-    store.applyModel("claude-sonnet-4-6");
+    store.applyModel("sonnet");
     feedStore.emit(FEED_ID, { type: "system_metadata", cwd: "/x" });
-    expect(store.getSnapshot().model).toBeNull();
+    expect(store.getSnapshot().model).toBe("sonnet");
+
+    // A frame that DOES carry a model supersedes the override.
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      model: "claude-sonnet-4-6",
+    });
+    expect(store.getSnapshot().model).toBe("claude-sonnet-4-6");
+
+    store.dispose();
+  });
+
+  test("a permission-mode override survives a mode-less system_metadata", () => {
+    // Same only-if-carried rule as the model: a frame that omits (or blanks)
+    // permissionMode must not clobber an optimistic Shift+Tab / sheet pick.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(feedStore as never, FEED_ID as never);
+
+    store.applyPermissionMode("acceptEdits");
+    feedStore.emit(FEED_ID, { type: "system_metadata", cwd: "/x" });
+    expect(store.getSnapshot().permissionMode).toBe("acceptEdits");
+
+    feedStore.emit(FEED_ID, {
+      type: "system_metadata",
+      permissionMode: "plan",
+    });
+    expect(store.getSnapshot().permissionMode).toBe("plan");
 
     store.dispose();
   });

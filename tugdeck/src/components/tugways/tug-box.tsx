@@ -11,6 +11,15 @@
  * Label position: legend (in border line) or above (heading above children).
  * Inset padding scales with size: sm/md/lg.
  *
+ * **Layout contract.** Children render inside a `.tug-box-body` div, and
+ * that div is the only layout surface — consumers style
+ * `.their-class > .tug-box-body` for flex/grid/gap, never the fieldset
+ * itself. WebKit's special-cased legend layout disagrees between layout
+ * passes about whether the legend is a flex item, so a fieldset-level
+ * `display: flex` makes the box's height change by one `gap` on any style
+ * recalc (theme switch, HMR) — a visible hop. A DEV-only guard warns when a
+ * fieldset computes to flex/grid.
+ *
  * Laws: [L06] appearance via CSS, [L16] pairings declared,
  *       [L19] component authoring guide
  */
@@ -20,6 +29,7 @@ import "./tug-box.css";
 import React from "react";
 import { cn } from "@/lib/utils";
 import { TugBoxContext, useTugBoxDisabled } from "./internal/tug-box-context";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 
 // ---- Types ----
 
@@ -112,6 +122,35 @@ export interface TugBoxProps
 
 // ---- TugBox ----
 
+/**
+ * DEV-only guard: warn (once per class list) when a consumer makes the
+ * fieldset itself a flex/grid container — the exact authoring mistake the
+ * `.tug-box-body` wrapper exists to prevent (see the render comment). The
+ * production build compiles this to a no-op.
+ */
+const warnedFieldsetLayouts = new Set<string>();
+function useFieldsetLayoutGuard(
+  ref: React.RefObject<HTMLFieldSetElement | null>,
+): void {
+  React.useLayoutEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const el = ref.current;
+    if (el === null) return;
+    const display = getComputedStyle(el).display;
+    if (!/flex|grid/.test(display)) return;
+    const key = el.className;
+    if (warnedFieldsetLayouts.has(key)) return;
+    warnedFieldsetLayouts.add(key);
+    tugDevLogStore.warn(
+      "tug-box",
+      `TugBox fieldset has display:${display} (class "${key}"). ` +
+        "Never lay out the fieldset — WebKit's legend layout is " +
+        "pass-dependent and the box height will hop on style recalc. " +
+        "Style `> .tug-box-body` instead.",
+    );
+  });
+}
+
 export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
   function TugBox(
     {
@@ -140,6 +179,19 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
       [effectiveDisabled],
     );
 
+    // Internal fieldset ref for the DEV layout guard, merged with the
+    // forwarded ref so consumers keep theirs.
+    const fieldsetRef = React.useRef<HTMLFieldSetElement | null>(null);
+    const mergedRef = React.useCallback(
+      (el: HTMLFieldSetElement | null) => {
+        fieldsetRef.current = el;
+        if (typeof ref === "function") ref(el);
+        else if (ref !== null) ref.current = el;
+      },
+      [ref],
+    );
+    useFieldsetLayoutGuard(fieldsetRef);
+
     // Separator variant — renders <hr>, no children, no label, no context.
     if (variant === "separator") {
       return (
@@ -161,7 +213,7 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
     return (
       <TugBoxContext.Provider value={ctxValue}>
         <fieldset
-          ref={ref}
+          ref={mergedRef}
           data-slot="tug-box"
           disabled={effectiveDisabled}
           data-disabled={effectiveDisabled || undefined}
@@ -182,7 +234,16 @@ export const TugBox = React.forwardRef<HTMLFieldSetElement, TugBoxProps>(
           {label && labelPosition === "above" && (
             <span className="tug-box-label-above">{label}</span>
           )}
-          {children}
+          {/* The body div is the ONLY layout surface for box content. The
+              fieldset itself must never be a flex/grid container: WebKit's
+              special-cased legend layout disagrees between layout passes
+              about whether the legend is a flex item, so a fieldset-level
+              `display: flex` + `gap` makes every box's height change by one
+              gap on any style recalc (theme switch, HMR) — the sections
+              visibly hop. Consumers style `.their-class > .tug-box-body`. */}
+          <div className="tug-box-body" data-slot="tug-box-body">
+            {children}
+          </div>
         </fieldset>
       </TugBoxContext.Provider>
     );

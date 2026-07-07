@@ -22,11 +22,17 @@
    default `width: fit-content` so each box fills the panel's
    content area. */
 .settings-general-group {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Layout lives on the body div, never the fieldset — a flexed fieldset's
+   height hops by one gap on style recalc (WebKit legend layout; see
+   tug-box.css). */
+.settings-general-group > .tug-box-body {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-lg);
-  width: 100%;
-  box-sizing: border-box;
 }
 
 /* WebKit (and some other browsers) gives `<legend>` an intrinsic

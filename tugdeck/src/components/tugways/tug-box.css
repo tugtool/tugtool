@@ -58,6 +58,19 @@
   padding: var(--tug-space-xs);
 }
 
+/* ---- Body ----
+   The only layout surface for box content. The fieldset itself must never
+   be a flex/grid container: WebKit's special-cased legend layout disagrees
+   between layout passes about whether the legend is a flex item, so a
+   fieldset-level `display: flex` + `gap` changes the box's height by one
+   gap on any style recalc (theme switch, HMR). Consumers lay out
+   `.their-class > .tug-box-body`. */
+
+.tug-box-body {
+  display: block;
+  min-width: 0;
+}
+
 /* ---- Resize ---- */
 
 .tug-box-resize-horizontal,

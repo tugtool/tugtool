@@ -303,6 +303,20 @@ describe.skipIf(!SHOULD_RUN)(
           await app.ingestSessionMetadata("B", capabilities());
           await waitForText(app, cardModelValue("B"), "Sonnet 4.6");
 
+          // The seed must STICK: a turn-free, model-less system_metadata
+          // (the synthetic session_init emitted right after spawn) says
+          // nothing about the model and must not clobber the just-seeded
+          // optimistic pick back to the account default.
+          await app.ingestSessionMetadata("B", {
+            type: "system_metadata",
+            cwd: "/tmp/x",
+            ipc_version: 2,
+          });
+          expect(
+            await textAt(app, cardModelValue("B")),
+            "a model-less metadata frame must not clobber the seeded pick",
+          ).toBe("Sonnet 4.6");
+
           // ---- Isolation: change card A's model via its own Z4B picker.
           //      The deck default and card B must not move.
           await app.click(`[data-card-id="A"] [data-slot="model-chip"]`);

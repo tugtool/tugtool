@@ -16,11 +16,17 @@
 /* Matches .settings-general-group: override .tug-box's fit-content so
    the box fills the panel's content area. */
 .settings-app-group {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Layout lives on the body div, never the fieldset — a flexed fieldset's
+   height hops by one gap on style recalc (WebKit legend layout; see
+   tug-box.css). */
+.settings-app-group > .tug-box-body {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-lg);
-  width: 100%;
-  box-sizing: border-box;
 }
 
 /* WebKit gives `<legend>` an intrinsic inline-size that can extend past

@@ -525,6 +525,10 @@ export class SessionMetadataStore {
 
     const sys = parseSystemRegion(payload);
     if (!sys) return;
+    // Whether THIS frame actually carried the field — read before the
+    // no-clobber carry-forward below fills a blank model from history.
+    const frameCarriedModel = sys.model !== null;
+    const frameCarriedMode = sys.permissionMode !== null;
     // [P06] no-clobber precedence: a later `system_metadata` whose model is
     // absent (a live re-init that omitted `model`, or a stale/empty durable
     // replay frame) must NOT wipe a model that already resolved. The
@@ -535,10 +539,14 @@ export class SessionMetadataStore {
       sys.model = this._system.model;
     }
     this._system = sys;
-    // The authoritative model + permission mode just landed → drop the
-    // optimistic overrides they were standing in for (self-correcting).
-    delete this._optimistic.model;
-    delete this._optimistic.permissionMode;
+    // An optimistic override is superseded ONLY by a frame that actually
+    // carries its field. A model-less frame (the turn-free synthetic
+    // session_init, a sparse replay row) says nothing about the model — if
+    // it dropped the override, a just-seeded pick (deck default → sonnet)
+    // would flash and then snap back to the spawn model until the next real
+    // turn. Same rule for permission mode.
+    if (frameCarriedModel) delete this._optimistic.model;
+    if (frameCarriedMode) delete this._optimistic.permissionMode;
     this._recompute();
   }
 
