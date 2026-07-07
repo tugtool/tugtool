@@ -126,6 +126,7 @@ import {
 } from "@/lib/tug-native-clipboard";
 import { tugTheme } from "./tug-text-editor/theme";
 import { hostFocusMirror } from "./tug-text-editor/host-state";
+import { hostClickToCaret } from "./tug-text-editor/host-click";
 import {
   addAtomsEffect,
   atomBytesStoreFacet,
@@ -1105,6 +1106,10 @@ function buildExtensions(
     tugCaretInteractionPlugin,
     tugTheme,
     hostFocusMirror(host),
+    // The host is the text surface: a click in the blank band below short
+    // content (host taller than contentDOM) lands the caret instead of
+    // letting WebKit's mousedown default blur the editor.
+    hostClickToCaret(host),
     // Atom support: the decoration field is the data layer; the
     // atomic-ranges provider lifts that data into CM6's motion /
     // deletion machinery; clipboard filters round-trip the atoms

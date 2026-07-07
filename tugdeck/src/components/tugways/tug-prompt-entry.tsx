@@ -83,6 +83,7 @@ import type { PastedCommandResolver } from "./tug-text-editor/clipboard-filters"
 import {
   clearDropCaret,
   dropOffsetAtCoords,
+  markEditorDropActive,
   paintDropCaret,
   processAttachmentFiles,
 } from "./tug-text-editor/drop-extension";
@@ -1096,67 +1097,66 @@ export const TugPromptEntry = React.forwardRef<
     [attachmentBytesStore],
   );
 
-  // Z4C zone as a drop target. The attachment strip sits BELOW the editor
-  // and holds no text position of its own, so a file dropped onto it routes
-  // through the editor's exact attachment pipeline and lands at the editor's
-  // current caret/selection — mirroring the image-paste path, which also has
-  // no drop coordinate. Without these handlers the browser rejects the drop
-  // (a `dragover` that calls `preventDefault` is what marks an element a
-  // drop target). The `data-drop-active` flag is a DOM write — appearance,
-  // not React state ([L06]) — keyed by the CSS drop ring beside the editor's.
-  const handleAttachmentsDragOver = useCallback(
+  // The WHOLE prompt entry is ONE continuous drop surface. The editor
+  // substrate claims drags over its own host (`drop-extension.ts` attaches
+  // host-level listeners, so the blank band below short content accepts
+  // too); these entry-level handlers catch everything else — the
+  // attachment strip, the toolbar, the status row, the gaps — and route
+  // the drop through the same editor pipeline, mirroring the image-paste
+  // path. Events the substrate already claimed arrive here with
+  // `defaultPrevented` set and are left alone, so the two layers compose
+  // without double handling. The visual cues are the editor's own: the
+  // drop ring on the editor host (`markEditorDropActive`) plus the drop
+  // caret at the resolved position — the coordinate clamps to the nearest
+  // document position, so a drop over the toolbar lands at the bottom
+  // row. All DOM writes, no React state ([L06]).
+  const handleEntryDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
+      if (event.defaultPrevented) return;
       if (!event.dataTransfer.types.includes("Files")) return;
+      const view = textEditorRef.current?.view();
+      if (view === null || view === undefined) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
-      event.currentTarget.setAttribute("data-drop-active", "accept");
-      // Drive the editor's drop caret while the cursor is over the strip —
-      // the strip continues the editor's drop surface. The coordinate
-      // resolves to the bottom row (the strip is below the doc), pushed up
-      // clear of the drag ghost so the drop target stays visible.
-      const view = textEditorRef.current?.view();
-      if (view !== null && view !== undefined) {
-        paintDropCaret(view, event.clientX, event.clientY);
-      }
+      markEditorDropActive(view, true);
+      paintDropCaret(view, event.clientX, event.clientY);
     },
     [],
   );
-  const clearAttachmentsDropState = useCallback(
+  const clearEntryDropState = useCallback((): void => {
+    const view = textEditorRef.current?.view();
+    if (view === null || view === undefined) return;
+    markEditorDropActive(view, false);
+    clearDropCaret(view);
+  }, []);
+  const handleEntryDragLeave = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      event.currentTarget.removeAttribute("data-drop-active");
-      const view = textEditorRef.current?.view();
-      if (view !== null && view !== undefined) clearDropCaret(view);
-    },
-    [],
-  );
-  const handleAttachmentsDragLeave = useCallback(
-    (event: React.DragEvent<HTMLDivElement>): void => {
-      // Ignore leave events that merely cross into a descendant (the strip,
-      // a tile) — only clear when the pointer truly exits the zone. A native
-      // Escape-cancel fires dragleave with a null relatedTarget, so this also
-      // tears down the caret on cancel.
+      // Ignore leave events that merely cross into a descendant — only
+      // clear when the pointer truly exits the entry. A native
+      // Escape-cancel fires dragleave with a null relatedTarget, so this
+      // also tears down the caret on cancel.
       const next = event.relatedTarget as Node | null;
       if (next !== null && event.currentTarget.contains(next)) return;
-      clearAttachmentsDropState(event);
+      clearEntryDropState();
     },
-    [clearAttachmentsDropState],
+    [clearEntryDropState],
   );
-  const handleAttachmentsDrop = useCallback(
+  const handleEntryDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      event.currentTarget.removeAttribute("data-drop-active");
+      if (event.defaultPrevented) return;
       const files = Array.from(event.dataTransfer.files);
       if (files.length === 0) return;
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
       // Resolve the drop against the editor's measured layout, same as a
-      // drop on the editor itself. The strip sits below the document, so the
-      // coordinate clamps to the nearest position — the bottom row — letting
-      // the user target it instead of dumping at a stale caret.
+      // drop on the editor itself. The chrome sits outside the document,
+      // so the coordinate clamps to the nearest position — the bottom row
+      // — letting the user target it instead of dumping at a stale caret.
       const pos =
         dropOffsetAtCoords(view, event.clientX, event.clientY) ??
         view.state.doc.length;
-      clearDropCaret(view);
+      clearEntryDropState();
       void processAttachmentFiles(
         view,
         files,
@@ -1165,7 +1165,7 @@ export const TugPromptEntry = React.forwardRef<
         publishAttachmentError,
       );
     },
-    [attachmentBytesStore, publishAttachmentError],
+    [attachmentBytesStore, publishAttachmentError, clearEntryDropState],
   );
 
   // Z5 submit-button state machine. The button's whole view — label,
@@ -2305,6 +2305,14 @@ export const TugPromptEntry = React.forwardRef<
           inert={disabled || undefined}
           data-disabled={disabled ? "" : undefined}
           className={cn("tug-prompt-entry", className)}
+          // One continuous drop surface (see the handlers above): a file
+          // drag anywhere over the entry — chrome included — accepts and
+          // lands in the editor. The substrate's own host-level handlers
+          // claim drags over the editor first; these catch the rest.
+          onDragOver={handleEntryDragOver}
+          onDragLeave={handleEntryDragLeave}
+          onDragEnd={clearEntryDropState}
+          onDrop={handleEntryDrop}
         >
           {hasStatusRow && (
             <div className="tug-prompt-entry-status">
@@ -2384,13 +2392,9 @@ export const TugPromptEntry = React.forwardRef<
               // Descendant controls that need focus (none here — the tile
               // opens a sheet, the ✕ refuses) are unaffected.
               data-tug-focus="refuse"
-              // Drop another image onto the strip → insert at the editor's
-              // caret (see the handlers above). Without these the browser
-              // rejects the drop.
-              onDragOver={handleAttachmentsDragOver}
-              onDragLeave={handleAttachmentsDragLeave}
-              onDragEnd={clearAttachmentsDropState}
-              onDrop={handleAttachmentsDrop}
+              // Drops on the strip ride the entry-root drop surface (the
+              // handlers on `.tug-prompt-entry` above) — no zone-local
+              // handlers, one continuous target.
             >
               <TugAttachmentPreview
                 atoms={composeImageAtoms}

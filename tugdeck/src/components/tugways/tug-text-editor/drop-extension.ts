@@ -286,6 +286,19 @@ export function clearDropCaret(view: EditorView): void {
 }
 
 /**
+ * Mark/clear the editor host's `data-drop-active` drop ring from OUTSIDE
+ * the extension — for a sibling drop surface (the prompt entry's
+ * whole-entry surface) that routes its drop into this editor. Pairs with
+ * {@link paintDropCaret} / {@link clearDropCaret} so an entry-level drag
+ * paints the same two cues (ring + caret) as a drag over the editor
+ * itself. Resolves the host from the view, same as the caret plugin.
+ */
+export function markEditorDropActive(view: EditorView, active: boolean): void {
+  const host = view.dom.closest<HTMLElement>(".tug-text-editor");
+  setDropActive(host, active ? "accept" : null);
+}
+
+/**
  * Quiet window after the last `dragover` before the watchdog calls a
  * drag dead. Must comfortably exceed WebKit's steady `dragover` cadence
  * (which keeps firing while a drag is live, even stationary) so a
@@ -874,12 +887,16 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  * non-null, the custom handler takes precedence and no async
  * processing happens.
  *
- * The DOM event handlers attach to `view.contentDOM` via
- * `EditorView.domEventHandlers`. Drag events on the scroller
- * padding (the gap between contentDOM and scrollDOM) bubble up
- * through contentDOM in WebKit, so this is sufficient coverage —
- * users dropping on the visible editor area always reach the
- * handlers.
+ * The DOM event handlers attach to the HOST wrapper (native
+ * listeners installed by a ViewPlugin), NOT to `view.contentDOM`
+ * via `EditorView.domEventHandlers`. The content DOM is
+ * content-sized: a host taller than its content (the Dev prompt's
+ * min-height) has a blank band below the last line where a drag
+ * targets the scroller and never reaches a contentDOM handler — the
+ * OS would refuse the drop over the editor's own empty space. The
+ * host is the text surface (same rule as `host-click.ts`), so the
+ * drag surface is the host: events over content bubble up to it,
+ * and events over the blank band land on it directly.
  *
  * Returns an array of extensions (StateField + ViewPlugin + theme +
  * event handlers) so the consumer doesn't have to know the
@@ -896,21 +913,20 @@ export function tugDropExtension(
     tugDropCaretPlugin,
     tugDropCaretTheme,
     tugDropCancelWatchdog(host),
-    EditorView.domEventHandlers({
-      dragenter(event, _view) {
+    ViewPlugin.define((view) => {
+      const onDragEnter = (event: DragEvent): void => {
         // Only claim file drags. Keyboard-driven or application-
         // specific drags pass through.
-        if (!event.dataTransfer?.types.includes("Files")) return false;
+        if (!event.dataTransfer?.types.includes("Files")) return;
         // Claim the event so CM6's internal drag handler doesn't
         // also try to accept it with `dropEffect = "copy"` (which
         // would be redundant but defensive in case CM6's behavior
         // changes).
         event.preventDefault();
         setDropActive(host, "accept");
-        return true;
-      },
-      dragover(event, view) {
-        if (!event.dataTransfer?.types.includes("Files")) return false;
+      };
+      const onDragOver = (event: DragEvent): void => {
+        if (!event.dataTransfer?.types.includes("Files")) return;
         event.preventDefault();
         setDropActive(host, "accept");
         try {
@@ -922,30 +938,26 @@ export function tugDropExtension(
         } catch {
           // `dropEffect` is read-only in some environments.
         }
-
         paintDropCaret(view, event.clientX, event.clientY);
-        return true;
-      },
-      dragleave(event, view) {
+      };
+      const onDragLeave = (event: DragEvent): void => {
         // Only hide when the cursor truly exits the editor — a
         // dragleave fires for every internal element-to-element
         // crossing too. `relatedTarget` names the element being
-        // entered; if it's inside contentDOM, the drag is still
-        // over the editor.
+        // entered; if it's inside the host, the drag is still over
+        // the editor.
         const related = event.relatedTarget as Node | null;
-        if (related !== null && view.contentDOM.contains(related)) {
-          return false;
+        if (related !== null && host !== null && host.contains(related)) {
+          return;
         }
         setDropActive(host, null);
         clearDropCaret(view);
-        return false;
-      },
-      dragend(_event, view) {
+      };
+      const onDragEnd = (_event: DragEvent): void => {
         setDropActive(host, null);
         clearDropCaret(view);
-        return false;
-      },
-      drop(event, view) {
+      };
+      const onDrop = (event: DragEvent): void => {
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) {
           // No files — clear the caret if a previous dragover
@@ -953,7 +965,7 @@ export function tugDropExtension(
           // browser handles the (non-file) drop natively.
           setDropActive(host, null);
           clearDropCaret(view);
-          return false;
+          return;
         }
 
         // Suppress the WebView's default file-URL navigation. Done
@@ -973,10 +985,10 @@ export function tugDropExtension(
           const atoms = handler(files);
           if (atoms.length === 0) {
             clearDropCaret(view);
-            return true;
+            return;
           }
           insertAtomsAt(view, insertPos, atoms);
-          return true;
+          return;
         }
 
         // Hide the drop caret synchronously — the async pipeline
@@ -993,9 +1005,9 @@ export function tugDropExtension(
           // future detached prompt-entries that don't participate
           // in attachment bytes.
           const items = defaultFilesToMixedItems(files);
-          if (items.length === 0) return true;
+          if (items.length === 0) return;
           insertMixedAt(view, insertPos, items);
-          return true;
+          return;
         }
 
         // Bytes-store-aware path: preflights every file (decoding
@@ -1009,8 +1021,25 @@ export function tugDropExtension(
           bytesStore,
           onAttachmentError,
         );
-        return true;
-      },
+      };
+
+      // The host is the drag surface (see the factory docstring); fall
+      // back to the editor's own DOM if a host was never supplied.
+      const surface: HTMLElement = host ?? view.dom;
+      surface.addEventListener("dragenter", onDragEnter);
+      surface.addEventListener("dragover", onDragOver);
+      surface.addEventListener("dragleave", onDragLeave);
+      surface.addEventListener("dragend", onDragEnd);
+      surface.addEventListener("drop", onDrop);
+      return {
+        destroy(): void {
+          surface.removeEventListener("dragenter", onDragEnter);
+          surface.removeEventListener("dragover", onDragOver);
+          surface.removeEventListener("dragleave", onDragLeave);
+          surface.removeEventListener("dragend", onDragEnd);
+          surface.removeEventListener("drop", onDrop);
+        },
+      };
     }),
   ];
 }

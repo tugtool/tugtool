@@ -209,6 +209,17 @@ body {
   overflow-y: hidden;
 }
 
+/* The host is the text surface: the blank band below short content (host
+ * taller than contentDOM) accepts clicks (host-click.ts lands the caret
+ * there), so it advertises the text cursor like the content itself. A
+ * disabled/read-only editor claims no clicks, so it keeps the default
+ * cursor. */
+.tug-text-editor:not([data-disabled]):not([data-readonly])
+  > .cm-editor
+  > .cm-scroller {
+  cursor: text;
+}
+
 .tug-text-editor > .cm-editor > .cm-scroller[data-tug-overflowing] {
   overflow-y: auto;
 }

@@ -318,22 +318,6 @@ body {
   z-index: 2;
 }
 
-/* Drop ring on the Z4C attachment zone — the strip is a drop target too: a
-   file dropped here inserts at the editor's caret. Same accent as the editor
-   ring above so the two read as one continuous drop surface. Keyed on the
-   DOM `data-drop-active` flag the zone's drag handlers write — appearance,
-   no React state ([L06]). */
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
-.tug-prompt-entry-attachments[data-drop-active]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: var(--tugx-drop-ring-width) solid var(--tug7-element-highlight-stroke-normal-drop-rest);
-  border-radius: 0;
-  pointer-events: none;
-  z-index: 2;
-}
-
 /* Keyboard-focus-cycling fill suppression ([P12]).
  *
  * Outside cycling the submit is `filled` — its standing identity as the

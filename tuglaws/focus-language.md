@@ -71,6 +71,16 @@ A raw "focus the editor" claim is a bug even when it *looks* harmless: under a m
 
 Boundaries pinned by tests: window blur→focus (at0148), resting-card activation clicks for every click target (at0201), cross-card click-away/click-back onto a modal card — title bar and content, both dialog kinds (at0203).
 
+## No dead surface inside a text substrate
+
+A text editor's interactive surface is its **host**, not its content box. CM6 owns pointer selection and (previously) drag acceptance only within `contentDOM`, which is content-sized — so a host taller than its content (the Dev prompt opens at a min-height) had a blank band that *looked* like editor but ate the caret on click (WebKit's mousedown focus default blurred to body) and refused file drops. The rules:
+
+- **Clicks land the caret.** A primary-button mousedown anywhere inside the host that no finer surface claims (content → CM6 selection, gutters → line select, scrollbar band → native) focuses the editor and lands the caret at the nearest document position (`host-click.ts`). The band advertises `cursor: text`. A read-only editor (the prompt stood down behind a card-modal dialog) claims nothing.
+- **Drags target the host.** The drop extension's listeners ride the host (`drop-extension.ts`), so the accept ring and drop caret work over the whole editor, blank band included.
+- **A composite entry is ONE drop surface.** The prompt entry layers one entry-root set of drag handlers over its chrome (attachment strip, toolbar, status row); the substrate claims drags over the editor first (`defaultPrevented` is the layering contract), and everything else routes into the same editor pipeline, cued by the editor's own ring + drop caret at the clamped nearest position. Help the drop land — never make the user hunt for the magic pixel.
+
+Pinned by at0204 (blank-band click keeps the caret; drops accept on the band and on the toolbar).
+
 ---
 
 ## The contract — engine attributes → CSS
