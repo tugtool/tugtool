@@ -1336,7 +1336,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-tug-setup",
     contentFactory: (_cardId) => <GalleryTugSetup />,
-    defaultMeta: { title: "TugSetup (design spike)", icon: "ListChecks", closable: true },
+    defaultMeta: { title: "TugSetup", icon: "ListChecks", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
