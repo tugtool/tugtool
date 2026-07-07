@@ -113,24 +113,31 @@ export interface EffortSupport {
  *
  * A resumed session carries no live `initialize` capabilities (`models` is
  * empty), but its model id is still known via `system_metadata` replay — so
- * support resolves from the static `KNOWN_MODELS` fallback (which carries the
- * captured per-family effort data), exactly as the model chip falls back for
- * its label. Only when NOTHING is known yet — no capabilities AND no resolved
- * model — is support genuinely unknowable (returns unsupported → `-`).
+ * support resolves from the caller-supplied `catalogFallback` (the persisted
+ * live catalog, `readModelCatalog()` in production — real per-model effort
+ * data from the last capabilities any session reported). When NOTHING is
+ * known — no capabilities, no catalog, or no resolved model — support is
+ * genuinely unknowable and resolves unsupported (→ `-`); there is no
+ * hardcoded model data to pretend otherwise.
  */
 export function resolveEffortSupport(
   models: CapabilityModel[],
   activeModel: string | null,
+  catalogFallback: CapabilityModel[] | null,
 ): EffortSupport {
   // Nothing known yet (no live capabilities, no resolved model) — can't tell.
   if (models.length === 0 && activeModel === null) {
     return { supported: false, levels: [] };
   }
 
-  // `resolvePickerModels` uses the live list when present, else the static
-  // `KNOWN_MODELS` fallback — so a resumed session with a known model id still
-  // resolves its effort support.
-  const { options, activeValue } = resolvePickerModels(models, activeModel);
+  // The live list when present, else the persisted catalog — so a resumed
+  // session with a known model id still resolves its effort support from
+  // real data. With neither, the placeholder row carries no effort support.
+  const { options, activeValue } = resolvePickerModels(
+    models,
+    activeModel,
+    catalogFallback,
+  );
   const entry =
     options.find((m) => m.value === activeValue) ?? options[0] ?? null;
   if (entry === null || entry.supportsEffort !== true) {
@@ -162,7 +169,7 @@ export interface EffortDisplay {
  * model's effective effort IS its default in the meantime, so the chip shows
  * the default rather than a `-` blank. A live override sharpens it on the first
  * turn, exactly the way the model chip shows the resolved model before the
- * handshake lands. (`resolveEffortSupport` falls back to the static model
+ * handshake lands. (`resolveEffortSupport` falls back to the persisted live
  * catalog, so a resumed session with a known model id resolves support — and
  * thus its default level — without a live handshake.)
  */
@@ -170,8 +177,9 @@ export function resolveEffortDisplay(
   models: CapabilityModel[],
   activeModel: string | null,
   effort: string | null,
+  catalogFallback: CapabilityModel[] | null,
 ): EffortDisplay {
-  const support = resolveEffortSupport(models, activeModel);
+  const support = resolveEffortSupport(models, activeModel, catalogFallback);
   if (!support.supported) {
     return { supported: false, level: null, levels: support.levels };
   }

@@ -428,6 +428,20 @@ function parseSystemRegion(payload: unknown): SystemRegion | null {
 // ── SessionMetadataStore ──────────────────────────────────────────────────────
 
 /**
+ * The read side of {@link SessionMetadataStore} — exactly what the metadata
+ * consumers (the Z4B chips and the picker hooks) need: `subscribe` +
+ * `getSnapshot`, nothing else. The concrete store satisfies it structurally,
+ * so every existing call site is unchanged, while an alternative provider
+ * (e.g. a defaults-backed adapter) can stand in wherever only reads happen.
+ * The pickers route writes through their injected action callbacks, never
+ * through the store's `apply*` mutators — this type is what enforces that.
+ */
+export type ReadableMetadataStore = Pick<
+  SessionMetadataStore,
+  "subscribe" | "getSnapshot"
+>;
+
+/**
  * SessionMetadataStore — L02-compliant store subscribing to FeedStore.
  *
  * Detects system_metadata payloads via reference comparison on the given feed.

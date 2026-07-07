@@ -37,6 +37,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
+import { readModelCatalog } from "@/lib/model-catalog";
 import {
   DEFAULT_EFFORT_LEVEL,
   EFFORT_DEFAULT_DOMAIN,
@@ -144,7 +145,7 @@ export function useEffort({
     // resolved model id (a resumed session's `system_metadata` has replayed).
     // Before EITHER lands we can't tell support and shouldn't race the spawn.
     if (models.length === 0 && model === null) return;
-    const support = resolveEffortSupport(models, model);
+    const support = resolveEffortSupport(models, model, readModelCatalog());
     if (
       !support.supported ||
       !(support.levels as string[]).includes(seedEffort)

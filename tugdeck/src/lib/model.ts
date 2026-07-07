@@ -23,12 +23,14 @@ import { readModelCatalog } from "@/lib/model-catalog";
  * against the live, persisted model catalog ([model-catalog.ts]), never a
  * hardcoded set, so a selector claude added (e.g. a new family) validates the
  * moment it appears. Used to drop untrusted persisted strings that aren't a
- * real selector rather than push a bogus model to claude. Falls back to the
- * `KNOWN_MODELS` bootstrap seed only before any session has reported
- * capabilities (and in pure unit tests, where there is no tugbank).
+ * real selector rather than push a bogus model to claude. Before any session
+ * has ever reported capabilities there is no catalog and no model knowledge —
+ * only the `default` selector (which forces no particular model) validates.
  */
 export function isModelSelector(value: string): boolean {
-  return readModelCatalog().some((m) => m.value === value);
+  const catalog = readModelCatalog();
+  if (catalog === null) return value === DEFAULT_MODEL_SELECTOR;
+  return catalog.some((m) => m.value === value);
 }
 
 /**

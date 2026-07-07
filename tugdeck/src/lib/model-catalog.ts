@@ -5,13 +5,14 @@
  *
  * The model lineup changes constantly; a hand-maintained constant rots and
  * shows up as the wrong list on launch, on resumed sessions, and in the
- * session-less Settings dropdown. The fix is to treat claude's live
- * `initialize` capabilities as the sole source of truth: whenever a card's
- * `session_capabilities` handshake reports a non-empty `models[]`, we persist
- * it here (`persistModelCatalog`), and every fallback reads it back
- * (`readModelCatalog`). `KNOWN_MODELS` from `model-picker-data.ts` is demoted
- * to a one-time bootstrap seed — used only on a fresh install that has never
- * once spawned a session, and overwritten the instant real capabilities land.
+ * session-less Settings picker. So claude's live `initialize` capabilities
+ * are the sole source of truth: whenever a card's `session_capabilities`
+ * handshake reports a non-empty `models[]`, we persist it here
+ * (`persistModelCatalog`), and every fallback reads it back
+ * (`readModelCatalog`). There is NO hardcoded seed: before any session has
+ * ever reported capabilities, `readModelCatalog` returns `null` and callers
+ * present the honest single-Default placeholder
+ * ([model-picker-data.ts] `UNKNOWN_CATALOG_OPTION`) instead of invented data.
  *
  * The live Z4B picker already prefers live capabilities when present; this
  * module is what makes the *fallback* current too.
@@ -20,7 +21,6 @@
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import type { CapabilityModel } from "@/lib/session-metadata-store";
-import { KNOWN_MODELS } from "@/lib/model-picker-data";
 import { putModelCatalog } from "@/settings-api";
 
 /** tugbank domain/key for the persisted live model catalog. */
@@ -81,18 +81,15 @@ export function persistModelCatalog(models: CapabilityModel[]): void {
 
 /**
  * Read the always-current model catalog synchronously from the tugbank cache:
- * the last live `session_capabilities.models` claude reported, else the
- * `KNOWN_MODELS` bootstrap seed on a fresh install that has never spawned a
- * session. This is the fallback the picker and the Settings dropdown use in
- * place of the hardcoded constant.
+ * the last live `session_capabilities.models` claude reported, or `null` when
+ * no session has ever reported capabilities (fresh install). `null` means
+ * "genuinely unknown" — callers show the honest single-Default placeholder,
+ * never a hardcoded list.
  */
-export function readModelCatalog(): CapabilityModel[] {
+export function readModelCatalog(): CapabilityModel[] | null {
   const client = getTugbankClient();
-  if (client !== null) {
-    const parsed = parsePersistedCatalog(
-      client.get(MODEL_CATALOG_DOMAIN, MODEL_CATALOG_KEY),
-    );
-    if (parsed !== null) return parsed;
-  }
-  return KNOWN_MODELS;
+  if (client === null) return null;
+  return parsePersistedCatalog(
+    client.get(MODEL_CATALOG_DOMAIN, MODEL_CATALOG_KEY),
+  );
 }

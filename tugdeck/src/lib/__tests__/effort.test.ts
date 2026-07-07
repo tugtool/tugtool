@@ -90,46 +90,64 @@ describe("parsePersistedEffort", () => {
 
 describe("resolveEffortSupport", () => {
   test("opus (default) supports all five levels in canonical order", () => {
-    const support = resolveEffortSupport(CAPABILITY_MODELS, "claude-opus-4-8[1m]");
+    const support = resolveEffortSupport(
+      CAPABILITY_MODELS,
+      "claude-opus-4-8[1m]",
+      null,
+    );
     expect(support.supported).toBe(true);
     expect(support.levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
   test("sonnet supports four levels (no xhigh)", () => {
-    const support = resolveEffortSupport(CAPABILITY_MODELS, "claude-sonnet-4-6");
+    const support = resolveEffortSupport(
+      CAPABILITY_MODELS,
+      "claude-sonnet-4-6",
+      null,
+    );
     expect(support.supported).toBe(true);
     expect(support.levels).toEqual(["low", "medium", "high", "max"]);
   });
 
   test("haiku does not support effort — gated", () => {
-    const support = resolveEffortSupport(CAPABILITY_MODELS, "claude-haiku-4-5");
+    const support = resolveEffortSupport(
+      CAPABILITY_MODELS,
+      "claude-haiku-4-5",
+      null,
+    );
     expect(support.supported).toBe(false);
     expect(support.levels).toEqual([]);
   });
 
   test("no model id resolves to the default (account-default) row's support", () => {
-    const support = resolveEffortSupport(CAPABILITY_MODELS, null);
+    const support = resolveEffortSupport(CAPABILITY_MODELS, null, null);
     expect(support.supported).toBe(true);
     expect(support.levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
 
-  test("resumed session (no caps) resolves support from the known model id", () => {
-    // Empty capabilities but a known model → static KNOWN_MODELS fallback.
-    const opus = resolveEffortSupport([], "claude-opus-4-8[1m]");
+  test("resumed session (no caps) resolves support from the persisted catalog", () => {
+    // Empty capabilities but a known model → the persisted-catalog fallback.
+    const opus = resolveEffortSupport([], "claude-opus-4-8[1m]", CAPABILITY_MODELS);
     expect(opus.supported).toBe(true);
     expect(opus.levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
 
-    const sonnet = resolveEffortSupport([], "claude-sonnet-4-6");
+    const sonnet = resolveEffortSupport([], "claude-sonnet-4-6", CAPABILITY_MODELS);
     expect(sonnet.supported).toBe(true);
     expect(sonnet.levels).toEqual(["low", "medium", "high", "max"]);
 
-    const haiku = resolveEffortSupport([], "claude-haiku-4-5");
+    const haiku = resolveEffortSupport([], "claude-haiku-4-5", CAPABILITY_MODELS);
     expect(haiku.supported).toBe(false);
     expect(haiku.levels).toEqual([]);
   });
 
+  test("known model but no catalog at all — unknowable, honestly unsupported", () => {
+    const support = resolveEffortSupport([], "claude-opus-4-8[1m]", null);
+    expect(support.supported).toBe(false);
+    expect(support.levels).toEqual([]);
+  });
+
   test("nothing known (no caps, no model) is gated — unknowable support", () => {
-    const support = resolveEffortSupport([], null);
+    const support = resolveEffortSupport([], null, null);
     expect(support.supported).toBe(false);
     expect(support.levels).toEqual([]);
   });
@@ -137,13 +155,23 @@ describe("resolveEffortSupport", () => {
 
 describe("resolveEffortDisplay", () => {
   test("an explicit override shows that level (live handshake present)", () => {
-    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-opus-4-8", "low");
+    const d = resolveEffortDisplay(
+      CAPABILITY_MODELS,
+      "claude-opus-4-8",
+      "low",
+      null,
+    );
     expect(d.supported).toBe(true);
     expect(d.level).toBe("low");
   });
 
   test("no override on a supported model shows its built-in default", () => {
-    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-opus-4-8", null);
+    const d = resolveEffortDisplay(
+      CAPABILITY_MODELS,
+      "claude-opus-4-8",
+      null,
+      null,
+    );
     expect(d.supported).toBe(true);
     expect(d.level).toBe(DEFAULT_EFFORT_LEVEL);
   });
@@ -151,22 +179,27 @@ describe("resolveEffortDisplay", () => {
   test("a supported model shows its default even before the live handshake", () => {
     // `models` empty ⇒ the capabilities handshake hasn't landed (claude is
     // silent until the first input on a resume). The model id still resolves
-    // support via the static catalog, so the chip shows the model's DEFAULT
+    // support via the persisted catalog, so the chip shows the model's DEFAULT
     // effort — the honest effective value — not a `-` blank. A live override
     // sharpens it on the first turn.
-    const d = resolveEffortDisplay([], "claude-opus-4-8", null);
+    const d = resolveEffortDisplay([], "claude-opus-4-8", null, CAPABILITY_MODELS);
     expect(d.supported).toBe(true);
     expect(d.level).toBe(DEFAULT_EFFORT_LEVEL);
     expect(d.levels.length).toBeGreaterThan(0); // support resolved for the picker
   });
 
   test("a restored per-card effort overrides the default", () => {
-    const d = resolveEffortDisplay([], "claude-opus-4-8", "max");
+    const d = resolveEffortDisplay([], "claude-opus-4-8", "max", CAPABILITY_MODELS);
     expect(d.level).toBe("max");
   });
 
   test("an unsupported model has no level regardless of source", () => {
-    const d = resolveEffortDisplay(CAPABILITY_MODELS, "claude-haiku-4-5", null);
+    const d = resolveEffortDisplay(
+      CAPABILITY_MODELS,
+      "claude-haiku-4-5",
+      null,
+      null,
+    );
     expect(d.supported).toBe(false);
     expect(d.level).toBeNull();
   });

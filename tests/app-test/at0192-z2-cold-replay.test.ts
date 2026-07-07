@@ -286,13 +286,16 @@ describe.skipIf(!SHOULD_RUN)(
           expect(ctxMax.includes("1.0") || ctxMax.includes("1M")).toBe(true);
           expect(modelText.includes("?")).toBe(false);
 
-          // EFFORT (#step-8a): the resumed `claude-opus-4-8` supports effort
-          // (resolved from the static catalog even without a live handshake),
-          // so the chip shows the model's built-in DEFAULT level — "High" —
-          // not a `-` blank. A live override would sharpen it on the first
-          // turn. (`-` is only for an effort-UNsupported model.)
+          // EFFORT: effort support resolves from real data only — the live
+          // handshake or the PERSISTED model catalog. This cold replay has
+          // neither (a fresh test instance, no session ever reported
+          // capabilities), so support is genuinely unknowable and the chip
+          // honestly shows the `-` placeholder rather than a level invented
+          // from a hardcoded list. A machine that resumes for real has the
+          // prior session's persisted catalog and shows the level — that path
+          // is pinned by at0096's resume test, which seeds the catalog.
           const effortText = await app.evalJS<string>(EFFORT_JS);
-          expect(effortText).toBe("High"); // DEFAULT_EFFORT_LEVEL "high" → "High"
+          expect(effortText).toBe("-");
 
           process.stdout.write(
             `[at0192] CONTEXT ${ctxUsed} ${ctxMax} · TOKENS ${tokensText} · MODEL ${modelText} · EFFORT ${effortText}\n`,

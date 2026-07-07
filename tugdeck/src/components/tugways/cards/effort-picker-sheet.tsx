@@ -43,7 +43,8 @@ import {
   type TugListViewDataSource,
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
+import { readModelCatalog } from "@/lib/model-catalog";
 import {
   DEFAULT_EFFORT_LEVEL,
   formatEffortLabel,
@@ -71,7 +72,7 @@ const EFFORT_SUBTITLES: Record<string, string> = {
 /** Args for {@link useEffortPicker}. */
 export interface UseEffortPickerArgs {
   /** Metadata store supplying the active model's supported levels + current. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * Apply the chosen level — wired by the dev card to {@link useEffort}'s
    * `setEffort`, which reflects it optimistically, persists it per card, and
@@ -111,7 +112,11 @@ export function useEffortPicker({
 }: UseEffortPickerArgs): EffortPickerController {
   const openEffortPicker = useCallback(() => {
     const snapshot = sessionMetadataStore.getSnapshot();
-    const { levels } = resolveEffortSupport(snapshot.models, snapshot.model);
+    const { levels } = resolveEffortSupport(
+      snapshot.models,
+      snapshot.model,
+      readModelCatalog(),
+    );
     // No levels ⇒ the chip would be hidden; defensively no-op rather than
     // present an empty sheet.
     if (levels.length === 0) return;

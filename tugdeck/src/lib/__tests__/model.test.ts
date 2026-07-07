@@ -6,8 +6,12 @@
  * selector validation, persisted-value parsing, and the seed resolution that
  * lets a fresh card adopt the deck-wide default while a used card keeps its own.
  *
- * The known selectors mirror the picker's static catalog (`default` / `sonnet`
- * / `haiku`), where `default` is the account default.
+ * Selector validation runs against the persisted live catalog
+ * ([model-catalog.ts]) — there is NO hardcoded model list. These tests run
+ * with no tugbank client, i.e. the no-catalog state: only the `default`
+ * selector (which forces no particular model) is trustworthy there. The
+ * catalog-backed acceptance path is proven in the real-app test, where a
+ * session's capabilities persist a real catalog.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -18,11 +22,11 @@ import {
   resolveSeedModel,
 } from "@/lib/model";
 
-describe("isModelSelector", () => {
-  test("accepts the catalog selectors", () => {
+describe("isModelSelector (no catalog — fresh install / unit env)", () => {
+  test("accepts only the default selector when nothing is known", () => {
     expect(isModelSelector("default")).toBe(true);
-    expect(isModelSelector("sonnet")).toBe(true);
-    expect(isModelSelector("haiku")).toBe(true);
+    expect(isModelSelector("sonnet")).toBe(false);
+    expect(isModelSelector("haiku")).toBe(false);
   });
 
   test("rejects a resolved model id or an unknown string", () => {
@@ -32,10 +36,15 @@ describe("isModelSelector", () => {
   });
 });
 
-describe("parsePersistedModel", () => {
-  test("reads a string-kinded tagged value that is a known selector", () => {
-    const entry: TaggedValue = { kind: "string", value: "sonnet" };
-    expect(parsePersistedModel(entry)).toBe("sonnet");
+describe("parsePersistedModel (no catalog — fresh install / unit env)", () => {
+  test("reads a string-kinded default; drops a concrete selector it cannot vouch for", () => {
+    expect(parsePersistedModel({ kind: "string", value: "default" })).toBe(
+      "default",
+    );
+    // With no catalog there is no basis to trust a concrete selector — it is
+    // dropped rather than sent to claude, and the unavailable-model bulletin
+    // (gated on a persisted catalog existing) is what surfaces a stale pick.
+    expect(parsePersistedModel({ kind: "string", value: "sonnet" })).toBeNull();
   });
 
   test("returns null for undefined, non-string, or unknown-selector values", () => {

@@ -472,12 +472,12 @@ the defaults UI can show a rich, current list with no live session.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Widen chip/picker store prop to `ReadableMetadataStore` | pending | — |
-| #step-2 | `DefaultsMetadataAdapter` | pending | — |
-| #step-3 | Settings Assistant: Model + Effort default chips + sheets | pending | — |
-| #step-4 | Fold Permission Mode default into the chip | pending | — |
-| #step-5 | Unavailable-model bulletin | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | Widen chip/picker store prop to `ReadableMetadataStore` | done | `dc4166b09` |
+| #step-2 | `DefaultsMetadataAdapter` | done | `66166cfbc` |
+| #step-3 | Settings Assistant: Model + Effort default chips + sheets | done | `798ebff8b` |
+| #step-4 | Fold Permission Mode default into the chip | done | `fe16920e8` |
+| #step-5 | Unavailable-model bulletin | done | `26be4c98d` |
+| #step-6 | Integration checkpoint | done | `c5575b90e` |
 
 #### Step 1: Widen chip/picker store prop to `ReadableMetadataStore` {#step-1}
 

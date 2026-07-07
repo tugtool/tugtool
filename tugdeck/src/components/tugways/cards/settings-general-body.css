@@ -84,6 +84,11 @@
   gap: var(--tug-space-md);
 }
 
+/* The Assistant chip trio sits centered in its box. */
+.settings-general-assistant-row {
+  justify-content: center;
+}
+
 /* The TugPopupButton applies the className we pass directly to the
    trigger TugButton, so `.settings-general-popup-*` selects the
    button itself (no descendant). We pin a `min-width` per popup so
@@ -101,11 +106,6 @@
 
 .settings-general-popup-size {
   min-width: 6rem;
-}
-
-/* Longest mode label is `Accept Edits`. */
-.settings-general-popup-mode {
-  min-width: 8.5rem;
 }
 
 /* One switch per row, comfortable vertical margin between them. */

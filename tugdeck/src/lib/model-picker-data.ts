@@ -1,22 +1,27 @@
 /**
- * Model-picker data — the static fallback model list and the pure resolver
- * that turns a metadata snapshot into the picker's option list + active value.
+ * Model-picker data — pure resolvers that turn a metadata snapshot + the
+ * persisted catalog into the picker's option list, active value, and labels.
  *
  * Split out from the React picker so it is unit-testable without a DOM
  * (pure-logic `bun:test` only — no fake-DOM render tests).
+ *
+ * **There is NO hardcoded model list.** Claude's live capabilities (persisted
+ * as the model catalog, [model-catalog.ts]) are the only source of model
+ * data. When nothing has ever been reported — a fresh install where no
+ * session has run — the picker offers exactly one honest row: the `default`
+ * selector, with an explanation that the full list arrives after the first
+ * request ({@link UNKNOWN_CATALOG_OPTION}). `default` is the one selector
+ * that is always valid regardless of knowledge: it forces no particular
+ * model, so the row is truthful with zero data behind it.
  *
  * **Selectors vs resolved ids.** The picker rows are *selectors* the
  * `model_change` frame carries (`default` / `sonnet` / `haiku`), matching the
  * Claude Code terminal's `/model` picker. The live `system_metadata.model` is
  * a *resolved* model id (e.g. `claude-opus-4-8[1m]`) — these never
  * string-match, so the active row is mapped back to its selector by family
- * (see {@link resolvePickerModels}). The account default resolves to the
- * most-capable model (Opus), so there is no standalone Opus row — Default
- * *is* Opus, exactly as the terminal presents it.
- *
- * Resumed sessions carry no `initialize` model list (the handshake is
- * new-session-only), so when the live `models` list is empty the picker falls
- * back to `KNOWN_MODELS`.
+ * ({@link modelIdToSelector}). The account default resolves to the
+ * most-capable model, so there is no standalone Opus row — Default *is* the
+ * account default, exactly as the terminal presents it.
  *
  * @module lib/model-picker-data
  */
@@ -24,108 +29,106 @@
 import type { CapabilityModel } from "./session-metadata-store";
 
 /**
- * Static fallback model list for sessions without an `initialize` list,
- * mirroring the terminal's `/model` picker: three selectors with the
- * resolved-model + tagline as the description.
+ * The single honest option offered when no model catalog exists yet (fresh
+ * install, no session has ever reported capabilities). NOT a catalog and
+ * never persisted — a UI placeholder whose description says exactly why the
+ * list is short. The `default` selector forces no particular model, so this
+ * row is valid with zero model knowledge.
  */
-export const KNOWN_MODELS: CapabilityModel[] = [
-  {
-    value: "default",
-    displayName: "Default (recommended)",
-    description: "Opus 4.8 with 1M context · Most capable for complex work",
-    // Reasoning-effort support per the captured claude 2.1.158 `initialize`
-    // models[]: opus supports all five levels, sonnet four (no `xhigh`), haiku
-    // none. Carried on the static fallback so the effort chip ([#step-4]) can
-    // resolve support for a RESUMED session, which gets no live `initialize`
-    // capabilities. New sessions override this with the live per-model data.
-    supportsEffort: true,
-    supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    value: "sonnet",
-    displayName: "Sonnet",
-    description: "Sonnet 4.6 · Best for everyday tasks",
-    supportsEffort: true,
-    supportedEffortLevels: ["low", "medium", "high", "max"],
-  },
-  {
-    value: "haiku",
-    displayName: "Haiku",
-    description: "Haiku 4.5 · Fastest for quick answers",
-    // No `supportsEffort` — haiku does not support reasoning effort.
-  },
-];
+export const UNKNOWN_CATALOG_OPTION: CapabilityModel = {
+  value: "default",
+  displayName: "Default",
+  description: "The full model list becomes available after the first request to Claude.",
+};
 
 export interface PickerModels {
-  /** The options to render (live list when present, else the static union). */
+  /** The options to render (live list, else the persisted catalog, else the
+   *  single {@link UNKNOWN_CATALOG_OPTION} placeholder). */
   options: CapabilityModel[];
-  /** The value of the row to mark active, or null when there are no options. */
+  /** The value of the row to mark active. */
   activeValue: string | null;
 }
 
 /**
  * Non-default families a resolved model id can be mapped back to a selector
- * row by. Order matters only in that each is checked independently; opus and
- * anything unrecognized fall through to the default row.
+ * by. Each is checked independently; opus and anything unrecognized fall
+ * through to `default` — mirroring the terminal, which checkmarks "Default"
+ * while naming the resolved most-capable model in its description. These are
+ * family *name heuristics* for id↔selector mapping, not model data — no
+ * version, label, or capability is asserted here.
  */
 const NON_DEFAULT_FAMILIES = ["haiku", "sonnet"] as const;
 
 /**
- * Representative resolved model id each picker selector currently resolves to,
- * for the chip's optimistic update (the `model_change` frame carries the
- * selector, but the chip displays a resolved id via `formatModelLabel`). The
- * `default` selector resolves to the account default, currently Opus 4.8 1M.
- * Self-correcting if the real `system_metadata` later disagrees.
+ * Map a resolved model id (`claude-sonnet-4-6`, `claude-opus-4-8[1m]`, …) —
+ * or an optimistic display label — back to the picker selector it belongs
+ * to. A sonnet/haiku family match yields that selector; opus, an
+ * unrecognized id, or anything else yields `default` (the account default).
  */
-const SELECTOR_TO_MODEL_ID: Record<string, string> = {
-  default: "claude-opus-4-8[1m]",
-  sonnet: "claude-sonnet-4-6",
-  haiku: "claude-haiku-4-5",
-};
+export function modelIdToSelector(modelId: string): string {
+  const lower = modelId.toLowerCase();
+  for (const family of NON_DEFAULT_FAMILIES) {
+    if (lower.includes(family)) return family;
+  }
+  return "default";
+}
 
 /**
- * Map a picker selector (`default` / `sonnet` / `haiku`) to a representative
- * resolved model id for the chip's optimistic display. An already-resolved id
- * (or an unknown selector) is returned unchanged.
+ * Strip a trailing parenthetical from a catalog display name —
+ * `Default (recommended)` → `Default` — for chip-width contexts. The picker
+ * sheet keeps the full name (it has the room).
  */
-export function selectorToModelId(value: string): string {
-  return SELECTOR_TO_MODEL_ID[value] ?? value;
+export function stripDisplayNameParenthetical(displayName: string): string {
+  return displayName.replace(/\s*\([^)]*\)\s*$/, "");
+}
+
+/**
+ * The chip-ready label for a picker selector, resolved from the catalog —
+ * the row's display name (parenthetical stripped). With no catalog, the
+ * `default` selector reads "Default" (always truthful); any other selector
+ * falls back to its raw value so an unknown-but-persisted pick stays legible
+ * rather than being dressed up as model knowledge.
+ */
+export function selectorDisplayLabel(
+  selector: string,
+  catalog: CapabilityModel[] | null,
+): string {
+  const row = catalog?.find((m) => m.value === selector);
+  if (row !== undefined) return stripDisplayNameParenthetical(row.displayName);
+  return selector === UNKNOWN_CATALOG_OPTION.value
+    ? UNKNOWN_CATALOG_OPTION.displayName
+    : selector;
 }
 
 /**
  * Resolve the picker's option list and active row from a metadata snapshot.
  *
  * Options: the live `initialize` capability list when non-empty, else the
- * caller-supplied `fallback` — the persisted live catalog via
- * `readModelCatalog()` in production ([model-catalog.ts]), or `KNOWN_MODELS`
- * for pure unit tests. The resolved model is never injected as an extra row.
+ * caller-supplied `fallback` (the persisted live catalog via
+ * `readModelCatalog()` in production), else the single
+ * {@link UNKNOWN_CATALOG_OPTION} placeholder — never a hardcoded list.
  *
- * Active row: `system_metadata.model` is a resolved id (`claude-sonnet-4-6`,
- * `claude-opus-4-8[1m]`, …) while the options are selectors, so it is mapped
- * by family — a sonnet/haiku resolved id selects that row; opus, an
- * unrecognized id, or no model at all selects the first (account-default) row.
- * This mirrors the terminal, which checkmarks "Default" while naming the
- * resolved Opus model in its description.
+ * Active row: the resolved id (or optimistic label) is mapped to its
+ * selector by family ({@link modelIdToSelector}); a row with that value is
+ * marked, else the first row (the account default by convention).
  */
 export function resolvePickerModels(
   models: CapabilityModel[],
   activeModel: string | null,
-  fallback: CapabilityModel[] = KNOWN_MODELS,
+  fallback: CapabilityModel[] | null,
 ): PickerModels {
-  const options = models.length > 0 ? models : fallback;
-  if (options.length === 0) return { options, activeValue: null };
+  const known = models.length > 0 ? models : fallback;
+  const options =
+    known !== null && known.length > 0 ? known : [UNKNOWN_CATALOG_OPTION];
 
   if (activeModel !== null) {
-    const lower = activeModel.toLowerCase();
-    for (const family of NON_DEFAULT_FAMILIES) {
-      if (!lower.includes(family)) continue;
-      const hit = options.find(
-        (m) =>
-          m.value.toLowerCase().includes(family) ||
-          m.displayName.toLowerCase().includes(family),
-      );
-      if (hit) return { options, activeValue: hit.value };
-    }
+    const selector = modelIdToSelector(activeModel);
+    const hit = options.find(
+      (m) =>
+        m.value.toLowerCase().includes(selector) ||
+        m.displayName.toLowerCase().includes(selector),
+    );
+    if (hit) return { options, activeValue: hit.value };
   }
 
   // No model yet, or an opus / default / unrecognized resolved id → the first

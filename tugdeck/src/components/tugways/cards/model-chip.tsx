@@ -51,22 +51,14 @@ import React, { useSyncExternalStore } from "react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
 import { formatModelLabel } from "@/lib/model-label";
-import { KNOWN_MODELS, selectorToModelId } from "@/lib/model-picker-data";
-
-/**
- * Resolved-model labels the chip width-stabilizes against — one per known
- * model family (`Opus 4.8 · 1M`, `Sonnet 4.6`, `Haiku 4.5`). Reserving the
- * widest means switching models never reflows the chip ([R01]).
- */
-const MODEL_CHIP_SIZER_LABELS = KNOWN_MODELS.map((m) =>
-  formatModelLabel(selectorToModelId(m.value)),
-);
+import { readModelCatalog } from "@/lib/model-catalog";
+import { stripDisplayNameParenthetical } from "@/lib/model-picker-data";
 
 export interface ModelChipProps {
   /** Metadata store supplying the live `model` + the `initialize` model list. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * Open the shared model picker sheet. Wired by the dev card to the single
    * opener from {@link useModelPicker} — the same opener the `/model` slash
@@ -110,8 +102,19 @@ export function ModelChip({
   // (`Default`). The picker sheet keeps the full label (it has the room).
   const defaultModelLabel =
     snapshot.models.length > 0
-      ? snapshot.models[0].displayName.replace(/\s*\([^)]*\)\s*$/, "")
+      ? stripDisplayNameParenthetical(snapshot.models[0].displayName)
       : null;
+
+  // Labels the chip width-stabilizes against — the known models' display
+  // names (live list, else the persisted catalog). Real data only: on a
+  // fresh install with no catalog there is nothing to reserve for, and the
+  // overlay re-stabilizes larger ex-post-facto when a wider label arrives
+  // ([R01]).
+  const sizerModels =
+    snapshot.models.length > 0 ? snapshot.models : (readModelCatalog() ?? []);
+  const sizerLabels = sizerModels.map((m) =>
+    stripDisplayNameParenthetical(m.displayName),
+  );
 
   let content: string;
   let unknown = false;
@@ -160,7 +163,7 @@ export function ModelChip({
       <TugStableOverlay
         data-slot="model-value"
         active={content}
-        alternates={MODEL_CHIP_SIZER_LABELS}
+        alternates={sizerLabels}
       />
     </TugPushButton>
     {copy.contextMenu}

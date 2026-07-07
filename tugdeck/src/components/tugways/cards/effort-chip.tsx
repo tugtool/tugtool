@@ -42,12 +42,13 @@ import React, { useSyncExternalStore } from "react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
 import { formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
+import { readModelCatalog } from "@/lib/model-catalog";
 
 export interface EffortChipProps {
   /** Metadata store supplying the live `effort` + the capability `models[]`. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * Open the shared effort picker sheet. Wired by the dev card to the single
    * opener from {@link useEffortPicker} — the same opener a future `/effort`
@@ -93,6 +94,7 @@ export function EffortChip({
     snapshot.models,
     snapshot.model,
     snapshot.effort,
+    readModelCatalog(),
   );
   const effectiveEffort = display.level;
   const content = formatEffortLabel(effectiveEffort);

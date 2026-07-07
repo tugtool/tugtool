@@ -50,7 +50,7 @@ import {
   type TugListViewDataSource,
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import {
   PERMISSION_MODE_DOMAIN,
@@ -63,10 +63,16 @@ import {
 import type { PermissionMode } from "@tugproto/inbound";
 
 export interface PermissionModeChipProps {
-  /** The card whose binding's permission mode the chip persists / restores. */
-  cardId: string;
+  /**
+   * The card whose binding's permission mode the chip persists / restores.
+   * **Omit for the defaults context** (Settings → Assistant): with no card
+   * behind the chip there is no per-card persisted mode to fall back to, so
+   * the chip skips that read and trusts the store's `permissionMode` as-is —
+   * which, through `DefaultsMetadataAdapter`, is the deck default.
+   */
+  cardId?: string;
   /** Metadata store supplying the live `permissionMode`. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * Open the shared permission sheet. Wired by the dev card to the single
    * opener from {@link usePermissionSheet} — the same opener the `/permissions`
@@ -108,9 +114,12 @@ export function PermissionModeChip({
 
   // Per-card persisted mode — the pre-population fallback before the live
   // `system_metadata` round-trips on a fresh card mount ([D07]). [L02].
+  // In the defaults context (no cardId) there is no per-card value: the hook
+  // still runs (hooks are unconditional) but its read misses and the fallback
+  // is forced null, so the store's mode — the deck default — wins ([R02]).
   const persistedMode = useTugbankValue<string | null>(
     PERMISSION_MODE_DOMAIN,
-    cardId,
+    cardId ?? "",
     parsePersistedPermissionMode,
     null,
   );
@@ -120,7 +129,10 @@ export function PermissionModeChip({
   // dash, so a fresh session reads `Default` and the sheet checkmarks it.
   // Shared fallback chain — the host menu-state publication resolves
   // the mode through the same helper so menu checkmarks match the chip.
-  const mode = resolvePermissionMode(liveMode, persistedMode);
+  const mode = resolvePermissionMode(
+    liveMode,
+    cardId === undefined ? null : persistedMode,
+  );
 
   const copy = useCopyableButton(`Mode: ${formatPermissionMode(mode)}`);
 
@@ -167,10 +179,15 @@ export function PermissionModeChip({
 
 /** Args for {@link usePermissionSheet}. */
 export interface UsePermissionSheetArgs {
-  /** Card whose persisted mode pre-populates the sheet's selection. */
-  cardId: string;
+  /**
+   * Card whose persisted mode pre-populates the sheet's selection. **Omit for
+   * the defaults context** (Settings → Assistant): the sheet then seeds only
+   * from the store's `permissionMode` — the deck default via
+   * `DefaultsMetadataAdapter` — with no per-card fallback.
+   */
+  cardId?: string;
   /** Metadata store supplying the authoritative live `permissionMode`. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * Called with the chosen mode when the user picks one. Wired by the dev
    * card to `usePermissionMode().setMode`, which sends the `permission_mode`
@@ -217,7 +234,7 @@ export function usePermissionSheet({
 }: UsePermissionSheetArgs): PermissionSheetController {
   const persistedMode = useTugbankValue<string | null>(
     PERMISSION_MODE_DOMAIN,
-    cardId,
+    cardId ?? "",
     parsePersistedPermissionMode,
     null,
   );
@@ -225,7 +242,7 @@ export function usePermissionSheet({
   const openPermissionSheet = useCallback(() => {
     const mode = resolvePermissionMode(
       sessionMetadataStore.getSnapshot().permissionMode,
-      persistedMode,
+      cardId === undefined ? null : persistedMode,
     );
     void showSheet({
       title: "Permission Mode",
@@ -246,7 +263,7 @@ export function usePermissionSheet({
         />
       ),
     });
-  }, [showSheet, sessionMetadataStore, persistedMode, onSelectMode, commitDisposition]);
+  }, [showSheet, sessionMetadataStore, cardId, persistedMode, onSelectMode, commitDisposition]);
 
   return { openPermissionSheet };
 }

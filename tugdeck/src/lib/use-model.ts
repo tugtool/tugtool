@@ -38,7 +38,8 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
-import { resolvePickerModels, selectorToModelId } from "@/lib/model-picker-data";
+import { modelIdToSelector, selectorDisplayLabel } from "@/lib/model-picker-data";
+import { readModelCatalog } from "@/lib/model-catalog";
 import {
   MODEL_DEFAULT_DOMAIN,
   MODEL_DEFAULT_KEY,
@@ -119,11 +120,16 @@ export function useModel({
   // Set the model to an explicit selector: reflect it optimistically on the
   // chip (claude answers with a control_response, not a fresh system_metadata),
   // persist it per card, and send the `model_change` frame. The single path the
-  // picker and the mount-restore both funnel through.
+  // picker and the mount-restore both funnel through. The optimistic value is
+  // the selector's catalog display name — real reported data, not a hardcoded
+  // resolved id; the authoritative `system_metadata` sharpens it to the exact
+  // model id after the next turn.
   const setModel = useCallback(
     (selector: string) => {
       sentRef.current = true;
-      sessionMetadataStore.applyModel(selectorToModelId(selector));
+      sessionMetadataStore.applyModel(
+        selectorDisplayLabel(selector, readModelCatalog()),
+      );
       writePersistedModel(cardId, selector);
       codeSessionStore.setModel(selector);
     },
@@ -148,7 +154,7 @@ export function useModel({
     // family selector, or `default` (the account default a fresh session spawns
     // on) when no model id has landed yet.
     const currentSelector =
-      model !== null ? resolvePickerModels(models, model).activeValue : "default";
+      model !== null ? modelIdToSelector(model) : "default";
     if (seedModel !== currentSelector) {
       setModel(seedModel);
     } else {

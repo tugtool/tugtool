@@ -260,9 +260,25 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({ testName: "at0096-effort-chip-resume" });
         try {
           await app.enableDeckTrace(true);
+
+          // A resumed session resolves effort support from the PERSISTED live
+          // catalog (a machine that resumes has, by definition, run a session
+          // that reported capabilities before) — there is no hardcoded model
+          // list. Persist that catalog before the card mounts, exactly as the
+          // prior session's capabilities would have.
+          await app.waitForCondition<boolean>(
+            `typeof window.__tug !== "undefined"`,
+          );
+          await app.evalJS(
+            `window.__tug.setTugbankValue("dev.tugtool.models", "catalog", {
+              kind: "json",
+              value: ${JSON.stringify(effortCapabilities(null).models)},
+            })`,
+          );
+
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
-            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+            `window.__tug.assertHostRootRegistered("A")`,
           );
           await app.bindDevSession("A");
           await app.awaitEngineReady("A");
@@ -272,8 +288,7 @@ describe.skipIf(!SHOULD_RUN)(
           // capabilities, so `models[]` stays empty. (The `sessionMode` of the
           // bind is irrelevant to the chip — only `models` + `model` drive its
           // resolution.) The effort chip must resolve support from that known
-          // model via the static KNOWN_MODELS fallback and repopulate — not sit
-          // at `-`.
+          // model via the persisted catalog and repopulate — not sit at `-`.
           await app.ingestSessionMetadata("A", {
             type: "system_metadata",
             model: "claude-opus-4-8[1m]",

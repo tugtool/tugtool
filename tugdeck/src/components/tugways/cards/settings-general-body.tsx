@@ -3,7 +3,7 @@
  *
  * The editor/response preferences that previously lived behind the Dev
  * card's title-bar `…` sheet, now hosted by the Settings card's
- * "Dev Card" tab. Two stacked sections:
+ * "Dev Card" tab. Three stacked sections:
  *
  *   1. **Response** — Magnification (CSS `zoom` on the transcript
  *      root, per card) and the inter-entry vertical gap. The macOS
@@ -11,6 +11,11 @@
  *      and composes with the per-card magnification.
  *   2. **Editor** — typography, view toggles, and submit-key policy
  *      for the prompt editor.
+ *   3. **Assistant** — the deck-wide default Model / Permission Mode /
+ *      Effort new cards adopt on first open, edited through the *same*
+ *      chips + sheets as the Dev card's Z4B row, bound to the deck
+ *      defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
+ *      no parallel dropdown UI.
  *
  * Self-contained: the panel constructs its own `EditorSettingsStore` /
  * `ResponseSettingsStore` instances at mount and disposes them on
@@ -39,10 +44,15 @@ import { TugSlider } from "../tug-slider";
 import { TugSwitch } from "../tug-switch";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { useResponderForm } from "../use-responder-form";
+import { useTugSheet } from "../tug-sheet";
+import { ModelChip } from "./model-chip";
+import { EffortChip } from "./effort-chip";
+import { useModelPicker } from "./model-picker-sheet";
+import { useEffortPicker } from "./effort-picker-sheet";
+import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { ResponseSettingsStore } from "@/lib/response-settings-store";
-import { DefaultPermissionModeStore } from "@/lib/default-permission-mode-store";
-import { PERMISSION_MODE_LABELS, PERMISSION_MODE_MENU } from "@/lib/permission-mode";
+import { DefaultsMetadataAdapter } from "@/lib/defaults-metadata-adapter";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./settings-general-body.css";
 
@@ -63,18 +73,6 @@ const FONT_SIZE_OPTIONS: TugPopupButtonItem<number>[] = [
   { action: TUG_ACTIONS.SET_VALUE, value: 15, label: "15 px" },
   { action: TUG_ACTIONS.SET_VALUE, value: 16, label: "16 px" },
 ];
-
-/**
- * Default permission-mode choices, derived from the chip's behavior-sheet
- * menu so the two surfaces never drift. Each carries the same human-readable
- * label the chip shows (Default, Accept Edits, Plan, Auto, Bypass).
- */
-const DEFAULT_PERMISSION_MODE_OPTIONS: TugPopupButtonItem<string>[] =
-  PERMISSION_MODE_MENU.map((mode) => ({
-    action: TUG_ACTIONS.SET_VALUE,
-    value: mode,
-    label: PERMISSION_MODE_LABELS[mode] ?? mode,
-  }));
 
 /**
  * Two-decimal formatter for the magnification slider's value input.
@@ -118,15 +116,39 @@ function submitKeyLegend(
 export function SettingsGeneralBody() {
   const [editorStore] = useState(() => new EditorSettingsStore());
   const [responseStore] = useState(() => new ResponseSettingsStore());
-  const [defaultModeStore] = useState(() => new DefaultPermissionModeStore());
+  // Defaults-shaped metadata store: lets the Z4B chips + picker sheets render
+  // the deck defaults unmodified, with rich labels from the persisted catalog.
+  // It owns the three deck-default stores the pickers write to.
+  const [defaultsAdapter] = useState(() => new DefaultsMetadataAdapter());
   useEffect(
     () => () => {
       editorStore.dispose();
       responseStore.dispose();
-      defaultModeStore.dispose();
+      defaultsAdapter.dispose();
     },
-    [editorStore, responseStore, defaultModeStore],
+    [editorStore, responseStore, defaultsAdapter],
   );
+
+  // One sheet host for the Assistant pickers — the same single-host pattern
+  // the Dev card uses, so opening one picker replaces any other open sheet.
+  const assistantSheet = useTugSheet();
+  const { openModelPicker } = useModelPicker({
+    onSelectModel: (selector) => defaultsAdapter.modelStore.set(selector),
+    sessionMetadataStore: defaultsAdapter,
+    showSheet: assistantSheet.showSheet,
+  });
+  const { openEffortPicker } = useEffortPicker({
+    sessionMetadataStore: defaultsAdapter,
+    onSelectEffort: (effort) => defaultsAdapter.effortStore.set(effort),
+    showSheet: assistantSheet.showSheet,
+  });
+  // No cardId: the defaults context — the sheet seeds from the adapter's
+  // mode (the deck default), never a per-card persisted value.
+  const { openPermissionSheet } = usePermissionSheet({
+    sessionMetadataStore: defaultsAdapter,
+    onSelectMode: (mode) => defaultsAdapter.permissionModeStore.set(mode),
+    showSheet: assistantSheet.showSheet,
+  });
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
@@ -135,10 +157,6 @@ export function SettingsGeneralBody() {
   const responseSettings = useSyncExternalStore(
     responseStore.subscribe,
     responseStore.getSnapshot,
-  );
-  const defaultMode = useSyncExternalStore(
-    defaultModeStore.subscribe,
-    defaultModeStore.getSnapshot,
   );
 
   // Stable senders for the controls; the chain dispatches land on the
@@ -152,12 +170,10 @@ export function SettingsGeneralBody() {
   const enterKeyId = useId();
   const responseEntryMarginSliderId = useId();
   const responseMagnificationSliderId = useId();
-  const defaultModePopupId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
       [fontPopupId]: (v: string) => editorStore.set({ fontId: v }),
-      [defaultModePopupId]: (v: string) => defaultModeStore.set(v),
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
@@ -332,20 +348,27 @@ export function SettingsGeneralBody() {
           variant="bordered"
           className="settings-general-group"
         >
-          {/* Default mode new cards adopt on first open. A card that already
-              carries its own remembered mode keeps it — changing this only
-              affects freshly-spawned cards. Mirrors the Mode chip's sheet. */}
-          <div className="settings-general-row">
-            <TugPopupButton
-              className="settings-general-popup settings-general-popup-mode"
-              topLabel="Permission Mode"
-              label={PERMISSION_MODE_LABELS[defaultMode] ?? defaultMode}
-              items={DEFAULT_PERMISSION_MODE_OPTIONS}
-              senderId={defaultModePopupId}
-              size="sm"
+          {/* Defaults new cards adopt on first open. A card that already
+              carries its own remembered value keeps it — changing these only
+              affects freshly-spawned cards. All three controls are the same
+              chips + sheets as the Z4B row, bound to the deck defaults
+              through the adapter — one editor, identical labels. */}
+          <div className="settings-general-row settings-general-assistant-row">
+            <PermissionModeChip
+              sessionMetadataStore={defaultsAdapter}
+              onOpenSheet={openPermissionSheet}
+            />
+            <ModelChip
+              sessionMetadataStore={defaultsAdapter}
+              onOpenPicker={openModelPicker}
+            />
+            <EffortChip
+              sessionMetadataStore={defaultsAdapter}
+              onOpenPicker={openEffortPicker}
             />
           </div>
         </TugBox>
+        {assistantSheet.renderSheet()}
       </div>
     </ResponderScope>
   );

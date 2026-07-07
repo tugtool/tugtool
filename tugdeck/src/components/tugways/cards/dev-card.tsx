@@ -44,6 +44,7 @@ import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
 import { useModel } from "@/lib/use-model";
+import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
 import { useDiffSheet } from "./diff-sheet";
@@ -2685,6 +2686,15 @@ export function DevCardBody({
     cardId,
     codeSessionStore,
     sessionMetadataStore,
+  });
+
+  // Bulletin when the card's saved model selector (per-card, else the deck
+  // default) is a concrete pick the persisted live catalog no longer offers:
+  // reset to `default` and point the user at Settings → Assistant. Single-shot
+  // per mount; the `default` zero-state never triggers it.
+  useUnavailableModelBulletin({
+    cardId,
+    showSheet: cardPickerSheet.showSheet,
   });
 
   // Always-current model catalog: whenever this card's `session_capabilities`

@@ -11,8 +11,9 @@
  *
  * The option list is resolved fresh at open time from
  * `SessionMetadataStore` ([L02], [L07]): the turn-free `initialize` model
- * list when present, else the static `KNOWN_MODELS` fallback (resumed
- * sessions carry no `initialize` list) — see {@link resolvePickerModels}.
+ * list when present, else the persisted live catalog (resumed sessions carry
+ * no `initialize` list), else the single honest Default placeholder — never
+ * a hardcoded list. See {@link resolvePickerModels}.
  * Picking a row sends a `model_change` control frame via {@link
  * DevControlSender}; the chip reflects the new model on the next
  * `system_metadata` round-trip ([D03]), matching the plan's round-trip model.
@@ -46,7 +47,7 @@ import {
 } from "@/components/tugways/tug-list-view";
 import type {
   CapabilityModel,
-  SessionMetadataStore,
+  ReadableMetadataStore,
 } from "@/lib/session-metadata-store";
 import { resolvePickerModels } from "@/lib/model-picker-data";
 import { readModelCatalog } from "@/lib/model-catalog";
@@ -64,7 +65,7 @@ export interface UseModelPickerArgs {
    */
   onSelectModel: (selector: string) => void;
   /** Metadata store supplying the live model + the `initialize` model list. */
-  sessionMetadataStore: SessionMetadataStore;
+  sessionMetadataStore: ReadableMetadataStore;
   /**
    * The card's shared sheet host (`useTugSheet().showSheet`). Routing every
    * card picker through one host means opening this picker replaces any other
@@ -291,6 +292,7 @@ function ModelPickerSheetBody({
       </ModelPickerListContext.Provider>
       <div className="tug-sheet-actions">
         <TugPushButton
+          data-slot="model-picker-cancel"
           emphasis="outlined"
           role="action"
           onClick={onCancel}
@@ -300,6 +302,7 @@ function ModelPickerSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          data-slot="model-picker-ok"
           emphasis="primary"
           onClick={confirm}
           focusGroup={focusGroup}
