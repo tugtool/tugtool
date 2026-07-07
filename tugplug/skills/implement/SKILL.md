@@ -88,19 +88,24 @@ convention:
    path. Nothing is written to the base checkout.**
 5. Establish a green baseline (`bun test`, and for Rust changes
    `cd tugrust && cargo nextest run`) so you know what "still green" means.
-6. Make progress visible with one task per step. `TaskCreate`/`TaskUpdate` are
+6. Make progress visible with one task per step. **This is not optional and not
+   best-effort** — the task list is the user's live progress surface for the run,
+   and it must mirror the resolved step list exactly: **every step selected this
+   run gets a task, before you start walking.** `TaskCreate`/`TaskUpdate` are
    deferred tools — their schemas are not in the prompt until you load them, and
    listing them under `allowed-tools` does **not** load them. First call
    `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate`
    **once per step** (it creates a single task — it has no `tasks`/`todos` batch
    parameter), passing top-level string `subject` (the step title) and
-   `description` (what the step does). Use `TaskUpdate` to flip a task to
-   in-progress/complete as you walk.
+   `description` (what the step does).
 
 ### 2. Implement (walk the steps)
 
 Walk the resolved steps in dependency order. For each step:
 
+- **Flip the step's task to in-progress** (`TaskUpdate`) before touching any code —
+  exactly one task is in-progress at a time, and it always names the step you are
+  actually on.
 - Read the step's Tasks / References / Checkpoint.
 - Do the work yourself, in the worktree. Match the surrounding code's style.
 - Run **that step's checkpoint** before committing: typecheck (`bunx tsc --noEmit`),
@@ -119,12 +124,16 @@ Walk the resolved steps in dependency order. For each step:
   dash branch.
 - **Update the Step Status Ledger** in the plan: flip the step from `pending` to
   `done` and record its commit. (Edit the plan in the worktree.)
-- Mark the task complete; move to the next step.
+- **Mark the step's task complete** (`TaskUpdate`) in the same breath as the ledger
+  flip — task, ledger, and commit move together, never one without the others. Then
+  move to the next step.
 
 Pragmatics:
 - Folding trivial or already-absorbed steps into a neighbor is fine — `dash join`
   squashes at the end, so per-step commit granularity is for *your* visibility
-  during the run, not the final history.
+  during the run, not the final history. When you fold a step, still close its
+  task (complete it with a note that it landed with its neighbor) — no task is
+  left dangling in-progress or pending at the end of the run.
 - If a step's verification fails, fix it before committing. Never commit red.
 - When you reach the end of the requested selection (single step, range, or whole
   plan), stop walking and report the ledger state — which steps are `done` and which
@@ -182,7 +191,9 @@ the worktree's cwd — independent of the user's main instance. Confirm it's liv
 ### 4. Iterate (interactive)
 
 The user tests and reports issues. Fix them on the worktree, run the relevant
-checkpoint, and commit each fix as its own `dash commit` round. Know your build
+checkpoint, and commit each fix as its own `dash commit` round. Track fixes the
+same way as steps: `TaskCreate` a task per reported issue, flip it in-progress
+while you work it, complete it when its fix commits. Know your build
 surface:
 - **tugdeck (frontend)** changes are live via Vite HMR — no rebuild; tell the user
   to hard-reload the card if Fast Refresh doesn't repaint a row.
@@ -213,6 +224,10 @@ first.
 - **Never commit to the base branch.** All commits go to the dash worktree via
   `tugutil dash commit`. The user owns the base branch; `dash join` is the only path
   back, and only on their say-so.
+- **Keep the task list in lockstep.** One task per selected step, created up front;
+  flip to in-progress when you start a step, complete when its ledger entry flips to
+  `done`. If a run is interrupted or a step is folded, reconcile the tasks so none
+  are left stale. A run whose tasks don't match the ledger is an unfinished run.
 - **Verify before every commit.** Green typecheck + tests. Warnings are errors.
 - **Right test, never a banned one.** Real-app tests via `just app-test` (never a
   hand-rolled `TUGAPP_*` pipeline); pure-logic via `bun:test`. No fake-DOM/RTL tests,
