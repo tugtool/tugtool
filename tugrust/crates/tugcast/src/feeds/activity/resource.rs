@@ -291,7 +291,11 @@ mod tests {
     }
 
     fn node(parent: Option<u32>, cpu: f32, rss: u64) -> ProcNode {
-        ProcNode { parent, cpu_pct: cpu, rss_bytes: rss }
+        ProcNode {
+            parent,
+            cpu_pct: cpu,
+            rss_bytes: rss,
+        }
     }
 
     /// Sum CPU% + rss over a subtree the way the sampler does inline.
@@ -354,16 +358,25 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn disk_differencing_is_monotonic_and_non_negative() {
-        use super::disk::{non_negative_delta, DiskCounters};
-        let last = DiskCounters { read: 1_000, write: 500 };
+        use super::disk::{DiskCounters, non_negative_delta};
+        let last = DiskCounters {
+            read: 1_000,
+            write: 500,
+        };
         // Monotonic growth → the delta is the growth.
-        let cur = DiskCounters { read: 1_600, write: 900 };
+        let cur = DiskCounters {
+            read: 1_600,
+            write: 900,
+        };
         let d = non_negative_delta(last, cur);
         assert_eq!(d.read, 600);
         assert_eq!(d.write, 400);
         // A counter that appears to go backward (a child exited, its bytes
         // left the session sum) clamps to zero rather than underflowing.
-        let shrunk = DiskCounters { read: 400, write: 100 };
+        let shrunk = DiskCounters {
+            read: 400,
+            write: 100,
+        };
         let d2 = non_negative_delta(last, shrunk);
         assert_eq!(d2.read, 0);
         assert_eq!(d2.write, 0);
@@ -377,7 +390,10 @@ mod tests {
         // stable, which is exactly what the guard relies on.
         let me = std::process::id();
         let start = process_start_time(me);
-        assert!(start.is_some(), "the running test process must have a start time");
+        assert!(
+            start.is_some(),
+            "the running test process must have a start time"
+        );
         assert_eq!(start, process_start_time(me), "start time must be stable");
     }
 }

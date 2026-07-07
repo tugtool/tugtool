@@ -459,7 +459,10 @@ mod tests {
         assert!(files.contains("src/lib.rs"), "should contain src/lib.rs");
         // Directories are indexed in their trailing-slash form only.
         assert!(!files.contains("src"), "bare dir name must not appear");
-        assert!(files.contains("src/"), "dir should appear with trailing slash");
+        assert!(
+            files.contains("src/"),
+            "dir should appear with trailing slash"
+        );
     }
 
     #[test]
@@ -495,7 +498,10 @@ mod tests {
         let (files, _) = watcher.walk();
 
         assert!(files.contains("src/"));
-        assert!(!files.contains("target/"), "ignored dir must not be indexed");
+        assert!(
+            !files.contains("target/"),
+            "ignored dir must not be indexed"
+        );
     }
 
     #[test]

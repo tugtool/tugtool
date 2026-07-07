@@ -162,8 +162,7 @@ mod tests {
 
     #[test]
     fn detects_activity_delta() {
-        let payload =
-            br#"{"tug_session_id":"s1","type":"activity_delta","channels":{"text":42}}"#;
+        let payload = br#"{"tug_session_id":"s1","type":"activity_delta","channels":{"text":42}}"#;
         assert!(is_activity_delta(payload));
         assert!(!is_system_metadata(payload));
         assert!(!is_session_capabilities(payload));
@@ -178,14 +177,20 @@ mod tests {
 
     #[test]
     fn detects_turn_end_for_both_closers() {
-        assert!(is_turn_end(br#"{"type":"turn_complete","msg_id":"m","seq":3}"#));
-        assert!(is_turn_end(br#"{"type":"turn_cancelled","msg_id":"m","seq":4}"#));
+        assert!(is_turn_end(
+            br#"{"type":"turn_complete","msg_id":"m","seq":3}"#
+        ));
+        assert!(is_turn_end(
+            br#"{"type":"turn_cancelled","msg_id":"m","seq":4}"#
+        ));
         assert!(!is_turn_end(br#"{"type":"assistant_text","text":"hi"}"#));
     }
 
     #[test]
     fn detects_wake_started() {
-        assert!(is_wake_started(br#"{"type":"wake_started","session_id":"x"}"#));
+        assert!(is_wake_started(
+            br#"{"type":"wake_started","session_id":"x"}"#
+        ));
         assert!(!is_wake_started(br#"{"type":"turn_complete"}"#));
     }
 }

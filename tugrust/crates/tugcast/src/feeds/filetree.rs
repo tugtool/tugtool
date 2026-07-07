@@ -776,11 +776,21 @@ mod tests {
         let response = feed.empty_query();
         let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
         assert!(paths.contains(&"README.md"));
-        assert!(paths.contains(&"src/"), "root-level dir belongs in empty query");
-        assert!(!paths.contains(&"src/main.rs"), "nested file is not root-level");
+        assert!(
+            paths.contains(&"src/"),
+            "root-level dir belongs in empty query"
+        );
+        assert!(
+            !paths.contains(&"src/main.rs"),
+            "nested file is not root-level"
+        );
         let dir = response.results.iter().find(|r| r.path == "src/").unwrap();
         assert!(dir.is_dir);
-        let file = response.results.iter().find(|r| r.path == "README.md").unwrap();
+        let file = response
+            .results
+            .iter()
+            .find(|r| r.path == "README.md")
+            .unwrap();
         assert!(!file.is_dir);
     }
 
@@ -815,7 +825,10 @@ mod tests {
         let response = feed.scored_query("local");
         let paths: Vec<&str> = response.results.iter().map(|r| r.path.as_str()).collect();
         assert!(paths.contains(&"locale.ts"));
-        assert!(!paths.contains(&"local-secrets/"), "dir entry itself must be filtered");
+        assert!(
+            !paths.contains(&"local-secrets/"),
+            "dir entry itself must be filtered"
+        );
         assert!(!paths.contains(&"local-secrets/api.txt"));
     }
 
