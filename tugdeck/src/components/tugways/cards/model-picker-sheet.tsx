@@ -31,6 +31,7 @@
  */
 
 import "./model-picker-sheet.css";
+import "./sheet-option-list.css";
 
 import React, { useCallback, useMemo, useState } from "react";
 
@@ -283,7 +284,7 @@ function ModelPickerSheetBody({
   return (
     <div className="model-picker-sheet">
       <ModelPickerListContext.Provider value={selected}>
-        <div className="model-picker-sheet-list">
+        <div className="model-picker-sheet-list sheet-option-list">
           <TugListView<ModelPickerDataSource>
             dataSource={dataSource}
             delegate={delegate}

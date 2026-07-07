@@ -13,28 +13,8 @@
   min-width: 18rem;
 }
 
-/*
- * The list view is `height: 100%` by default (it expects a bounded flex
- * parent). This is a fixed, short list (the permission modes), so we size it to
- * its rows EXACTLY — its framed height is an integer multiple of the row height,
- * with no partial row and no leftover gap. A cascade-scoped override on this
- * instance, the sanctioned customization path ([L20]).
- */
-.permission-mode-sheet-list .tug-list-view {
-  /* Content height, no scroll cap: every mode row shows, so the perimeter ring
-     hugs exactly N rows (no cut row, no scrollbar). */
-  height: auto;
-  /* Rows flush to the list frame. The list seeds as the keyboard key view, so it
-     wears the perimeter ring at its edge; the default inline padding would
-     otherwise leave a visible gap between that ring and the rows (the selection
-     fill + dividers must reach the frame). Rows keep their own internal text
-     padding, so only the fill / dividers extend, not the text ([L20]). */
-  padding-inline: 0;
-  /* Drop the block-axis breathing spacers (::before / ::after) so the ring sits
-     flush against the first and last rows — otherwise a half-row gap reads at
-     top and bottom. */
-  --tugx-list-view-padding-block: 0;
-}
+/* The option-list sizing, resting frame, and header-margin alignment are
+   the shared `.sheet-option-list` treatment (sheet-option-list.css). */
 
 /* The leading checkmark column is `TugListRow`'s `selectedGlyph="check"`
    now — it reserves the fixed-width holder itself, so this sheet no

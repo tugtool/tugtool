@@ -34,6 +34,7 @@
  */
 
 import "./permission-mode-chip.css";
+import "./sheet-option-list.css";
 
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -434,7 +435,7 @@ function PermissionModeSheetBody({
   return (
     <div className="permission-mode-sheet">
       <PermissionModeListContext.Provider value={selected}>
-        <div className="permission-mode-sheet-list">
+        <div className="permission-mode-sheet-list sheet-option-list">
           <TugListView<PermissionModeDataSource>
             dataSource={dataSource}
             delegate={delegate}

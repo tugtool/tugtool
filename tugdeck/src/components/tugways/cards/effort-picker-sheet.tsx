@@ -29,6 +29,7 @@
  */
 
 import "./effort-picker-sheet.css";
+import "./sheet-option-list.css";
 
 import React, { useCallback, useMemo, useState } from "react";
 
@@ -282,7 +283,7 @@ function EffortPickerSheetBody({
   return (
     <div className="effort-picker-sheet">
       <EffortPickerListContext.Provider value={selected}>
-        <div className="effort-picker-sheet-list">
+        <div className="effort-picker-sheet-list sheet-option-list">
           <TugListView<EffortPickerDataSource>
             dataSource={dataSource}
             delegate={delegate}
