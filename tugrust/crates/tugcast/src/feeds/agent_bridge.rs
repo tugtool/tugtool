@@ -696,12 +696,14 @@ pub async fn run_session_bridge(
         drop(child._keepalive);
 
         // The child is gone — clear its (pid, start_time) so the sampler stops
-        // attributing a subtree to a dead process. A retry re-captures on the
-        // next spawn above.
+        // attributing a subtree to a dead process, and drop any in-flight
+        // turn flag (a crash mid-turn never sends `turn_complete`). A retry
+        // re-captures on the next spawn above.
         {
             let mut entry = ledger_entry.lock().await;
             entry.child_pid = None;
             entry.child_start_time = None;
+            entry.turn_active = false;
         }
 
         match outcome {

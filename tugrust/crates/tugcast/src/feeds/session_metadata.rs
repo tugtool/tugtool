@@ -76,6 +76,35 @@ pub fn is_activity_delta(payload: &[u8]) -> bool {
         .any(|w| w == ACTIVITY_DELTA_NEEDLE)
 }
 
+/// Needle bytes for the two turn-closing frame types. The merger flips the
+/// session's `turn_active` flag off when either crosses the pipe, so the
+/// activity sampler stops attributing OS work the moment the turn ends —
+/// an idle session's Pulse reads zero, not the claude process's idle
+/// event-loop heartbeat.
+const TURN_COMPLETE_NEEDLE: &[u8] = b"\"type\":\"turn_complete\"";
+const TURN_CANCELLED_NEEDLE: &[u8] = b"\"type\":\"turn_cancelled\"";
+
+/// Needle bytes for `wake_started` — a wake turn opens with no inbound
+/// `user_message`, so this outbound marker is its turn-open signal.
+const WAKE_STARTED_NEEDLE: &[u8] = b"\"type\":\"wake_started\"";
+
+/// Check if a payload ends a turn (`turn_complete` / `turn_cancelled`).
+pub fn is_turn_end(payload: &[u8]) -> bool {
+    payload
+        .windows(TURN_COMPLETE_NEEDLE.len())
+        .any(|w| w == TURN_COMPLETE_NEEDLE)
+        || payload
+            .windows(TURN_CANCELLED_NEEDLE.len())
+            .any(|w| w == TURN_CANCELLED_NEEDLE)
+}
+
+/// Check if a payload is a `wake_started` marker (opens a wake turn).
+pub fn is_wake_started(payload: &[u8]) -> bool {
+    payload
+        .windows(WAKE_STARTED_NEEDLE.len())
+        .any(|w| w == WAKE_STARTED_NEEDLE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +174,18 @@ mod tests {
     fn rejects_activity_delta_for_non_activity() {
         let payload = br#"{"type":"assistant_text","text":"hi"}"#;
         assert!(!is_activity_delta(payload));
+    }
+
+    #[test]
+    fn detects_turn_end_for_both_closers() {
+        assert!(is_turn_end(br#"{"type":"turn_complete","msg_id":"m","seq":3}"#));
+        assert!(is_turn_end(br#"{"type":"turn_cancelled","msg_id":"m","seq":4}"#));
+        assert!(!is_turn_end(br#"{"type":"assistant_text","text":"hi"}"#));
+    }
+
+    #[test]
+    fn detects_wake_started() {
+        assert!(is_wake_started(br#"{"type":"wake_started","session_id":"x"}"#));
+        assert!(!is_wake_started(br#"{"type":"turn_complete"}"#));
     }
 }

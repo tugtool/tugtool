@@ -1,0 +1,134 @@
+/**
+ * pulse-card.css — the expanded PULSE-strip popover ([P12]).
+ *
+ * Each metric is ONE visual block: a subtly tinted region (Gestalt common
+ * region — the label can only belong to the line it shares a box with) whose
+ * sparkline fills it edge to edge, with the label top-left and the live value
+ * top-right in the channel's hue (the Tufte endpoint tie). All blocks are the
+ * card's full content width on one alignment grid; a single uniform card
+ * padding sets the only margins, so the PULSE title sets the left edge.
+ * Each color rule names its surface per [L16].
+ *
+ * @module components/tugways/cards/pulse-card
+ */
+
+.dev-pulse-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm, 8px);
+  padding: var(--tug-space-md, 12px);
+  /* Width = the sparkline width + the card padding; the SPARK_WIDTH constant
+     in pulse-card.tsx is the single source of the content width. */
+  width: max-content;
+}
+
+/* The title wears the Z2 instrument-legend style (the STATE / TIME / TOKENS
+ * endcap labels — `.dev-telemetry-endcap-label`), so the popover reads as
+ * part of the same apparatus it expands. */
+/* @tug-renders-on var(--tugx-popover-bg) */
+.dev-pulse-card-title {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.5625rem;
+  font-weight: var(--tug-font-weight-medium);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  margin-block-end: 2px;
+}
+
+.dev-pulse-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm, 8px);
+}
+
+/* One metric block, two zones: a reserved head band (label / value), then
+ * the graph flush to the block's bottom and side edges. The tint binds the
+ * pair; the zoning guarantees the line never touches the text. */
+/* @tug-renders-on var(--tugx-popover-bg) */
+.dev-pulse-card-row {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: color-mix(in oklab, var(--tugx-popover-fg) 5%, transparent);
+  overflow: hidden;
+}
+
+/* The value inherits its channel's hue — the color that ties the number to
+ * its line ([Tufte]). `--row-accent` is set per channel below. */
+.dev-pulse-card-row[data-activity-channel="text"] {
+  --row-accent: var(--activity-text);
+}
+.dev-pulse-card-row[data-activity-channel="tokens"] {
+  --row-accent: var(--activity-tokens);
+}
+.dev-pulse-card-row[data-activity-channel="tools"] {
+  --row-accent: var(--activity-tools);
+}
+.dev-pulse-card-row[data-activity-channel="subagents"] {
+  --row-accent: var(--activity-subagents);
+}
+.dev-pulse-card-row[data-activity-channel="cpu"] {
+  --row-accent: var(--activity-cpu);
+}
+.dev-pulse-card-row[data-activity-channel="disk"] {
+  --row-accent: var(--activity-disk);
+}
+
+.dev-pulse-card-spark {
+  display: block;
+}
+
+/* The head band: its own zone above the graph, inside the same block. */
+.dev-pulse-card-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 5px 8px 3px;
+}
+
+/* Row labels wear the Z2 instrument-legend style verbatim
+ * (`.dev-telemetry-endcap-label`): mono face, letterspaced small caps. */
+/* @tug-renders-on var(--tugx-popover-bg) */
+.dev-pulse-card-label {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.5625rem;
+  font-weight: var(--tug-font-weight-medium);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: default;
+  outline: none;
+  white-space: nowrap;
+}
+
+/* Values wear the Z2 value treatment (`.dev-telemetry-status-value`): the
+ * row's focal data, a step up from the legend, bold, tabular — in the
+ * channel's hue (the Tufte endpoint tie). The label↔value size relationship
+ * is Z2's own, so the pair reads as the same instrument. */
+/* @tug-renders-on var(--tugx-popover-bg) */
+.dev-pulse-card-value {
+  font-size: 0.8125rem;
+  font-weight: var(--tug-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--row-accent, var(--tug7-element-global-text-normal-normal-rest));
+}
+
+/* The resting state: a dimmed zero in the channel's unit — the hue and
+ * weight light up only when there's signal to tie the color to. */
+.dev-pulse-card-value[data-idle="true"] {
+  font-weight: 400;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The line reads clean over the tinted block; the area fill stays quiet
+ * context so a flat gauge never reads as a solid slab ([Tufte data-ink]).
+ * Scoped to the card — the compact strip keeps its own weight. */
+.dev-pulse-card-spark .tug-sparkline-area {
+  opacity: 0.1;
+}
+.dev-pulse-card-spark .tug-sparkline-line {
+  opacity: 1;
+  stroke-width: 1.25;
+}

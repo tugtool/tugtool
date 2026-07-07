@@ -63,7 +63,7 @@ import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
 } from "@/lib/session-activity-store";
-import { DevActivityCard } from "@/components/tugways/cards/activity-card";
+import { DevPulseCard } from "@/components/tugways/cards/pulse-card";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
 /** How many recent pulses the PULSE-label popover lists. */
@@ -255,15 +255,10 @@ export function DevPulseStrip({
         : [],
     [activityStore, tugSessionId],
   );
-  // Tint the line by the session's dominant channel ([P05]); the store owns
-  // the hysteresis so a single-sample burst never flips the color.
-  const getColorChannel = useCallback(
-    (nowMs: number): string | null =>
-      activityStore !== null && tugSessionId.length > 0
-        ? activityStore.dominant(tugSessionId, nowMs)
-        : null,
-    [activityStore, tugSessionId],
-  );
+  // The compact line stays a single muted hue — no dominant-channel tint.
+  // Color-by-channel is legible only where the label sits beside the line
+  // (the expanded Pulse card); on this word-sized strip a shifting color has
+  // no legend, so it reads as noise. The expansion carries the color story.
 
   const currentElRef = useRef<HTMLSpanElement | null>(null);
   const outgoingElRef = useRef<HTMLSpanElement | null>(null);
@@ -377,11 +372,10 @@ export function DevPulseStrip({
             tabIndex={-1}
             data-tug-focus="refuse"
             data-no-activate=""
-            aria-label="Session activity detail"
+            aria-label="Session pulse detail"
           >
             <TugSparkline
               getSeries={getSeries}
-              getColorChannel={getColorChannel}
               binMs={ACTIVITY_BIN_MS}
               fullScale={SPARKLINE_FULL_SCALE_CHARS}
               curve={SPARKLINE_CURVE}
@@ -393,7 +387,7 @@ export function DevPulseStrip({
           </button>
         </TugPopoverTrigger>
         <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
-          <DevActivityCard session={tugSessionId} />
+          <DevPulseCard session={tugSessionId} />
         </TugPopoverContent>
       </TugPopover>
       {copyLine.contextMenu}

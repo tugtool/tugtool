@@ -47,6 +47,7 @@ use super::agent_bridge::{
 use super::code::parse_tug_session_id;
 use super::session_metadata::{
     is_activity_delta, is_rate_limit_event, is_session_capabilities, is_system_metadata,
+    is_turn_end, is_wake_started,
 };
 use super::session_scoped::SessionScopedFeed;
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
@@ -302,6 +303,13 @@ pub struct LedgerEntry {
     /// sampler attributes the subtree only while the live pid's start time
     /// still matches this. `None` between spawns.
     pub child_start_time: Option<u64>,
+    /// True while a turn is in flight — set by the dispatcher's inbound
+    /// `user_message` intercept (and the merger's `wake_started` marker),
+    /// cleared when the merger sees `turn_complete` / `turn_cancelled` or
+    /// the relay tears the child down. The activity sampler attributes OS
+    /// work only while this is set: Pulse measures the session *working*,
+    /// not the idle claude process's event-loop heartbeat.
+    pub turn_active: bool,
     /// Stdin sender when `Live`.
     pub input_tx: Option<mpsc::Sender<Frame>>,
     /// Cancels the per-session worker on `close_session`.
@@ -363,6 +371,7 @@ impl LedgerEntry {
             child: None,
             child_pid: None,
             child_start_time: None,
+            turn_active: false,
             input_tx: None,
             cancel: CancellationToken::new(),
             card_id: None,
@@ -1801,11 +1810,13 @@ impl AgentSupervisor {
         (sup, merger_register_rx)
     }
 
-    /// Snapshot every session that currently has a live tugcode child, with
-    /// its captured `(pid, start_time)` — the input the activity sampler
-    /// ([P10]) needs to root each session's subtree walk and apply the
-    /// PID-reuse guard ([P20]). Sessions between spawns (no live child)
-    /// are omitted.
+    /// Snapshot every session that currently has a live tugcode child AND a
+    /// turn in flight, with its captured `(pid, start_time)` — the input the
+    /// activity sampler ([P10]) needs to root each session's subtree walk
+    /// and apply the PID-reuse guard ([P20]). Sessions between spawns (no
+    /// live child) and sessions idle between turns are omitted: Pulse
+    /// attributes the session *working*, so an idle session's gauges decay
+    /// to zero instead of reporting the claude process's idle heartbeat.
     pub async fn live_session_processes(&self) -> Vec<LiveSessionProcess> {
         let entries: Vec<Arc<Mutex<LedgerEntry>>> = {
             let ledger = self.ledger.lock().await;
@@ -1814,6 +1825,9 @@ impl AgentSupervisor {
         let mut out = Vec::new();
         for entry_arc in entries {
             let entry = entry_arc.lock().await;
+            if !entry.turn_active {
+                continue;
+            }
             if let (Some(pid), Some(start_time)) = (entry.child_pid, entry.child_start_time) {
                 out.push(LiveSessionProcess {
                     tug_session_id: entry.tug_session_id.clone(),
@@ -3836,7 +3850,12 @@ impl AgentSupervisor {
                 &user_attachments,
                 now,
             ) {
-                Ok(()) => {}
+                Ok(()) => {
+                    // A turn is opening: from here until the merger sees the
+                    // closing `turn_complete` / `turn_cancelled`, the activity
+                    // sampler attributes this session's OS work.
+                    entry_arc.lock().await.turn_active = true;
+                }
                 Err(err) => {
                     warn!(
                         error = %err,
@@ -4063,6 +4082,29 @@ impl AgentSupervisor {
                     // `relay_session_io` so this send passes through
                     // unchanged.
                     self.code_output.publish_tagged(frame.clone());
+                    // Turn-boundary tracking for the activity sampler: the
+                    // closing `turn_complete` / `turn_cancelled` ends OS-work
+                    // attribution; `wake_started` opens a wake turn (which has
+                    // no inbound `user_message` to open it). Clearing is gated
+                    // on no replay bracket being open — a `replay_batch`'s
+                    // embedded historical `turn_complete` text matches the
+                    // needle but must not end a live turn (`replay_started`
+                    // has already incremented the bracket counter by the time
+                    // the batch flows through here).
+                    if is_turn_end(&frame.payload) || is_wake_started(&frame.payload) {
+                        let entry_arc = {
+                            let ledger = self.ledger.lock().await;
+                            ledger.get(&id).cloned()
+                        };
+                        if let Some(entry_arc) = entry_arc {
+                            let mut entry = entry_arc.lock().await;
+                            if is_wake_started(&frame.payload) {
+                                entry.turn_active = true;
+                            } else if entry.replay_brackets_open == 0 {
+                                entry.turn_active = false;
+                            }
+                        }
+                    }
                     // Per-session system_metadata capture + broadcast per
                     // [D14]. CRITICAL: rewrap as `FeedId::SESSION_SIDEBAND`
                     // before publishing / storing. `Frame::encode()`
@@ -6444,6 +6486,103 @@ mod tests {
 
         cancel.cancel();
         let _ = merger_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_turn_active_gates_the_sampler_snapshot() {
+        // Pins the Pulse work-attribution gate: `live_session_processes`
+        // reports a session only while a turn is in flight. A closing
+        // `turn_complete` through the merger ends attribution (so an idle
+        // session's CPU/disk read zero); `wake_started` re-opens it; a
+        // replayed historical closer (bracket open) must NOT end a live turn.
+        let ((sup, _state_rx, _meta_rx, _control_rx), register_rx) =
+            make_supervisor_with_spawner(stall_spawner_factory());
+        let sup = Arc::new(sup);
+        let cancel = CancellationToken::new();
+        let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+
+        let id = TugSessionId::new("sess-turn");
+        insert_ledger_entry(&sup, &id).await;
+        let entry_arc = sup.ledger.lock().await.get(&id).cloned().unwrap();
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.child_pid = Some(4242);
+            entry.child_start_time = Some(1_000);
+            entry.turn_active = true;
+        }
+        assert_eq!(sup.live_session_processes().await.len(), 1);
+
+        let (tx, rx) = mpsc::channel::<Frame>(8);
+        sup.merger_register_tx.send((id.clone(), rx)).await.unwrap();
+
+        // The live closer ends attribution.
+        tx.send(Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-turn","type":"turn_complete","msg_id":"m","seq":1}"#
+                .to_vec(),
+        ))
+        .await
+        .unwrap();
+        wait_until(|| {
+            let entry_arc = entry_arc.clone();
+            async move { !entry_arc.lock().await.turn_active }
+        })
+        .await;
+        assert!(sup.live_session_processes().await.is_empty());
+
+        // A wake turn re-opens attribution without an inbound user_message.
+        tx.send(Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-turn","type":"wake_started","session_id":"x"}"#.to_vec(),
+        ))
+        .await
+        .unwrap();
+        wait_until(|| {
+            let entry_arc = entry_arc.clone();
+            async move { entry_arc.lock().await.turn_active }
+        })
+        .await;
+        assert_eq!(sup.live_session_processes().await.len(), 1);
+
+        // A replayed closer inside an open bracket must not end the turn.
+        // Subscribe to CODE_OUTPUT first: receiving the closer back off the
+        // broadcast proves the merger has fully processed it (turn frames
+        // forward to CODE_OUTPUT; only activity_delta diverts).
+        let mut code_rx = sup.code_output.subscribe();
+        entry_arc.lock().await.replay_brackets_open = 1;
+        tx.send(Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-turn","type":"turn_complete","msg_id":"old","seq":0}"#
+                .to_vec(),
+        ))
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_millis(500), code_rx.recv())
+            .await
+            .expect("bracketed closer timeout")
+            .expect("bracketed closer recv err");
+        assert!(
+            entry_arc.lock().await.turn_active,
+            "a bracketed (replayed) turn_complete must not end a live turn"
+        );
+
+        cancel.cancel();
+        let _ = merger_handle.await;
+    }
+
+    /// Poll `cond` until it yields true (bounded); panics on timeout.
+    async fn wait_until<F, Fut>(mut cond: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        for _ in 0..100 {
+            if cond().await {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("wait_until: condition not met within 1s");
     }
 
     #[tokio::test]
