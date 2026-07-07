@@ -6,6 +6,8 @@
  * - isHostBelowFloor across below / at / above floor, unknown old + future
  *   lines, and unknown/unparseable host (fail-open).
  * - deriveTugSetupOpen precedence: false whenever the gate is open.
+ * - deriveCreateDevCardOpen: the empty-deck affordance's precedence and
+ *   first-run handoff.
  * - Drift: SUPPORTED_MACOS matches scripts/lab/matrix.json min_version.
  */
 
@@ -17,6 +19,7 @@ import {
   compareMacosVersion,
   isHostBelowFloor,
   deriveTugSetupOpen,
+  deriveCreateDevCardOpen,
   requiredMinimumLabel,
   SUPPORTED_MACOS,
 } from "../lib/macos-support";
@@ -86,6 +89,37 @@ describe("deriveTugSetupOpen (gate precedence, Spec S02)", () => {
   test("gate closed passes setup's own would-open through", () => {
     expect(deriveTugSetupOpen(false, true)).toBe(true);
     expect(deriveTugSetupOpen(false, false)).toBe(false);
+  });
+});
+
+describe("deriveCreateDevCardOpen (empty-deck affordance, Spec S02)", () => {
+  const base = {
+    gateOpen: false,
+    suppressed: false,
+    loggedIn: true as boolean | null,
+    cardCount: 0,
+    firstRun: false,
+    deckEverHadCard: false,
+  };
+  test("set-up, logged-in user with an empty deck → open", () => {
+    expect(deriveCreateDevCardOpen(base)).toBe(true);
+  });
+  test("gate or app-test suppression closes it", () => {
+    expect(deriveCreateDevCardOpen({ ...base, gateOpen: true })).toBe(false);
+    expect(deriveCreateDevCardOpen({ ...base, suppressed: true })).toBe(false);
+  });
+  test("logged out or probe unanswered → closed (setup owns those)", () => {
+    expect(deriveCreateDevCardOpen({ ...base, loggedIn: false })).toBe(false);
+    expect(deriveCreateDevCardOpen({ ...base, loggedIn: null })).toBe(false);
+  });
+  test("any card on the deck → closed", () => {
+    expect(deriveCreateDevCardOpen({ ...base, cardCount: 1 })).toBe(false);
+  });
+  test("first run: setup wizard owns the empty deck until a card has existed", () => {
+    expect(deriveCreateDevCardOpen({ ...base, firstRun: true })).toBe(false);
+    expect(
+      deriveCreateDevCardOpen({ ...base, firstRun: true, deckEverHadCard: true }),
+    ).toBe(true);
   });
 });
 

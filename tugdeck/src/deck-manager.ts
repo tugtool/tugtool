@@ -46,6 +46,7 @@ import type { Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { DeckCanvas } from "./components/chrome/deck-canvas";
 import { TugSetup } from "./components/tugways/tug-setup";
+import { TugCreateDevCard } from "./components/tugways/tug-create-dev-card";
 import { TugLogout } from "./components/tugways/tug-logout";
 import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
@@ -585,6 +586,11 @@ export class DeckManager implements IDeckManagerStore {
           // is installed, signed in, and the first session is opened — auth is
           // strictly required for an AI IDE. Renders nothing once set up.
           React.createElement(TugSetup, {}),
+          // App-modal empty-deck affordance: a set-up, logged-in user with
+          // zero cards gets a one-Return-press "Create Dev Card" alert, not
+          // the full wizard. Last in the Spec S02 precedence chain
+          // (gate > setup > create-dev-card). Renders nothing otherwise.
+          React.createElement(TugCreateDevCard, {}),
           // App-level logout orchestrator (renders nothing). Watches the
           // logout-request nonce; on request runs confirm → interrupt every
           // turn → `claude_logout`, then TugSetup reopens for re-login (or a

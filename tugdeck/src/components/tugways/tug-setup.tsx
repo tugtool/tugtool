@@ -10,7 +10,9 @@
  * status` probe surfaced via `check_auth`) plus the deck's card count:
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
  *   2. Logged in to Claude — browser OAuth shell-out.
- *   3. Open your first session — pops the first Dev card.
+ *   3. Open your first session — pops the first Dev card. First-run only:
+ *      a set-up user whose deck goes empty mid-life gets the lightweight
+ *      TugCreateDevCard sibling, not the wizard.
  *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
  * via PATH then `~/.local/bin` — see `resolveClaudePath`/`claude_executable` —
@@ -172,8 +174,6 @@ export function TugSetup(): ReactElement {
     : reason === "claude_missing";
 
   const notReady = forced ? !forcedLoggedIn : loggedIn === false;
-  const needsFirstSession =
-    effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
 
   // First launch: show the wizard up front and immediately, even before the
   // auth probe answers, rather than flashing a blank deck. The flag is read
@@ -183,6 +183,13 @@ export function TugSetup(): ReactElement {
     const client = getTugbankClient();
     return client ? !readSetupSeen(client) : false;
   });
+
+  // The "open your first session" step claims the empty deck only on a
+  // genuine first run. A set-up user whose deck goes empty mid-life (last
+  // card closed, or a relaunch with an empty layout) gets TugCreateDevCard —
+  // the lightweight sibling app-modal — not the full wizard.
+  const needsFirstSession =
+    firstRun && effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
 
   // App-test suppression, read once at mount like `firstRun`: tugcast seeds
   // the flag when the app-test harness launched this instance, so the

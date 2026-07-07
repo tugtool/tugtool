@@ -130,6 +130,33 @@ export function deriveTugSetupOpen(
 }
 
 /**
+ * TugCreateDevCard's open state — the empty-deck affordance for a set-up,
+ * logged-in user. Last in the app-modal precedence chain (Spec S02):
+ * gate > setup > create-dev-card.
+ *
+ * During a genuine first run (`firstRun` — the persisted setup-seen flag was
+ * absent at mount) the setup wizard owns the empty deck via its "Start a
+ * Claude Code session" step, but only until the deck has held its first card
+ * (`deckEverHadCard`): once the wizard's CTA has opened a card, closing it
+ * lands here, not back in the wizard. Pure — unit-testable beside
+ * {@link deriveTugSetupOpen}.
+ */
+export function deriveCreateDevCardOpen(args: {
+  gateOpen: boolean;
+  suppressed: boolean;
+  loggedIn: boolean | null;
+  cardCount: number;
+  firstRun: boolean;
+  deckEverHadCard: boolean;
+}): boolean {
+  const { gateOpen, suppressed, loggedIn, cardCount, firstRun, deckEverHadCard } =
+    args;
+  if (gateOpen || suppressed) return false;
+  if (loggedIn !== true || cardCount !== 0) return false;
+  return !firstRun || deckEverHadCard;
+}
+
+/**
  * Whether the version gate should be open (blocking). The single derivation
  * both `TugVersionGate` and `TugSetup` read, so the gate's precedence over
  * setup (Spec S02) stays consistent. A dev override wins in dev builds.

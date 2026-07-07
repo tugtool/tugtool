@@ -40,6 +40,7 @@ function GalleryAlertInner() {
   const [dangerResult, setDangerResult] = React.useState("none");
   const [cautionResult, setCautionResult] = React.useState("none");
   const [okOnlyResult, setOkOnlyResult] = React.useState("none");
+  const [createDevCardResult, setCreateDevCardResult] = React.useState("none");
 
   // Ref-based section
   const alertRef = React.useRef<TugAlertHandle>(null);
@@ -128,6 +129,16 @@ function GalleryAlertInner() {
     setCautionResult(confirmed ? "confirmed" : "cancelled");
   }
 
+  async function handleCreateDevCardPreview() {
+    const confirmed = await showAlert({
+      title: "Create Dev Card",
+      message: "Start a new development session",
+      confirmLabel: "Create",
+      icon: "MessageSquareText",
+    });
+    setCreateDevCardResult(confirmed ? "confirmed" : "cancelled");
+  }
+
   async function handleOkOnlyAlert() {
     const confirmed = await showAlert({
       title: "Export Complete",
@@ -210,6 +221,25 @@ function GalleryAlertInner() {
         </div>
         <div style={resultStyle}>
           Result: <strong>{okOnlyResult}</strong>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- Create Dev Card copy preview ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Create Dev Card (Empty-Deck Copy)</TugLabel>
+        <div style={labelStyle}>
+          The TugCreateDevCard empty-deck app-modal's copy, previewed through
+          the same alert chrome (the real one only opens with zero cards).
+        </div>
+        <div style={{ display: "flex" }}>
+          <TugPushButton emphasis="outlined" size="sm" onClick={handleCreateDevCardPreview}>
+            Preview Create Dev Card
+          </TugPushButton>
+        </div>
+        <div style={resultStyle}>
+          Result: <strong>{createDevCardResult}</strong>
         </div>
       </div>
 
