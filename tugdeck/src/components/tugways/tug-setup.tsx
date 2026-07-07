@@ -357,11 +357,17 @@ export function TugSetup(): ReactElement {
           aria-describedby={undefined}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <div className="tug-setup-header">
-            <Rocket className="tug-setup-icon" size={32} aria-hidden="true" />
-            <AlertDialog.Title className="tug-setup-title">
-              Set up Tug
-            </AlertDialog.Title>
+          {/* Shared one-line modal header (tugx-header.css) — the alert
+              header classes with no message: icon centered on the title. */}
+          <div className="tug-alert-body" data-icon-role="action">
+            <div className="tug-alert-icon" aria-hidden="true">
+              <Rocket />
+            </div>
+            <div className="tug-alert-text">
+              <AlertDialog.Title className="tug-alert-title">
+                Set Up Tug
+              </AlertDialog.Title>
+            </div>
           </div>
 
           <ol className="tug-setup-steps">

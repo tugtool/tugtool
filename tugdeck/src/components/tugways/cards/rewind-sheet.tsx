@@ -106,7 +106,7 @@ export function useRewindSheet({
     const rows = projectRewindTurns(codeSessionStore.getSnapshot().transcript);
     if (rows.length === 0) {
       void presentAlertSheet(showSheet, {
-        title: "Can't rewind",
+        title: "Can't Rewind",
         message:
           "Rewind needs at least one completed turn before the current point. " +
           "A fresh session — or one the last /compact reset — has nothing " +
@@ -117,8 +117,7 @@ export function useRewindSheet({
     void showSheet({
       title: "Rewind",
       icon: "History",
-      // Guidance renders as a centered proposal label below the divider (in
-      // the body), not as a below-the-line description.
+      description: "Pick a turn to return to. Newer turns are discarded.",
       displayWidth: "md",
       content: (close) => (
         <RewindSheetBody
@@ -476,12 +475,6 @@ function RewindSheetBody({
         className="rewind-sheet"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <div className="rewind-intro">
-          <TugLabel emphasis="proposal" align="center">
-            Pick a turn to return to. Newer turns are discarded.
-          </TugLabel>
-        </div>
-
         <RewindCellContext.Provider
           value={{
             previews,

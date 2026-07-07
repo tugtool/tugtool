@@ -1,7 +1,8 @@
 /*
  * TugVersionGate body. The modal chrome (overlay, panel, shadow, z-index)
- * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes;
- * this file styles only the gate's title and copy. No color-setting rules →
+ * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes and
+ * the header from the shared `.tug-alert-*` header classes (tugx-header.css);
+ * this file styles only the gate's paragraph rhythm. No color-setting rules →
  * text inherits the panel color, like TugSetup.
  */
 
@@ -9,26 +10,18 @@
   text-align: left;
 }
 
-.tug-version-gate-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 0 8px;
-}
-
-.tug-version-gate-body {
-  font-size: 13px;
-  line-height: 1.45;
-  margin: 0;
-}
-
-.tug-version-gate-body p {
+/* The message is a multi-paragraph div (asChild); give the paragraphs the
+   message's own rhythm. */
+.tug-version-gate .tug-alert-message p {
   margin: 0 0 12px;
 }
 
-.tug-version-gate-body p:last-child {
+.tug-version-gate .tug-alert-message p:last-child {
   margin-bottom: 0;
 }
 
+/* Compounds with the message's 0.8 for an effective 0.7 — the hint's
+   original weight. */
 .tug-version-gate-hint {
-  opacity: 0.7;
+  opacity: 0.875;
 }

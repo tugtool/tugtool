@@ -390,10 +390,15 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                 `useSpatialOrder` reads the trap scope, not the outer one. */}
             <AlertSpatialOrder order={buttonSpatialOrder} />
             {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
-            <div className="tug-alert-body">
+            <div
+              className="tug-alert-body"
+              data-has-message={message ? "true" : undefined}
+            >
               {IconComponent && (
                 <div className="tug-alert-icon" aria-hidden="true">
-                  {React.createElement(IconComponent, { size: 48 })}
+                  {/* The icon box owns the size (see tugx-header.css); the
+                      svg fills it. */}
+                  {React.createElement(IconComponent, { size: "100%" })}
                 </div>
               )}
               <div className="tug-alert-text">

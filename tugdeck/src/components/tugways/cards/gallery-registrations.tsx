@@ -102,6 +102,7 @@ import { GalleryTugLinearGauge } from "./gallery-tug-linear-gauge";
 import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
 import { GalleryTugSetup } from "./gallery-tug-setup";
+import { GalleryModalHeaders } from "./gallery-modal-headers";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
 import "./gallery.css";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -1340,6 +1341,22 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  // Reference card for the unified modal-header convention
+  // (styles/tugx-header.css): the three header cases (one-line / two-line /
+  // alert) as static shipped/spec parity pairs, judged without live overlays.
+  registerCard({
+    componentId: "gallery-modal-headers",
+    contentFactory: (_cardId) => <GalleryModalHeaders />,
+    defaultMeta: { title: "Modal Headers", icon: "PanelTop", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: {
+      min: { width: 480, height: 400 },
+      preferred: { width: 800, height: 940 },
+    },
     category: CATEGORIES.overlays,
   });
 

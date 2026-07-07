@@ -91,8 +91,9 @@ export function useResumeSheet({
   const openResumeSheet = useCallback(() => {
     if (projectDir.length === 0) return;
     void showSheet({
-      title: "Resume session",
+      title: "Resume Session",
       icon: "RotateCcw",
+      iconRole: "agent",
       description: "Pick a session to resume in this card.",
       content: (close) => (
         <ResumeSheetBody

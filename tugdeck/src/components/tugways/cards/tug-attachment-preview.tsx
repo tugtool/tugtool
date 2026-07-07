@@ -291,7 +291,9 @@ export const TugAttachmentPreview = React.forwardRef<
       void showSheet({
         title: atom.value,
         // The preview owns its own top bar (title + actions), so the
-        // sheet's header is suppressed; `title` stays for aria-label. `xl`
+        // sheet's header is suppressed; `title` stays for aria-label. A
+        // full-bleed lightbox is the one sanctioned exemption from the
+        // shared modal-header convention (tugx-header.css). `xl`
         // + drag-resize gives the image real room; `aspectLockContent`
         // locks the panel to the image's aspect so the margin stays
         // uniform; `maxHostFraction` keeps it within 90% of the card.

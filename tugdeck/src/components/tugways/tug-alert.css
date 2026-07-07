@@ -131,11 +131,19 @@ body {
 
 /* ---- Body — icon left, text right (classic Mac HIG layout) ---- */
 
+/* Shared modal-header convention (styles/tugx-header.css): with a message,
+   the alert case — 44px icon top-aligned to the title; without one, the
+   one-line case — 30px icon centered on the lone title line. */
 .tug-alert-body {
   display: flex;
-  gap: var(--tugx-alert-space-b);
+  gap: var(--tugx-header-gap-one);
+  align-items: center;
+  margin-bottom: var(--tugx-header-margin);
+}
+
+.tug-alert-body[data-has-message] {
+  gap: var(--tugx-header-gap-alert);
   align-items: flex-start;
-  margin-bottom: var(--tugx-alert-space-b);
 }
 
 /* ---- Icon container ---- */
@@ -145,12 +153,33 @@ body {
   color: var(--tugx-alert-icon-fg);
   /* Fixed size — does not shrink under long text */
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: var(--tugx-header-icon-one);
+  height: var(--tugx-header-icon-one);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
+.tug-alert-body[data-has-message] .tug-alert-icon {
+  width: var(--tugx-header-icon-alert);
+  height: var(--tugx-header-icon-alert);
+}
+
+/* The box owns the size even when a call site hands in an icon node with its
+   own width/height attributes. */
+.tug-alert-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Per-role icon tint — mirrors the sheet header's data-icon-role family by
+   re-pointing the icon alias. `muted` is the default (declared on body), so
+   it needs no override here. */
+.tug-alert-body[data-icon-role="agent"]   { --tugx-alert-icon-fg: var(--tug7-element-tone-icon-normal-agent-rest); }
+.tug-alert-body[data-icon-role="accent"]  { --tugx-alert-icon-fg: var(--tug7-element-tone-icon-normal-accent-rest); }
+.tug-alert-body[data-icon-role="action"]  { --tugx-alert-icon-fg: var(--tug7-element-tone-icon-normal-action-rest); }
+.tug-alert-body[data-icon-role="caution"] { --tugx-alert-icon-fg: var(--tug7-element-tone-icon-normal-caution-rest); }
+.tug-alert-body[data-icon-role="danger"]  { --tugx-alert-icon-fg: var(--tug7-element-tone-icon-normal-danger-rest); }
 
 /* ---- Text column (title + message) ---- */
 
@@ -162,19 +191,20 @@ body {
 /* ---- Title ---- */
 
 .tug-alert-title {
-  font-weight: var(--tug-font-weight-semibold);
-  font-size: 1rem;
-  margin: 0 0 var(--tugx-alert-space-a) 0;
-  /* Vertically center title with icon when no message */
-  line-height: 1.4;
+  font-weight: var(--tugx-header-title-weight);
+  font-size: var(--tugx-header-title-size);
+  margin: 0;
+  line-height: var(--tugx-header-title-lh);
 }
 
 /* ---- Message ---- */
 
 .tug-alert-message {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  margin: 0;
+  font-size: var(--tugx-header-desc-size);
+  line-height: var(--tugx-header-desc-lh);
+  /* The under-title gap lives on the message, so a title with no message
+     centers cleanly against the icon. */
+  margin: var(--tugx-header-desc-gap) 0 0;
   /* Slightly muted */
   opacity: 0.8;
 }

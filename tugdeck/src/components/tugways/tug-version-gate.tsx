@@ -16,6 +16,7 @@
  */
 
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import { TriangleAlert } from "lucide-react";
 import { type ReactElement } from "react";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useHostInfo } from "@/lib/host-info-store";
@@ -38,23 +39,32 @@ export function TugVersionGate(): ReactElement {
           data-slot="tug-version-gate"
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <AlertDialog.Title className="tug-version-gate-title">
-            Update macOS to continue
-          </AlertDialog.Title>
-          <AlertDialog.Description className="tug-version-gate-body" asChild>
-            <div>
-              <p>
-                Tug needs macOS {required} or later.
-                {host !== null
-                  ? ` This Mac is running macOS ${host.version}.`
-                  : ""}
-              </p>
-              <p className="tug-version-gate-hint">
-                Update in System Settings → General → Software Update, then
-                reopen Tug.
-              </p>
+          {/* Shared alert-case modal header (tugx-header.css): icon
+              top-aligned to the title, multi-paragraph message below. */}
+          <div className="tug-alert-body" data-has-message="true">
+            <div className="tug-alert-icon" aria-hidden="true">
+              <TriangleAlert />
             </div>
-          </AlertDialog.Description>
+            <div className="tug-alert-text">
+              <AlertDialog.Title className="tug-alert-title">
+                Update macOS to Continue
+              </AlertDialog.Title>
+              <AlertDialog.Description className="tug-alert-message" asChild>
+                <div>
+                  <p>
+                    Tug needs macOS {required} or later.
+                    {host !== null
+                      ? ` This Mac is running macOS ${host.version}.`
+                      : ""}
+                  </p>
+                  <p className="tug-version-gate-hint">
+                    Update in System Settings → General → Software Update, then
+                    reopen Tug.
+                  </p>
+                </div>
+              </AlertDialog.Description>
+            </div>
+          </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>

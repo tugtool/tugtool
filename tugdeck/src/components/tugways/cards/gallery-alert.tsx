@@ -59,7 +59,7 @@ function GalleryAlertInner() {
     let cancelled = false;
     void (async () => {
       const confirmed = await showAlert({
-        title: "Log out of Claude? (repro)",
+        title: "Log Out of Claude? (repro)",
         message:
           "Effect-driven confirm on the deck-root singleton — the same path the File menu / /logout use.",
         confirmLabel: "Log Out",
@@ -100,7 +100,7 @@ function GalleryAlertInner() {
 
   async function handleBasicAlert() {
     const confirmed = await showAlert({
-      title: "Replace existing file?",
+      title: "Replace Existing File?",
       message: 'A file named \u201cQ4 Report.pdf\u201d already exists in Downloads. Replacing it will overwrite the current version.',
     });
     setBasicResult(confirmed ? "confirmed" : "cancelled");
@@ -119,7 +119,7 @@ function GalleryAlertInner() {
 
   async function handleCautionAlert() {
     const confirmed = await showAlert({
-      title: "Discard unsaved changes?",
+      title: "Discard Unsaved Changes?",
       message: 'You\'ve made changes to \u201cHomepage Copy\u201d that haven\'t been saved. Leaving now will discard them.',
       confirmLabel: "Discard",
       confirmRole: "danger",
@@ -130,7 +130,7 @@ function GalleryAlertInner() {
 
   async function handleOkOnlyAlert() {
     const confirmed = await showAlert({
-      title: "Export complete",
+      title: "Export Complete",
       message: 'Your workspace has been exported to \u201ctugtool-export-2026-03-28.zip\u201d and saved to your Downloads folder.',
       confirmLabel: "OK",
       cancelLabel: null,
@@ -141,7 +141,7 @@ function GalleryAlertInner() {
   async function handleRefAlert() {
     if (!alertRef.current) return;
     const confirmed = await alertRef.current.alert({
-      title: "Send feedback?",
+      title: "Send Feedback?",
       message: "This will share your last session log with the Tugtool team to help diagnose the issue you reported.",
       confirmLabel: "Send",
     });
@@ -220,7 +220,7 @@ function GalleryAlertInner() {
         <TugLabel className="cg-section-title">Ref-Based Imperative API</TugLabel>
         <div style={labelStyle}>useRef&lt;TugAlertHandle&gt; + alertRef.current.alert() — alternative to provider pattern</div>
         {/* Standalone TugAlert instance for this section */}
-        <TugAlert ref={alertRef} title="Send feedback?" />
+        <TugAlert ref={alertRef} title="Send Feedback?" />
         <div style={{ display: "flex" }}>
           <TugPushButton emphasis="outlined" size="sm" onClick={handleRefAlert}>
             Send Feedback

@@ -3081,7 +3081,6 @@ export function DevCardBody({
         .showSheet({
           title: "Compacting",
           icon: "Archive",
-          hideHeaderRule: true,
           content: (close) => (
             <CompactionProgressSheet close={close} onCancel={onCancel} />
           ),
@@ -3248,18 +3247,17 @@ export function DevCardBody({
         const { title, message } =
           payload.reason === "unsupported"
             ? {
-                title: "Command not available",
+                title: "Command Not Available",
                 message: `The /${payload.name} command is not available in the dev card. Type / to see the available commands.`,
               }
             : {
-                title: "Unknown command",
+                title: "Unknown Command",
                 message: `There is no /${payload.name} command in this project. Type / to see the available commands.`,
               };
         void presentAlertSheet(cardPickerSheet.showSheet, {
           title,
-          // Match the canonical TugAlert icon sizing (the `.tug-alert-icon`
-          // box is 48×48; the default glyph is `size={48}`).
-          icon: <AlertTriangle size={48} aria-hidden="true" />,
+          // The `.tug-alert-icon` box owns the glyph size (tugx-header.css).
+          icon: <AlertTriangle aria-hidden="true" />,
           message,
         });
       },

@@ -1198,10 +1198,13 @@ export function TugSheetContent({
                       : "tug-sheet-header"
                   }
                   data-icon-role={icon ? iconRole : undefined}
+                  data-has-description={description ? "true" : undefined}
                 >
                   {IconComponent && (
                     <div className="tug-sheet-icon" aria-hidden="true">
-                      <IconComponent size={28} />
+                      {/* The icon box owns the size (one-line vs two-line
+                          header, see tugx-header.css); the svg fills it. */}
+                      <IconComponent size="100%" />
                     </div>
                   )}
                   <div className="tug-sheet-heading">

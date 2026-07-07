@@ -314,20 +314,26 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
   /* @tug-renders-on: --tugx-sheet-bg */
   color: var(--tugx-sheet-header-fg);
   display: flex;
-  /* Icon aligns to the top of the title text — the TugAlert layout. */
-  align-items: flex-start;
-  /* Icon ↔ text gap. Tighter than the alert's B gap — the sheet icon is
-     smaller (28px) and the title is more compact. */
-  gap: var(--tugx-sheet-space-a);
-  /* No rule (TugAlert has none); the generous bottom margin is the only
+  /* One-line header (title only): icon centered on the single line.
+     Shared modal-header convention — see styles/tugx-header.css. */
+  align-items: center;
+  gap: var(--tugx-header-gap-one);
+  /* No rule (TugAlert has none); the bottom margin is the only
      separation from the body. */
-  margin-bottom: var(--tugx-sheet-space-b);
+  margin-bottom: var(--tugx-header-margin);
+}
+
+/* Two-line header (title + description): larger icon, top-aligned to the
+   title text. */
+.tug-sheet-header[data-has-description] {
+  align-items: flex-start;
+  gap: var(--tugx-header-gap-two);
 }
 
 /* `hideHeaderRule` is a no-op now that the header carries no rule by default;
    the class stays for call-site compatibility. */
 .tug-sheet-header-no-rule {
-  margin-bottom: var(--tugx-sheet-space-b);
+  margin-bottom: var(--tugx-header-margin);
 }
 
 /* ---- Header icon column ---- */
@@ -339,6 +345,22 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The box owns the icon size (the svg inside fills it): 30px for a
+     one-line header, 36px when a description makes it two lines. */
+  width: var(--tugx-header-icon-one);
+  height: var(--tugx-header-icon-one);
+}
+
+.tug-sheet-header[data-has-description] .tug-sheet-icon {
+  width: var(--tugx-header-icon-two);
+  height: var(--tugx-header-icon-two);
+}
+
+/* The box owns the size even when a call site hands in an icon node with its
+   own width/height attributes. */
+.tug-sheet-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* Per-role icon tint — mirrors the tone-icon family. `muted` is the default
@@ -361,18 +383,18 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 /* ---- Sheet title ---- */
 
 .tug-sheet-title {
-  font-weight: var(--tug-font-weight-semibold);
-  font-size: 0.9375rem;
+  font-weight: var(--tugx-header-title-weight);
+  font-size: var(--tugx-header-title-size);
   margin: 0;
-  line-height: 1.4;
+  line-height: var(--tugx-header-title-lh);
 }
 
 /* ---- Optional description ---- */
 
 .tug-sheet-description {
   /* Matches the TugAlert message style. */
-  font-size: 0.875rem;
-  line-height: 1.5;
+  font-size: var(--tugx-header-desc-size);
+  line-height: var(--tugx-header-desc-lh);
   margin: 0 0 var(--tugx-sheet-space-a) 0;
   opacity: 0.8;
 }
@@ -380,7 +402,7 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 /* In the header text column the description sits directly under the title:
    a small top gap, no bottom margin (the header owns the gap to the body). */
 .tug-sheet-heading .tug-sheet-description {
-  margin: 0.25rem 0 0 0;
+  margin: var(--tugx-header-desc-gap) 0 0 0;
 }
 
 /* ---- Sheet body: arbitrary content ---- */

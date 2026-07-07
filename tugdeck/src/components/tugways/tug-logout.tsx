@@ -49,7 +49,7 @@ export function TugLogout(): null {
     let cancelled = false;
     void (async () => {
       const confirmed = await showAlert({
-        title: "Log out of Claude?",
+        title: "Log Out of Claude?",
         message:
           "Your in-progress turns will stop, and you'll need to log in again to continue.",
         confirmLabel: "Log Out",
@@ -98,7 +98,7 @@ export function TugLogout(): null {
     const reason = logoutError;
     authStore.clearLogoutError();
     void showAlert({
-      title: "Couldn't log out",
+      title: "Couldn't Log Out",
       message: `${reason} You're still logged in.`,
       confirmLabel: "OK",
       cancelLabel: null,

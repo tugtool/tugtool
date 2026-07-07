@@ -63,7 +63,7 @@ export function TugAlertSheetView({
   onCancel,
 }: TugAlertSheetViewProps): React.ReactElement {
   const iconNode =
-    icon === undefined ? <Info size={48} aria-hidden="true" /> : icon;
+    icon === undefined ? <Info aria-hidden="true" /> : icon;
   // Author the actions into the sheet's trapped focus mode: Tab walks Cancel →
   // confirm, with the confirm button seeded as the live default so it opens
   // filled+ring (an action confirm promotes its `primary` tint to the role fill;
@@ -74,7 +74,12 @@ export function TugAlertSheetView({
   useSeedKeyView(`${focusGroup}:${CONFIRM_ORDER}`);
   return (
     <div className="tug-alert-sheet">
-      <div className="tug-alert-body">
+      <div
+        className="tug-alert-body"
+        data-has-message={
+          message !== undefined && message !== null ? "true" : undefined
+        }
+      >
         {iconNode !== null ? (
           <div className="tug-alert-icon" aria-hidden="true">
             {iconNode}

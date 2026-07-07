@@ -1,7 +1,8 @@
 /*
  * TugSetup wizard body. The modal chrome (overlay, panel, shadow, z-index)
- * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes;
- * this file styles only the wizard's title and step list. Steps inherit text
+ * comes from the inherited `tug-alert-content`/`tug-alert-overlay` classes and
+ * the header from the shared `.tug-alert-*` header classes; this file styles
+ * only the wizard's step list. Steps inherit text
  * color from the panel (no color-setting rules → no @tug-renders-on needed); a
  * pending step dims via opacity.
  */
@@ -13,24 +14,8 @@
   max-width: 560px;
 }
 
-/* TugAlert-style header: the rocket icon vertically centered with the title. */
-.tug-setup-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 0 0 20px;
-}
-
-.tug-setup-icon {
-  flex: 0 0 auto;
-  color: var(--tug7-element-tone-text-normal-action-rest);
-}
-
-.tug-setup-title {
-  font-size: 19px;
-  font-weight: 700;
-  margin: 0;
-}
+/* The header is the shared one-line modal header — `.tug-alert-body` with
+ * `data-icon-role="action"` (see tugx-header.css). No bespoke header rules. */
 
 .tug-setup-steps {
   list-style: none;

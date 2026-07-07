@@ -73,7 +73,7 @@ export function useRenameSessionSheet({
     if (binding === undefined) return;
     const current = sessionNameStore.getName(binding.tugSessionId) ?? "";
     void showSheet({
-      title: "Rename session",
+      title: "Rename Session",
       icon: "Pencil",
       content: (close) => (
         <RenameSheetBody

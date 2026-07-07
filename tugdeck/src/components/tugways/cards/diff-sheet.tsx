@@ -92,7 +92,7 @@ export function useDiffSheet({
 
       if (snap.phase === "error") {
         void presentAlertSheet(showSheet, {
-          title: "Couldn't load the diff",
+          title: "Couldn't Load the Diff",
           message: snap.error ?? "Something went wrong fetching the diff.",
         });
         return;
@@ -101,7 +101,7 @@ export function useDiffSheet({
       if (payload === null) return; // defensive — ready implies a payload
       if (payload.no_repo) {
         void presentAlertSheet(showSheet, {
-          title: "Not a git repository",
+          title: "Not a Git Repository",
           message:
             "This project isn't a git repository, so there are no changes to show.",
         });
@@ -109,7 +109,7 @@ export function useDiffSheet({
       }
       if (payload.files.length === 0) {
         void presentAlertSheet(showSheet, {
-          title: "No uncommitted changes",
+          title: "No Uncommitted Changes",
           message: "The working tree is clean — nothing to diff against HEAD.",
         });
         return;

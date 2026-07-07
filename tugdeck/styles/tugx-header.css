@@ -1,0 +1,50 @@
+/**
+ * tugx-header.css — shared modal-header utility token family.
+ *
+ * One scale for every modal/overlay header in the app: TugAlert,
+ * TugAlertSheet, TugSheet, TugSetup, and TugVersionGate all draw their
+ * icon + title (+ description/message) block from these slots. The
+ * convention has three cases that differ only in icon size and alignment:
+ *
+ *  - one-line  — title only. 30px icon, centered on the single line.
+ *  - two-line  — title + description. 36px icon, top-aligned to the title.
+ *  - alert     — title + message (may wrap). 44px icon, top-aligned.
+ *
+ * Per `tuglaws/token-naming.md`, `--tugx-` is the shared-utility lane;
+ * this file follows the `tugx-block.css` pattern: one body-level slot
+ * family, consumed directly by component CSS (one hop to `--tug7-*` /
+ * `--tug-*` per [L17]). The look was designed in the "Modal Headers"
+ * gallery card (gallery-modal-headers.tsx), which renders these same
+ * slots.
+ */
+
+body {
+  /* ------------------------------------------------------------------ *
+   * Title — one scale everywhere. Title Case by convention.            *
+   * ------------------------------------------------------------------ */
+  --tugx-header-title-size:   1.0625rem;
+  --tugx-header-title-weight: 700;
+  --tugx-header-title-lh:     1.25;
+
+  /* ------------------------------------------------------------------ *
+   * Description / message — one scale, tucked 4px under the title.     *
+   * ------------------------------------------------------------------ */
+  --tugx-header-desc-size: 0.875rem;
+  --tugx-header-desc-lh:   1.4;
+  --tugx-header-desc-gap:  4px;
+
+  /* ------------------------------------------------------------------ *
+   * Icon — steps with the text-block height.                           *
+   * ------------------------------------------------------------------ */
+  --tugx-header-icon-one:   30px;
+  --tugx-header-icon-two:   36px;
+  --tugx-header-icon-alert: 44px;
+
+  /* Icon ↔ text gap scales with the icon. */
+  --tugx-header-gap-one:   12px;
+  --tugx-header-gap-two:   14px;
+  --tugx-header-gap-alert: 18px;
+
+  /* Header ↔ body separation. */
+  --tugx-header-margin: 20px;
+}
