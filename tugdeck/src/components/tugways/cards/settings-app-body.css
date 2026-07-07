@@ -10,7 +10,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-2xl);
-  padding: var(--tug-space-xs) 0;
+  /* Extra top room: the first box's legend overhangs above its border. */
+  padding: var(--tug-space-lg) 0 var(--tug-space-xs);
 }
 
 /* Matches .settings-general-group: override .tug-box's fit-content so
@@ -18,6 +19,22 @@
 .settings-app-group {
   width: 100%;
   box-sizing: border-box;
+  /* The legend is absolutely positioned (below), so its line is reserved
+     here with fixed padding — the box height is padding + content, always.
+     WebKit's built-in fieldset/legend layout is pass-dependent (boxes came
+     out one legend taller on a late mount than after a style recalc — the
+     hop); taking the legend out of flow removes that layout entirely. */
+  position: relative;
+  padding-top: calc(var(--tug-space-lg) + 8px);
+}
+
+/* The legend sits ON the border line, painted over it, out of flow. */
+.settings-app-group > .tug-box-legend {
+  position: absolute;
+  top: 0;
+  left: var(--tug-space-lg);
+  transform: translateY(-50%);
+  background: var(--tugx-pane-bg);
 }
 
 /* Layout lives on the body div, never the fieldset — a flexed fieldset's
