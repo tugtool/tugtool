@@ -5,13 +5,13 @@
  *
  * Consumed by the transcript user-message row (`UserMessageCell` in
  * `dev-card-transcript.tsx`). Each atom chip is built via the shared
- * `buildAtomSVGDataUri` helper, so the transcript's chips and the
- * editor's atom widgets are pixel-identical: same SVG, same theme
+ * `bakeAtomChipDataUri` helper, so the transcript's chips and the
+ * editor's atom widgets are pixel-identical: same bake, same theme
  * tokens, same baseline offset.
  *
  * **Replaced-element behaviour rides on `<img>`.** The transcript
  * chips aren't editable, but the editor's atoms also render via
- * `<img>` (`createAtomImgElement` → `buildAtomSVGDataUri` internally),
+ * `<img>` (`createAtomImgElement` → `bakeAtomChipDataUri` internally),
  * which is what keeps the editor's caret / selection / clipboard
  * semantics free per HTML spec. The shared helper is the consistency
  * boundary; React vs. imperative DOM is a per-surface choice.
@@ -21,7 +21,7 @@
  * without needing to mount the component.
  *
  * Laws:
- *  - [L06] all chip appearance flows from the SVG data URI + per-image
+ *  - [L06] all chip appearance flows from the baked data URI + per-image
  *    inline style (verticalAlign / margin). No React state for
  *    appearance, no className-conditional logic.
  *  - [L19] file pair, module docstring, exported props interface,

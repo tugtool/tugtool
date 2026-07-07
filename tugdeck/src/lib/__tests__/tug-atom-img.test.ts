@@ -1,6 +1,6 @@
 /**
  * Pure-logic tests for the `tug-atom-img` exports that don't depend on
- * the DOM. The full chip-builder (`buildAtomSVGDataUri`) is
+ * the DOM. The full chip-builder (`bakeAtomChipDataUri`) is
  * DOM-dependent (it reads theme tokens via `getComputedStyle(document.body)`)
  * and is exercised through the real-app manual smoke; this file pins
  * the pure pieces consumers rely on:

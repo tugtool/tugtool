@@ -2321,13 +2321,13 @@ export function DevCardBody({
   // Bind the pane element for CSS variable cascade
   // (`--tug-font-family-editor` / `--tug-font-size-editor` /
   // `--tug-letter-spacing-editor` / `--tug-line-height-editor`). The
-  // `regenerateAtoms` callback re-renders SVG atom glyphs when the
+  // `regenerateAtoms` callback re-renders baked atom chips when the
   // editor font changes, so atoms track the editor's chosen font.
   const paneRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const el = paneRef.current;
     if (!el) return;
-    // `regenerateAtoms` re-renders the SVG atom glyphs when the editor
+    // `regenerateAtoms` re-renders the baked atom chips when the editor
     // font changes via the tools popover — atoms must track the editor
     // font so a chosen monospace actually reaches the atom chip labels.
     editorStore.bind(el, () => entryDelegateRef.current?.regenerateAtoms());

@@ -23,7 +23,6 @@ import { getTugbankClient } from "./tugbank-singleton";
 import { putEditorSettings } from "@/settings-api";
 import type { EditorSettings } from "@/settings-api";
 import { setAtomFont } from "./tug-atom-img";
-import { ensureAtomFontsLoaded } from "./tug-atom-fonts";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -79,7 +78,7 @@ export class EditorSettingsStore {
 
     // Seed the atom-font module state synchronously, BEFORE any React
     // chip render. Without this seed, the first React render of a
-    // transcript / tool-block chip would bake its SVG with the
+    // transcript / tool-block chip would bake with the
     // atom-img module's default `_measureFamily` (system-ui, sans-serif)
     // and stick with that until something triggers a re-render. The
     // editor's `bind()` later calls the same _applyAtomFont and busts
@@ -216,11 +215,17 @@ export class EditorSettingsStore {
     const stack = FONT_STACKS[fontId];
     if (stack) setAtomFont(stack, fontSize);
     this._regenerateAtoms?.();
-    // Atom SVGs embed the editor font as @font-face inside their data URI
-    // so the label renders in the real font (Hack/Inter/Plex) instead of
-    // a generic fallback. The fetch + base64 step is async; on first call
-    // the regenerate above paints with whatever's already cached, then
-    // this Promise resolves and we regenerate again with embedded fonts.
-    ensureAtomFontsLoaded().then(() => this._regenerateAtoms?.());
+    // The chip bake measures and paints its label with the document's
+    // Canvas — a face that hasn't finished loading silently falls back
+    // and the bounds come out wrong. Load the stack explicitly and
+    // re-bake once it lands; in the steady state (main.tsx warms the
+    // stacks at boot) the faces are already loaded, the promise
+    // resolves immediately, and the regenerate is a no-op rebuild.
+    if (stack && typeof document !== "undefined" && document.fonts) {
+      document.fonts
+        .load(`${fontSize}px ${stack}`)
+        .then(() => this._regenerateAtoms?.())
+        .catch(() => undefined);
+    }
   }
 }

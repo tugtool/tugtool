@@ -15,7 +15,7 @@
  * `atomicRanges` provider reads (see `atomic-ranges.ts`), so cursor
  * motion and deletion treat each atom as a single unit per [Q01].
  *
- * Theme regeneration: atom SVGs are baked at widget construction
+ * Theme regeneration: atom chips are baked at widget construction
  * (colors are resolved at `createAtomImgElement` call time), so a
  * theme switch must dispatch `regenerateAtomsEffect` to rebuild every
  * widget. Subscription to `subscribeThemeChange` is wired in
@@ -36,7 +36,7 @@ import type { DecorationSet, PluginValue, ViewUpdate } from "@codemirror/view";
 import { Facet, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import {
-  buildAtomSVGDataUri,
+  bakeAtomChipDataUri,
   createAtomImgElement,
   TUG_ATOM_CHAR,
   type AtomSegment,
@@ -93,7 +93,7 @@ export const atomBytesStoreFacet = Facet.define<
  * instances created after the bump compare `!eq` to instances
  * created before it. Without the bump, two widgets carrying the
  * same `segment` would be treated as identical by CM6's
- * reconciliation and the cached DOM (with stale SVG colors baked at
+ * reconciliation and the cached DOM (with stale chip colors baked at
  * the old theme's tokens) would survive a theme switch.
  *
  * The counter is read at widget construction, so any caller that
@@ -175,7 +175,7 @@ export const addAtomsEffect = StateEffect.define<readonly PositionedAtom[]>();
 
 /**
  * Force re-creation of every atom widget — used when colors baked into
- * the SVG data URI become stale after a theme switch. The decorations'
+ * the chip data URI become stale after a theme switch. The decorations'
  * positions are unchanged; only the widget instances are replaced.
  */
 export const regenerateAtomsEffect = StateEffect.define<null>();
@@ -685,7 +685,7 @@ export function syncSelectedAtoms(view: EditorView): void {
       if (!_restSrc.has(img)) _restSrc.set(img, img.src);
       let selected = _selectedSrc.get(img);
       if (selected === undefined) {
-        selected = buildAtomSVGDataUri(
+        selected = bakeAtomChipDataUri(
           img.dataset.atomType ?? "",
           img.dataset.atomLabel ?? "",
           img.dataset.atomValue ?? "",

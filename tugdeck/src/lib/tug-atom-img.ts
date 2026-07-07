@@ -1,5 +1,5 @@
 /**
- * tug-atom-img.ts — Atom rendering as <img> elements with SVG data URIs.
+ * tug-atom-img.ts — Atom rendering as <img> elements with PNG data URIs.
  *
  * Atoms are replaced elements — WebKit treats them as atomic inline units.
  * Caret navigation, selection, undo, and clipboard all work natively.
@@ -8,12 +8,21 @@
  * Each atom is an <img> with data attributes:
  *   data-atom-type, data-atom-label, data-atom-value
  *
- * Colors read from theme tokens via getTokenValue. SVG is regenerated
- * on theme change (see TugTextEngine.regenerateAtoms).
+ * The chip is painted with Canvas 2D and baked to a PNG data URL. The
+ * paint is SYNCHRONOUS and uses the parent document's already-loaded
+ * fonts — the pixels in the data URL are final before the `<img>` ever
+ * enters the DOM, so the first raster is the correct raster. (The
+ * previous bake was an SVG data URI with the editor font embedded as a
+ * base64 `@font-face` inside the image's own document; WebKit loads
+ * such fonts asynchronously and does not reliably re-rasterize the
+ * image when they land, so a chip could paint its label in a fallback
+ * font — or not at all — until an unrelated repaint invalidated it.)
+ *
+ * Colors read from theme tokens via getTokenValue. The bake is
+ * regenerated on theme change (see TugTextEngine.regenerateAtoms).
  */
 
 import { getTokenValue } from "@/theme-tokens";
-import { findEmbeddableFace } from "./tug-atom-fonts";
 import { chipStyle, chipDisplayLabel, chipHasIcon, ATOM_KEY_WASH } from "./command-atom";
 import type { ChipVariant } from "./command-atom";
 
@@ -36,10 +45,6 @@ export const ATOM_RECESS = {
   shadeOpacity: 0.14,
   shadeStop: 0.12,
 } as const;
-
-/** DOM id of the recess top-shade gradient inside a baked chip's isolated
- *  SVG document. Constant is safe — each data-URI is its own document. */
-const BAKED_RECESS_GRADIENT_ID = "tug-atom-recess";
 
 // ---- Types ----
 
@@ -98,13 +103,6 @@ export interface AtomImgOptions {
   pending?: boolean;
 }
 
-// ---- SVG helpers ----
-
-/** Escape text for safe interpolation into SVG/XML markup. */
-function escapeSVG(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 /** Lucide-style icon paths (24x24 viewBox) for atom types. */
 const ATOM_ICON_PATHS: Record<string, string> = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
@@ -117,9 +115,10 @@ const ATOM_ICON_PATHS: Record<string, string> = {
 // ---- Layout constants ----
 
 let _fontSize = 12;
-/** Font family stack for Canvas measurement and SVG rendering (full stack
- *  including custom @font-face fonts — resolved inside the SVG via inline
- *  @font-face embedding; see tug-atom-fonts.ts). */
+/** Font family stack for Canvas measurement AND Canvas label painting —
+ *  the same string drives both, so measured bounds always fit the
+ *  painted glyphs. Custom faces resolve from the parent document's
+ *  own @font-face rules (the Canvas shares the document's font set). */
 let _measureFamily = "system-ui, sans-serif";
 /**
  * Atom label size as a fraction of the editor font size. Held at 1.0 so the
@@ -208,7 +207,7 @@ export function setAtomFont(family: string, size?: number): void {
 
 /**
  * vertical-align offset (px) so the atom's internal text baseline aligns
- * with the surrounding text baseline, for a given font size. The SVG
+ * with the surrounding text baseline, for a given font size. The chip
  * draws label text with its baseline at `atomHeightFor(size)/2 + size *
  * 0.32` from the top of the box, so the IMG's bottom must sit
  * `atomHeightFor(size)/2 - size * 0.32` below the parent baseline —
@@ -259,52 +258,16 @@ function truncateLabel(label: string, maxWidth: number, fontShorthand: string = 
   return label.slice(0, best) + ellipsis;
 }
 
-// ---- SVG generation ----
-
-/**
- * Resolve the font-family to render inside the SVG and the @font-face
- * block to inline so the SVG can use it. Picks the first family from
- * the given stack that has been loaded via @font-face + discovered by
- * tug-atom-fonts. Falls back to a generic family name only — still
- * inherits the generic keyword so the SVG's monospace/sans pick is
- * preserved when a custom font hasn't loaded yet.
- */
-function resolveSvgFont(family: string, weight: number): { fontFamily: string; fontFaceCSS: string } {
-  const face = findEmbeddableFace(family, weight, "normal");
-  if (face) {
-    const generic = pickGenericFallback(family);
-    return {
-      fontFamily: `&quot;${face.family}&quot;${generic ? `, ${generic}` : ""}`,
-      fontFaceCSS: face.css,
-    };
-  }
-  return { fontFamily: pickGenericFallback(family) || "sans-serif", fontFaceCSS: "" };
-}
-
-/** Extract the last generic family keyword from a CSS font-family stack. */
-function pickGenericFallback(stack: string): string {
-  const generics = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded"]);
-  const parts = stack.split(",").map((s) => s.replace(/["']/g, "").trim());
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (generics.has(parts[i])) return parts[i];
-  }
-  return "";
-}
-
-function svgToDataURI(svg: string): string {
-  return "data:image/svg+xml," + encodeURIComponent(svg);
-}
-
 // ---- Chip geometry (shared between data-URI and inline-SVG renderers) ----
 
 /**
  * Pure layout description for an atom chip. Produced by
  * {@link computeAtomChipGeometry}; consumed by both the editor's
- * data-URI baker ({@link buildAtomSVGDataUri}) and the React-side
+ * data-URI baker ({@link bakeAtomChipDataUri}) and the React-side
  * inline-`<svg>` component (`TugAtomChip`). Carries everything a
  * renderer needs to paint the chip *except* the four theme colors —
- * those are baked as hex by the data-URI path (since CSS can't reach
- * inside an `<img src="data:...">` document) and resolved as CSS
+ * those are baked as pixels by the data-URI path (an `<img
+ * src="data:...">` can't reach the host cascade) and resolved as CSS
  * variables by the inline-`<svg>` path (so a theme switch re-paints
  * for free).
  */
@@ -325,18 +288,21 @@ export interface AtomChipGeometry {
   hasIcon: boolean;
   /** `transform` attribute for the icon `<g>` (translate + scale). */
   iconTransform: string;
-  /** `x` for the `<text>` element. */
+  /** Icon origin (px) — the numeric pieces of {@link iconTransform},
+   *  for renderers that place the icon via Canvas transforms. */
+  iconX: number;
+  iconY: number;
+  /** Scale factor from the icon's 24×24 viewBox to its rendered size. */
+  iconScale: number;
+  /** `x` for the label text. */
   textX: number;
-  /** `y` for the `<text>` element (baseline). */
+  /** `y` for the label text (baseline). */
   textY: number;
   /** Effective font size in px. */
   fontSize: number;
-  /** Resolved family for the SVG `<text>` element (may quote a custom
-   *  face followed by a generic fallback). */
-  svgFontFamily: string;
-  /** `@font-face` block to inline in `<defs><style>`. Empty when no
-   *  custom face needs embedding. */
-  fontFaceCSS: string;
+  /** The font-family stack used for label measurement. Renderers MUST
+   *  paint with the same stack or the measured bounds won't fit. */
+  fontFamily: string;
   /** Vertical-align offset (px) for `<img>`-based renderers — see
    *  {@link atomBaselineOffsetFor}. Inline-`<svg>` renderers ignore
    *  this and align via the shared `.tug-atom-chip` CSS rule. */
@@ -374,8 +340,9 @@ export function computeAtomChipGeometry(
   const hasIcon = chipHasIcon(type);
   const iconSpan = hasIcon ? icon_px + gap : 0;
   const width = paddingX + iconSpan + Math.ceil(textWidth) + paddingX;
-  const iconTransform = `translate(${paddingX},${(height_px - icon_px) / 2}) scale(${icon_px / 24})`;
-  const { fontFamily: svgFontFamily, fontFaceCSS } = resolveSvgFont(family, 400);
+  const iconX = paddingX;
+  const iconY = (height_px - icon_px) / 2;
+  const iconScale = icon_px / 24;
   return {
     iconPath: ATOM_ICON_PATHS[type] ?? ATOM_ICON_PATHS.file,
     displayLabel,
@@ -383,32 +350,151 @@ export function computeAtomChipGeometry(
     height: height_px,
     radius,
     hasIcon,
-    iconTransform,
+    iconTransform: `translate(${iconX},${iconY}) scale(${iconScale})`,
+    iconX,
+    iconY,
+    iconScale,
     textX: paddingX + iconSpan,
     textY: height_px / 2 + size * 0.32,
     fontSize: size,
-    svgFontFamily,
-    fontFaceCSS,
+    fontFamily: family,
     baselineOffset: atomBaselineOffsetFor(size),
   };
+}
+
+// ---- Canvas painting helpers ----
+
+/**
+ * Raster scale for the PNG bake, in device pixels per CSS px. Uses the
+ * screen's own density with 2× headroom so the chip stays crisp when
+ * the Swift host's `WKWebView.pageZoom` scales the page up — the baked
+ * bitmap is displayed at CSS size via the `<img width/height>`
+ * attributes, so extra resolution costs only a few KB per chip.
+ */
+function bakeScale(): number {
+  const dpr =
+    typeof window !== "undefined" && window.devicePixelRatio
+      ? window.devicePixelRatio
+      : 1;
+  return Math.min(6, Math.max(2, dpr * 2));
+}
+
+/** Trace a rounded-rect path (the Canvas analogue of `<rect rx>`). */
+function traceRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+/**
+ * Stroke the elements of an {@link ATOM_ICON_PATHS} markup string onto
+ * a Canvas whose transform already maps the icon's 24×24 viewBox to
+ * its rendered box. The icon set uses exactly three element kinds —
+ * `<path d>`, `<rect x y width height rx ry>`, `<circle cx cy r>` — so
+ * a targeted parse covers it; an unrecognized element would simply not
+ * draw, which the gallery smoke would catch on the next icon addition.
+ */
+function strokeIconMarkup(ctx: CanvasRenderingContext2D, markup: string): void {
+  const elementRe = /<(path|rect|circle)\b([^>]*?)\/>/g;
+  for (const el of markup.matchAll(elementRe)) {
+    const attrs: Record<string, string> = {};
+    for (const a of el[2]!.matchAll(/([a-zA-Z-]+)="([^"]*)"/g)) {
+      attrs[a[1]!] = a[2]!;
+    }
+    switch (el[1]) {
+      case "path":
+        ctx.stroke(new Path2D(attrs.d ?? ""));
+        break;
+      case "rect":
+        traceRoundedRect(
+          ctx,
+          Number(attrs.x ?? 0),
+          Number(attrs.y ?? 0),
+          Number(attrs.width ?? 0),
+          Number(attrs.height ?? 0),
+          Number(attrs.rx ?? 0),
+        );
+        ctx.stroke();
+        break;
+      case "circle":
+        ctx.beginPath();
+        ctx.arc(
+          Number(attrs.cx ?? 0),
+          Number(attrs.cy ?? 0),
+          Number(attrs.r ?? 0),
+          0,
+          Math.PI * 2,
+        );
+        ctx.stroke();
+        break;
+    }
+  }
+}
+
+/**
+ * Paint the recess top shade: `border` color fading from
+ * `shadeOpacity` at the top edge to transparent by `shadeStop` of the
+ * height, clipped to the chip's rounded shape. Painted through an
+ * offscreen alpha mask because Canvas gradient stops need their alpha
+ * inline in the color string, and the resolved theme token can be any
+ * CSS color format — `destination-in` applies a pure alpha ramp to the
+ * already-filled shape without ever parsing the color.
+ */
+function paintRecessShade(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radius: number,
+  borderColor: string,
+  scale: number,
+): void {
+  const off = document.createElement("canvas");
+  off.width = Math.max(1, Math.round(width * scale));
+  off.height = Math.max(1, Math.round(height * scale));
+  const octx = off.getContext("2d");
+  if (octx === null) return;
+  octx.scale(off.width / width, off.height / height);
+  octx.fillStyle = borderColor;
+  traceRoundedRect(octx, 0, 0, width, height, radius);
+  octx.fill();
+  octx.globalCompositeOperation = "destination-in";
+  const ramp = octx.createLinearGradient(0, 0, 0, height);
+  ramp.addColorStop(0, `rgba(0,0,0,${ATOM_RECESS.shadeOpacity})`);
+  ramp.addColorStop(ATOM_RECESS.shadeStop, "rgba(0,0,0,0)");
+  ramp.addColorStop(1, "rgba(0,0,0,0)");
+  octx.fillStyle = ramp;
+  octx.fillRect(0, 0, width, height);
+  ctx.drawImage(off, 0, 0, width, height);
 }
 
 // ---- Public API ----
 
 /**
- * Result of {@link buildAtomSVGDataUri}: a self-describing SVG chip
+ * Result of {@link bakeAtomChipDataUri}: a self-describing chip bitmap
  * the caller can apply to an `<img>` (the editor's CM6 widget) or
  * a React-rendered `<img>` (the transcript walker), without either
- * surface re-implementing the SVG / theme-token / baseline math.
+ * surface re-implementing the paint / theme-token / baseline math.
  *
  * Pure data — no DOM references. Both numeric fields are in px.
  */
-export interface AtomSvgResult {
-  /** `data:image/svg+xml,…` URI ready for `<img src=...>`. */
+export interface AtomChipBake {
+  /** `data:image/png;base64,…` URI ready for `<img src=...>`. */
   dataUri: string;
-  /** Chip width in px — set on `<img width=...>` for layout stability. */
+  /** Chip width in CSS px — set on `<img width=...>` for layout stability. */
   width: number;
-  /** Chip height in px — set on `<img height=...>`. */
+  /** Chip height in CSS px — set on `<img height=...>`. */
   height: number;
   /**
    * Vertical-align offset in px (typically negative). Apply as
@@ -419,35 +505,40 @@ export interface AtomSvgResult {
 }
 
 /**
- * Build the SVG-chip data URI + geometry for an atom. Used by the
- * editor's `createAtomImgElement` (imperative `<img>` for CM6 widgets)
- * — colors are baked as hex into the SVG because the `<img src="data:…">`
- * document is isolated from the host CSS cascade. React-side surfaces
- * use `TugAtomChip` (inline `<svg>`) instead, which re-paints for free
- * on theme switch via CSS-variable cascading.
+ * Paint an atom chip with Canvas 2D and bake it to a PNG data URI.
+ * Used by the editor's `createAtomImgElement` (imperative `<img>` for
+ * CM6 widgets) — colors are baked as pixels because the `<img>` can't
+ * reach the host CSS cascade. React-side surfaces use `TugAtomChip`
+ * (inline `<svg>`) instead, which re-paints for free on theme switch
+ * via CSS-variable cascading.
+ *
+ * The bake is synchronous and final: the label is drawn with the
+ * parent document's fonts (already loaded — the same faces the Canvas
+ * measurement used), so the `<img>`'s first raster shows the finished
+ * chip. No font resolution happens inside the image.
  *
  * Reads theme tokens via `getTokenValue` at call time. The CM6
  * widget's regeneration counter ({@link AtomWidget} in
  * `atom-decoration.ts`) busts the reconciliation cache so the editor
  * refreshes after a theme switch.
  */
-export function buildAtomSVGDataUri(
+export function bakeAtomChipDataUri(
   type: string,
   label: string,
   value: string,
   options?: {
     maxLabelWidth?: number;
     /**
-     * Override the font family used for SVG text rendering AND
-     * Canvas-side text measurement (the two must match or the chip's
-     * bounds won't fit the rendered label). When omitted, the chip
-     * uses the module-state `_measureFamily` last set via
-     * {@link setAtomFont} — which the editor settings store calls
-     * when the user's font preference changes.
+     * Override the font family used for label painting AND label
+     * measurement (the two must match or the chip's bounds won't fit
+     * the rendered text). When omitted, the chip uses the
+     * module-state `_measureFamily` last set via {@link setAtomFont}
+     * — which the editor settings store calls when the user's font
+     * preference changes.
      */
     fontFamily?: string;
     /**
-     * Override the font size (in px) used for SVG text and Canvas
+     * Override the font size (in px) used for label painting and
      * measurement. When omitted, defaults to the module-state
      * `_fontSize`.
      */
@@ -461,63 +552,97 @@ export function buildAtomSVGDataUri(
      */
     variant?: ChipVariant;
   },
-): AtomSvgResult {
+): AtomChipBake {
   // A slash command displays its leading slash (`/tugplug:commit`); every
   // other type shows its stored label. Both renderers route through
   // `chipDisplayLabel` so the text is identical across editor and transcript.
   const displayLabel = chipDisplayLabel(type, label, value);
   const g = computeAtomChipGeometry(type, displayLabel, options);
-  // Colors come from the shared chip style. The editor path bakes resolved
-  // hex because the `<img src="data:…">` document is isolated from the host
-  // cascade.
+  // Colors come from the shared chip style, resolved to concrete values
+  // at bake time.
   const tokens = chipStyle(options?.variant).tokens;
   const surfaceColor = getTokenValue(tokens.surface);
   const keyColor = getTokenValue(tokens.key);
   const borderColor = getTokenValue(tokens.border);
   const iconColor = getTokenValue(tokens.icon);
   const textColor = getTokenValue(tokens.text);
-  // The recess top-shade gradient is declared in <defs> alongside any embedded
-  // font face. The Key wash is an overlay rect (below), not color-mix, so it
-  // resolves inside the isolated `<img>` document.
-  const gradient =
-    `<linearGradient id="${BAKED_RECESS_GRADIENT_ID}" x1="0" y1="0" x2="0" y2="1">`
-    + `<stop offset="0" stop-color="${borderColor}" stop-opacity="${ATOM_RECESS.shadeOpacity}"/>`
-    + `<stop offset="${ATOM_RECESS.shadeStop}" stop-color="${borderColor}" stop-opacity="0"/>`
-    + `</linearGradient>`;
-  const defs = `<defs>${gradient}${g.fontFaceCSS ? `<style>${g.fontFaceCSS}</style>` : ""}</defs>`;
-  const icon = g.hasIcon
-    ? `<g transform="${g.iconTransform}" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${g.iconPath}</g>`
-    : "";
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${g.width}" height="${g.height}" viewBox="0 0 ${g.width} ${g.height}">`,
-    defs,
-    // Base surface (opaque), then the Key wash overlay — together a 9% wash,
-    // no hard stroke.
-    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="${surfaceColor}"/>`,
-    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="${keyColor}" fill-opacity="${ATOM_KEY_WASH}"/>`,
-    // Recess: top inner shade, then a faint inset hairline.
-    `<rect x="0" y="0" width="${g.width}" height="${g.height}" rx="${g.radius}" fill="url(#${BAKED_RECESS_GRADIENT_ID})"/>`,
-    `<rect x="0.5" y="0.5" width="${g.width - 1}" height="${g.height - 1}" rx="${Math.max(0, g.radius - 0.5)}" fill="none" stroke="${borderColor}" stroke-opacity="${ATOM_RECESS.hairlineOpacity}" stroke-width="1"/>`,
-    icon,
-    `<text x="${g.textX}" y="${g.textY}" font-size="${g.fontSize}" font-family="${g.svgFontFamily}" fill="${textColor}">${escapeSVG(g.displayLabel)}</text>`,
-    `</svg>`,
-  ].join("");
+
+  const scale = bakeScale();
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(g.width * scale));
+  canvas.height = Math.max(1, Math.round(g.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) {
+    // No 2D context (should not happen in WebKit) — a blank chip of the
+    // right size beats a thrown widget render.
+    return {
+      dataUri: canvas.toDataURL("image/png"),
+      width: g.width,
+      height: g.height,
+      baselineOffset: g.baselineOffset,
+    };
+  }
+  ctx.scale(canvas.width / g.width, canvas.height / g.height);
+
+  // Base surface (opaque), then the Key wash overlay — together a 9%
+  // wash, no hard stroke.
+  ctx.fillStyle = surfaceColor;
+  traceRoundedRect(ctx, 0, 0, g.width, g.height, g.radius);
+  ctx.fill();
+  ctx.globalAlpha = ATOM_KEY_WASH;
+  ctx.fillStyle = keyColor;
+  traceRoundedRect(ctx, 0, 0, g.width, g.height, g.radius);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Recess: top inner shade, then a faint inset hairline.
+  paintRecessShade(ctx, g.width, g.height, g.radius, borderColor, scale);
+  ctx.globalAlpha = ATOM_RECESS.hairlineOpacity;
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1;
+  traceRoundedRect(
+    ctx,
+    0.5,
+    0.5,
+    g.width - 1,
+    g.height - 1,
+    Math.max(0, g.radius - 0.5),
+  );
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  if (g.hasIcon) {
+    ctx.save();
+    ctx.translate(g.iconX, g.iconY);
+    ctx.scale(g.iconScale, g.iconScale);
+    ctx.strokeStyle = iconColor;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    strokeIconMarkup(ctx, g.iconPath);
+    ctx.restore();
+  }
+
+  ctx.font = `${g.fontSize}px ${g.fontFamily}`;
+  ctx.fillStyle = textColor;
+  ctx.fillText(g.displayLabel, g.textX, g.textY);
+
   return {
-    dataUri: svgToDataURI(svg),
+    dataUri: canvas.toDataURL("image/png"),
     width: g.width,
     height: g.height,
     baselineOffset: g.baselineOffset,
   };
 }
 
-/** Create an atom <img> element with SVG data URI. */
+/** Create an atom <img> element with a baked PNG data URI. */
 export function createAtomImgElement(
   type: string,
   label: string,
   value: string,
   options?: AtomImgOptions,
 ): HTMLImageElement {
-  const { dataUri, width, height, baselineOffset } = buildAtomSVGDataUri(
+  const { dataUri, width, height, baselineOffset } = bakeAtomChipDataUri(
     type,
     label,
     value,

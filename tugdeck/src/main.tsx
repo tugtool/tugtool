@@ -46,7 +46,7 @@ import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-p
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
-import { ensureAtomFontsLoaded } from "./lib/tug-atom-fonts";
+import { FONT_STACKS } from "./lib/editor-settings-store";
 import { deserialize } from "./serialization";
 import { attachTugTestSurface } from "./test-surface";
 import { installHmrBridge } from "./hmr-bridge";
@@ -231,12 +231,14 @@ if (!container) {
   // Capture the baseline sentinel for theme change detection.
   initThemeTokens();
 
-  // Preload the atom SVG font faces now, once the theme's @font-face rules
-  // are in the document. Fetch + base64-encode runs off the atom-creation
-  // path so the first atom renders in the embedded font instead of a
-  // generic fallback that later flips. Idempotent with the editor
-  // settings store's own call.
-  void ensureAtomFontsLoaded();
+  // Warm the editor font stacks now, once the @font-face rules are in
+  // the document, so the first atom-chip bake (Canvas measurement +
+  // label paint in tug-atom-img.ts) already has its faces decoded —
+  // a not-yet-loaded face silently falls back and the chip would need
+  // a re-bake. The editor settings store re-warms on font changes.
+  for (const stack of Object.values(FONT_STACKS)) {
+    void document.fonts.load(`13px ${stack}`).catch(() => undefined);
+  }
 
   // Initialize motion observer early so data-tug-motion attribute is set before
   // DeckManager construction. The cleanup function is intentionally not stored

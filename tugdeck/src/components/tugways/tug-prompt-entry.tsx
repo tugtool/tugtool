@@ -868,7 +868,7 @@ export interface TugPromptEntryDelegate {
   getEditorElement(): HTMLElement | null;
   /**
    * Regenerate atom widgets — needed when the editor font or theme
-   * tokens change so the SVG-rendered atom chips pick up the new
+   * tokens change so the baked atom chips pick up the new
    * family/size. Forwards to the substrate's
    * `regenerateAtomsEffect` dispatch.
    */

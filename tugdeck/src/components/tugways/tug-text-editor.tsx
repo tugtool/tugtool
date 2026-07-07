@@ -2363,7 +2363,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       // with the live view.
       setView(view);
 
-      // Atom SVGs bake their colors at construction time (`tug-atom-img.ts`
+      // Atom chips bake their colors at construction time (`tug-atom-img.ts`
       // resolves token values via `getTokenValue` at the moment the
       // `<img>` is built). When the application theme changes, those
       // colors are stale, so we dispatch a `regenerateAtomsEffect` to

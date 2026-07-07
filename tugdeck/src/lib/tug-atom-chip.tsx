@@ -3,12 +3,11 @@
  * inline `<svg>` with CSS-variable-driven `fill` / `stroke` and
  * font-family inherited from the surrounding text.
  *
- * Companion to `tug-atom-img.ts`'s {@link buildAtomSVGDataUri}, which
- * bakes resolved hex colors AND embeds the editor's custom font face
- * via `@font-face` into a `data:image/svg+xml,…` URI for the editor's
- * CM6 widget (the `<img>` document is isolated from the host CSS
- * cascade, so neither CSS variables nor document-loaded fonts reach
- * inside). This component is the React-side path — `TugAtomTextBody`
+ * Companion to `tug-atom-img.ts`'s {@link bakeAtomChipDataUri}, which
+ * paints the chip with Canvas 2D — resolved colors, the editor's own
+ * document fonts — and bakes it to a `data:image/png,…` URI for the
+ * editor's CM6 widget (an `<img>` can't reach the host CSS cascade).
+ * This component is the React-side path — `TugAtomTextBody`
  * (transcript chips) and the four tool-block path renderers consume
  * it.
  *
@@ -232,7 +231,7 @@ export const TugAtomChip = React.forwardRef<SVGSVGElement, TugAtomChipProps>(
           x={geom.textX}
           y={geom.textY}
           fontSize={geom.fontSize}
-          fontFamily={chipFontFamily}
+          fontFamily={geom.fontFamily}
           fill={`var(${tokens.text})`}
         >
           {geom.displayLabel}
