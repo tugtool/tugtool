@@ -2372,6 +2372,37 @@ export function DevCardBody({
   // drift from the composite bit when `activePaneId` does not match
   // the top pane (post-detach or post-move edge cases).
   const cardLifecycle = useCardLifecycle();
+  const focusManager = useFocusManager();
+
+  // Dev-card's focus destination is ONE rule, not one element: the card's
+  // pushed key destination when its focus context owns one — a pending
+  // card-modal dialog's trap, a descended scope ([P20]) — and the resting
+  // `tug-prompt-entry` otherwise. Several lifecycle triggers need to
+  // re-claim that destination; each is gated on this card being first
+  // responder so a background-card event never steals focus from the card
+  // the user is actually in. The guard-and-claim is consolidated here so it
+  // is one named thing, not a copy per trigger.
+  //
+  // The [P20] gate matters: a trigger that fires while a Question /
+  // Permission dialog is pending (a title-bar click's zero-move
+  // `cardDidMove`, a banner closing over the scrim) must land focus back on
+  // the DIALOG's key view, never re-assert the deactivated editor — the
+  // editor claim can't move DOM focus (the entry stands down under the
+  // scrim) but its responder promotion still re-seeds the key view off the
+  // dialog's stop, stripping the ring and the arrow walk. `adoptKeyCard` is
+  // the same gate `applyBagFocus` runs on every activation claim.
+  const reclaimFocusDestination = useCallback((): void => {
+    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+    // While cycling, the cycle owns focus — a sheet opened from a cycle stop
+    // returns to its stop (the retain disposition) or relinquishes via the engine
+    // (the cycle's `restingFocus` lands the caret). Either way the card must NOT
+    // also reclaim the editor here, or it would clobber the chip restore on a
+    // retain close ([P15]). This reclaim is for sheets/banners closed outside a
+    // cycle (a slash-command picker, a banner).
+    if (cycle.cycling) return;
+    if (focusManager?.adoptKeyCard(cardId) === true) return;
+    entryDelegateRef.current?.focus();
+  }, [cardLifecycle, cardId, entryDelegateRef, cycle, focusManager]);
 
   useCardDelegate(cardId, {
     cardDidActivate: () => {
@@ -2413,7 +2444,7 @@ export function DevCardBody({
         cardId,
         delegate: "cardDidMove",
       });
-      entryDelegateRef.current?.focus();
+      reclaimFocusDestination();
     },
     cardDidResize: () => {
       if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
@@ -2422,7 +2453,7 @@ export function DevCardBody({
         cardId,
         delegate: "cardDidResize",
       });
-      entryDelegateRef.current?.focus();
+      reclaimFocusDestination();
     },
   });
 
@@ -2475,34 +2506,14 @@ export function DevCardBody({
   //       every overlay show/hide cycle by this contract.
   // [L24] structure-zone (`inert` clearing) drives structure-zone
   //       (focus reclaim) via the per-overlay event pipe.
-  // Dev-card's one focus destination is its `tug-prompt-entry`.
-  // Several lifecycle triggers need to re-claim it; each is gated on
-  // this card being first responder so a background-card event never
-  // steals focus from the card the user is actually in. The
-  // guard-and-claim is consolidated here so it is one named thing,
-  // not a copy per trigger. (`cardDidMove` / `cardDidResize` keep
-  // their own inline form — they additionally emit a
-  // `macrotask-focus-claim` trace event.)
-  const reclaimEntryFocus = useCallback((): void => {
-    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
-    // While cycling, the cycle owns focus — a sheet opened from a cycle stop
-    // returns to its stop (the retain disposition) or relinquishes via the engine
-    // (the cycle's `restingFocus` lands the caret). Either way the card must NOT
-    // also reclaim the editor here, or it would clobber the chip restore on a
-    // retain close ([P15]). This reclaim is for sheets/banners closed outside a
-    // cycle (a slash-command picker, a banner).
-    if (cycle.cycling) return;
-    entryDelegateRef.current?.focus();
-  }, [cardLifecycle, cardId, entryDelegateRef, cycle]);
-
   useSheetDelegate(cardId, {
     sheetDidHide: () => {
-      reclaimEntryFocus();
+      reclaimFocusDestination();
     },
   });
   useBannerDelegate(cardId, {
     bannerDidHide: () => {
-      reclaimEntryFocus();
+      reclaimFocusDestination();
     },
   });
 
@@ -2516,7 +2527,7 @@ export function DevCardBody({
   // (the body can also mount inside an inactive stack on cold-boot /
   // restore, where the cold-boot RESTORE path owns focus).
   useLayoutEffect(() => {
-    reclaimEntryFocus();
+    reclaimFocusDestination();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

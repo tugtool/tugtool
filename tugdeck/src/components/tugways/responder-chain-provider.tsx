@@ -878,7 +878,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         }
         return null;
       }
-      const card = el.closest(CARD_MODAL_SCRIM_SELECTOR);
+      let card = el.closest(CARD_MODAL_SCRIM_SELECTOR);
+      if (card === null) {
+        // Pane chrome around a card-modal card — the title bar, frame, and
+        // resize edges live OUTSIDE the card root that carries the scrim
+        // attribute, but the modality covers them all the same: a click
+        // there (including the activation click that brings the pane back)
+        // must not promote the pane responder and coarsen the dialog's
+        // trapped key view. Match the pane whose VISIBLE card is card-modal
+        // (an inactive tab's dialog is display:none → offsetParent null).
+        const pane = el.closest(".tug-pane");
+        const paneModal =
+          pane?.querySelector<HTMLElement>(CARD_MODAL_SCRIM_SELECTOR) ?? null;
+        card =
+          paneModal !== null && paneModal.offsetParent !== null
+            ? paneModal
+            : null;
+      }
       if (card === null) return null;
       // A click already inside the bright dialog island behaves normally.
       if (el.closest(DIALOG_ISLAND_SELECTOR) !== null) return null;

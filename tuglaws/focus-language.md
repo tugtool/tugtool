@@ -37,7 +37,7 @@ There is no role-less branch. Every focusable's ring, selection-fill, and behind
 A pure action control has no separate "selected" state, so the cursor takes over the fill — but **solid fill is reserved for selection and the live (focused) control**. Three resting states:
 
 - **Rest** — outlined.
-- **Recommended default** — the button `Return` fires while the cursor rests elsewhere — rests at a **tint** (`primary` emphasis) with a ring. This is the `persistentDefaultRing` treatment; the engine owns the `data-default-ring` attribute so the one-filled-ring-per-scope invariant is structural.
+- **Recommended default** — the button `Return` fires while the cursor rests elsewhere — rests at a **tint** (`primary` emphasis) with a ring. This is the `persistentDefaultRing` treatment; the engine owns the `data-default-ring` attribute so the one-filled-ring-per-scope invariant is structural. The ring is a **promise, and it must be honest**: `persistentDefaultRing` both paints the ring and registers the button as the scope's Return-home, so it must be set only while `Return` really fires that button. A surface whose `Return` is consumed elsewhere mid-flow gates it — the question wizard's Submit wears the ring only at the review step with every question answered (`Return` on a live question commits-and-advances; before review the ring would lie). The at0202 suite pins this, together with the reveal that scrolls the newly-lit Submit into view.
 - **Live / focused** — promotes to its **filled** role style + a role-colored ring; siblings demote to outlined.
 
 A whole **container** that becomes the key view (popover, sheet, alert, inline-dialog box) can't fill: it wears a box-shadow ring that hugs the radius with no reflow, and the quiet "within" variant when it merely contains the active control.
@@ -57,6 +57,19 @@ Keyboard motion moves on two independent planes, and **commit is a separate act*
 **Per-card key-window model.** Focus contexts are **per card**. Each card owns its own key view, cursor, default-ring stack, scope stack, **and first responder**, like windows in a windowing system; only the active card's context is live.
 
 The first responder is the chain's *single global* register (see [responder-chain.md](responder-chain.md)), but the key-window model makes focus per-card — so card **activation must restore the first responder** alongside the key view, as the fifth per-card axis. The engine does this in `FocusManager.adoptKeyCard` ([P21] activation): it promotes the responder that contains the activated card's key view (a resting card's editor; a sheet's focused control → the sheet's responder). Without it, a first-responder-routed accelerator (Cmd-W `close`, Cmd-. `cancel-dialog`) is dropped on the just-activated card while the engine's Escape ladder — which reads the active context directly — still works. The first responder must NOT be left to ride DOM `focusin`: that does not fire when the activated key view is a focus-refusing control (a dialog button) or when the activation `.focus()` is idempotency-skipped (DOM focus already on target).
+
+## The card's focus destination — one rule
+
+A card has **one focus destination at any moment**, and it is a rule, not an element: the context's **pushed key destination** when it owns one — a pending card-modal dialog's trap (Question / Permission), a mid-flow focus cycle, a descended scope — and the **resting editor** otherwise ([P20]). Every path that places focus "back on a card" must resolve the destination through that rule:
+
+- **Activation** (click, tab switch, pane promotion, cross-pane move, window blur→focus, cold boot) dispatches through `applyBagFocus`, whose first act is `adoptKeyCard`: a context that owns a pushed destination gets its key view focused and the resting-editor claim is skipped.
+- **Lifecycle reclaims** — a sheet/banner `didHide` over the card, a pane drag/resize commit (`cardDidMove` / `cardDidResize`, which fire even for a zero-move title-bar click), the body's mount claim — run the same gate before falling back to the editor (the dev card consolidates this as `reclaimFocusDestination`).
+
+A raw "focus the editor" claim is a bug even when it *looks* harmless: under a modal scrim the entry stands down, so the claim cannot move DOM focus — but its **responder promotion still fires**, the chain seed re-points the key view at the editor, and the dialog silently loses its ring and arrow walk while DOM focus sits correctly on the dialog. Symptomless in the DOM, dead to the keyboard.
+
+**The modal barrier covers pane chrome.** While a card is card-modal, a pointerdown anywhere in its pane *outside the bright dialog island* — the scrimmed transcript, and equally the pane's **title bar, frame, and resize edges** — is a stray click: the chain redirects its promotion to the dialog island as a programmatic (non-pointer) promotion, so the seed yields to the dialog's finer key view and the ring survives. Only the pane whose *visible* card is modal participates; a background tab's dialog does not capture its pane. The click still activates the pane / starts the drag — it just never re-places the keyboard.
+
+Boundaries pinned by tests: window blur→focus (at0148), resting-card activation clicks for every click target (at0201), cross-card click-away/click-back onto a modal card — title bar and content, both dialog kinds (at0203).
 
 ---
 
@@ -84,7 +97,8 @@ Building a control or surface that participates in the language:
 - **Appearance is CSS only** ([L06]). Style focus/selection by selecting on the engine attributes above. Never drive a focus style from React state.
 - **Author controls into a focus group.** Give every focusable a `focusGroup` (the enclosing surface's group) and a `focusOrder`; that is what puts it in the `Tab` walk and the spatial plane. A control with neither is a native-only stop and will read as "Tab skips it."
 - **Seed the opening key view** with `useSeedKeyView(\`${group}:${order}\`)` — the field for a form, the list for a picker, the default button for a button-only surface. For a Radix-trapped dialog, prefer `onOpenAutoFocus` → `event.preventDefault()` + `focusManager.armKeyboardRestore(...)` so the engine, not Radix, owns the seed.
-- **Mark the commit button** with `persistentDefaultRing` (and `primary` emphasis) so it holds the default ring and owns `Return`. Danger confirmations seed the default on **Cancel** so `Return` can't fire a destructive action.
+- **Mark the commit button** with `persistentDefaultRing` (and `primary` emphasis) so it holds the default ring and owns `Return`. Danger confirmations seed the default on **Cancel** so `Return` can't fire a destructive action. Gate the flag when the surface's `Return` is consumed elsewhere mid-flow (a wizard whose options commit on `Return`): the ring must light only when `Return` truly fires the button — see "Buttons" above.
+- **Never focus the resting editor directly from a lifecycle trigger.** Any reclaim that can fire while a card-modal dialog is pending must resolve the card's focus destination through the [P20] gate (`adoptKeyCard`, or the dev card's `reclaimFocusDestination`) — see "The card's focus destination — one rule."
 - **Declare the arrow order** with `useSpatialOrder(rowGridOrder([...]))` (or a hand-built `SpatialOrder`). For a **dialog/sheet/alert**, the `useSpatialOrder` call must run **inside** the trap's `FocusModeScope` — mount a small null-rendering registrar there (see `AlertSpatialOrder` / `ConfirmPopoverSpatialOrder`); calling it in the component body binds the order to the mode *above* the trap ([L03]).
 - **The engine is structure** ([L22]). Key view, cursor, scope stack, and cycling-mode push/pop are the `FocusManager`'s; never mirror them in `useState`.
 
