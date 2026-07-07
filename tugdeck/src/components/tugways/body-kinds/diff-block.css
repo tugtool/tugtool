@@ -3,8 +3,8 @@
    - --tugx-block-strip-bg / --tugx-block-strip-color          (shared header strip)
    - --tugx-block-tone-add-bg / --tugx-block-tone-add-color    (shared add band)
    - --tugx-block-tone-remove-bg / --tugx-block-tone-remove-color (shared remove band)
-   - --tugx-diff-word-add-bg / --tugx-diff-word-add-color      (diff-specific word-level overlay)
-   - --tugx-diff-word-remove-bg / --tugx-diff-word-remove-color (diff-specific word-level overlay)
+   - --tugx-diff-line-add-bg / --tugx-diff-line-remove-bg      (softened line bands)
+   - --tugx-block-tone-add-bg / --tugx-block-tone-remove-bg    (word-level overlay, bg-only)
    `DiffBlock` paints a code-surface frame with a header (path + stats),
    one band per hunk, and three line classes (context, add, remove)
    inside each hunk's body. The shared block-surface scaffold lives in
@@ -61,13 +61,32 @@ body {
   --tugx-diff-marker-padding-x:  var(--tug-space-2xs);
   --tugx-diff-content-padding-x: var(--tug-space-sm);
 
-  /* Word-level intra-line highlight — saturated text colors layered
-   * over the same tone bg as the line. The bgs reuse the shared
-   * `--tugx-block-tone-{add,remove}-bg` family; only the saturated
-   * text colors are diff-specific (`tone-text`, not `global-text`). */
-  --tugx-diff-word-add-color:    var(--tug7-element-tone-text-normal-success-rest);
-  --tugx-diff-word-remove-color: var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-diff-word-radius:       var(--tug-radius-xs);
+  /* Line-band backgrounds — the shared tone surfaces blended toward the
+   * block background. Full-strength tone bands read too heavy across
+   * whole rows of code; the softened wash keeps the add/remove reading
+   * while the word-level overlay below stays at full tone strength, so
+   * intra-line changes stand out against the row. */
+  --tugx-diff-line-add-bg: color-mix(
+    in oklab,
+    var(--tugx-block-tone-add-bg) 60%,
+    var(--tugx-block-bg)
+  );
+  --tugx-diff-line-remove-bg: color-mix(
+    in oklab,
+    var(--tugx-block-tone-remove-bg) 60%,
+    var(--tugx-block-bg)
+  );
+
+  /* Word-level intra-line highlight — background-only. Hand-picked
+   * vivid bands (not derived from the tone surfaces): clearly past the
+   * softened line wash in chroma and lightness, while staying dark
+   * enough here (light enough in the light override below) that
+   * syntax-colored text survives on top. Blending wash and text colors
+   * was tried and lands on olive/brick mud — these are authored
+   * directly instead. */
+  --tugx-diff-word-add-bg: --tug-color(green, l: 440, c: 300);
+  --tugx-diff-word-remove-bg: --tug-color(red, l: 430, c: 260);
+  --tugx-diff-word-radius: var(--tug-radius-xs);
 
   /* Async-loading placeholder */
   --tugx-diff-loading-padding: var(--tug-space-md);
@@ -75,6 +94,15 @@ body {
 
   /* Side-by-side mode */
   --tugx-diff-sbs-column-gap: 1px;
+}
+
+/* Light-appearance word bands — vivid pastels over the pale line wash
+ * (GitHub-style): saturated enough to read as "this exact text
+ * changed" at a glance, light enough that the dark light-mode syntax
+ * colors keep full contrast on top. */
+[data-theme-mode="light"] body {
+  --tugx-diff-word-add-bg: --tug-color(green, l: 880, c: 240);
+  --tugx-diff-word-remove-bg: --tug-color(red, l: 870, c: 180);
 }
 
 .tugx-diff {
@@ -256,12 +284,12 @@ body {
 }
 
 .tugx-diff-line[data-kind="add"] {
-  background: var(--tugx-block-tone-add-bg);
+  background: var(--tugx-diff-line-add-bg);
   color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-line[data-kind="remove"] {
-  background: var(--tugx-block-tone-remove-bg);
+  background: var(--tugx-diff-line-remove-bg);
   color: var(--tugx-block-text-color);
 }
 
@@ -338,12 +366,12 @@ body {
 }
 
 .tugx-diff-sbs-cell[data-kind="add"] {
-  background: var(--tugx-block-tone-add-bg);
+  background: var(--tugx-diff-line-add-bg);
   color: var(--tugx-block-text-color);
 }
 
 .tugx-diff-sbs-cell[data-kind="remove"] {
-  background: var(--tugx-block-tone-remove-bg);
+  background: var(--tugx-diff-line-remove-bg);
   color: var(--tugx-block-text-color);
 }
 
@@ -366,14 +394,12 @@ body {
 /* ---------- Word-level intra-line highlight ---------- */
 
 .tugx-diff-word-add {
-  background: var(--tugx-block-tone-add-bg);
-  color: var(--tugx-diff-word-add-color);
+  background: var(--tugx-diff-word-add-bg);
   border-radius: var(--tugx-diff-word-radius);
 }
 
 .tugx-diff-word-remove {
-  background: var(--tugx-block-tone-remove-bg);
-  color: var(--tugx-diff-word-remove-color);
+  background: var(--tugx-diff-word-remove-bg);
   border-radius: var(--tugx-diff-word-radius);
 }
 

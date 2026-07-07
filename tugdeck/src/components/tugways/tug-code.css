@@ -23,25 +23,59 @@
 
 body {
   /* --- Syntax ---
-     Accent-derived tokens: palette var() references per Phase 5d5e.
+     Accent-derived tokens: a hue-wheel palette so each semantic role reads
+     as its own color at a glance. HARD CONSTRAINT: no red and no green —
+     those hues are reserved for diff add/remove semantics (the diff
+     renderer paints syntax-colored code over green/red tone bands, and a
+     red string or green tag would read as a change that isn't there). The
+     wheel splits warm/cool: literals are warm (amber strings, gold
+     numbers), structure is cool (violet keywords, cornflower functions,
+     cyan properties, plum types), tags are pink. Lightness sits in a
+     narrow band so no role shouts over the others on dark surfaces.
      Text-derived tokens: var() references to --tug-fg-* per [D09] — these do NOT
      need per-theme overrides since they inherit from the already-overridden fg tokens. */
-  --tug-syntax-keyword: --tug-color(cyan, l: 800, c: 260);
-  --tug-syntax-string: --tug-color(coral, l: 550, c: 440);
-  --tug-syntax-number: --tug-color(green, l: 820, c: 440);
-  --tug-syntax-function: --tug-color(yellow, l: 900, c: 260);
-  --tug-syntax-type: --tug-color(green, l: 820, c: 440);
-  --tug-syntax-variable: --tug-color(cyan, l: 800, c: 260);
+  --tug-syntax-keyword: --tug-color(violet, l: 760, c: 300);
+  --tug-syntax-string: --tug-color(amber, l: 820, c: 260);
+  --tug-syntax-string-expression: --tug-color(orange, l: 780, c: 280);
+  --tug-syntax-number: --tug-color(gold, l: 840, c: 240);
+  --tug-syntax-function: --tug-color(cobalt, l: 780, c: 280);
+  --tug-syntax-type: --tug-color(plum, l: 780, c: 260);
+  --tug-syntax-property: --tug-color(cyan, l: 800, c: 240);
+  --tug-syntax-variable: --tug-color(cyan, l: 800, c: 240);
   /* text-derived — inherits per-theme via fg-muted override */
   --tugx-syntax-comment: var(--tug7-element-global-text-normal-muted-rest);
   /* text-derived — inherits per-theme via fg-default override */
   --tugx-syntax-operator: var(--tug7-element-global-text-normal-default-rest);
   --tugx-syntax-punctuation: var(--tug7-element-global-text-normal-default-rest);
-  --tug-syntax-constant: --tug-color(cyan, l: 800, c: 260);
-  --tug-syntax-decorator: --tug-color(violet, l: 710, c: 300);
-  --tug-syntax-tag: --tug-color(cyan, l: 800, c: 260);
-  --tug-syntax-attribute: --tug-color(cyan, l: 800, c: 260);
+  --tug-syntax-constant: --tug-color(gold, l: 840, c: 240);
+  --tug-syntax-decorator: --tug-color(purple, l: 760, c: 280);
+  --tug-syntax-tag: --tug-color(pink, l: 780, c: 280);
+  --tug-syntax-attribute: --tug-color(cyan, l: 800, c: 240);
+}
 
+/* Light-appearance syntax palette. The accent-derived tokens above are
+   fixed-lightness values tuned for dark surfaces; on the light themes those
+   pale accents fall below readable contrast. Same hues, darker rung. The
+   text-derived tokens (comment/operator/punctuation) already flow through
+   `--tug7-*` and need no override. `data-theme-mode` is reflected onto
+   `<html>` from the active theme's `--tugx-theme-appearance` metadata token
+   (see `src/theme-tokens.ts`). */
+[data-theme-mode="light"] body {
+  --tug-syntax-keyword: --tug-color(violet, l: 470, c: 340);
+  --tug-syntax-string: --tug-color(amber, l: 500, c: 360);
+  --tug-syntax-string-expression: --tug-color(orange, l: 490, c: 360);
+  --tug-syntax-number: --tug-color(gold, l: 510, c: 340);
+  --tug-syntax-function: --tug-color(cobalt, l: 470, c: 360);
+  --tug-syntax-type: --tug-color(plum, l: 480, c: 340);
+  --tug-syntax-property: --tug-color(cyan, l: 440, c: 400);
+  --tug-syntax-variable: --tug-color(cyan, l: 440, c: 400);
+  --tug-syntax-constant: --tug-color(gold, l: 510, c: 340);
+  --tug-syntax-decorator: --tug-color(purple, l: 460, c: 340);
+  --tug-syntax-tag: --tug-color(pink, l: 490, c: 360);
+  --tug-syntax-attribute: --tug-color(cyan, l: 440, c: 400);
+}
+
+body {
   /* --- Terminal --- */
   --tugx-terminal-bg: var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-terminal-fg: var(--tug7-element-global-text-normal-default-rest);

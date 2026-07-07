@@ -1,24 +1,23 @@
 /**
- * Parse Shiki's per-line HTML output into a flat array of
- * `[start, end)` token ranges with their inline-style strings.
+ * Convert Shiki's themed-token output into flat `[start, end)` token
+ * ranges with inline-style strings.
  *
- * Shiki emits each line as a `<span class="line">` containing one or
- * more `<span style="color:...; font-style:...">…</span>` token
- * spans. For the diff renderer we want those tokens as character
- * ranges over the *original* line text, so we can merge them with
- * word-level diff ranges in `render-line.ts` without losing either
- * decoration.
+ * For the diff renderer we want each line's tokens as character ranges
+ * over the original line text, so we can merge them with word-level
+ * diff ranges in `render-line.ts` without losing either decoration.
+ * `<DiffBlock>` invokes Shiki's `codeToTokens` itself (reusing the
+ * shared singleton from `lib/code-block-utils.ts`) on whole
+ * reconstructed hunk sides — multi-line input, so grammar state flows
+ * across lines (a block-comment interior stays a comment; a CSS
+ * declaration inside its rule braces stays a property) — and feeds
+ * each returned line in here. Keeping the conversion separate keeps it
+ * pure and easy to test.
  *
- * This module ships only the parser. `<DiffBlock>` invokes Shiki's
- * `codeToHtml` itself (reusing the shared singleton from
- * `code-block-utils.ts`) and feeds the per-line HTML in. Keeping the
- * parser separate keeps it pure and easy to test.
- *
- * Shape note: Shiki uses inline `style="..."` rather than CSS classes.
- * Decorations on each token are therefore inline-style strings; the
- * renderer applies them via the React `style` attribute. The
- * word-level overlay continues to use CSS classes — both decorations
- * compose naturally on the same `<span>`.
+ * Shape note: with the `tug-syntax-variables` theme, token colors are
+ * `var(--syntax-token-*)` references; the renderer applies them via
+ * the React `style` attribute. The word-level overlay continues to use
+ * CSS classes — both decorations compose naturally on the same
+ * `<span>`.
  *
  * @module lib/diff/syntax-tokens-from-shiki
  */
@@ -29,72 +28,63 @@ export interface SyntaxToken {
   /** End offset in the original line text (exclusive). */
   end: number;
   /**
-   * Inline CSS string (e.g. `color:#79B8FF` or
-   * `color:#79B8FF;font-style:italic`). Empty string when Shiki has
-   * no style for the token (rare, but safe to treat as "no
-   * decoration"). The renderer can pass this directly to React's
-   * `style` prop.
+   * Inline CSS string (e.g. `color:var(--syntax-token-keyword)` or
+   * `color:var(--syntax-token-comment);font-style:italic` with the
+   * CSS-variables theme; literal hex colors with a fixed theme).
+   * Empty string when Shiki has no style for the token (rare, but
+   * safe to treat as "no decoration"). The renderer can pass this
+   * directly to React's `style` prop.
    */
   style: string;
 }
 
-const SPAN_TOKEN_RE =
-  /<span\s+(?:[^>]*?\s+)?style="([^"]*)"[^>]*>([\s\S]*?)<\/span>/g;
-
 /**
- * Parse one line of Shiki HTML into character-range tokens.
- *
- * The input may be either:
- *  - the full `<span class="line">…</span>` element (with or without
- *    surrounding whitespace), or
- *  - just the inner contents (a sequence of `<span style="…">…</span>`
- *    spans).
- *
- * Both forms work because the regex skips spans without a `style=`
- * attribute (e.g. the wrapping `<span class="line">`).
- *
- * Returns tokens in document order. Offsets are computed from the
- * cumulative token-content length and therefore index into the
- * *decoded* original text. HTML entities (`&lt;`, `&gt;`, `&amp;`,
- * `&quot;`, `&#39;`) are decoded so offsets match the source line.
- *
- * Shiki's normal output never nests styled spans, so this regex-based
- * parser is sufficient. If a future Shiki version starts emitting
- * nested spans for, say, ligature decorations, this parser will
- * misattribute the inner content — call sites should treat empty
- * results as "fall back to plain text" in that case (acceptable
- * graceful degradation per Thread C's design).
+ * Structural subset of Shiki's `ThemedToken` that the conversion
+ * needs. Declared locally so this module (and its tests) don't depend
+ * on Shiki's types.
  */
-export function parseShikiLineHtml(lineHtml: string): SyntaxToken[] {
-  const tokens: SyntaxToken[] = [];
-  let offset = 0;
-  // Reset because we're sharing a single regex literal.
-  SPAN_TOKEN_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SPAN_TOKEN_RE.exec(lineHtml)) !== null) {
-    const style = match[1];
-    const encodedText = match[2];
-    const text = decodeHtmlEntities(encodedText);
-    if (text.length === 0) continue;
-    const start = offset;
-    const end = offset + text.length;
-    tokens.push({ start, end, style });
-    offset = end;
-  }
-  return tokens;
+export interface ThemedTokenLike {
+  /** The token's text content. */
+  content: string;
+  /** Resolved foreground color (a `var(--syntax-…)` string with the
+   * CSS-variables theme). */
+  color?: string;
+  /** Shiki font-style bitmask: 1 = italic, 2 = bold, 4 = underline. */
+  fontStyle?: number;
 }
 
 /**
- * Decode the small set of HTML entities Shiki emits. Avoids pulling
- * in a full HTML parser; the entity set is fixed and small.
+ * Convert one line of Shiki themed tokens into character-range tokens.
+ *
+ * Offsets are cumulative over the token contents, so they index into
+ * the original source line. Tokens whose color equals `foreground`
+ * (the theme's base text color) and carry no font style are emitted
+ * with an empty style string, letting the renderer skip the wrapping
+ * `<span>` for plain text runs.
  */
-export function decodeHtmlEntities(s: string): string {
-  // Order matters: `&amp;` must be last so we don't double-decode.
-  return s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
+export function tokensFromThemedLine(
+  line: readonly ThemedTokenLike[],
+  foreground?: string,
+): SyntaxToken[] {
+  const tokens: SyntaxToken[] = [];
+  let offset = 0;
+  for (const themed of line) {
+    const text = themed.content;
+    if (text.length === 0) continue;
+    const start = offset;
+    const end = offset + text.length;
+    offset = end;
+
+    const parts: string[] = [];
+    if (themed.color !== undefined && themed.color !== foreground) {
+      parts.push(`color:${themed.color}`);
+    }
+    const fontStyle = themed.fontStyle ?? 0;
+    if ((fontStyle & 1) !== 0) parts.push("font-style:italic");
+    if ((fontStyle & 2) !== 0) parts.push("font-weight:bold");
+    if ((fontStyle & 4) !== 0) parts.push("text-decoration:underline");
+
+    tokens.push({ start, end, style: parts.join(";") });
+  }
+  return tokens;
 }

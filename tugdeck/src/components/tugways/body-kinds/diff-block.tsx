@@ -117,8 +117,11 @@ import {
   type RenderedSegment,
   type WordRange,
 } from "@/lib/diff/render-line";
+import type { BundledLanguage } from "shiki";
+
+import { grammarSeedLines } from "@/lib/diff/grammar-seed";
 import {
-  parseShikiLineHtml,
+  tokensFromThemedLine,
   type SyntaxToken,
 } from "@/lib/diff/syntax-tokens-from-shiki";
 import { loadTugdiffWasm } from "@/lib/lazy/load-tugdiff-wasm";
@@ -880,11 +883,19 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
   // -- Syntax-highlight tokens (Shiki) --------------------------------------
   //
   // When `data.filePath` has a recognized extension, we lazy-load
-  // Shiki and compute per-line syntax tokens. Tokens are stored in
-  // a Map<line-content, SyntaxToken[]> keyed on the line text — same
-  // text reuses the same tokenization regardless of which hunk it
-  // appears in. Empty / unknown languages leave the map empty and
-  // the renderer falls back to plain text + word-level overlay.
+  // Shiki and compute per-line syntax tokens. Each hunk's *before*
+  // text (context + remove lines) and *after* text (context + add
+  // lines) are reconstructed and tokenized as whole multi-line blocks
+  // so grammar state flows across lines — a block-comment interior
+  // stays a comment, a CSS declaration stays inside its rule braces.
+  // Tokenizing lines in isolation mis-scopes exactly those cases (a
+  // bare `margin: 0;` outside braces parses as a selector).
+  //
+  // Tokens are stored in a Map keyed `"<hunkIndex>:<lineIndex>"` —
+  // position-keyed, not content-keyed, because the same text can
+  // resolve differently depending on where it sits. Empty / unknown
+  // languages leave the map empty and the renderer falls back to
+  // plain text + word-level overlay.
   const language = data === undefined ? undefined : detectLanguage(data.filePath ?? "");
   const [syntaxByLine, setSyntaxByLine] = React.useState<
     ReadonlyMap<string, SyntaxToken[]>
@@ -897,9 +908,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     let cancelled = false;
     (async () => {
       try {
-        const utils = await import(
-          "@/_archive/cards/conversation/code-block-utils"
-        );
+        const utils = await import("@/lib/code-block-utils");
         const highlighter = await utils.getHighlighter();
         if (cancelled) return;
         const normalized = utils.normalizeLanguage(language);
@@ -914,30 +923,56 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
           if (cancelled) return;
         }
 
-        // Collect every unique line text across all hunks.
-        const uniqueLines = new Set<string>();
-        for (const hunk of hunks) {
-          for (const line of hunk.lines) {
-            if (line.content.length > 0) uniqueLines.add(line.content);
-          }
-        }
-
         const map = new Map<string, SyntaxToken[]>();
-        for (const text of uniqueLines) {
-          const html = highlighter.codeToHtml(text, {
-            lang: normalized,
-            theme: "github-dark",
+        hunks.forEach((hunk, hunkIndex) => {
+          // Split the hunk into its two sides, remembering each row's
+          // index in the hunk's flat line list.
+          const beforeIndices: number[] = [];
+          const beforeLines: string[] = [];
+          const afterIndices: number[] = [];
+          const afterLines: string[] = [];
+          hunk.lines.forEach((line, lineIndex) => {
+            if (line.kind !== "add") {
+              beforeIndices.push(lineIndex);
+              beforeLines.push(line.content);
+            }
+            if (line.kind !== "remove") {
+              afterIndices.push(lineIndex);
+              afterLines.push(line.content);
+            }
           });
-          // Shiki wraps in <pre><code><span class="line">…</span></code></pre>.
-          // Use a lookahead to anchor on the line-span's actual close
-          // (the one followed by `\n` or `</code>`), since the inner
-          // styled spans also use `</span>`.
-          const lineMatch = html.match(
-            /<span class="line"[^>]*>([\s\S]*?)<\/span>(?=\n|<\/code>)/,
-          );
-          const inner = lineMatch === null ? "" : lineMatch[1];
-          map.set(text, parseShikiLineHtml(inner));
-        }
+
+          const tokenizeSide = (lines: string[], indices: number[]): void => {
+            if (lines.length === 0) return;
+            // A hunk can begin inside a block comment or a CSS rule
+            // whose opener sits above the hunk window; seed lines
+            // restore that grammar state, then their rows are dropped.
+            const text = lines.join("\n");
+            const seeds = grammarSeedLines(text, normalized);
+            const result = highlighter.codeToTokens(
+              seeds.length === 0 ? text : seeds.join("\n") + "\n" + text,
+              {
+                // `normalizeLanguage` returns plain strings; the
+                // dynamically-loaded language was verified above.
+                lang: normalized as BundledLanguage,
+                theme: utils.SYNTAX_THEME_NAME,
+              },
+            );
+            for (let row = 0; row < indices.length; row++) {
+              const themed = result.tokens[row + seeds.length];
+              if (themed === undefined) continue;
+              map.set(
+                `${hunkIndex}:${indices[row]}`,
+                tokensFromThemedLine(themed, result.fg),
+              );
+            }
+          };
+
+          // Context lines appear in both sides; the after-pass runs
+          // second so they land with the after-side's grammar state.
+          tokenizeSide(beforeLines, beforeIndices);
+          tokenizeSide(afterLines, afterIndices);
+        });
 
         if (!cancelled) setSyntaxByLine(map);
       } catch {
@@ -1174,8 +1209,8 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
                   data-slot={DATA_SLOT_HUNK_ROWS}
                 >
                   {viewMode === "inline"
-                    ? renderInlineHunkBody(hunkData, syntaxByLine)
-                    : renderSideBySideHunkBody(hunkData, syntaxByLine)}
+                    ? renderInlineHunkBody(hunkData, index, syntaxByLine)
+                    : renderSideBySideHunkBody(hunkData, index, syntaxByLine)}
                 </div>
               </div>
             );
@@ -1333,12 +1368,13 @@ function parseInlineStyle(css: string): React.CSSProperties {
 /** Inline view: one row per line, 4-column grid. */
 function renderInlineHunkBody(
   data: HunkRenderData,
+  hunkIndex: number,
   syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
 ): React.ReactNode {
   const { hunk, wordRangesByLineIndex } = data;
   return hunk.lines.map((line, lineIndex) => {
     const wordRanges = wordRangesByLineIndex.get(lineIndex) ?? null;
-    const syntaxTokens = syntaxByLine.get(line.content) ?? null;
+    const syntaxTokens = syntaxByLine.get(`${hunkIndex}:${lineIndex}`) ?? null;
     return (
       <div
         key={lineIndex}
@@ -1389,6 +1425,7 @@ function renderInlineHunkBody(
  */
 function renderSideBySideHunkBody(
   data: HunkRenderData,
+  hunkIndex: number,
   syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
 ): React.ReactNode {
   const { sbsRows, wordRangesByLineIndex } = data;
@@ -1409,8 +1446,22 @@ function renderSideBySideHunkBody(
         data-row-index={rowIndex}
         data-paired={row.paired ? "true" : "false"}
       >
-        {renderSideBySideCell("left", row.left, leftRanges, syntaxByLine)}
-        {renderSideBySideCell("right", row.right, rightRanges, syntaxByLine)}
+        {renderSideBySideCell(
+          "left",
+          row.left,
+          row.leftIndex,
+          hunkIndex,
+          leftRanges,
+          syntaxByLine,
+        )}
+        {renderSideBySideCell(
+          "right",
+          row.right,
+          row.rightIndex,
+          hunkIndex,
+          rightRanges,
+          syntaxByLine,
+        )}
       </div>
     );
   });
@@ -1419,6 +1470,8 @@ function renderSideBySideHunkBody(
 function renderSideBySideCell(
   side: "left" | "right",
   line: DiffLine | null,
+  lineIndex: number | null,
+  hunkIndex: number,
   wordRanges: WordRange[] | null,
   syntaxByLine: ReadonlyMap<string, SyntaxToken[]>,
 ): React.ReactNode {
@@ -1437,7 +1490,10 @@ function renderSideBySideCell(
     );
   }
   const lineno = side === "left" ? line.before_lineno : line.after_lineno;
-  const syntaxTokens = syntaxByLine.get(line.content) ?? null;
+  const syntaxTokens =
+    lineIndex !== null
+      ? (syntaxByLine.get(`${hunkIndex}:${lineIndex}`) ?? null)
+      : null;
   return (
     <div
       className="tugx-diff-sbs-cell"

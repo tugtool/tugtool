@@ -92,18 +92,30 @@ body {
   --chart-4: var(--tug-chart-series-rose); /* legacy-token-allowlist */
   --chart-5: var(--tug-chart-series-violet); /* legacy-token-allowlist */
 
-  /* Shiki CSS variable bridge tokens (Spec S01) */
+  /* Shiki CSS variable bridge tokens (Spec S01). One per semantic bucket
+     emitted by the `tug-syntax-variables` theme (lib/code-block-utils.ts);
+     each aliases the theme-aware `--tug-syntax-*` palette (tug-code.css). */
   --syntax-foreground: var(--tug7-element-global-text-normal-default-rest);
   --syntax-background: var(--tug7-surface-global-primary-normal-control-rest);
   --syntax-token-keyword: var(--tug-syntax-keyword);
   --syntax-token-string: var(--tug-syntax-string);
+  --syntax-token-string-expression: var(--tug-syntax-string-expression);
   --syntax-token-comment: var(--tugx-syntax-comment);
   --syntax-token-function: var(--tug-syntax-function);
   --syntax-token-constant: var(--tug-syntax-constant);
+  --syntax-token-number: var(--tug-syntax-number);
+  --syntax-token-type: var(--tug-syntax-type);
   --syntax-token-punctuation: var(--tugx-syntax-punctuation);
-  --syntax-token-parameter: var(--tug-syntax-variable);
-  --syntax-token-string-expression: var(--tug-syntax-string);
-  --syntax-token-link: var(--tug-syntax-keyword);
+  --syntax-token-operator: var(--tugx-syntax-operator);
+  /* Plain identifiers stay prose-colored — color marks *roles*, not every
+     name, or the whole line turns to confetti. */
+  --syntax-token-variable: var(--tug7-element-global-text-normal-default-rest);
+  --syntax-token-parameter: var(--tug-syntax-property);
+  --syntax-token-property: var(--tug-syntax-property);
+  --syntax-token-tag: var(--tug-syntax-tag);
+  --syntax-token-attribute: var(--tug-syntax-attribute);
+  --syntax-token-decorator: var(--tug-syntax-decorator);
+  --syntax-token-link: var(--tug-syntax-function);
 }
 
 /* ============================================================================

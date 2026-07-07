@@ -24,8 +24,7 @@ import {
   type WordRange,
 } from "../render-line";
 import {
-  decodeHtmlEntities,
-  parseShikiLineHtml,
+  tokensFromThemedLine,
   type SyntaxToken,
 } from "../syntax-tokens-from-shiki";
 
@@ -33,73 +32,69 @@ import {
 // syntax-tokens-from-shiki
 // ---------------------------------------------------------------------------
 
-describe("decodeHtmlEntities", () => {
-  test("decodes the standard quintet", () => {
-    expect(decodeHtmlEntities("&lt;tag&gt;")).toBe("<tag>");
-    expect(decodeHtmlEntities("a &amp; b")).toBe("a & b");
-    expect(decodeHtmlEntities("&quot;hi&quot;")).toBe('"hi"');
-    expect(decodeHtmlEntities("it&#39;s")).toBe("it's");
-    expect(decodeHtmlEntities("it&apos;s")).toBe("it's");
-  });
-
-  test("does not double-decode '&amp;lt;'", () => {
-    // After one pass: `&lt;` (we want literal "&lt;" preserved as
-    // text — this matches Shiki's expectation that `&amp;lt;` in
-    // source becomes "&lt;" rendered).
-    expect(decodeHtmlEntities("&amp;lt;")).toBe("&lt;");
-  });
-});
-
-describe("parseShikiLineHtml", () => {
-  test("plain Shiki line with three styled tokens", () => {
-    const html =
-      '<span class="line">' +
-      '<span style="color:#79B8FF">const</span>' +
-      '<span style="color:#E1E4E8"> x </span>' +
-      '<span style="color:#F97583">=</span>' +
-      "</span>";
-    const tokens = parseShikiLineHtml(html);
+describe("tokensFromThemedLine", () => {
+  test("three themed tokens map to cumulative character ranges", () => {
+    const tokens = tokensFromThemedLine([
+      { content: "const", color: "var(--syntax-token-keyword)" },
+      { content: " x ", color: "var(--syntax-foreground)" },
+      { content: "=", color: "var(--syntax-token-operator)" },
+    ]);
     expect(tokens).toHaveLength(3);
-    expect(tokens[0]).toEqual({ start: 0, end: 5, style: "color:#79B8FF" });
-    expect(tokens[1]).toEqual({ start: 5, end: 8, style: "color:#E1E4E8" });
-    expect(tokens[2]).toEqual({ start: 8, end: 9, style: "color:#F97583" });
+    expect(tokens[0]).toEqual({
+      start: 0,
+      end: 5,
+      style: "color:var(--syntax-token-keyword)",
+    });
+    expect(tokens[1]).toEqual({
+      start: 5,
+      end: 8,
+      style: "color:var(--syntax-foreground)",
+    });
+    expect(tokens[2]).toEqual({
+      start: 8,
+      end: 9,
+      style: "color:var(--syntax-token-operator)",
+    });
   });
 
-  test("inner-only HTML (no wrapping <span class=\"line\">) parses identically", () => {
-    const inner =
-      '<span style="color:#79B8FF">const</span>' +
-      '<span style="color:#E1E4E8"> x</span>';
-    const tokens = parseShikiLineHtml(inner);
+  test("base-foreground tokens with no font style emit an empty style", () => {
+    const tokens = tokensFromThemedLine(
+      [
+        { content: "if", color: "var(--syntax-token-keyword)" },
+        { content: " (a < b)", color: "var(--syntax-foreground)" },
+      ],
+      "var(--syntax-foreground)",
+    );
     expect(tokens).toHaveLength(2);
-    expect(tokens[0].end).toBe(5);
-    expect(tokens[1].end).toBe(7);
+    expect(tokens[1]).toEqual({ start: 2, end: 10, style: "" });
   });
 
-  test("HTML entities in token content map to original character offsets", () => {
-    // Shiki encodes `<` as `&lt;` etc. The reconstructed text must
-    // align with the original source line so word-level offsets work.
-    const html =
-      '<span style="color:#79B8FF">if</span>' +
-      '<span style="color:#E1E4E8"> (a &lt; b)</span>';
-    const tokens = parseShikiLineHtml(html);
-    expect(tokens).toHaveLength(2);
-    // " (a < b)" is 8 chars, not 11 (the encoded "&lt;" form).
-    expect(tokens[1]).toEqual({ start: 2, end: 10, style: "color:#E1E4E8" });
+  test("font-style bitmask composes with color", () => {
+    const tokens = tokensFromThemedLine([
+      { content: "// note", color: "var(--syntax-token-comment)", fontStyle: 1 },
+      { content: "bold", fontStyle: 2 },
+      { content: "link", color: "var(--syntax-token-link)", fontStyle: 4 },
+    ]);
+    expect(tokens[0].style).toBe(
+      "color:var(--syntax-token-comment);font-style:italic",
+    );
+    expect(tokens[1].style).toBe("font-weight:bold");
+    expect(tokens[2].style).toBe(
+      "color:var(--syntax-token-link);text-decoration:underline",
+    );
   });
 
-  test("empty / non-Shiki HTML yields no tokens", () => {
-    expect(parseShikiLineHtml("")).toEqual([]);
-    expect(parseShikiLineHtml("<span class=\"line\"></span>")).toEqual([]);
-    expect(parseShikiLineHtml("just plain text")).toEqual([]);
+  test("empty input and empty-content tokens yield no tokens", () => {
+    expect(tokensFromThemedLine([])).toEqual([]);
+    expect(tokensFromThemedLine([{ content: "" }])).toEqual([]);
   });
 
-  test("token text reconstructs the original line", () => {
-    const html =
-      '<span style="color:#79B8FF">const</span>' +
-      '<span style="color:#E1E4E8"> x = </span>' +
-      '<span style="color:#79B8FF">1</span>';
-    const tokens = parseShikiLineHtml(html);
-    // Reconstruct: end of last token == total length of "const x = 1".
+  test("token ranges reconstruct the original line length", () => {
+    const tokens = tokensFromThemedLine([
+      { content: "const", color: "c1" },
+      { content: " x = " },
+      { content: "1", color: "c2" },
+    ]);
     expect(tokens[tokens.length - 1].end).toBe("const x = 1".length);
   });
 });

@@ -100,8 +100,8 @@ export function renderMarkdown(text: string): string {
  * (the vanilla code-block.ts was deleted in Step 10).
  */
 export async function enhanceCodeBlocks(container: HTMLElement): Promise<void> {
-  const { getHighlighter, normalizeLanguage } = await import(
-    "../_archive/cards/conversation/code-block-utils"
+  const { getHighlighter, normalizeLanguage, SYNTAX_THEME_NAME } = await import(
+    "./code-block-utils"
   );
 
   const codeElements = container.querySelectorAll("pre > code");
@@ -131,7 +131,7 @@ export async function enhanceCodeBlocks(container: HTMLElement): Promise<void> {
 
       const html = highlighter.codeToHtml(code, {
         lang: loaded.includes(language) ? language : "text",
-        theme: "github-dark",
+        theme: SYNTAX_THEME_NAME,
       });
 
       // Build .code-block-container element to replace the raw <pre>
