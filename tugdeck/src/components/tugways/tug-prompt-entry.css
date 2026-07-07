@@ -184,6 +184,22 @@ body {
   background-color: var(--tugx-prompt-entry-editor-focus);
 }
 
+/* The compose attachment zone (Z4C) is part of the SAME input block as the
+   editor above it — a dropped image is draft content exactly like typed
+   text. So the zone carries the editor's surface, state for state (rest
+   tint / focus), instead of falling through to whatever sits behind the
+   entry root (the bare pane surface — which visibly split the input into
+   an editor band and a stranded strip band). `:focus-within` mirrors the
+   `.cm-focused` state at the zone's remove: the strip never holds the
+   caret itself, so editor focus is the block's focus. Rules set only
+   background-color — self-documenting per [L16]. */
+.tug-prompt-entry .tug-prompt-entry-attachments {
+  background-color: var(--tugx-prompt-entry-editor-rest);
+}
+.tug-prompt-entry:focus-within .tug-prompt-entry-attachments {
+  background-color: var(--tugx-prompt-entry-editor-focus);
+}
+
 /* Drop the field border outright. `borderless` only zeroes its COLOR, leaving a
    1px transparent ring that revealed the wrapper's own (field-rest) background as
    a faint hairline around the now card-body editor surface. Zeroing the width
