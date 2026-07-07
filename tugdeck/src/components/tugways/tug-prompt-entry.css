@@ -40,10 +40,18 @@
 body {
   --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
   --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
-  /* The editor's resting/blurred/deactivated surface is the CARD body surface
-     (--tugx-pane-bg) — the same background the transcript shows — so the editor
-     only diverges from the card when the caret is actually blinking in it. */
-  --tugx-prompt-entry-editor-rest:  var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest));
+  /* The editor's resting/blurred/deactivated surface: the CARD body surface
+     (--tugx-pane-bg) carrying a measure of the theme's focus surface, so a
+     deactivated prompt still reads as an INPUT — distinct from the Pulse bar
+     and transcript that share the bare pane background above it — while the
+     full focus surface stays reserved for the caret-blinking state. A
+     component-tier color-mix over two existing tokens, so no theme-file edit
+     is needed ([D11]); each theme's own focus surface drives the tint. */
+  --tugx-prompt-entry-editor-rest: color-mix(
+    in oklab,
+    var(--tug7-surface-field-primary-normal-plain-focus) 65%,
+    var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest))
+  );
   /* The single "lit" state: caret blinking here. Aliased so the focus surface is
      retunable in one place; today it reuses the existing field focus surface, so
      no theme-file edit is needed ([D11]). */
@@ -159,10 +167,13 @@ body {
    is untouched for every other editor).
 
    - Rest, blurred, AND deactivated (pane/window inactive — the editor is blurred,
-     so never `.cm-focused`) all read as the card body surface, identical to the
-     transcript. No more field-rest / disabled (red-tinted) surfaces of its own.
-   - Focused (caret blinking, pane active → `.cm-focused`) is the one state that
-     diverges, onto the focus surface.
+     so never `.cm-focused`) all read as ONE resting surface: the card body
+     surface tinted with a measure of the theme's focus surface (see the
+     `--tugx-prompt-entry-editor-rest` alias above), so the input stays
+     distinguishable from the Pulse bar / transcript on the bare pane
+     background. No field-rest / disabled (red-tinted) surfaces of its own.
+   - Focused (caret blinking, pane active → `.cm-focused`) diverges onto the
+     full focus surface.
 
    Specificity (4 classes) intentionally beats the substrate's `&` (1), `&.cm-focused`
    (2), and `&[data-disabled]` (2) generated theme rules. ----------------------- */
