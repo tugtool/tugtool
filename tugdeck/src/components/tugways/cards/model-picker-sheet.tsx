@@ -50,6 +50,7 @@ import type {
   ReadableMetadataStore,
 } from "@/lib/session-metadata-store";
 import { resolvePickerModels } from "@/lib/model-picker-data";
+import { compressContextPhrase } from "@/lib/model-label";
 import { readModelCatalog } from "@/lib/model-catalog";
 
 // ---------------------------------------------------------------------------
@@ -192,8 +193,10 @@ class ModelPickerDataSource implements TugListViewDataSource {
  * leading checkmark) when its value matches the sheet-open-time active model.
  * `selectedGlyph="check"` reserves the fixed-width check column on every row —
  * empty when unselected — so the titles align whether or not a row carries the
- * mark. Presentational — activation is the enclosing `TugListView` cell
- * wrapper's job.
+ * mark. The description never truncates: the verbose context phrase is
+ * compressed to the ` · 1M` idiom (`compressContextPhrase`) and the subtitle
+ * may wrap to a second line. Presentational — activation is the enclosing
+ * `TugListView` cell wrapper's job.
  */
 const ModelPickerCell: TugListViewCellRenderer<ModelPickerDataSource> =
   function ModelPickerCell({
@@ -206,7 +209,12 @@ const ModelPickerCell: TugListViewCellRenderer<ModelPickerDataSource> =
     return (
       <TugListRow
         title={model.displayName}
-        subtitle={model.description}
+        subtitle={
+          model.description !== undefined
+            ? compressContextPhrase(model.description)
+            : undefined
+        }
+        subtitleMaxLines={2}
         selected={selected}
         selectedGlyph="check"
         data-model={model.value}

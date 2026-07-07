@@ -1,11 +1,25 @@
 /**
- * model-label.ts — format a Claude model id into the dev-card's display label.
+ * model-label.ts — THE single source of a model's display label.
  *
- * `system_metadata.model` carries an exact model id like
- * `claude-opus-4-8[1m]`; the Z4B model chip ([#step-2]) shows a compact,
- * human-readable form: `Opus 4.8 · 1M`. This is the pure formatter — no
- * React, no DOM, no I/O — so the mapping is unit-testable on its own,
- * mirroring `model-context-max.ts`.
+ * Every chip that names a model — the Dev card's Z4B model chip AND the
+ * Settings Assistant default chip — derives its content through
+ * {@link resolveModelLabel} in this module. One copy, by construction: the
+ * two surfaces cannot drift because there is no second label path.
+ *
+ * The label is a compact "name with version" — `Opus 4.8 · 1M`,
+ * `Fable 5`, `Sonnet 4.6` — derived from live data in this order:
+ *
+ *  1. A capability/catalog row for the model ({@link modelRowTitle}): the
+ *     leading segment of claude's own `description` ("Fable 5 · Most
+ *     capable…" → "Fable 5"), with the verbose context phrase compressed
+ *     ("Opus 4.8 with 1M context" → "Opus 4.8 · 1M"). This is claude's
+ *     reported wording, never a hardcoded list.
+ *  2. No row → parse the exact model id ({@link formatModelLabel}):
+ *     `claude-opus-4-8[1m]` → `Opus 4.8 · 1M`.
+ *  3. Nothing known → `null` (callers show an honest `?` / `Default`).
+ *
+ * Pure — no React, no DOM, no I/O — so the mapping is unit-testable on its
+ * own, mirroring `model-context-max.ts`.
  *
  * Shape of a model id (modern Anthropic convention, family-first):
  *   `claude-<family>-<major>-<minor>[-<release-date>][\[1m\]]`
@@ -19,6 +33,8 @@
  *
  * @module lib/model-label
  */
+
+import type { CapabilityModel } from "./session-metadata-store";
 
 /** The vendor prefix every Claude model id carries. */
 const CLAUDE_PREFIX = "claude-";
@@ -80,4 +96,106 @@ export function formatModelLabel(model: string): string {
   const core =
     version.length > 0 ? `${familyLabel} ${version.join(".")}` : familyLabel;
   return extended ? `${core} · ${EXTENDED_LABEL}` : core;
+}
+
+/**
+ * Strip a trailing parenthetical from a catalog display name —
+ * `Default (recommended)` → `Default` — for chip-width contexts. The picker
+ * sheet keeps the full name (it has the room).
+ */
+export function stripDisplayNameParenthetical(displayName: string): string {
+  return displayName.replace(/\s*\([^)]*\)\s*$/, "");
+}
+
+/**
+ * Compress the verbose extended-context phrase in claude's model wording
+ * into the chip's ` · 1M` annotation idiom:
+ * `Opus 4.8 with 1M context` → `Opus 4.8 · 1M`. Text without the phrase
+ * passes through unchanged.
+ */
+export function compressContextPhrase(text: string): string {
+  return text.replace(
+    /\s+with\s+(\d+(?:\.\d+)?\s*[MK])\s+context\b/i,
+    (_m, size: string) => ` · ${size.replace(/\s+/g, "")}`,
+  );
+}
+
+/**
+ * The "name with version" title for a capability/catalog row, from claude's
+ * own wording: the leading `·`-separated segment of the row's `description`
+ * (`"Fable 5 · Most capable…"` → `"Fable 5"`), context phrase compressed
+ * (`"Opus 4.8 with 1M context"` → `"Opus 4.8 · 1M"`). A row without a
+ * description falls back to its display name, parenthetical stripped.
+ */
+export function modelRowTitle(row: CapabilityModel): string {
+  if (row.description !== undefined) {
+    // Isolate the leading name segment FIRST, then compress — compressing
+    // first would introduce the very `·` the split keys on.
+    const segment = compressContextPhrase(row.description.split("·")[0].trim());
+    if (segment.length > 0) return segment;
+  }
+  return stripDisplayNameParenthetical(row.displayName);
+}
+
+/**
+ * The model row a model string belongs to. `model` may be an exact resolved
+ * id (`claude-sonnet-4-6`), a picker selector (`sonnet`), or an optimistic
+ * display label (`Sonnet 4.6`) — matched first by exact selector value, then
+ * by the row's value appearing in the string (the `default` row never
+ * containment-matches; a resolved id names a family, not "default").
+ */
+export function findModelRow(
+  model: string,
+  rows: CapabilityModel[],
+): CapabilityModel | null {
+  const lower = model.toLowerCase();
+  const exact = rows.find((r) => r.value.toLowerCase() === lower);
+  if (exact !== undefined) return exact;
+  return (
+    rows.find(
+      (r) =>
+        r.value !== "default" &&
+        r.value.length > 0 &&
+        lower.includes(r.value.toLowerCase()),
+    ) ?? null
+  );
+}
+
+/**
+ * The rows a label/selector resolution should consult: the live capability
+ * list when present, else the persisted catalog, else nothing. Real data
+ * only — there is no hardcoded model list.
+ */
+export function knownModelRows(
+  models: CapabilityModel[],
+  catalog: CapabilityModel[] | null,
+): CapabilityModel[] {
+  return models.length > 0 ? models : (catalog ?? []);
+}
+
+/**
+ * THE model-chip label — the one path every surface shares ([P01]-grade:
+ * consistency by construction, not by parallel implementations).
+ *
+ *  - `model === null` (session hasn't resolved one): the first row's title —
+ *    the account default by convention — or `null` when nothing is known
+ *    (callers show `?`).
+ *  - A row matches (`findModelRow` handles ids, selectors, and optimistic
+ *    labels alike): that row's {@link modelRowTitle}.
+ *  - No row but the string is the `default` selector: `"Default"` — the
+ *    honest zero-state word, since with no data we cannot say what the
+ *    account default resolves to.
+ *  - Anything else: {@link formatModelLabel} parses the id shape.
+ */
+export function resolveModelLabel(
+  model: string | null,
+  rows: CapabilityModel[],
+): string | null {
+  if (model === null) {
+    return rows.length > 0 ? modelRowTitle(rows[0]) : null;
+  }
+  const row = findModelRow(model, rows);
+  if (row !== null) return modelRowTitle(row);
+  if (model === "default") return "Default";
+  return formatModelLabel(model);
 }

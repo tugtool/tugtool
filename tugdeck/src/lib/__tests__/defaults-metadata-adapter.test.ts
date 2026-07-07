@@ -22,17 +22,20 @@ const CATALOG: CapabilityModel[] = [
 ];
 
 describe("buildDefaultsSnapshot", () => {
-  test("maps the selector to its catalog display label", () => {
+  test("carries the selector verbatim — no adapter-side label to drift", () => {
+    // The chip resolves any model string (id / selector / label) through the
+    // single resolveModelLabel path in model-label.ts; the adapter must NOT
+    // pre-compute a second label.
     const snapshot = buildDefaultsSnapshot("default", "default", "high", CATALOG);
-    expect(snapshot.model).toBe("Default");
+    expect(snapshot.model).toBe("default");
 
     const sonnet = buildDefaultsSnapshot("sonnet", "default", "high", CATALOG);
-    expect(sonnet.model).toBe("Sonnet");
+    expect(sonnet.model).toBe("sonnet");
   });
 
-  test("with no catalog, the default selector still reads Default", () => {
+  test("with no catalog, models is empty and the selector still carries", () => {
     const snapshot = buildDefaultsSnapshot("default", "default", "high", null);
-    expect(snapshot.model).toBe("Default");
+    expect(snapshot.model).toBe("default");
     expect(snapshot.models).toEqual([]);
   });
 
@@ -72,7 +75,7 @@ describe("buildDefaultsSnapshot", () => {
       CATALOG,
     );
     expect(modelChanged).not.toBe(base);
-    expect(modelChanged.model).toBe("Haiku");
+    expect(modelChanged.model).toBe("haiku");
 
     const modeChanged = buildDefaultsSnapshot(
       "haiku",

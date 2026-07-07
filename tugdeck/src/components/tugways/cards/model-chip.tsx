@@ -52,9 +52,12 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
-import { formatModelLabel } from "@/lib/model-label";
+import {
+  knownModelRows,
+  modelRowTitle,
+  resolveModelLabel,
+} from "@/lib/model-label";
 import { readModelCatalog } from "@/lib/model-catalog";
-import { stripDisplayNameParenthetical } from "@/lib/model-picker-data";
 
 export interface ModelChipProps {
   /** Metadata store supplying the live `model` + the `initialize` model list. */
@@ -94,41 +97,34 @@ export function ModelChip({
     sessionMetadataStore.getSnapshot,
   );
 
-  // Resolution order: exact current model (live or ledger-replayed) →
-  // the `initialize` default-model label → honest caution `?`.
+  // THE one label path ([model-label.ts] resolveModelLabel): id / selector /
+  // optimistic label → the model's "name with version" title, resolved from
+  // the live capability rows or the persisted catalog. The Z4B chip and the
+  // Settings Assistant chip both run exactly this line — consistency by
+  // construction, no second implementation to drift.
   const exactModel = snapshot.model;
-  // The default model's display name is `Default (recommended)` — too long for
-  // the chip's reserved width, so the chip drops the trailing parenthetical
-  // (`Default`). The picker sheet keeps the full label (it has the room).
-  const defaultModelLabel =
-    snapshot.models.length > 0
-      ? stripDisplayNameParenthetical(snapshot.models[0].displayName)
-      : null;
+  const rows = knownModelRows(snapshot.models, readModelCatalog());
+  const label = resolveModelLabel(exactModel, rows);
 
-  // Labels the chip width-stabilizes against — the known models' display
-  // names (live list, else the persisted catalog). Real data only: on a
-  // fresh install with no catalog there is nothing to reserve for, and the
-  // overlay re-stabilizes larger ex-post-facto when a wider label arrives
-  // ([R01]).
-  const sizerModels =
-    snapshot.models.length > 0 ? snapshot.models : (readModelCatalog() ?? []);
-  const sizerLabels = sizerModels.map((m) =>
-    stripDisplayNameParenthetical(m.displayName),
-  );
+  // Labels the chip width-stabilizes against — every known row's title, so
+  // switching among them never reflows the chip ([R01]). Real data only: on
+  // a fresh install with no catalog there is nothing to reserve for, and the
+  // overlay re-stabilizes larger ex-post-facto when a wider label arrives.
+  const sizerLabels = rows.map((m) => modelRowTitle(m));
 
   let content: string;
   let unknown = false;
   let title: string;
-  if (exactModel !== null) {
-    content = formatModelLabel(exactModel);
-    title = exactModel;
-  } else if (defaultModelLabel !== null) {
-    content = defaultModelLabel;
-    title = `${defaultModelLabel} — exact model resolves on the first turn`;
-  } else {
+  if (label === null) {
     content = "?";
     unknown = true;
     title = "Model not reported by the session";
+  } else {
+    content = label;
+    title =
+      exactModel !== null
+        ? exactModel
+        : `${label} — exact model resolves on the first turn`;
   }
 
   const copy = useCopyableButton(`Model: ${content}`);

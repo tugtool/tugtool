@@ -10,14 +10,16 @@
  * `DefaultEffortStore` with `readModelCatalog()`, so the chips render rich,
  * byte-identical labels with no live session behind them.
  *
- * Snapshot mapping: `model` is the default selector's catalog display label
- * (`selectorDisplayLabel` — "Default" for the zero-state, "Sonnet" for a
- * concrete pick), so the chip shows exactly what a Z4B chip shows for the
- * same state and never dresses a selector up as model knowledge we don't
- * have. `models` is the persisted catalog (empty when none exists yet),
- * which gives the sheets their options and lets the effort chip resolve
- * per-model support. The remaining session fields are inert
- * (`sessionId` / `cwd` / `version` `null`, `slashCommands` empty).
+ * Snapshot mapping: `model` is the deck-default SELECTOR, verbatim — the
+ * adapter does NOT pre-compute a label. Every chip resolves its model string
+ * (id, selector, or optimistic label) through the single
+ * `resolveModelLabel` path in [model-label.ts], so the Settings chip and the
+ * Z4B chip render byte-identical titles for the same state by construction —
+ * there is no adapter-side label to drift. `models` is the persisted catalog
+ * (empty when none exists yet), which gives the sheets their options and
+ * lets the effort chip resolve per-model support. The remaining session
+ * fields are inert (`sessionId` / `cwd` / `version` `null`, `slashCommands`
+ * empty).
  *
  * The snapshot is memoized: `getSnapshot` returns a cached object, rebuilt
  * only when a composed source actually changed — `useSyncExternalStore`
@@ -43,7 +45,6 @@ import { DefaultModelStore } from "./default-model-store";
 import { DefaultEffortStore } from "./default-effort-store";
 import { DefaultPermissionModeStore } from "./default-permission-mode-store";
 import { MODEL_CATALOG_DOMAIN, readModelCatalog } from "./model-catalog";
-import { selectorDisplayLabel } from "./model-picker-data";
 
 /**
  * Build the defaults-shaped metadata snapshot. Pure — every input is a
@@ -70,7 +71,7 @@ export function buildDefaultsSnapshot(
   }
   const snapshot: SessionMetadataSnapshot = {
     sessionId: null,
-    model: selectorDisplayLabel(modelSelector, catalog),
+    model: modelSelector,
     permissionMode,
     cwd: null,
     version: null,

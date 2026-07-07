@@ -16,8 +16,6 @@ import {
   UNKNOWN_CATALOG_OPTION,
   modelIdToSelector,
   resolvePickerModels,
-  selectorDisplayLabel,
-  stripDisplayNameParenthetical,
 } from "@/lib/model-picker-data";
 
 const LIVE_LIST: CapabilityModel[] = [
@@ -91,41 +89,50 @@ describe("resolvePickerModels", () => {
 });
 
 describe("modelIdToSelector", () => {
-  test("maps resolved ids to their family selector", () => {
-    expect(modelIdToSelector("claude-sonnet-4-6")).toBe("sonnet");
-    expect(modelIdToSelector("claude-haiku-4-5-20251001")).toBe("haiku");
+  test("maps resolved ids, labels, and selectors against the rows", () => {
+    expect(modelIdToSelector("claude-sonnet-4-6", LIVE_LIST)).toBe("sonnet");
+    expect(modelIdToSelector("claude-haiku-4-5-20251001", LIVE_LIST)).toBe(
+      "haiku",
+    );
+    expect(modelIdToSelector("Sonnet", LIVE_LIST)).toBe("sonnet");
+    expect(modelIdToSelector("sonnet", LIVE_LIST)).toBe("sonnet");
   });
 
-  test("opus and anything unrecognized map to default", () => {
-    expect(modelIdToSelector("claude-opus-4-8[1m]")).toBe("default");
-    expect(modelIdToSelector("gpt-4o")).toBe("default");
+  test("anything unmatched maps to default", () => {
+    expect(modelIdToSelector("claude-opus-4-8[1m]", LIVE_LIST)).toBe("default");
+    expect(modelIdToSelector("gpt-4o", LIVE_LIST)).toBe("default");
+    expect(modelIdToSelector("claude-fable-5", [])).toBe("default");
   });
 
-  test("optimistic display labels map like ids", () => {
-    expect(modelIdToSelector("Sonnet")).toBe("sonnet");
-    expect(modelIdToSelector("Default")).toBe("default");
-  });
-});
-
-describe("selectorDisplayLabel", () => {
-  test("resolves a selector to its catalog display name, parenthetical stripped", () => {
-    expect(selectorDisplayLabel("default", CATALOG)).toBe("Default");
-    expect(selectorDisplayLabel("sonnet", CATALOG)).toBe("Sonnet");
+  test("a data-driven family maps the moment it appears in the rows", () => {
+    const rows: CapabilityModel[] = [
+      { value: "default", displayName: "Default (recommended)" },
+      { value: "fable", displayName: "Fable" },
+    ];
+    expect(modelIdToSelector("claude-fable-5", rows)).toBe("fable");
   });
 
-  test("with no catalog, default reads Default and others stay raw", () => {
-    expect(selectorDisplayLabel("default", null)).toBe("Default");
-    expect(selectorDisplayLabel("sonnet", null)).toBe("sonnet");
-  });
-
-  test("a selector missing from the catalog stays raw", () => {
-    expect(selectorDisplayLabel("haiku", CATALOG)).toBe("haiku");
-  });
-});
-
-describe("stripDisplayNameParenthetical", () => {
-  test("drops only a trailing parenthetical", () => {
-    expect(stripDisplayNameParenthetical("Default (recommended)")).toBe("Default");
-    expect(stripDisplayNameParenthetical("Sonnet")).toBe("Sonnet");
+  test("a row describing the same model as Default maps to default", () => {
+    // An explicit Opus row alongside a Default row that resolves to Opus —
+    // a session on that model checkmarks Default, mirroring the terminal.
+    const rows: CapabilityModel[] = [
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Opus 4.8 with 1M context · Best for everyday work",
+      },
+      {
+        value: "opus",
+        displayName: "Opus",
+        description: "Opus 4.8 with 1M context · Best for everyday work",
+      },
+      {
+        value: "fable",
+        displayName: "Fable",
+        description: "Fable 5 · Most capable",
+      },
+    ];
+    expect(modelIdToSelector("claude-opus-4-8[1m]", rows)).toBe("default");
+    expect(modelIdToSelector("claude-fable-5", rows)).toBe("fable");
   });
 });

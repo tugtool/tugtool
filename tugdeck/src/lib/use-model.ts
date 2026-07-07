@@ -38,7 +38,8 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
-import { modelIdToSelector, selectorDisplayLabel } from "@/lib/model-picker-data";
+import { modelIdToSelector } from "@/lib/model-picker-data";
+import { knownModelRows } from "@/lib/model-label";
 import { readModelCatalog } from "@/lib/model-catalog";
 import {
   MODEL_DEFAULT_DOMAIN,
@@ -121,15 +122,14 @@ export function useModel({
   // chip (claude answers with a control_response, not a fresh system_metadata),
   // persist it per card, and send the `model_change` frame. The single path the
   // picker and the mount-restore both funnel through. The optimistic value is
-  // the selector's catalog display name — real reported data, not a hardcoded
-  // resolved id; the authoritative `system_metadata` sharpens it to the exact
-  // model id after the next turn.
+  // the SELECTOR itself — the chip resolves any model string (id, selector,
+  // or label) through the one `resolveModelLabel` path, so the selector
+  // renders as the catalog row's "name with version" title; the authoritative
+  // `system_metadata` sharpens it to the exact model id after the next turn.
   const setModel = useCallback(
     (selector: string) => {
       sentRef.current = true;
-      sessionMetadataStore.applyModel(
-        selectorDisplayLabel(selector, readModelCatalog()),
-      );
+      sessionMetadataStore.applyModel(selector);
       writePersistedModel(cardId, selector);
       codeSessionStore.setModel(selector);
     },
@@ -151,10 +151,13 @@ export function useModel({
     // can't tell the current model, don't race the spawn.
     if (models.length === 0 && model === null) return;
     // The session's current selector: the resolved model mapped back to its
-    // family selector, or `default` (the account default a fresh session spawns
-    // on) when no model id has landed yet.
+    // selector against the known rows (live list, else the persisted
+    // catalog), or `default` (the account default a fresh session spawns on)
+    // when no model id has landed yet.
     const currentSelector =
-      model !== null ? modelIdToSelector(model) : "default";
+      model !== null
+        ? modelIdToSelector(model, knownModelRows(models, readModelCatalog()))
+        : "default";
     if (seedModel !== currentSelector) {
       setModel(seedModel);
     } else {

@@ -217,9 +217,22 @@ describe.skipIf(!SHOULD_RUN)(
           await app.click(`${SETTINGS_SHEET} [data-slot="model-picker-cancel"]`);
 
           // ---- A session reports capabilities → the Dev card persists the
-          //      live catalog, and the Settings picker now offers real data.
+          //      live catalog. Every chip now shows the account default's
+          //      "name with version" title, derived from claude's own
+          //      description wording via the one resolveModelLabel path.
           await app.ingestSessionMetadata("A", capabilities());
-          await waitForText(app, cardModelValue("A"), "Default");
+          await waitForText(app, cardModelValue("A"), "Opus 4.8 · 1M");
+          await waitForText(app, SETTINGS_MODEL_VALUE, "Opus 4.8 · 1M");
+          expect(
+            await textAt(app, cardModelValue("A")),
+            "Settings and Z4B render the identical title for the same state",
+          ).toBe(await textAt(app, SETTINGS_MODEL_VALUE));
+          const settingsChipWidthBefore = await app.evalJS<number | null>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(SETTINGS_MODEL_CHIP)});
+              return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
+            })()`,
+          );
 
           // ---- The model chip opens the rich picker sheet: title +
           //      description rows with the Default row checkmarked.
@@ -260,23 +273,35 @@ describe.skipIf(!SHOULD_RUN)(
             "the Default row is checkmarked for the zero-state",
           ).toEqual(["Default (recommended)"]);
 
-          // ---- Pick Sonnet as the deck default. The chip shows the catalog
-          //      display name — real reported data, no hardcoded id mapping.
+          // ---- Pick Sonnet as the deck default. The chip title is the
+          //      row's name-with-version, from claude's own wording.
           await app.click(`${SETTINGS_SHEET} [data-model="sonnet"]`);
           await app.click(`${SETTINGS_SHEET} [data-slot="model-picker-ok"]`);
-          await waitForText(app, SETTINGS_MODEL_VALUE, "Sonnet");
+          await waitForText(app, SETTINGS_MODEL_VALUE, "Sonnet 4.6");
+
+          // Width stability: the chip reserves every known row's title, so
+          // changing the default never reflows it.
+          expect(
+            await app.evalJS<number | null>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(SETTINGS_MODEL_CHIP)});
+                return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
+              })()`,
+            ),
+            "the Settings model chip must not reflow across default values",
+          ).toBe(settingsChipWidthBefore);
 
           // ---- Card A's session is knowable (capabilities landed above), so
           //      the seed aligns it to the new deck default, and the Z4B label
           //      matches Settings byte-for-byte.
-          await waitForText(app, cardModelValue("A"), "Sonnet");
+          await waitForText(app, cardModelValue("A"), "Sonnet 4.6");
           expect(await textAt(app, cardModelValue("A"))).toBe(
             await textAt(app, SETTINGS_MODEL_VALUE),
           );
 
           // Card B seeds from the same default.
           await app.ingestSessionMetadata("B", capabilities());
-          await waitForText(app, cardModelValue("B"), "Sonnet");
+          await waitForText(app, cardModelValue("B"), "Sonnet 4.6");
 
           // ---- Isolation: change card A's model via its own Z4B picker.
           //      The deck default and card B must not move.
@@ -292,11 +317,11 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             await textAt(app, SETTINGS_MODEL_VALUE),
             "deck default unchanged by a per-card pick",
-          ).toBe("Sonnet");
+          ).toBe("Sonnet 4.6");
           expect(
             await textAt(app, cardModelValue("B")),
             "other open cards unchanged by a per-card pick",
-          ).toBe("Sonnet");
+          ).toBe("Sonnet 4.6");
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
@@ -364,9 +389,9 @@ describe.skipIf(!SHOULD_RUN)(
           // ---- The card was reset to the `default` selector: once its
           //      session reports capabilities, the seed is Default (no
           //      model_change to a concrete pick), so the chip shows the
-          //      account-default label.
+          //      account default's name-with-version title.
           await app.ingestSessionMetadata("A", capabilities());
-          await waitForText(app, cardModelValue("A"), "Default");
+          await waitForText(app, cardModelValue("A"), "Opus 4.8 · 1M");
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
