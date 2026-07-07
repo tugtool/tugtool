@@ -10,7 +10,10 @@
  *  1. the dialog's outer box never changes height;
  *  2. the stationary options panel never moves (same top, same height) —
  *     including at the review step, which fills the panel instead of
- *     collapsing it;
+ *     collapsing it. The panel top is measured relative to the dialog's
+ *     top: reaching review deliberately scrolls the transcript (the
+ *     action-bar reveal, see at0202), so viewport coordinates would
+ *     conflate that intended scroll with a layout shift;
  *  3. the rail never changes height as rows change status (every row
  *     reserves its one-line `→ answer` slot in every status).
  *
@@ -132,7 +135,7 @@ function readGeometry(app: App): Promise<Geometry> {
       return {
         dialogHeight: d?d.height:-1,
         railHeight: r?r.height:-1,
-        panelTop: p?p.top:-1,
+        panelTop: (p&&d)?(p.top-d.top):-1,
         panelHeight: p?p.height:-1
       };
     })()`,

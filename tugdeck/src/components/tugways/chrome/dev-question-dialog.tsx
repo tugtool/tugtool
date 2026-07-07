@@ -1800,6 +1800,22 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // visible (the common short-dialog case), so this only acts when needed.
   // Fires on the false→true edge into review, not every render at review.
   // [L03] layout effect; [L06] this is a scroll write (appearance), not React state.
+  //
+  // `scrollIntoView` alone is NOT enough: the host block's `.tool-call-header`
+  // is sticky (`block-header.css`), so while the view sits deep inside a tall
+  // wizard the header overlays the scrollport's top band. "nearest" reasons
+  // about the scrollport's geometry only — it happily leaves the action bar
+  // parked UNDER the stuck header, geometrically "visible" but pixel-hidden.
+  // So after the scrollIntoView, measure the shortfall between the stuck
+  // header's bottom and the action bar's top and scroll the container up by
+  // that much. Self-gating like "nearest": when the header isn't stuck it
+  // sits naturally above the action bar and the shortfall is ≤ 0.
+  //
+  // The reveal clears the header by REVEAL_RING_GAP_PX beyond flush: the
+  // buttons' focus / default ring paints OUTSIDE their border box
+  // (`--tugx-focus-ring-offset` 2px + `--tugx-focus-ring-width` 1.5px,
+  // `focus-ring.css`), so a flush landing clips Submit's ring under the
+  // header. 6px = the 3.5px ring halo plus a couple of pixels of air.
   const wasAtReviewRef = React.useRef(false);
   React.useLayoutEffect(() => {
     const atReview = currentIndex >= questions.length;
@@ -1812,7 +1828,25 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
       '[data-slot="dev-question-dialog-actionbar"]',
     );
     scroller.disengage("question-review");
-    (actionbar ?? root).scrollIntoView({ block: "nearest", inline: "nearest" });
+    const target = actionbar ?? root;
+    target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const header = root
+      .closest(".tool-block-chrome")
+      ?.querySelector<HTMLElement>(":scope > .tool-call-header");
+    if (header === null || header === undefined) return;
+    const REVEAL_RING_GAP_PX = 6;
+    const shortfall =
+      header.getBoundingClientRect().bottom +
+      REVEAL_RING_GAP_PX -
+      target.getBoundingClientRect().top;
+    if (shortfall <= 0) return;
+    for (let node = target.parentElement; node !== null; node = node.parentElement) {
+      if (node.scrollHeight <= node.clientHeight) continue;
+      const overflowY = window.getComputedStyle(node).overflowY;
+      if (overflowY !== "auto" && overflowY !== "scroll") continue;
+      node.scrollTop -= shortfall;
+      break;
+    }
   }, [isPending, declineMode, currentIndex, questions.length, scroller]);
 
   // Panel height floor, ratcheted — the hard guarantee under the sizer grid.
@@ -2018,13 +2052,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
           </TugPushButton>
         </>
       ) : null}
+      {/* The default ring ([P14]) declares "Return fires this button". While
+          a live question is open, Return is the wizard's commit-and-advance
+          (the options list consumes it), so the ring would lie — it lights
+          only at the review step with every question answered, when Submit
+          truly is Return's home. A single-question payload has no review
+          step; there the commit lands the key view ON Submit, whose focus
+          ring carries the same message. */}
       <TugPushButton
         emphasis="primary"
         role="action"
         size="xs"
         focusGroup={focusGroup}
         focusOrder={QUESTION_SUBMIT_ORDER}
-        persistentDefaultRing
+        persistentDefaultRing={allAnswered && isAtReview}
         disabled={!allAnswered}
         onClick={handleSubmit}
       >
