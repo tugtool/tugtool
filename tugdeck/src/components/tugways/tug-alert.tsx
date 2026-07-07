@@ -46,7 +46,9 @@
  * explicitly confirm or cancel. A chain-driven auto-dismiss would
  * surprise users whose alert disappears because an unrelated keyboard
  * shortcut fired. The alert stays open until the user responds via the
- * confirm button, the cancel button, Escape, or Cmd+.
+ * confirm button, the cancel button, Escape, or Cmd+. — or the host
+ * calls `TugAlertHandle.dismiss()` because the condition that opened
+ * the alert no longer holds (resolves the pending promise with false).
  *
  * Laws: [L06] appearance via CSS,
  *       [L11] controls emit actions; responders handle actions,
@@ -107,6 +109,13 @@ export interface TugAlertHandle {
     /** Lucide icon name override. Defaults to role-based icon. */
     icon?: string;
   }): Promise<boolean>;
+  /**
+   * Closes the alert programmatically, resolving any pending `alert()`
+   * promise with false. For hosts whose precondition evaporates while
+   * the alert is open (e.g. the empty-deck offer when a card lands via
+   * Cmd-N). No-op when the alert is closed.
+   */
+  dismiss(): void;
 }
 
 /* ---------------------------------------------------------------------------
@@ -254,6 +263,9 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
           resolverRef.current = resolve;
           setOpen(true);
         });
+      },
+      dismiss() {
+        resolveAndClose(false);
       },
     }));
 

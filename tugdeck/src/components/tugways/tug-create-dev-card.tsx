@@ -12,7 +12,9 @@
  * open state: an effect opens the alert when {@link deriveCreateDevCardOpen}
  * says so, Create resolves into `deck.addCard("dev")`, and Cancel (or Escape
  * / Cmd-.) dismisses so the user can work with an empty deck — the offer
- * re-arms after the deck next holds a card, and on every launch.
+ * re-arms after the deck next holds a card, and on every launch. If a card
+ * lands by any other means while the alert is up (Cmd-N, a restored
+ * layout), the alert auto-dismisses: the offer's premise is gone.
  *
  * Last in the app-modal precedence chain (Spec S02): gate > setup >
  * create-dev-card. During a genuine first run the setup wizard owns the empty
@@ -83,6 +85,18 @@ export function TugCreateDevCard(): ReactElement {
 
   const alertRef = useRef<TugAlertHandle>(null);
   const pendingRef = useRef(false);
+
+  // A card landed while the alert was up (Cmd-N, a restored layout, any
+  // path that isn't this alert's Create button): the offer's premise is
+  // gone, so drop the modal state instead of stranding the user in it.
+  // dismiss() resolves the pending promise false; the dismissed flag it
+  // sets is immediately cleared by the effect above because cardCount > 0.
+  useEffect(() => {
+    if (cardCount > 0 && pendingRef.current) {
+      alertRef.current?.dismiss();
+    }
+  }, [cardCount]);
+
   useEffect(() => {
     if (!wantOpen || dismissed || pendingRef.current) return;
     const handle = alertRef.current;
