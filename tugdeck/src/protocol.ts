@@ -36,6 +36,8 @@ export const FeedId = {
   // Code (Claude Code bridge)
   CODE_OUTPUT: 0x40,
   CODE_INPUT: 0x41,
+  // Per-session activity feed (binned channel samples)
+  ACTIVITY: 0x42,
   // Defaults / Session
   DEFAULTS: 0x50,
   SESSION_SIDEBAND: 0x51,
@@ -826,6 +828,63 @@ export function parsePulseFrame(payload: Uint8Array): PulseFramePayload | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Decoded `ACTIVITY` feed frame — one binned per-session channel sample
+ * (Spec S02). tugcode emits `activity_delta` with the stream-derived rate
+ * channels; the cast sampler adds the OS gauge channels; tugcast splices
+ * `tug_session_id` and re-tags `FeedId::ACTIVITY`. `channels` is keyed by
+ * the deck's canonical channel names — the gauge wire keys (`cpu_pct`,
+ * `rss_bytes`, `disk_read_bps`/`disk_write_bps`) are normalized here so the
+ * store records one `disk` (read+write summed), `cpu`, `memory`.
+ */
+export interface ActivityFramePayload {
+  tug_session_id: string;
+  channels: Record<string, number>;
+}
+
+/** Wire channel key → canonical store channel; unlisted keys are dropped. */
+const ACTIVITY_WIRE_CHANNELS: Readonly<Record<string, string>> = {
+  text: "text",
+  tokens: "tokens",
+  tools: "tools",
+  subagents: "subagents",
+  cpu_pct: "cpu",
+  rss_bytes: "memory",
+  disk_read_bps: "disk",
+  disk_write_bps: "disk",
+};
+
+/**
+ * Parse an `ACTIVITY` feed frame's payload into canonical channel samples;
+ * null on a malformed / foreign / session-less shape. Disk read+write fold
+ * into a single `disk` channel (bytes/sec total). Non-finite / non-number
+ * channel values are skipped.
+ */
+export function parseActivityFrame(
+  payload: Uint8Array,
+): ActivityFramePayload | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(payload));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const p = parsed as Record<string, unknown>;
+  const sessionId = p.tug_session_id;
+  if (typeof sessionId !== "string" || sessionId.length === 0) return null;
+  if (typeof p.channels !== "object" || p.channels === null) return null;
+  const wire = p.channels as Record<string, unknown>;
+  const channels: Record<string, number> = {};
+  for (const [wireKey, canonical] of Object.entries(ACTIVITY_WIRE_CHANNELS)) {
+    const v = wire[wireKey];
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    channels[canonical] = (channels[canonical] ?? 0) + v;
+  }
+  if (Object.keys(channels).length === 0) return null;
+  return { tug_session_id: sessionId, channels };
 }
 
 /**

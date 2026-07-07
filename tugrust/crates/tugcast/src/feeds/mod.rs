@@ -3,6 +3,7 @@
 //! This module contains the implementations of different feed types
 //! (terminal, filesystem, git, etc.) and manages their lifecycle.
 
+pub mod activity;
 pub mod agent_bridge;
 pub mod agent_supervisor;
 pub mod claude_auth;

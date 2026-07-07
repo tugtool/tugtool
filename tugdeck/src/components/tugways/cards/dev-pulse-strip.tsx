@@ -59,7 +59,11 @@ import {
   usePulse,
   type PulseLineEntry,
 } from "@/lib/pulse-store";
-import { THROUGHPUT_BIN_MS } from "@/lib/throughput-meter";
+import {
+  ACTIVITY_BIN_MS,
+  getSessionActivityStore,
+} from "@/lib/session-activity-store";
+import { DevActivityCard } from "@/components/tugways/cards/activity-card";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
 /** How many recent pulses the PULSE-label popover lists. */
@@ -238,11 +242,28 @@ export function DevPulseStrip({
       : NONE_ENTRY;
   const { current, outgoing, settleOutgoing } = useDwellDisplay(target);
 
-  // Live output-velocity feed for the sparkline. The meter is a stable store
-  // field (NOT snapshot state): the sparkline samples it imperatively, off
-  // React's render path; the scroll itself is WAAPI ([L06]/[L13]).
-  const meter = codeSessionStore.throughputMeter;
-  const getSeries = useCallback((nowMs: number) => meter.series(nowMs), [meter]);
+  // Live activity feed for the sparkline. The app-scoped store is a stable
+  // singleton (NOT snapshot state): the sparkline samples its composite
+  // series imperatively for this card's session, off React's render path;
+  // the scroll itself is WAAPI ([L06]/[L13]). All derivation is upstream in
+  // tugcode ([Q05]) — the deck only records + reads.
+  const activityStore = getSessionActivityStore();
+  const getSeries = useCallback(
+    (nowMs: number): number[] =>
+      activityStore !== null && tugSessionId.length > 0
+        ? activityStore.compositeSeries(tugSessionId, nowMs)
+        : [],
+    [activityStore, tugSessionId],
+  );
+  // Tint the line by the session's dominant channel ([P05]); the store owns
+  // the hysteresis so a single-sample burst never flips the color.
+  const getColorChannel = useCallback(
+    (nowMs: number): string | null =>
+      activityStore !== null && tugSessionId.length > 0
+        ? activityStore.dominant(tugSessionId, nowMs)
+        : null,
+    [activityStore, tugSessionId],
+  );
 
   const currentElRef = useRef<HTMLSpanElement | null>(null);
   const outgoingElRef = useRef<HTMLSpanElement | null>(null);
@@ -342,16 +363,39 @@ export function DevPulseStrip({
           />
         ) : null}
       </span>
-      <TugSparkline
-        getSeries={getSeries}
-        binMs={THROUGHPUT_BIN_MS}
-        fullScale={SPARKLINE_FULL_SCALE_CHARS}
-        curve={SPARKLINE_CURVE}
-        width={64}
-        height={22}
-        className="dev-pulse-strip-spark"
-        title="Output throughput in characters streamed per second"
-      />
+      {/*
+        The compact sparkline is the entry point to the expanded Activity
+        card ([P12] Surface): clicking it opens a popover of per-channel
+        small-multiples for this session. The trigger mirrors the legend
+        button's focus discipline (leaf, never steals card focus).
+      */}
+      <TugPopover>
+        <TugPopoverTrigger>
+          <button
+            type="button"
+            className="dev-pulse-strip-spark-trigger"
+            tabIndex={-1}
+            data-tug-focus="refuse"
+            data-no-activate=""
+            aria-label="Session activity detail"
+          >
+            <TugSparkline
+              getSeries={getSeries}
+              getColorChannel={getColorChannel}
+              binMs={ACTIVITY_BIN_MS}
+              fullScale={SPARKLINE_FULL_SCALE_CHARS}
+              curve={SPARKLINE_CURVE}
+              width={64}
+              height={22}
+              className="dev-pulse-strip-spark"
+              title="Session activity — text, tokens, tools, and subagents"
+            />
+          </button>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="top" align="end" sideOffset={8} arrow>
+          <DevActivityCard session={tugSessionId} />
+        </TugPopoverContent>
+      </TugPopover>
       {copyLine.contextMenu}
     </div>
   );

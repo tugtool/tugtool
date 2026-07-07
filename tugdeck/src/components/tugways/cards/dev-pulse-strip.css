@@ -152,6 +152,18 @@
   transform: translateY(var(--dev-pulse-strip-spark-offset-y));
 }
 
+/* The sparkline's popover trigger: a bare button wrapper that adds no box of
+ * its own, so wrapping the sparkline never shifts the strip layout. The
+ * pointer cursor is the only affordance that it expands. */
+.dev-pulse-strip-spark-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* The outgoing layer rides absolutely atop the incoming during the fade
  * (same geometry; only opacity differs while TugAnimator runs). */
 .dev-pulse-strip-outgoing {

@@ -45,7 +45,9 @@ use super::agent_bridge::{
     ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
 use super::code::parse_tug_session_id;
-use super::session_metadata::{is_rate_limit_event, is_session_capabilities, is_system_metadata};
+use super::session_metadata::{
+    is_activity_delta, is_rate_limit_event, is_session_capabilities, is_system_metadata,
+};
 use super::session_scoped::SessionScopedFeed;
 use super::workspace_registry::{WorkspaceError, WorkspaceKey, WorkspaceRegistry};
 #[cfg(test)]
@@ -291,6 +293,15 @@ pub struct LedgerEntry {
     pub latest_rate_limit: Option<Frame>,
     /// Owned subprocess handle when `Live`.
     pub child: Option<tokio::process::Child>,
+    /// OS pid of the live tugcode child, captured at spawn as the activity
+    /// sampler's subtree root ([P08]). `None` between spawns (before the
+    /// bridge spawns, and after the relay tears the child down).
+    pub child_pid: Option<u32>,
+    /// The child's process start time (seconds since epoch), captured
+    /// alongside `child_pid` as the PID-reuse guard baseline ([P20]). The
+    /// sampler attributes the subtree only while the live pid's start time
+    /// still matches this. `None` between spawns.
+    pub child_start_time: Option<u64>,
     /// Stdin sender when `Live`.
     pub input_tx: Option<mpsc::Sender<Frame>>,
     /// Cancels the per-session worker on `close_session`.
@@ -350,6 +361,8 @@ impl LedgerEntry {
             latest_capabilities: None,
             latest_rate_limit: None,
             child: None,
+            child_pid: None,
+            child_start_time: None,
             input_tx: None,
             cancel: CancellationToken::new(),
             card_id: None,
@@ -365,6 +378,16 @@ impl LedgerEntry {
 /// Shared ledger map. Outer mutex guards membership; per-session mutex guards
 /// the entry's mutable fields.
 pub type Ledger = Arc<Mutex<HashMap<TugSessionId, Arc<Mutex<LedgerEntry>>>>>;
+
+/// A session with a live tugcode child and its captured `(pid, start_time)` —
+/// the activity sampler's per-session subtree root and reuse-guard baseline
+/// ([P08], [P10], [P20]). Produced by [`AgentSupervisor::live_session_processes`].
+#[derive(Debug, Clone)]
+pub struct LiveSessionProcess {
+    pub tug_session_id: TugSessionId,
+    pub pid: u32,
+    pub start_time: u64,
+}
 
 // ---------------------------------------------------------------------------
 // SessionsRecorder — writer trait for the per-session ledger
@@ -1002,6 +1025,12 @@ pub struct AgentSupervisor {
     /// the handle keeps the lag-recovery replay buffer fed ([D06]: the
     /// buffer is cross-session; the deck filter provides isolation [D11]).
     pub code_output: SessionScopedFeed,
+    /// The ACTIVITY feed ([P14], `FeedId::ACTIVITY`). The merger diverts
+    /// tugcode's `activity_delta` frames onto it (re-tagged, splice
+    /// preserved) so a per-session activity sample stream reaches the deck
+    /// without riding the high-churn CODE_OUTPUT transcript. Broadcast with
+    /// `LagPolicy::Warn` ([P17]): a dropped sample bin is a negligible gap.
+    pub activity: SessionScopedFeed,
     /// Outbound CONTROL broadcast sender — used for `session_unknown`,
     /// `session_backpressure`, and other supervisor-emitted error frames.
     pub control_tx: broadcast::Sender<Frame>,
@@ -1710,6 +1739,7 @@ impl AgentSupervisor {
         session_state: SessionScopedFeed,
         session_sideband: SessionScopedFeed,
         code_output: SessionScopedFeed,
+        activity: SessionScopedFeed,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         spawner_factory: SpawnerFactory,
@@ -1721,6 +1751,7 @@ impl AgentSupervisor {
             session_state,
             session_sideband,
             code_output,
+            activity,
             control_tx,
             sessions_recorder,
             None,
@@ -1740,6 +1771,7 @@ impl AgentSupervisor {
         session_state: SessionScopedFeed,
         session_sideband: SessionScopedFeed,
         code_output: SessionScopedFeed,
+        activity: SessionScopedFeed,
         control_tx: broadcast::Sender<Frame>,
         sessions_recorder: Arc<dyn SessionsRecorder>,
         session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
@@ -1755,6 +1787,7 @@ impl AgentSupervisor {
             session_sideband,
             client_sessions: Arc::new(Mutex::new(HashMap::new())),
             code_output,
+            activity,
             control_tx,
             sessions_recorder,
             session_ledger,
@@ -1766,6 +1799,30 @@ impl AgentSupervisor {
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
         };
         (sup, merger_register_rx)
+    }
+
+    /// Snapshot every session that currently has a live tugcode child, with
+    /// its captured `(pid, start_time)` — the input the activity sampler
+    /// ([P10]) needs to root each session's subtree walk and apply the
+    /// PID-reuse guard ([P20]). Sessions between spawns (no live child)
+    /// are omitted.
+    pub async fn live_session_processes(&self) -> Vec<LiveSessionProcess> {
+        let entries: Vec<Arc<Mutex<LedgerEntry>>> = {
+            let ledger = self.ledger.lock().await;
+            ledger.values().cloned().collect()
+        };
+        let mut out = Vec::new();
+        for entry_arc in entries {
+            let entry = entry_arc.lock().await;
+            if let (Some(pid), Some(start_time)) = (entry.child_pid, entry.child_start_time) {
+                out.push(LiveSessionProcess {
+                    tug_session_id: entry.tug_session_id.clone(),
+                    pid,
+                    start_time,
+                });
+            }
+        }
+        out
     }
 
     /// Handle a CONTROL frame's action. `client_id` is the WebSocket
@@ -3985,6 +4042,21 @@ impl AgentSupervisor {
                 }
                 maybe_frame = streams.next(), if !streams.is_empty() => {
                     let Some((id, frame)) = maybe_frame else { continue };
+                    // Divert `activity_delta` frames off CODE_OUTPUT onto the
+                    // ACTIVITY feed ([P13], [P15]). The payload already carries
+                    // its `tug_session_id` (spliced in `relay_session_io`), so
+                    // we only re-tag `FeedId::ACTIVITY` — mirroring the
+                    // SESSION_SIDEBAND rewrap below, but a DIVERT not a copy:
+                    // the sample must never ride the CODE_OUTPUT transcript
+                    // stream or its shared ReplayBuffer (a replayed activity
+                    // sample would strobe the deck's live meter). Skipping the
+                    // journal gate is correct too — activity frames are not
+                    // turn-completion markers.
+                    if is_activity_delta(&frame.payload) {
+                        self.activity
+                            .publish_tagged(Frame::new(FeedId::ACTIVITY, frame.payload));
+                        continue;
+                    }
                     // Forward to shared CODE_OUTPUT broadcast (feeds the
                     // shared router-level replay ring per [D06], unchanged).
                     // The inbound frame is already tagged `CODE_OUTPUT` by
@@ -4549,6 +4621,7 @@ pub(crate) fn test_minimal_supervisor() -> (Arc<AgentSupervisor>, mpsc::Receiver
         SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
         SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
         SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+        SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
         control_tx,
         recorder,
         factory,
@@ -4726,6 +4799,7 @@ mod tests {
             SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
             control_tx,
             recorder,
             spawner_factory,
@@ -5092,6 +5166,7 @@ mod tests {
             SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
             control_tx,
             recorder,
             Some(Arc::clone(&ledger)),
@@ -6314,6 +6389,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_merger_diverts_activity_delta_to_activity_feed() {
+        // Pins Step 7 ([P13]/[P15]): an `activity_delta` line arriving on a
+        // session's stdout is DIVERTED onto the ACTIVITY feed — re-tagged
+        // `FeedId::ACTIVITY`, session tag preserved — and never rides the
+        // CODE_OUTPUT broadcast. A following ordinary frame proves the
+        // stream keeps flowing on CODE_OUTPUT after the divert.
+        let ((sup, _state_rx, _meta_rx, _control_rx), register_rx) =
+            make_supervisor_with_spawner(stall_spawner_factory());
+        let sup = Arc::new(sup);
+        let mut activity_rx = sup.activity.subscribe();
+        let mut code_rx = sup.code_output.subscribe();
+        let cancel = CancellationToken::new();
+        let merger_handle = tokio::spawn(Arc::clone(&sup).merger_task(register_rx, cancel.clone()));
+
+        let id = TugSessionId::new("sess-act");
+        let (tx, rx) = mpsc::channel::<Frame>(4);
+        sup.merger_register_tx.send((id.clone(), rx)).await.unwrap();
+
+        // The activity frame arrives already tagged CODE_OUTPUT (relay's
+        // splice) with `tug_session_id` as the first field, exactly as the
+        // live producer (#step-8) emits it.
+        let activity_frame = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-act","type":"activity_delta","channels":{"text":42}}"#
+                .to_vec(),
+        );
+        let ordinary_frame = Frame::new(
+            FeedId::CODE_OUTPUT,
+            br#"{"tug_session_id":"sess-act","type":"assistant_text"}"#.to_vec(),
+        );
+        tx.send(activity_frame.clone()).await.unwrap();
+        tx.send(ordinary_frame.clone()).await.unwrap();
+
+        // The diverted frame lands on ACTIVITY, re-tagged, splice intact.
+        let diverted = tokio::time::timeout(Duration::from_millis(500), activity_rx.recv())
+            .await
+            .expect("activity frame timeout")
+            .expect("activity frame recv err");
+        assert_eq!(diverted.feed_id, FeedId::ACTIVITY);
+        assert_eq!(diverted.payload, activity_frame.payload);
+
+        // CODE_OUTPUT sees ONLY the ordinary frame — the activity_delta was
+        // diverted, not copied, so the very first CODE_OUTPUT frame is the
+        // ordinary one.
+        let on_code = tokio::time::timeout(Duration::from_millis(500), code_rx.recv())
+            .await
+            .expect("code frame timeout")
+            .expect("code frame recv err");
+        assert_eq!(
+            on_code.payload, ordinary_frame.payload,
+            "activity_delta must not ride CODE_OUTPUT"
+        );
+
+        cancel.cancel();
+        let _ = merger_handle.await;
+    }
+
+    #[tokio::test]
     async fn test_merger_routes_metadata_per_session_no_clobber() {
         // Pins [D14]: two sessions emit distinct `system_metadata` frames
         // in rapid succession. Both frames must land on the SESSION_SIDEBAND
@@ -7309,6 +7442,7 @@ mod tests {
             SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
             control_tx,
             recorder,
             stall_spawner_factory(),
@@ -7408,6 +7542,7 @@ mod tests {
             SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
             SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
             control_tx,
             recorder,
             Some(Arc::clone(&ledger)),

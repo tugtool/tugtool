@@ -69,6 +69,12 @@ impl FeedId {
     pub const CODE_OUTPUT: Self = Self(0x40);
     /// Code input stream (tugdeck → tugcast)
     pub const CODE_INPUT: Self = Self(0x41);
+    /// Per-session activity feed (tugcast → tugdeck). Carries binned
+    /// per-channel work samples (text / tokens / tools / subagents rates
+    /// and cpu / memory / disk gauges). tugcode is the single authoritative
+    /// producer of the stream-derived channels: it emits `activity_delta`
+    /// frames on CODE_OUTPUT, which the supervisor's merger diverts here.
+    pub const ACTIVITY: Self = Self(0x42);
 
     // -- Defaults --
     /// Domain defaults snapshot (tugcast → tugdeck)
@@ -137,6 +143,7 @@ impl FeedId {
             Self::STATS_BUILD_STATUS => Some("StatsBuildStatus"),
             Self::CODE_OUTPUT => Some("CodeOutput"),
             Self::CODE_INPUT => Some("CodeInput"),
+            Self::ACTIVITY => Some("Activity"),
             Self::DEFAULTS => Some("Defaults"),
             Self::SESSION_SIDEBAND => Some("SessionSideband"),
             Self::SESSION_STATE => Some("SessionState"),
@@ -418,6 +425,8 @@ mod tests {
         assert_eq!(FeedId::STATS_BUILD_STATUS.as_byte(), 0x33);
         assert_eq!(FeedId::CODE_OUTPUT.as_byte(), 0x40);
         assert_eq!(FeedId::CODE_INPUT.as_byte(), 0x41);
+        assert_eq!(FeedId::ACTIVITY.as_byte(), 0x42);
+        assert_eq!(FeedId::ACTIVITY.name(), Some("Activity"));
         assert_eq!(FeedId::DEFAULTS.as_byte(), 0x50);
         assert_eq!(FeedId::SESSION_SIDEBAND.as_byte(), 0x51);
         assert_eq!(FeedId::SESSION_STATE.as_byte(), 0x52);

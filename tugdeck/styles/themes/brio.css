@@ -1053,6 +1053,18 @@ body {
   --tugx-term-ansi-bright-cyan:     --tug-color(teal, l: 910, c: 300);
   --tugx-term-ansi-bright-white:    --tug-color(white);
 
+  /* ---- Activity feed channel hues ([P05]) ----
+   * The compact PULSE sparkline tints its line by the session's dominant
+   * channel; each maps to a vetted ANSI term hue so it inherits this
+   * theme's accessibility budget. */
+  --activity-text:      var(--tugx-term-ansi-bright-blue);
+  --activity-tokens:    var(--tugx-term-ansi-bright-green);
+  --activity-tools:     var(--tugx-term-ansi-bright-yellow);
+  --activity-subagents: var(--tugx-term-ansi-bright-magenta);
+  --activity-cpu:       var(--tugx-term-ansi-bright-red);
+  --activity-memory:    var(--tugx-term-ansi-blue);
+  --activity-disk:      var(--tugx-term-ansi-bright-cyan);
+
   /* ---- Tool block chrome (BlockChrome per Table T07) ----
    * Frame painted around every Layer-2 tool block. Brio uses a
    * lightly-elevated dark surface with a left-edge stripe whose

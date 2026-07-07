@@ -203,6 +203,10 @@ const STDERR_DRAIN_GRACE: Duration = Duration::from_millis(50);
 pub struct SessionChild {
     pub stdin: Box<dyn AsyncWrite + Send + Unpin>,
     pub stdout: Box<dyn AsyncRead + Send + Unpin>,
+    /// OS pid of the spawned tugcode child, captured at spawn for the
+    /// activity sampler's subtree root ([P08], [P20]). `None` for mock
+    /// spawners that don't back a real process.
+    pub pid: Option<u32>,
     pub _keepalive: Box<dyn std::any::Any + Send>,
     /// Ring of the last [`STDERR_TAIL_CAP`] stderr lines this subprocess
     /// emitted, populated by the stderr-forwarding task. Read by
@@ -438,9 +442,11 @@ impl ChildSpawner for TugcodeSpawner {
                     }
                 });
             }
+            let pid = child.id();
             Ok(SessionChild {
                 stdin: Box::new(stdin),
                 stdout: Box::new(stdout),
+                pid,
                 _keepalive: Box::new(child),
                 stderr_tail,
             })
@@ -652,6 +658,17 @@ pub async fn run_session_bridge(
             }
         };
 
+        // Retain the child's (pid, start_time) on the ledger entry for the
+        // activity sampler ([P08], [P20]). Captured now, at spawn, so a pid
+        // recycled after this session exits is rejected by the start-time
+        // guard rather than misattributed. Cleared when the relay ends below.
+        if let Some(pid) = child.pid {
+            let start_time = crate::feeds::activity::resource::process_start_time(pid);
+            let mut entry = ledger_entry.lock().await;
+            entry.child_pid = Some(pid);
+            entry.child_start_time = start_time;
+        }
+
         // Run one relay iteration.
         let lines = BufReader::new(child.stdout).lines();
         let outcome = relay_session_io(
@@ -677,6 +694,15 @@ pub async fn run_session_bridge(
         // `child._keepalive` (holding tokio::process::Child) drops here at end
         // of iteration if we fall through. `kill_on_drop(true)` cleans up.
         drop(child._keepalive);
+
+        // The child is gone — clear its (pid, start_time) so the sampler stops
+        // attributing a subtree to a dead process. A retry re-captures on the
+        // next spawn above.
+        {
+            let mut entry = ledger_entry.lock().await;
+            entry.child_pid = None;
+            entry.child_start_time = None;
+        }
 
         match outcome {
             RelayOutcome::Cancelled => {
@@ -1995,6 +2021,7 @@ mod tests {
         let session_child = SessionChild {
             stdin: Box::new(stdin),
             stdout: Box::new(stdout),
+            pid: Some(pid as u32),
             _keepalive: Box::new(child),
             stderr_tail: Arc::new(std::sync::Mutex::new(VecDeque::new())),
         };

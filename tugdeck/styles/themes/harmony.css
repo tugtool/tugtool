@@ -1078,6 +1078,18 @@ body {
   --tugx-term-ansi-bright-cyan:     --tug-color(teal, l: 540, c: 260);
   --tugx-term-ansi-bright-white:    --tug-color(black);
 
+  /* ---- Activity feed channel hues ([P05]) ----
+   * The compact PULSE sparkline tints its line by the session's dominant
+   * channel; each maps to a vetted ANSI term hue so it inherits this
+   * theme's accessibility budget. */
+  --activity-text:      var(--tugx-term-ansi-bright-blue);
+  --activity-tokens:    var(--tugx-term-ansi-bright-green);
+  --activity-tools:     var(--tugx-term-ansi-bright-yellow);
+  --activity-subagents: var(--tugx-term-ansi-bright-magenta);
+  --activity-cpu:       var(--tugx-term-ansi-bright-red);
+  --activity-memory:    var(--tugx-term-ansi-blue);
+  --activity-disk:      var(--tugx-term-ansi-bright-cyan);
+
   /* ---- Tool block chrome (BlockChrome per Table T07) ----
    * Light-theme counterpart. Same vocabulary as brio.css with
    * directionally-flipped tints and the harmony palette.

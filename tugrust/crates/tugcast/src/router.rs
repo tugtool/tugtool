@@ -1646,6 +1646,7 @@ mod tests {
                 LagPolicy::Warn,
             ),
             SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
             control_tx,
             recorder,
             factory,

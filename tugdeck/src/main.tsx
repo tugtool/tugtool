@@ -17,6 +17,7 @@ import { restoreDevSessions } from "./lib/dev-session-restore";
 import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
+import { attachSessionActivityStore } from "./lib/session-activity-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { transportStateStore } from "./lib/transport-state-store";
 import {
@@ -403,6 +404,11 @@ if (!container) {
   // fetch on first observation, live `PULSE` frames folded after.
   // The Z2 strip reads it via `usePulse`.
   attachPulseStore(connection);
+
+  // Wire the app-scoped ACTIVITY store: one subscription to the
+  // per-session activity feed ([P01]), routed by each frame's own
+  // `tug_session_id`. The Z2 sparkline reads its `compositeSeries`.
+  attachSessionActivityStore(connection);
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;

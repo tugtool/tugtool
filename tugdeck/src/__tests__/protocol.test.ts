@@ -16,7 +16,56 @@ import {
   encodeResetSession,
   encodeSpawnSession,
   isControlFrame,
+  parseActivityFrame,
 } from "../protocol";
+
+const encode = (obj: unknown): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(obj));
+
+describe("parseActivityFrame", () => {
+  test("maps rate channels 1:1 and keeps the session id", () => {
+    const f = parseActivityFrame(
+      encode({
+        tug_session_id: "sess-abc",
+        channels: { text: 312, tokens: 47, tools: 1 },
+      }),
+    );
+    expect(f).toEqual({
+      tug_session_id: "sess-abc",
+      channels: { text: 312, tokens: 47, tools: 1 },
+    });
+  });
+
+  test("normalizes gauge wire keys and folds disk read+write", () => {
+    const f = parseActivityFrame(
+      encode({
+        tug_session_id: "s",
+        channels: {
+          cpu_pct: 143.2,
+          rss_bytes: 512_000_000,
+          disk_read_bps: 1000,
+          disk_write_bps: 250,
+        },
+      }),
+    );
+    expect(f?.channels).toEqual({
+      cpu: 143.2,
+      memory: 512_000_000,
+      disk: 1250,
+    });
+  });
+
+  test("rejects session-less, channel-less, and malformed frames", () => {
+    expect(parseActivityFrame(encode({ channels: { text: 1 } }))).toBeNull();
+    expect(
+      parseActivityFrame(encode({ tug_session_id: "s", channels: {} })),
+    ).toBeNull();
+    expect(
+      parseActivityFrame(encode({ tug_session_id: "s", channels: { text: "x" } })),
+    ).toBeNull();
+    expect(parseActivityFrame(new TextEncoder().encode("not json"))).toBeNull();
+  });
+});
 
 describe("controlFrame", () => {
   test("restart produces correct feedId and payload", () => {

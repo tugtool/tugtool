@@ -571,6 +571,16 @@ async fn main() {
         BROADCAST_CAPACITY,
         LagPolicy::Warn,
     );
+    // ACTIVITY ([P16] byte 0x42) — a native SessionScopedFeed ([P14]). The
+    // supervisor's merger diverts tugcode's `activity_delta` frames onto it
+    // ([P13]); the OS subtree sampler (a later step) publishes gauge samples
+    // through the same handle. `LagPolicy::Warn` per [P17]: the deck wants
+    // the sample stream, and a dropped low-volume bin self-heals.
+    let activity_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::ACTIVITY,
+        BROADCAST_CAPACITY,
+        LagPolicy::Warn,
+    );
 
     // Per [D15], tugbank unavailability is still a fatal startup error
     // because other tugcast subsystems (defaults, recents, layout) need it.
@@ -694,6 +704,7 @@ async fn main() {
         session_state_feed.clone(),
         session_sideband_feed.clone(),
         code_output_feed.clone(),
+        activity_feed.clone(),
         client_action_tx.clone(),
         sessions_recorder,
         Some(Arc::clone(&ledger)),
@@ -762,6 +773,21 @@ async fn main() {
             .await;
     });
 
+    // Spawn the OS resource sampler: at 1 Hz (gated to live sessions) it
+    // walks each session's tugcode subtree and publishes CPU/memory gauge
+    // samples onto the ACTIVITY feed ([P08]-[P10], [P20]).
+    let sampler_supervisor = Arc::clone(&supervisor);
+    let sampler_activity = activity_feed.clone();
+    let sampler_cancel = cancel.clone();
+    tokio::spawn(async move {
+        feeds::activity::resource::run_resource_sampler(
+            sampler_supervisor,
+            sampler_activity,
+            sampler_cancel,
+        )
+        .await;
+    });
+
     // Build feed router with dynamic registration
     let mut feed_router = FeedRouter::new(
         cli.session.clone(),
@@ -791,6 +817,10 @@ async fn main() {
     // — there is no snapshot-watch registration for either feed.
     feed_router.register_session_feed(&session_state_feed);
     feed_router.register_session_feed(&session_sideband_feed);
+    // ACTIVITY ([P16]) — a native SessionScopedFeed client. The merger
+    // publishes diverted `activity_delta` samples through the handle; the
+    // router wires the same broadcast channel into client delivery.
+    feed_router.register_session_feed(&activity_feed);
 
     // Register input sinks (client → server backends). CODE_INPUT points
     // at the supervisor's dispatcher (spawned above); the dispatcher

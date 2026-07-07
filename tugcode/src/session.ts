@@ -33,6 +33,8 @@ import type {
   SystemMetadata,
   CostUpdate,
   StreamingUsage,
+  ActivityChannel,
+  ActivityDelta,
   WakeStarted,
   TaskStarted,
   TaskUpdated,
@@ -2282,6 +2284,24 @@ interface LaneState {
 /** The main-loop lane key; subagent lanes key by their launching tool_use id. */
 const MAIN_LANE: string | null = null;
 
+// ── Activity counting units (Spec S04) ──────────────────────────────────────
+// Relocated verbatim from the deck's former `recordThroughput` so the
+// producer emits the same magnitudes the sparkline was tuned against. A
+// subagent/background beat and a foreground tool call each pulse a fixed
+// burst (subagents stream no partial deltas to the parent, so a burst is
+// the only signal that keeps the line alive); tool results are credited
+// their output length, capped so one large result can't swamp the window.
+const SUBAGENT_ACTIVITY_UNITS = 250;
+const TOOL_USE_ACTIVITY_UNITS = 250;
+const SUBAGENT_RESULT_UNITS_CAP = 600;
+const FOREGROUND_RESULT_UNITS_CAP = 600;
+
+/**
+ * Activity-flush cadence ([Q06]). 250 ms matches the deck meter's bin so the
+ * consumer math is unchanged: one `activity_delta` per bin per live turn.
+ */
+const ACTIVITY_FLUSH_MS = 250;
+
 export class ActiveTurn {
   /**
    * Per-lane stream state, keyed `parent_tool_use_id ?? null` (see
@@ -2428,6 +2448,31 @@ export class ActiveTurn {
    *   7. EOF: `error` on unexpected stream end
    */
   suppressEmit: boolean = false;
+  /**
+   * Per-channel work accumulated since the last activity flush (Spec S04).
+   * Drained each 250 ms bin by {@link drainActivity}; the subagent/foreground
+   * split is expressed as the `subagents`/`tools` channels (keyed off the
+   * event's `parent_tool_use_id`), not by lane — the wire frame is one
+   * per-session sample, not per-lane.
+   */
+  private readonly activity: Record<ActivityChannel, number> = {
+    text: 0,
+    tokens: 0,
+    tools: 0,
+    subagents: 0,
+  };
+  /**
+   * Last cumulative `output_tokens` observed per `msg_id`, for token-velocity
+   * deltas ([Q01]/[P06]). `output_tokens` is cumulative within a `msg_id`, so
+   * the recorded units are `max(0, cur − last)`, seeded on a new id.
+   */
+  private readonly tokenByMsgId = new Map<string, number>();
+  /** Cumulative `tool_input_progress` bytes per `tool_use_id`, differenced into `text`. */
+  private readonly toolInputBytes = new Map<string, number>();
+  /** Subagent `tool_use` ids already credited a burst (dedupe by id). */
+  private readonly subagentToolSeen = new Set<string>();
+  /** Foreground `tool_use` ids already credited a burst (dedupe; enhancement row). */
+  private readonly foregroundToolSeen = new Set<string>();
   /** Resolves when the turn ends (either via `gotResult` or stdout EOF). */
   readonly completion: Promise<void>;
   private resolveCompletion: (() => void) | null;
@@ -2455,6 +2500,120 @@ export class ActiveTurn {
       this.resolveCompletion();
       this.resolveCompletion = null;
     }
+  }
+
+  /**
+   * Fold one outbound frame into the activity accumulator (Spec S04). Called
+   * for every frame `dispatchEventToTurn` writes to the wire for this turn;
+   * unrecognized types are ignored. The (parity) rows replicate the deck's
+   * former `recordThroughput` field reads and units exactly; the two
+   * (enhancement) rows — output-token velocity replacing the flat
+   * `streaming_usage` pip, and a foreground `tool_use` burst the deck never
+   * counted — are the deliberate, fixture-pinned changes ([P21]).
+   *
+   * Only reached inside `dispatchEventToTurn`'s `!suppressEmit` guards, so a
+   * replay bracket's re-emitted frames never generate activity — the flush
+   * is gated the same way ([Q06]).
+   */
+  accountActivity(msg: Record<string, unknown>): void {
+    const t = msg.type;
+    const toolUseId =
+      typeof msg.tool_use_id === "string" ? msg.tool_use_id : null;
+    const parent =
+      typeof msg.parent_tool_use_id === "string" &&
+      msg.parent_tool_use_id.length > 0;
+    if (
+      (t === "assistant_text" || t === "thinking_text") &&
+      msg.is_partial === true &&
+      typeof msg.text === "string"
+    ) {
+      this.activity.text += msg.text.length;
+    } else if (
+      t === "tool_input_progress" &&
+      typeof msg.bytes === "number" &&
+      toolUseId !== null
+    ) {
+      const last = this.toolInputBytes.get(toolUseId) ?? 0;
+      const delta = msg.bytes - last;
+      this.toolInputBytes.set(toolUseId, msg.bytes);
+      if (delta > 0) this.activity.text += delta;
+    } else if (
+      parent &&
+      t === "tool_use" &&
+      toolUseId !== null &&
+      msg.input != null &&
+      typeof msg.input === "object" &&
+      Object.keys(msg.input as object).length > 0
+    ) {
+      // A subagent's tool call. Subagents stream no partial deltas to the
+      // parent, so this complete frame is the only activity signal — pulse
+      // once per call to keep the sparkline alive while an agent works.
+      if (!this.subagentToolSeen.has(toolUseId)) {
+        this.subagentToolSeen.add(toolUseId);
+        this.activity.subagents += SUBAGENT_ACTIVITY_UNITS;
+      }
+    } else if (parent && t === "tool_result" && typeof msg.output === "string") {
+      this.activity.subagents += Math.min(
+        msg.output.length,
+        SUBAGENT_RESULT_UNITS_CAP,
+      );
+    } else if (!parent && t === "tool_result" && typeof msg.output === "string") {
+      this.activity.tools += Math.min(
+        msg.output.length,
+        FOREGROUND_RESULT_UNITS_CAP,
+      );
+    } else if (
+      !parent &&
+      t === "tool_use" &&
+      toolUseId !== null &&
+      msg.input != null &&
+      typeof msg.input === "object" &&
+      Object.keys(msg.input as object).length > 0
+    ) {
+      // Enhancement: a foreground tool call the deck never counted. The
+      // burst reads the tool launching as a beat, keeping the line off the
+      // floor through an otherwise-silent tool run.
+      if (!this.foregroundToolSeen.has(toolUseId)) {
+        this.foregroundToolSeen.add(toolUseId);
+        this.activity.tools += TOOL_USE_ACTIVITY_UNITS;
+      }
+    } else if (t === "streaming_usage") {
+      // Enhancement: real output-token velocity. `output_tokens` is
+      // cumulative within a `msg_id`; record its per-bin growth.
+      const usage = msg.usage as Record<string, unknown> | undefined;
+      const cur =
+        usage && typeof usage.output_tokens === "number"
+          ? usage.output_tokens
+          : 0;
+      const msgId = typeof msg.msg_id === "string" ? msg.msg_id : "";
+      const last = this.tokenByMsgId.get(msgId) ?? 0;
+      this.tokenByMsgId.set(msgId, cur);
+      const delta = Math.max(0, cur - last);
+      if (delta > 0) this.activity.tokens += delta;
+    } else if (t === "task_progress") {
+      // A backgrounded agent step; its tool calls don't stream to the
+      // parent, so this is the only signal while it runs.
+      this.activity.tools += SUBAGENT_ACTIVITY_UNITS;
+    }
+  }
+
+  /**
+   * Drain the accumulated activity into a wire `channels` object carrying
+   * only the non-zero channels, resetting the accumulator. Returns `null`
+   * for an idle bin so the flush emits no frame ([P15]).
+   */
+  drainActivity(): Partial<Record<ActivityChannel, number>> | null {
+    const channels: Partial<Record<ActivityChannel, number>> = {};
+    let any = false;
+    for (const ch of ["text", "tokens", "tools", "subagents"] as const) {
+      const v = this.activity[ch];
+      if (v > 0) {
+        channels[ch] = v;
+        any = true;
+      }
+      this.activity[ch] = 0;
+    }
+    return any ? channels : null;
   }
 
   /**
@@ -2680,6 +2839,16 @@ export class SessionManager {
    * `handleUserMessage` see a consistent view without locks.
    */
   private activeTurn: ActiveTurn | null = null;
+  /**
+   * The 250 ms activity-flush interval ([Q06], [P13]). Started lazily the
+   * first time a turn dispatches an event and left running (unref'd, so it
+   * never blocks process exit) for the session's life; each tick flushes the
+   * live turn's accumulator as an `activity_delta`, a no-op between turns.
+   * The final decaying bin is emitted by an explicit trailing flush at
+   * turn end (before `activeTurn` is cleared), so a short turn that ends
+   * within a bin still reports its work. `null` until the first turn.
+   */
+  private activityFlushTimer: ReturnType<typeof setInterval> | null = null;
   /**
    * FIFO of user messages written to claude's stdin while a turn was
    * already in flight — submitted but not yet bracketed by an
@@ -3212,6 +3381,12 @@ export class SessionManager {
     // The session is changing (respawn / fork / truncate) — drop the cached
     // `/rewind` preview JSONL so the next preview re-reads ([#step-7-3]).
     this.rewindPreviewJsonl = null;
+    // Stop the activity-flush heartbeat; a respawn re-arms it on its first
+    // turn event via `ensureActivityFlush`.
+    if (this.activityFlushTimer !== null) {
+      clearInterval(this.activityFlushTimer);
+      this.activityFlushTimer = null;
+    }
     // Claude exit forces each live background-agent tailer's final
     // flush: drain what its file holds and compose the final answer.
     await this.stopAllSubagentTailers();
@@ -4590,6 +4765,10 @@ export class SessionManager {
       // produces). See `handleTaskNotification` for the bracket-open
       // side and `roadmap/tugplan-dev-session-wake.md` [D02].
       if (turn.gotResult) {
+        // Trailing flush ([Q06]): emit the final bin's accumulated work
+        // before the turn's slot clears, so a turn that ends within a bin
+        // still reports its last decaying sample.
+        this.flushActivity(turn);
         this.activeTurn = null;
         if (this.isInWake) {
           this.isInWake = false;
@@ -4946,10 +5125,48 @@ export class SessionManager {
    * On `gotResult`, calls `turn.finish()` to resolve the completion
    * promise so `handleUserMessage`'s await returns.
    */
+  /**
+   * Ensure the 250 ms activity-flush interval is running ([Q06]). Idempotent
+   * — created once on the first turn's first event and left running for the
+   * session. The timer is unref'd so a quiescent tugcode still exits cleanly
+   * (the drain / stdin loops own liveness, not this heartbeat).
+   */
+  private ensureActivityFlush(): void {
+    if (this.activityFlushTimer !== null) return;
+    const timer = setInterval(() => {
+      this.flushActivity(this.activeTurn);
+    }, ACTIVITY_FLUSH_MS);
+    // Bun's Timer supports unref(); guard for any host that doesn't.
+    timer.unref?.();
+    this.activityFlushTimer = timer;
+  }
+
+  /**
+   * Drain `turn`'s accumulated activity and emit one `activity_delta` frame
+   * for the bin (behind `!suppressEmit` — a replay bracket emits nothing).
+   * A no-op for a null / idle / suppressed turn. tugcast splices the
+   * `tug_session_id` and diverts the frame onto `FeedId::ACTIVITY`.
+   */
+  private flushActivity(turn: ActiveTurn | null): void {
+    if (turn === null || turn.suppressEmit) return;
+    const channels = turn.drainActivity();
+    if (channels === null) return;
+    const frame: ActivityDelta = {
+      type: "activity_delta",
+      channels,
+      ipc_version: 2,
+    };
+    writeLine(frame);
+  }
+
   private dispatchEventToTurn(
     turn: ActiveTurn,
     event: Record<string, unknown>,
   ): void {
+    // Keep the per-turn activity heartbeat alive (idempotent). Started here
+    // so every turn-open path (handleUserMessage, buffered follow-on,
+    // compact/wake re-inits) is covered by construction.
+    this.ensureActivityFlush();
     // Resolve the event's lane BEFORE any mapping: a turn's stdout
     // multiplexes the main loop with background subagents' streams,
     // and each runs its own message cycle with its own `message.id`s.
@@ -5016,8 +5233,12 @@ export class SessionManager {
       // runReplay's bracket is on the wire. State mutations (the lane's
       // msgId / rev / partialText / messageBlocks) continue regardless —
       // the snapshot emission in emitInflightTurnFromActiveTurn reads
-      // them.
-      if (!turn.suppressEmit) writeLine(ipcMsg);
+      // them. Activity accounting rides the same gate so a replay
+      // bracket's re-emitted frames never generate a sample ([Q06]).
+      if (!turn.suppressEmit) {
+        turn.accountActivity(ipcMsg as unknown as Record<string, unknown>);
+        writeLine(ipcMsg);
+      }
     }
     // Mirror routed messages onto the lane's per-block state for
     // mid-turn replay snapshot ([D07] § Mid-turn replay snapshot). Runs
@@ -5058,7 +5279,10 @@ export class SessionManager {
         // ([D07] § Mid-turn replay snapshot); subsequent live deltas
         // append via (msg_id, block_index) match against Messages the
         // snapshot already minted.
-        if (!turn.suppressEmit) writeLine(ipcMsg);
+        if (!turn.suppressEmit) {
+          turn.accountActivity(ipcMsg as unknown as Record<string, unknown>);
+          writeLine(ipcMsg);
+        }
       }
       // Mirror streamed messages onto the lane's per-block state. Same
       // rationale as the routeResult call above.
@@ -5094,7 +5318,12 @@ export class SessionManager {
               (progress as unknown as Record<string, unknown>).parent_tool_use_id =
                 routeResult.parentToolUseId;
             }
-            if (!turn.suppressEmit) writeLine(progress);
+            if (!turn.suppressEmit) {
+              turn.accountActivity(
+                progress as unknown as Record<string, unknown>,
+              );
+              writeLine(progress);
+            }
           }
         }
       }
@@ -5604,6 +5833,10 @@ export class SessionManager {
       }
     }
     turn.finish();
+    // Trailing activity flush ([Q06]) before the slot clears — the final
+    // bin's work (including a turn that ends within a bin via EOF/interrupt)
+    // still reports.
+    this.flushActivity(turn);
     // Turn ownership is drain-bounded: clear the slot now the turn is
     // finished. `handleUserMessage` no longer clears it — it no longer
     // owns the turn lifecycle.

@@ -111,6 +111,7 @@ interface TickPoint {
 
 export function TugSparkline({
   getSeries,
+  getColorChannel,
   binMs,
   fullScale,
   curve = sparklineCurves.linear,
@@ -121,6 +122,14 @@ export function TugSparkline({
 }: {
   /** Current window oldest→newest; the last element is the still-open bin. */
   getSeries: (nowMs: number) => number[];
+  /**
+   * Optional dominant-channel selector, sampled on the same loop as
+   * `getSeries` ([P05]). Its return (a channel name, or null when idle) is
+   * stamped as `data-activity-channel` on the container so theme CSS can
+   * tint the line by what the session is doing; the caller owns hysteresis
+   * so the color doesn't strobe. Omitted → the line keeps its default hue.
+   */
+  getColorChannel?: (nowMs: number) => string | null;
   /** Bin width in ms (used to size the rolling-rate window). */
   binMs: number;
   /** Rate (per RATE_WINDOW_MS) that reaches full height; larger clamps. Fixed. */
@@ -133,6 +142,7 @@ export function TugSparkline({
   /** Native hover tooltip. The graphic itself stays `aria-hidden`. */
   title?: string;
 }): React.ReactElement {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const lineRef = useRef<SVGPolylineElement | null>(null);
   const areaRef = useRef<SVGPolygonElement | null>(null);
@@ -143,6 +153,7 @@ export function TugSparkline({
   const svgWidth = Math.ceil(width + epochPx + 8);
 
   useLayoutEffect(() => {
+    const container = containerRef.current;
     const track = trackRef.current;
     const line = lineRef.current;
     const area = areaRef.current;
@@ -213,11 +224,23 @@ export function TugSparkline({
     };
 
     // One sample → one permanent point at "now" (the right edge), then redraw.
+    let stampedChannel: string | null = null;
     const sample = (): void => {
       const now = Date.now();
       if (!motion) t0 = now;
       tape.push({ t: now, v: sampleRate(now) });
       redraw();
+      // Stamp the dominant channel for CSS tinting ([P05]) — only on change,
+      // so a steady color doesn't rewrite the attribute every tick. Appearance
+      // rides the DOM attribute, never React state ([L06]).
+      if (getColorChannel !== undefined && container !== null) {
+        const channel = getColorChannel(now);
+        if (channel !== stampedChannel) {
+          stampedChannel = channel;
+          if (channel === null) container.removeAttribute("data-activity-channel");
+          else container.setAttribute("data-activity-channel", channel);
+        }
+      }
     };
 
     const startEpoch = (): void => {
@@ -256,10 +279,21 @@ export function TugSparkline({
         anim.cancel();
       }
     };
-  }, [getSeries, binMs, fullScale, curve, width, height, pxPerSec, epochPx]);
+  }, [
+    getSeries,
+    getColorChannel,
+    binMs,
+    fullScale,
+    curve,
+    width,
+    height,
+    pxPerSec,
+    epochPx,
+  ]);
 
   return (
     <div
+      ref={containerRef}
       className={className ? `tug-sparkline ${className}` : "tug-sparkline"}
       data-slot="tug-sparkline"
       style={{ width, height }}

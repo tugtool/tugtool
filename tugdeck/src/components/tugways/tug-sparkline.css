@@ -16,6 +16,39 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* Dominant-channel tint ([P05]). When the caller supplies `getColorChannel`,
+   the sample loop stamps `data-activity-channel`; the line/area inherit this
+   `color` through `currentColor`. The `--activity-*` hues are per-theme
+   tokens; an absent attribute keeps the muted default above. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="text"] {
+  color: var(--activity-text);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="tokens"] {
+  color: var(--activity-tokens);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="tools"] {
+  color: var(--activity-tools);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="subagents"] {
+  color: var(--activity-subagents);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="cpu"] {
+  color: var(--activity-cpu);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="memory"] {
+  color: var(--activity-memory);
+}
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.tug-sparkline[data-activity-channel="disk"] {
+  color: var(--activity-disk);
+}
+
 /* The scrolling layer — WAAPI animates its transform; pinned top-left so the
    SVG inside it scrolls under the fixed window. */
 .tug-sparkline-track {

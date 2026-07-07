@@ -590,6 +590,29 @@ export interface StreamingUsage {
 }
 
 /**
+ * Stream-derived work sample for the ACTIVITY feed. tugcode is the single
+ * authoritative interpreter of the claude stream (Q05); it accumulates
+ * per-channel work in the live `ActiveTurn` and flushes one `activity_delta`
+ * per 250 ms bin (Q06). tugcast's merger diverts these off CODE_OUTPUT onto
+ * `FeedId::ACTIVITY`, splicing the `tug_session_id` (which tugcode does not
+ * carry). No outbound allowlist gate applies.
+ *
+ * `channels` carries only the rate channels tugcode derives — `text`
+ * (streamed prose + forming tool input), `tokens` (output-token velocity),
+ * `tools` (foreground tool cadence), `subagents` (background agent cadence).
+ * Only channels with a non-zero accumulation for the bin are present; a bin
+ * with no activity is not emitted. The OS gauge channels (cpu/memory/disk)
+ * ride the same feed but are produced cast-side, not here.
+ */
+export type ActivityChannel = "text" | "tokens" | "tools" | "subagents";
+
+export interface ActivityDelta {
+  type: "activity_delta";
+  channels: Partial<Record<ActivityChannel, number>>;
+  ipc_version: number;
+}
+
+/**
  * Compact context boundary marker. Emitted when claude's live stream
  * reports a `system`/`compact_boundary` (in practice: auto-compaction at
  * capacity — a typed `/compact` is client-dispatched and never reaches the
@@ -1308,6 +1331,7 @@ export type OutboundMessage =
   | SessionCapabilities
   | CostUpdate
   | StreamingUsage
+  | ActivityDelta
   | CompactBoundary
   | ContextBreakdown
   | ApiRetry

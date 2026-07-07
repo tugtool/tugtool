@@ -64,22 +64,6 @@ import {
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { getPulseStore } from "./pulse-store";
-import { ThroughputMeter } from "./throughput-meter";
-
-/** Sparkline pulse (chars-equivalent) for one subagent tool call. */
-const SUBAGENT_ACTIVITY_UNITS = 250;
-/** Cap on chars credited for a subagent tool result. */
-const SUBAGENT_RESULT_UNITS_CAP = 600;
-/** Cap on chars credited for a FOREGROUND tool result landing. */
-const FOREGROUND_RESULT_UNITS_CAP = 600;
-/**
- * Sparkline pulse for one `streaming_usage` frame — a constant beat so the
- * line stays alive across API-call progress that emits no streamed text
- * (e.g. the brief assistant turn between tool rounds, context processing).
- * Kept small relative to a text burst so it animates the curve without
- * dominating it.
- */
-const STREAMING_USAGE_UNITS = 60;
 import {
   clearCachedParses,
   invalidateCachedParsesByPrefix,
@@ -384,17 +368,6 @@ export class CodeSessionStore {
   private readonly atomBytesStore: AtomBytesStore;
 
   private state: CodeSessionState;
-
-  /**
-   * Live output-velocity meter feeding the PULSE sparkline. Mutated from
-   * `recordThroughput` on every streamed delta; read imperatively by the
-   * sparkline canvas. Deliberately NOT in the snapshot ([L02]/[L06]).
-   */
-  readonly throughputMeter = new ThroughputMeter();
-  /** Per-`tool_use_id` last cumulative byte count, for streaming deltas. */
-  private readonly _toolInputBytes = new Map<string, number>();
-  /** Subagent tool_use ids already pulsed into the meter (dedupe). */
-  private readonly _subagentToolSeen = new Set<string>();
 
   private _transcript: ReadonlyArray<TurnEntry> = [];
   // Older turns staged by a load-previous (prepend) replay bracket, in
@@ -1401,87 +1374,7 @@ export class CodeSessionStore {
    * the outer value at the FeedStore boundary, so inner frames dispatch
    * post-filter and need no `tug_session_id` of their own.
    */
-  /**
-   * Feed the output-velocity meter from streamed deltas. Counts only
-   * is_partial text/thinking deltas (the live stream — replay delivers
-   * complete frames, never deltas) and the incremental byte growth of
-   * `tool_input_progress` (a long Write's content as it forms; that frame
-   * is dropped by the reducer, so it's tapped here before `frameToEvent`).
-   * Skipped entirely during a replay bracket so historical frames replayed
-   * in a burst don't spike "now".
-   */
-  private recordThroughput(value: unknown): void {
-    if (this.state.phase === "replaying") return;
-    const ev = value as Record<string, unknown> & { type?: string };
-    const t = ev.type;
-    const now = Date.now();
-    const parent =
-      typeof ev.parent_tool_use_id === "string" &&
-      ev.parent_tool_use_id.length > 0;
-    if (
-      (t === "assistant_text" || t === "thinking_text") &&
-      ev.is_partial === true &&
-      typeof ev.text === "string"
-    ) {
-      this.throughputMeter.record(ev.text.length, now);
-    } else if (
-      t === "tool_input_progress" &&
-      typeof ev.bytes === "number" &&
-      typeof ev.tool_use_id === "string"
-    ) {
-      const last = this._toolInputBytes.get(ev.tool_use_id) ?? 0;
-      const delta = ev.bytes - last;
-      this._toolInputBytes.set(ev.tool_use_id, ev.bytes);
-      if (delta > 0) this.throughputMeter.record(delta, now);
-    } else if (
-      parent &&
-      t === "tool_use" &&
-      typeof ev.tool_use_id === "string" &&
-      ev.input != null &&
-      typeof ev.input === "object" &&
-      Object.keys(ev.input as object).length > 0
-    ) {
-      // A subagent's tool call. Subagents stream NO partial deltas to the
-      // parent — these complete tool_use/tool_result frames are the only
-      // activity signal — so pulse the meter (once per call) to keep the
-      // sparkline alive while an agent works.
-      if (!this._subagentToolSeen.has(ev.tool_use_id)) {
-        this._subagentToolSeen.add(ev.tool_use_id);
-        this.throughputMeter.record(SUBAGENT_ACTIVITY_UNITS, now);
-      }
-    } else if (parent && t === "tool_result" && typeof ev.output === "string") {
-      // The subagent's tool returned — real content flowing back.
-      this.throughputMeter.record(
-        Math.min(ev.output.length, SUBAGENT_RESULT_UNITS_CAP),
-        now,
-      );
-    } else if (!parent && t === "tool_result" && typeof ev.output === "string") {
-      // A FOREGROUND tool returned (Bash/Read/Grep…). Only subagent
-      // results fed the meter before, so a foreground tool's output —
-      // often the only signal after a long silent tool run — never moved
-      // the sparkline. Credit it (capped) so the result landing reads as
-      // a beat of activity.
-      this.throughputMeter.record(
-        Math.min(ev.output.length, FOREGROUND_RESULT_UNITS_CAP),
-        now,
-      );
-    } else if (t === "streaming_usage") {
-      // Authoritative per-API-call telemetry the sparkline ignored. It
-      // fires even when no text streams (between tool rounds, while
-      // claude processes a tool result), so a constant beat here keeps
-      // the line off the floor during active-but-textless API work.
-      this.throughputMeter.record(STREAMING_USAGE_UNITS, now);
-    } else if (t === "task_progress") {
-      // A backgrounded agent step. Its tool calls don't stream to the
-      // parent, so this is the ONLY activity signal while it runs — a
-      // beat here keeps the sparkline alive instead of flat-lining the
-      // moment the launch turn ends.
-      this.throughputMeter.record(SUBAGENT_ACTIVITY_UNITS, now);
-    }
-  }
-
   private routeFrame(feedId: number, value: unknown): void {
-    if (feedId === FeedId.CODE_OUTPUT) this.recordThroughput(value);
     if (
       feedId === FeedId.CODE_OUTPUT &&
       (value as { type?: string }).type === "replay_batch"

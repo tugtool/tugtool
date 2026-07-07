@@ -215,6 +215,8 @@ Anchors are explicit, kebab-case; plan-local decisions use `[P01]`; steps cite d
 
 **Decision:** The Activity card renders one labeled `TugSparkline` + raw readout per live channel; stacked bands are a follow-on.
 
+**Surface (DECIDED 2026-07-06):** the expanded card lives as a **popover off the Z2 PULSE strip** — the same pattern the TIME/TOKENS/CONTEXT telemetry cells use (`dev-card-telemetry-popovers.tsx`, `PerAreaPopoverFrame`). Session-bound by construction (no card-registry / sheet plumbing); the compact strip is the entry point, the popover is its expansion. A standalone, movable deck card (via `registerCard`) is the eventual home for the app-wide **all-sessions** view — that is the deferred [Q04] follow-on, not Step 15.
+
 #### [P13] Single authoritative interpreter: tugcode emits `activity_delta` (DECIDED) {#p13-single-interpreter}
 
 **Decision:** All stream-derived channels are counted **only** in tugcode's `dispatchEventToTurn` (the one existing parser), accumulated in `ActiveTurn`, and emitted as `activity_delta` frames; tugcast diverts them onto `ACTIVITY` (as it rewraps `SESSION_SIDEBAND`); the deck records. The deck's `recordThroughput` is deleted.
@@ -418,17 +420,17 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 | #step-3 | Convert SESSION_SIDEBAND (rewrap-preserving) | done | bdd42a10e |
 | #step-4 | Convert CODE_OUTPUT (replay + input-ownership) | done | 02af5ed93 |
 | #step-5 | Route STATS registration; foundation checkpoint | done | 023f9cdeb |
-| #step-6 | `FeedId::ACTIVITY` as a native SessionScopedFeed | pending | — |
-| #step-7 | tugcast divert `activity_delta` → ACTIVITY | pending | — |
-| #step-8 | tugcode `activity_delta` (single interpreter) | pending | — |
-| #step-9 | Deck store consumes ACTIVITY; delete deck derivation | pending | — |
-| #step-10 | Compact: dominant color + composite intensity | pending | — |
-| #step-11 | Retain `(pid, start_time)` per session | pending | — |
-| #step-12 | OS subtree sampler → CPU/memory into ACTIVITY | pending | — |
-| #step-13 | Disk I/O via `proc_pid_rusage` | pending | — |
-| #step-14 | Pulse labels: skills, AskUserQuestion, generic | pending | — |
-| #step-15 | Expanded Activity card | pending | — |
-| #step-16 | Integration checkpoint | pending | — |
+| #step-6 | `FeedId::ACTIVITY` as a native SessionScopedFeed | done | (folded w/ #step-7) |
+| #step-7 | tugcast divert `activity_delta` → ACTIVITY | done | see dash log |
+| #step-8 | tugcode `activity_delta` (single interpreter) | done | see dash log |
+| #step-9 | Deck store consumes ACTIVITY; delete deck derivation | done | see dash log |
+| #step-10 | Compact: dominant color + composite intensity | done | see dash log |
+| #step-11 | Retain `(pid, start_time)` per session | done | see dash log |
+| #step-12 | OS subtree sampler → CPU/memory into ACTIVITY | done | see dash log |
+| #step-13 | Disk I/O via `proc_pid_rusage` | done | see dash log |
+| #step-14 | Pulse labels: skills, AskUserQuestion, generic | done | see dash log |
+| #step-15 | Expanded Activity card | done | see dash log |
+| #step-16 | Integration checkpoint | done | verification-only |
 
 #### Step 1: Trait-mediated registration; convert TERMINAL/FS/FT/GIT/PULSE {#step-1}
 
@@ -743,10 +745,10 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 **References:** [P12], [P04], Spec S01
 
-**Artifacts:** `activity-card.tsx` — per-channel labeled `TugSparkline` + `raw` readout, hued per descriptor, bound to the dev card's session.
+**Artifacts:** `activity-card.tsx` — per-channel labeled `TugSparkline` + `raw` readout, hued per descriptor, bound to the dev card's session. Surface: a **popover off the Z2 PULSE strip** ([P12] Surface), reusing the `PerAreaPopoverFrame` vocabulary of the TIME/TOKENS/CONTEXT telemetry popovers — NOT a registered deck card or a sheet.
 
 **Tasks:**
-- [ ] Small-multiples card; register/mount; reuse Tug components; membership via `useSyncExternalStore`.
+- [ ] Small-multiples popover content; hang it off the PULSE strip's popover (a second surface/trigger); reuse Tug components + `PerAreaPopoverFrame`; membership via `useSyncExternalStore` on the activity store's snapshot; rows from `channels(session)`, lines from `series`/`compositeSeries`, readout from `raw`.
 
 **Tests:**
 - [ ] Unit: `channels(session)` drives the row set.
@@ -782,14 +784,14 @@ Emitted per 250 ms bin behind `!turn.suppressEmit` ([Q06]); pinned by a fixture 
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] No server→client feed bypasses the trait abstraction (grep-clean).
-- [ ] Exactly one activity interpreter (tugcode); deck derivation deleted.
-- [ ] Activity model visible on the `ACTIVITY` wire feed.
-- [ ] Skills / AskUserQuestion / thinking / subagents move the sparkline; dominant color shifts without strobing.
-- [ ] Bash build shows CPU (+ macOS disk) humps isolated to the session; reused PIDs rejected.
-- [ ] `CODE_OUTPUT` post-conversion isolates sessions and recovers a lagging client.
-- [ ] Activity card renders live per-channel over the same store.
-- [ ] `cargo nextest run`, `bunx vite build`, `bun test`, `audit:theme-contrast` pass.
+- [x] No server→client feed bypasses the trait abstraction (grep-clean; activity producers publish only through `SessionScopedFeed`).
+- [x] Exactly one activity interpreter (tugcode); deck derivation deleted (grep-clean of `throughputMeter`/`recordThroughput`).
+- [ ] Activity model visible on the `ACTIVITY` wire feed. *(interactive: raw ACTIVITY dump during a live turn — user vet on the debug build.)*
+- [ ] Skills / AskUserQuestion / thinking / subagents move the sparkline; dominant color shifts without strobing. *(interactive/visual — user vet; hysteresis unit-tested.)*
+- [~] Bash build shows CPU (+ macOS disk) humps isolated to the session; reused PIDs rejected. *(PID-reuse guard + subtree isolation unit-tested; the visible hump is a user vet.)*
+- [x] `CODE_OUTPUT` post-conversion isolates sessions and recovers a lagging client (Step 4 checkpoint, still green in the workspace suite).
+- [ ] Activity card renders live per-channel over the same store. *(interactive/visual — user vet; `channels()` row-set unit-tested.)*
+- [x] `cargo nextest run` (1084), `bunx vite build`, `bun test` (deck 3884 + tugcode 719), `audit:theme-contrast` pass.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

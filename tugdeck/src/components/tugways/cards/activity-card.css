@@ -1,0 +1,66 @@
+/**
+ * activity-card.css — the expanded PULSE-strip activity popover ([P12]).
+ *
+ * Small-multiples: a title + rule, then one row per live channel (label /
+ * sparkline / raw readout). Self-contained styling that mirrors the
+ * telemetry popovers' title/rule rhythm; each color rule names its surface
+ * per [L16].
+ *
+ * @module components/tugways/cards/activity-card
+ */
+
+.dev-activity-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs, 4px);
+  min-width: 15rem;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-rest) */
+.dev-activity-card-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  padding-block-end: var(--tug-space-xs, 4px);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-rest) */
+.dev-activity-card-rule {
+  height: 1px;
+  background-color: var(--tug7-element-global-border-normal-subtle-rest);
+  margin-block-end: var(--tug-space-xs, 4px);
+}
+
+.dev-activity-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr auto;
+  align-items: center;
+  gap: var(--tug-space-sm, 8px);
+  min-height: 1.25rem;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-rest) */
+.dev-activity-row-label {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.dev-activity-row-spark {
+  justify-self: stretch;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-rest) */
+.dev-activity-row-readout {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  min-width: 4rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-rest) */
+.dev-activity-empty {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding-block: var(--tug-space-xs, 4px);
+}

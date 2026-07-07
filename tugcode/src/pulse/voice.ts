@@ -345,6 +345,56 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+/**
+ * A beat for an `AskUserQuestion` tool call — the turn is pausing for the
+ * user. Borrows the first question's short `header` when present ("Asking:
+ * Auth method"), else a bare "Asking a question". Without this the strip
+ * would freeze on the assistant's last pre-question thought.
+ */
+function askQuestionBeat(frame: ToolUse): string {
+  const input = (frame.input ?? {}) as Record<string, unknown>;
+  const questions = Array.isArray(input.questions) ? input.questions : [];
+  const first = questions[0] as Record<string, unknown> | undefined;
+  const header =
+    first && typeof first.header === "string" && first.header.length > 0
+      ? first.header
+      : null;
+  return header !== null ? `Asking: ${clipPhrase(header, 40)}` : "Asking a question";
+}
+
+/**
+ * The skill name for a skill invocation, or null when the call is not a
+ * skill. Two wire shapes: a `<plugin>:<skill>` tool name surfaced directly
+ * (e.g. `tugplug:vet`), or the generic `Skill` tool carrying the id in its
+ * input. A skill drives its own turn with little interstitial narration, so
+ * naming it keeps the strip off "None".
+ */
+function skillLabel(frame: ToolUse): string | null {
+  const name = frame.tool_name;
+  if (/^[\w.-]+:[\w.-]+$/.test(name)) {
+    return name.split(":").pop() ?? name;
+  }
+  if (name === "Skill") {
+    const input = (frame.input ?? {}) as Record<string, unknown>;
+    for (const key of ["command", "name", "skill"]) {
+      const v = input[key];
+      if (typeof v === "string" && v.length > 0) {
+        return v.includes(":") ? (v.split(":").pop() ?? v) : v;
+      }
+    }
+    return "a skill";
+  }
+  return null;
+}
+
+/** A tool with no file target — narrated generically as a fallback so the
+ *  strip moves; a file tool (with `file_path`) defers to the monologue /
+ *  `tool_input_progress` line instead. */
+function isGenericNonFileTool(frame: ToolUse): boolean {
+  const input = (frame.input ?? {}) as Record<string, unknown>;
+  return typeof input.file_path !== "string";
+}
+
 /** One line, clipped with an ellipsis. */
 function clipPhrase(text: string, n: number): string {
   const t = oneLine(text);
@@ -490,9 +540,36 @@ export class PulseVoice {
           return null;
         }
         // Task-list lifecycle is a materially interesting beat the prose
-        // monologue glosses over — surface it directly.
-        const beat = taskBeat(frame);
-        if (beat !== null) state.directLine = beat;
+        // monologue glosses over — surface it directly. taskBeat owns these
+        // tools; an empty-input frame (the content_block_start) is
+        // intentionally silent, so never fall through to a generic label.
+        if (frame.tool_name === "TaskCreate" || frame.tool_name === "TaskUpdate") {
+          const beat = taskBeat(frame);
+          if (beat !== null) state.directLine = beat;
+          return null;
+        }
+        // AskUserQuestion — the turn is pausing for the user.
+        if (frame.tool_name === "AskUserQuestion") {
+          state.directLine = askQuestionBeat(frame);
+          return null;
+        }
+        // A skill invocation (`<plugin>:<skill>` / the `Skill` tool) — a
+        // distinct, always-shown beat: a skill drives its own turn with
+        // little narration, so without this the strip sits on "None".
+        const skill = skillLabel(frame);
+        if (skill !== null) {
+          state.directLine = `Running ${skill}`;
+          return null;
+        }
+        // Generic non-file tool FALLBACK — only when the assistant has NOT
+        // narrated (no monologue to own the strip). This keeps a tool-only
+        // stretch (a lone search, a plugin tool with no prose) off "None",
+        // while a foreground Bash/Grep DURING narration stays quiet (the
+        // monologue keeps the strip). A file tool defers to the monologue /
+        // tool_input_progress line regardless.
+        if (state.blockText.length === 0 && isGenericNonFileTool(frame)) {
+          state.directLine = narrateTool(frame.tool_name, frame.input ?? {});
+        }
         return null;
       }
       case "turn_complete":

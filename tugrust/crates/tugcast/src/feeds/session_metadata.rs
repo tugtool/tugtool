@@ -61,6 +61,21 @@ pub fn is_rate_limit_event(payload: &[u8]) -> bool {
         .any(|w| w == RATE_LIMIT_EVENT_NEEDLE)
 }
 
+/// Needle bytes for identifying `activity_delta` frames — the binned
+/// per-channel work samples tugcode emits from `dispatchEventToTurn`
+/// ([P13]).
+const ACTIVITY_DELTA_NEEDLE: &[u8] = b"\"type\":\"activity_delta\"";
+
+/// Check if a payload is an `activity_delta` frame. The merger diverts
+/// these off the CODE_OUTPUT transcript stream onto the ACTIVITY feed
+/// ([P15]) — re-tagged, splice preserved — so per-session activity
+/// samples never ride CODE_OUTPUT or its shared replay buffer.
+pub fn is_activity_delta(payload: &[u8]) -> bool {
+    payload
+        .windows(ACTIVITY_DELTA_NEEDLE.len())
+        .any(|w| w == ACTIVITY_DELTA_NEEDLE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +129,21 @@ mod tests {
     fn rejects_rate_limit_for_non_rate_limit() {
         let payload = br#"{"type":"system_metadata","model":"x"}"#;
         assert!(!is_rate_limit_event(payload));
+    }
+
+    #[test]
+    fn detects_activity_delta() {
+        let payload =
+            br#"{"tug_session_id":"s1","type":"activity_delta","channels":{"text":42}}"#;
+        assert!(is_activity_delta(payload));
+        assert!(!is_system_metadata(payload));
+        assert!(!is_session_capabilities(payload));
+        assert!(!is_rate_limit_event(payload));
+    }
+
+    #[test]
+    fn rejects_activity_delta_for_non_activity() {
+        let payload = br#"{"type":"assistant_text","text":"hi"}"#;
+        assert!(!is_activity_delta(payload));
     }
 }
