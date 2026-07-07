@@ -834,7 +834,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return target.closest(FOCUS_REFUSE_SELECTOR) !== null;
     }
 
-    // ---- Card-modal scrim barrier ([P16]/[P19]) ----
+    // ---- Modal scrim barrier: card-modal ([P16]/[P19]) + pane-modal ----
     //
     // While an inline dialog (permission / question) is pending its card is
     // card-modal: the keyboard is trapped in the dialog and the surround is
@@ -863,6 +863,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             ? target.parentElement
             : null;
       if (el === null) return null;
+      // Pane-modal barrier: the pane's built-in scrim ([D18]) only receives
+      // pointer events while a sheet has raised it (`data-scrim="on"` flips it
+      // to `pointer-events: auto`), so a pointerdown targeting the scrim IS a
+      // stray click on a pane-modal surround. Redirect the promotion to the
+      // topmost open sheet panel in that pane, mirroring the card-modal rule:
+      // the gesture activates the pane but first responder and the key-view
+      // ring stay in the sheet.
+      if (el.classList.contains("tug-pane-scrim")) {
+        const pane = el.closest(".tug-pane");
+        if (pane !== null) {
+          const sheets = pane.querySelectorAll('[data-slot="tug-sheet"]');
+          if (sheets.length > 0) return sheets[sheets.length - 1];
+        }
+        return null;
+      }
       const card = el.closest(CARD_MODAL_SCRIM_SELECTOR);
       if (card === null) return null;
       // A click already inside the bright dialog island behaves normally.

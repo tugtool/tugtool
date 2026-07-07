@@ -231,6 +231,22 @@ export function usePaneFocusController(
       const pane = store.getSnapshot().panes.find((p) => p.id === paneId);
       if (!pane) return;
 
+      // Pane-modal scrim short-circuit. The pane's built-in scrim only
+      // receives pointer events while a sheet has raised it, so a
+      // pointerdown targeting the scrim is a stray click on a pane-modal
+      // surround. On the already-active pane, re-running the activation
+      // transfer would promote the card and coarsen the key view out of
+      // the sheet — the chain provider's scrim redirect keeps promotion
+      // on the open sheet instead. A background pane still runs the
+      // transfer so its z-order comes forward; the sheet reclaims
+      // promotion downstream of activation.
+      if (
+        startEl.classList.contains("tug-pane-scrim") &&
+        store.getFirstResponderCardId() === pane.activeCardId
+      ) {
+        return;
+      }
+
       // Route the activation through `transferFocusForActivation`
       // The helper
       // owns the save → commit → resolve → gate → focus sequence
