@@ -1034,8 +1034,14 @@ app-test *FILES:
     # Refresh tugdeck/dist so the harness (which loads prod-built
     # static files via tugcast's ServeDir, not Vite — see the
     # TUGAPP_APP_TEST branch in AppDelegate.loadPreferences)
-    # reflects current source.
-    (cd tugdeck && bun run build >/dev/null)
+    # reflects current source. A failed build MUST abort the run:
+    # continuing would silently test whatever stale dist is on disk,
+    # producing verdicts about old code.
+    if ! (cd tugdeck && bun run build >/dev/null); then
+        echo "[app-test] tugdeck dist build FAILED — aborting; a stale dist would test old code." >&2
+        echo "           Run 'cd tugdeck && bunx vite build' to see the build error." >&2
+        exit 1
+    fi
 
     # Clean slate before the first spawn: wipe THIS WORKTREE's
     # apptest data dirs from earlier runs and stop any of its tugcasts

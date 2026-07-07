@@ -39,6 +39,10 @@
  *      matches against `state.cards`) → **true** (card-to-card
  *      navigation via tab switch or pane activation is a deliberate
  *      user gesture, not focus theft — AT0001/AT0003 scenarios).
+ *   6b. Focus is inside a pane-modal sheet (`[data-slot="tug-sheet"]`,
+ *      portaled into the pane frame with no `[data-card-id]` ancestor)
+ *      → **true** (same deliberate-navigation rationale as 6 —
+ *      AT0100's cross-pane click while a sheet is open).
  *   7. Otherwise → **false** (the user has focus somewhere real;
  *      don't steal).
  *
@@ -171,6 +175,23 @@ export function canProgrammaticallyFocus(
     ) {
       return true;
     }
+  }
+
+  // Branch 6b: focus is inside a pane-modal sheet. A TugSheet portals into
+  // the pane *frame* ([D19]) — a sibling of the card host — so its
+  // focusables carry no `[data-card-id]` ancestor and branch 6 misses them
+  // even though they are deck UI, not an external control. Clicking another
+  // card while a sheet holds focus is the same deliberate navigation as
+  // branch 6; refusing here would strand the activation with no focus at
+  // all (the activation-click mousedown suppression means no browser
+  // default fills in behind a refused transfer). Same-pane sheet modality
+  // is unaffected: clicks on the raised pane scrim never reach the
+  // activation transfer (the scrim short-circuit consumes them).
+  if (
+    active instanceof Element &&
+    active.closest('[data-slot="tug-sheet"]') !== null
+  ) {
+    return true;
   }
 
   // Branch 7: user has focus somewhere real outside any deck card.

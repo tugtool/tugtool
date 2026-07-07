@@ -3510,8 +3510,19 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         style={separatorStyle}
         role={listRole}
         // A subordinate list adds no Tab stop of its own (the filter input owns
-        // focus); every other list is a native / engine focus stop at `0`.
-        tabIndex={keyboardSubordinate ? -1 : 0}
+        // focus); an authored or interactive list is a native / engine focus
+        // stop at `0`. A read-only, un-authored listing (`interactive={false}`,
+        // e.g. the dev transcript) renders NO tabindex at all: a `0`/`-1`
+        // container is still mouse-focusable, so a click on inert content
+        // would move DOM focus onto the scroll container and steal the caret
+        // from the surface that owns it (the prompt entry, a sheet's field).
+        tabIndex={
+          keyboardSubordinate
+            ? -1
+            : !interactive && !focusEngineActive
+              ? undefined
+              : 0
+        }
       >
         <div
           ref={topSpacerRef}
@@ -3549,10 +3560,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    `data-disabled` / `aria-disabled` so CSS and assistive
             //    tech reflect the state. The movement cursor already skips
             //    it via `isCursorableRow`.
+            //  - A read-only, un-authored listing (`interactive={false}`)
+            //    renders NO tabindex on its wrappers: `-1` is still
+            //    mouse-focusable, so a click on the row's content would
+            //    move DOM focus onto the inert wrapper and steal the caret
+            //    from the surface that owns it.
             const wrapperTabIndex =
-              rowsAreNativeStops && interactive && role === "cell" && enabled
-                ? 0
-                : -1;
+              rowsAreNativeStops && !interactive
+                ? undefined
+                : rowsAreNativeStops && interactive && role === "cell" && enabled
+                  ? 0
+                  : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;
             const wrapperDisabledAttr = enabled ? undefined : "true";
             // `selectionRequired` mode — the owned selected row.

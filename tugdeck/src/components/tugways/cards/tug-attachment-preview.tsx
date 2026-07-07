@@ -54,7 +54,7 @@
 import "./tug-attachment-preview.css";
 
 import * as React from "react";
-import { BoneFracture, X } from "lucide-react";
+import { ImageOff, X } from "lucide-react";
 
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
@@ -469,7 +469,7 @@ function AttachmentPreviewTile({
           ) : tile.broken ? (
             // Broken image: the atom points at a bytes-store entry with no
             // pixels — a recalled history image whose bytes are gone and whose
-            // durable thumbnail was never captured. A fractured-bone glyph
+            // durable thumbnail was never captured. A broken-image glyph
             // reads as "this image is broken" rather than a blank slot that
             // looks like it's still loading.
             <span
@@ -478,7 +478,7 @@ function AttachmentPreviewTile({
               aria-label="Image unavailable"
               title="Image unavailable"
             >
-              <BoneFracture aria-hidden="true" />
+              <ImageOff aria-hidden="true" />
             </span>
           ) : (
             // No pixels yet (the brief pre-bake drop window): a transparent,

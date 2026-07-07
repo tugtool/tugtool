@@ -149,7 +149,21 @@ export function usePaneFocusController(
 
   // Document-level classification listener.
   useLayoutEffect(() => {
+    // Set by `onPointerDown` when the gesture is a cross-card activation
+    // (the clicked pane's active card was not the first responder), consumed
+    // by `onMouseDown` in the same gesture. An activation click's focus
+    // placement belongs to `transferFocusForActivation` — the browser's
+    // mousedown focus default must not clobber it: on card content with no
+    // focusable ancestor under the click, WebKit clears focus to body,
+    // which strips the caret the transfer just placed (e.g. the dev card's
+    // prompt entry after a click on transcript prose). Matches the Mac
+    // first-click-activates convention: the click that brings a background
+    // card forward activates it and does not also place a caret or start a
+    // selection; the next click interacts normally.
+    let activationClick = false;
+
     function onPointerDown(event: PointerEvent): void {
+      activationClick = false;
       const root = deckRootRef.current;
       if (!root) return;
 
@@ -266,8 +280,13 @@ export function usePaneFocusController(
       // cross-pane flips; the explicit clear after this call covers
       // the same-bit case so a click back onto the only / already-
       // active pane still restores `data-focused="true"`.
+      const outgoingCardId = store.getFirstResponderCardId();
+      // Flag the paired mousedown (below) when this click transfers the
+      // first responder to a different card — including from a deselected
+      // canvas (`null` outgoing).
+      activationClick = outgoingCardId !== pane.activeCardId;
       transferFocusForActivation({
-        outgoingCardId: store.getFirstResponderCardId(),
+        outgoingCardId,
         incomingCardId: pane.activeCardId,
         store,
         commitMutation: () => store.activateCard(pane.activeCardId),
@@ -314,6 +333,17 @@ export function usePaneFocusController(
       if (paneEl === null) return;
       if (event.metaKey) return;
       if (startEl.closest("[data-no-activate]")) return;
+      // Activation click (flagged by the pointerdown classifier above):
+      // `transferFocusForActivation` has already placed focus on the
+      // incoming card's destination. Suppress the browser's mousedown
+      // focus default even on card content — a click on non-focusable
+      // content (transcript prose) would otherwise clear focus to body
+      // and strip the caret the transfer just placed.
+      if (activationClick && event.button === 0) {
+        activationClick = false;
+        event.preventDefault();
+        return;
+      }
       // Card-content click: the browser's default focus behavior is
       // the correct outcome (input → focus input, etc.). Only pane-
       // chrome clicks need the focus-clearing suppression.

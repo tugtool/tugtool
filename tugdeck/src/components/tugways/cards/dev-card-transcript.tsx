@@ -1581,6 +1581,14 @@ export const DevTranscriptHost = forwardRef<
               // lands on an unmounted or unpainted row.
               inline
               pageByEntry
+              // The transcript is a read-only stream surface: its rows are
+              // prose and tool blocks, not pickable list items. Without this,
+              // the un-authored default makes every row wrapper (and the
+              // scroll container) a native focus target, so any click on
+              // transcript content moves DOM focus onto the row and steals
+              // the caret from the prompt entry — including the activation
+              // click that brings a background dev card forward.
+              interactive={false}
             />
           </ToolBlockExpansionContext.Provider>
           <DevJumpToBottomButton

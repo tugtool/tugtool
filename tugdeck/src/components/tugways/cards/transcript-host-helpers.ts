@@ -111,25 +111,6 @@ interface TranscriptCellProps {
   ref: (node: Element | null) => void;
   onContextMenu: (event: React.MouseEvent) => void;
   onMouseDown: (event: React.MouseEvent) => void;
-  /**
-   * `tabIndex={-1}` makes the cell click-focusable (programmatically
-   * focusable, not in the tab order). This matters because the
-   * surrounding `TugListView` cell wrapper carries `tabIndex={0}`,
-   * and the browser's mousedown-default focus walks up from the
-   * click target looking for the deepest focusable ancestor. Without
-   * this, the focus lands on the list-view's wrapper, fires a
-   * `focusin` whose target sits ABOVE our cell's `data-responder-id`,
-   * and the chain's focusin promoter walks UP from the wrapper
-   * (skipping our cell entirely) to the card-content responder —
-   * un-promoting the cell and routing subsequent ⌘C / ⌘A to the
-   * card instead of to this entry. With `tabIndex={-1}` here, the
-   * cell-div is the deepest focusable element in the chain, so the
-   * mousedown focus lands on it, the resulting focusin re-confirms
-   * the cell as first responder (no-op transition), and the cell
-   * stays promoted across the menu lifetime. Keyboard Tab order is
-   * preserved (`-1` excludes the cell from sequential navigation).
-   */
-  tabIndex: -1;
 }
 
 /**
@@ -331,11 +312,17 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
 
   return {
     ResponderScope,
+    // No tabIndex on the cell: the transcript renders inside a read-only
+    // (`interactive={false}`) TugListView, so nothing in the click chain is
+    // focusable and the browser's mousedown-default focus walk finds no
+    // target — DOM focus (the prompt entry's caret) survives a click on
+    // transcript content. First-responder promotion of this cell rides the
+    // chain's pointerdown promoter, which needs no focusable element, so
+    // ⌘C / ⌘A and the right-click menu still route to this entry.
     cellProps: {
       ref: responderRef as (node: Element | null) => void,
       onContextMenu: handleContextMenu,
       onMouseDown: handleMouseDown,
-      tabIndex: -1,
     },
     bodyRef,
     menu,
