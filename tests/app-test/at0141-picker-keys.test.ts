@@ -12,11 +12,16 @@
  * (3) → Cancel (4) → Open (5) — so the engine's Tab walk owns navigation, each
  * `TugListView` is ONE item-group
  * stop that arrow-roves internally, and `armKeyboardRestore` seeds the ring on
- * the commit-home (Open). Each assertion below fails loudly if a seam breaks:
+ * the Sessions list (its cursor rests on the "New session" row, so one Return
+ * falls through to the persistent-default Open). Each assertion below fails
+ * loudly if a seam breaks:
  *
- *   - **Seed (A):** the ring rests on Open at open ([P12] Picker → Open via the
- *     focus-key seed). Fails if the smart-latch `.focus()`→`armKeyboardRestore`
- *     swap regressed or Open wasn't authored.
+ *   - **Seed (A):** the ring rests on the Sessions list at open ([P12] Picker →
+ *     New session via the focus-key seed). Fails if the smart-latch
+ *     `.focus()`→`armKeyboardRestore` swap regressed or the list wasn't
+ *     authored. The walk then Tabs forward to Open (skipping the
+ *     conditionally-disabled Move-all-to-Trash stop, whichever way the host's
+ *     session count leaves it).
  *   - **Walk owns Tab + wraps (B):** Tab from Open (the last stop) wraps to the
  *     path field (order 0) and lands DOM focus on the real `<input>`. Fails if
  *     the engine walk didn't take over Tab in the sheet, the field isn't a stop,
@@ -71,6 +76,7 @@ const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
 // the walk, at a fractional order so the stops below keep their stable keys.
 const BROWSE = '[data-tug-focus-key="dev-picker-cycle:0.5"]';
 const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
+const SESSIONS = '[data-tug-focus-key="dev-picker-cycle:2"]';
 const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
 const PICKER_FORM = ".dev-card-picker-form";
 
@@ -97,6 +103,30 @@ function pressKey(app: { evalJS<T>(s: string): Promise<T> }, key: string): Promi
       return null;
     })()`,
   );
+}
+
+// Tab forward until `selector` wears the key view. Bounded: the walk crosses
+// stops whose presence is host-dependent (Move-all-to-Trash drops out of the
+// cycle when the typed path has no sessions), so the hop count between two
+// named stops is not a constant this test should hard-code.
+async function tabUntil(
+  app: {
+    evalJS<T>(s: string): Promise<T>;
+    waitForCondition<T>(s: string, opts?: { timeoutMs?: number }): Promise<T>;
+  },
+  selector: string,
+  maxTabs: number,
+): Promise<void> {
+  for (let i = 0; i < maxTabs; i++) {
+    await pressKey(app, "Tab");
+    try {
+      await app.waitForCondition<boolean>(hasKeyView(selector), { timeoutMs: 1_500 });
+      return;
+    } catch {
+      // Not this stop — keep walking.
+    }
+  }
+  throw new Error(`tab walk never reached ${selector} within ${maxTabs} tabs`);
 }
 
 // The `data-recent-path` of the Recents row currently wearing the movement
@@ -162,11 +192,17 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
           { timeoutMs: 8000 },
         );
 
-        // (A) Seed: the ring rests on Open (the commit-home, [P12]) once the path
-        // seed settles Open enabled — via the engine key view (armKeyboardRestore),
-        // not a bare `.focus()`. The seed also focuses Open in the DOM, so the
+        // (A) Seed: the ring rests on the Sessions list ([P12] Picker → New
+        // session) once the path seed settles Open enabled and the sessions
+        // ledger is ready — via the engine key view (armKeyboardRestore), not a
+        // bare `.focus()`. The seed also focuses the list in the DOM, so the
         // walk below starts there.
-        await app.waitForCondition<boolean>(hasKeyView(OPEN), { timeoutMs: 8000 });
+        await app.waitForCondition<boolean>(hasKeyView(SESSIONS), { timeoutMs: 8000 });
+
+        // Walk forward to Open (the last stop). Between Sessions and Open sit
+        // Move-all-to-Trash (present only when the path has sessions) and
+        // Cancel, so the hop count is host-dependent — walk, don't count.
+        await tabUntil(app, OPEN, 4);
 
         // (B) The engine walk owns Tab inside the sheet, and Open (last) wraps to
         // the path field (order 0) with DOM focus on the real <input>.

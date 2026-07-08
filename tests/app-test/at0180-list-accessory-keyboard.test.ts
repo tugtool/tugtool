@@ -68,6 +68,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
 const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
+const SESSIONS = '[data-tug-focus-key="dev-picker-cycle:2"]';
 const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
 const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
 // The native "Browse…" folder button sits between PATH and RECENTS in the walk.
@@ -139,6 +140,29 @@ function pressKey(app: { evalJS<T>(s: string): Promise<T> }, key: string): Promi
   );
 }
 
+// Tab forward until `selector` wears the key view (at0141's helper). Bounded:
+// the walk crosses stops whose presence is host-dependent (Move-all-to-Trash
+// drops out when the typed path has no sessions).
+async function tabUntil(
+  app: {
+    evalJS<T>(s: string): Promise<T>;
+    waitForCondition<T>(s: string, opts?: { timeoutMs?: number }): Promise<T>;
+  },
+  selector: string,
+  maxTabs: number,
+): Promise<void> {
+  for (let i = 0; i < maxTabs; i++) {
+    await pressKey(app, "Tab");
+    try {
+      await app.waitForCondition<boolean>(hasKeyView(selector), { timeoutMs: 1_500 });
+      return;
+    } catch {
+      // Not this stop — keep walking.
+    }
+  }
+  throw new Error(`tab walk never reached ${selector} within ${maxTabs} tabs`);
+}
+
 function deckShape() {
   return {
     cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
@@ -179,10 +203,13 @@ describe.skipIf(!SHOULD_RUN)("AT0180: list-row accessories join the keyboard foc
           { timeoutMs: 8000 },
         );
 
-        // Walk the cycle onto the Recents stop: seed lands on Open; Tab wraps
-        // to the path field; Tab steps through the Browse button, then reaches
-        // Recents (at0141's walk).
-        await app.waitForCondition<boolean>(hasKeyView(OPEN), { timeoutMs: 8000 });
+        // Walk the cycle onto the Recents stop: the seed lands on the Sessions
+        // list ([P12] Picker → New session, at0141's contract); Tab forward
+        // through Trash-all (host-dependent) / Cancel / Open, wrap to the path
+        // field, step through Browse, and reach Recents. Named waypoints keep
+        // the wrap honest without hard-coding the hop count.
+        await app.waitForCondition<boolean>(hasKeyView(SESSIONS), { timeoutMs: 8000 });
+        await tabUntil(app, OPEN, 4);
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(PATH), { timeoutMs: 6000 });
         await pressKey(app, "Tab");

@@ -90,6 +90,17 @@ export async function openFixtureSession(
     `document.querySelector(${JSON.stringify(RECENTS)}) !== null`,
     { timeoutMs: 8000 },
   );
+  // The picker one-shot-seeds the path field from the host hint / home the
+  // moment it mounts — usually BEFORE the tugbank recents push above lands —
+  // so the field cannot be assumed to auto-fill from the seeded recent.
+  // Click the seeded Recents row instead (a recent click fills the input;
+  // the list stays put), then wait for the fill.
+  expect(
+    await clickElement(
+      app,
+      `.dev-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
+    ),
+  ).toBe(true);
   await app.waitForCondition<boolean>(
     `(function(){
       var el = document.querySelector(".dev-card-picker-form input");
