@@ -1192,7 +1192,23 @@ function handleInterrupt(
         interruptInFlightIntervals: [],
       },
       effects: [
-        { kind: "send-frame", msg: { type: "interrupt" } },
+        // A user-origin pull-down is a retraction: the row already left
+        // the local transcript and the draft is back in the composer, so
+        // the prompt must also leave claude's history — `retract: true`
+        // has tugcode truncate the session JSONL at the prompt record and
+        // silently respawn once the interrupt's echo lands. Without it
+        // the SDK keeps the prompt in context (with an
+        // `"[Request interrupted by user]"` marker) and a reload replays
+        // it as a phantom user row. Assistant-origin (wake) and
+        // suppressed (`/compact`) turns carry no user submission to
+        // retract — they interrupt plain.
+        {
+          kind: "send-frame",
+          msg:
+            inflightUser !== null
+              ? { type: "interrupt", retract: true }
+              : { type: "interrupt" },
+        },
         // `clear-inflight` is a no-op under the per-turn-paths
         // streaming architecture (each turn writes its own
         // `turn.${turnKey}.*` paths). The in-flight pair stops

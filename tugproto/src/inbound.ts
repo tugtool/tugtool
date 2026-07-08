@@ -93,9 +93,23 @@ export interface QuestionAnswer {
   response?: string;
 }
 
-/** Interrupt the in-flight turn. */
+/**
+ * Interrupt the in-flight turn.
+ *
+ * `retract` marks a pull-back: the user cancelled their submission before
+ * claude produced any answer content (the reducer's CASE A pull-down), so
+ * the prompt must leave the conversation entirely — not just stop it.
+ * Claude's SDK persists the prompt to the session JSONL on receipt and its
+ * `interrupt` verb keeps it in history (appending an
+ * `"[Request interrupted by user]"` marker), so tugcode honors `retract` by
+ * truncating the session JSONL at the prompt's record and silently
+ * respawning `--resume` once the interrupt's `result` echo lands — the same
+ * in-place conversation-rewind path as `session_rewind`. Absent/false ⇒ a
+ * plain stop (CASE B), which keeps the turn in history.
+ */
 export interface Interrupt {
   type: "interrupt";
+  retract?: boolean;
 }
 
 /** The session permission modes claude accepts. */

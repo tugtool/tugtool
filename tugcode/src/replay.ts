@@ -187,6 +187,21 @@ export interface JsonlEntry {
   parentUuid?: string | null;
   timestamp?: string;
   /**
+   * Present on `type: "system"` entries — `"compact_boundary"` marks a
+   * `/compact` point. The parent chain BREAKS at each compaction (the
+   * boundary record carries `parentUuid: null` and the continuation
+   * summary parents to it), so {@link computeDeadEntryIndices}'s live
+   * walk bridges backwards across these records by file position.
+   */
+  subtype?: string;
+  /**
+   * True on subagent sidechain entries (older sessions persisted agent
+   * transcripts inline in the main JSONL). Sidechains root their own
+   * parent chains mid-file, so they are exempt from the live-chain walk
+   * — {@link computeDeadEntryIndices} never marks them dead.
+   */
+  isSidechain?: boolean;
+  /**
    * Present on `type: "attachment"` entries. Most attachment subtypes are
    * Claude bookkeeping (skipped — see {@link SKIPPED_TOP_LEVEL_TYPES}),
    * but `queued_command` is how Claude Code persists a **steered mid-turn
@@ -2069,6 +2084,158 @@ function computeTurns(
 }
 
 /**
+ * Dead-branch detection: which entries are OFF the session's live parent
+ * chain and must not replay.
+ *
+ * Claude's session JSONL is append-only and `parentUuid`-threaded — a
+ * tree, not a list. History edits never remove bytes; they abandon them:
+ *   - the REPL's pre-response Escape drops the aborted prompt from its
+ *     in-memory history, leaving the persisted record as an orphan
+ *     (`parentUuid` chain no later entry points into);
+ *   - a conversation rewind (`/rewind` from a terminal,
+ *     `--resume-session-at`) branches: the next submission parents to an
+ *     ancestor, stranding everything after the branch point as a dead
+ *     branch.
+ * Claude itself resumes by walking the chain from the newest leaf, so
+ * dead entries never re-enter its context. A flat scan replays them as
+ * phantom turns — this walk computes the same live set claude uses.
+ *
+ * Algorithm: walk `parentUuid` upward from the LAST uuid-bearing entry
+ * (the newest leaf — the file is append-only, so the tail is live).
+ * When a walk terminates at a compaction record (`compact_boundary`
+ * system entry, or a continuation summary), the chain has hit a
+ * `/compact` break, not the session start: bridge backwards to the last
+ * uuid-bearing entry BEFORE the compaction (by file position) and keep
+ * walking — pre-compaction history is display-relevant even though it
+ * left claude's context.
+ *
+ * Off-chain alone is NOT dead. Real files carry benign mid-turn spurs
+ * that sit off the strict ancestor chain — hook-result `attachment`
+ * records, an occasional `tool_result` user record whose sibling
+ * carried the chain forward, an abandoned API-retry `assistant` branch
+ * — and, crucially, whole null-parent SEGMENTS: a session restart
+ * writes its first submission with `parentUuid: null` mid-file, and
+ * everything before a `/compact` break is disconnected from the live
+ * tail by construction. All of that is legitimate transcript content
+ * the flat scan has always shown.
+ *
+ * What must not replay is an abandoned BRANCH: a subtree rooted at a
+ * genuine user submission whose parent IS on the live chain — the
+ * exact shape a conversation rewind strands (the next submission
+ * parents to an ancestor, bypassing the branch). Requiring a live
+ * parent is what separates a rewound-away turn from a restart segment
+ * (whose root has no parent at all): a REPL-escape orphan with a null
+ * parent therefore stays visible — flat parity; rare, and honest — and
+ * Tug's own retraction never produces one (it truncates the bytes).
+ * The dead set is the descendant closure of live-parented off-chain
+ * user-submission roots, nothing else.
+ *
+ * Exemptions: entries with no `uuid` (bookkeeping — `last-prompt`,
+ * `queue-operation`, `file-history-snapshot`, …) and sidechain entries
+ * (`isSidechain: true` — they root their own chains mid-file) are never
+ * marked dead.
+ */
+export function computeDeadEntryIndices(
+  parsedEntries: ReadonlyArray<JsonlEntry | null>,
+): Set<number> {
+  // Index the chain participants: uuid-bearing, non-sidechain entries.
+  const indexByUuid = new Map<string, number>();
+  const childIndices = new Map<string, number[]>();
+  const chainIndices: number[] = [];
+  for (let i = 0; i < parsedEntries.length; i++) {
+    const entry = parsedEntries[i];
+    if (entry === null) continue;
+    if (entry.isSidechain === true) continue;
+    if (typeof entry.uuid !== "string" || entry.uuid.length === 0) continue;
+    indexByUuid.set(entry.uuid, i);
+    chainIndices.push(i);
+    if (typeof entry.parentUuid === "string") {
+      const siblings = childIndices.get(entry.parentUuid);
+      if (siblings === undefined) childIndices.set(entry.parentUuid, [i]);
+      else siblings.push(i);
+    }
+  }
+  if (chainIndices.length === 0) return new Set();
+
+  const isCompactionRecord = (entry: JsonlEntry): boolean =>
+    (entry.type === "system" && entry.subtype === "compact_boundary") ||
+    entry.isCompactSummary === true;
+
+  // Live = the ancestor closure of the newest leaf, bridged backwards
+  // across /compact chain breaks.
+  const live = new Set<number>();
+  let cursor: number | undefined = chainIndices[chainIndices.length - 1];
+  while (cursor !== undefined) {
+    // Walk this segment's chain upward. The `live` check breaks cycles
+    // (corrupt files) and stops when a bridge merges into an
+    // already-live entry.
+    let rootIndex: number = cursor;
+    let walk: number | undefined = cursor;
+    while (walk !== undefined && !live.has(walk)) {
+      live.add(walk);
+      rootIndex = walk;
+      const parent: string | null | undefined =
+        parsedEntries[walk]?.parentUuid;
+      walk =
+        typeof parent === "string" ? indexByUuid.get(parent) : undefined;
+    }
+    // Segment root reached. A compaction root means the chain broke at
+    // a `/compact` — bridge to the newest chain entry before it.
+    const rootEntry = parsedEntries[rootIndex];
+    cursor = undefined;
+    if (rootEntry !== null && rootEntry !== undefined && isCompactionRecord(rootEntry)) {
+      for (let j = chainIndices.length - 1; j >= 0; j--) {
+        const candidate = chainIndices[j];
+        if (candidate < rootIndex && !live.has(candidate)) {
+          cursor = candidate;
+          break;
+        }
+      }
+    }
+  }
+
+  // A genuine user submission: string content, or blocks with at least
+  // one non-tool_result block. Mirrors the anchor test in
+  // `computeConversationTruncation` — a tool_result echo or a
+  // bookkeeping record never roots an abandoned turn.
+  const isUserSubmission = (entry: JsonlEntry): boolean => {
+    if (entry.type !== "user") return false;
+    const content = entry.message?.content;
+    if (typeof content === "string") return content.length > 0;
+    if (!Array.isArray(content)) return false;
+    return content.some((b) => b?.type !== "tool_result");
+  };
+
+  // Dead roots: off-chain user submissions whose parent is LIVE — true
+  // branch points. Their descendant closure is off-chain by
+  // construction (live is an ancestor closure), so the BFS needs no
+  // re-check.
+  const dead = new Set<number>();
+  const queue: number[] = [];
+  for (const i of chainIndices) {
+    if (live.has(i)) continue;
+    const entry = parsedEntries[i];
+    if (entry === null || !isUserSubmission(entry)) continue;
+    const parentIndex =
+      typeof entry.parentUuid === "string"
+        ? indexByUuid.get(entry.parentUuid)
+        : undefined;
+    if (parentIndex !== undefined && live.has(parentIndex)) queue.push(i);
+  }
+  while (queue.length > 0) {
+    const i = queue.pop()!;
+    if (dead.has(i)) continue;
+    dead.add(i);
+    const uuid = parsedEntries[i]?.uuid;
+    if (typeof uuid !== "string") continue;
+    for (const child of childIndices.get(uuid) ?? []) {
+      if (!dead.has(child)) queue.push(child);
+    }
+  }
+  return dead;
+}
+
+/**
  * The real-corpus contract's tugcode side (#step-7): segment a whole JSONL
  * string into the ordered per-turn origin list `["user" | "assistant", …]`
  * by dry-running the real translator (`computeTurns`). The Rust engine
@@ -2356,6 +2523,23 @@ export async function* translateJsonlSession(
       return null;
     }
   });
+
+  // Dead-branch exclusion: entries off the live `parentUuid` chain
+  // (retracted prompts, REPL-escape orphans, abandoned rewind branches)
+  // are nulled so every downstream pass — the anchor scans, turn
+  // location, windowing, and the emit loop — skips them uniformly, the
+  // same way malformed lines are skipped. Claude's own resume walks the
+  // chain and never feeds these to the model; replaying them paints
+  // phantom turns the live session never showed.
+  const deadIndices = computeDeadEntryIndices(parsedEntries);
+  if (deadIndices.size > 0) {
+    console.log(
+      `Replay: skipping ${deadIndices.size} dead-branch JSONL entr${deadIndices.size === 1 ? "y" : "ies"} (off the live parent chain)`,
+    );
+    for (const idx of deadIndices) {
+      parsedEntries[idx] = null;
+    }
+  }
 
   // Which parent `Agent` calls were launched in the BACKGROUND — their
   // main-JSONL result is the async-launch echo (`isAsync` / `status:

@@ -83,7 +83,8 @@ export const INBOUND_HANDLERS: InboundHandlers = {
     sessionManager?.handleToolApproval(msg),
   question_answer: (msg, { sessionManager }) =>
     sessionManager?.handleQuestionAnswer(msg),
-  interrupt: (_msg, { sessionManager }) => sessionManager?.handleInterrupt(),
+  interrupt: (msg, { sessionManager }) =>
+    sessionManager?.handleInterrupt(msg.retract === true),
   permission_mode: (msg, { sessionManager }) =>
     sessionManager?.handlePermissionMode(msg),
   model_change: (msg, { sessionManager }) =>

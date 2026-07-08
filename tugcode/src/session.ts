@@ -2430,6 +2430,16 @@ export class ActiveTurn {
   /** True if `handleInterrupt` was invoked while this turn was active. */
   interrupted: boolean = false;
   /**
+   * True if the interrupt was a retraction (`interrupt{retract:true}` —
+   * the client's CASE A pull-down). When the turn closes, the manager's
+   * close hook truncates the session JSONL at this turn's
+   * {@link promptUuid} record and silently respawns, so the aborted
+   * prompt leaves claude's history instead of lingering as a
+   * phantom-context entry. Meaningless unless {@link interrupted} is
+   * also set.
+   */
+  retractRequested: boolean = false;
+  /**
    * Set by `runReplay` when it adopts this turn for in-flight emission
    * (mid-turn replay design). While true, the per-turn `writeLine`
    * sites in `dispatchEventToTurn` and `signalEofToActiveTurn` skip
@@ -4773,6 +4783,13 @@ export class SessionManager {
         if (this.isInWake) {
           this.isInWake = false;
         }
+        // Retraction hook: a turn interrupted with `retract: true`
+        // truncates its own prompt out of the session JSONL now that
+        // the turn is closed. Only on this clean `result`-bounded
+        // close — the EOF close means claude died, and a respawn
+        // decision there belongs to the crash/early-exit paths, not
+        // the retraction.
+        this.maybeScheduleRetraction(turn);
       }
     } else {
       this.handleInterTurnEvent(event);
@@ -6042,16 +6059,28 @@ export class SessionManager {
    * rather than `error` if claude tears down before responding.
    * The flag is per-turn (lives on `ActiveTurn`); a stale interrupt
    * arriving when no turn is active is a no-op.
+   *
+   * `retract` marks the interrupt as a pull-back (the client's CASE A
+   * pull-down): once the turn closes, the aborted prompt must leave
+   * claude's history entirely, not merely stop. The SDK has no live
+   * verb for this — its `interrupt` keeps the prompt in the session
+   * JSONL and appends an `"[Request interrupted by user]"` marker — so
+   * the turn is flagged and the close hook
+   * ({@link maybeScheduleRetraction}) runs the conversation-rewind
+   * truncation anchored at the turn's own prompt record.
    */
-  handleInterrupt(): void {
+  handleInterrupt(retract: boolean = false): void {
     if (!this.claudeProcess) {
       console.log("No active claude process to interrupt");
       return;
     }
 
-    console.log("Interrupting current turn via control_request interrupt");
+    console.log(
+      `Interrupting current turn via control_request interrupt${retract ? " (retract)" : ""}`,
+    );
     if (this.activeTurn !== null) {
       this.activeTurn.interrupted = true;
+      if (retract) this.activeTurn.retractRequested = true;
     }
     const stdin = this.claudeProcess.stdin;
     sendControlRequest(stdin, generateRequestId(), { subtype: "interrupt" });
@@ -6457,6 +6486,86 @@ export class SessionManager {
       };
     }
     return { canRewind: true };
+  }
+
+  /**
+   * Schedule the retraction of a just-closed turn's prompt
+   * (`interrupt{retract:true}` — the client's CASE A pull-down). Runs
+   * on a fresh tick: the close hook fires inside the stdout drain
+   * loop, and the retraction kills the claude subprocess — deferring
+   * lets the old drain observe EOF and exit on its own, the same
+   * process-swap shape as an effort-change respawn.
+   *
+   * A retraction with no captured {@link ActiveTurn.promptUuid} is
+   * skipped: the SDK never echoed the prompt record, so there is
+   * nothing on disk to truncate (the escape beat the persist) — the
+   * degenerate case IS the desired end state.
+   */
+  private maybeScheduleRetraction(turn: ActiveTurn): void {
+    if (!turn.retractRequested) return;
+    const promptUuid = turn.promptUuid;
+    if (promptUuid === null) {
+      console.log("Retraction skipped: no prompt uuid captured for the turn");
+      return;
+    }
+    setTimeout(() => {
+      this.applyPromptRetraction(promptUuid).catch((err) => {
+        console.log(
+          `Retraction failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }, 0);
+  }
+
+  /**
+   * Retract an aborted prompt from claude's history: truncate the
+   * session JSONL at the prompt's record and silently respawn
+   * `--resume` — the in-place leg of {@link applyConversationRewind},
+   * anchored at the retracted prompt itself. `slice(0, boundary)`
+   * semantics make the anchor the first record dropped, so the prompt,
+   * the SDK's `"[Request interrupted by user]"` marker, and the
+   * synthetic assistant stop all leave the file — the model's context
+   * and any future replay match what the client already shows (the
+   * CASE A pull-down removed the row locally at Escape time).
+   *
+   * Degrades to a plain interrupt (poison stays, honestly replayable)
+   * rather than risking the session on every guard:
+   *   - a follow-on turn opened at the close boundary (queued steering
+   *     send) — retraction must never kill a live turn;
+   *   - the prompt record never landed on disk (`not_found`);
+   *   - the prompt is the session's first submission
+   *     (`no_retained_turns` — truncation would leave an unresumable
+   *     empty session);
+   *   - a compaction raced into the chop range
+   *     (`compaction_blocked`);
+   *   - the session is held by another process (terminal resume) —
+   *     guarded inside {@link applyConversationRewind}.
+   */
+  private async applyPromptRetraction(promptUuid: string): Promise<void> {
+    if (!this.isClaudeIdle()) {
+      console.log("Retraction skipped: a follow-on turn is already running");
+      return;
+    }
+    const read = await this.readLiveSessionJsonl();
+    if (read.kind !== "ok") {
+      console.log(`Retraction skipped: could not read session JSONL (${read.message})`);
+      return;
+    }
+    const truncation = computeConversationTruncation(read.jsonl, promptUuid);
+    if (truncation.kind !== "ok") {
+      console.log(`Retraction skipped: ${truncation.kind}`);
+      return;
+    }
+    const result = await this.applyConversationRewind(promptUuid, false);
+    if (!result.canRewind) {
+      console.log(`Retraction skipped: ${result.error ?? "rewind refused"}`);
+      return;
+    }
+    console.log(`Retracted prompt ${promptUuid} from session history`);
+    logSessionLifecycle("tugcode.prompt_retracted", {
+      session_id: this.sessionId,
+      prompt_uuid: promptUuid,
+    });
   }
 
   /**
