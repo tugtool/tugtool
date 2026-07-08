@@ -530,7 +530,10 @@
   align-items: center;
   gap: var(--tug-space-sm);
   width: 100%;
-  margin-block: var(--tug-space-xs);
+  /* Top-only: transcript body children space with top margins (see the
+     run-end comment in block-chrome.css); the adjacency rules below
+     carry the gaps around the divider. */
+  margin-block: var(--tug-space-xs) 0;
   font-size: 0.85em;
   opacity: 0.55;
   user-select: none;
@@ -547,6 +550,20 @@
   flex: 0 0 auto;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* Top-margins-only adjacency around the divider: prose after the divider
+   owns the xs gap (prose has no margin of its own; blocks already carry a
+   bigger top margin), and the divider keeps the preceding block's wider
+   gap when it directly follows one. */
+.dev-card-transcript-compaction + .tug-markdown-block {
+  margin-top: var(--tug-space-xs);
+}
+.tool-block-chrome + .dev-card-transcript-compaction {
+  margin-top: var(--tugx-block-run-gap);
+}
+.dev-thinking-block + .dev-card-transcript-compaction {
+  margin-top: var(--tug-space-lg);
 }
 
 

@@ -101,8 +101,10 @@ body {
  * rounded tinted panel on `--tugx-block-surface`, set off from the transcript
  * column by contrast rather than a border. Consecutive tool calls are NOT a
  * semantic group, so adjacent blocks are separated by `--tugx-block-stack-gap`
- * (the `+` rule below) rather than fused into one panel; the first/last block
- * is set off from surrounding prose by the wider `--tugx-block-run-gap`.
+ * (the `+` rule below) rather than fused into one panel; a run is set off from
+ * the prose above by the block's own `--tugx-block-run-gap` top margin, and
+ * from the prose below by the follower's matching top margin (top-margins-only
+ * spacing — see the run-end comment below).
  *
  * The body kinds are scoped onto the SAME surface here ([L20] cascade
  * override): inside a block they read `--tugx-block-bg` = the panel surface
@@ -152,12 +154,17 @@ body {
   margin-top: var(--tugx-block-stack-gap);
 }
 
-/* Run end: the last block before non-block content (prose, a thinking block,
- * or nothing) gets the wider prose gap so the sequence doesn't butt against
- * the column. A standalone block matches both this and the default top margin,
- * so it keeps the full gap top and bottom. */
-.tool-block-chrome:not(:has(+ .tool-block-chrome)) {
-  margin-bottom: var(--tugx-block-run-gap);
+/* Run end: blocks space with TOP margins only — a block never carries a
+ * bottom margin. The transcript entry body is a `flow-root` (it contains
+ * descendant margins), so a trailing bottom margin becomes real height
+ * inside the body box and pushes the row's in-flight/controls footer a
+ * content-dependent distance below the last painted pixel. The FOLLOWER
+ * owns the gap instead: prose after a run gets the same run gap the block
+ * takes when it follows prose. Followers that carry a larger top margin
+ * of their own (the thinking block's `note` strip) need no rule here —
+ * their own margin is the gap. */
+.tool-block-chrome + .tug-markdown-block {
+  margin-top: var(--tugx-block-run-gap);
 }
 
 /* ---- Variants ([data-variant]) ----

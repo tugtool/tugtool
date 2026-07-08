@@ -105,7 +105,9 @@ body {
    * theme (dark on light, light on dark) so it holds up everywhere.     *
    * ------------------------------------------------------------------ */
   --tugx-block-hairline: color-mix(in srgb, var(--tug7-element-global-text-normal-default-rest) 16%, transparent);
-  /* Gap from surrounding prose (above the first block, below the last). */
+  /* Gap from surrounding prose. Applied as TOP margins only — the first
+   * block carries it above the run, and the element following the run
+   * carries it below (see the run-end comment in block-chrome.css). */
   --tugx-block-run-gap:  var(--tug-space-md);
   /* Gap between consecutive tool blocks. Each tool call is its own rounded
    * panel; a sequence is NOT a semantic group, so adjacent blocks are set

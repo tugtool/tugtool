@@ -63,8 +63,10 @@
 [data-variant="note"] {
   /* Margin — wider (lg) than the shared block-margin (md) because
    * the thinking strip is a major chrome element that benefits from
-   * extra vertical breathing room. */
-  --tugx-thinking-margin: var(--tug-space-lg) 0 var(--tug-space-lg) 0;
+   * extra vertical breathing room. Top-only: blocks space with top
+   * margins (see the run-end comment in block-chrome.css); the
+   * follower rules below carry the lg gap under the strip. */
+  --tugx-thinking-margin: var(--tug-space-lg) 0 0 0;
 
   /* Label — strong "Thinking" header text */
   --tugx-thinking-label-size:   var(--tug-font-size-sm);
@@ -97,6 +99,14 @@
   border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   overflow: hidden;
+}
+
+/* Top-margins-only spacing (see the run-end comment in block-chrome.css):
+ * the strip carries no bottom margin, so whatever follows owns the lg gap
+ * the strip's bottom edge used to provide. */
+.dev-thinking-block + .tug-markdown-block,
+.dev-thinking-block + .tool-block-chrome {
+  margin-top: var(--tug-space-lg);
 }
 
 /* ---- Hide the entire strip when there is no thinking content yet.
