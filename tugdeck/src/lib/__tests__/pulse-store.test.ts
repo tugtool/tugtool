@@ -116,6 +116,29 @@ describe("PulseStore", () => {
     expect(store.getSnapshot().latest?.text).toBe("third");
   });
 
+  it("intent rides both the live fold and the tail hydrate", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // Live frame with an intent; a second without.
+    conn.pushPulseFrame({
+      ...liveLine(2, "Writing chain.ts — 9 lines"),
+      intent: "I'll rewire the responder chain.",
+    });
+    conn.pushPulseFrame(liveLine(3, "Done"));
+    let snap = store.getSnapshot();
+    expect(snap.lines[0].intent).toBe("I'll rewire the responder chain.");
+    expect(snap.lines[1].intent).toBeUndefined();
+    // The tail carries a persisted intent for older rows.
+    publishListPulseLinesOk({
+      lines: [
+        { ...wireRow(1, "Explore · Reading foo.ts"), intent: "Mapping the reducer seam first." },
+      ] as never,
+    });
+    snap = store.getSnapshot();
+    expect(snap.lines[0].intent).toBe("Mapping the reducer seam first.");
+  });
+
   it("the rolling log caps oldest-out", () => {
     const { store, conn } = makeStore();
     stores.push(store);

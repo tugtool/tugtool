@@ -178,6 +178,22 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* ── Two-level line: "intent • action" ─────────────────────────────────
+   The retained high-level thought (the assistant's last substantive
+   monologue line) reads muted ahead of the live beat; the bullet is the
+   level divider. Shared by the strip and the history popover — the
+   surrounding text rule owns size/overflow, these only re-tint. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-pulse-intent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-pulse-intent-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  margin-inline: 0.55em;
+}
+
 /* Rendered markdown flattens to one inline run: the strip is a single
  * line; block wrappers from the parse lose their box behavior. */
 .dev-pulse-strip-text :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {

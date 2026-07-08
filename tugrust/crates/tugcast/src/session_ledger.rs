@@ -332,6 +332,12 @@ pub struct PulseLineRow {
     pub at_ms: i64,
     pub beat: i64,
     pub text: String,
+    /// The retained high-level thought behind a low-level `text` beat
+    /// ("intent • action" in the strip); absent when `text` is itself
+    /// the monologue or a turn marker. Omitted from serialization when
+    /// `None` so pre-intent rows round-trip unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
     pub scopes: Vec<String>,
 }
 
@@ -540,6 +546,7 @@ impl SessionLedger {
         Self::migrate_sessions_add_name(conn)?;
         Self::migrate_sessions_add_name_user_set(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
+        Self::migrate_pulse_lines_add_intent(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -755,6 +762,7 @@ impl SessionLedger {
                 at_ms  INTEGER NOT NULL,
                 beat   INTEGER NOT NULL,
                 text   TEXT NOT NULL,
+                intent TEXT,
                 scopes TEXT NOT NULL
             );
 
@@ -868,6 +876,22 @@ impl SessionLedger {
                 "ALTER TABLE sessions ADD COLUMN name_user_set INTEGER NOT NULL DEFAULT 0",
                 [],
             )?;
+        }
+        Ok(())
+    }
+
+    /// Self-healing add of the `pulse_lines.intent` column — the retained
+    /// high-level thought behind a low-level beat ("intent • action" in
+    /// the strip). Pre-column rows read `NULL` (no intent), which is
+    /// exactly what they carried. No-op on a fresh DB (the CREATE TABLE
+    /// defines it) or when already migrated.
+    fn migrate_pulse_lines_add_intent(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "pulse_lines")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "intent") {
+            conn.execute("ALTER TABLE pulse_lines ADD COLUMN intent TEXT", [])?;
         }
         Ok(())
     }
@@ -1975,6 +1999,7 @@ impl SessionLedger {
         at_ms: i64,
         beat: i64,
         text: &str,
+        intent: Option<&str>,
         scopes: &[String],
         cap: usize,
     ) -> Result<(), LedgerError> {
@@ -1982,9 +2007,9 @@ impl SessionLedger {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         tx.execute(
-            "INSERT INTO pulse_lines (at_ms, beat, text, scopes)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![at_ms, beat, text, scopes_json],
+            "INSERT INTO pulse_lines (at_ms, beat, text, intent, scopes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![at_ms, beat, text, intent, scopes_json],
         )?;
         tx.execute(
             "DELETE FROM pulse_lines
@@ -2002,19 +2027,20 @@ impl SessionLedger {
     pub fn list_pulse_lines_tail(&self, limit: usize) -> Result<Vec<PulseLineRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, beat, text, scopes FROM (
-                 SELECT id, at_ms, beat, text, scopes
+            "SELECT id, at_ms, beat, text, intent, scopes FROM (
+                 SELECT id, at_ms, beat, text, intent, scopes
                  FROM pulse_lines ORDER BY id DESC LIMIT ?1
              ) ORDER BY id ASC",
         )?;
         let rows = stmt
             .query_map(params![limit as i64], |row| {
-                let scopes_json: String = row.get(4)?;
+                let scopes_json: String = row.get(5)?;
                 Ok(PulseLineRow {
                     id: row.get(0)?,
                     at_ms: row.get(1)?,
                     beat: row.get(2)?,
                     text: row.get(3)?,
+                    intent: row.get(4)?,
                     scopes: serde_json::from_str(&scopes_json).unwrap_or_default(),
                 })
             })?
@@ -2360,10 +2386,20 @@ mod tests {
         assert!(ledger.list_pulse_lines_tail(20).unwrap().is_empty());
 
         // Write past the cap; only the newest `cap` rows survive.
+        // Even beats carry an intent, odd beats none — the tail must
+        // round-trip both.
         let scopes = vec!["scope-a".to_string(), "scope-b".to_string()];
         for i in 1..=250_i64 {
+            let intent = (i % 2 == 0).then(|| format!("intent {i}"));
             ledger
-                .record_pulse_line(1_000 + i, i, &format!("line {i}"), &scopes, 200)
+                .record_pulse_line(
+                    1_000 + i,
+                    i,
+                    &format!("line {i}"),
+                    intent.as_deref(),
+                    &scopes,
+                    200,
+                )
                 .expect("record_pulse_line");
         }
         let all = ledger.list_pulse_lines_tail(1_000).unwrap();
@@ -2378,6 +2414,8 @@ mod tests {
         assert_eq!(tail.last().unwrap().text, "line 250");
         assert_eq!(tail.last().unwrap().beat, 250);
         assert_eq!(tail.last().unwrap().scopes, scopes);
+        assert_eq!(tail.last().unwrap().intent.as_deref(), Some("intent 250"));
+        assert_eq!(tail.first().unwrap().intent, None); // beat 231, odd
     }
 
     // ── CRUD round-trip per state transition ─────────────────────────────────

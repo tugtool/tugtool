@@ -240,16 +240,25 @@ describe("PulseVoice — the monologue", () => {
       { scope: "s1", text: "I'll write the poem file now." },
     ]);
 
-    // Tool-input progress takes over and keeps the strip alive.
+    // Tool-input progress takes over and keeps the strip alive — with the
+    // superseded thought riding along as the intent.
     voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 12 }), 2_200);
     expect(voice.flush(2_300)).toEqual([
-      { scope: "s1", text: "Writing poem.txt — 12 lines" },
+      {
+        scope: "s1",
+        text: "Writing poem.txt — 12 lines",
+        intent: "I'll write the poem file now.",
+      },
     ]);
 
     // It climbs as more content streams.
     voice.onFrame("s1", toolProgress({ filePath: "/a/b/poem.txt", lines: 30 }), 3_400);
     expect(voice.flush(3_500)).toEqual([
-      { scope: "s1", text: "Writing poem.txt — 30 lines" },
+      {
+        scope: "s1",
+        text: "Writing poem.txt — 30 lines",
+        intent: "I'll write the poem file now.",
+      },
     ]);
   });
 
@@ -394,6 +403,89 @@ describe("PulseVoice — the monologue", () => {
     voice.onFrame("s1", toolUse("Bash", { command: "make" }), 1_200);
     // The monologue still owns the strip; no spurious tool beat.
     expect(voice.flush(2_300)).toEqual([]);
+  });
+});
+
+describe("PulseVoice — intent riding a tool chain", () => {
+  test("a substantive thought pins as intent across subagent beats", () => {
+    const voice = new PulseVoice();
+    voice.onFrame(
+      "s1",
+      assistantText("I'll map the reducer seam before touching the renderer."),
+      0,
+    );
+    voice.onFrame(
+      "s1",
+      toolUse("Agent", { subagent_type: "Explore", description: "map it" }, { id: "toolu_a" }),
+      100,
+    );
+    expect(voice.flush(1_100)).toEqual([
+      {
+        scope: "s1",
+        text: "Launching Explore…",
+        intent: "I'll map the reducer seam before touching the renderer.",
+      },
+    ]);
+    // Later beats keep carrying the same intent.
+    voice.onFrame(
+      "s1",
+      toolUse("Read", { file_path: "/x/reducer.ts" }, { id: "toolu_1", parent: "toolu_a" }),
+      1_200,
+    );
+    expect(voice.flush(2_300)).toEqual([
+      {
+        scope: "s1",
+        text: "Explore · Reading reducer.ts",
+        intent: "I'll map the reducer seam before touching the renderer.",
+      },
+    ]);
+  });
+
+  test("a trivially short thought keeps the previous intent (substance gate)", () => {
+    const voice = new PulseVoice();
+    voice.onFrame(
+      "s1",
+      assistantText("Now I'll rewire the whole responder chain carefully.", { msgId: "m1" }),
+      0,
+    );
+    voice.onFrame("s1", toolProgress({ filePath: "/x/chain.ts", lines: 3 }), 100);
+    voice.flush(1_100);
+    // A new, too-thin thought ("Now the tests." — under both gates)...
+    voice.onFrame("s1", assistantText("Now the tests.", { msgId: "m2" }), 1_200);
+    voice.onFrame("s1", toolProgress({ filePath: "/x/chain.test.ts", lines: 9 }), 1_300);
+    // ...does not evict the substantive intent.
+    expect(voice.flush(2_400)).toEqual([
+      {
+        scope: "s1",
+        text: "Writing chain.test.ts — 9 lines",
+        intent: "Now I'll rewire the whole responder chain carefully.",
+      },
+    ]);
+  });
+
+  test("no monologue yet means no intent on a beat", () => {
+    const voice = new PulseVoice();
+    voice.onFrame("s1", toolProgress({ filePath: "/x/a.ts", lines: 2 }), 0);
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "Writing a.ts — 2 lines" },
+    ]);
+  });
+
+  test("turn completion clears the retained intent", () => {
+    const voice = new PulseVoice();
+    voice.onFrame(
+      "s1",
+      assistantText("Finishing the ledger migration and running the tests."),
+      0,
+    );
+    voice.onFrame("s1", toolProgress({ filePath: "/x/l.rs", lines: 4 }), 100);
+    voice.flush(1_100);
+    voice.onFrame("s1", turnComplete(), 2_000);
+    // The next turn's first beat starts with a clean slate.
+    voice.onFrame("s1", toolProgress({ filePath: "/x/m.rs", lines: 1 }), 3_500);
+    expect(voice.flush(4_600)).toEqual([
+      { scope: "s1", text: "Writing m.rs — 1 line" },
+    ]);
   });
 });
 

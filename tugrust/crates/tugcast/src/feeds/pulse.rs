@@ -402,6 +402,10 @@ fn handle_pulse_line(config: &PulseBridgeConfig, pulse_tx: &broadcast::Sender<Fr
     }
     let beat = parsed.get("beat").and_then(|v| v.as_i64()).unwrap_or(0);
     let at_ms = parsed.get("at").and_then(|v| v.as_i64()).unwrap_or(0);
+    let intent = parsed
+        .get("intent")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
     let scopes: Vec<String> = parsed
         .get("scopes")
         .and_then(|v| v.as_array())
@@ -412,7 +416,9 @@ fn handle_pulse_line(config: &PulseBridgeConfig, pulse_tx: &broadcast::Sender<Fr
         })
         .unwrap_or_default();
     if let Some(ledger) = config.ledger.as_ref() {
-        if let Err(err) = ledger.record_pulse_line(at_ms, beat, text, &scopes, PULSE_LEDGER_CAP) {
+        if let Err(err) =
+            ledger.record_pulse_line(at_ms, beat, text, intent, &scopes, PULSE_LEDGER_CAP)
+        {
             warn!(error = %err, "pulse bridge: ledger write failed");
         }
     }

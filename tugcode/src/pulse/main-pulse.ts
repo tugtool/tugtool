@@ -47,6 +47,7 @@ function main(): void {
     const pulse: PulseLine = {
       type: "pulse",
       text: line.text,
+      ...(line.intent !== undefined ? { intent: line.intent } : {}),
       scopes: [line.scope],
       beat: emitted,
       at: Date.now(),

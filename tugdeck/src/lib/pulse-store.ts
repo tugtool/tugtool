@@ -39,6 +39,9 @@ export const PULSE_ENABLED_KEY = "enabled";
 export interface PulseLineEntry {
   key: string;
   text: string;
+  /** Retained high-level thought behind a low-level `text` beat —
+   *  the strip renders "intent • text" when present. */
+  intent?: string;
   scopes: readonly string[];
   beat: number;
   atMs: number;
@@ -169,6 +172,7 @@ export class PulseStore {
         {
           key: lineKey(line.at, line.beat),
           text: line.text,
+          ...(line.intent !== undefined ? { intent: line.intent } : {}),
           scopes: Object.freeze([...line.scopes]),
           beat: line.beat,
           atMs: line.at,
@@ -243,6 +247,9 @@ export class PulseStore {
       Object.freeze({
         key: lineKey(row.at_ms, row.beat),
         text: row.text,
+        ...(typeof row.intent === "string" && row.intent.length > 0
+          ? { intent: row.intent }
+          : {}),
         scopes: Object.freeze([...row.scopes]) as readonly string[],
         beat: row.beat,
         atMs: row.at_ms,

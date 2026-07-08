@@ -98,6 +98,9 @@ const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 interface DisplayEntry {
   key: string;
   text: string;
+  /** Retained high-level thought behind a low-level `text` beat — the
+   *  strip renders "intent • text" (intent muted) when present. */
+  intent?: string;
   placeholder: boolean;
 }
 
@@ -238,7 +241,12 @@ export function DevPulseStrip({
   );
   const target: DisplayEntry =
     latest !== null
-      ? { key: latest.key, text: latest.text, placeholder: false }
+      ? {
+          key: latest.key,
+          text: latest.text,
+          ...(latest.intent !== undefined ? { intent: latest.intent } : {}),
+          placeholder: false,
+        }
       : NONE_ENTRY;
   const { current, outgoing, settleOutgoing } = useDwellDisplay(target);
 
@@ -295,8 +303,11 @@ export function DevPulseStrip({
   // The last few pulses for this card's session — shown in the legend popover.
   const history = linesForScope(pulse.lines, tugSessionId, PULSE_HISTORY_COUNT);
 
-  // Right-click → Copy the current line's raw text (not the placeholder).
-  const copyLine = useCopyableButton(current.placeholder ? "" : current.text);
+  // Right-click → Copy the current line's raw text (not the placeholder),
+  // intent included so the copy carries the whole two-level reading.
+  const copyLine = useCopyableButton(
+    current.placeholder ? "" : composeLineCopy(current.intent, current.text),
+  );
 
   if (!pulse.enabled) return null;
   return (
@@ -412,25 +423,54 @@ function DevPulseHistory({
         <div className="dev-pulse-history-empty">None yet</div>
       ) : (
         lines.map((line) => (
-          <DevPulseHistoryRow key={line.key} text={line.text} />
+          <DevPulseHistoryRow
+            key={line.key}
+            text={line.text}
+            intent={line.intent}
+          />
         ))
       )}
     </div>
   );
 }
 
-function DevPulseHistoryRow({ text }: { text: string }): React.ReactElement {
+function DevPulseHistoryRow({
+  text,
+  intent,
+}: {
+  text: string;
+  intent?: string;
+}): React.ReactElement {
   const render = React.useMemo(() => renderPulseLine(text), [text]);
-  // Right-click → Copy this row's raw pulse text.
-  const copy = useCopyableButton(text);
-  const body =
+  const intentRender = React.useMemo(
+    () => (intent !== undefined ? renderPulseLine(intent) : null),
+    [intent],
+  );
+  // Right-click → Copy this row's raw pulse text, intent included.
+  const copy = useCopyableButton(composeLineCopy(intent, text));
+  const textNode =
     render === null || render.html.length === 0 ? (
-      <span className="dev-pulse-history-text">{text}</span>
+      <>{text}</>
     ) : (
-      <span
-        className="dev-pulse-history-text"
-        dangerouslySetInnerHTML={{ __html: render.html }}
-      />
+      <span dangerouslySetInnerHTML={{ __html: render.html }} />
+    );
+  const body =
+    intent === undefined ? (
+      <span className="dev-pulse-history-text">{textNode}</span>
+    ) : (
+      <span className="dev-pulse-history-text">
+        <span className="dev-pulse-intent">
+          {intentRender === null || intentRender.html.length === 0 ? (
+            <>{intent}</>
+          ) : (
+            <span dangerouslySetInnerHTML={{ __html: intentRender.html }} />
+          )}
+        </span>
+        <span className="dev-pulse-intent-sep" aria-hidden="true">
+          •
+        </span>
+        {textNode}
+      </span>
     );
   return (
     <div
@@ -447,12 +487,19 @@ function DevPulseHistoryRow({ text }: { text: string }): React.ReactElement {
   );
 }
 
+/** Raw-text form of a line for the clipboard: "intent • text". */
+function composeLineCopy(intent: string | undefined, text: string): string {
+  return intent !== undefined ? `${intent} • ${text}` : text;
+}
+
 /**
  * One rendered line layer. The pulse-line library owns fidelity and
  * safety (math-first split, sanitized markdown, KaTeX, total-function
  * fallback); this component only re-renders once a lazy KaTeX load
  * resolves, then every render is synchronous. `html: ""` is the
- * library's render-as-plain-text signal.
+ * library's render-as-plain-text signal. An entry carrying an `intent`
+ * renders two levels — the retained thought muted, then a bullet, then
+ * the live beat.
  */
 function PulseLineText({
   entry,
@@ -473,32 +520,62 @@ function PulseLineText({
   // the SAME entry with real typesetting (the first pass showed the
   // escaped source while the engine loaded).
   const render = React.useMemo(
-    () => (entry.placeholder ? null : renderPulseLine(entry.text)),
+    () =>
+      entry.placeholder
+        ? null
+        : {
+            text: renderPulseLine(entry.text),
+            intent:
+              entry.intent !== undefined ? renderPulseLine(entry.intent) : null,
+          },
     [entry, engineEpoch],
   );
   React.useEffect(() => {
-    if (render?.pending == null) return;
+    const pendings = [render?.text.pending, render?.intent?.pending].filter(
+      (p): p is Promise<void> => p != null,
+    );
+    if (pendings.length === 0) return;
     let live = true;
-    void render.pending.then(() => {
+    void Promise.all(pendings).then(() => {
       if (live) bumpEngineReady();
     });
     return () => {
       live = false;
     };
   }, [render]);
-  if (render === null || render.html.length === 0) {
+  if (render === null) {
     return (
       <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
         {entry.text}
       </span>
     );
   }
+  const textNode =
+    render.text.html.length === 0 ? (
+      <>{entry.text}</>
+    ) : (
+      <span dangerouslySetInnerHTML={{ __html: render.text.html }} />
+    );
+  if (entry.intent === undefined) {
+    return (
+      <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
+        {textNode}
+      </span>
+    );
+  }
+  const intentNode =
+    render.intent === null || render.intent.html.length === 0 ? (
+      <>{entry.intent}</>
+    ) : (
+      <span dangerouslySetInnerHTML={{ __html: render.intent.html }} />
+    );
   return (
-    <span
-      ref={spanRef}
-      className={className}
-      aria-hidden={ariaHidden}
-      dangerouslySetInnerHTML={{ __html: render.html }}
-    />
+    <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
+      <span className="dev-pulse-intent">{intentNode}</span>
+      <span className="dev-pulse-intent-sep" aria-hidden="true">
+        •
+      </span>
+      {textNode}
+    </span>
   );
 }

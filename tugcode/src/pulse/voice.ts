@@ -42,6 +42,19 @@ export const VOICE_THROTTLE_MS = 1_000;
 /** An in-progress thought this long may show before any sentence
  *  settles (marked with a streaming ellipsis). */
 const PARTIAL_MIN_CHARS = 40;
+/**
+ * Minimum substance for a RETAINED intent — the high-level "this is
+ * what I'm trying to do" line that rides along with a low-level tool
+ * beat. A thought must read as a real clause to be worth pinning over
+ * a whole tool chain; an interstitial beat ("Now the tests.") fails
+ * both gates and the previous substantive intent survives instead.
+ * Math is always substantial (an equation is a whole thought).
+ */
+export const INTENT_MIN_CHARS = 24;
+export const INTENT_MIN_WORDS = 4;
+/** Intent budget — tighter than {@link LINE_CLIP}: the intent shares
+ *  the strip's single line with the action beat. */
+const INTENT_CLIP = 160;
 /** Raw-markdown budget per line. Generous: LaTeX source is several
  *  times wider than its rendered form, and the strip's CSS ellipsis
  *  owns VISUAL overflow — this cap only bounds wire/ledger rows. */
@@ -56,6 +69,14 @@ export const SCOPE_IDLE_SWEEP_MS = 30 * 60 * 1000;
 export interface VoiceLine {
   scope: string;
   text: string;
+  /**
+   * The retained high-level thought behind a low-level beat: the last
+   * substantive monologue line, carried while a tool chain runs so the
+   * strip can show "intent • action" instead of the action alone.
+   * Absent when the text IS the monologue (it is its own intent) and
+   * on turn-boundary markers.
+   */
+  intent?: string;
 }
 
 /** Collapse whitespace to one line. */
@@ -278,6 +299,32 @@ export function extractDisplay(raw: string): string | null {
 }
 
 /**
+ * Substance gate for a retained intent: a clause of at least
+ * {@link INTENT_MIN_CHARS} chars AND {@link INTENT_MIN_WORDS} words, or
+ * any math. Below the gate a thought is an interstitial beat, not an
+ * intent worth pinning over a tool chain.
+ */
+export function isSubstantialIntent(display: string): boolean {
+  if (hasMath(display)) return true;
+  if (display.length < INTENT_MIN_CHARS) return false;
+  const words = display.split(" ").filter((w) => w.length > 0);
+  return words.length >= INTENT_MIN_WORDS;
+}
+
+/**
+ * The intent line of an accumulating monologue: its display extraction
+ * ({@link extractDisplay}), admitted only past the substance gate and
+ * clipped to the tighter {@link INTENT_CLIP} budget. Null when nothing
+ * substantive has been said — callers keep the previous intent.
+ */
+export function extractIntent(raw: string): string | null {
+  const display = extractDisplay(raw);
+  if (display === null) return null;
+  if (!isSubstantialIntent(display)) return null;
+  return clipOutsideMath(display, INTENT_CLIP);
+}
+
+/**
  * Parse one stdin line into a spliced frame. Returns null (no throw)
  * for malformed JSON, missing `type`, or missing the spliced
  * `tug_session_id` — the bridge only forwards spliced relay lines.
@@ -466,6 +513,14 @@ class ScopeVoiceState {
    */
   directLine: string | null = null;
   /**
+   * The retained high-level thought — the last monologue line that
+   * passed {@link isSubstantialIntent}. Rides along with `directLine`
+   * emits so the strip shows what the tool chain is FOR. Survives a
+   * trivially-short new thought (the gate keeps the previous intent);
+   * cleared at turn boundaries.
+   */
+  lastIntent: string | null = null;
+  /**
    * Launched-agent labels: `Agent`/`Task` tool_use_id → a short label
    * (subagent type or description). A subagent's own tool calls arrive with
    * `parent_tool_use_id` set to its launching call, so this lets the strip
@@ -481,6 +536,7 @@ class ScopeVoiceState {
     this.blockKey = null;
     this.blockText = "";
     this.directLine = null;
+    this.lastIntent = null;
     this.agentLabels.clear();
     this.shownText = null;
   }
@@ -644,12 +700,22 @@ export class PulseVoice {
       if (atMs - state.lastEmitAt < VOICE_THROTTLE_MS) continue;
       // A live tool-progress line outranks the monologue: during a long
       // Write there is no assistant_text to settle, so the directLine is
-      // the only thing keeping the strip alive.
+      // the only thing keeping the strip alive. The monologue it
+      // superseded rides along as `intent` — the strip shows what the
+      // tool chain is FOR, not just the beat.
       if (state.directLine !== null) {
         if (state.directLine === state.shownText) continue;
+        if (state.blockText.length > 0) {
+          const intent = extractIntent(state.blockText);
+          if (intent !== null) state.lastIntent = intent;
+        }
         state.shownText = state.directLine;
         state.lastEmitAt = atMs;
-        lines.push({ scope, text: state.directLine });
+        lines.push({
+          scope,
+          text: state.directLine,
+          ...(state.lastIntent !== null ? { intent: state.lastIntent } : {}),
+        });
         continue;
       }
       if (state.blockText.length === 0) continue;

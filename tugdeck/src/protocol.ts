@@ -780,6 +780,10 @@ export interface PulseLineWireRow {
   at_ms: number;
   beat: number;
   text: string;
+  /** Retained high-level thought behind a low-level `text` beat
+   *  ("intent • action" in the strip); absent on pre-intent rows and
+   *  when `text` is itself the monologue. */
+  intent?: string;
   scopes: string[];
 }
 
@@ -803,6 +807,9 @@ export function encodeListPulseLines(): Frame {
  */
 export interface PulseFramePayload {
   text: string;
+  /** Retained high-level thought behind a low-level `text` beat;
+   *  absent when `text` is itself the monologue or a turn marker. */
+  intent?: string;
   scopes: string[];
   beat: number;
   at: number;
@@ -819,6 +826,9 @@ export function parsePulseFrame(payload: Uint8Array): PulseFramePayload | null {
     }
     return {
       text: p.text,
+      ...(typeof p.intent === "string" && p.intent.length > 0
+        ? { intent: p.intent }
+        : {}),
       scopes: Array.isArray(p.scopes)
         ? p.scopes.filter((s): s is string => typeof s === "string")
         : [],
