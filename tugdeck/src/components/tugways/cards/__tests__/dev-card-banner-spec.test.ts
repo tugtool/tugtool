@@ -75,6 +75,7 @@ function baseSnap(
     activeTurn: null,
     wakeTrigger: null,
     jobs: [],
+    goal: null,
     pendingDraftRestore: null,
     lastCost: null,
     apiRetry: null,

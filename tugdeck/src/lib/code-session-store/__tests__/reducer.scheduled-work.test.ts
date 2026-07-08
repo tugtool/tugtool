@@ -174,7 +174,44 @@ describe("scheduled-work wake reconciliation + respawn sweep", () => {
     expect(state.jobs[0].status).toBe("scheduled");
   });
 
-  test("session_init sweeps a pending scheduled row to stopped (respawn)", () => {
+  test("wake_started seeds the trigger summary as a scheduled system_note", () => {
+    let state = fresh();
+    state = reduce(state, {
+      type: "wake_started",
+      session_id: "s",
+      wake_trigger: {
+        task_id: "",
+        tool_use_id: "tu_w",
+        status: "completed",
+        summary: "loop pacing",
+        output_file: "",
+      },
+      turnKey: "wk1",
+    } as CodeSessionEvent).state;
+    const entry = state.scratch.get("wk1");
+    expect(entry).toBeDefined();
+    expect(entry!.messages[0]).toMatchObject({
+      kind: "system_note",
+      source: "scheduled",
+      text: "loop pacing",
+    });
+    expect(entry!.systemNoteSeq).toBe(1);
+  });
+
+  test("a wake with an empty summary seeds no note", () => {
+    let state = fresh();
+    state = reduce(state, wakeStarted("", "wk1")).state;
+    const entry = state.scratch.get("wk1");
+    expect(entry).toBeDefined();
+    expect(entry!.messages.length).toBe(0);
+  });
+
+  test("session_init leaves a pending scheduled row alive (respawn resumes; resume re-fires)", () => {
+    // Every tugcode respawn path resumes, and on claude >= 2.1.204 the
+    // harness scheduler re-fires pending wakeups/crons in the resumed
+    // process (tugcode/probes/goal-loop/FINDINGS.md#q02-loop). Only
+    // `running` rows are stale-marked; the surviving scheduled row
+    // reconciles via the wake fold or ages out via the reaper.
     let state = applyAll(fresh(), [
       send("go", "t1"),
       ...toolCall("ScheduleWakeup", WAKEUP_INPUT, WAKEUP_RESULT, "tu_w"),
@@ -182,6 +219,6 @@ describe("scheduled-work wake reconciliation + respawn sweep", () => {
     ]);
     expect(state.jobs[0].status).toBe("scheduled");
     state = reduce(state, { type: "session_init" }).state;
-    expect(state.jobs[0].status).toBe("stopped");
+    expect(state.jobs[0].status).toBe("scheduled");
   });
 });

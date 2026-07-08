@@ -1564,6 +1564,27 @@ export function routeTopLevelEvent(
       const message = event.message as Record<string, unknown> | undefined;
       const rawContent = message?.content;
 
+      // Goal-evaluator feedback. While a `/goal` is active, the Stop-hook
+      // evaluator injects synthetic user events (`isSynthetic: true`, text
+      // `Stop hook feedback:\n[<condition>]: <reason>`) into the SAME result
+      // cycle — a goal run is one long turn (see
+      // tugcode/probes/goal-loop/FINDINGS.md#q01-goal). Translate the event
+      // to a `goal_feedback` frame and stop: it is not the user's prompt
+      // (it must not latch the rewind anchor below) and it carries no
+      // tool_result blocks.
+      if (event.isSynthetic === true) {
+        const feedback = parseGoalFeedbackText(rawContent);
+        if (feedback !== null) {
+          messages.push({
+            type: "goal_feedback",
+            condition: feedback.condition,
+            reason: feedback.reason,
+            ipc_version: 2,
+          });
+        }
+        break;
+      }
+
       // `/rewind` anchor capture ([#step-7-1]). With `--replay-user-messages`
       // claude echoes the turn's own submission back as a `user` event
       // carrying the prompt-record `uuid`. That uuid is the rewind anchor
@@ -1944,6 +1965,35 @@ export function parseToolInputProgress(partialJson: string): ToolInputProgressSu
   }
 
   return { bytes: partialJson.length, filePath, contentLines };
+}
+
+/**
+ * Parse a goal-evaluator feedback text out of a synthetic user event's
+ * content. The wire shape (pinned by the goal-lifecycle capture in
+ * `tugcode/probes/goal-loop/`) is a single text block:
+ *
+ *     Stop hook feedback:\n[<condition>]: <reason>
+ *
+ * The condition match is greedy (a condition may itself contain `]: `);
+ * the reason is whatever follows the last `]: `. Returns null when the
+ * content carries no such text — synthetic events that are not goal
+ * feedback stay untranslated rather than guessed at.
+ */
+export function parseGoalFeedbackText(
+  rawContent: unknown,
+): { condition: string; reason: string } | null {
+  let text = "";
+  if (typeof rawContent === "string") {
+    text = rawContent;
+  } else if (Array.isArray(rawContent)) {
+    text = (rawContent as Array<Record<string, unknown>>)
+      .filter((b) => b.type === "text")
+      .map((b) => (b.text as string) || "")
+      .join("");
+  }
+  const match = text.match(/^Stop hook feedback:\s*\n\[([\s\S]*)\]:\s([\s\S]*)$/);
+  if (match === null) return null;
+  return { condition: match[1], reason: match[2].trim() };
 }
 
 export function mapStreamEvent(
@@ -5025,14 +5075,28 @@ export class SessionManager {
       );
       return;
     }
+    // Drain the pending-trigger FIFO so the wake carries its label —
+    // "loop pacing" beats a bare "scheduled wake". A wakeup entry is
+    // consumed by its fire; a cron entry persists (recurring) until
+    // CronDelete clears it.
+    const trigger =
+      this.pendingScheduledTriggers.length > 0
+        ? this.pendingScheduledTriggers[0]
+        : null;
+    if (trigger !== null && trigger.kind === "wakeup") {
+      this.pendingScheduledTriggers.shift();
+    }
     const frame: WakeStarted = {
       type: "wake_started",
       session_id: this.sessionId,
       wake_trigger: {
         task_id: "",
-        tool_use_id: "",
+        tool_use_id: trigger?.toolUseId ?? "",
         status: "completed",
-        summary: "scheduled wake",
+        summary:
+          trigger !== null && trigger.label.length > 0
+            ? trigger.label
+            : "scheduled wake",
         output_file: "",
       },
       ipc_version: 2,
@@ -5176,6 +5240,79 @@ export class SessionManager {
     writeLine(frame);
   }
 
+  /**
+   * Pending scheduled-trigger labels, FIFO. When the main lane calls
+   * `ScheduleWakeup` / `CronCreate`, the harness's later fire arrives as
+   * a bare re-init with no id (Cohort B), so the only way to label the
+   * wake is to remember what was scheduled. `handleWakeReInit` drains
+   * this: a wakeup entry is consumed by its fire (fire-once); a cron
+   * entry persists across fires until `CronDelete`. `ScheduleWakeup
+   * {stop:true}` clears pending wakeups (the loop-skill end signal).
+   * Bounded — a runaway scheduler can't grow it without limit.
+   */
+  private pendingScheduledTriggers: Array<{
+    toolUseId: string;
+    kind: "wakeup" | "cron";
+    label: string;
+  }> = [];
+
+  /**
+   * Observe outbound `tool_use` frames for scheduled-work registration.
+   * Main lane only — a subagent's scheduling isn't this session's wake.
+   */
+  private noteScheduledTriggerFrames(
+    messages: OutboundMessage[],
+    laneKey: string | null,
+  ): void {
+    if (laneKey !== null) return;
+    for (const m of messages) {
+      if (m.type !== "tool_use") continue;
+      const name = m.tool_name.toLowerCase();
+      if (name !== "schedulewakeup" && name !== "croncreate" && name !== "crondelete") {
+        continue;
+      }
+      const input = m.input as Record<string, unknown> | undefined;
+      if (name === "schedulewakeup") {
+        if (input?.stop === true) {
+          this.pendingScheduledTriggers = this.pendingScheduledTriggers.filter(
+            (t) => t.kind !== "wakeup",
+          );
+          continue;
+        }
+        const label =
+          typeof input?.reason === "string" && input.reason.length > 0
+            ? input.reason
+            : typeof input?.prompt === "string"
+              ? input.prompt
+              : "";
+        this.pendingScheduledTriggers.push({
+          toolUseId: m.tool_use_id,
+          kind: "wakeup",
+          label,
+        });
+      } else if (name === "croncreate") {
+        const label =
+          typeof input?.prompt === "string" && input.prompt.length > 0
+            ? input.prompt
+            : typeof input?.cron === "string"
+              ? input.cron
+              : "";
+        this.pendingScheduledTriggers.push({
+          toolUseId: m.tool_use_id,
+          kind: "cron",
+          label,
+        });
+      } else {
+        this.pendingScheduledTriggers = this.pendingScheduledTriggers.filter(
+          (t) => t.kind !== "cron",
+        );
+      }
+      if (this.pendingScheduledTriggers.length > 8) {
+        this.pendingScheduledTriggers = this.pendingScheduledTriggers.slice(-8);
+      }
+    }
+  }
+
   private dispatchEventToTurn(
     turn: ActiveTurn,
     event: Record<string, unknown>,
@@ -5262,6 +5399,7 @@ export class SessionManager {
     // regardless of suppressEmit so the snapshot has up-to-date block
     // state if the bracket fires.
     turn.updateBlockStateFromMessages(routeResult.messages, laneKey);
+    this.noteScheduledTriggerFrames(routeResult.messages, laneKey);
 
     // Tier 2: delegate stream_event inner payload to mapStreamEvent().
     if (routeResult.streamEvent) {
@@ -5304,6 +5442,7 @@ export class SessionManager {
       // Mirror streamed messages onto the lane's per-block state. Same
       // rationale as the routeResult call above.
       turn.updateBlockStateFromMessages(streamResult.messages, laneKey);
+      this.noteScheduledTriggerFrames(streamResult.messages, laneKey);
 
       // Tool-input progress: claude streams a tool's argument JSON as
       // `input_json_delta` fragments. The block state (minted by the

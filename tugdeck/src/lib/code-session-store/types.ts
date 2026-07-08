@@ -16,6 +16,7 @@
 import type { AtomSegment } from "../tug-atom-img";
 import type { CardSessionMode } from "../card-session-binding-store";
 import type { JobItem } from "./select-jobs";
+import type { GoalState } from "./select-goal";
 
 export type { CardSessionMode } from "../card-session-binding-store";
 
@@ -1095,6 +1096,14 @@ export interface CodeSessionSnapshot {
    * rebuilds ([L02]). Read via `useJobsState`.
    */
   jobs: ReadonlyArray<JobItem>;
+  /**
+   * The session's one `/goal`, or null — reduced from `/goal …`
+   * submissions, `goal_feedback` frames, and the goal cycle's commit
+   * (see `select-goal.ts`). Live-only: replay never populates it. The
+   * reference passes through from the reducer unchanged for `Object.is`
+   * stability across quiescent rebuilds ([L02]). Read via `useGoalState`.
+   */
+  goal: GoalState | null;
   /**
    * Wall-clock ms when the user-initiated interrupt round-trip
    * started (`interrupt()` from a content-bearing phase — CASE B), or

@@ -85,12 +85,20 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   // Conversation-structure / automation deferred to a future plan — no
   // surface this pass. Kept here (rather than dropped) as a marker for
   // possible future feature work; each is a substantial standalone surface.
+  // (`/goal` and `/loop` graduated to pass-throughs — probe-verified on
+  // claude 2.1.204, see tuglaws/slash-commands.md and
+  // tugcode/probes/goal-loop/FINDINGS.md.)
   "branch",
   "plan",
-  "goal",
-  "loop",
-  "tasks",
-  "bashes", // alias of /tasks.
+  // (`/tasks` and its alias `/bashes` graduated to Tug-local commands —
+  // they open the WORK popover; see LOCAL_SLASH_COMMANDS.)
+  // /btw is refused headless by claude itself ("/btw isn't available in
+  // this environment", zero-cost local response — probe-verified on
+  // 2.1.204, tugcode/probes/goal-loop/FINDINGS.md#q03-btw) and absent
+  // from the catalog. Hidden so it fails honestly with the notice
+  // instead of round-tripping to a refusal; a Tug-side side-question
+  // surface is follow-on work (roadmap/slash-command-plan.md #roadmap).
+  "btw",
   "autofix-pr",
   "workflows", // workflow-orchestration progress view.
   "fork", // forked-subagent spawn; interactive, no bridge surface yet.

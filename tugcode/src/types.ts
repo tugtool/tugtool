@@ -832,6 +832,26 @@ export interface OutputTruncated {
 }
 
 /**
+ * `/goal` evaluator feedback. While a goal is active, claude's Stop-hook
+ * evaluator injects a synthetic `user` event (`isSynthetic: true`, text
+ * `Stop hook feedback:\n[<condition>]: <reason>`) into the SAME result
+ * cycle to keep the assistant working — a goal run is one long turn, not
+ * a wake bracket (probe: `tugcode/probes/goal-loop/FINDINGS.md#q01-goal`).
+ * tugcode translates each such event into this frame so the deck can track
+ * goal state (active, latest evaluator reason) without parsing prose. The
+ * synthetic event itself emits no user-visible content and is excluded
+ * from the rewind prompt-anchor latch.
+ */
+export interface GoalFeedback {
+  type: "goal_feedback";
+  /** The goal condition, verbatim from the bracketed feedback text. */
+  condition: string;
+  /** The evaluator's reason the condition is not yet met. */
+  reason: string;
+  ipc_version: number;
+}
+
+/**
  * Subscription-quota status broadcast emitted by Claude Code 2.1.x at the
  * start of every turn (post-`system/init`, pre-stream). Distinct from
  * {@link ApiRetry}, which fires on backoff-retryable HTTP failures.
@@ -1337,6 +1357,7 @@ export type OutboundMessage =
   | ApiRetry
   | ModelRefusalFallback
   | OutputTruncated
+  | GoalFeedback
   | RateLimitEvent
   | ToolUseStructured
   | ControlRequestCancel

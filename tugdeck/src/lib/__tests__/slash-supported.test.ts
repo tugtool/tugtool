@@ -34,6 +34,27 @@ describe("classifySlashCommand", () => {
     }
   });
 
+  test("/btw is hidden (refused headless by claude itself; probe-verified)", () => {
+    expect(classifySlashCommand("btw")).toBe("hidden");
+  });
+
+  test("/tasks and /bashes are supported-local (the WORK popover surface)", () => {
+    for (const name of ["tasks", "bashes"]) {
+      expect(classifySlashCommand(name)).toBe("supported-local");
+      expect(HIDDEN_SLASH_COMMANDS.has(name)).toBe(false);
+    }
+  });
+
+  test("/goal and /loop are pass-throughs (probe-verified on 2.1.204)", () => {
+    // Graduated out of the hidden set: a goal runs as one long result
+    // cycle, a loop paces via ScheduleWakeup/CronCreate wakes — both work
+    // end-to-end over the bridge (tugcode/probes/goal-loop/FINDINGS.md).
+    for (const name of ["goal", "loop"]) {
+      expect(classifySlashCommand(name)).toBe("pass-through");
+      expect(HIDDEN_SLASH_COMMANDS.has(name)).toBe(false);
+    }
+  });
+
   test("an unknown name defaults to pass-through (never swallowed)", () => {
     for (const name of ["wibble", "tugplug:commit", "some-future-command"]) {
       expect(classifySlashCommand(name)).toBe("pass-through");

@@ -99,6 +99,14 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Show the context-window breakdown in the status-bar popover",
   },
   {
+    name: "tasks",
+    description: "Show the session's work (goal, jobs, scheduled, checklist) in the WORK popover",
+  },
+  {
+    name: "bashes",
+    description: "Show the session's work in the WORK popover (alias of /tasks)",
+  },
+  {
     name: "skills",
     description: "List the project's plugin + user skills",
   },

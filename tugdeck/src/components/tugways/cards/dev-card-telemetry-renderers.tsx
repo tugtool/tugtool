@@ -75,20 +75,24 @@ import { useSessionStateChanges } from "@/lib/session-state-changes-store";
 
 import {
   ContextPopoverContent,
-  JobsPopoverContent,
   StateChangeLogPopoverContent,
-  TasksPopoverContent,
   TimePopoverContent,
   TokensPopoverContent,
+  WorkPopoverContent,
   type ScrollToRowHandler,
 } from "./dev-card-telemetry-popovers";
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
 import { useJobsState } from "@/lib/code-session-store/hooks/use-jobs-state";
 import {
   countJobs,
-  jobsCellPose,
   jobsOwnedByTurn,
 } from "@/lib/code-session-store/select-jobs";
+import { goalIsActive } from "@/lib/code-session-store/select-goal";
+import {
+  composeWorkSummary,
+  workCellLabel,
+  workCellPose,
+} from "@/lib/code-session-store/select-work";
 import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
 // ---------------------------------------------------------------------------
@@ -278,7 +282,7 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
    * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
-   * TASKS, JOBS = base + 0…5).
+   * WORK = base + 0…4).
    */
   focusOrderBase?: number;
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
@@ -297,6 +301,9 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
 export interface DevTelemetryStatusRowHandle {
   /** Open the CONTEXT popover (the `/context`-style breakdown). */
   openContextPopover(): void;
+  /** Open the WORK popover (goal / jobs / scheduled / checklist) — the
+   *  `/tasks` surface. */
+  openWorkPopover(): void;
 }
 
 /**
@@ -451,9 +458,9 @@ export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
  * Combined session status row — production Z2 surface promoted from
  * the workshop gallery. Layout:
  *
- *     STATE   TIME   TOKENS   CONTEXT   TASKS   JOBS
+ *     STATE   TIME   TOKENS   CONTEXT   WORK
  *
- * Six cell anchors, each opening a popover on click:
+ * Five cell anchors, each opening a popover on click:
  *
  *   - **STATE** → `StateChangeLogPopoverContent` driven by
  *     `useSessionStateChanges(snap.tugSessionId)` against the
@@ -487,15 +494,16 @@ export const DevTelemetryPhase: React.FC<DevTelemetryProps> = ({
  * `devSessionPhaseKey` + `devSessionPhaseVisual`) and give the
  * cell the live motion a static figure cannot.
  *
- * The TASKS cell carries the [D100] todo list; the JOBS cell carries
- * the background-jobs ledger (`useJobsState`), same `N/M` + pose
- * grammar, with no idle demotion — a background job genuinely runs
- * between turns. Cumulative TOTAL TIME / TOTAL TOKENS are not
- * separate cells; the same sums surface in the TIME and TOKENS
- * popovers' summary footers (one click reveals the per-turn rows +
- * the cumulative totals).
+ * The WORK cell unifies the [D100] todo list, the [D102]
+ * background-jobs ledger (`useJobsState`), and the `/goal` under one
+ * merged `label + pose` grammar (`select-work.ts`): jobs and goals
+ * never idle-demote (a background job genuinely runs between turns),
+ * the checklist contribution keeps [D100]'s idle demotion. Cumulative
+ * TOTAL TIME / TOTAL TOKENS are not separate cells; the same sums
+ * surface in the TIME and TOKENS popovers' summary footers (one click
+ * reveals the per-turn rows + the cumulative totals).
  *
- * **Mount-identity ([L26]):** the six-cell flex row and every cell
+ * **Mount-identity ([L26]):** the five-cell flex row and every cell
  * are unconditionally mounted across phase / transport / interrupt
  * transitions. Only the popovers' open/closed state and the cell
  * values change; the STATE indicators reconcile tone in place.
@@ -507,13 +515,16 @@ export const DevTelemetryStatusRow = React.forwardRef<
   { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy },
   ref,
 ) {
-  // Handle on the CONTEXT cell's popover so `/context` can pop it
-  // programmatically — same imperative-open pattern as TugConfirmPopover.
+  // Handles on the CONTEXT / WORK cells' popovers so `/context` and
+  // `/tasks` can pop them programmatically — same imperative-open
+  // pattern as TugConfirmPopover.
   const contextPopoverRef = useRef<TugPopoverHandle>(null);
+  const workPopoverRef = useRef<TugPopoverHandle>(null);
   useImperativeHandle(
     ref,
     () => ({
       openContextPopover: () => contextPopoverRef.current?.open(),
+      openWorkPopover: () => workPopoverRef.current?.open(),
     }),
     [],
   );
@@ -673,60 +684,33 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // own role + state via devSessionPhaseVisual.
   const stateLabelText = DEV_SESSION_PHASE_LABELS[statePhaseKey];
 
-  // TASKS cell — assembled from the Task* event stream ([D100]).
-  // The cell is a single `TugProgressIndicator` (pulsing-dot variant)
-  // whose state collapses the task list down to one of four poses:
-  //   - `stopped` — no tasks, OR idle with work remaining (the dot
-  //     reads quiet so the cell doesn't imply ongoing activity)
-  //   - `running` — tasks exist, not all complete, session active
-  //   - `completed` — every task done; the indicator paints in the
-  //     success role to mark the milestone
-  //   - (`aborted` is reserved for future error surfacing)
+  // WORK cell — the unified surface over every trackable unit of
+  // session work ([P02]/[P03] of `roadmap/slash-command-plan.md`): the
+  // task checklist ([D100]'s fold, with its idle demotion preserved for
+  // the checklist contribution only), the background-jobs ledger
+  // ([D102]'s ledger, never idle-demoted — a job genuinely runs between
+  // turns), and the `/goal`. Pose and label are the merged grammar in
+  // `select-work.ts`; the popover carries the full grouped picture.
   const taskListState = useTaskListState(codeSessionStore);
   const taskCounts = countTasks(taskListState.tasks);
   const hasTasks = taskCounts.total > 0;
   const isIdle = snap.phase === "idle";
   const allTasksComplete =
     hasTasks && taskCounts.completed === taskCounts.total;
-  const tasksWorking =
-    hasTasks && !allTasksComplete && !isIdle;
-  const tasksLabelText = hasTasks
-    ? `${taskCounts.completed}/${taskCounts.total}`
-    : "None";
-  // State drives both the indicator's pose and its color via the
-  // component's state→role default: running → action (blue),
-  // completed → success (green), stopped → inherit (muted).
-  const tasksIndicatorState: TugProgressIndicatorState =
-    !hasTasks
-      ? "stopped"
-      : allTasksComplete
-        ? "completed"
-        : tasksWorking
-          ? "running"
-          : "stopped";
-
-  // JOBS cell — the background-jobs ledger (session-lifetime, fed by
-  // the task_started / task_updated frames). Mirrors the TASKS grammar
-  // — `finished/total` + pose — with one deliberate divergence: NO
-  // idle demotion. A background job genuinely runs *between* turns, so
-  // the dot keeps pulsing while the session idles; `jobsCellPose` is a
-  // pure function of the ledger only. The `aborted` pose (danger)
-  // surfaces a failed job until the user clears it or new work starts.
+  const goal = snap.goal;
   const jobCounts = countJobs(jobsLedger);
-  // `total` excludes scheduled rows, so the `finished/total` fraction
-  // reads only executing/done work. A lone pending wakeup has total 0
-  // but is not "None" — it shows its scheduled count and keeps the dot
-  // pulsing (`jobsCellPose` treats scheduled as pending work).
-  const hasFraction = jobCounts.total > 0;
-  const hasJobs = jobsLedger.length > 0;
-  const jobsLabelText = hasFraction
-    ? `${jobCounts.finished}/${jobCounts.total}`
-    : jobCounts.scheduled > 0
-      ? `${jobCounts.scheduled}`
-      : "None";
-  const jobsIndicatorState: TugProgressIndicatorState = jobsCellPose(jobsLedger);
+  const hasWork =
+    hasTasks || jobsLedger.length > 0 || goal !== null;
+  const workLabelText = workCellLabel(taskCounts, jobCounts, goal);
+  const workIndicatorState: TugProgressIndicatorState = workCellPose(
+    jobsLedger,
+    goal,
+    { hasTasks, allTasksComplete, isIdle },
+  );
+  const workSummary = composeWorkSummary(taskCounts, jobCounts, goal);
   // Popover actions — fire-and-forget control-style callbacks onto the
-  // store's named methods (stop rides the wire; clear is deck-local).
+  // store's named methods (stop/cancel/stop-loop/clear-goal ride the
+  // wire; clear is deck-local).
   const stopJob = useCallback(
     (jobId: string) => codeSessionStore.stopJob(jobId),
     [codeSessionStore],
@@ -737,6 +721,14 @@ export const DevTelemetryStatusRow = React.forwardRef<
   );
   const cancelScheduledWork = useCallback(
     (jobId: string) => codeSessionStore.cancelScheduledWork(jobId),
+    [codeSessionStore],
+  );
+  const stopLoop = useCallback(
+    (jobId: string) => codeSessionStore.stopLoop(jobId),
+    [codeSessionStore],
+  );
+  const clearGoal = useCallback(
+    () => codeSessionStore.clearGoal(),
     [codeSessionStore],
   );
 
@@ -781,28 +773,30 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const statePopover = (
     <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
   );
-  const tasksPopover = (
-    <TasksPopoverContent state={taskListState} idle={isIdle} />
-  );
-  const jobsPopover = (
-    <JobsPopoverContent
+  const workPopover = (
+    <WorkPopoverContent
+      goal={goal}
+      canClearGoal={isIdle && goalIsActive(goal)}
+      onClearGoal={clearGoal}
+      taskState={taskListState}
+      idle={isIdle}
       jobs={jobsLedger}
       transcript={snap.transcript}
       turnNumberBase={turnNumberBase}
       onScrollToRow={onScrollToRow}
       onStopJob={stopJob}
       onCancelScheduledWork={cancelScheduledWork}
+      onStopLoop={stopLoop}
       onClearJobs={clearJobs}
     />
   );
 
-  // Flat 6-cell flex row — STATE + TIME + TOKENS + CONTEXT + TASKS +
-  // JOBS as direct siblings. The row's `justify-content: center`
-  // (declared in CSS) packs the cells as one group with a fixed
-  // inter-item `gap`; the leftover width splits into equal flexing
-  // margins on the row's far left and right. Every cell is a
-  // fixed-width box so the group's width is constant and the cells
-  // never shift.
+  // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + WORK as
+  // direct siblings. The row's `justify-content: center` (declared in
+  // CSS) packs the cells as one group with a fixed inter-item `gap`;
+  // the leftover width splits into equal flexing margins on the row's
+  // far left and right. Every cell is a fixed-width box so the group's
+  // width is constant and the cells never shift.
   return (
     <div
       className="dev-telemetry-status-row"
@@ -883,10 +877,11 @@ export const DevTelemetryStatusRow = React.forwardRef<
         </span>
       </TugStatusCell>
       <TugStatusCell
-        priority="tasks"
-        label="TASKS"
-        popover={tasksPopover}
-        valueEmpty={!hasTasks}
+        priority="work"
+        label="WORK"
+        popover={workPopover}
+        popoverRef={workPopoverRef}
+        valueEmpty={!hasWork}
         focusGroup={focusGroup}
         focusOrder={cellOrder(4)}
         focusPolicy={focusPolicy}
@@ -898,51 +893,14 @@ export const DevTelemetryStatusRow = React.forwardRef<
             variant="pulsing-dot"
             glyphPosition="both"
             size={10}
-            state={tasksIndicatorState}
-            label={tasksLabelText}
+            state={workIndicatorState}
+            label={workLabelText}
             labelAlign="center"
             phaseLabels={{
               none: "None",
-              max: hasTasks ? `${taskCounts.total}/${taskCounts.total}` : "0/0",
+              max: "00/00",
             }}
-            aria-label={
-              hasTasks
-                ? `${taskCounts.completed} of ${taskCounts.total} tasks complete`
-                : "No tasks"
-            }
-          />
-        )}
-      </TugStatusCell>
-      <TugStatusCell
-        priority="jobs"
-        label="JOBS"
-        popover={jobsPopover}
-        valueEmpty={!hasJobs}
-        focusGroup={focusGroup}
-        focusOrder={cellOrder(5)}
-        focusPolicy={focusPolicy}
-      >
-        {replayInert ? (
-          <span className="dev-telemetry-status-value">—</span>
-        ) : (
-          <TugProgressIndicator
-            variant="pulsing-dot"
-            glyphPosition="both"
-            size={10}
-            state={jobsIndicatorState}
-            label={jobsLabelText}
-            labelAlign="center"
-            phaseLabels={{
-              none: "None",
-              max: hasFraction ? `${jobCounts.total}/${jobCounts.total}` : "0/0",
-            }}
-            aria-label={
-              hasFraction
-                ? `${jobCounts.finished} of ${jobCounts.total} jobs finished`
-                : jobCounts.scheduled > 0
-                  ? `${jobCounts.scheduled} scheduled`
-                  : "No background jobs"
-            }
+            aria-label={workSummary}
           />
         )}
       </TugStatusCell>

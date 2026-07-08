@@ -118,6 +118,11 @@ import {
   type JobStatus,
 } from "@/lib/code-session-store/select-jobs";
 import { isWakeLate } from "@/lib/code-session-store/select-scheduled-work";
+import {
+  goalIsActive,
+  type GoalState,
+} from "@/lib/code-session-store/select-goal";
+import { composeWorkSummary } from "@/lib/code-session-store/select-work";
 
 // ---------------------------------------------------------------------------
 // Cross-popover callback contract
@@ -1022,6 +1027,7 @@ function JobRow({
   onScrollToRow,
   onStopJob,
   onCancelScheduledWork,
+  onStopLoop,
 }: {
   job: JobItem;
   transcript: ReadonlyArray<TurnEntry>;
@@ -1029,6 +1035,13 @@ function JobRow({
   onScrollToRow?: ScrollToRowHandler;
   onStopJob?: (jobId: string) => void;
   onCancelScheduledWork?: (jobId: string) => void;
+  /**
+   * Stop a wakeup-paced `/loop` — the scheduled `wakeup` row's action
+   * (a real user message asking the assistant to end the loop with
+   * `ScheduleWakeup {stop:true}`; `CodeSessionStore.stopLoop`). When
+   * omitted, wakeup rows render no action (the historical shape).
+   */
+  onStopLoop?: (jobId: string) => void;
 }): React.ReactElement {
   const description = jobDescriptionText(job.description);
   // The job launched from an assistant turn's `tool_use`; link its
@@ -1116,6 +1129,23 @@ function JobRow({
         role="action"
         size="2xs"
         onClick={() => onCancelScheduledWork(job.jobId)}
+      />
+    ) : job.status === "scheduled" &&
+        job.kind === "wakeup" &&
+        onStopLoop !== undefined ? (
+      // A pending wakeup can't be cancelled (harness-owned, fire-once),
+      // but a wakeup-paced LOOP can be stopped: the assistant is asked
+      // to end the protocol (`ScheduleWakeup {stop:true}`) so no
+      // further wakeups are scheduled.
+      <TugPushButton
+        subtype="icon"
+        icon={<Square size={12} strokeWidth={3} />}
+        aria-label={`Stop loop: ${description}`}
+        title="Ask the assistant to stop this loop"
+        emphasis="outlined"
+        role="danger"
+        size="2xs"
+        onClick={() => onStopLoop(job.jobId)}
       />
     ) : undefined;
   return (
@@ -1243,6 +1273,224 @@ export function JobsPopoverContent({
     >
       <TugPopupListScroller data-slot="dev-jobs-popover-body">
         {body}
+      </TugPopupListScroller>
+    </TugPopupListFrame>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Work popover — the unified surface
+// ---------------------------------------------------------------------------
+
+/** The goal row's dot pose. */
+function goalRowState(goal: GoalState): TugProgressIndicatorState {
+  if (goal.status === "active") return "running";
+  if (goal.status === "achieved") return "completed";
+  return "stopped";
+}
+
+/**
+ * `WORK` popup — opened from the `WORK` cell, the single surface over
+ * every trackable unit of session work ([P02]/[P03] of
+ * `roadmap/slash-command-plan.md`): the `/goal`, running background
+ * jobs, scheduled wakeups/crons, the task checklist, and finished
+ * rows. Sections render only when non-empty; every management action
+ * carries over from the surfaces it merges — stop job, cancel cron,
+ * stop loop, clear finished, clear goal.
+ *
+ * The storage stays split ([P02]): tasks are the derived turn-scoped
+ * fold, jobs the session-lifetime ledger, the goal its own snapshot
+ * field. This component only composes them.
+ */
+export function WorkPopoverContent({
+  goal,
+  canClearGoal,
+  onClearGoal,
+  taskState,
+  idle,
+  jobs,
+  transcript,
+  turnNumberBase = 0,
+  onScrollToRow,
+  onStopJob,
+  onCancelScheduledWork,
+  onStopLoop,
+  onClearJobs,
+}: {
+  goal: GoalState | null;
+  /** Clear is gated to idle (a live goal run is stopped via interrupt). */
+  canClearGoal?: boolean;
+  onClearGoal?: () => void;
+  taskState: TaskListState;
+  idle: boolean;
+  jobs: readonly JobItem[];
+  transcript: ReadonlyArray<TurnEntry>;
+  turnNumberBase?: number;
+  onScrollToRow?: ScrollToRowHandler;
+  onStopJob?: (jobId: string) => void;
+  onCancelScheduledWork?: (jobId: string) => void;
+  onStopLoop?: (jobId: string) => void;
+  onClearJobs?: () => void;
+}): React.ReactElement {
+  const hasGoal = goal !== null;
+  const hasTasks = taskState.tasks.length > 0;
+  const hasJobs = jobs.length > 0;
+  if (!hasGoal && !hasTasks && !hasJobs) {
+    return (
+      <TugPopupListFrame title="Work" kind="item">
+        <TugPopupListEmpty>No work for this session.</TugPopupListEmpty>
+      </TugPopupListFrame>
+    );
+  }
+  const jobCounts = countJobs(jobs);
+  const renderJobRow = (job: JobItem): React.ReactElement => (
+    <JobRow
+      key={job.jobId}
+      job={job}
+      transcript={transcript}
+      turnNumberBase={turnNumberBase}
+      onScrollToRow={onScrollToRow}
+      onStopJob={onStopJob}
+      onCancelScheduledWork={onCancelScheduledWork}
+      onStopLoop={onStopLoop}
+    />
+  );
+  const group = (
+    label: string,
+    rows: React.ReactNode,
+    empty: boolean,
+  ): React.ReactElement | null =>
+    empty ? null : <TugPopupListGroup label={label}>{rows}</TugPopupListGroup>;
+
+  const goalRow =
+    goal === null ? null : (
+      <TugPopupListItem
+        data-status={goal.status}
+        data-slot="dev-work-popover-goal-row"
+        indicator={
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            size={12}
+            state={goalRowState(goal)}
+            aria-label={`goal ${goal.status}`}
+          />
+        }
+        action={
+          goalIsActive(goal) && onClearGoal !== undefined ? (
+            <TugPushButton
+              subtype="icon"
+              icon={<X size={12} strokeWidth={3} />}
+              aria-label="Clear the active goal"
+              title={
+                canClearGoal === false
+                  ? "Stop the running turn first, then clear the goal"
+                  : "Clear the goal (/goal clear)"
+              }
+              emphasis="outlined"
+              role="danger"
+              size="2xs"
+              disabled={canClearGoal === false}
+              onClick={onClearGoal}
+            />
+          ) : undefined
+        }
+      >
+        <TugPopupListItemText
+          primary={goal.condition}
+          meta={
+            goal.latestReason !== null ? (
+              <span className="dev-work-popover-goal-reason">
+                {`${goal.turnsEvaluated} evaluated · ${goal.latestReason}`}
+              </span>
+            ) : (
+              <span className="dev-work-popover-goal-reason">{goal.status}</span>
+            )
+          }
+        />
+      </TugPopupListItem>
+    );
+
+  const taskRows = taskState.tasks.map((task) => {
+    const text = <TugPopupListItemText primary={task.subject} />;
+    return (
+      <TugPopupListItem
+        key={task.taskId}
+        className="dev-tasks-popover-item"
+        data-status={task.status}
+        indicator={
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            size={14}
+            state={taskRowState(task.status, idle)}
+            aria-label={`task ${task.status}`}
+          />
+        }
+      >
+        {task.description === undefined ? (
+          text
+        ) : (
+          <TugTooltip content={task.description} side="top" align="start">
+            {text}
+          </TugTooltip>
+        )}
+      </TugPopupListItem>
+    );
+  });
+
+  const summary = composeWorkSummary(
+    countTasks(taskState.tasks),
+    jobCounts,
+    goal,
+  );
+  return (
+    <TugPopupListFrame
+      title="Work"
+      kind="item"
+      footer={
+        <TugPopupListFooter summary={summary}>
+          <PopupCopyButton
+            aria-label="Copy the work list"
+            getText={() =>
+              [
+                hasJobs ? composeJobsCopyText(jobs) : null,
+                hasTasks ? composeTaskCopyText(taskState.tasks, false) : null,
+              ]
+                .filter((s): s is string => s !== null)
+                .join("\n\n")
+            }
+          />
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="2xs"
+            aria-label="Clear finished jobs"
+            title="Clear finished jobs (running and scheduled rows are kept)"
+            disabled={jobCounts.finished === 0 || onClearJobs === undefined}
+            onClick={onClearJobs}
+          >
+            Clear
+          </TugPushButton>
+        </TugPopupListFooter>
+      }
+    >
+      <TugPopupListScroller data-slot="dev-work-popover-body">
+        {group("Goal", goalRow, goalRow === null)}
+        {group(
+          "Running",
+          jobs.filter((j) => j.status === "running").map(renderJobRow),
+          jobCounts.running === 0,
+        )}
+        {group(
+          "Scheduled",
+          jobs.filter((j) => j.status === "scheduled").map(renderJobRow),
+          jobCounts.scheduled === 0,
+        )}
+        {group("Checklist", taskRows, !hasTasks)}
+        {group(
+          "Finished",
+          jobs.filter((j) => isTerminalJobStatus(j.status)).map(renderJobRow),
+          jobCounts.finished === 0,
+        )}
       </TugPopupListScroller>
     </TugPopupListFrame>
   );

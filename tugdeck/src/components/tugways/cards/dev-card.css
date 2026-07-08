@@ -599,6 +599,38 @@
   margin-top: var(--tug-space-lg);
 }
 
+/* Wake-trigger chip — the subdued label opening a wake turn's assistant
+   body with what scheduled it ("loop pacing", a cron's prompt). Same
+   quiet register as the compaction divider, but a leading chip rather
+   than a full-width separator: label first, one trailing rule. */
+.dev-card-transcript-wake-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  margin-block: var(--tug-space-xs) 0;
+  font-size: 0.85em;
+  opacity: 0.55;
+  user-select: none;
+}
+.dev-card-transcript-wake-trigger::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}
+.dev-card-transcript-wake-trigger-label {
+  flex: 0 0 auto;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-card-transcript-wake-trigger + .tug-markdown-block {
+  margin-top: var(--tug-space-xs);
+}
+
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`

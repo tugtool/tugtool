@@ -56,25 +56,21 @@
 .dev-telemetry-status-cell[data-priority="state"] {
   --tugx-dev-status-cell-width: 20ch;
 }
-/* TIME / TOKENS are narrowed to make room for the JOBS cell. TIME is
-   held one column wider so the width-stabilized hour-plus format
-   (`4h 30m 00s` = 10ch, minutes zero-padded past an hour) sits with a
-   little breathing room; TOKENS' worst content (`−208.3K` = 8ch)
-   clears 12ch comfortably. */
+/* Merging TASKS + JOBS into the single WORK cell returned width to
+   TIME / TOKENS (they were narrowed when JOBS landed). TIME clears the
+   width-stabilized hour-plus format (`4h 30m 00s` = 10ch) comfortably;
+   TOKENS' worst content (`−208.3K` = 8ch) likewise. */
 .dev-telemetry-status-cell[data-priority="time"] {
-  --tugx-dev-status-cell-width: 13ch;
+  --tugx-dev-status-cell-width: 16ch;
 }
 .dev-telemetry-status-cell[data-priority="tokens"] {
-  --tugx-dev-status-cell-width: 12ch;
+  --tugx-dev-status-cell-width: 14ch;
 }
 .dev-telemetry-status-cell[data-priority="context"] {
   --tugx-dev-status-cell-width: 20ch;
 }
-.dev-telemetry-status-cell[data-priority="tasks"] {
+.dev-telemetry-status-cell[data-priority="work"] {
   --tugx-dev-status-cell-width: 16ch;
-}
-.dev-telemetry-status-cell[data-priority="jobs"] {
-  --tugx-dev-status-cell-width: 14ch;
 }
 
 .dev-telemetry-status-value-wrap {
@@ -106,23 +102,19 @@
   margin-inline: 2px;
 }
 
-/* TASKS / JOBS value rows — a single `TugProgressIndicator`
-   (pulsing-dot variant) whose `label` carries the `N/M` text (or
-   `None`). The two cells share the same value grammar. */
-.dev-telemetry-status-cell[data-priority="tasks"]
-  .dev-telemetry-status-value-wrap,
-.dev-telemetry-status-cell[data-priority="jobs"]
+/* WORK value row — a single `TugProgressIndicator` (pulsing-dot
+   variant) whose `label` carries the merged reading (`goal`, `N/M`, a
+   scheduled count, or `None`). */
+.dev-telemetry-status-cell[data-priority="work"]
   .dev-telemetry-status-value-wrap {
   gap: var(--tug-space-xs);
 }
 
-/* The indicator's label inside the TASKS / JOBS cells takes the same
-   focal "value" treatment as every other cell: bold, tabular-nums,
-   step-up size. */
+/* The indicator's label inside the WORK cell takes the same focal
+   "value" treatment as every other cell: bold, tabular-nums, step-up
+   size. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
-.dev-telemetry-status-cell[data-priority="tasks"]
-  .tug-progress-indicator-label-active,
-.dev-telemetry-status-cell[data-priority="jobs"]
+.dev-telemetry-status-cell[data-priority="work"]
   .tug-progress-indicator-label-active {
   font-size: 0.8125rem;
   font-weight: var(--tug-font-weight-bold);
@@ -132,9 +124,7 @@
 
 /* Dim the indicator + label when the cell is empty so it reads as a
    quiet placeholder. */
-.dev-telemetry-status-cell[data-priority="tasks"]
-  .dev-telemetry-status-value-wrap[data-empty="true"],
-.dev-telemetry-status-cell[data-priority="jobs"]
+.dev-telemetry-status-cell[data-priority="work"]
   .dev-telemetry-status-value-wrap[data-empty="true"] {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
@@ -311,10 +301,9 @@
    declares `container-type: inline-size` + `container-name: dev-status`
    so these `@container` rules can target it. As the host narrows, whole
    cells (label apparatus + value together) hide in priority order —
-   TIME first, then TOKENS, then TASKS, with JOBS the last collapsible:
-   a running job is live "something is happening" signal, while the task
-   list is recoverable from the transcript. STATE / CONTEXT stay as the
-   most-persistent set. */
+   TIME first, then TOKENS, with WORK the last collapsible: a running
+   job / live goal is live "something is happening" signal. STATE /
+   CONTEXT stay as the most-persistent set. */
 
 @container dev-status (max-width: 460px) {
   .dev-telemetry-status-cell[data-priority="time"] {
@@ -328,14 +317,8 @@
   }
 }
 
-@container dev-status (max-width: 230px) {
-  .dev-telemetry-status-cell[data-priority="tasks"] {
-    display: none;
-  }
-}
-
-@container dev-status (max-width: 180px) {
-  .dev-telemetry-status-cell[data-priority="jobs"] {
+@container dev-status (max-width: 200px) {
+  .dev-telemetry-status-cell[data-priority="work"] {
     display: none;
   }
 }

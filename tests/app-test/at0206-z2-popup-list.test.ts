@@ -4,20 +4,20 @@
  *
  * Drives a bound dev card through two committed turns, a three-row
  * background-jobs ledger (running / completed / failed), and a
- * two-task list, then opens each Z2 popup (JOBS / TASKS / TIME /
+ * two-task list, then opens each Z2 popup (WORK / TIME /
  * STATE / TOKENS) by clicking its status cell and pins the rework's
  * structural claims:
  *
  *  - every popup mounts a `tug-popup-list` frame with its kind
  *    (`item` / `log` / `state`);
- *  - the JOBS stop button sits in the item row's structural action
+ *  - the WORK popup's stop button sits in the item row's structural action
  *    column — top-aligned to the row's first text line (≤ 2px), never
  *    centered across a two-line row — and carries the proportional
  *    `data-rounded="sm"` 2xs radius;
  *  - log popups (TIME) share one subgrid: per-turn rows in the
  *    scroller plus always-visible summary rows;
  *  - footers standardize on COPY (every log-shaped popup) and CLEAR
- *    (JOBS), with the count summary on the leading edge;
+ *    (WORK), with the count summary on the leading edge;
  *  - STATE tone dots color via `data-tone` attributes, no inline
  *    styles ([L06]).
  *
@@ -183,8 +183,8 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           );
         };
 
-        // ---- JOBS ------------------------------------------------------
-        await openPopup("jobs");
+        // ---- WORK (jobs + checklist merged) ----------------------------
+        await openPopup("work");
         const jobsProbe = await app.evalJS<string>(`JSON.stringify((() => {
           const popup = document.querySelector('${POPUP}');
           const stop = popup.querySelector('[aria-label^="Stop background job"]');
@@ -219,7 +219,7 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         })())`);
         const jobs = JSON.parse(jobsProbe);
         expect(jobs.kind).toBe("item");
-        expect(jobs.rows).toBe(JOB_COUNT);
+        expect(jobs.rows).toBe(JOB_COUNT + 2); // 28 job rows + 2 checklist tasks
         // Scroll strategy: a long ledger scrolls inside its capped
         // scroller instead of growing the popup — and the popup stays
         // fully on-screen.
@@ -237,26 +237,10 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         expect(Math.abs(jobs.stopTopDelta)).toBeLessThanOrEqual(2);
         expect(jobs.copy).toBe(true);
         expect(jobs.clear).toBe(true);
-        await closePopup("jobs");
+        await closePopup("work");
 
-        // ---- TASKS -----------------------------------------------------
-        await openPopup("tasks");
-        const tasksProbe = await app.evalJS<string>(`JSON.stringify((() => {
-          const popup = document.querySelector('${POPUP}');
-          const footer = popup.querySelector('[data-slot="tug-popup-list-footer"]');
-          return {
-            kind: popup.getAttribute('data-kind'),
-            rows: popup.querySelectorAll('[data-slot="tug-popup-list-item"]').length,
-            copy: footer ? !!footer.querySelector('[data-slot="block-copy"]') : false,
-            summary: footer ? (footer.querySelector('.tug-popup-list-footer-summary')||{}).textContent : null,
-          };
-        })())`);
-        const tasks = JSON.parse(tasksProbe);
-        expect(tasks.kind).toBe("item");
-        expect(tasks.rows).toBe(2);
-        expect(tasks.copy).toBe(true);
-        expect((tasks.summary ?? "").length).toBeGreaterThan(0);
-        await closePopup("tasks");
+        // (Checklist rows are asserted inside the WORK popup above — the
+        // separate TASKS popup merged into WORK.)
 
         // ---- TIME ------------------------------------------------------
         await openPopup("time");

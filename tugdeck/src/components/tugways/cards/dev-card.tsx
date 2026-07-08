@@ -240,16 +240,16 @@ const DEV_CYCLE_GROUP = "dev-prompt-cycle";
 // left→right, then up to the status cells and the PULSE strip, then into the
 // editor and its compose-phase attachment tiles, and **seeds at the route**
 // (order 0). Forward Tab: route → Claude Code → Session → Project → Mode →
-// Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → TASKS → JOBS →
+// Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK →
 // PULSE → editor → attachment-1 … attachment-N → wrap; Shift+Tab reverses.
 // Every Z4B chip (the route indicator, Session / Project badges, and the
-// Mode / Model / Effort pickers), the six Z2 status cells, and the PULSE
+// Mode / Model / Effort pickers), the five Z2 status cells, and the PULSE
 // label are independent leaf stops (no arrow-roving); the editor is a text
 // stop (Return resumes typing); each Z4C attachment tile is a leaf stop
 // (Return / Space opens its preview). PULSE exists only while the strip is
 // shown (status bar present AND the `pulse/enabled` default on); attachment
 // stops exist only while the editor holds image atoms — when neither is
-// present the walk runs … JOBS → editor → wrap. A disabled stop (the empty
+// present the walk runs … WORK → editor → wrap. A disabled stop (the empty
 // submit, or the chips on the Shell route) drops out of the walk via the
 // engine's interactivity filter, so the seed lands on the next live stop.
 const DEV_CYCLE_ORDER_ROUTE = 0;
@@ -260,12 +260,14 @@ const DEV_CYCLE_ORDER_MODE = 4;
 const DEV_CYCLE_ORDER_MODEL = 5;
 const DEV_CYCLE_ORDER_EFFORT = 6;
 const DEV_CYCLE_ORDER_SUBMIT = 7;
-// The Z2 status cells are six independent leaf stops ([P10] revised —
-// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / TASKS / JOBS take
-// orders 8…13 (base + 0…5). The PULSE label follows at 14 (its own one-node
-// grid row beneath the status cells); the editor (the text body) at 15; and
-// the Z4C compose-phase attachment tiles — one leaf stop each — the orders
-// from 16 upward (base + tile index), so they Tab right after the editor.
+// The Z2 status cells are five independent leaf stops ([P10] revised —
+// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK take orders
+// 8…12 (base + 0…4; order 13 is an intentional gap left by the TASKS+JOBS
+// → WORK merge — ordering is relative, gaps are harmless). The PULSE label
+// follows at 14 (its own one-node grid row beneath the status cells); the
+// editor (the text body) at 15; and the Z4C compose-phase attachment tiles
+// — one leaf stop each — the orders from 16 upward (base + tile index), so
+// they Tab right after the editor.
 const DEV_CYCLE_ORDER_STATUS_BASE = 8;
 const DEV_CYCLE_ORDER_PULSE = 14;
 const DEV_CYCLE_ORDER_EDITOR = 15;
@@ -2298,7 +2300,6 @@ export function DevCardBody({
         k(DEV_CYCLE_ORDER_STATUS_BASE + 2),
         k(DEV_CYCLE_ORDER_STATUS_BASE + 3),
         k(DEV_CYCLE_ORDER_STATUS_BASE + 4),
-        k(DEV_CYCLE_ORDER_STATUS_BASE + 5),
       ],
       // PULSE — a one-node row beneath the status cells (rowGridOrder drops it
       // when the strip is hidden, so Down from a status cell reaches the editor
@@ -2897,6 +2898,11 @@ export function DevCardBody({
     resume: () => resumeSheet.openResumeSheet(),
     diff: () => diffSheet.openDiffSheet(),
     context: () => statusRowRef.current?.openContextPopover(),
+    // `/tasks` (upstream: running shells + subagents) opens the WORK
+    // popover — the unified surface those rows live in here. `/bashes`
+    // is upstream's alias; both were hidden before the WORK cell landed.
+    tasks: () => statusRowRef.current?.openWorkPopover(),
+    bashes: () => statusRowRef.current?.openWorkPopover(),
     skills: () => skillsSheet.openSkillsSheet(),
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),

@@ -1,0 +1,13 @@
+{
+  "sessionId": "2ec6fb08-4ba1-4b47-bab4-78060d63b1c7",
+  "capture": "capture-goal-2026-07-08T14-58-18-964Z",
+  "stdoutLines": 227,
+  "systemInit": 3,
+  "results": 2,
+  "userEvents": 17,
+  "hookEvents": 9,
+  "goalMentions": 26,
+  "localCommandStdout": 0,
+  "jsonlPath": "/Users/kocienda/.claude/projects/-private-tmp-goal-probe/2ec6fb08-4ba1-4b47-bab4-78060d63b1c7.jsonl",
+  "jsonlExists": true
+}

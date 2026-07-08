@@ -133,6 +133,14 @@ import {
   scheduledRowFromWakeup,
   stopScheduledRow,
 } from "./select-scheduled-work";
+import {
+  commandLineFromSend,
+  reduceGoalOnFeedback,
+  reduceGoalOnSend,
+  settleGoalOnCycleCommit,
+  type GoalState,
+} from "./select-goal";
+import { TUG_ATOM_CHAR } from "../tug-atom-img";
 import { decodePermissionDenials, mergeDenials } from "./denials";
 import { tugDevLogStore } from "../tug-dev-log-store/tug-dev-log-store";
 import {
@@ -789,6 +797,15 @@ export interface CodeSessionState {
    * never populates it — see `handleToolResult`'s launch-insert guard.
    */
   jobs: readonly JobItem[];
+  /**
+   * The session's one `/goal` (claude allows one per session), or null.
+   * Reduced from the user's own `/goal …` submissions, `goal_feedback`
+   * frames, and the goal cycle's `turn_complete` — see `select-goal.ts`.
+   * Live-only: replay never populates it; a respawn keeps it in-memory as
+   * possibly-active. Mirrored unchanged onto `CodeSessionSnapshot.goal`
+   * for stable `Object.is` identity across quiescent rebuilds ([L02]).
+   */
+  goal: GoalState | null;
 }
 
 /**
@@ -877,6 +894,7 @@ export function createInitialState(
     toolUseStartedAt: new Map(),
     wakeTrigger: null,
     jobs: EMPTY_JOBS_LEDGER,
+    goal: null,
   };
 }
 
@@ -970,6 +988,14 @@ function handleSend(
       // turn of a session is fine — `extractTurnCost` degenerates the
       // delta to `after`.
       costAtSubmit: state.lastCost,
+      // A `/goal …` submission sets / clears the session goal; every
+      // other send leaves it untouched (see select-goal.ts).
+      goal: reduceGoalOnSend(
+        state.goal,
+        commandLineFromSend(event.text, event.atoms, TUG_ATOM_CHAR),
+        submitAt,
+        event.turnKey,
+      ),
       // Clear last turn's live token accumulation — the new turn's
       // `streaming_usage` frames build a fresh `liveTurnUsage` from
       // scratch.
@@ -4714,10 +4740,26 @@ function handleWakeStarted(
       scratch: withScratchEntry(
         state.scratch,
         event.turnKey,
-        // No initial messages — wake turns have no user_message. The
-        // first wire content event (assistant_text / thinking_text /
-        // tool_use) mints into this scratch via `handleContentBlockStart`.
-        newScratchEntry(event.turnKey, []),
+        // No user_message — wake turns are assistant-originated. Seed the
+        // trigger's summary as a `scheduled` system_note so the wake turn
+        // opens with its label ("loop pacing" beats an unexplained
+        // assistant row); wire content mints into the same scratch via
+        // `handleContentBlockStart`. `systemNoteSeq` starts past the
+        // seeded note so a later note in the same turn keys uniquely.
+        trigger.summary.length > 0
+          ? {
+              ...newScratchEntry(event.turnKey, [
+                {
+                  kind: "system_note",
+                  messageKey: systemNoteKey(event.turnKey, 0),
+                  createdAt: submitAt,
+                  text: trigger.summary,
+                  source: "scheduled",
+                } satisfies SystemNote,
+              ]),
+              systemNoteSeq: 1,
+            }
+          : newScratchEntry(event.turnKey, []),
       ),
       toolUseStartedAt: new Map(),
       pendingApproval: null,
@@ -5068,8 +5110,39 @@ export function reduce(
       return handleToolResult(state, event);
     case "tool_use_structured":
       return handleToolUseStructured(state, event);
-    case "turn_complete":
-      return handleTurnComplete(state, event);
+    case "turn_complete": {
+      // Settle the goal against the PRE-commit state (the pendingTurn the
+      // commit consumes is the goal's cycle), then apply it to the
+      // handler's result. A successful commit of the goal's own cycle
+      // means the evaluator passed — the goal is achieved. An errored /
+      // interrupted / suppressed cycle leaves it possibly-active.
+      const res = handleTurnComplete(state, event);
+      const committedKey =
+        state.pendingTurn !== null && res.state.pendingTurn === null
+          ? state.pendingTurn.turnKey
+          : null;
+      const settled = settleGoalOnCycleCommit(
+        res.state.goal,
+        committedKey,
+        event.result === "success",
+      );
+      return settled === res.state.goal
+        ? res
+        : { ...res, state: { ...res.state, goal: settled } };
+    }
+    case "goal_feedback":
+      return {
+        state: {
+          ...state,
+          goal: reduceGoalOnFeedback(
+            state.goal,
+            event.condition,
+            event.reason,
+            state.pendingTurn?.turnKey ?? null,
+          ),
+        },
+        effects: [],
+      };
     case "control_request_forward":
       return handleControlRequestForward(state, event);
     case "respond_approval":

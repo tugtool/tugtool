@@ -89,7 +89,7 @@ This plan does four things in one arc: (1) writes the durable slash-command doct
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] What does a `/goal` evaluator-driven continuation turn look like on the wire? (OPEN) {#q01-goal-wire-shape}
+#### [Q01] What does a `/goal` evaluator-driven continuation turn look like on the wire? (DECIDED) {#q01-goal-wire-shape}
 
 **Question:** After a turn's `result`, when the Stop-hook evaluator says "not met," how does the next turn begin over `--input-format stream-json --output-format stream-json`? A wake-like re-init? A new turn bracket with no `user` event? Is goal state (condition, evaluator reason, achieved) observable anywhere other than `/goal` status stdout?
 
@@ -102,9 +102,23 @@ This plan does four things in one arc: (1) writes the durable slash-command doct
 
 **Plan to resolve:** Probe in #step-3; pin captures.
 
-**Resolution:** OPEN — resolved at #step-6.
+**Resolution:** DECIDED (probe evidence: `tugcode/probes/goal-loop/FINDINGS.md#q01-goal`,
+capture `capture-goal-2026-07-08T14-58-18-964Z`). **A goal run is ONE result
+cycle** — continuation is a synthetic `user` event (`isSynthetic: true`, text
+`Stop hook feedback:\n[<condition>]: <reason>`) injected into the same cycle;
+no re-init, no per-continuation `result`. tugcode needs **no new bracketing**
+(the wake cohorts are not involved) — #step-8's tugcode work is instead:
+(a) exclude `isSynthetic` user events from the rewind prompt-anchor latch
+(today they pass `isSubmissionEcho` and would corrupt the anchor), and
+(b) surface the feedback to the deck (a dedicated IPC frame carrying the
+evaluator's reason). Goal state is observable only via the
+`<command-name>/goal</command-name>` envelope (set), the synthetic feedback
+events (active + latest reason), and the cycle result / clear acknowledgment
+(ended). `/goal` status output is plain assistant text (no
+`<local-command-stdout>`), and upstream status FORGETS an achieved goal on
+2.1.204. Feedback events persist to the JSONL — replay must classify them.
 
-#### [Q02] Is the stream-json resume-scheduler bug still present on 2.1.204? (OPEN) {#q02-resume-scheduler}
+#### [Q02] Is the stream-json resume-scheduler bug still present on 2.1.204? (DECIDED) {#q02-resume-scheduler}
 
 **Question:** The 2026-05-25 probe (`tugcode/probes/wake-investigation/probe-resume.mjs`, finding recorded in `roadmap/archive/wake-investigation-findings.md`) showed that in stream-json mode, `--resume` restores a scheduled task's *metadata* but the in-process scheduler never fires it ("FAIL: no wake_started observed"). Does 2.1.204 still behave this way? And does an active `/goal` (documented to be restored on resume) actually re-arm its evaluator over stream-json?
 
@@ -112,9 +126,21 @@ This plan does four things in one arc: (1) writes the durable slash-command doct
 
 **Plan to resolve:** Re-run `probe-resume.mjs` (and a goal-resume variant) in #step-4.
 
-**Resolution:** OPEN — resolved at #step-6.
+**Resolution:** DECIDED (probe evidence: `FINDINGS.md#q02-loop`, captures
+`capture-loop-*-2026-07-08T15-04-34-180Z`). **The bug is FIXED on 2.1.204** —
+a `ScheduleWakeup` armed before a kill fires in the `--resume`d process
+(PASS). Since tugcode respawns with `--resume`, live loops survive
+model/effort change, Reload, and app restart. Tool-per-mode confirmed:
+self-paced → `ScheduleWakeup` (ends via `{stop}`), interval → `CronCreate`;
+a wake fire is a fresh `system/init` (Cohort B) + `/loop` envelope
+re-injection; no `task_notification` in either mode. Goal-across-resume:
+the resumed session continues goal work immediately; evaluator re-arm
+unconfirmed (treat a resumed goal as possibly-active, don't clear it).
+**#step-9 takes the fixed-upstream branch**: verification + honest scheduled
+rows across respawn (no re-arm affordance — nothing needs re-arming; the
+step must instead ensure scheduled rows are NOT falsely marked stopped).
 
-#### [Q03] What does `/btw` do over the headless bridge? (OPEN) {#q03-btw-headless}
+#### [Q03] What does `/btw` do over the headless bridge? (DECIDED) {#q03-btw-headless}
 
 **Question:** `/btw` is documented as a TUI overlay (ephemeral answer, never enters history, usable mid-turn, answers off the parent prompt cache with no tools). Its headless/stream-json behavior is undocumented. Does it answer at all? On what channel (a normal-looking turn? `<local-command-stdout>`? an error)? Does the exchange stay out of the session JSONL?
 
@@ -122,9 +148,15 @@ This plan does four things in one arc: (1) writes the durable slash-command doct
 
 **Plan to resolve:** Probe in #step-5: send `/btw <question>` through tugcode against a session with prior context; capture everything; also inspect the session JSONL afterward for contamination.
 
-**Resolution:** OPEN — resolved at #step-6.
+**Resolution:** DECIDED (probe evidence: `FINDINGS.md#q03-btw`, capture
+`capture-btw-2026-07-08T15-05-07-785Z`). **`/btw` is not available over the
+headless bridge**: claude answers `"/btw isn't available in this
+environment."` as a local zero-cost response (`num_turns: 0`, no envelope,
+no model turn burned), and the exchange still enters the session JSONL.
+`btw` is also absent from the 2.1.204 `slash_commands` catalog. There is no
+headless side-question channel to render.
 
-#### [Q04] If `/btw` is unsupported headless, hide-with-notice or build Tug-side? (OPEN) {#q04-btw-fallback}
+#### [Q04] If `/btw` is unsupported headless, hide-with-notice or build Tug-side? (DECIDED) {#q04-btw-fallback}
 
 **Question:** Should an unsupported `/btw` be hidden (minimum), or implemented Tug-side (tugcode issues a one-shot, tool-less query against session context)?
 
@@ -136,7 +168,10 @@ This plan does four things in one arc: (1) writes the durable slash-command doct
 
 **Plan to resolve:** Decide with the owner at #step-6 once [Q03] evidence is in. Default if unreachable: hide with notice, note the follow-on in [#roadmap].
 
-**Resolution:** OPEN — decided at #step-6.
+**Resolution:** DECIDED — **hide with notice** (the plan's stated default,
+taken on the [Q03] evidence: upstream refuses `/btw` headless outright, so
+the only native path is a from-scratch Tug-side query channel — recorded as
+a follow-on in [#roadmap]). #step-11 takes branch B.
 
 ---
 
@@ -358,7 +393,19 @@ interface GoalState {
 // CodeSessionSnapshot.goal: GoalState | null
 ```
 
-Reduced from whatever markers [Q01] surfaces (wire events and/or `/goal` command stdout parsing). Rules: replay never resurrects an `active` goal (an achieved/cleared goal may render as `finished` history); a fresh `session_init` after respawn marks an active goal `cleared` unless [Q02] shows resume re-arms it. Field shape is finalized at #step-6 from probe evidence; this spec is the target, not a guess to preserve.
+Reduction sources (finalized at #step-6 from the [Q01] captures): **set** — the
+`<command-name>/goal</command-name>` envelope user event (condition in
+`<command-args>`); **active + latestReason** — each `isSynthetic` Stop-hook-feedback
+user event (reason = text after `]: `), surfaced to the deck via the #step-8 IPC
+frame; **achieved** — the goal cycle's terminal `result` landing with no
+subsequent feedback; **cleared** — the `/goal clear` acknowledgment (plain user
+text + assistant stand-down; note residual feedback events may trail a clear by
+a round or two). There is no dedicated goal-state wire event and nothing rides
+`<local-command-stdout>`. Rules: replay never resurrects an `active` goal (an
+achieved/cleared goal may render as `finished` history); after a respawn/resume
+a previously-active goal is **possibly-active** ([Q02]: work continues after
+resume; evaluator re-arm unconfirmed) — keep it `active` rather than clearing,
+and let the next observed signal settle it.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -445,21 +492,21 @@ Reduced from whatever markers [Q01] surfaces (wire events and/or `/goal` command
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Write `tuglaws/slash-commands.md` | pending | — |
-| #step-2 | Re-baseline capabilities to 2.1.204 | pending | — |
-| #step-3 | Probe `/goal` lifecycle | pending | — |
-| #step-4 | Probe `/loop` + resume retest | pending | — |
-| #step-5 | Probe `/btw` headless | pending | — |
-| #step-6 | Decision gate: resolve Q01–Q04 in this plan | pending | — |
-| #step-7 | Unhide `goal` / `loop` / `proactive` | pending | — |
-| #step-8 | Goal-turn lifecycle plumbing | pending | — |
-| #step-9 | Loop/goal durability (honest surface) | pending | — |
-| #step-10 | Loop legibility: trigger chips + stop | pending | — |
-| #step-11 | `/btw` disposition | pending | — |
-| #step-12 | WORK view-model, cell, popover | pending | — |
-| #step-13 | `/tasks` + `/bashes` local commands | pending | — |
-| #step-14 | Docs + design-decisions sync | pending | — |
-| #step-15 | Integration checkpoint | pending | — |
+| #step-1 | Write `tuglaws/slash-commands.md` | done | 796ff7b11 |
+| #step-2 | Re-baseline capabilities to 2.1.204 | done | c54b01fe9 |
+| #step-3 | Probe `/goal` lifecycle | done | cb42b4f50 |
+| #step-4 | Probe `/loop` + resume retest | done | ebbb90561 |
+| #step-5 | Probe `/btw` headless | done | ebbb90561 (folded into #step-4's commit) |
+| #step-6 | Decision gate: resolve Q01–Q04 in this plan | done | f71ed423f + 79a4e1af0 |
+| #step-7 | Unhide `goal` / `loop` / `proactive` | done | 863546ede |
+| #step-8 | Goal-turn lifecycle plumbing | done | 671a2de6a |
+| #step-9 | Loop/goal durability (honest surface) | done | 274d0bbdc + 836a3345e |
+| #step-10 | Loop legibility: trigger chips + stop | done | f2cb46625 |
+| #step-11 | `/btw` disposition | done | 32419e57f |
+| #step-12 | WORK view-model, cell, popover | done | bd5fc8cb0 |
+| #step-13 | `/tasks` + `/bashes` local commands | done | 7883dcc19 |
+| #step-14 | Docs + design-decisions sync | done | 8467ada6c |
+| #step-15 | Integration checkpoint | done | N/A (verification only; live real-claude goal/loop runs deferred to the debug-build vet) |
 
 #### Step 1: Write `tuglaws/slash-commands.md` {#step-1}
 
@@ -643,15 +690,16 @@ Reduced from whatever markers [Q01] surfaces (wire events and/or `/goal` command
 
 **References:** [Q01] resolution, [P05] goal state, Spec S04, Risk R01, (#wake-mechanics, #state-zone-mapping)
 
-**Artifacts:**
-- tugcode: continuation-turn bracketing per the [Q01] shape (extend the Cohort A/B detection or the `assistant_opener` path in `tugcode/src/session.ts`; new IPC summary if warranted). Integration test pinned against the #step-3 captures (style of `wake-reinit.test.ts`).
-- tugdeck: `CodeSessionSnapshot.goal` (Spec S04) + `select-goal.ts` + `useGoalState`; reducer cases; `CodeSessionStore.clearGoal()` sending `/goal clear`.
-- Correct Z1 phase display for goal turns; prompt entry stays usable per the captured semantics; interrupt terminates a goal turn.
+**Artifacts (rescoped at #step-6 — [Q01]: no new bracketing; a goal run is one result cycle):**
+- tugcode: (a) exclude `isSynthetic` user events from the rewind prompt-anchor latch in the `case "user"` mapping in `tugcode/src/session.ts` — today the feedback event passes `isSubmissionEcho` (it carries a non-`tool_result` text block) and would overwrite the anchor mid-run; (b) map each Stop-hook-feedback event to a new `goal_feedback` IPC frame carrying the condition and the evaluator's reason (parsed from the `Stop hook feedback:\n[<condition>]: <reason>` text) so the deck can track goal state live. Integration test pinned against the #step-3 capture lines (style of `wake-reinit.test.ts`).
+- tugdeck: `CodeSessionSnapshot.goal` (Spec S04) + `select-goal.ts` + `useGoalState`; reducer cases for the goal envelope (set), `goal_feedback` (active + latest reason), cycle result (achieved), clear acknowledgment (cleared); `CodeSessionStore.clearGoal()` sending `/goal clear`.
+- Replay: classify `isSynthetic` JSONL user entries so Stop-hook feedback never renders as user prose on replay/reload.
+- Z1 phases need no new states (one long turn); interrupt is the normal turn interrupt; prompt entry queues mid-run submissions as it does for any in-flight turn (the capture shows a mid-run `/goal clear` is delivered into the running cycle).
 
 **Tasks:**
-- [ ] Implement the bracketing per FINDINGS.md; never guess beyond the captures.
-- [ ] Reduce goal state from the observed markers (+ `/goal` stdout parsing where that's the only source); enforce the replay/staleness rules in Spec S04.
-- [ ] Verify turn/token accounting counts continuation turns.
+- [ ] Implement the anchor exclusion + `goal_feedback` frame per FINDINGS.md; never guess beyond the captures.
+- [ ] Reduce goal state from the Spec S04 sources; enforce the replay/possibly-active rules.
+- [ ] Verify turn/token accounting over a goal cycle (one bracket; `num_turns` is claude-internal).
 
 **Tests:**
 - [ ] tugcode integration test over captured lines.
@@ -666,24 +714,25 @@ Reduced from whatever markers [Q01] surfaces (wire events and/or `/goal` command
 
 **Depends on:** #step-6, #step-7
 
-**Commit:** `feat(tugdeck): mark scheduled work stopped on respawn; add re-arm affordance`
+**Commit:** `fix(tugdeck): keep scheduled work honest across respawn (resume re-fires on 2.1.204)`
 
 **References:** [Q02] resolution, [P04] honest surface, Risk R02, (#resume-finding)
 
-**Artifacts:**
-- If [Q02] = still broken: scheduled rows (`wakeup`/`cron`) flip to `stopped` on `session_init` (extending [D102]'s stale-marking, which already covers `running` rows); a re-arm action on stopped loop-born rows that re-sends the originating loop command; width-stable button.
-- If [Q02] = fixed upstream: a verification capture + fixture pin and a note here; no re-arm needed for resume (respawn-without-resume paths still get stale-marking).
+**Artifacts ([Q02] = fixed upstream — this step takes the verification branch):**
+- The resume-survival captures are pinned (#step-4's `capture-loop-resume-sw-*`); no re-arm affordance is built — a `--resume`d claude re-fires its scheduled work, and every tugcode respawn path resumes.
+- Deck honesty audit: scheduled rows (`wakeup`/`cron` kinds from `select-scheduled-work.ts`) must SURVIVE a respawn un-stale-marked — verify the [D102] `session_init` stale-marking touches only `running` job rows, and that a post-resume wake fire reconciles the surviving scheduled row (flip/reap) rather than duplicating it.
+- A regression note in `FINDINGS.md` if any false stale-marking or duplication is found and fixed.
 
 **Tasks:**
-- [ ] Implement per the [Q02] branch chosen at #step-6.
-- [ ] Ensure the re-arm affordance discloses interval-phase reset.
+- [ ] Trace the `session_init` stale-mark path over the scheduled-work selector; fix any false flip of scheduled rows.
+- [ ] Verify post-resume wake reconciliation against the #step-4 resume captures.
 
 **Tests:**
-- [ ] Unit tests for the stale-mark + re-arm row derivation.
-- [ ] App-test: resume a captured session JSONL containing a real `ScheduleWakeup` tool call (captured in #step-4; resume-from-JSONL is the established real-not-mock mechanism — Developer ▸ Reload re-resumes from JSONL), trigger a respawn (model change), assert the scheduled row reads `stopped` with the re-arm affordance present.
+- [ ] Unit tests over the scheduled-row derivation across a `session_init` boundary (survives) and a post-resume wake fire (reconciles, no duplicate).
+- [ ] App-test: resume a captured session JSONL containing a real `ScheduleWakeup` tool call (from the #step-4 captures; resume-from-JSONL is the established real-not-mock mechanism — Developer ▸ Reload re-resumes from JSONL), trigger a respawn (model change), assert the scheduled row survives (not falsely `stopped`).
 
 **Checkpoint:**
-- [ ] `just app-test` green including the new respawn case; no silently-vanishing scheduled rows.
+- [ ] `just app-test` green including the respawn case; no silently-vanishing and no falsely-stopped scheduled rows.
 
 ---
 
@@ -718,7 +767,7 @@ Reduced from whatever markers [Q01] surfaces (wire events and/or `/goal` command
 
 **Depends on:** #step-6
 
-**Commit:** `feat(slash): resolve /btw — native side-question surface` *(or, per branch: `fix(slash): hide /btw pending SDK side-question support`)*
+**Commit:** `fix(slash): hide /btw pending SDK side-question support` *(branch B chosen at #step-6 — [Q03]: upstream refuses /btw headless)*
 
 **References:** [Q03] [Q04] resolutions, [P06] overlay-only, [P08]-adjacent surface wiring, Spec S01, (#state-zone-mapping)
 

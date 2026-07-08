@@ -474,13 +474,18 @@ describe("scheduled rows", () => {
     expect(cleared).toEqual([w, r]);
   });
 
-  test("markRunningJobsStopped sweeps scheduled rows too (respawn kills pending wakeups)", () => {
+  test("markRunningJobsStopped leaves scheduled rows alive (resume re-fires on >= 2.1.204)", () => {
+    // Every tugcode respawn path resumes, and the harness scheduler
+    // re-fires pending wakeups/crons in the resumed process
+    // (tugcode/probes/goal-loop/FINDINGS.md#q02-loop) — a scheduled row
+    // falsely flipped to stopped would contradict the wake that then
+    // actually fires.
     const marked = markRunningJobsStopped(
       [wakeup("w"), job({ jobId: "a" }), job({ jobId: "b", status: "completed", endedAtMs: 1 })],
       9_999,
     );
-    expect(marked.map((j) => j.status)).toEqual(["stopped", "stopped", "completed"]);
-    expect(marked[0].endedAtMs).toBe(9_999);
+    expect(marked.map((j) => j.status)).toEqual(["scheduled", "stopped", "completed"]);
+    expect(marked[1].endedAtMs).toBe(9_999);
   });
 });
 

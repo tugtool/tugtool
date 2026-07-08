@@ -155,9 +155,15 @@ describe("handleTurnComplete — no-content fallback (#spec-reducer-state rule 2
     const entry = turns[0].entry;
 
     // Wake bracket commits with NO user_message Message — the wake
-    // discriminator under [D07]. messages is empty because no content
-    // event minted any assistant Message either.
-    expect(entry.messages).toHaveLength(0);
+    // discriminator under [D07]. The only Message is the seeded
+    // wake-trigger system_note (the trigger's summary); no content
+    // event minted any assistant Message.
+    expect(entry.messages).toHaveLength(1);
+    expect(entry.messages[0]).toMatchObject({
+      kind: "system_note",
+      source: "scheduled",
+      text: "scheduled wake",
+    });
 
     // Result is interrupted.
     expect(entry.result).toBe("interrupted");

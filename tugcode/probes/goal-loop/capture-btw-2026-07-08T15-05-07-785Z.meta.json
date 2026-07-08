@@ -1,0 +1,14 @@
+{
+  "cli": "2.1.204",
+  "sessionId": "38273f99-e832-4aaf-bc0a-a82a29112c45",
+  "capture": "capture-btw-2026-07-08T15-05-07-785Z",
+  "stdoutLines": 34,
+  "results": 3,
+  "systemInit": 3,
+  "btwEnvelope": 0,
+  "unknownCommand": 0,
+  "xylophoneOnWire": 7,
+  "jsonlExists": true,
+  "jsonlMentionsBtw": true,
+  "jsonlMentionsXylophoneAnswer": 4
+}

@@ -1,6 +1,9 @@
 # Dev-card unsupported slash commands
 
-*Why some of Claude Code's slash commands don't appear in the dev card's `/` popup.*
+*Why some of Claude Code's slash commands don't appear in the dev card's `/` popup.
+This is the maintained mirror of the hidden set; the engineering doctrine — the
+full three-tier model, catalog sources, decision procedure, and recipes — lives in
+[slash-commands.md](slash-commands.md).*
 
 The dev card talks to `claude` over a **stream-json / print-mode** bridge — there
 is no interactive terminal UI on the other end. Claude Code's slash commands fall
@@ -27,8 +30,10 @@ into three groups, and the popup shows only the first two:
 
 The authoritative hidden set is `HIDDEN_SLASH_COMMANDS` in
 `tugdeck/src/lib/slash-supported.ts`; this document mirrors it. The decision to
-hide rather than grey-out, and to keep the list discoverable here, is [D14] in
-[design-decisions.md](design-decisions.md).
+hide rather than grey-out, and to keep the list discoverable here, was made in
+the original slash-commands plan (its plan-local decision [D14] — not an entry
+in the global [design-decisions.md](design-decisions.md)); the standing doctrine
+is [slash-commands.md](slash-commands.md).
 
 ## Hidden commands, by reason
 
@@ -41,13 +46,28 @@ Z4B chrome already shows session status; `/statusline` is the same, the Z4B
 chrome owns ours.)
 
 ### Conversation-structure / automation
-`/branch`, `/plan`, `/goal`, `/loop`, `/tasks` (alias `/bashes`), `/autofix-pr`,
-`/workflows`, `/fork`, `/ultraplan`, `/ultrareview`, `/schedule` (alias
-`/routines`) — conversation branching, plan mode, agentic goal loops,
-background-task / PR / workflow orchestration, forked subagents, cloud
-plan/review, and scheduled cloud routines. Out of conversational-parity scope;
-each is a substantial standalone feature for a future plan, and is kept in the
-hidden registry as a marker for that future work.
+`/branch`, `/plan`, `/autofix-pr`, `/workflows`, `/fork`, `/ultraplan`,
+`/ultrareview`, `/schedule` (alias `/routines`) — conversation branching,
+plan mode, PR / workflow orchestration, forked subagents, cloud
+plan/review, and scheduled cloud routines. Out of conversational-parity
+scope; each is a substantial standalone feature for a future plan, and is
+kept in the hidden registry as a marker for that future work.
+
+(`/tasks` — alias `/bashes` — graduated to a Tug-local command: it opens
+the WORK popover, the unified surface where running shells, subagents,
+scheduled work, the checklist, and the `/goal` live.)
+
+(`/goal` and `/loop` — alias `/proactive` — graduated out of this group as
+pass-throughs, probe-verified on claude 2.1.204; see
+[slash-commands.md](slash-commands.md) and
+`tugcode/probes/goal-loop/FINDINGS.md`.)
+
+`/btw` — hidden by probe evidence rather than deferral: claude itself
+refuses it over the headless bridge ("/btw isn't available in this
+environment"), so the notice is more honest than a round-trip to a
+refusal. A Tug-native side-question surface is possible future work
+(the exchange would have to be built Tug-side; upstream offers no
+headless channel).
 
 ### Plugin / advisor / dev-loop config
 `/advisor`, `/plugin`, `/reload-plugins`, `/reload-skills` — plugin and

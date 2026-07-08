@@ -538,6 +538,20 @@ export interface OutputTruncatedEvent {
 }
 
 /**
+ * `goal_feedback` — the `/goal` Stop-hook evaluator judged the condition
+ * unmet and injected guidance to keep the assistant working. A goal run is
+ * ONE result cycle; these frames arrive mid-cycle (tugcode translates the
+ * synthetic user events — see `tugcode/probes/goal-loop/FINDINGS.md`). The
+ * reducer folds each into `CodeSessionState.goal` (round count + the
+ * evaluator's latest reason); no phase change, no transcript ink.
+ */
+export interface GoalFeedbackEvent {
+  type: "goal_feedback";
+  condition: string;
+  reason: string;
+}
+
+/**
  * `compact_boundary` — claude compacted its context (in practice:
  * auto-compaction at capacity; a typed `/compact` is client-dispatched
  * and never reaches the bridge). Display-only: the reducer appends a
@@ -1148,6 +1162,7 @@ export type CodeSessionEvent =
   | ApiRetryEvent
   | ModelRefusalFallbackEvent
   | OutputTruncatedEvent
+  | GoalFeedbackEvent
   | CompactBoundaryEvent
   | UnknownEventEvent
   | WireErrorEvent

@@ -667,8 +667,27 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         );
         continue;
       }
-      // Other system_note sources (`scheduled` / `other`) have no
-      // renderer yet — skip silently rather than crashing.
+      if (message.source === "scheduled") {
+        // Wake-trigger chip — a subdued label above the wake turn's
+        // assistant content naming what scheduled it ("loop pacing", a
+        // cron's prompt), seeded by the reducer from
+        // `wake_started.wake_trigger.summary`. Appearance is CSS-only
+        // ([L06]).
+        elements.push(
+          <div
+            key={message.messageKey}
+            className="dev-card-transcript-wake-trigger"
+            data-slot="wake-trigger-chip"
+          >
+            <span className="dev-card-transcript-wake-trigger-label">
+              {message.text}
+            </span>
+          </div>,
+        );
+        continue;
+      }
+      // Other system_note sources (`other`) have no renderer yet —
+      // skip silently rather than crashing.
       continue;
     }
     if (message.kind === "assistant_thinking") {

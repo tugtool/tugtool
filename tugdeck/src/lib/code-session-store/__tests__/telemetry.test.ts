@@ -442,6 +442,7 @@ describe("deriveInflightActiveMs", () => {
       interruptInFlightSegmentStartedAt: null,
       wakeTrigger: null,
       jobs: [],
+      goal: null,
       ...overrides,
     };
   }
@@ -586,6 +587,7 @@ describe("deriveTimeCellMs", () => {
       interruptInFlightSegmentStartedAt: null,
       wakeTrigger: null,
       jobs: [],
+      goal: null,
       ...overrides,
     };
   }

@@ -154,6 +154,7 @@ function snapshotWith(args: {
     interruptInFlightIntervals: [],
     wakeTrigger: null,
     jobs: [],
+    goal: null,
     interruptInFlightSegmentStartedAt: null,
   };
 }

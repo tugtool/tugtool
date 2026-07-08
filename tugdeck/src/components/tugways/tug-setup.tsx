@@ -19,7 +19,7 @@
  * so a binary the installer drops in `~/.local/bin` is reachable without any
  * shell-PATH edit. There is no realistic "installed but unreachable" state.)
  *
- * Each step is a bespoke pulsing-dot row ([D105]): the dot encodes lifecycle,
+ * Each step is a bespoke pulsing-dot row ([D106]): the dot encodes lifecycle,
  * a CTA (or a success check) hangs on the right. The unhappy paths are
  * first-class designed states, not fallthroughs ([P10], #tugsetup-states):
  *   - install failed → `authStore.installError` → an error row + Retry;
@@ -67,7 +67,7 @@ const DEV_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | false 
   false;
 
 /**
- * A step's lifecycle status, encoded by the left-hand pulsing dot ([D105]):
+ * A step's lifecycle status, encoded by the left-hand pulsing dot ([D106]):
  * `pending` (dimmed), `active` (the user's turn — a CTA shows), `busy` (an
  * async action in flight), `error` (failed — a retry CTA shows), `done`.
  */
@@ -82,7 +82,7 @@ const DOT_SIZE = 14;
  */
 const SIGN_IN_TIMEOUT_MS = 600_000;
 
-/** Map a step status onto the dot's role + state ([D02]/[D105]). */
+/** Map a step status onto the dot's role + state ([D02]/[D106]). */
 function dotVisual(status: StepStatus): {
   role: TugProgressIndicatorRole;
   state: TugProgressIndicatorState;
@@ -244,7 +244,7 @@ export function TugSetup(): ReactElement {
 
   const overlayRoot = useCanvasOverlay();
 
-  // The ordered steps, each a pulsing-dot row ([D105]). During the first-run
+  // The ordered steps, each a pulsing-dot row ([D106]). During the first-run
   // probe the login state is unknown, so we render a "checking" body rather
   // than guess statuses.
   type Step = {

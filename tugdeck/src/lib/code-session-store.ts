@@ -55,6 +55,7 @@ import {
   narrowTaskUpdatedFrame,
   narrowTaskProgressFrame,
 } from "./code-session-store/select-jobs";
+import { goalIsActive } from "./code-session-store/select-goal";
 import {
   createInitialState,
   deriveActiveTurnSnapshot,
@@ -227,6 +228,10 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // An assistant message closed on `max_tokens` — the output was truncated.
   // Display-only: the reducer folds it into `outputTruncated`, no phase change.
   "output_truncated",
+  // `/goal` evaluator feedback — the Stop-hook evaluator judged the goal
+  // condition unmet mid-cycle. The reducer folds it into `goal` (round
+  // count + latest reason); no phase change, no transcript ink.
+  "goal_feedback",
   // Claude compacted its context (auto-compaction at capacity). The
   // reducer appends a compaction `system_note` to the active turn.
   "compact_boundary",
@@ -731,6 +736,9 @@ export class CodeSessionStore {
       // field doesn't change ([L02]). The JOBS cell reads it via
       // `useJobsState`.
       jobs: this.state.jobs,
+      // The session's `/goal` — reference passed through unchanged
+      // ([L02]). Read via `useGoalState`.
+      goal: this.state.goal,
     };
     this._cachedSnapshot = snap;
     return snap;
@@ -1093,6 +1101,52 @@ export class CodeSessionStore {
     const label = job.scheduleLabel ?? job.description;
     const suffix = label.length > 0 ? ` (${label})` : "";
     this.send(`Please cancel the scheduled cron \`${jobId}\`${suffix} using CronDelete.`, []);
+  }
+
+  /**
+   * Stop a running `/loop` paced by a pending wakeup — the scheduled
+   * row's Stop button for `kind: "wakeup"`. A harness-owned wakeup
+   * can't be cancelled over the wire, and unlike a cron there is no
+   * delete verb; the honest path (the `cancelScheduledWork` precedent)
+   * is a real user message asking the assistant to end the loop's
+   * protocol (`ScheduleWakeup {stop: true}` — the fire consumes the
+   * pending wake, and the stop keeps a new one from being scheduled).
+   * Gated to idle and to scheduled wakeup rows.
+   */
+  stopLoop(jobId: string): void {
+    if (this._disposed) return;
+    const job = this.state.jobs.find((j) => j.jobId === jobId);
+    if (
+      job === undefined ||
+      job.status !== "scheduled" ||
+      job.kind !== "wakeup" ||
+      this.state.phase !== "idle"
+    ) {
+      return;
+    }
+    const label = job.scheduleLabel ?? job.description;
+    const suffix = label.length > 0 ? ` (${label})` : "";
+    this.send(
+      `Please stop the running loop${suffix}: do not act on its next wakeup, ` +
+        `and end it with ScheduleWakeup {stop: true} so no further wakeups are scheduled.`,
+      [],
+    );
+  }
+
+  /**
+   * Clear the session's active `/goal` — sends the real `/goal clear`
+   * command as a user message. Gated to idle/errored like any submit: a
+   * goal RUN is one long in-flight cycle, and the honest way to stop the
+   * cycle itself is the existing interrupt control; once the turn is
+   * stopped (or between evaluator rounds after a respawn), this clears
+   * the claude-side goal so the evaluator never re-arms. No-ops without
+   * an active goal.
+   */
+  clearGoal(): void {
+    if (this._disposed) return;
+    if (!goalIsActive(this.state.goal)) return;
+    if (this.state.phase !== "idle" && this.state.phase !== "errored") return;
+    this.send("/goal clear", []);
   }
 
   /**
@@ -1531,6 +1585,14 @@ export class CodeSessionStore {
         // No payload — the reducer flips a per-turn boolean. Drop the wire's
         // `ipc_version` so the reducer event is clean.
         return { type: "output_truncated" } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "goal_feedback") {
+        // Flat string payload; drop `ipc_version`, narrow defensively.
+        return {
+          type: "goal_feedback",
+          condition: typeof ev.condition === "string" ? ev.condition : "",
+          reason: typeof ev.reason === "string" ? ev.reason : "",
+        } as unknown as CodeSessionEvent;
       }
       if (ev.type === "compact_boundary") {
         // Normalize the wire's snake_case `pre_tokens` to the reducer

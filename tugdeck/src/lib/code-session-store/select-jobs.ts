@@ -613,19 +613,25 @@ export function applyJobAgentStructured(
 }
 
 /**
- * Flip every non-terminal row to `stopped` — the stale-marking rule
- * for a fresh `session_init`: a respawned claude cannot have carried
- * background tasks across, and the harness does not re-fire a pending
- * wakeup after `--resume`, so rows still `running` or `scheduled` are
- * dead.
+ * Flip `running` rows to `stopped` — the stale-marking rule for a fresh
+ * `session_init`: a respawned claude cannot have carried in-flight
+ * background tasks across. `scheduled` rows SURVIVE: every tugcode
+ * respawn path resumes (`--resume`), and on claude ≥ 2.1.204 the harness
+ * scheduler re-fires a pending wakeup/cron in the resumed process
+ * (probe-verified, `tugcode/probes/goal-loop/FINDINGS.md#q02-loop` —
+ * reversing the 2.1.150-era finding that scheduled work died on resume).
+ * The surviving row reconciles normally when its wake fires
+ * (`flipEarliestElapsedScheduled`) or its fire time lapses unmet
+ * (`reapElapsedScheduled`), so a genuinely-dead schedule still ages out
+ * rather than pulsing forever.
  */
 export function markRunningJobsStopped(
   jobs: readonly JobItem[],
   endedAtMs: number,
 ): readonly JobItem[] {
-  if (!jobs.some((j) => !isTerminalJobStatus(j.status))) return jobs;
+  if (!jobs.some((j) => j.status === "running")) return jobs;
   return jobs.map((j) =>
-    !isTerminalJobStatus(j.status) ? { ...j, status: "stopped", endedAtMs } : j,
+    j.status === "running" ? { ...j, status: "stopped", endedAtMs } : j,
   );
 }
 

@@ -27,7 +27,7 @@
 }
 
 /* Each step is its own little job — a rounded plinth on the same surface the
- * transcript's block renderers use ([D105]). Every row is the SAME fixed
+ * transcript's block renderers use ([D106]). Every row is the SAME fixed
  * height (`--tug-setup-row-h`) whatever its state, so a step growing from one
  * line (pending) to label+detail+CTA (active) never makes the dialog hop. The
  * content block is vertically centered in that height. */

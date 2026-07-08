@@ -247,6 +247,15 @@ export interface JsonlEntry {
    */
   isMeta?: boolean;
   /**
+   * Harness-injected synthetic user event — today: the `/goal` Stop-hook
+   * evaluator's feedback (`Stop hook feedback:\n[<condition>]: <reason>`),
+   * injected mid-cycle to keep the assistant working toward the goal.
+   * Not a user submission: the translator skips it so replay never paints
+   * evaluator feedback as user prose (and never resurrects goal state —
+   * goal tracking is live-only, per `roadmap/slash-command-plan.md` S04).
+   */
+  isSynthetic?: boolean;
+  /**
    * The active permission mode at submit time (`"acceptEdits"`,
    * `"default"`, etc.). Claude Code stamps this on every *real* user
    * submission as it leaves the CLI's input layer. Crucially, it is
@@ -1286,6 +1295,10 @@ function handleUserEntry(
   // close the prior real turn as `interrupted` via orphan synthesis.
   // See `JsonlEntry.isMeta` for the surveyed shape inventory.
   if (entry.isMeta === true) return out;
+
+  // Goal-evaluator feedback (`isSynthetic`) — harness-injected, not a
+  // user submission. See {@link JsonlEntry.isSynthetic}.
+  if (entry.isSynthetic === true) return out;
 
   // Bare-string `message.content` shapes: scaffolding (skip), the
   // `<task-notification>` wake envelope (emit `wake_started`), or a

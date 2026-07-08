@@ -1,0 +1,41 @@
+{
+  "cli": "2.1.204",
+  "sessions": {
+    "self": "d0118c24-a16c-40e7-a0ee-ee94af17ec58",
+    "interval": "9a408cb5-a407-4f4e-9add-e4dd37a178ce",
+    "resumeSw": "d517b0da-129d-48d0-8212-c0785f49dc26",
+    "resumeGoal": "6ed7507a-0197-4b06-805c-4233ca71aa52"
+  },
+  "self": {
+    "capture": "capture-loop-self-2026-07-08T15-04-34-180Z",
+    "scheduleWakeupCalls": 4,
+    "cronCreateCalls": 0,
+    "taskNotifications": 0,
+    "systemInit": 2,
+    "results": 2
+  },
+  "interval": {
+    "capture": "capture-loop-interval-2026-07-08T15-04-34-180Z",
+    "scheduleWakeupCalls": 0,
+    "cronCreateCalls": 2,
+    "taskNotifications": 0,
+    "systemInit": 2,
+    "results": 2
+  },
+  "resumeSw": {
+    "phase1": "capture-loop-resume-sw-phase1-2026-07-08T15-04-34-180Z",
+    "phase2": "capture-loop-resume-sw-phase2-2026-07-08T15-04-34-180Z",
+    "phase1ScheduleWakeup": 2,
+    "phase2TaskNotifications": 0,
+    "phase2SystemInit": 1,
+    "phase2ResumedMarker": 3,
+    "verdict": "PASS: scheduled wake fired after --resume"
+  },
+  "resumeGoal": {
+    "phase1": "capture-loop-resume-goal-phase1-2026-07-08T15-04-34-180Z",
+    "phase2": "capture-loop-resume-goal-phase2-2026-07-08T15-04-34-180Z",
+    "phase1StopHookFeedback": 0,
+    "phase2StopHookFeedback": 0,
+    "verdict": "FAIL: no evaluator feedback after --resume"
+  }
+}
