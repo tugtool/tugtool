@@ -86,7 +86,14 @@ export function clickElement(app: App, selector: string): Promise<boolean> {
   );
 }
 
-export const PROGRESS_STRIP = '[data-testid="dev-replay-progress"]';
+// The restore-progress affordance is the Z0 load overlay's control bar,
+// shown (`data-visible="true"` → display) for the whole cold-restore window.
+// The original `data-testid="dev-replay-progress"` strip was folded into
+// this bar when the load surfaces were unified (882eb82a7); the audit's
+// affordance leg had been probing the retired testid — and so counting a
+// visible determinate progress bar as a blank screen — ever since.
+export const PROGRESS_STRIP =
+  '[data-slot="dev-load-overlay"] .tug-control-bar[data-visible="true"]';
 
 export interface UiSample {
   restoring: boolean;
