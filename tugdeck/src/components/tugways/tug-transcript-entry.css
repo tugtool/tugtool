@@ -261,15 +261,30 @@ body {
   -webkit-user-select: text;
 }
 
-/* A body with a large markdown heading (h1–h3) gets the wider gap above
-   it — the bigger margin tracks the bigger content. `.tug-markdown-block`
-   is rendered only for assistant prose, so user prompts (a plain `<span>`)
-   keep the tight default gap. The selector deliberately does NOT assert
-   exact nesting (no `:first-child` / `>` chain): markdown wraps headings a
-   level or two deep and one wrong link silently voids the whole `:has()`,
-   which is what left every assistant turn stuck on the 0 default. A loose
-   descendant test is robust against that. */
-.tug-transcript-entry__body:has(.tug-markdown-block :is(h1, h2, h3)) {
+/* A body that OPENS with a large markdown heading (h1–h3) gets the wider
+   gap above it — the bigger margin tracks the bigger content. The chain
+   asserts position, not mere presence: the heading must sit in the first
+   `.tugx-md-block` of a `.tug-markdown-block` that is itself the first
+   thing in the body (a loose descendant test here made every reply that
+   contained an h2 ANYWHERE carry the wide margin, which is what broke the
+   under-attribution rhythm). Two body shapes exist: the markdown block as
+   the body's direct first child, and the markdown block as the first child
+   of a single wrapper div (the assistant message run / the user prompt's
+   atom-markdown host) — both are covered below. An exact chain like this
+   silently voids when the DOM shape drifts, so the at0208 app-test pins
+   both directions: heading-first bodies get the wide margin, bodies with
+   only a mid-body heading keep the tight default. */
+.tug-transcript-entry__body:has(
+  > .tug-markdown-block:first-child
+    > .tugx-md-block:first-child
+    > :is(h1, h2, h3)
+),
+.tug-transcript-entry__body:has(
+  > :first-child
+    > .tug-markdown-block:first-child
+    > .tugx-md-block:first-child
+    > :is(h1, h2, h3)
+) {
   margin-top: var(--tugx-transcript-body-margin-top-heading);
 }
 

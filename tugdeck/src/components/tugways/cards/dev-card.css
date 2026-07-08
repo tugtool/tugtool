@@ -530,10 +530,12 @@
   align-items: center;
   gap: var(--tug-space-sm);
   width: 100%;
-  /* Top-only: transcript body children space with top margins (see the
-     run-end comment in block-chrome.css); the adjacency rules below
-     carry the gaps around the divider. */
-  margin-block: var(--tug-space-xs) 0;
+  /* Top-only and follower-position-only: transcript body children space
+     with top margins (see the run-end comment in block-chrome.css), and
+     the margin applies only when the divider follows a sibling — a
+     first-in-body divider sits flush under the attribution header. The
+     adjacency rules below carry the gaps around the divider. */
+  margin-block: 0;
   font-size: 0.85em;
   opacity: 0.55;
   user-select: none;
@@ -550,6 +552,10 @@
   flex: 0 0 auto;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+* + .dev-card-transcript-compaction {
+  margin-top: var(--tug-space-xs);
 }
 
 /* Top-margins-only adjacency around the divider: prose after the divider

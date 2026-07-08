@@ -117,9 +117,12 @@ body {
 .tool-block-chrome {
   display: flex;
   flex-direction: column;
-  /* Default: a run boundary on top (gap from prose / a thinking block above).
-   * Removed below when this block follows another block (mid-run). */
-  margin: var(--tugx-block-run-gap) 0 0 0;
+  /* No margin of its own — spacing is follower-position-only (the `* +`
+   * rule below). A block that is FIRST in its container sits flush, so
+   * the transcript entry's own body-margin token stays the single source
+   * of the under-attribution gap regardless of which block kind opens
+   * the body. */
+  margin: 0;
   background: var(--tugx-block-surface);
   /* Every block rounds all four corners — a tool call is its own card, never
    * fused into a run. The radius is on the chrome (the whole header+body
@@ -143,6 +146,15 @@ body {
  * keeps its hairline. */
 .tool-block-chrome-body {
   --tugx-block-strip-border: transparent;
+}
+
+/* Run boundary: a block that follows ANY sibling opens the run gap (gap from
+ * prose / a thinking block above). Follower-position, not a default margin,
+ * so a first-in-body block leaks nothing under the attribution header. The
+ * tighter block-after-block rule below wins on specificity (0,2,0 over
+ * 0,1,0). */
+* + .tool-block-chrome {
+  margin-top: var(--tugx-block-run-gap);
 }
 
 /* Between consecutive tool blocks: a tighter gap than the prose boundary, so a

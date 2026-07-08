@@ -63,9 +63,13 @@
 [data-variant="note"] {
   /* Margin — wider (lg) than the shared block-margin (md) because
    * the thinking strip is a major chrome element that benefits from
-   * extra vertical breathing room. Top-only: blocks space with top
-   * margins (see the run-end comment in block-chrome.css); the
-   * follower rules below carry the lg gap under the strip. */
+   * extra vertical breathing room. Top-only AND follower-position-only:
+   * blocks space with top margins (see the run-end comment in
+   * block-chrome.css), and the margin applies only when the strip
+   * follows a sibling — a first-in-body strip sits flush so the
+   * transcript entry's body-margin token alone sets the gap under the
+   * attribution header. The follower rules below carry the lg gap
+   * under the strip. */
   --tugx-thinking-margin: var(--tug-space-lg) 0 0 0;
 
   /* Label — strong "Thinking" header text */
@@ -90,7 +94,7 @@
 
 .dev-thinking-block {
   display: block;
-  margin: var(--tugx-thinking-margin);
+  margin: 0;
   padding: 0;
   /* Match the tool-block chrome surface (the raised `--tugx-block-chrome-bg`),
    * not the inset `--tugx-block-bg`, so a note reads as the same card as every
@@ -99,6 +103,13 @@
   border: 1px solid var(--tugx-block-border);
   border-radius: var(--tugx-block-radius);
   overflow: hidden;
+}
+
+/* Follower-position margin — the strip opens its lg gap only when it
+ * follows a sibling; first-in-body it sits flush under the attribution
+ * header. */
+* + .dev-thinking-block {
+  margin: var(--tugx-thinking-margin);
 }
 
 /* Top-margins-only spacing (see the run-end comment in block-chrome.css):
