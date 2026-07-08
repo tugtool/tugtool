@@ -132,14 +132,13 @@ const ATOM_LABEL_SIZE_RATIO = 1.0;
 /**
  * The prose line-height the chip is *sized to fill*. The chip is baked once and
  * shown on two surfaces: the editor (line-height pinned in
- * `editor-settings-store`, currently 1.5) and the transcript body
+ * `editor-settings-store`, 1.75) and the transcript body
  * (`--tugx-md-body-line-height`, 1.6). The chip is sized for 1.6 minus the
- * 1px-per-edge inset below, which leaves enough slack that it still tucks
- * inside the tighter 1.5 editor line for every editor font size up to ~20px
- * (the fit reduces to `0.1·size ≤ 2`). Beyond that — or if the editor line
- * dropped further — the chip would poke out and the line-hop would return, so
- * the `tug-atom-img.test` guards assert the fit on both surfaces across the
- * supported font-size range.
+ * 1px-per-edge inset below, so it fills the 1.6 transcript line and tucks
+ * comfortably inside the taller 1.75 editor line — the extra editor leading
+ * becomes air above and below the chip, which keeps chips on successive editor
+ * lines from touching. The `tug-atom-img.test` guards assert the fit on both
+ * surfaces across the supported font-size range.
  */
 const ATOM_PROSE_LINE_HEIGHT = 1.6;
 /**
