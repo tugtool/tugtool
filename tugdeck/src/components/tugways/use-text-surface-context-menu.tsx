@@ -133,6 +133,15 @@ export interface UseTextSurfaceContextMenuOptions {
    * (CSS-visual select-all flag) into Copy enablement.
    */
   hasSelectionOverride?: () => boolean;
+
+  /**
+   * Optional target-dependent entries, sampled from the `contextmenu`
+   * event at open time and prepended above the standard editing items
+   * (with a separator). Lets a surface offer context-specific actions —
+   * e.g. the prompt editor's "Open in Editor" when the right-click
+   * landed on a path-bearing file atom. Return `[]` for no extras.
+   */
+  extraEntries?: (event: MouseEvent) => TugEditorContextMenuEntry[];
 }
 
 export interface UseTextSurfaceContextMenuResult {
@@ -177,12 +186,15 @@ interface MenuState {
   x: number;
   y: number;
   hasSelection: boolean;
+  /** Target-dependent entries sampled at open time (may be empty). */
+  extra: TugEditorContextMenuEntry[];
 }
 
 export function useTextSurfaceContextMenu(
   options: UseTextSurfaceContextMenuOptions,
 ): UseTextSurfaceContextMenuResult {
-  const { adapterRef, capabilities, hasSelectionOverride } = options;
+  const { adapterRef, capabilities, hasSelectionOverride, extraEntries } =
+    options;
 
   // The single piece of React state the hook owns: open/closed +
   // anchor + hasSelection sample. `null` means closed. Open is
@@ -223,22 +235,30 @@ export function useTextSurfaceContextMenu(
       if (hasSelectionOverride !== undefined) {
         hasSelection = hasSelectionOverride();
       }
-      setMenuState({ x: event.clientX, y: event.clientY, hasSelection });
+      setMenuState({
+        x: event.clientX,
+        y: event.clientY,
+        hasSelection,
+        extra: extraEntries?.(event) ?? [],
+      });
     },
-    [adapterRef, hasSelectionOverride],
+    [adapterRef, hasSelectionOverride, extraEntries],
   );
 
   // Build the menu items via the shared builder so every surface
   // shows the same labels, shortcuts, and order. Disabled state
-  // follows from capabilities + hasSelection.
-  const items = useMemo<TugEditorContextMenuEntry[]>(
-    () =>
-      buildTextEditingMenuItems({
-        hasSelection: menuState?.hasSelection ?? false,
-        canEdit: capabilities.canEdit,
-      }) as TugEditorContextMenuEntry[],
-    [menuState?.hasSelection, capabilities.canEdit],
-  );
+  // follows from capabilities + hasSelection. Target-dependent
+  // extras (sampled at open time) sit above the standard block.
+  const items = useMemo<TugEditorContextMenuEntry[]>(() => {
+    const standard = buildTextEditingMenuItems({
+      hasSelection: menuState?.hasSelection ?? false,
+      canEdit: capabilities.canEdit,
+    }) as TugEditorContextMenuEntry[];
+    const extra = menuState?.extra ?? [];
+    return extra.length > 0
+      ? [...extra, { type: "separator" }, ...standard]
+      : standard;
+  }, [menuState?.hasSelection, menuState?.extra, capabilities.canEdit]);
 
   // Only mount the menu component when there's an open state.
   // `TugEditorContextMenu` calls `useRequiredResponderChain` at the

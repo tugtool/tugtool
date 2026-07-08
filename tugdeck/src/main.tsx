@@ -40,6 +40,7 @@ import { registerGitCard } from "./components/tugways/cards/git-card";
 import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
+import { registerFileCard } from "./components/tugways/cards/file-card-registration";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
 import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
@@ -252,6 +253,7 @@ if (!container) {
   registerDevCard();
   registerAboutCard();
   registerSettingsCard();
+  registerFileCard();
   registerGalleryCards();
   registerDevPanelInspectorTabs();
 

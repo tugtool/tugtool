@@ -450,6 +450,28 @@ export const TUG_ACTIONS = {
   //                         current selection. Dispatched by ⌘G.
   // FIND_PREVIOUS:          payload — none. Symmetric with FIND_NEXT.
   //                         Dispatched by ⇧⌘G.
+  // SAVE:                   payload — none. Flush the first responder's
+  //                         pending edits to disk now. Under the live
+  //                         autosave model there is no dirty state —
+  //                         SAVE is "write immediately + checkpoint",
+  //                         not "persist or lose". Dispatched by ⌘S and
+  //                         File ▸ Save; handled by editing surfaces
+  //                         that own a disk binding (`TugFileEditor`).
+  // OPEN_FILE:              payload — `{ path: string, line?: number }`
+  //                         via `dispatchAction` / Control frames, or a
+  //                         chain dispatch whose `value` is the path
+  //                         string (context-menu items). Open `path` in
+  //                         a File card: an existing card bound to the
+  //                         same path is activated and jumped to `line`;
+  //                         otherwise a new File card is created seeded
+  //                         with the path. Registry handler in
+  //                         `action-dispatch.ts`; chain handler on
+  //                         DeckCanvas. Both call `openFileInCard`.
+  // REVEAL_IN_FINDER:       payload — `value: string` (absolute path).
+  //                         Reveal the path in the macOS Finder via the
+  //                         host bridge (`openPathInOS`). Dispatched by
+  //                         file-reference context menus; handled by
+  //                         DeckCanvas (deck-level, card-independent).
   CLOSE:                  "close",
   CLOSE_ALL:              "close-all",
   MINIMIZE:               "minimize",
@@ -461,6 +483,9 @@ export const TUG_ACTIONS = {
   FIND:                   "find",
   FIND_NEXT:              "find-next",
   FIND_PREVIOUS:          "find-previous",
+  SAVE:                   "save",
+  OPEN_FILE:              "open-file",
+  REVEAL_IN_FINDER:       "reveal-in-finder",
 
   // ---- Dev session management ----
   //

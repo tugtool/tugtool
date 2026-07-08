@@ -545,6 +545,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
 
+        // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
+        // web layer reuses an existing File card bound to the chosen
+        // path or opens a new one (action-dispatch.ts `open-file`).
+        fileMenu.addItem(NSMenuItem(title: "Open File…", action: #selector(openFileInEditor(_:)), keyEquivalent: "o").identified("file.openFile"))
+
         fileMenu.addItem(NSMenuItem.separator())
 
         // Close Card (⌘W): routes through the web view's responder chain
@@ -569,6 +574,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         closeAllCardTabsMenuItem = NSMenuItem(title: "Close All Card Tabs", action: #selector(closeAllCardTabs(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
         closeAllCardTabsMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCardTabs")
         fileMenu.addItem(closeAllCardTabsMenuItem)
+
+        fileMenu.addItem(NSMenuItem.separator())
+
+        // Save (⌘S): flush the focused editor's pending edits to disk
+        // now. Under the File card's live autosave there is no dirty
+        // state — this is "write immediately + checkpoint", routed as a
+        // `save` Control frame → responder-chain SAVE dispatch. AppKit
+        // swallows ⌘S at the menubar, so the menu item must carry the
+        // chord; the web keybinding-map entry covers browser-only dev.
+        fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -939,6 +954,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func newDevCard(_ sender: Any) {
         sendControl("show-card", params: ["component": "dev"])
+    }
+
+    @objc private func openFileInEditor(_ sender: Any) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.sendControl("open-file", params: ["path": url.path])
+        }
+    }
+
+    @objc private func saveActiveEditor(_ sender: Any) {
+        // Bare chain-action name "save" (Both-category identity action,
+        // same convention as "close").
+        sendControl("save")
     }
 
     @objc private func nextTheme(_ sender: Any) {
@@ -1397,6 +1429,32 @@ extension AppDelegate: BridgeDelegate {
     }
 
     func bridgeChoosePath(kind: String, initialPath: String?, completion: @escaping (String?) -> Void) {
+        // `save` kind: an NSSavePanel choosing a NEW file path (the File
+        // card's Move To… / Save As…). The panel returns the path only —
+        // the web layer performs the write through its own fs surface.
+        if kind == "save" {
+            let panel = NSSavePanel()
+            panel.message = "Choose where to save the file"
+            panel.prompt = "Save"
+            if let initialPath = initialPath, !initialPath.isEmpty {
+                let resolved = (initialPath as NSString).expandingTildeInPath
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: resolved, isDirectory: &isDir), isDir.boolValue {
+                    panel.directoryURL = URL(fileURLWithPath: resolved)
+                } else {
+                    panel.nameFieldStringValue = (resolved as NSString).lastPathComponent
+                    panel.directoryURL = URL(fileURLWithPath: resolved).deletingLastPathComponent()
+                }
+            }
+            panel.beginSheetModal(for: window) { response in
+                guard response == .OK, let url = panel.url else {
+                    completion(nil)
+                    return
+                }
+                completion(url.path)
+            }
+            return
+        }
         let wantFile = kind == "file"
         let panel = NSOpenPanel()
         panel.canChooseFiles = wantFile

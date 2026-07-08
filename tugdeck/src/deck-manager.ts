@@ -700,8 +700,15 @@ export class DeckManager implements IDeckManagerStore {
    * If the registration carries `defaultCards`, the stack is seeded with one
    * card per template (fresh UUIDs); otherwise a single card is created from
    * `defaultMeta`.
+   *
+   * `initialContent`, when provided, is seeded into the new card's
+   * `CardStateBag.content` BEFORE the deck-state commit, so the card
+   * mounts through the same restore path a reloaded card takes — its
+   * `useCardStatePreservation.onRestore` receives the payload. This is
+   * how parameterized openers (e.g. `open-file` seeding a path) hand
+   * initial state to a card without a side channel.
    */
-  addCard(componentId: string): string | null {
+  addCard(componentId: string, initialContent?: unknown): string | null {
     const registration = getRegistration(componentId);
     if (!registration) {
       console.warn(
@@ -763,6 +770,9 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     const firstCardId = seededCards[0].id;
+    if (initialContent !== undefined) {
+      this.cardStateCache.set(firstCardId, { content: initialContent });
+    }
     const win: TugPaneState = {
       id: paneId,
       position,

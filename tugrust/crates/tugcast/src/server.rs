@@ -257,6 +257,8 @@ pub(crate) fn build_app(
         .route("/api/permissions", get(crate::permissions::get_permissions))
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))
+        .route("/api/fs/read", get(crate::fs_read::get_fs_read))
+        .route("/api/fs/write", post(crate::fs_write::post_fs_write))
         .with_state(router)
         .layer(cors);
 

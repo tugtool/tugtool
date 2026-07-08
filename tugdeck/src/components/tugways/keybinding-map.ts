@@ -196,6 +196,11 @@ export const KEYBINDINGS: KeyBinding[] = [
   // browsers have no default meaning for ⌘G inside a WKWebView.
   { key: "KeyG", meta: true, action: TUG_ACTIONS.FIND_NEXT },
   { key: "KeyG", meta: true, shift: true, action: TUG_ACTIONS.FIND_PREVIOUS },
+  // ⌘S — flush the first responder's pending edits to disk now (live
+  // autosave makes this "write immediately + checkpoint", never a
+  // dirty-state gate). `preventDefaultOnMatch` suppresses WebKit's
+  // save-page default so the chord is inert when nothing handles it.
+  { key: "KeyS", meta: true, action: TUG_ACTIONS.SAVE, preventDefaultOnMatch: true },
   // Tab navigation: macOS convention (Safari, Terminal) uses
   // ⇧⌘[ / ⇧⌘] for previous / next tab with wrap-around. Routes to
   // TugPane's existing previous-tab / next-tab handlers, which already

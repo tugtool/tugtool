@@ -504,21 +504,21 @@ Action name `"open-file"`, payload `{ path: string, line?: number }`. Behavior p
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | fs_read endpoint | pending | — |
-| #step-2 | fs_write endpoint | pending | — |
-| #step-3 | file-io client + FileEditorStore | pending | — |
-| #step-4 | TugFileEditor primitive core | pending | — |
-| #step-5 | TugFileEditor responders, clipboard, SAVE plumbing | pending | — |
-| #step-6 | File card + registration + chooser + preservation | pending | — |
-| #step-7 | open-file action + addCard seeding | pending | — |
-| #step-8 | External change: auto-revert + conflict banner | pending | — |
-| #step-9 | Integration checkpoint: core live loop (M01) | pending | — |
-| #step-10 | Lezer highlighting | pending | — |
-| #step-11 | Find UI + menus (File ▸ Open/Save, Cmd-S) | pending | — |
-| #step-12 | Transcript links (headers, file-block, atoms) | pending | — |
-| #step-13 | NSFileVersion bridge + versions sheet | pending | — |
-| #step-14 | Untitled drafts + Move To | pending | — |
-| #step-15 | Final integration checkpoint (M02+M03) | pending | — |
+| #step-1 | fs_read endpoint | done | f6063ffc4 |
+| #step-2 | fs_write endpoint | done | 2ab33de2e |
+| #step-3 | file-io client + FileEditorStore | done | bc8cc65d6 |
+| #step-4 | TugFileEditor primitive core | done | bc8cc65d6 (folded with #step-3) |
+| #step-5 | TugFileEditor responders, clipboard, SAVE plumbing | done | bc8cc65d6 (folded with #step-3) |
+| #step-6 | File card + registration + chooser + preservation | done | 4e1692155 |
+| #step-7 | open-file action + addCard seeding | done | 4e1692155 (folded) |
+| #step-8 | External change: auto-revert + conflict banner | done | 4e1692155 (folded) |
+| #step-9 | Integration checkpoint: core live loop (M01) | done | 50c59e324 |
+| #step-10 | Lezer highlighting | done | a5b6cdc43 |
+| #step-11 | Find UI + menus (File ▸ Open/Save, Cmd-S) | done | 4e1692155 (Swift compile verified at build) |
+| #step-12 | Transcript links (headers, file-block, atoms) | done | 4e1692155 |
+| #step-13 | NSFileVersion bridge + versions sheet | done | 4e1692155 (R04 spike at build/iterate) |
+| #step-14 | Untitled drafts + Move To | done | ec0f4cd83 |
+| #step-15 | Final integration checkpoint (M02+M03) | done | 50c59e324 |
 
 #### Step 1: fs_read endpoint {#step-1}
 

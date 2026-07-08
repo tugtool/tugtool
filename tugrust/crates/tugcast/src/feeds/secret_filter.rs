@@ -99,10 +99,10 @@ impl SecretFilter {
     }
 
     /// Construct a filter containing the built-in denylist only, with
-    /// no workspace lookup. Test-only — production callers always
-    /// have a workspace root and should use `new` so the optional
+    /// no workspace lookup. For callers without a workspace root — the
+    /// `/api/fs/*` endpoints, which accept any absolute path. Callers
+    /// that do have a workspace root should use `new` so the optional
     /// `.tugattachignore` is honored.
-    #[cfg(test)]
     pub fn builtin_only() -> Self {
         let mut builder = GitignoreBuilder::new(".");
         Self::add_builtin_patterns(&mut builder);

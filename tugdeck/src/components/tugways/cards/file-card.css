@@ -1,0 +1,161 @@
+/* @tug-pairings:
+   - --tug7-element-global-text-normal-default-rest / --tug7-surface-card-primary-normal-plain-rest (open/error surfaces)
+   `FileCard` composes TugFileEditor (its own token family), TugFileChooser,
+   TugPaneBanner, and TugPushButton — each keeps its own tokens [L20].
+   Card-local rules below are layout-only.
+*/
+
+/**
+ * file-card.css — layout for the File card body.
+ *
+ * The card body is a full-height column. In the editor state the
+ * TugFileEditor host fills it (the editor's own `.cm-scroller` is the
+ * scrolling surface). The open and error surfaces are centered stacks.
+ *
+ * Tuglaw cross-check: [L06] layout-only rules, no state styling here;
+ * [L19] file pair with module docstring; [L20] no reach into composed
+ * components' token families.
+ */
+
+.file-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- Editor state ---- */
+
+/* Find bar — a compact strip above the editor. Composes TugInput /
+ * TugIconButton / TugLabel; layout-only rules here [L20]. */
+.file-card-find-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  padding: var(--tug-space-2xs) var(--tug-space-sm);
+  flex: 0 0 auto;
+}
+
+.file-card-find-bar > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-card-find-count {
+  white-space: nowrap;
+}
+
+.file-card--editor {
+  overflow: hidden;
+}
+
+.file-card-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Quiet corner affordances over the editor (versions). Anchored to the
+ * card, floated over the editor's top-right; the editor's stable
+ * scrollbar gutter keeps content clear of it in practice. */
+.file-card--editor {
+  position: relative;
+}
+
+.file-card-editor-affordances {
+  position: absolute;
+  top: var(--tug-space-2xs);
+  right: var(--tug-space-sm);
+  display: flex;
+  gap: var(--tug-space-2xs);
+  z-index: 1;
+}
+
+/* ---- Versions sheet content ---- */
+
+.file-card-versions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-md);
+  min-width: 320px;
+}
+
+.file-card-versions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.file-card-versions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+}
+
+.file-card-versions-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- Open (empty/loading) surface ---- */
+
+.file-card-open-surface {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-xl);
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.file-card-open-prompt {
+  margin: 0;
+  font-weight: 600;
+}
+
+.file-card-open-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.file-card-open-row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-card-open-alt {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* ---- Error surface ---- */
+
+.file-card-error-surface {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-xl);
+  text-align: center;
+}
+
+.file-card-error-message {
+  margin: 0;
+  font-weight: 600;
+}
+
+.file-card-error-path {
+  margin: 0;
+  word-break: break-all;
+}

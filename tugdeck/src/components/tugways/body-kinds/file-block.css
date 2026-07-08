@@ -122,6 +122,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 60%;
+  /* The path is a link into the File card (open-file on click). Rest
+   * treatment is unchanged; hover reveals the affordance. */
+  cursor: pointer;
+}
+
+.tugx-file-path:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .tugx-file-lang {

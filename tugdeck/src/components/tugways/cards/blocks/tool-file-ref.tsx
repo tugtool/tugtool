@@ -10,20 +10,22 @@
  * on a transparent surface — no box, no fill, no border. The full path
  * is the hover tooltip.
  *
- * The treatment is deliberately the inline icon+text vocabulary so it
- * reads like a file mention in prose. It is the reference style a later
- * step joins markdown file-mentions to — set here first so there is a
- * concrete anchor to point back at.
+ * The ref is a LINK into the File card: a primary click dispatches the
+ * `open-file` action (`{ path, line? }` through `dispatchAction`), so
+ * the file the assistant just read or edited opens in an editor —
+ * reusing an existing File card bound to the same path. A right-click
+ * offers Open in Editor / Show in Finder via `TugContextMenu` (chain
+ * actions carrying the path as `value`, handled by DeckCanvas).
  *
- * Composition:
- *  - Sits in the header's `detail` slot, which establishes the code
- *    font + muted tone. The ref inherits both, so the basename matches
- *    a Bash command's text exactly and the two read as one vocabulary.
- *  - The glyph inherits `currentColor`, so it tracks the same muted
- *    tone and any theme switch repaints it for free.
+ * Focus discipline: the ref carries `data-tug-focus="refuse"` so
+ * clicking it never steals first-responder status from wherever the
+ * user is typing — the File card claims focus itself through the
+ * activation path, exactly like any other card activation.
  *
  * Laws:
  *  - [L06] appearance is pure CSS + inherited tokens; no React state.
+ *  - [L11] the ref is a control — it emits `open-file`; the deck level
+ *    owns the state the action mutates.
  *  - [L19] file pair (`.tsx` + `.css`), exported props, `data-slot`.
  *
  * @module components/tugways/cards/blocks/tool-file-ref
@@ -31,10 +33,13 @@
 
 import "./tool-file-ref.css";
 
-import React from "react";
+import React, { useCallback } from "react";
 import { FileText } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { dispatchAction } from "@/action-dispatch";
+import { TugContextMenu } from "@/components/tugways/tug-context-menu";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 export interface ToolFileRefProps {
   /**
@@ -42,6 +47,12 @@ export interface ToolFileRefProps {
    * the native hover tooltip (`title`).
    */
   path: string;
+  /**
+   * 1-based line the reference points at (e.g. a Read's `offset`).
+   * Carried on the `open-file` dispatch so the editor lands on the
+   * relevant line, not just the file.
+   */
+  line?: number;
   /**
    * Leading glyph. Defaults to a generic file-document icon
    * (`FileText`). A tool with a more specific shape (a notebook, say)
@@ -64,21 +75,55 @@ export function fileRefBasename(path: string): string {
 
 export function ToolFileRef({
   path,
+  line,
   icon,
   "data-slot": dataSlot = "tool-file-ref",
   className,
 }: ToolFileRefProps): React.ReactElement {
   const name = fileRefBasename(path);
+
+  const handleClick = useCallback(
+    (event: React.MouseEvent) => {
+      // Plain primary click only — modified clicks fall through so
+      // text selection gestures over the header stay intact.
+      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      const payload: Record<string, unknown> = {
+        action: TUG_ACTIONS.OPEN_FILE,
+        path,
+      };
+      if (line !== undefined) payload.line = line;
+      dispatchAction(payload);
+    },
+    [path, line],
+  );
+
   return (
-    <span
-      className={cn("tool-file-ref", className)}
-      title={path}
-      data-slot={dataSlot}
+    <TugContextMenu<string>
+      items={[
+        {
+          action: TUG_ACTIONS.OPEN_FILE,
+          value: path,
+          label: "Open in Editor",
+        },
+        {
+          action: TUG_ACTIONS.REVEAL_IN_FINDER,
+          value: path,
+          label: "Show in Finder",
+        },
+      ]}
     >
-      <span className="tool-file-ref-icon" aria-hidden="true">
-        {icon ?? <FileText />}
+      <span
+        className={cn("tool-file-ref", "tool-file-ref--link", className)}
+        title={path}
+        data-slot={dataSlot}
+        data-tug-focus="refuse"
+        onClick={handleClick}
+      >
+        <span className="tool-file-ref-icon" aria-hidden="true">
+          {icon ?? <FileText />}
+        </span>
+        {name}
       </span>
-      {name}
-    </span>
+    </TugContextMenu>
   );
 }

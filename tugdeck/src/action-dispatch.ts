@@ -43,6 +43,7 @@ import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { openFileInCard } from "@/lib/open-file-in-card";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -478,6 +479,40 @@ export function initActionDispatch(
       deckManager.showSingletonCard(component);
     } else {
       deckManager.addCard(component);
+    }
+  });
+
+  // open-file: open a path in a File card. Path-keyed reuse — a card
+  // already bound to the path is activated (raised, focus-claimed) and
+  // jumped to the requested line; otherwise a new File card is created
+  // seeded with the path so it opens directly on the file. Dispatched
+  // by transcript file references (tool-call headers, file blocks,
+  // file atoms) via `dispatchAction`, and by the Swift File ▸ Open…
+  // menu as a Control frame.
+  registerAction(TUG_ACTIONS.OPEN_FILE, (payload) => {
+    const path = payload.path;
+    if (typeof path !== "string" || path.trim() === "") {
+      console.warn("open-file: missing or invalid path parameter", payload);
+      return;
+    }
+    const line = typeof payload.line === "number" ? payload.line : undefined;
+    openFileInCard(deckManager, path, line);
+  });
+
+  // save (Both): flush the focused editor's pending edits to disk via
+  // the responder chain. Trivial adapter — Control-frame name and
+  // chain-action name are identical (TUG_ACTIONS.SAVE = "save"). The
+  // File ▸ Save menu item carries ⌘S (AppKit swallows the chord at the
+  // menubar); the keybinding-map entry covers browser-only dev. An
+  // unhandled dispatch (no editing surface focused) is a silent no-op.
+  registerAction(TUG_ACTIONS.SAVE, () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToFirstResponder({
+        action: TUG_ACTIONS.SAVE,
+        phase: "discrete",
+      });
+    } else {
+      console.warn(`${TUG_ACTIONS.SAVE}: responder chain manager not registered yet`);
     }
   });
 

@@ -35,6 +35,8 @@ import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
 import { selectionGuard } from "@/components/tugways/selection-guard";
 import { copySelectionAsPlainText } from "@/lib/copy-as-plain-text";
+import { openFileInCard } from "@/lib/open-file-in-card";
+import { openPathInOS } from "@/lib/os-open";
 
 // ---- DeckCanvasProps ----
 
@@ -79,6 +81,8 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE,
   TUG_ACTIONS.CLOSE,
   TUG_ACTIONS.CLOSE_ALL,
+  TUG_ACTIONS.OPEN_FILE,
+  TUG_ACTIONS.REVEAL_IN_FINDER,
 ]);
 
 /**
@@ -266,6 +270,23 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       },
       [TUG_ACTIONS.NEXT_TAB]: (_event: ActionEvent) => {
         reactivateWhenDeselected();
+      },
+      // open-file / reveal-in-finder — deck-level file-reference
+      // actions dispatched by context menus on transcript file refs.
+      // The chain payload carries the absolute path as `value`; the
+      // richer `{ path, line }` form arrives via `dispatchAction` and
+      // is handled in `action-dispatch.ts`. Both converge on
+      // `openFileInCard` (path-keyed File-card reuse).
+      [TUG_ACTIONS.OPEN_FILE]: (event: ActionEvent) => {
+        if (typeof event.value !== "string" || event.value === "") return;
+        openFileInCard(store, event.value);
+      },
+      [TUG_ACTIONS.REVEAL_IN_FINDER]: (event: ActionEvent) => {
+        if (typeof event.value !== "string" || event.value === "") return;
+        // The host's `openPath` bridge opens a `folder` kind in Finder;
+        // showing the file's parent directory is the reveal.
+        const parent = event.value.replace(/\/[^/]*$/, "");
+        openPathInOS(parent === "" ? "/" : parent, "folder");
       },
       [TUG_ACTIONS.SHOW_SETTINGS]: (_event: ActionEvent) => {
         // ⌘, — open (or raise) the Settings singleton card. This

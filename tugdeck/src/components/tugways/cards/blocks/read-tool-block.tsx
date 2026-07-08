@@ -213,7 +213,11 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
   // is computed below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef path={filePath} data-slot="read-tool-block-path" />
+      <ToolFileRef
+        path={filePath}
+        line={readInput.offset}
+        data-slot="read-tool-block-path"
+      />
     ) : undefined;
   // Errored reads carry the failure message in `textOutput` (e.g.
   // "ENOENT: no such file"). When errored, prefer the chrome's error

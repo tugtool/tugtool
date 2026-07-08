@@ -135,8 +135,13 @@ export interface IDeckManagerStore {
    * Add a new card from the registry, wrapped in a new single-card
    * window at the default position. Returns the generated card id,
    * or null if no registration is found for `componentId`.
+   *
+   * `initialContent`, when provided, seeds the new card's
+   * `CardStateBag.content` before the commit so the card mounts
+   * through the restore path with the payload in hand (parameterized
+   * openers like `open-file`).
    */
-  addCard: (componentId: string) => string | null;
+  addCard: (componentId: string, initialContent?: unknown) => string | null;
 
   /**
    * Show a card type as a singleton: activate the existing card with

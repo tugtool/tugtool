@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This file documents copyright notices for third-party code and patterns adopted
+This file documents copyright notices for third-party code and patterns adopt
 in this repository, per [L21](tuglaws/tuglaws.md). Each entry identifies
 the source, what was adopted, and the required copyright notice.
 

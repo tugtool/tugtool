@@ -285,6 +285,9 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
         contentController.add(self, name: "exportSession")
+        contentController.add(self, name: "checkpointVersion")
+        contentController.add(self, name: "listVersions")
+        contentController.add(self, name: "restoreVersion")
 
         // Configure WKWebView
         let config = WKWebViewConfiguration()
@@ -655,11 +658,26 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
+        contentController.removeScriptMessageHandler(forName: "checkpointVersion")
+        contentController.removeScriptMessageHandler(forName: "listVersions")
+        contentController.removeScriptMessageHandler(forName: "restoreVersion")
         bridgeCleaned = true
     }
 
     deinit {
         cleanupBridge()
+    }
+
+    /// Opaque, stable identifier for an NSFileVersion: the archived
+    /// `persistentIdentifier`, base64-encoded. List and restore both
+    /// derive it the same way, so restore matches by string equality
+    /// without unarchiving.
+    static func archiveVersionIdentifier(_ version: NSFileVersion) -> String? {
+        guard let data = try? NSKeyedArchiver.archivedData(
+            withRootObject: version.persistentIdentifier,
+            requiringSecureCoding: false
+        ) else { return nil }
+        return data.base64EncodedString()
     }
 
     /// Escape a string for safe embedding in JavaScript
@@ -1083,6 +1101,119 @@ extension MainWindow: WKScriptMessageHandler {
             let jsonl = (body["jsonl"] as? String) ?? ""
             presentExportPanel(requestId: requestId, baseName: baseName,
                                markdown: markdown, jsonl: jsonl)
+        case "checkpointVersion":
+            // File-card version safety net: deposit a copy of the file's
+            // CURRENT content into the macOS document revision store
+            // (`.DocumentRevisions-V100`, the same store TextEdit's
+            // Versions uses) via NSFileVersion. The frontend calls this
+            // before its first autosave write of an editing session and
+            // on every explicit ⌘S, so Tug's aggressive write-through is
+            // never destructive. Failures (network volumes without a
+            // revision store, say) are reported but non-fatal — versions
+            // are a net, not a gate on saving.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["id"] as? String,
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty else { return }
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                var ok = false
+                if FileManager.default.fileExists(atPath: url.path) {
+                    do {
+                        _ = try NSFileVersion.addOfItem(at: url, withContentsOf: url)
+                        ok = true
+                    } catch {
+                        NSLog("MainWindow: checkpointVersion failed for %@: %@",
+                              url.path, error.localizedDescription)
+                    }
+                }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    let idArg = self.escapeForJS(requestId)
+                    self.webView.evaluateJavaScript(
+                        "window.__tugBridge?.onVersionCheckpointed?.('\(idArg)', \(ok))"
+                    ) { _, error in
+                        if let error = error {
+                            NSLog("MainWindow: evaluateJavaScript failed for checkpointVersion: %@",
+                                  error.localizedDescription)
+                        }
+                    }
+                }
+            }
+        case "listVersions":
+            // Enumerate the revision store's other versions of a file for
+            // the File card's restore sheet. Each entry carries an opaque
+            // `versionId` (the archived persistentIdentifier, base64) and
+            // the version's modification date in ms. Calls back
+            // onVersionsListed(id, entries|null).
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["id"] as? String,
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty else { return }
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                var entriesJSON = "null"
+                if let versions = NSFileVersion.otherVersionsOfItem(at: url) {
+                    var entries: [[String: Any]] = []
+                    for version in versions {
+                        guard let versionId = MainWindow.archiveVersionIdentifier(version) else { continue }
+                        let mtimeMs = (version.modificationDate?.timeIntervalSince1970 ?? 0) * 1000
+                        entries.append(["versionId": versionId, "modificationDate": mtimeMs])
+                    }
+                    if let data = try? JSONSerialization.data(withJSONObject: entries),
+                       let json = String(data: data, encoding: .utf8) {
+                        entriesJSON = json
+                    }
+                }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    let idArg = self.escapeForJS(requestId)
+                    self.webView.evaluateJavaScript(
+                        "window.__tugBridge?.onVersionsListed?.('\(idArg)', \(entriesJSON))"
+                    ) { _, error in
+                        if let error = error {
+                            NSLog("MainWindow: evaluateJavaScript failed for listVersions: %@",
+                                  error.localizedDescription)
+                        }
+                    }
+                }
+            }
+        case "restoreVersion":
+            // Replace the file's content with a chosen version from the
+            // revision store. The frontend treats a successful restore as
+            // an external change (re-read + revert in place). Calls back
+            // onVersionRestored(id, ok).
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["id"] as? String,
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty,
+                  let versionId = body["versionId"] as? String, !versionId.isEmpty else { return }
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                var ok = false
+                if let versions = NSFileVersion.otherVersionsOfItem(at: url) {
+                    for version in versions
+                    where MainWindow.archiveVersionIdentifier(version) == versionId {
+                        do {
+                            _ = try version.replaceItem(at: url)
+                            ok = true
+                        } catch {
+                            NSLog("MainWindow: restoreVersion failed for %@: %@",
+                                  url.path, error.localizedDescription)
+                        }
+                        break
+                    }
+                }
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    let idArg = self.escapeForJS(requestId)
+                    self.webView.evaluateJavaScript(
+                        "window.__tugBridge?.onVersionRestored?.('\(idArg)', \(ok))"
+                    ) { _, error in
+                        if let error = error {
+                            NSLog("MainWindow: evaluateJavaScript failed for restoreVersion: %@",
+                                  error.localizedDescription)
+                        }
+                    }
+                }
+            }
         case "frontendReady":
             revealWebView()
             bridgeDelegate?.bridgeFrontendReady()

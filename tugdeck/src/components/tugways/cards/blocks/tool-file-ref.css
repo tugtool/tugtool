@@ -27,6 +27,19 @@
   white-space: nowrap;
 }
 
+/* Link affordance: the ref opens the file in a File card on click. The
+ * resting treatment stays indistinguishable from command text; hover
+ * reveals the link with an underline + pointer, so the header stays
+ * quiet until the user reaches for it. */
+.tool-file-ref--link {
+  cursor: pointer;
+}
+
+.tool-file-ref--link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 /* Leading glyph — sized to the surrounding text (1em) and nudged so its
  * optical center sits on the lowercase text rather than the baseline. */
 .tool-file-ref-icon {

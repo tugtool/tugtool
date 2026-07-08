@@ -16,8 +16,12 @@
  * @module lib/native-path-picker
  */
 
-/** What the picker selects. */
-export type PathPickerKind = "directory" | "file";
+/**
+ * What the picker selects. `directory` / `file` run an NSOpenPanel;
+ * `save` runs an NSSavePanel choosing a NEW file path (Move To… /
+ * Save As… — the web layer performs the actual write).
+ */
+export type PathPickerKind = "directory" | "file" | "save";
 
 /** The host→web bridge object; only the path callback concerns us here. */
 interface TugBridge {

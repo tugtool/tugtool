@@ -106,15 +106,10 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { cn } from "@/lib/utils";
+import { dispatchAction } from "@/action-dispatch";
 import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
-import { requestEditMenuStateRefresh, setEditUndoLabels } from "@/lib/host-menu-state";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
-import {
-  applyHistoryStep,
-  EMPTY_UNDO_LABEL_STACKS,
-  undoLabelForUserEvent,
-  type UndoLabelStacks,
-} from "./tug-text-editor/undo-labels";
+import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
@@ -899,79 +894,6 @@ const scrollbarAtCap: Extension = EditorView.updateListener.of((update) => {
     },
   });
 });
-
-/**
- * Mirror undo/redo *state* outward to the native Edit menu.
- *
- * Two outputs per document change:
- *
- *   - **Availability.** The menu's undo/redo enablement reads this
- *     editor's history depth through the responder node's
- *     `validateAction`, but the chain only recomputes on
- *     validation-version changes (focus / register / unregister) —
- *     typing changes the depth without any of those. The plugin asks the
- *     edit-caps publisher to recompute when availability (depth > 0) or
- *     the menu labels change — not on every keystroke: a continued
- *     typing run alters neither, so it publishes nothing. The publisher
- *     additionally diffs the serialized payload, so even a redundant
- *     request posts nothing.
- *   - **Labels.** Parallel label stacks (undo-labels.ts) name the next
- *     undo/redo steps ("Typing", "Paste", …); the tops are registered in
- *     host-menu-state's per-editor label registry keyed by `view.dom`,
- *     where the publisher resolves them for the focused editor only.
- *
- * A ViewPlugin (not a bare updateListener) so per-instance state lives
- * on the plugin and `destroy()` clears the registry entry on unmount.
- */
-const undoMenuStatePlugin: Extension = ViewPlugin.fromClass(
-  class {
-    private stacks: UndoLabelStacks = EMPTY_UNDO_LABEL_STACKS;
-    /** Availability + label fingerprint of the last refresh request. */
-    private lastPublished = "";
-
-    constructor(private readonly view: EditorView) {
-      setEditUndoLabels(view.dom, { undo: "", redo: "" });
-    }
-
-    update(update: ViewUpdate): void {
-      if (!update.docChanged) return;
-
-      const isUndo = update.transactions.some((t) => t.isUserEvent("undo"));
-      const isRedo = update.transactions.some((t) => t.isUserEvent("redo"));
-      let label = "";
-      if (!isUndo && !isRedo) {
-        for (const t of update.transactions) {
-          const userEvent = t.annotation(Transaction.userEvent) ?? null;
-          const mapped = undoLabelForUserEvent(userEvent);
-          if (mapped !== "") label = mapped;
-        }
-      }
-      this.stacks = applyHistoryStep(this.stacks, {
-        kind: isUndo ? "undo" : isRedo ? "redo" : "edit",
-        label,
-        undoDepthAfter: undoDepth(update.state),
-        redoDepthAfter: redoDepth(update.state),
-      });
-
-      const undoLabel = this.stacks.done[this.stacks.done.length - 1] ?? "";
-      const redoLabel = this.stacks.undone[this.stacks.undone.length - 1] ?? "";
-      setEditUndoLabels(this.view.dom, { undo: undoLabel, redo: redoLabel });
-
-      // Refresh only when something menu-visible changed: availability
-      // (depth > 0) or the labels. A continued typing run changes
-      // neither, so it requests nothing.
-      const published = `${this.stacks.done.length > 0}|${undoLabel}|${this.stacks.undone.length > 0}|${redoLabel}`;
-      if (published !== this.lastPublished) {
-        this.lastPublished = published;
-        requestEditMenuStateRefresh();
-      }
-    }
-
-    destroy(): void {
-      setEditUndoLabels(this.view.dom, null);
-    }
-  },
-);
 
 function buildExtensions(
   host: HTMLElement,
@@ -1918,12 +1840,32 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
     }, [view]);
 
+    // Right-clicked file/directory atom's path, captured at menu-open
+    // time so the OPEN_FILE responder handler below can dispatch it
+    // when the "Open in Editor" item is activated [L07].
+    const contextAtomPathRef = useRef<string | null>(null);
+
     const {
       onContextMenu: onContextMenuOpen,
       menu: contextMenu,
     } = useTextSurfaceContextMenu({
       adapterRef: cmAdapterRef,
       capabilities: { canEdit: true },
+      // Target-dependent extras: a right-click on a path-bearing atom
+      // chip (`<img data-atom-type="file">`) offers "Open in Editor",
+      // jumping straight from a prompt mention to the File card.
+      extraEntries: (event) => {
+        contextAtomPathRef.current = null;
+        const target = event.target;
+        if (!(target instanceof Element)) return [];
+        const img = target.closest("img[data-atom-type]");
+        if (img === null) return [];
+        const type = img.getAttribute("data-atom-type");
+        const value = img.getAttribute("data-atom-value");
+        if (type !== "file" || value === null || value === "") return [];
+        contextAtomPathRef.current = value;
+        return [{ action: TUG_ACTIONS.OPEN_FILE, label: "Open in Editor" }];
+      },
     });
 
     // Attach the contextmenu listener only when the click lands inside the
@@ -2252,6 +2194,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.DELETE_WORD_BACKWARD]: handleDeleteWordBackward,
       [TUG_ACTIONS.MOVE_WORD_FORWARD]: handleMoveWordForward,
       [TUG_ACTIONS.MOVE_WORD_BACKWARD]: handleMoveWordBackward,
+      // Context-menu "Open in Editor" on a file atom — the path was
+      // captured at menu-open time; route through the deck-level
+      // open-file handler (path-keyed File-card reuse).
+      [TUG_ACTIONS.OPEN_FILE]: () => {
+        const path = contextAtomPathRef.current;
+        if (path === null) return;
+        return () => {
+          dispatchAction({ action: TUG_ACTIONS.OPEN_FILE, path });
+        };
+      },
     };
     const { responderRef, ResponderScope } = useOptionalResponder({
       id: responderId,

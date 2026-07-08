@@ -115,6 +115,8 @@ import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
+import { dispatchAction } from "@/action-dispatch";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   BlockActionsCluster,
   BlockCopyButton,
@@ -894,6 +896,20 @@ export const FileBlock: React.FC<FileBlockProps> = ({
             className="tugx-file-path"
             data-slot="file-path"
             title={data.filePath}
+            data-tug-focus="refuse"
+            onClick={(event) => {
+              // Primary click opens the file in a File card at the
+              // block's starting line (open-file: path-keyed reuse).
+              if (event.button !== 0 || event.metaKey || event.shiftKey) {
+                return;
+              }
+              if (data.filePath === "") return;
+              dispatchAction({
+                action: TUG_ACTIONS.OPEN_FILE,
+                path: data.filePath,
+                line: data.startLine,
+              });
+            }}
           >
             {basename(data.filePath)}
           </span>
