@@ -247,6 +247,52 @@ fn reap_dash_tmux(branch: &str) {
     }
 }
 
+/// Tear down a dash's worktree robustly, always leaving the directory gone.
+///
+/// A dash's live app/vite dev server keeps files open inside the worktree.
+/// On a mounted filesystem, removing a file that a process still holds open
+/// leaves a silly-rename placeholder, so the parent `rmdir` fails with
+/// "Directory not empty" — and `git worktree remove` strands a half-removed
+/// worktree on disk (the exact failure `dash join` used to hit). To avoid it:
+///   1. reap the dash's tmux server/app *first*, so nothing holds files open;
+///   2. `--force` so gitignored build artifacts never block git's removal;
+///   3. fall back to a direct filesystem wipe when git bails, retrying a few
+///      times because reaped processes release their handles asynchronously;
+///   4. `git worktree prune` to clear git's now-stale administrative entry.
+///
+/// A warning is pushed only if the directory truly survives all of that.
+fn remove_dash_worktree(repo: &Path, branch: &str, worktree: &Path, warnings: &mut Vec<String>) {
+    const ATTEMPTS: u32 = 5;
+
+    reap_dash_tmux(branch);
+
+    if !worktree.exists() {
+        return;
+    }
+
+    for attempt in 0..ATTEMPTS {
+        let _ = git_output(
+            repo,
+            &["worktree", "remove", "--force", &worktree.to_string_lossy()],
+        );
+        if worktree.exists() {
+            let _ = std::fs::remove_dir_all(worktree);
+        }
+        if !worktree.exists() {
+            break;
+        }
+        if attempt + 1 < ATTEMPTS {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+
+    let _ = git_output(repo, &["worktree", "prune"]);
+
+    if worktree.exists() {
+        warnings.push(format!("Failed to remove worktree: {}", worktree.display()));
+    }
+}
+
 /// Resolve a dash's base branch: git config first ([P03]), else detection.
 fn dash_base(repo: &Path, name: &str) -> Result<String, String> {
     if let Some(base) = config_get(repo, &format!("branch.tugdash/{}.tugbase", name)) {
@@ -751,24 +797,9 @@ pub fn run_dash_join(
     }
     let commit_hash = git_stdout(&repo_root, &["rev-parse", "HEAD"])?;
 
-    // Remove the worktree (warn on failure).
-    if worktree.exists() {
-        let out = git_output(
-            &repo_root,
-            &["worktree", "remove", &worktree.to_string_lossy()],
-        );
-        match out {
-            Ok(o) if !o.status.success() => warnings.push(format!(
-                "Failed to remove worktree: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            )),
-            Err(e) => warnings.push(format!("Failed to remove worktree: {}", e)),
-            _ => {}
-        }
-    }
-
-    // Reap the removed worktree's tmux server/session so it doesn't leak.
-    reap_dash_tmux(&branch);
+    // Reap the dash's tmux/app and remove its worktree robustly (see
+    // `remove_dash_worktree` for the "Directory not empty" race this avoids).
+    remove_dash_worktree(&repo_root, &branch, &worktree, &mut warnings);
 
     // Delete the branch (warn on failure).
     match git_output(&repo_root, &["branch", "-D", &branch]) {
@@ -817,24 +848,9 @@ pub fn run_dash_release(name: String, json: bool, quiet: bool) -> Result<i32, St
         return Err(format!("Dash not found: {}", name));
     }
 
-    // Remove the worktree with --force (warn on failure).
-    if worktree.exists() {
-        let out = git_output(
-            &repo_root,
-            &["worktree", "remove", "--force", &worktree.to_string_lossy()],
-        );
-        match out {
-            Ok(o) if !o.status.success() => warnings.push(format!(
-                "Failed to remove worktree: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            )),
-            Err(e) => warnings.push(format!("Failed to remove worktree: {}", e)),
-            _ => {}
-        }
-    }
-
-    // Reap the removed worktree's tmux server/session so it doesn't leak.
-    reap_dash_tmux(&branch);
+    // Reap the dash's tmux/app and remove its worktree robustly (see
+    // `remove_dash_worktree` for the "Directory not empty" race this avoids).
+    remove_dash_worktree(&repo_root, &branch, &worktree, &mut warnings);
 
     // Delete the branch (warn on failure).
     if branch_exists(&repo_root, &branch) {
@@ -1369,6 +1385,45 @@ mod tests {
             dlog.contains("joined"),
             "dash-log should record join: {dlog}"
         );
+    }
+
+    /// Regression: when git's own `worktree remove` refuses (in production, a
+    /// mounted-filesystem "Directory not empty" caused by the dash's app still
+    /// holding files open; here, a `git worktree lock` that single-`--force`
+    /// won't override), `remove_dash_worktree` must still leave the directory
+    /// gone via its filesystem-wipe fallback — no stranded worktree, no
+    /// warning. This drives the real fallback code path on real files.
+    #[serial]
+    #[test]
+    fn test_remove_dash_worktree_fallback_when_git_refuses() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        std::env::set_current_dir(repo).unwrap();
+
+        run_dash_create("test-dash".to_string(), None, false, true).unwrap();
+        let branch = branch_name("test-dash");
+        let worktree = worktree_path(repo, "test-dash");
+        assert!(worktree.exists());
+
+        // Lock the worktree so `git worktree remove --force` (single -f)
+        // refuses, standing in for the mount-level rmdir failure production
+        // hits. Only the filesystem fallback can clear it.
+        git_output(repo, &["worktree", "lock", &worktree.to_string_lossy()]).unwrap();
+        assert!(
+            !git_output(repo, &["worktree", "remove", "--force", &worktree.to_string_lossy()])
+                .unwrap()
+                .status
+                .success(),
+            "precondition: git must refuse to remove the locked worktree"
+        );
+        assert!(worktree.exists(), "precondition: worktree still present");
+
+        let mut warnings = Vec::new();
+        remove_dash_worktree(repo, &branch, &worktree, &mut warnings);
+
+        assert!(!worktree.exists(), "fallback must remove the directory");
+        assert!(warnings.is_empty(), "no warning when the directory is gone: {warnings:?}");
     }
 
     #[serial]
