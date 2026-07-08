@@ -531,17 +531,31 @@ pub async fn run_session_bridge(
     // exhaustion publish can fold the real failure reason into the errored
     // detail instead of an opaque `crash_budget_exhausted`.
     let mut last_failure_reason: Option<String> = None;
+    // False only for the loop's first iteration. The auth gate below runs on
+    // RESPAWN iterations only: that is where an instant claude exit needs to
+    // be told apart from a crash. The first spawn skips the probe — `claude
+    // auth status --json` costs ~200ms of CLI startup, and paying it on the
+    // happy path delays tugcode spawn (and therefore replay's first frames)
+    // by that much on every session open. A logged-out first open just fails
+    // fast once and the second iteration's probe surfaces the auth state.
+    let mut is_respawn = false;
     loop {
         // Auth gate. A logged-out (or entirely missing) `claude` exits the
         // instant it's spawned, which the relay can't distinguish from a crash
         // — so without this it would crash-loop to a useless
-        // `crash_budget_exhausted`. Probe first and surface an actionable auth
-        // state instead. Re-probed every iteration (cheap local CLI call), so a
-        // mid-session logout is caught on the next respawn, not just at open.
-        let auth_detail = match crate::feeds::claude_auth::probe().await {
-            crate::feeds::claude_auth::AuthState::LoggedIn(_) => None,
-            crate::feeds::claude_auth::AuthState::ClaudeMissing => Some("claude_missing"),
-            crate::feeds::claude_auth::AuthState::LoggedOut => Some("auth_required"),
+        // `crash_budget_exhausted`. Probe on respawn and surface an actionable
+        // auth state instead; a mid-session logout is caught on the next
+        // respawn, exactly as before.
+        let probe_auth = is_respawn;
+        is_respawn = true;
+        let auth_detail = if probe_auth {
+            match crate::feeds::claude_auth::probe().await {
+                crate::feeds::claude_auth::AuthState::LoggedIn(_) => None,
+                crate::feeds::claude_auth::AuthState::ClaudeMissing => Some("claude_missing"),
+                crate::feeds::claude_auth::AuthState::LoggedOut => Some("auth_required"),
+            }
+        } else {
+            None
         };
         if let Some(detail) = auth_detail {
             let mut entry = ledger_entry.lock().await;
