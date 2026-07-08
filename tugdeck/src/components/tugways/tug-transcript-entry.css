@@ -196,8 +196,14 @@ body {
  * `offsetHeight` — the `ResizeObserver` in `tug-transcript-entry.tsx`
  * keeps measuring the un-extended header height, and the chrome /
  * actions / find rows pin exactly at `height + TIER_GAP_PX`, flush
- * with the bottom of this strip. */
-.tug-transcript-entry__header::after {
+ * with the bottom of this strip.
+ *
+ * Keyed on `data-stuck` (written by the IntersectionObserver in the
+ * .tsx pair): the strip exists only while the header is actually
+ * pinned. At rest it would paint header background over the top 4px
+ * of the body's first block — with the tight 1px body margin that
+ * visibly clips a first tool block's header. */
+.tug-transcript-entry__header[data-stuck="true"]::after {
   content: "";
   position: absolute;
   inset-inline: 0;

@@ -20,7 +20,11 @@
  *   - a body with only a MID-BODY heading MUST keep the tight margin —
  *     a re-loosened descendant test fails here;
  *   - thinking-first / tool-first bodies MUST sit at the tight margin —
- *     a block kind regaining an unconditional top margin fails here.
+ *     a block kind regaining an unconditional top margin fails here;
+ *   - a turn whose thinking block closed EMPTY must render its tool
+ *     block at the tight margin — a hidden (`data-empty`) strip left in
+ *     the DOM is a phantom sibling that re-opens the run gap (the
+ *     `StreamedTextGate` contract in dev-card-transcript.tsx).
  *
  * Measurement scrolls each entry to viewport center first (an unstuck
  * header), then reads rect deltas: header bottom → the top of the body's
@@ -66,6 +70,7 @@ const CASES: ReadonlyArray<{
   { marker: "Heading-first prompt", participant: "user", expectedGap: HEADING_GAP_PX, shape: "user heading-first" },
   { marker: "Heading-first reply", participant: "assistant", expectedGap: HEADING_GAP_PX, shape: "assistant heading-first" },
   { marker: "Tool-first turn", participant: "assistant", expectedGap: TIGHT_GAP_PX, shape: "assistant tool-first" },
+  { marker: "Empty-thinking turn", participant: "assistant", expectedGap: TIGHT_GAP_PX, shape: "assistant empty-thinking-then-tool (canary: a closed-empty thinking block must leave no phantom sibling above the tool block)" },
   { marker: "Mid-heading turn", participant: "assistant", expectedGap: TIGHT_GAP_PX, shape: "assistant mid-body-heading (canary: heading anywhere must NOT widen the gap)" },
 ];
 
@@ -163,6 +168,12 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
             { timeoutMs: 15_000 },
           );
 
+          for (const p of probes) {
+            console.log(
+              `GAP marker="${p.marker}" found=${p.found} participant=${p.participant} ` +
+                `gap=${p.gap} first=${p.firstChild}`,
+            );
+          }
           for (const [i, probe] of probes.entries()) {
             const c = CASES[i]!;
             expect(probe.found, `entry not found for marker "${c.marker}"`).toBe(true);
@@ -172,6 +183,52 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
               `${c.shape}: gap ${probe.gap}px, expected ${c.expectedGap}px (first child ${probe.firstChild})`,
             ).toBeLessThanOrEqual(GAP_TOLERANCE_PX);
           }
+
+          // ── Obscuring strip paints ONLY while the header is pinned. ──
+          //
+          // At rest the `::after` strip must not exist (it would paint
+          // header background over the body's first 4px — the clipped
+          // tool-block-header regression); once the scroller top sits
+          // inside an entry, that entry's header pins and the strip
+          // must paint (`data-stuck` written by the IntersectionObserver
+          // in tug-transcript-entry.tsx).
+          const HEADER = '[data-card-id="A"] .tug-transcript-entry .tug-transcript-entry__header';
+          const restContent = await app.evalJS<string>(
+            `(function(){
+              var h = document.querySelector(${JSON.stringify(HEADER)});
+              h.closest('.tug-transcript-entry').scrollIntoView({ block: 'center' });
+              return getComputedStyle(h, '::after').content;
+            })()`,
+          );
+          expect(restContent, "strip must not paint at rest").toBe("none");
+
+          // Scroll so the scroller's top edge lands 40px into the first
+          // entry — its sticky header pins.
+          await app.evalJS<null>(
+            `(function(){
+              var h = document.querySelector(${JSON.stringify(HEADER)});
+              var entry = h.closest('.tug-transcript-entry');
+              var scroller = entry.parentElement;
+              while (scroller && scroller !== document.body) {
+                var o = getComputedStyle(scroller).overflowY;
+                if (o === 'auto' || o === 'scroll') break;
+                scroller = scroller.parentElement;
+              }
+              var top = entry.getBoundingClientRect().top -
+                scroller.getBoundingClientRect().top + scroller.scrollTop;
+              scroller.scrollTop = top + 40;
+              return null;
+            })()`,
+          );
+          const pinned = await app.waitForCondition<boolean>(
+            `(function(){
+              var h = document.querySelector(${JSON.stringify(HEADER)});
+              return h.getAttribute('data-stuck') === 'true' &&
+                getComputedStyle(h, '::after').content !== 'none';
+            })()`,
+            { timeoutMs: 4000 },
+          );
+          expect(pinned, "strip must paint while the header is pinned").toBe(true);
         } finally {
           await app.quitGracefully();
         }

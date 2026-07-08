@@ -303,9 +303,53 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
       });
     });
     observer.observe(header);
+
+    // Stuck detection — the header's `::after` obscuring strip (which
+    // paints the pin-stack tier gap in header background) must render
+    // ONLY while the header is actually pinned. At rest the strip would
+    // paint 4px of header background over the top of the body's first
+    // block (visible as a clipped tool-block header now that the body
+    // sits at the tight 1px margin). CSS cannot observe stuck state, so
+    // the observer writes `data-stuck` and the strip's CSS keys on it.
+    //
+    // The classic sticky-sentinel trick: with the scroll ancestor as
+    // root and a -1px top rootMargin, a fully-visible header reports
+    // ratio 1; the moment it pins, its top pixel leaves the inset root
+    // and the ratio drops below 1. Ratio also drops when the header
+    // crosses the root's BOTTOM edge (entry scrolling in from below),
+    // so stuck additionally requires the header's top at (or above)
+    // the root's top. Fires only on threshold crossings — no per-frame
+    // scroll work.
+    const scroller = ((): HTMLElement | null => {
+      let p: HTMLElement | null = header.parentElement;
+      while (p !== null && p !== document.body) {
+        const overflowY = getComputedStyle(p).overflowY;
+        if (overflowY === "auto" || overflowY === "scroll") return p;
+        p = p.parentElement;
+      }
+      return null;
+    })();
+    let stuckObserver: IntersectionObserver | null = null;
+    if (scroller !== null) {
+      stuckObserver = new IntersectionObserver(
+        (records) => {
+          const record = records[records.length - 1];
+          if (record === undefined) return;
+          const rootTop = record.rootBounds?.top ?? 0;
+          const stuck =
+            record.intersectionRatio < 1 &&
+            record.boundingClientRect.top <= rootTop + 1;
+          header.dataset.stuck = stuck ? "true" : "false";
+        },
+        { root: scroller, threshold: [1], rootMargin: "-1px 0px 0px 0px" },
+      );
+      stuckObserver.observe(header);
+    }
+
     return () => {
       cancelAnimationFrame(rafId);
       observer.disconnect();
+      stuckObserver?.disconnect();
     };
   }, []);
 

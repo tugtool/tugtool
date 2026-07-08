@@ -499,6 +499,59 @@ const GhostRowCell = React.memo(function GhostRowCell({
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// `StreamedTextGate` — suppress the DOM of a closed-and-empty streamed
+// block.
+//
+// A thinking / text Message mints on `content_block_start` with no text;
+// its block self-hides (`data-empty` → `display: none`) until deltas
+// arrive. But a block that CLOSES empty stays a real DOM sibling forever,
+// and the transcript's follower-position spacing rules (`* + .tool-block-
+// chrome` etc.) can't skip hidden siblings — the invisible node opens a
+// phantom run gap above whatever follows it (visibly: extra air between
+// an attribution header and a first tool block whenever the turn minted
+// an empty thinking block). The gate removes the node instead: when the
+// message is closed (a later Message exists — blocks stream strictly in
+// order, so a non-last block receives no further deltas) and its streamed
+// text is empty, it renders nothing at all.
+//
+// The turn's LAST message always mounts (`alwaysMount`): it may still be
+// streaming, and the block's own subscription + `data-empty` chrome
+// handle the pre-first-delta hidden state. Nothing follows it, so its
+// hidden node affects no spacing.
+//
+// [L02]: the store enters React through `useSyncExternalStore`. [L26]:
+// the message key rides the gate, so mount identity is preserved across
+// re-renders for blocks the gate keeps.
+// ---------------------------------------------------------------------------
+
+interface StreamedTextGateProps {
+  streamingStore: PropertyStore;
+  streamingPath: string;
+  /** Turn's last message — may still be streaming; always mount. */
+  alwaysMount: boolean;
+  children: React.ReactNode;
+}
+
+const StreamedTextGate: React.FC<StreamedTextGateProps> = ({
+  streamingStore,
+  streamingPath,
+  alwaysMount,
+  children,
+}) => {
+  const subscribe = React.useCallback(
+    (onStoreChange: () => void) =>
+      streamingStore.observe(streamingPath, onStoreChange),
+    [streamingStore, streamingPath],
+  );
+  const hasText = React.useSyncExternalStore(subscribe, () => {
+    const value = streamingStore.get(streamingPath);
+    return typeof value === "string" && value.length > 0;
+  });
+  if (!alwaysMount && !hasText) return null;
+  return <>{children}</>;
+};
+
+// ---------------------------------------------------------------------------
 // `CodeRowBody` — iterate the turn's Message sequence ([D07]).
 //
 // Renders each Message kind to its inline surface in arrival order.
@@ -557,6 +610,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   }, [messages]);
 
   const elements: React.ReactNode[] = [];
+  const lastMessage = messages[messages.length - 1];
   for (const message of messages) {
     if (message.kind === "user_message") {
       // Rendered separately by the user row — skip in the assistant body.
@@ -588,23 +642,35 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     if (message.kind === "assistant_thinking") {
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
       elements.push(
-        <DevThinkingBlock
+        <StreamedTextGate
           key={message.messageKey}
           streamingStore={streamingStore}
           streamingPath={path}
-        />,
+          alwaysMount={message === lastMessage}
+        >
+          <DevThinkingBlock
+            streamingStore={streamingStore}
+            streamingPath={path}
+          />
+        </StreamedTextGate>,
       );
       continue;
     }
     if (message.kind === "assistant_text") {
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
       elements.push(
-        <TugMarkdownBlock
+        <StreamedTextGate
           key={message.messageKey}
           streamingStore={streamingStore}
           streamingPath={path}
-          className="dev-card-transcript-code-body"
-        />,
+          alwaysMount={message === lastMessage}
+        >
+          <TugMarkdownBlock
+            streamingStore={streamingStore}
+            streamingPath={path}
+            className="dev-card-transcript-code-body"
+          />
+        </StreamedTextGate>,
       );
       continue;
     }
