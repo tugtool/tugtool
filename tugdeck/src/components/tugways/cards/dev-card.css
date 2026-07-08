@@ -572,6 +572,33 @@
   margin-top: var(--tug-space-lg);
 }
 
+/* Empty-run marker — a muted inline trace shown in place of an assistant
+   run's empty body: a `plumbing` line for a hidden-tool-only run
+   ("Scheduled a wake-up") or the `empty` placeholder for a blank turn.
+   Non-interactive; borrows the compaction divider's muted tone. */
+.dev-card-transcript-run-marker {
+  font-size: 0.85em;
+  opacity: 0.55;
+  user-select: none;
+  font-style: italic;
+}
+.dev-card-transcript-run-marker[data-variant="empty"] {
+  font-style: normal;
+}
+.dev-card-transcript-run-marker-label {
+  white-space: pre-wrap;
+}
+/* Top-margins-only adjacency, matching the compaction divider: the
+   marker owns the xs gap when it follows a sibling; first-in-body it
+   sits flush under the attribution header. A thinking chip before it
+   keeps its wider gap so the trace reads as a follow-on line. */
+* + .dev-card-transcript-run-marker {
+  margin-top: var(--tug-space-xs);
+}
+.dev-thinking-block + .dev-card-transcript-run-marker {
+  margin-top: var(--tug-space-lg);
+}
+
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`

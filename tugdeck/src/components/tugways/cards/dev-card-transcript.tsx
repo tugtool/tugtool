@@ -111,6 +111,10 @@ import {
 // bespoke wrapper is in the registry before the first resolveToolBlock.
 import "@/components/tugways/cards/dev-assistant-renderer-registrations";
 import {
+  classifyRunBody,
+  EMPTY_RUN_PLACEHOLDER,
+} from "@/components/tugways/cards/dev-transcript-run-body";
+import {
   ToolBlockExpansionContext,
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
@@ -580,7 +584,34 @@ interface CodeRowBodyProps {
    * stay stuck `in_flight` ([D03]). Threaded into `dispatchToolCallState`.
    */
   turnInterrupted?: boolean;
+  /**
+   * True for a committed row (a `TurnEntry` exists). Gates the empty-run
+   * fallback (`classifyRunBody`): a live/in-flight row is skipped so a
+   * turn mid-stream — which may transiently hold only a tool call before
+   * its text arrives — never flashes a plumbing marker or placeholder.
+   */
+  committed?: boolean;
 }
+
+/**
+ * Subtle inline marker rendered in place of an assistant run's empty
+ * body — either a `plumbing` trace for a hidden-tool-only run (e.g.
+ * "Scheduled a wake-up") or the `empty` placeholder for a blank turn.
+ * Muted, non-interactive; matches the compaction-divider tone.
+ */
+const TranscriptRunMarker: React.FC<{
+  variant: "plumbing" | "empty";
+  label: string;
+}> = ({ variant, label }) => (
+  <div
+    className="dev-card-transcript-run-marker"
+    data-variant={variant}
+    data-slot={`run-marker-${variant}`}
+    role="note"
+  >
+    <span className="dev-card-transcript-run-marker-label">{label}</span>
+  </div>
+);
 
 const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   messages,
@@ -589,6 +620,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   session,
   awaitingToolUseId,
   turnInterrupted = false,
+  committed = false,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -725,6 +757,36 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         </ToolCallMetaProvider>
       </ToolUseIdContext.Provider>,
     );
+  }
+
+  // Empty-run fallback ([D14] — thinking is supplementary, hidden tools
+  // paint zero ink [D101]). A committed run that produced no user-facing
+  // content would otherwise be attribution chrome over a blank body. A
+  // `plumbing` run (only hidden-policy tools) gets a marker per tool so
+  // the invisible work reads as a trace; a truly `empty` run gets the
+  // canned placeholder. Live rows are skipped — a mid-stream turn may
+  // hold only a tool call before its text arrives.
+  if (committed) {
+    const { fallback, markers } = classifyRunBody(messages);
+    if (fallback === "plumbing") {
+      for (const label of markers) {
+        elements.push(
+          <TranscriptRunMarker
+            key={`run-marker-${label}`}
+            variant="plumbing"
+            label={label}
+          />,
+        );
+      }
+    } else if (fallback === "empty") {
+      elements.push(
+        <TranscriptRunMarker
+          key="run-marker-empty"
+          variant="empty"
+          label={EMPTY_RUN_PLACEHOLDER}
+        />,
+      );
+    }
   }
 
   return <>{elements}</>;
@@ -999,6 +1061,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                     // interrupted: it's genuinely still running.
                     turn !== undefined && turn.turnEndReason !== "complete"
                   }
+                  committed={isCommitted}
                 />
                 {permissionSlot}
               </div>
