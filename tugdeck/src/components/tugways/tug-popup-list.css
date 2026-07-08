@@ -1,0 +1,345 @@
+/**
+ * tug-popup-list.css — frame, log-grid, item-row, and footer styling
+ * for TugPopupList (the shared popup-list vocabulary).
+ *
+ * Structure:
+ *   .tug-popup-list                    frame (title / rule / body / footer)
+ *   .tug-popup-list-scroller           shared scroll surface (row-height cap)
+ *   .tug-popup-list-grid               subgrid log (rows + summary aligned)
+ *   .tug-popup-list-item               [lead | text | action] item row
+ *   .tug-popup-list-footer             summary + action cluster
+ *
+ * `data-kind` on the frame selects width caps and row rhythm per popup
+ * family; all geometry is carried by the `--tugx-popup-list-*` slots so
+ * a kind (or a composing component) retunes rhythm with one override.
+ *
+ * @tug-pairings {
+ *   --tug7-element-global-text-normal-muted-rest    | --tug7-surface-popover-primary-normal-default-rest | content
+ *   --tug7-element-global-text-normal-default-rest  | --tug7-surface-popover-primary-normal-default-rest | content
+ *   --tug7-element-global-border-normal-default-rest | --tug7-surface-popover-primary-normal-default-rest | content
+ *   --tug7-element-global-text-normal-success-rest  | --tug7-surface-popover-primary-normal-default-rest | control
+ *   --tug7-element-global-text-normal-caution-rest  | --tug7-surface-popover-primary-normal-default-rest | control
+ *   --tug7-element-global-text-normal-danger-rest   | --tug7-surface-popover-primary-normal-default-rest | control
+ * }
+ *
+ * @tug-pairings
+ * | Element                                           | Surface                                             | Role    | Context                                   |
+ * |---------------------------------------------------|-----------------------------------------------------|---------|-------------------------------------------|
+ * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-title etc. (color)        |
+ * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-row-value etc. (color)    |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-rule (border-top)         |
+ * | --tug7-element-global-text-normal-{tone}-rest     | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone] (background) |
+ */
+
+/* ============================================================================
+   Frame
+   ========================================================================= */
+
+.tug-popup-list {
+  /* Geometry slots — retuned per data-kind below. */
+  --tugx-popup-list-row-h: 22px;
+  --tugx-popup-list-visible-rows: 10;
+  --tugx-popup-list-scroll-gutter: 12px;
+
+  padding: var(--tug-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+}
+
+/* Per-kind width caps + row rhythm. `log` fits the four-column
+   per-entry row (address pair, capped preview, badge, non-wrapping
+   value) — narrower caps squeeze the value's `auto` track until a
+   "0h 0m 02s" wraps. */
+.tug-popup-list[data-kind="log"] {
+  min-width: 380px;
+  max-width: 560px;
+}
+
+.tug-popup-list[data-kind="state"] {
+  --tugx-popup-list-row-h: 18px;
+  min-width: 380px;
+  max-width: 520px;
+}
+
+.tug-popup-list[data-kind="item"] {
+  --tugx-popup-list-row-h: 24px;
+  --tugx-popup-list-visible-rows: 12;
+  min-width: 340px;
+  max-width: 520px;
+}
+
+.tug-popup-list[data-kind="wide"] {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-title {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-rule {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-empty {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-style: italic;
+  padding-block: 4px;
+}
+
+/* ============================================================================
+   Scroller
+   ========================================================================= */
+
+.tug-popup-list-scroller {
+  max-height: calc(
+    var(--tugx-popup-list-visible-rows) * var(--tugx-popup-list-row-h)
+  );
+  overflow-y: auto;
+  /* Never sideways: long content ellipsizes rather than widening the
+     popup (overflow-y: auto would otherwise promote x to auto too). */
+  overflow-x: hidden;
+  padding-right: var(--tugx-popup-list-scroll-gutter);
+}
+
+/* ============================================================================
+   Log grid — subgrid-shared four columns (label / preview / annotation
+   / value) across the scrolling rows AND the summary block, so the
+   column edges line up vertically end-to-end.
+   ========================================================================= */
+
+.tug-popup-list-grid {
+  display: grid;
+  grid-template-columns: max-content max-content max-content auto;
+  row-gap: 0;
+}
+
+.tug-popup-list-grid-scroller {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
+/* Summary block — the same subgrid + right gutter as the scroller so
+   its column tracks align with the scroller's across the divider. */
+.tug-popup-list-grid-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  padding-right: var(--tugx-popup-list-scroll-gutter);
+}
+
+.tug-popup-list-grid-empty {
+  grid-column: 1 / -1;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 6px;
+  /* End flush with the value column, not overhanging the gutter. */
+  margin-inline-end: var(--tugx-popup-list-scroll-gutter);
+}
+
+.tug-popup-list-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  column-gap: var(--tug-space-md);
+  padding-block: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-row-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-popup-list-row-preview {
+  min-width: 0;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-row-annotation {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-weight: var(--tug-font-weight-regular);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-row-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: var(--tug-font-weight-semibold);
+  text-align: right;
+  /* A "0h 0m 02s" must read as one unit, never wrapped. */
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Item rows — [lead | text | action] grid. Alignment is structural:
+   `align-items: start` puts the lead and action columns on the first
+   text line; no per-callsite margin nudges.
+   ========================================================================= */
+
+.tug-popup-list-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: start;
+  column-gap: var(--tug-space-sm);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+.tug-popup-list-item-lead {
+  display: inline-flex;
+  align-items: center;
+  /* Center the indicator within the first text line's box (~15px at
+     the frame's 0.6875rem scale) so a 12px dot sits optically on
+     line 1 regardless of how many lines the text block has. */
+  block-size: calc(1lh);
+}
+
+.tug-popup-list-item-body {
+  min-width: 0;
+}
+
+.tug-popup-list-item-action {
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.tug-popup-list-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-item-primary {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-item-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--tug-space-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.625rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   Groups
+   ========================================================================= */
+
+.tug-popup-list-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-group-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+}
+
+/* ============================================================================
+   Footer — summary + action cluster over an above-rule
+   ========================================================================= */
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-footer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  padding-block-start: var(--tug-space-sm);
+  /* The trailing action cluster carries its own hover padding (ghost /
+     outlined buttons); the leading summary text doesn't — so it gets
+     the larger inset to avoid hugging the frame edge. */
+  padding-inline-start: var(--tug-space-md);
+  padding-inline-end: var(--tug-space-xs);
+  margin-block-start: var(--tug-space-xs);
+  border-block-start: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-footer-summary {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-popup-list-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  /* Actions hold the trailing edge even when no summary renders. */
+  margin-inline-start: auto;
+}
+
+/* Footer actions are chrome, not telemetry data — pin the UI (sans)
+   face against the frame's mono body. TugButton declares `font-family:
+   inherit` so context decides; this is that context. Scoped to the
+   footer (not the whole frame) so in-row controls keep their own
+   treatment. */
+.tug-popup-list-footer-actions .tug-button {
+  font-family: var(--tug-font-family-sans);
+}
+
+/* ============================================================================
+   Tone dot
+   ========================================================================= */
+
+.tug-popup-list-tone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-tone-dot[data-tone="default"] {
+  background-color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-tone-dot[data-tone="success"] {
+  background-color: var(--tug7-element-global-text-normal-success-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-tone-dot[data-tone="caution"] {
+  background-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.tug-popup-list-tone-dot[data-tone="danger"] {
+  background-color: var(--tug7-element-global-text-normal-danger-rest);
+}

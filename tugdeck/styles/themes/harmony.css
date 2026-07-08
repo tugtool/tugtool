@@ -416,8 +416,8 @@ body {
 
   /* Filled Danger */
   --tug7-surface-control-primary-filled-danger-rest: --tug-color(red, l: 640, c: 580);
-  --tug7-surface-control-primary-filled-danger-hover: --tug-color(red, l: 600, c: 540);
-  --tug7-surface-control-primary-filled-danger-active: --tug-color(red, l: 540, c: 480);
+  --tug7-surface-control-primary-filled-danger-hover: --tug-color(red, l: 570, c: 500);
+  --tug7-surface-control-primary-filled-danger-active: --tug-color(red, l: 520, c: 460);
   --tug7-element-control-text-filled-danger-rest: --tug-color(indigo, l: 960, c: 20);
   --tug7-element-control-text-filled-danger-hover: --tug-color(indigo, l: 960, c: 20);
   --tug7-element-control-text-filled-danger-active: --tug-color(indigo, l: 960, c: 20);
@@ -425,8 +425,8 @@ body {
   --tug7-element-control-icon-filled-danger-hover: --tug-color(indigo, l: 960, c: 20);
   --tug7-element-control-icon-filled-danger-active: --tug-color(indigo, l: 960, c: 20);
   --tug7-element-control-border-filled-danger-rest: --tug-color(red, l: 640, c: 580);
-  --tug7-element-control-border-filled-danger-hover: --tug-color(red, l: 600, c: 540);
-  --tug7-element-control-border-filled-danger-active: --tug-color(red, l: 540, c: 480);
+  --tug7-element-control-border-filled-danger-hover: --tug-color(red, l: 570, c: 500);
+  --tug7-element-control-border-filled-danger-active: --tug-color(red, l: 520, c: 460);
 
   /* Filled Agent — violet reads perceptually brighter than its L suggests
      (saturated purple), so its whole ramp sits 5 tone points darker for

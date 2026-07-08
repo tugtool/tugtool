@@ -1,55 +1,49 @@
 /**
- * dev-card-telemetry-popovers.tsx — popover content components for
- * the four Z2 status-row anchors (indicator, TIME, TOKENS, CONTEXT).
+ * dev-card-telemetry-popovers.tsx — popup content for the six Z2
+ * status-row anchors (STATE, TIME, TOKENS, CONTEXT, TASKS, JOBS).
  *
- * Each component renders inside a `TugPopoverContent` returned by
- * `DevTelemetryStatusRow`. The popovers share a layout vocabulary
- * (`PerAreaPopoverFrame`, `PopoverRow`, `DevPopoverRowGrid`) so the
- * four surfaces read with the same rhythm — title bar above a 1px
- * rule, then either a 3-column row grid (Time / Tokens / state-change
- * log) or a 2-column gauge + legend layout (Context).
+ * Every popup composes the shared `TugPopupList` vocabulary — frame,
+ * log grid, item rows, footer — so the six surfaces read with one
+ * rhythm. This module contributes only what is dev-card-specific:
+ * turn-address links into the transcript, per-turn previews and
+ * end-state badges, task/job row assembly, and the copy-text
+ * composers behind each footer's COPY affordance.
  *
- * **Four-column shared grid (Time / Tokens).** The row list AND the
- * summary footer share a single CSS grid via `subgrid`, so the
- * label / preview / annotation / value columns line up vertically
- * across every row in both blocks. Without the shared grid, each row
- * would be its own grid and column edges would drift with content
- * widths.
+ * Titles match the Z2 cell legends (STATE / TIME / TOKENS / CONTEXT /
+ * TASKS / JOBS) so a popup and its trigger read as one instrument.
+ *
+ * **Footer affordances.** Log-shaped popups (all but CONTEXT) carry a
+ * COPY action that writes the visible list as plain text; JOBS adds
+ * CLEAR (a deck-local wipe of terminal rows). Every action is the
+ * standard popup-list footer shape (2xs outlined push-button chrome).
  *
  * **End-state badge consistency.** Per-turn rows display the badge
  * produced by `endStateBadgeFor(turn.turnEndReason)` — the same
- * dispatch the Z1B end-state display uses. The popover and the Z1B
- * footer therefore always read the same text ("OK" / "interrupted" /
- * "error" / "lost") and tone for a given turn.
+ * dispatch the Z1B end-state display uses, so the two surfaces always
+ * read the same text and tone for a given turn.
  *
- * **Turn-number affordance.** Each per-turn row's label is the PAIR
- * of speaker-prefixed addresses the turn spans — the user-half
- * (`#u{turn}`) and the assistant-half (`#a{turn}`), the same markers
- * the transcript stamps on its attribution rows. When the host threads
- * an `onScrollToRow` handler down, each is an independently clickable
- * button that scrolls the transcript to that entry's row — a
- * control-style action, no popover-local state. The row also carries
- * an end-truncated preview of the turn's request string.
+ * **Turn-number affordance.** Each per-turn row's label is the PAIR of
+ * speaker-prefixed addresses the turn spans (`#u{turn}` / `#a{turn}`),
+ * matching the transcript's attribution rows. With an `onScrollToRow`
+ * handler threaded down, each is an independently clickable button
+ * that scrolls the transcript to that entry's row.
  *
  * Conformance:
- *  - [L02] popover content is a function of inputs only — `transcript`,
- *    `inflight`, `contextMax`, `rows`. The status-row owns the
- *    `useSyncExternalStore` subscriptions; this module reads no
- *    external state on its own.
- *  - [L06] all visible state lives on CSS class / data-attribute
- *    selectors; no inline style for appearance.
- *  - [L19] `.tsx` + `.css` pair; popover-frame and row primitives
- *    carry `data-slot` anchors for tests.
- *  - [L20] component-token sovereignty — the popovers consume
- *    `--tug-space-*`, `--tug-font-mono`, and `--tug7-element-*`
- *    tokens but introduce no new slot family.
+ *  - [L02] popup content is a function of inputs only; the status row
+ *    owns the `useSyncExternalStore` subscriptions.
+ *  - [L06] visible state lives on CSS class / data-attribute selectors.
+ *  - [L19] `.tsx` + `.css` pair; dev-specific primitives carry
+ *    `data-slot` anchors for tests.
+ *  - [L20] component-token sovereignty — the composed `TugPopupList` /
+ *    `TugBadge` / `TugProgressIndicator` primitives keep their own
+ *    tokens; this module introduces no new slot family.
  *
  * @module components/tugways/cards/dev-card-telemetry-popovers
  */
 
 import "./dev-card-telemetry-popovers.css";
 
-import React, { useLayoutEffect, useRef } from "react";
+import React from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type { TugArcGaugeSegment } from "@/components/tugways/tug-arc-gauge";
@@ -93,6 +87,19 @@ import {
 } from "@/components/tugways/body-kinds/todo-list-block";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import type { TaskListState } from "@/lib/code-session-store/select-task-list";
+import {
+  TugPopupListEmpty,
+  TugPopupListFooter,
+  TugPopupListFrame,
+  TugPopupListGrid,
+  TugPopupListGroup,
+  TugPopupListItem,
+  TugPopupListItemText,
+  TugPopupListRow,
+  TugPopupListScroller,
+  TugPopupListToneDot,
+  type TugPopupListTone,
+} from "@/components/tugways/tug-popup-list";
 
 import {
   formatDurationMs,
@@ -117,10 +124,10 @@ import { isWakeLate } from "@/lib/code-session-store/select-scheduled-work";
 // ---------------------------------------------------------------------------
 
 /**
- * Invoked when the user clicks a `#u{turn}` / `#a{turn}` address in the
- * Time / Tokens popover — scrolls the transcript so that entry's row is in
- * view. `rowIndex` is a transcript list-view row index: a turn shows
- * BOTH of its entries (user row + assistant row), each independently
+ * Invoked when the user clicks a `#u{turn}` / `#a{turn}` address in a
+ * popup — scrolls the transcript so that entry's row is in view.
+ * `rowIndex` is a transcript list-view row index: a turn shows BOTH of
+ * its entries (user row + assistant row), each independently
  * clickable, so the handler is keyed by row rather than by turn. See
  * `userRowIndexForTurn` / `assistantRowIndexForTurn`. Supplied by the
  * dev card, which owns the transcript's imperative handle; omitted in
@@ -130,7 +137,7 @@ export type ScrollToRowHandler = (rowIndex: number) => void;
 
 /**
  * Per-turn request-preview cap. The user-half prompt is collapsed to a
- * single line and end-truncated to this many characters so the popover
+ * single line and end-truncated to this many characters so the popup
  * row stays compact.
  */
 const REQUEST_PREVIEW_MAX_CHARS = 24;
@@ -145,8 +152,7 @@ function requestPreviewText(turn: TurnEntry): string {
   // Pull the user submission's text from the `user_message` Message
   // at the head of `turn.messages` (the [D07] substrate replacement
   // for `turn.userMessage`). Wake turns have no `user_message` head;
-  // they return an empty preview, which the caller is gated to avoid
-  // by `turn.messages[0]?.kind === "user_message"` upstream.
+  // they return an empty preview.
   const head = turn.messages[0];
   const raw = head !== undefined && head.kind === "user_message" ? head.text : "";
   let text = raw.trim();
@@ -158,98 +164,83 @@ function requestPreviewText(turn: TurnEntry): string {
 }
 
 // ---------------------------------------------------------------------------
-// Shared frame
+// Footer actions — the standardized COPY affordance
 // ---------------------------------------------------------------------------
 
 /**
- * Popover-content frame shared by every Z2 anchor — centered uppercase
- * title bar above a 1px rule, then the body. The summary footer is
- * NOT rendered here for the row-grid popovers (Time / Tokens / state
- * log): those use {@link DevPopoverRowGrid}, which folds the summary
- * into the same subgrid so columns align across rows and summary.
- * The Context popover renders its own arc + legend body and never
- * carries a summary footer.
- *
- * `data-popover-kind` lets a callsite tune width / padding via the
- * stylesheet without each popover redeclaring its own root rule.
+ * The one COPY shape every popup-list footer uses — text-only,
+ * outlined, 2xs — so COPY reads identically beside CLEAR and across
+ * every popup. `getText` composes the popup's visible list as plain
+ * text at click time.
  */
-function PerAreaPopoverFrame({
-  title,
-  children,
-  kind,
+function PopupCopyButton({
+  getText,
+  "aria-label": ariaLabel,
 }: {
-  title: string;
-  children: React.ReactNode;
-  /**
-   * `default` → the Time / Tokens narrow width.
-   * `context` → wider cap for the segmented arc + legend.
-   * `state-log` → wider, taller cap for the state-change row log.
-   */
-  kind?: "default" | "context" | "state-log";
+  getText: () => string;
+  "aria-label": string;
 }): React.ReactElement {
   return (
-    <div
-      className="dev-popover-frame"
-      data-popover-kind={kind ?? "default"}
-      data-slot="dev-popover-frame"
-    >
-      <div className="dev-popover-frame-title">{title}</div>
-      <div className="dev-popover-frame-rule" />
-      {children}
-    </div>
+    <BlockCopyButton
+      subtype="text"
+      emphasis="outlined"
+      size="2xs"
+      aria-label={ariaLabel}
+      getText={getText}
+    />
   );
 }
-
-// ---------------------------------------------------------------------------
-// Row primitives — subgrid-shared 4-column layout
-// ---------------------------------------------------------------------------
 
 /**
- * One row in a Time / Tokens popover. Renders four grid cells (label /
- * preview / annotation / value) into the surrounding
- * {@link DevPopoverRowGrid} via CSS subgrid. Columns size to the
- * widest content across EVERY row in the grid (both the scrollable
- * row list and the summary footer), so the column edges line up
- * vertically end-to-end.
- *
- * Four-column contract:
- *   col 1 → label (muted, left-aligned — the turn's `#u{turn}` / `#a{turn}`
- *           address pair for per-turn rows, "turns" / "total" / "avg" for the
- *           summary rows)
- *   col 2 → preview (the turn's request-string preview; empty on the
- *           summary rows)
- *   col 3 → annotation (badge or hint, right-aligned within the
- *           column so it abuts the value)
- *   col 4 → value (normal, right-aligned, e.g. "30.1K" / "0h 0m 02s")
- *
- * `label` and `preview` accept a `ReactNode`; `preview` is omitted on
- * the summary rows, whose cell then renders empty (the column still
- * exists so the summary stays column-aligned with the per-turn rows).
+ * Plain-text lines for a Time / Tokens per-turn log — one line per
+ * committed turn (addresses, preview, end state, value) plus the
+ * summary block, tab-separated for pasteability.
  */
-function PopoverRow({
-  label,
-  preview,
-  value,
-  hint,
-  badge,
-}: {
-  label: React.ReactNode;
-  preview?: React.ReactNode;
-  value: string;
-  hint?: string;
-  badge?: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <div className="dev-popover-row" data-slot="dev-popover-row">
-      <span className="dev-popover-row-label">{label}</span>
-      <span className="dev-popover-row-preview">{preview ?? null}</span>
-      <span className="dev-popover-row-annotation">
-        {badge !== undefined ? badge : hint !== undefined ? hint : null}
-      </span>
-      <span className="dev-popover-row-value">{value}</span>
-    </div>
-  );
+function composeTurnLogCopyText(
+  transcript: ReadonlyArray<TurnEntry>,
+  turnNumberBase: number,
+  valueFor: (turn: TurnEntry, index: number) => string,
+  summaryLines: ReadonlyArray<string>,
+): string {
+  const lines = transcript.map((turn, i) => {
+    const n = turnNumberBase + i + 1;
+    const badge = endStateBadgeFor(turn.turnEndReason, turn.interruptReason);
+    const preview = requestPreviewText(turn);
+    return [`#u${n} · #a${n}`, preview, badge.text, valueFor(turn, i)]
+      .filter((part) => part.length > 0)
+      .join("\t");
+  });
+  return [...lines, ...summaryLines].join("\n");
 }
+
+/** Plain-text lines for the state-change log. */
+function composeStateLogCopyText(
+  rows: ReadonlyArray<SessionStateChangeRow>,
+): string {
+  return rows
+    .map((row) => {
+      const f = formatStateChangeRow(row);
+      return `${f.atText}\t${f.phase}\t${f.transportState}\tinterrupt: ${f.interrupt}`;
+    })
+    .join("\n");
+}
+
+/** Plain-text lines for the jobs ledger. */
+function composeJobsCopyText(jobs: readonly JobItem[]): string {
+  return jobs
+    .map((job) => {
+      const elapsedMs =
+        job.status === "running"
+          ? Date.now() - job.startedAtMs
+          : Math.max(0, (job.endedAtMs ?? job.startedAtMs) - job.startedAtMs);
+      return `[${job.status}]\t${jobDescriptionText(job.description)}\t${job.kind} · ${formatDurationMs(elapsedMs)}`;
+    })
+    .join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Turn-address links
+// ---------------------------------------------------------------------------
 
 /**
  * One transcript entry address — `#u{turn}` / `#a{turn}` in the same
@@ -263,7 +254,7 @@ function PopoverRow({
  * scrolls the transcript to that entry's row; otherwise it is inert text
  * (gallery / fixtures, with no transcript to drive). The click is a
  * control-style action — fire-and-forget to the handler the dev card
- * threaded down; no popover-local state.
+ * threaded down; no popup-local state.
  */
 function TurnNumberButton({
   address,
@@ -308,7 +299,7 @@ function TurnNumberButton({
  *
  * Wake turns ([D06]) have NO user row — `userRowIndexForTurn` returns
  * `-1` for them, and we render only the assistant-half `#a{turn}` (no
- * `·` separator). The single-address rendering is the popover's visual
+ * `·` separator). The single-address rendering is the popup's visual
  * cue that the turn doesn't have a user submission to scroll to.
  */
 function TurnEntryPair({
@@ -329,7 +320,6 @@ function TurnEntryPair({
   // returns `-1`, and we render only the assistant-half address. No
   // `origin`/`messages[0]` boolean — the row walk is the authority ([P04]).
   if (userRow === -1) {
-    // Wake turn — render only the assistant-half address, no separator.
     return (
       <span className="dev-popover-turn-pair" data-slot="dev-popover-turn-pair">
         <TurnNumberButton
@@ -373,70 +363,12 @@ function RequestPreview({ turn }: { turn: TurnEntry }): React.ReactElement {
 }
 
 /**
- * Shared 3-column grid spanning the popover's row list AND its
- * summary footer. Both blocks render into the same outer grid via
- * `subgrid`, so the label / annotation / value column edges line up
- * vertically across every row — including across the divider that
- * separates the scrolling list from the summary rows.
- *
- * The row list lives inside a scroller `<div>` with `max-height` +
- * `overflow-y: auto` capped at the shared 10-row visible height; the
- * summary rows sit in a sibling `<div>` below the divider and are
- * always visible. Both wrappers carry the SAME right-edge gutter
- * (`--dev-popover-scroll-gutter`) so their subgrid tracks inset
- * equally — the scroller's columns and the summary's columns line up
- * across the divider. (Padding the scroller alone drifts its columns
- * left of the summary's by the gutter width.)
- *
- * If the row list is empty, the grid degenerates to "summary only"
- * (or to the caller's `empty` content when no summary applies).
- */
-function DevPopoverRowGrid({
-  rows,
-  summary,
-  empty,
-}: {
-  rows: ReadonlyArray<React.ReactElement>;
-  summary?: ReadonlyArray<React.ReactElement>;
-  empty?: React.ReactNode;
-}): React.ReactElement {
-  const hasRows = rows.length > 0;
-  const summaryRows = summary ?? [];
-  const hasSummary = summaryRows.length > 0;
-  if (!hasRows && !hasSummary) {
-    return <>{empty ?? <EmptyTranscriptBody />}</>;
-  }
-  return (
-    <div className="dev-popover-row-grid" data-slot="dev-popover-row-grid">
-      {hasRows ? (
-        <div className="dev-popover-row-grid-scroller">{rows}</div>
-      ) : (
-        <div className="dev-popover-row-grid-empty">
-          {empty ?? <EmptyTranscriptBody />}
-        </div>
-      )}
-      {hasSummary ? (
-        <>
-          <div className="dev-popover-row-grid-divider" aria-hidden />
-          <div
-            className="dev-popover-row-grid-summary"
-            data-slot="dev-popover-row-grid-summary"
-          >
-            {summaryRows}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-/**
  * Per-turn end-state chip — driven by the same `endStateBadgeFor`
- * dispatch the Z1B end-state row uses, so the popover row and the
+ * dispatch the Z1B end-state row uses, so the popup row and the
  * Z1B footer always read the same text + tone for a given turn.
  *
  * Renders as a `ghost`-emphasis TugBadge to keep the row chrome
- * quiet (the popover lists many rows; a `tinted` badge per row
+ * quiet (the popup lists many rows; a `tinted` badge per row
  * would dominate).
  */
 function TurnEndStateBadge({ turn }: { turn: TurnEntry }): React.ReactElement {
@@ -451,17 +383,9 @@ function TurnEndStateBadge({ turn }: { turn: TurnEntry }): React.ReactElement {
   );
 }
 
-/**
- * Empty-row body shared by Time / Tokens / state-log popovers. Same
- * muted typographic weight as the rest of the popover so the empty
- * state doesn't read as an error.
- */
+/** Shared empty body for the per-turn log popups. */
 function EmptyTranscriptBody(): React.ReactElement {
-  return (
-    <div className="dev-popover-empty" data-slot="dev-popover-empty">
-      No committed turns yet.
-    </div>
-  );
+  return <TugPopupListEmpty>No committed turns yet.</TugPopupListEmpty>;
 }
 
 // ---------------------------------------------------------------------------
@@ -469,14 +393,10 @@ function EmptyTranscriptBody(): React.ReactElement {
 // ---------------------------------------------------------------------------
 
 /**
- * `Time` popover — per-turn `activeMs` log + summary footer (count,
- * total, average) + optional in-flight footer surfacing the live
- * current-turn elapsed when a turn is in flight. The summary is
- * derived by `computeTimeSummary` so the gallery + production
- * popovers compute identical numbers.
- *
- * Row + summary share a single subgrid so the column edges line up
- * end-to-end ({@link DevPopoverRowGrid}).
+ * `TIME` popup — per-turn `activeMs` log + summary rows (count, total,
+ * average) + optional in-flight row surfacing the live current-turn
+ * elapsed. The summary is derived by `computeTimeSummary` so the
+ * gallery + production popups compute identical numbers. Footer: COPY.
  */
 export function TimePopoverContent({
   transcript,
@@ -494,7 +414,7 @@ export function TimePopoverContent({
 }): React.ReactElement {
   const summary = computeTimeSummary(transcript);
   const rows = transcript.map((t, i) => (
-    <PopoverRow
+    <TugPopupListRow
       key={t.turnKey}
       label={<TurnEntryPair turnIndex={i} transcript={transcript} turnNumberBase={turnNumberBase} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
@@ -503,13 +423,13 @@ export function TimePopoverContent({
     />
   ));
   const summaryRows: React.ReactElement[] = [
-    <PopoverRow key="turns" label="turns" value={String(summary.count)} />,
-    <PopoverRow
+    <TugPopupListRow key="turns" label="turns" value={String(summary.count)} />,
+    <TugPopupListRow
       key="total"
       label="total"
       value={formatTimeAlwaysHours(summary.totalActiveMs)}
     />,
-    <PopoverRow
+    <TugPopupListRow
       key="avg"
       label="avg"
       value={formatTimeAlwaysHours(summary.avgActiveMs)}
@@ -518,7 +438,7 @@ export function TimePopoverContent({
   ];
   if (inflight !== null) {
     summaryRows.push(
-      <PopoverRow
+      <TugPopupListRow
         key="current"
         label="current turn"
         value={formatTimeAlwaysHours(inflight.currentTurnActiveMs)}
@@ -526,10 +446,34 @@ export function TimePopoverContent({
       />,
     );
   }
+  const footer =
+    transcript.length > 0 ? (
+      <TugPopupListFooter>
+        <PopupCopyButton
+          aria-label="Copy the per-turn time log"
+          getText={() =>
+            composeTurnLogCopyText(
+              transcript,
+              turnNumberBase,
+              (t) => (turnHasTiming(t) ? formatTimeAlwaysHours(t.activeMs) : "—"),
+              [
+                `turns\t${summary.count}`,
+                `total\t${formatTimeAlwaysHours(summary.totalActiveMs)}`,
+                `avg\t${formatTimeAlwaysHours(summary.avgActiveMs)}`,
+              ],
+            )
+          }
+        />
+      </TugPopupListFooter>
+    ) : undefined;
   return (
-    <PerAreaPopoverFrame title="Per-request log — Time">
-      <DevPopoverRowGrid rows={rows} summary={summaryRows} />
-    </PerAreaPopoverFrame>
+    <TugPopupListFrame title="Time" kind="log" footer={footer}>
+      <TugPopupListGrid
+        rows={rows}
+        summary={summaryRows}
+        empty={<EmptyTranscriptBody />}
+      />
+    </TugPopupListFrame>
   );
 }
 
@@ -538,15 +482,12 @@ export function TimePopoverContent({
 // ---------------------------------------------------------------------------
 
 /**
- * `Tokens` popover — per-turn token log + summary footer. Each turn's
+ * `TOKENS` popup — per-turn token log + summary rows. Each turn's
  * figure is its SIGNED `perTurn` window delta (`window(N) −
  * window(N−1)`, the transcript window-walk — the same number Z1B
  * shows), never a sum of raw `TurnCost`. A `/compact` turn reads as an
- * honest negative. Same in-flight contract as the Time popover:
- * in-flight turns are excluded from the row log, with the live
- * current-turn delta surfaced as a separate footer row.
- *
- * Row + summary share a single subgrid ({@link DevPopoverRowGrid}).
+ * honest negative. Same in-flight contract as the Time popup. Footer:
+ * COPY.
  */
 export function TokensPopoverContent({
   transcript,
@@ -566,7 +507,7 @@ export function TokensPopoverContent({
 }): React.ReactElement {
   const summary = computeTokensSummary(transcript, sessionInitTokens);
   const rows = transcript.map((t, i) => (
-    <PopoverRow
+    <TugPopupListRow
       key={t.turnKey}
       label={<TurnEntryPair turnIndex={i} transcript={transcript} turnNumberBase={turnNumberBase} onScrollToRow={onScrollToRow} />}
       preview={<RequestPreview turn={t} />}
@@ -575,13 +516,13 @@ export function TokensPopoverContent({
     />
   ));
   const summaryRows: React.ReactElement[] = [
-    <PopoverRow key="turns" label="turns" value={String(summary.count)} />,
-    <PopoverRow
+    <TugPopupListRow key="turns" label="turns" value={String(summary.count)} />,
+    <TugPopupListRow
       key="total"
       label="total"
       value={formatTokensCaps(summary.totalTokens)}
     />,
-    <PopoverRow
+    <TugPopupListRow
       key="avg"
       label="avg"
       value={formatTokensCaps(summary.avgTokensPerTurn)}
@@ -590,7 +531,7 @@ export function TokensPopoverContent({
   ];
   if (inflight !== null) {
     summaryRows.push(
-      <PopoverRow
+      <TugPopupListRow
         key="current"
         label="current turn"
         value={formatTokensCaps(inflight.currentTurnTokens)}
@@ -598,10 +539,34 @@ export function TokensPopoverContent({
       />,
     );
   }
+  const footer =
+    transcript.length > 0 ? (
+      <TugPopupListFooter>
+        <PopupCopyButton
+          aria-label="Copy the per-turn token log"
+          getText={() =>
+            composeTurnLogCopyText(
+              transcript,
+              turnNumberBase,
+              (_t, i) => formatTokensCaps(summary.perTurn[i] ?? 0),
+              [
+                `turns\t${summary.count}`,
+                `total\t${formatTokensCaps(summary.totalTokens)}`,
+                `avg\t${formatTokensCaps(summary.avgTokensPerTurn)}`,
+              ],
+            )
+          }
+        />
+      </TugPopupListFooter>
+    ) : undefined;
   return (
-    <PerAreaPopoverFrame title="Per-request log — Tokens">
-      <DevPopoverRowGrid rows={rows} summary={summaryRows} />
-    </PerAreaPopoverFrame>
+    <TugPopupListFrame title="Tokens" kind="log" footer={footer}>
+      <TugPopupListGrid
+        rows={rows}
+        summary={summaryRows}
+        empty={<EmptyTranscriptBody />}
+      />
+    </TugPopupListFrame>
   );
 }
 
@@ -614,12 +579,8 @@ function formatContextPercent(used: number, max: number): string {
   return `${((used / max) * 100).toFixed(1)}%`;
 }
 
-function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
-  return `var(--tugx-arc-gauge-segment-${tone}-color)`;
-}
-
 /**
- * `Context` popover — the `/context`-style session breakdown.
+ * `CONTEXT` popup — the `/context`-style session breakdown.
  *
  * Renders the assembled {@link ContextBreakdown} the status row hands
  * down — the SAME object the `CONTEXT` cell reads its total from, so
@@ -630,7 +591,7 @@ function contextSegmentSwatchVar(tone: TugArcGaugeSegment["tone"]): string {
  * out of scope.
  *
  * `breakdown === null` means there is no usage yet AND no durable
- * `context_breakdown` frame — nothing to show, so the popover surfaces an
+ * `context_breakdown` frame — nothing to show, so the popup surfaces an
  * explicit empty state. Once usage exists the breakdown is always non-null:
  * with a durable frame it shows the fine category split, and on a fresh
  * target / offline replay it reconstructs a coarse baseline + messages +
@@ -644,29 +605,29 @@ export function ContextPopoverContent({
 }): React.ReactElement {
   if (breakdown === null) {
     return (
-      <PerAreaPopoverFrame title="Context window" kind="context">
-        <div className="dev-popover-empty">
+      <TugPopupListFrame title="Context" kind="wide">
+        <TugPopupListEmpty>
           Session-init breakdown not yet recorded.
-        </div>
-      </PerAreaPopoverFrame>
+        </TugPopupListEmpty>
+      </TugPopupListFrame>
     );
   }
   return (
-    <PerAreaPopoverFrame title="Context window" kind="context">
+    <TugPopupListFrame title="Context" kind="wide">
       <ContextBreakdownBody
         segments={breakdown.segments}
         contextMax={breakdown.contextMax}
         totalUsed={breakdown.totalUsed}
       />
-    </PerAreaPopoverFrame>
+    </TugPopupListFrame>
   );
 }
 
 /**
- * Body for the Context popover — large segmented gauge on the left,
+ * Body for the Context popup — large segmented gauge on the left,
  * per-category legend + used/max summary in a single 3-column grid
  * on the right so column edges line up across the legend / summary
- * divider. Used by both rich and (when present) fallback paths.
+ * divider.
  */
 function ContextBreakdownBody({
   segments,
@@ -695,7 +656,7 @@ function ContextBreakdownBody({
             <span className="dev-context-popover-legend-label">
               <span
                 className="dev-context-popover-swatch"
-                style={{ backgroundColor: contextSegmentSwatchVar(s.tone) }}
+                data-arc-tone={s.tone}
               />
               {s.label}
             </span>
@@ -729,15 +690,13 @@ function ContextBreakdownBody({
 // State-change log popover
 // ---------------------------------------------------------------------------
 
-type StateChangeTone = "default" | "success" | "caution" | "danger";
-
 /**
- * Map a session-phase input onto a tone key. Resolves the same
- * (phase × transport × interrupt) → tone triple the inline
+ * Map a session-phase input onto a popup-list tone key. Resolves the
+ * same (phase × transport × interrupt) → tone triple the inline
  * {@link TugProgressIndicator} uses, without instantiating an
  * indicator per row.
  */
-function stateChangeToneFor(input: DevSessionPhaseInput): StateChangeTone {
+function stateChangeToneFor(input: DevSessionPhaseInput): TugPopupListTone {
   const visual = devSessionPhaseVisual(devSessionPhaseKey(input));
   if (visual.role === "danger") return "danger";
   if (visual.role === "caution") return "caution";
@@ -745,34 +704,13 @@ function stateChangeToneFor(input: DevSessionPhaseInput): StateChangeTone {
   return "default";
 }
 
-/** Map a tone key to the color token used in the popover's tone dot. */
-function stateChangeToneVar(tone: StateChangeTone): string {
-  switch (tone) {
-    case "success":
-      return "var(--tug7-element-global-text-normal-success-rest)";
-    case "caution":
-      return "var(--tug7-element-global-text-normal-caution-rest)";
-    case "danger":
-      return "var(--tug7-element-global-text-normal-danger-rest)";
-    case "default":
-    default:
-      return "var(--tug7-element-global-text-normal-default-rest)";
-  }
-}
-
 /**
- * Distance from the bottom (px) the auto-scroll considers "still
- * pinned." If the user scrolls up further than this, the effect
- * stops chasing new rows.
- */
-const AUTOSCROLL_THRESHOLD_PX = 8;
-
-/**
- * Scrolling log of every persisted state change for a session. One
- * shared 5-column grid (tone dot · timestamp · phase · transport ·
- * interrupt); all rows live in one grid so each column sizes to
- * the widest entry across the log. Auto-scroll keeps the most
- * recent row in view unless the user scrolls away from the bottom.
+ * `STATE` popup — scrolling log of every persisted state change for a
+ * session. One shared 5-column grid (tone dot · timestamp · phase ·
+ * transport · interrupt); all rows live in one grid so each column
+ * sizes to the widest entry across the log. The shared scroller's
+ * stick-to-bottom keeps the most recent row in view unless the user
+ * scrolls away. Footer: COPY.
  *
  * `rows` is the snapshot returned by `useSessionStateChanges`.
  */
@@ -781,57 +719,38 @@ export function StateChangeLogPopoverContent({
 }: {
   rows: ReadonlyArray<SessionStateChangeRow>;
 }): React.ReactElement {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const stickToBottomRef = useRef<boolean>(true);
-
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    if (!stickToBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  });
-
-  const onScroll = (ev: React.UIEvent<HTMLDivElement>): void => {
-    const el = ev.currentTarget;
-    const distanceFromBottom =
-      el.scrollHeight - (el.scrollTop + el.clientHeight);
-    stickToBottomRef.current = distanceFromBottom <= AUTOSCROLL_THRESHOLD_PX;
-  };
-
   if (rows.length === 0) {
     return (
-      <PerAreaPopoverFrame title="Session state changes" kind="state-log">
-        <div
-          className="dev-popover-empty"
-          data-slot="dev-popover-empty-state-changes"
-        >
+      <TugPopupListFrame title="State" kind="state">
+        <TugPopupListEmpty data-slot="dev-popover-empty-state-changes">
           No state changes recorded yet.
-        </div>
-      </PerAreaPopoverFrame>
+        </TugPopupListEmpty>
+      </TugPopupListFrame>
     );
   }
 
   const formatted = rows.map((r) => formatStateChangeRow(r));
 
   return (
-    <PerAreaPopoverFrame title="Session state changes" kind="state-log">
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="dev-state-log-scroller"
-        data-slot="dev-state-log-scroller"
-      >
+    <TugPopupListFrame
+      title="State"
+      kind="state"
+      footer={
+        <TugPopupListFooter>
+          <PopupCopyButton
+            aria-label="Copy the state-change log"
+            getText={() => composeStateLogCopyText(rows)}
+          />
+        </TugPopupListFooter>
+      }
+    >
+      <TugPopupListScroller stickToBottom data-slot="dev-state-log-scroller">
         <div className="dev-state-log-grid">
           {rows.map((row, i) => {
             const f = formatted[i]!;
-            const tone = stateChangeToneFor(row);
             return (
               <React.Fragment key={`${f.atText}-${i}`}>
-                <span
-                  aria-hidden
-                  className="dev-state-log-dot"
-                  style={{ backgroundColor: stateChangeToneVar(tone) }}
-                />
+                <TugPopupListToneDot tone={stateChangeToneFor(row)} />
                 <span className="dev-state-log-time">{f.atText}</span>
                 <span className="dev-state-log-phase">{f.phase}</span>
                 <span className="dev-state-log-transport">
@@ -844,8 +763,8 @@ export function StateChangeLogPopoverContent({
             );
           })}
         </div>
-      </div>
-    </PerAreaPopoverFrame>
+      </TugPopupListScroller>
+    </TugPopupListFrame>
   );
 }
 
@@ -874,17 +793,16 @@ function taskRowState(
 }
 
 /**
- * Tasks popover — opened from the `TASKS` cell in the status row.
- * Renders the full assembled task list ([D100]) as a flex column of
- * {@link TugProgressIndicator} rows in the `pulsing-dot` variant
- * with `glyphPosition="left"`. Each row's status drives its
- * `(role, state)` pair through {@link taskRowVisual}; an `idle`
- * session demotes any `in_progress` row to `state="stopped"`
- * (same gate that stops the status-bar TASKS dot). Rows with
- * descriptions wrap in a `TugTooltip` so the longer prose surfaces
- * on hover.
+ * `TASKS` popup — opened from the `TASKS` cell in the status row.
+ * Renders the full assembled task list ([D100]) as popup-list item
+ * rows, each led by a {@link TugProgressIndicator} pulsing dot. Each
+ * row's status drives its `(role, state)` pair through
+ * {@link taskRowState}; an `idle` session demotes any `in_progress`
+ * row to `state="stopped"` (same gate that stops the status-bar TASKS
+ * dot). Rows with descriptions wrap in a `TugTooltip` so the longer
+ * prose surfaces on hover. Footer: count summary + COPY.
  *
- * An empty `tasks` array renders the standard popover empty message.
+ * An empty `tasks` array renders the standard popup empty message.
  */
 export function TasksPopoverContent({
   state,
@@ -895,9 +813,9 @@ export function TasksPopoverContent({
 }): React.ReactElement {
   if (state.tasks.length === 0) {
     return (
-      <PerAreaPopoverFrame title="Tasks">
-        <div className="dev-popover-empty">No tasks for this session.</div>
-      </PerAreaPopoverFrame>
+      <TugPopupListFrame title="Tasks" kind="item">
+        <TugPopupListEmpty>No tasks for this session.</TugPopupListEmpty>
+      </TugPopupListFrame>
     );
   }
   // `composeTaskSummary` produces "3 done, 1 in progress, 2 pending"
@@ -905,55 +823,54 @@ export function TasksPopoverContent({
   // list is all-done, mid-flight, or untouched.
   const summary = composeTaskSummary(countTasks(state.tasks));
   return (
-    <PerAreaPopoverFrame title="Tasks">
-      <div
-        className="dev-tasks-popover-body"
-        data-slot="dev-tasks-popover-body"
-      >
+    <TugPopupListFrame
+      title="Tasks"
+      kind="item"
+      footer={
+        <TugPopupListFooter summary={summary}>
+          <PopupCopyButton
+            aria-label="Copy task list"
+            getText={() => composeTaskCopyText(state.tasks, false)}
+          />
+        </TugPopupListFooter>
+      }
+    >
+      <TugPopupListScroller data-slot="dev-tasks-popover-body">
         {state.tasks.map((task) => {
           // Always the `subject` — it carries the task's stable identity
           // (e.g. the "Step N:" prefix). The present-continuous
           // `activeForm` reads nicely inline but drops that identity, so
-          // the popover keeps every row reading the same way regardless
+          // the popup keeps every row reading the same way regardless
           // of status.
-          const text = task.subject;
-          const row = (
-            <TugProgressIndicator
-              variant="pulsing-dot"
-              glyphPosition="left"
-              size={14}
-              state={taskRowState(task.status, idle)}
-              label={text}
-              data-status={task.status}
-              className="dev-tasks-popover-row"
-            />
+          const text = (
+            <TugPopupListItemText primary={task.subject} />
           );
-          if (task.description === undefined) {
-            return <React.Fragment key={task.taskId}>{row}</React.Fragment>;
-          }
           return (
-            <TugTooltip
+            <TugPopupListItem
               key={task.taskId}
-              content={task.description}
-              side="top"
-              align="start"
+              className="dev-tasks-popover-item"
+              data-status={task.status}
+              indicator={
+                <TugProgressIndicator
+                  variant="pulsing-dot"
+                  size={14}
+                  state={taskRowState(task.status, idle)}
+                  aria-label={`task ${task.status}`}
+                />
+              }
             >
-              {row}
-            </TugTooltip>
+              {task.description === undefined ? (
+                text
+              ) : (
+                <TugTooltip content={task.description} side="top" align="start">
+                  {text}
+                </TugTooltip>
+              )}
+            </TugPopupListItem>
           );
         })}
-      </div>
-      <div
-        className="dev-tasks-popover-footer"
-        data-slot="dev-tasks-popover-footer"
-      >
-        <span className="dev-tasks-popover-pending">{summary}</span>
-        <BlockCopyButton
-          aria-label="Copy task list"
-          getText={() => composeTaskCopyText(state.tasks, false)}
-        />
-      </div>
-    </PerAreaPopoverFrame>
+      </TugPopupListScroller>
+    </TugPopupListFrame>
   );
 }
 
@@ -963,7 +880,7 @@ export function TasksPopoverContent({
 
 /**
  * One-line job description — whitespace-collapsed; the CSS clips with
- * an ellipsis at whatever width the popover affords (no character
+ * an ellipsis at whatever width the popup affords (no character
  * cap), and the full text surfaces in a tooltip (the task-description
  * precedent).
  */
@@ -976,7 +893,7 @@ function jobDescriptionText(description: string): string {
  * The committed-turn index that launched `job` — found via the turn
  * carrying the job's launching `tool_use`. `-1` while the launch turn is
  * still in flight (the `#a{turn}` affordance appears once the turn commits,
- * matching the popovers' committed-rows-only numbering). The caller derives
+ * matching the popups' committed-rows-only numbering). The caller derives
  * both the `#a{turn}` address and the assistant launch-row from it.
  */
 function jobTurnIndex(
@@ -1016,9 +933,9 @@ function jobRowState(status: JobStatus): TugProgressIndicatorState {
 
 /**
  * Live elapsed readout for a running job. A leaf component so the
- * shared 1Hz tick subscription mounts only while the popover is open
+ * shared 1Hz tick subscription mounts only while the popup is open
  * — the cell itself shows `N/M` (no clock) and its pulse is CSS
- * animation, so a closed popover pays no tick. This is the popovers
+ * animation, so a closed popup pays no tick. This is the popovers
  * module's one external-state read; the tick is presentation
  * clockwork, not session state, so the module stays a function of its
  * session inputs.
@@ -1076,17 +993,27 @@ export function scheduledCancelEnabled(job: JobItem): boolean {
   return job.status === "scheduled" && job.kind === "cron";
 }
 
+/** Muted meta-line separator dot. */
+function JobMetaSep(): React.ReactElement {
+  return (
+    <span className="dev-jobs-popover-meta-sep" aria-hidden>
+      ·
+    </span>
+  );
+}
 
 /**
- * One row of the Jobs popover — a status dot beside a two-line text
+ * One row of the Jobs popup — a status dot beside a two-line text
  * block (description above a muted meta line: the launching turn's
- * clickable `#a{turn}` address, the job kind, and the elapsed
- * time), with a stop button on running rows. The stop button wears
- * the Z5 submit/stop treatment — the bold `Square` glyph on a filled
- * danger button — and is a fire-and-forget control-style action: no
- * popover-local state, no optimistic flip; the row flips when the
- * wire confirms. Finished rows simply omit the button (the dot
- * already tells the status; no reserved gap).
+ * clickable `#a{turn}` address, the job kind, and the elapsed time),
+ * with a stop button on running rows in the item row's structural
+ * action column (top-aligned to the first line by the popup-list
+ * grid). The stop button wears the Z5 submit/stop treatment — the
+ * bold `Square` glyph on a filled danger button — and is a
+ * fire-and-forget control-style action: no popup-local state, no
+ * optimistic flip; the row flips when the wire confirms. Finished
+ * rows simply omit the button (the dot already tells the status; no
+ * reserved gap).
  */
 function JobRow({
   job,
@@ -1109,8 +1036,8 @@ function JobRow({
   const turnIndex = jobTurnIndex(job, transcript);
   const rowIndex =
     turnIndex === -1 ? -1 : assistantRowIndexForTurn(turnIndex, transcript);
-  // Meta-line trailing value: live elapsed for running rows, a live
-  // countdown / recurring label for scheduled rows, frozen elapsed for
+  // Meta-line trailing value: live elapsed for running rows, a
+  // schedule / recurring label for scheduled rows, frozen elapsed for
   // terminal ones.
   const elapsed =
     job.status === "running" ? (
@@ -1127,64 +1054,84 @@ function JobRow({
       )
     );
   const wakeBadge = wakeBadgeText(job);
-  const textBlock = (
-    <div className="dev-jobs-popover-text">
-      <span className="dev-jobs-popover-description">{description}</span>
-      <span className="dev-jobs-popover-meta">
-        {turnIndex >= 0 ? (
-          <>
-            <TurnNumberButton
-              address={{
-                speaker: "assistant",
-                turn: turnNumberBase + turnIndex + 1,
-              }}
-              rowIndex={rowIndex}
-              onScrollToRow={onScrollToRow}
-            />
-            <span className="dev-jobs-popover-meta-sep" aria-hidden>
-              ·
-            </span>
-          </>
-        ) : null}
-        <span className="dev-jobs-popover-kind">{job.kind}</span>
-        <span className="dev-jobs-popover-meta-sep" aria-hidden>
-          ·
-        </span>
-        <span className="dev-jobs-popover-elapsed">{elapsed}</span>
-        {job.progress?.lastToolName !== undefined ? (
-          // A backgrounded agent's most recent tool, from its latest
-          // `task_progress` tick — the running row's window into what
-          // the agent is doing, not just that it is alive.
-          <>
-            <span className="dev-jobs-popover-meta-sep" aria-hidden>
-              ·
-            </span>
-            <span className="dev-jobs-popover-progress">
-              {job.progress.lastToolName}
-            </span>
-          </>
-        ) : null}
-        {wakeBadge !== null ? (
-          <TugBadge emphasis="tinted" role="danger" size="2xs">
-            {wakeBadge}
-          </TugBadge>
-        ) : null}
-      </span>
-    </div>
+  const meta = (
+    <>
+      {turnIndex >= 0 ? (
+        <>
+          <TurnNumberButton
+            address={{
+              speaker: "assistant",
+              turn: turnNumberBase + turnIndex + 1,
+            }}
+            rowIndex={rowIndex}
+            onScrollToRow={onScrollToRow}
+          />
+          <JobMetaSep />
+        </>
+      ) : null}
+      <span className="dev-jobs-popover-kind">{job.kind}</span>
+      <JobMetaSep />
+      <span className="dev-jobs-popover-elapsed">{elapsed}</span>
+      {job.progress?.lastToolName !== undefined ? (
+        // A backgrounded agent's most recent tool, from its latest
+        // `task_progress` tick — the running row's window into what
+        // the agent is doing, not just that it is alive.
+        <>
+          <JobMetaSep />
+          <span className="dev-jobs-popover-progress">
+            {job.progress.lastToolName}
+          </span>
+        </>
+      ) : null}
+      {wakeBadge !== null ? (
+        <TugBadge emphasis="tinted" role="danger" size="2xs">
+          {wakeBadge}
+        </TugBadge>
+      ) : null}
+    </>
   );
+  const textBlock = <TugPopupListItemText primary={description} meta={meta} />;
+  const action =
+    job.status === "running" && onStopJob !== undefined ? (
+      <TugPushButton
+        subtype="icon"
+        icon={<Square size={12} strokeWidth={3} />}
+        aria-label={`Stop background job: ${description}`}
+        title="Stop this job"
+        emphasis="filled"
+        role="danger"
+        size="2xs"
+        onClick={() => onStopJob(job.jobId)}
+      />
+    ) : scheduledCancelEnabled(job) && onCancelScheduledWork !== undefined ? (
+      // Only a cron gets a Cancel button — the assistant `CronDelete`s
+      // it. A one-shot wakeup is harness-owned and fire-once, so there
+      // is nothing to cancel; we show no button rather than a dead one.
+      <TugPushButton
+        subtype="icon"
+        icon={<X size={12} strokeWidth={3} />}
+        aria-label={`Cancel scheduled cron: ${description}`}
+        title="Ask the assistant to cancel this cron"
+        emphasis="outlined"
+        role="action"
+        size="2xs"
+        onClick={() => onCancelScheduledWork(job.jobId)}
+      />
+    ) : undefined;
   return (
-    <div
-      className="dev-jobs-popover-row"
+    <TugPopupListItem
       data-status={job.status}
       data-slot="dev-jobs-popover-row"
+      indicator={
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={12}
+          state={jobRowState(job.status)}
+          aria-label={`${job.kind} job ${job.status}`}
+        />
+      }
+      action={action}
     >
-      <TugProgressIndicator
-        variant="pulsing-dot"
-        size={12}
-        state={jobRowState(job.status)}
-        className="dev-jobs-popover-dot"
-        aria-label={`${job.kind} job ${job.status}`}
-      />
       {job.description.trim().length > 0 ? (
         <TugTooltip content={job.description} side="top" align="start">
           {textBlock}
@@ -1192,72 +1139,21 @@ function JobRow({
       ) : (
         textBlock
       )}
-      {job.status === "running" && onStopJob !== undefined ? (
-        <TugPushButton
-          subtype="icon"
-          icon={<Square size={12} strokeWidth={3} />}
-          aria-label={`Stop background job: ${description}`}
-          title="Stop this job"
-          emphasis="filled"
-          role="danger"
-          size="2xs"
-          onClick={() => onStopJob(job.jobId)}
-        />
-      ) : scheduledCancelEnabled(job) && onCancelScheduledWork !== undefined ? (
-        // Only a cron gets a Cancel button — the assistant `CronDelete`s
-        // it. A one-shot wakeup is harness-owned and fire-once, so there
-        // is nothing to cancel; we show no button rather than a dead one.
-        <TugPushButton
-          subtype="icon"
-          icon={<X size={12} strokeWidth={3} />}
-          aria-label={`Cancel scheduled cron: ${description}`}
-          title="Ask the assistant to cancel this cron"
-          emphasis="outlined"
-          role="action"
-          size="2xs"
-          onClick={() => onCancelScheduledWork(job.jobId)}
-        />
-      ) : null}
-    </div>
+    </TugPopupListItem>
   );
 }
 
 /**
- * A labeled section of the Jobs popover (Running / Scheduled /
- * Finished). Renders nothing when its bucket is empty, so the labels
- * only appear for groups that exist.
- */
-function JobGroup({
-  label,
-  rows,
-  render,
-}: {
-  label: string;
-  rows: readonly JobItem[];
-  render: (job: JobItem) => React.ReactElement;
-}): React.ReactElement | null {
-  if (rows.length === 0) return null;
-  return (
-    <div className="dev-jobs-popover-group" data-slot="dev-jobs-popover-group">
-      <div className="dev-jobs-popover-group-label" aria-hidden>
-        {label}
-      </div>
-      {rows.map(render)}
-    </div>
-  );
-}
-
-/**
- * Jobs popover — opened from the `JOBS` cell in the status row.
- * Renders the session-lifetime background-jobs ledger as a flex
- * column of rows ({@link JobRow}) above a footer carrying the
- * composed summary ("1 running, 2 done, 1 failed") and a Clear
- * button. Clear is a deck-local wipe of terminal rows only — running
- * and scheduled rows always survive — and is disabled while nothing is
- * clearable. Once a wakeup/cron is pending, the rows split into
- * labeled Running / Scheduled / Finished groups.
+ * `JOBS` popup — opened from the `JOBS` cell in the status row.
+ * Renders the session-lifetime background-jobs ledger as popup-list
+ * item rows above a footer carrying the composed summary ("1 running,
+ * 2 done, 1 failed"), COPY, and a CLEAR button. Clear is a deck-local
+ * wipe of terminal rows only — running and scheduled rows always
+ * survive — and is disabled while nothing is clearable. Once a
+ * wakeup/cron is pending, the rows split into labeled Running /
+ * Scheduled / Finished groups.
  *
- * An empty ledger renders the standard popover empty message.
+ * An empty ledger renders the standard popup empty message.
  */
 export function JobsPopoverContent({
   jobs,
@@ -1281,9 +1177,9 @@ export function JobsPopoverContent({
 }): React.ReactElement {
   if (jobs.length === 0) {
     return (
-      <PerAreaPopoverFrame title="Jobs">
-        <div className="dev-popover-empty">No background jobs this session.</div>
-      </PerAreaPopoverFrame>
+      <TugPopupListFrame title="Jobs" kind="item">
+        <TugPopupListEmpty>No background jobs this session.</TugPopupListEmpty>
+      </TugPopupListFrame>
     );
   }
   const counts = countJobs(jobs);
@@ -1302,40 +1198,52 @@ export function JobsPopoverContent({
   // long-standing shape. Once a wakeup/cron is pending, split into
   // Running / Scheduled / Finished so the time-deferred promises read
   // distinctly from work that is executing or done.
+  const group = (
+    label: string,
+    rows: readonly JobItem[],
+  ): React.ReactElement | null =>
+    rows.length === 0 ? null : (
+      <TugPopupListGroup label={label}>
+        {rows.map(renderRow)}
+      </TugPopupListGroup>
+    );
   const body =
     counts.scheduled === 0 ? (
       jobs.map(renderRow)
     ) : (
       <>
-        <JobGroup label="Running" rows={jobs.filter((j) => j.status === "running")} render={renderRow} />
-        <JobGroup label="Scheduled" rows={jobs.filter((j) => j.status === "scheduled")} render={renderRow} />
-        <JobGroup label="Finished" rows={jobs.filter((j) => isTerminalJobStatus(j.status))} render={renderRow} />
+        {group("Running", jobs.filter((j) => j.status === "running"))}
+        {group("Scheduled", jobs.filter((j) => j.status === "scheduled"))}
+        {group("Finished", jobs.filter((j) => isTerminalJobStatus(j.status)))}
       </>
     );
   return (
-    <PerAreaPopoverFrame title="Jobs">
-      <div className="dev-jobs-popover-body" data-slot="dev-jobs-popover-body">
+    <TugPopupListFrame
+      title="Jobs"
+      kind="item"
+      footer={
+        <TugPopupListFooter summary={composeJobsSummary(counts)}>
+          <PopupCopyButton
+            aria-label="Copy the jobs list"
+            getText={() => composeJobsCopyText(jobs)}
+          />
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="2xs"
+            aria-label="Clear finished jobs"
+            title="Clear finished jobs (running jobs are kept)"
+            disabled={counts.finished === 0 || onClearJobs === undefined}
+            onClick={onClearJobs}
+          >
+            Clear
+          </TugPushButton>
+        </TugPopupListFooter>
+      }
+    >
+      <TugPopupListScroller data-slot="dev-jobs-popover-body">
         {body}
-      </div>
-      <div
-        className="dev-jobs-popover-footer"
-        data-slot="dev-jobs-popover-footer"
-      >
-        <span className="dev-jobs-popover-summary">
-          {composeJobsSummary(counts)}
-        </span>
-        <TugPushButton
-          emphasis="outlined"
-          role="action"
-          size="2xs"
-          aria-label="Clear finished jobs"
-          title="Clear finished jobs (running jobs are kept)"
-          disabled={counts.finished === 0 || onClearJobs === undefined}
-          onClick={onClearJobs}
-        >
-          Clear
-        </TugPushButton>
-      </div>
-    </PerAreaPopoverFrame>
+      </TugPopupListScroller>
+    </TugPopupListFrame>
   );
 }

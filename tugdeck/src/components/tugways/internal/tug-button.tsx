@@ -392,11 +392,12 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
 // in the cascade ([L06]); a component or theme can override the radius with
 // an ordinary rule, with no inline style to fight and no `!important`.
 
-/** Size-proportional default: every size resolves to `lg` unless a caller
- *  passes an explicit `rounded`. */
+/** Size-proportional default: compact sizes take proportionally tighter
+ *  corners (an 8px radius on a 20px-tall `2xs` button reads as a 40%
+ *  roundover); a caller's explicit `rounded` always wins. */
 const SIZE_ROUNDED_DEFAULT: Record<TugButtonSize, TugButtonRounded> = {
-  "2xs": "lg",
-  xs: "lg",
+  "2xs": "sm",
+  xs: "md",
   sm: "lg",
   md: "lg",
   lg: "lg",
