@@ -153,6 +153,15 @@ export interface ContentBlockStartEvent {
   kind: "text" | "thinking" | "tool_use";
   tool_use_id?: string;
   tool_name?: string;
+  /**
+   * Spawning `Agent` call's `tool_use_id` when this block belongs to a
+   * subagent — tugcode stamps it on every routed frame, the open
+   * included. The reducer needs it at mint time: a child of a
+   * *background* agent must open on the job ledger (its `tool_use`
+   * input-fill routes there), and a foreground child's mint carries
+   * `parentToolUseId` from the start so it nests immediately.
+   */
+  parent_tool_use_id?: string;
   tug_session_id?: string;
   [key: string]: unknown;
 }

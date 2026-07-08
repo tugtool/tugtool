@@ -1424,6 +1424,59 @@ function handleContentBlockStart(
   state: CodeSessionState,
   event: ContentBlockStartEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // Background-agent child opening its block. The call's identity and
+  // its input arrive as two separate events (`content_block_start`
+  // opens, `tool_use` fills); the fill for a job-owned child routes to
+  // the job ledger in `handleToolUse`, so the open must mint there too
+  // — a scratch mint here would be a second record for the same call,
+  // stuck at `input: {}` forever (the bare "Bash · 0m 03s" row).
+  // Ordered before the content-bearing bail: a background agent's
+  // children can stream inter-turn.
+  if (event.kind === "tool_use") {
+    const parentId =
+      typeof event.parent_tool_use_id === "string"
+        ? event.parent_tool_use_id
+        : undefined;
+    const id = typeof event.tool_use_id === "string" ? event.tool_use_id : "";
+    const name = typeof event.tool_name === "string" ? event.tool_name : "";
+    if (
+      parentId !== undefined &&
+      id !== "" &&
+      name !== "" &&
+      jobExistsForParent(state.jobs, parentId)
+    ) {
+      const child: ToolUseMessage = {
+        kind: "tool_use",
+        messageKey: `agent-child-${id}`,
+        createdAt: Date.now(),
+        toolUseId: id,
+        toolName: name,
+        input: {},
+        status: "pending",
+        result: null,
+        structuredResult: null,
+        parentToolUseId: parentId,
+        toolWallMs: null,
+      };
+      const jobs = applyJobChildToolUse(state.jobs, parentId, child);
+      let toolUseStartedAt = state.toolUseStartedAt;
+      if (!toolUseStartedAt.has(id)) {
+        toolUseStartedAt = new Map(toolUseStartedAt);
+        toolUseStartedAt.set(
+          id,
+          typeof event.timestamp === "number" ? event.timestamp : Date.now(),
+        );
+      }
+      if (
+        jobs === state.jobs &&
+        toolUseStartedAt === state.toolUseStartedAt
+      ) {
+        return { state, effects: [] };
+      }
+      return { state: { ...state, jobs, toolUseStartedAt }, effects: [] };
+    }
+  }
+
   if (!isContentBearingPhase(state.phase)) {
     return { state, effects: [] };
   }
@@ -1481,6 +1534,14 @@ function handleContentBlockStart(
         return { state, effects: [] };
       }
       toolUseId = id;
+      // A foreground subagent child (no job for its parent) mints into
+      // scratch like any call, but carries `parentToolUseId` from the
+      // open so it nests under its Agent block immediately rather than
+      // waiting for the input-fill `tool_use` to stamp it.
+      const mintParentId =
+        typeof event.parent_tool_use_id === "string"
+          ? event.parent_tool_use_id
+          : undefined;
       message = {
         kind: "tool_use",
         messageKey,
@@ -1491,6 +1552,9 @@ function handleContentBlockStart(
         status: "pending",
         result: null,
         structuredResult: null,
+        ...(mintParentId !== undefined
+          ? { parentToolUseId: mintParentId }
+          : {}),
         toolWallMs: null,
       } satisfies ToolUseMessage;
       break;
@@ -1755,7 +1819,23 @@ function handleToolUse(
   // foreground agent's streamed children have no job and fall through to
   // normal turn attachment below. Ordered before the content-bearing bail
   // precisely because inter-turn phase is not content-bearing.
+  //
+  // The live turn's scratch record wins over the job route: when a
+  // `content_block_start` already minted this call into the turn (the
+  // job landed between the open and this fill), the input must land on
+  // that mint — a second record on the ledger would leave the rendered
+  // one bare (`input: {}`) and forever pending.
+  const scratchTurnKey = isContentBearingPhase(state.phase)
+    ? state.pendingTurn?.turnKey
+    : undefined;
+  const scratchEntry =
+    scratchTurnKey !== undefined
+      ? state.scratch.get(scratchTurnKey)
+      : undefined;
+  const mintedInScratch =
+    scratchEntry?.toolCallIndex.has(event.tool_use_id) === true;
   if (
+    !mintedInScratch &&
     incomingParentId !== undefined &&
     jobExistsForParent(state.jobs, incomingParentId)
   ) {
@@ -1773,9 +1853,21 @@ function handleToolUse(
       toolWallMs: null,
     };
     const jobs = applyJobChildToolUse(state.jobs, incomingParentId, child);
-    return jobs === state.jobs
-      ? { state, effects: [] }
-      : { state: { ...state, jobs }, effects: [] };
+    // Start anchor for the child's wall time — the tail-fed path has no
+    // `content_block_start`, so this fill is the open. Tail-synthesized
+    // frames carry the original JSONL time; live frames anchor at now.
+    let toolUseStartedAt = state.toolUseStartedAt;
+    if (!toolUseStartedAt.has(event.tool_use_id)) {
+      toolUseStartedAt = new Map(toolUseStartedAt);
+      toolUseStartedAt.set(
+        event.tool_use_id,
+        typeof event.timestamp === "number" ? event.timestamp : Date.now(),
+      );
+    }
+    if (jobs === state.jobs && toolUseStartedAt === state.toolUseStartedAt) {
+      return { state, effects: [] };
+    }
+    return { state: { ...state, jobs, toolUseStartedAt }, effects: [] };
   }
 
   if (!isContentBearingPhase(state.phase)) {
@@ -1918,14 +2010,28 @@ function handleToolResult(
   // Background-agent child result. Routed to the job that owns the child
   // (its parent turn already committed; the child tool_use landed on the
   // job in `handleToolUse`). Ordered before the phase bail because these
-  // arrive inter-turn.
+  // arrive inter-turn. Wall time pairs the start anchor captured at the
+  // child's open with this result, same as the scratch path below.
   if (jobIdForChild(state.jobs, event.tool_use_id) !== undefined) {
+    const startedAt = state.toolUseStartedAt.get(event.tool_use_id);
+    const resultAt =
+      typeof event.timestamp === "number" ? event.timestamp : Date.now();
     const jobs = applyJobChildResult(state.jobs, event.tool_use_id, {
       result: event.output ?? null,
+      status: event.is_error === true ? "error" : "done",
+      ...(typeof startedAt === "number"
+        ? { toolWallMs: Math.max(0, resultAt - startedAt) }
+        : {}),
     });
-    return jobs === state.jobs
-      ? { state, effects: [] }
-      : { state: { ...state, jobs }, effects: [] };
+    let toolUseStartedAt = state.toolUseStartedAt;
+    if (toolUseStartedAt.has(event.tool_use_id)) {
+      toolUseStartedAt = new Map(toolUseStartedAt);
+      toolUseStartedAt.delete(event.tool_use_id);
+    }
+    if (jobs === state.jobs && toolUseStartedAt === state.toolUseStartedAt) {
+      return { state, effects: [] };
+    }
+    return { state: { ...state, jobs, toolUseStartedAt }, effects: [] };
   }
 
   // tool_result is accepted in `tool_work`, `replaying`, and `waking` —

@@ -556,13 +556,19 @@ export function applyJobChildToolUse(
 
 /**
  * Fold a child's terminal payload (`result` and/or `structuredResult`)
- * onto the matching `childCalls` entry, flipping its status to `done`.
- * No-op when no job owns the child.
+ * onto the matching `childCalls` entry, flipping its status to `done`
+ * (or `error` when the patch says so) and recording its wall time when
+ * the caller recovered one. No-op when no job owns the child.
  */
 export function applyJobChildResult(
   jobs: readonly JobItem[],
   childToolUseId: string,
-  patch: { result?: unknown; structuredResult?: unknown },
+  patch: {
+    result?: unknown;
+    structuredResult?: unknown;
+    status?: "done" | "error";
+    toolWallMs?: number;
+  },
 ): readonly JobItem[] {
   const idx = jobs.findIndex((j) =>
     (j.childCalls ?? []).some((c) => c.toolUseId === childToolUseId),
@@ -573,10 +579,13 @@ export function applyJobChildResult(
     c.toolUseId === childToolUseId
       ? {
           ...c,
-          status: "done" as const,
+          status: patch.status ?? ("done" as const),
           ...(patch.result !== undefined ? { result: patch.result } : {}),
           ...(patch.structuredResult !== undefined
             ? { structuredResult: patch.structuredResult }
+            : {}),
+          ...(patch.toolWallMs !== undefined
+            ? { toolWallMs: patch.toolWallMs }
             : {}),
         }
       : c,
