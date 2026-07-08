@@ -68,10 +68,10 @@ describe("formatAtomLabel — `filename` mode (basename extraction)", () => {
 describe("atomHeightFor", () => {
   // Pure layout helper exported so the transcript walker can publish
   // a `line-height` floor that matches the chip's actual rendered
-  // height. The chip fills the prose line box (`round(size * 1.6)`)
-  // minus a 1px inset each edge — see the atom-img module — so it fits
-  // inside the natural line-box.
-  test("computes height = round(size * 1.6) - 2", () => {
+  // height. The chip fills the host line box (`round(size * lineHeight)`,
+  // defaulting to the transcript's 1.6) minus a 1px inset each edge —
+  // see the atom-img module — so it fits inside the natural line-box.
+  test("computes height = round(size * 1.6) - 2 by default", () => {
     expect(atomHeightFor(13)).toBe(19); // round(20.8) - 2 = 21 - 2 = 19
     expect(atomHeightFor(14)).toBe(20); // round(22.4) - 2 = 22 - 2 = 20
     expect(atomHeightFor(18)).toBe(27); // round(28.8) - 2 = 29 - 2 = 27
@@ -79,14 +79,15 @@ describe("atomHeightFor", () => {
 
   // The whole no-hop / no-bloat scheme rests on one cross-file contract:
   // the chip must fit *inside* the natural line box on every surface that
-  // bakes it. `atomHeightFor` derives from 1.6 (the tighter line-height);
-  // this guards that the editor's pinned line-height never drops below it,
-  // which would silently bring the line-hop back. If the editor metric
-  // changes below the chip basis, this fails instead of the UI regressing.
-  test("chip fits inside the editor line box at every font size (no hop)", () => {
+  // bakes it. The editor bake sizes from the editor's own pinned
+  // line-height, so this guards strict fit — the chip stays *under* the
+  // visual row, leaving air between chips on adjacent wrapped rows of one
+  // long line. If the metrics drift so the chip fills or overflows the
+  // row, this fails instead of the UI regressing to touching chips.
+  test("editor-sized chip fits strictly inside the editor line box at every font size (no hop, no touch)", () => {
     for (const size of [11, 12, 13, 14, 15, 16]) {
-      const lineBox = Math.floor(size * EDITOR_LINE_HEIGHT);
-      expect(atomHeightFor(size)).toBeLessThanOrEqual(lineBox);
+      const lineBox = size * EDITOR_LINE_HEIGHT;
+      expect(atomHeightFor(size, EDITOR_LINE_HEIGHT)).toBeLessThan(lineBox);
     }
   });
 

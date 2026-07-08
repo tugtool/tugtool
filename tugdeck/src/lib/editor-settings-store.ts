@@ -22,7 +22,7 @@
 import { getTugbankClient } from "./tugbank-singleton";
 import { putEditorSettings } from "@/settings-api";
 import type { EditorSettings } from "@/settings-api";
-import { setAtomFont } from "./tug-atom-img";
+import { EDITOR_LINE_HEIGHT, setAtomFont } from "./tug-atom-img";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -30,12 +30,15 @@ const DOMAIN = "dev.tugtool.editor";
 const KEY = "settings";
 
 /**
- * Editor line metrics are no longer user-tunable — they're pinned here so
- * atom chips can be sized to fit the line box without a moving target. The
- * store publishes these as `--tug-line-height-editor` / `--tug-letter-spacing-editor`
- * on the bound element.
+ * Editor line metrics are no longer user-tunable — they're pinned so atom
+ * chips can be sized to fit the line box without a moving target. The
+ * line-height constant lives in `tug-atom-img` (the chip bake sizes editor
+ * chips from it; defining it there avoids an import cycle) and is re-exported
+ * here for the store's consumers. The store publishes these as
+ * `--tug-line-height-editor` / `--tug-letter-spacing-editor` on the bound
+ * element.
  */
-export const EDITOR_LINE_HEIGHT = 1.5;
+export { EDITOR_LINE_HEIGHT } from "./tug-atom-img";
 export const EDITOR_LETTER_SPACING = "normal";
 
 export const DEFAULT_SETTINGS: EditorSettings = {
