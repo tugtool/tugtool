@@ -41,6 +41,12 @@ body {
   --tugx-transcript-body-line-height:   1.5;
   --tugx-transcript-controls-margin-top: var(--tug-space-xs);
   --tugx-transcript-controls-gap:       var(--tug-space-sm);
+  /* Gap above the in-flight indicator. Bodies end flush (block spacing is
+   * top-margins-only, see block-chrome.css), so this token IS the whole
+   * visible gap between the last painted content and the indicator —
+   * matched to the block stack gap so the bars read as the next item in
+   * the run, not as chrome glued to the previous card. */
+  --tugx-transcript-inflight-margin-top: var(--tug-space-md);
 
   --tugx-transcript-identifier-color:     var(--tug7-element-global-text-normal-default-rest);
   --tugx-transcript-identifier-weight:    var(--tug-font-weight-semibold);
@@ -274,11 +280,11 @@ body {
  *
  * Sandwiched between the body and the `controls` (Z1B) slot so the
  * row footer reads top-to-bottom as `body → in-flight indicator →
- * end-state`. The margin matches the controls slot so the
- * vertical rhythm with the body above is consistent across the
- * two footer slots. */
+ * end-state`. The margin is the slot's own token — it is the entire
+ * visible gap below the body's last content (bodies end flush), so it
+ * runs wider than the controls slot's tight margin. */
 .tug-transcript-entry__inflight-footer {
-  margin-top: var(--tugx-transcript-controls-margin-top);
+  margin-top: var(--tugx-transcript-inflight-margin-top);
   display: flex;
   flex-direction: row;
   align-items: center;
