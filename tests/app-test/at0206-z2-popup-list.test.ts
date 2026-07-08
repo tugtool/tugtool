@@ -89,37 +89,37 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           type: "assistant_text", msg_id: "m1", text: "Working on it.",
           is_partial: true, rev: 0, seq: 0,
         }));
-        // ---- Jobs ledger: three backgrounded Bash launches. The
-        // `task_started` insert is gated on the launching tool_use being
-        // in the IN-FLIGHT turn's scratch with `run_in_background: true`
-        // and `task_type: "local_bash"` — so the frames land mid-turn.
-        for (const [n, taskId, desc] of [
-          ["1", "bg1", "Pull Cirrus Sequoia base image (background)"],
-          ["2", "bg2", "Build signed+notarized Tug.dmg and stage to lab (background)"],
-          ["3", "bg3", "Re-run signed+notarized lab-dmg build (background)"],
-        ] as const) {
+        // ---- Jobs ledger: MANY backgrounded Bash launches (the
+        // "out-of-control jobs list" scenario the scroll strategy
+        // exists for). The `task_started` insert is gated on the
+        // launching tool_use being in the IN-FLIGHT turn's scratch with
+        // `run_in_background: true` and `task_type: "local_bash"` — so
+        // the frames land mid-turn. Job 1 stays running (stop button);
+        // the rest finish as an alternating done/failed mix.
+        const JOB_COUNT = 28;
+        for (let n = 1; n <= JOB_COUNT; n++) {
           await app.driveDevSession("A", f({
             type: "tool_use", msg_id: "m1", tool_use_id: `job-tool-${n}`,
             tool_name: "Bash",
             input: { command: `make dmg ${n}`, run_in_background: true },
-            seq: 2 + Number(n),
+            seq: 2 + n,
           }));
           await app.driveDevSession("A", f({
-            type: "task_started", task_id: taskId, tool_use_id: `job-tool-${n}`,
-            description: desc,
+            type: "task_started", task_id: `bg${n}`, tool_use_id: `job-tool-${n}`,
+            description: `Background probe run ${n} (background)`,
             task_type: "local_bash",
           }));
           await app.driveDevSession("A", f({
             type: "tool_result", tool_use_id: `job-tool-${n}`,
             output: "launched",
           }));
+          if (n > 1) {
+            await app.driveDevSession("A", f({
+              type: "task_updated", task_id: `bg${n}`,
+              status: n % 5 === 0 ? "failed" : "completed",
+            }));
+          }
         }
-        await app.driveDevSession("A", f({
-          type: "task_updated", task_id: "bg2", status: "completed",
-        }));
-        await app.driveDevSession("A", f({
-          type: "task_updated", task_id: "bg3", status: "failed",
-        }));
         await app.driveDevSession("A", f({
           type: "turn_complete", msg_id: "m1", result: "success",
         }));
@@ -203,11 +203,33 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
             copy: footer ? !!footer.querySelector('[data-slot="block-copy"]') : false,
             clear: footer ? Array.from(footer.querySelectorAll('button')).some(b => (b.textContent||'').trim().toLowerCase() === 'clear') : false,
             summary: footer ? (footer.querySelector('.tug-popup-list-footer-summary')||{}).textContent : null,
+            scroller: (() => {
+              const sc = popup.querySelector('.tug-popup-list-scroller');
+              return sc === null ? null : {
+                clientHeight: sc.clientHeight,
+                scrollHeight: sc.scrollHeight,
+              };
+            })(),
+            popupRect: (() => {
+              const r = popup.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom };
+            })(),
+            viewportHeight: window.innerHeight,
           };
         })())`);
         const jobs = JSON.parse(jobsProbe);
         expect(jobs.kind).toBe("item");
-        expect(jobs.rows).toBe(3);
+        expect(jobs.rows).toBe(JOB_COUNT);
+        // Scroll strategy: a long ledger scrolls inside its capped
+        // scroller instead of growing the popup — and the popup stays
+        // fully on-screen.
+        expect(jobs.scroller).not.toBeNull();
+        expect(jobs.scroller.scrollHeight).toBeGreaterThan(jobs.scroller.clientHeight);
+        expect(jobs.scroller.clientHeight).toBeLessThanOrEqual(
+          12 * 24 + 1, // the item-kind visible-rows × row-height cap
+        );
+        expect(jobs.popupRect.top).toBeGreaterThanOrEqual(0);
+        expect(jobs.popupRect.bottom).toBeLessThanOrEqual(jobs.viewportHeight);
         expect(jobs.stopRounded).toBe("sm");
         // Top-aligned to the item's first line: the 20px button may
         // overhang a ~15px line box downward, but its top edge must sit

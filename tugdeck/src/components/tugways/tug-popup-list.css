@@ -48,6 +48,24 @@
   font-family: var(--tug-font-mono, monospace);
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
+  /* Viewport guard — the frame never exceeds the space Radix gave the
+     popover between its anchor and the collision boundary, so a long
+     list can NEVER push the popup off-screen: the scroller (the one
+     shrinkable child; title / rule / footer are fixed) absorbs the
+     squeeze and scrolls. The row-count caps below are the *preferred*
+     height; this is the hard ceiling for short windows. */
+  max-height: calc(
+    var(--radix-popover-content-available-height, 100dvh) - 2px
+  );
+  min-height: 0;
+}
+
+/* Frame chrome never shrinks under the viewport guard — only the
+   scroller gives. */
+.tug-popup-list-title,
+.tug-popup-list-rule,
+.tug-popup-list-footer {
+  flex: 0 0 auto;
 }
 
 /* Per-kind width caps + row rhythm. `log` fits the four-column
@@ -108,6 +126,9 @@
   max-height: calc(
     var(--tugx-popup-list-visible-rows) * var(--tugx-popup-list-row-h)
   );
+  /* Shrinkable below the row cap when the frame's viewport guard
+     squeezes the flex column. */
+  min-height: 0;
   overflow-y: auto;
   /* Never sideways: long content ellipsizes rather than widening the
      popup (overflow-y: auto would otherwise promote x to auto too). */
@@ -125,6 +146,11 @@
   display: grid;
   grid-template-columns: max-content max-content max-content auto;
   row-gap: 0;
+  /* Under the frame's viewport guard the grid clips rather than
+     painting past the popup edge (its scroller row already caps the
+     common case; this only engages in extremely short windows). */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tug-popup-list-grid-scroller {
