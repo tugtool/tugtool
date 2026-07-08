@@ -44,7 +44,7 @@ use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 use super::agent_bridge::{
     ChildSpawner, CrashBudget, DEFAULT_RETRY_DELAY, SessionMode, TugcodeSpawner, run_session_bridge,
 };
-use super::code::parse_tug_session_id;
+use super::code::{parse_tug_session_id, splice_tug_session_id};
 use super::session_metadata::{
     is_activity_delta, is_rate_limit_event, is_session_capabilities, is_system_metadata,
     is_turn_end, is_wake_started,
@@ -1376,6 +1376,27 @@ fn parse_tug_session_id_payload(payload: &[u8]) -> Result<TugSessionId, ControlE
     Ok(TugSessionId::new(id))
 }
 
+/// Stamp `tug_session_id` onto a persisted SESSION_SIDEBAND replay payload
+/// so it passes the client-side session filter ([D06]/[D11]). Parses the
+/// JSON and sets the field (overwriting any stale value from a prior
+/// binding), preserving every other field. A payload that fails to parse
+/// falls back to [`splice_tug_session_id`] — same insert-after-first-brace
+/// semantics the live relay path uses, with its pass-through-unchanged
+/// behavior for hopeless blobs. Cold path (runs once per bind), so the
+/// parse cost is irrelevant.
+fn stamp_tug_session_id(payload: Vec<u8>, tug_session_id: &str) -> Vec<u8> {
+    match serde_json::from_slice::<serde_json::Value>(&payload) {
+        Ok(serde_json::Value::Object(mut obj)) => {
+            obj.insert(
+                "tug_session_id".to_owned(),
+                serde_json::Value::String(tug_session_id.to_owned()),
+            );
+            serde_json::to_vec(&serde_json::Value::Object(obj)).unwrap_or(payload)
+        }
+        _ => splice_tug_session_id(&payload, tug_session_id),
+    }
+}
+
 /// Extract the optional recency `window` from a `request_replay` CONTROL
 /// payload. The supervisor forwards it verbatim into the `request_replay`
 /// verb it pushes to tugcode, which validates the shape at its handler
@@ -2055,6 +2076,16 @@ impl AgentSupervisor {
     /// rewrapped as `FeedId::SESSION_SIDEBAND` (the wire byte the client's
     /// `register_stream(FeedId::SESSION_SIDEBAND, …)` subscription keys on,
     /// same as the live merger publish).
+    ///
+    /// The persisted payload carries no `tug_session_id`: the bridge merges
+    /// and persists the RAW stdout line, splicing the id only onto the
+    /// emitted wire copy (`agent_bridge.rs` — merge precedes the splice at
+    /// the emit site). Clients filter SESSION_SIDEBAND by `tug_session_id`
+    /// per [D06]/[D11], so an unstamped replay would be silently dropped
+    /// and a resumed card would show no model / version / mode until its
+    /// first turn. Stamp the BOUND session's id here ([`stamp_tug_session_id`]);
+    /// stamping at replay time also keeps the frame correct when a claude
+    /// session is re-bound under a different tug id.
     fn persisted_metadata_replay_frame(
         &self,
         claude_session_id: Option<&str>,
@@ -2073,7 +2104,10 @@ impl AgentSupervisor {
         for candidate in candidates {
             match ledger.get_session_metadata(candidate) {
                 Ok(Some(row)) => {
-                    return Some(Frame::new(FeedId::SESSION_SIDEBAND, row.payload));
+                    return Some(Frame::new(
+                        FeedId::SESSION_SIDEBAND,
+                        stamp_tug_session_id(row.payload, tug_session_id),
+                    ));
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -5256,14 +5290,54 @@ mod tests {
 
         let received = meta_rx.try_recv().expect("persisted replay frame present");
         assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
+        // The replay is the persisted row stamped with the bound session's
+        // tug id — the persisted payload itself is untagged (the bridge
+        // merges the raw line, pre-splice), and the client drops untagged
+        // sideband frames per the [D06]/[D11] session filter.
+        let received_json: serde_json::Value =
+            serde_json::from_slice(&received.payload).unwrap();
         assert_eq!(
-            received.payload, payload,
-            "replay frame carries the persisted row payload verbatim",
+            received_json.get("tug_session_id").and_then(|v| v.as_str()),
+            Some("sess-1"),
+            "replay frame is stamped with the bound tug session id",
+        );
+        let mut expected: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        expected["tug_session_id"] = serde_json::Value::String("sess-1".into());
+        assert_eq!(
+            received_json, expected,
+            "replay frame is the persisted row payload plus the stamp",
         );
         assert!(
             meta_rx.try_recv().is_err(),
             "only a single replay frame is emitted",
         );
+    }
+
+    #[test]
+    fn stamp_tug_session_id_adds_field_to_untagged_payload() {
+        let payload = br#"{"type":"system_metadata","model":"claude-opus-4-8"}"#.to_vec();
+        let out = stamp_tug_session_id(payload, "sess-9");
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["tug_session_id"], "sess-9");
+        assert_eq!(v["model"], "claude-opus-4-8");
+    }
+
+    #[test]
+    fn stamp_tug_session_id_overwrites_stale_tag() {
+        let payload = br#"{"tug_session_id":"old-sess","type":"system_metadata"}"#.to_vec();
+        let out = stamp_tug_session_id(payload, "new-sess");
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["tug_session_id"], "new-sess");
+    }
+
+    #[test]
+    fn stamp_tug_session_id_splices_unparseable_blob() {
+        // Truncated JSON: serde refuses, the splice fallback still lands the
+        // tag after the first brace (matching the live relay's behavior).
+        let payload = br#"{"type":"system_metadata","model":"clau"#.to_vec();
+        let out = stamp_tug_session_id(payload, "sess-9");
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.starts_with(r#"{"tug_session_id":"sess-9","#));
     }
 
     #[tokio::test]

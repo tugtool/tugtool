@@ -321,24 +321,40 @@ class CardServicesStore {
     const editorStore = new EditorSettingsStore();
     const responseStore = new ResponseSettingsStore();
 
-    // Filter by workspace_key for feeds that carry it. SESSION_SIDEBAND
-    // does not carry workspace_key on the wire, so it stays unfiltered.
-    // The workspace_key is set on the binding when the supervisor acks
-    // and does not change for the lifetime of this services bag —
-    // re-binds (close + reopen) get a fresh services bag.
+    // Filter by workspace_key for feeds that carry it. The workspace_key
+    // is set on the binding when the supervisor acks and does not change
+    // for the lifetime of this services bag — re-binds (close + reopen)
+    // get a fresh services bag.
     const workspaceFilter: FeedStoreFilter = (_feedId, decoded) =>
       typeof decoded === "object" &&
       decoded !== null &&
       "workspace_key" in decoded &&
       (decoded as { workspace_key: unknown }).workspace_key === binding.workspaceKey;
 
+    // SESSION_SIDEBAND is a single broadcast shared by every session
+    // ([D06]/[D11]): tugcast splices `tug_session_id` into every frame and
+    // relies on this client-side filter for isolation — same contract as
+    // CODE_OUTPUT / SESSION_STATE in `CodeSessionStore`. Without it, any
+    // session's `system_metadata` / `session_capabilities` rewrites every
+    // card's model / mode / effort / catalog. workspace_key would be the
+    // wrong key even if carried: two cards in one workspace must still be
+    // isolated from each other.
+    const sessionFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      (decoded as { tug_session_id?: unknown }).tug_session_id ===
+        binding.tugSessionId;
+
     const sessionMetadataFeedStore = new FeedStore(
       connection,
       [FeedId.SESSION_SIDEBAND],
+      undefined,
+      sessionFilter,
     );
     const sessionMetadataStore = new SessionMetadataStore(
       sessionMetadataFeedStore,
       FeedId.SESSION_SIDEBAND,
+      binding.tugSessionId,
     );
 
     const fileTreeFeedStore = new FeedStore(

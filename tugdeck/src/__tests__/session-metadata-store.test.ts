@@ -812,3 +812,96 @@ describe("SessionMetadataStore reconciliation (optimistic overrides)", () => {
     store.dispose();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: session isolation guard ([D06]/[D11] defense in depth)
+// ---------------------------------------------------------------------------
+
+describe("SessionMetadataStore session isolation", () => {
+  test("a payload tagged with a foreign tug_session_id is dropped", () => {
+    // The per-card FeedStore filter is the primary gate; this guard keeps
+    // the invariant local to the store. A foreign session's system_metadata
+    // must not touch this card's model / mode / catalog.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(
+      feedStore as never,
+      FEED_ID as never,
+      "sess-mine",
+    );
+
+    feedStore.emit(
+      FEED_ID,
+      makeMetadataPayload({ tug_session_id: "sess-other" }),
+    );
+    expect(store.getSnapshot().model).toBeNull();
+    expect(store.getSnapshot().slashCommands).toEqual([]);
+
+    // A foreign session_capabilities is equally rejected.
+    feedStore.emit(FEED_ID, {
+      type: "session_capabilities",
+      tug_session_id: "sess-other",
+      models: [{ value: "sonnet", displayName: "Sonnet" }],
+    });
+    expect(store.getSnapshot().models).toEqual([]);
+
+    store.dispose();
+  });
+
+  test("a foreign frame does not drop an optimistic override", () => {
+    // A foreign session's system_metadata carries a model, and a frame that
+    // carries a field normally supersedes the optimistic override for it —
+    // the guard must reject the frame before that override logic runs, or
+    // another card's traffic snaps a just-picked model back.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(
+      feedStore as never,
+      FEED_ID as never,
+      "sess-mine",
+    );
+
+    store.applyModel("claude-haiku-4-5");
+    feedStore.emit(
+      FEED_ID,
+      makeMetadataPayload({
+        tug_session_id: "sess-other",
+        model: "claude-opus-4-8",
+      }),
+    );
+    expect(store.getSnapshot().model).toBe("claude-haiku-4-5");
+
+    store.dispose();
+  });
+
+  test("a payload tagged with the store's own tug_session_id is processed", () => {
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(
+      feedStore as never,
+      FEED_ID as never,
+      "sess-mine",
+    );
+
+    feedStore.emit(
+      FEED_ID,
+      makeMetadataPayload({ tug_session_id: "sess-mine" }),
+    );
+    expect(store.getSnapshot().model).toBe("claude-3-opus");
+
+    store.dispose();
+  });
+
+  test("an untagged payload is processed (test / fixture injection path)", () => {
+    // `_ingestForTest`, gallery fixtures, and pre-splice synthetic payloads
+    // carry no tug_session_id; absence is not a mismatch.
+    const feedStore = new MockFeedStore();
+    const store = new SessionMetadataStore(
+      feedStore as never,
+      FEED_ID as never,
+      "sess-mine",
+    );
+
+    feedStore.emit(FEED_ID, makeMetadataPayload());
+    expect(store.getSnapshot().model).toBe("claude-3-opus");
+
+    store.dispose();
+  });
+});

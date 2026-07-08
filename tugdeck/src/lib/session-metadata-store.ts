@@ -461,9 +461,15 @@ export class SessionMetadataStore {
   private _unsubscribeFeed: (() => void) | null = null;
   private _lastPayloadRef: unknown = undefined;
   private _feedId: FeedIdValue;
+  private _tugSessionId: string | null;
 
-  constructor(feedStore: FeedStore, feedId: FeedIdValue) {
+  constructor(
+    feedStore: FeedStore,
+    feedId: FeedIdValue,
+    tugSessionId: string | null = null,
+  ) {
     this._feedId = feedId;
+    this._tugSessionId = tugSessionId;
     this._unsubscribeFeed = feedStore.subscribe(() => {
       this._onFeedUpdate(feedStore);
     });
@@ -495,6 +501,22 @@ export class SessionMetadataStore {
    * other owns — the bug class that kept recurring.
    */
   private _processPayload(payload: unknown): void {
+    // Session isolation, defense in depth ([D06]/[D11]). The per-card
+    // FeedStore filter in `card-services-store.ts` is the primary gate;
+    // this guard makes the invariant local to the store so a future
+    // re-wiring cannot silently reintroduce cross-session contamination.
+    // Only a payload that CARRIES a `tug_session_id` is checked — test /
+    // gallery fixtures inject untagged payloads and must keep working.
+    if (
+      this._tugSessionId !== null &&
+      typeof payload === "object" &&
+      payload !== null
+    ) {
+      const tagged = (payload as Record<string, unknown>).tug_session_id;
+      if (typeof tagged === "string" && tagged !== this._tugSessionId) {
+        return;
+      }
+    }
     const payloadType =
       typeof payload === "object" && payload !== null
         ? (payload as Record<string, unknown>).type
