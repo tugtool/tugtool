@@ -5371,10 +5371,32 @@ export class SessionManager {
       const subtype = request?.subtype as string | undefined;
 
       if (subtype === "can_use_tool" && requestId && request) {
-        this.pendingControlRequests.set(requestId, cr);
-
         const toolName = (request.tool_name as string) || "";
         const isQuestion = toolName === "AskUserQuestion";
+
+        // Bypass mode auto-allows every permission request at the bridge:
+        // respond to the CLI immediately and never forward, so no dialog
+        // surfaces in the deck. AskUserQuestion rides the same
+        // `can_use_tool` wire but is a question, not a permission prompt —
+        // it still forwards. Nothing is stored in pendingControlRequests,
+        // so the mid-turn snapshot re-emit can't resurrect a bypassed
+        // request either.
+        if (
+          !isQuestion &&
+          this.permissionManager.getMode() === "bypassPermissions" &&
+          this.claudeProcess
+        ) {
+          sendControlResponse(
+            this.claudeProcess.stdin,
+            formatPermissionAllow(
+              requestId,
+              (request.input as Record<string, unknown>) || {},
+            ),
+          );
+          return;
+        }
+
+        this.pendingControlRequests.set(requestId, cr);
 
         const forward: ControlRequestForward = {
           type: "control_request_forward",
