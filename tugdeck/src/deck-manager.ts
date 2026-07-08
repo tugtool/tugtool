@@ -107,6 +107,15 @@ import {
 /** Debounce delay for saving layout (ms) */
 const SAVE_DEBOUNCE_MS = 500;
 
+/**
+ * Debounce delay for flushing dirty per-card state bags (ms). Kept
+ * tighter than the layout debounce: with the 250ms dirty-pipeline
+ * debounce in `use-card-dirty-state.ts` this bounds the worst-case
+ * edit→durable window at ~0.5s — the most a crash or force-quit (no
+ * `saveState` RPC, no `beforeunload` in WKWebView) can lose. [L23]
+ */
+const CARD_STATE_FLUSH_DEBOUNCE_MS = 250;
+
 /** Cascade step between consecutive new stacks (pixels) */
 const CASCADE_STEP = 30;
 
@@ -1224,14 +1233,14 @@ export class DeckManager implements IDeckManagerStore {
     this.cardStateSaveTimer = window.setTimeout(() => {
       this.flushDirtyCardStates();
       this.cardStateSaveTimer = null;
-    }, SAVE_DEBOUNCE_MS);
+    }, CARD_STATE_FLUSH_DEBOUNCE_MS);
   }
 
   /**
    * Capture `cardId`'s current bag and persist it durably immediately,
-   * skipping the {@link SAVE_DEBOUNCE_MS} window. The prompt entry calls
-   * this on submit: `editor.clear()` empties the draft, but the debounced
-   * save that would persist the cleared state is up to half a second out,
+   * skipping the {@link CARD_STATE_FLUSH_DEBOUNCE_MS} window. The prompt
+   * entry calls this on submit: `editor.clear()` empties the draft, but the
+   * debounced save that would persist the cleared state is still pending,
    * and WKWebView fires no `beforeunload`/`visibilitychange` on quit — so a
    * relaunch in that window would otherwise restore the just-submitted
    * message from the stale pre-submit bag. Forcing the write here closes
@@ -1293,16 +1302,19 @@ export class DeckManager implements IDeckManagerStore {
         this.cardStateSaveTimer = window.setTimeout(() => {
           void this.flushDirtyCardStates();
           this.cardStateSaveTimer = null;
-        }, SAVE_DEBOUNCE_MS);
+        }, CARD_STATE_FLUSH_DEBOUNCE_MS);
       }
     };
   };
 
-  private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean }): Promise<void> {
+  private flushDirtyCardStates(options?: { keepalive?: boolean; sync?: boolean; force?: boolean }): Promise<void> {
     // Deferred while a batch load holds the save gate — the dirty set is
     // retained and saved on a later ungated trigger. A `sync` flush
-    // (will-phase / unload) must always run, so it bypasses.
-    if (this.cardSaveSuspendDepth > 0 && options?.sync !== true) {
+    // (will-phase / unload) must always run, so it bypasses; `force` is
+    // the async-fetch equivalent for teardown-class callers that await
+    // the writes (prepareForReload) — "no fetch mid-load" is moot when
+    // the page is about to be torn down.
+    if (this.cardSaveSuspendDepth > 0 && options?.sync !== true && options?.force !== true) {
       return Promise.resolve();
     }
     const promises: Promise<void>[] = [];
@@ -1734,7 +1746,11 @@ export class DeckManager implements IDeckManagerStore {
     for (const cardId of Array.from(this.saveCallbacks.keys())) {
       this.invokeSaveCallback(cardId, "manual");
     }
-    await this.flushDirtyCardStates();
+    // `force` bypasses the save-suspend gate: a transcript load in
+    // flight must not turn this flush into a no-op — `reloadPending`
+    // below makes the beforeunload backstop skip, so this is the last
+    // write before the page tears down. [L23]
+    await this.flushDirtyCardStates({ force: true });
     this.reloadPending = true;
   }
 

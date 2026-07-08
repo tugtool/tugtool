@@ -33,7 +33,11 @@
 
 import { useCallback, useEffect, useRef } from "react";
 
-const AUTO_SAVE_DEBOUNCE_MS = 1000;
+// 250ms here + the 250ms card-state flush debounce in deck-manager keeps
+// the worst-case edit→durable window at ~0.5s, bounding what a crash or
+// force-quit (no saveState RPC, no beforeunload in WKWebView) can lose.
+// [L23]
+const AUTO_SAVE_DEBOUNCE_MS = 250;
 
 export interface UseCardDirtyStateArgs {
   hostContentEl: HTMLDivElement | null;

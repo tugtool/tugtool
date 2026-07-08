@@ -335,15 +335,17 @@ async function assertLiveText(app: App): Promise<void> {
 // Disk-poll helper for the dirty-state-debounce isolation test
 // ---------------------------------------------------------------------------
 
-const DIRTY_DEBOUNCE_MS = 1000;
-const DEBOUNCE_FLUSH_GRACE_MS = 1500;
+// Mirrors AUTO_SAVE_DEBOUNCE_MS (use-card-dirty-state.ts) +
+// CARD_STATE_FLUSH_DEBOUNCE_MS (deck-manager.ts): 250ms + 250ms.
+const DIRTY_DEBOUNCE_MS = 500;
+const DEBOUNCE_FLUSH_GRACE_MS = 1000;
 
 /**
  * Sleep for the given milliseconds. Used to wait past the
  * dirty-state debounce window so a save fires without any external
  * trigger. Bun's `setTimeout` is good enough for this — drift on
- * the order of milliseconds doesn't matter against a 1000ms
- * debounce + 500ms grace.
+ * the order of milliseconds doesn't matter against a 500ms
+ * debounce chain + 1000ms grace.
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {

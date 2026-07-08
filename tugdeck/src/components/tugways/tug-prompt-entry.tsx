@@ -2040,6 +2040,11 @@ export const TugPromptEntry = React.forwardRef<
   // moment is when `.cm-scroller` regains real `clientHeight` and
   // can honour the scroll write). Cleared on activation.
   const pendingActivationDraftRef = useRef<TugTextEditingState | null>(null);
+  // Last draft this entry captured or restored. `onSave` forwards it when
+  // `textEditorRef.current` is null (a save fired in a window where the
+  // substrate isn't mounted) — returning `draft: null` there would clobber
+  // a previously-good persisted draft with nothing. [L23]
+  const lastKnownDraftRef = useRef<TugTextEditingState | null>(null);
 
   // Phase E.11 Step 4e — engine-hook registration channel.
   //
@@ -2143,7 +2148,10 @@ export const TugPromptEntry = React.forwardRef<
     },
     onSave: () => {
       const editor = textEditorRef.current;
-      const liveDraft = editor !== null ? editor.captureState() : null;
+      // No live substrate: forward the last draft this entry saw rather
+      // than writing `draft: null` over a good persisted draft. [L23]
+      const liveDraft =
+        editor !== null ? editor.captureState() : lastKnownDraftRef.current;
       const snap = inactiveDraftSnapshotRef.current;
       // Card is inactive: prefer the snapshot's scroll axes (the
       // live scroller has been zeroed by display:none). Selection,
@@ -2169,6 +2177,7 @@ export const TugPromptEntry = React.forwardRef<
       const attachmentBytes = Object.keys(bytesSnap).length > 0
         ? bytesSnap
         : undefined;
+      lastKnownDraftRef.current = draft;
       return {
         route: routeLifecycle.getRoute(),
         draft,
@@ -2178,6 +2187,7 @@ export const TugPromptEntry = React.forwardRef<
     onRestore: (raw, { isActive }) => {
       const restored = coerceRestorePayload(raw);
       routeLifecycle.setRoute(restored.route);
+      lastKnownDraftRef.current = restored.draft;
       // Rehydrate the bytes-store BEFORE the editor restores its
       // draft so the moment the substrate reads atom-ids back, the
       // corresponding bytes are already there for buildWirePayload

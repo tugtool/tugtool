@@ -1196,6 +1196,15 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `bag.components` on top of whatever this returns.
   const assembleFrameworkBagRef = useRef<() => CardStateBag>(() => ({}));
   assembleFrameworkBagRef.current = () => {
+    // Content not mounted (the `feedsReady` gate below is still showing
+    // "Loading..."): nothing user-visible can have changed, and a fresh
+    // capture would assemble a bag with NO `content` axis — replacing the
+    // cached bag (and, on the next flush, the durable one) with a version
+    // that has lost the prompt draft, form controls, and region scrolls.
+    // Per [L23], forward the previous bag unchanged instead.
+    if (!feedsReady) {
+      return store.getCardState(cardId) ?? {};
+    }
     const contentEl = hostContentEl;
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
