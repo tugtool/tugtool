@@ -59,7 +59,7 @@ function FileSaveSheetView({
   close,
 }: {
   title: string;
-  message: string;
+  message?: string;
   buttons: SheetButton[];
   close: (result?: string) => void;
 }): React.ReactElement {
@@ -126,13 +126,13 @@ function FileSaveSheetView({
 
   return (
     <div className="tug-alert-sheet" data-slot="file-save-sheet">
-      <div className="tug-alert-body" data-has-message="true">
+      <div className="tug-alert-body" data-has-message={message ? "true" : undefined}>
         <div className="tug-alert-icon" aria-hidden="true">
           <TriangleAlert />
         </div>
         <div className="tug-alert-text">
           <h2 className="tug-alert-title">{title}</h2>
-          <p className="tug-alert-message">{message}</p>
+          {message ? <p className="tug-alert-message">{message}</p> : null}
         </div>
       </div>
       <div className="file-save-sheet-actions">
@@ -171,8 +171,7 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
         hideHeader: true,
         content: (close) => (
           <FileSaveSheetView
-            title={`Do you want to save the changes made to the document “${fileName}”?`}
-            message="Your changes will be lost if you don’t save them."
+            title={`Save changes to “${fileName}” before closing?`}
             buttons={[
               { label: "Don’t Save", result: "dont-save", role: "danger" },
               { label: "Cancel", result: "cancel" },
@@ -193,8 +192,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
         hideHeader: true,
         content: (close) => (
           <FileSaveSheetView
-            title={`The document “${fileName}” has been changed by another application.`}
-            message="Your unsaved changes and the changes on disk conflict."
+            title={`“${fileName}” was changed by another application.`}
+            message="Your unsaved changes conflict with the version on disk."
             buttons={[
               { label: "Reload from Disk", result: "reload" },
               { label: "Save As…", result: "save-as" },
@@ -216,8 +215,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
         hideHeader: true,
         content: (close) => (
           <FileSaveSheetView
-            title={`The file for “${fileName}” has been deleted by another application.`}
-            message="Save it again to recreate it, save it somewhere else, or discard your changes and close."
+            title={`“${fileName}” was deleted by another application.`}
+            message="Save to recreate it, or discard your changes."
             buttons={[
               { label: "Don’t Save", result: "dont-save", role: "danger" },
               { label: "Save As…", result: "save-as" },
@@ -234,8 +233,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
   const presentRevertSheet = useCallback(
     (fileName: string): Promise<boolean> =>
       presentAlertSheet(showSheet, {
-        title: `Do you want to revert to the last saved version of “${fileName}”?`,
-        message: "Your current changes will be lost.",
+        title: `Revert “${fileName}” to the last saved version?`,
+        message: "Your changes will be lost.",
         confirmLabel: "Revert",
         confirmRole: "danger",
         cancelLabel: "Cancel",
@@ -247,8 +246,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
   const presentReloadSheet = useCallback(
     (fileName: string): Promise<boolean> =>
       presentAlertSheet(showSheet, {
-        title: `Do you want to reload the version of “${fileName}” on disk?`,
-        message: "Your current changes will be lost.",
+        title: `Reload “${fileName}” from disk?`,
+        message: "Your changes will be lost.",
         confirmLabel: "Reload",
         confirmRole: "danger",
         cancelLabel: "Cancel",
@@ -262,8 +261,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
       // Keep My Changes is the default (confirm); Use Disk Version is the
       // alternative (cancel / Escape).
       presentAlertSheet(showSheet, {
-        title: `“${fileName}” has unsaved changes from a previous session, but the file on disk has been changed since.`,
-        message: "Keep your unsaved changes, or discard them for the version on disk?",
+        title: `“${fileName}” has unsaved changes from a previous session, but the file has changed on disk.`,
+        message: "Keep your unsaved changes, or use the version on disk?",
         confirmLabel: "Keep My Changes",
         confirmRole: "action",
         cancelLabel: "Use Disk Version",

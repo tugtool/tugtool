@@ -22,16 +22,16 @@ body {
   /* ------------------------------------------------------------------ *
    * Title — one scale everywhere. Title Case by convention.            *
    * ------------------------------------------------------------------ */
-  --tugx-header-title-size:   1.0625rem;
-  --tugx-header-title-weight: 700;
+  --tugx-header-title-size:   0.95rem;
+  --tugx-header-title-weight: 600;
   --tugx-header-title-lh:     1.25;
 
   /* ------------------------------------------------------------------ *
    * Description / message — one scale, tucked 4px under the title.     *
    * ------------------------------------------------------------------ */
-  --tugx-header-desc-size: 0.875rem;
+  --tugx-header-desc-size: 0.8rem;
   --tugx-header-desc-lh:   1.4;
-  --tugx-header-desc-gap:  4px;
+  --tugx-header-desc-gap:  8px;
 
   /* ------------------------------------------------------------------ *
    * Icon — steps with the text-block height.                           *
