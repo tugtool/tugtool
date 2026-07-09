@@ -208,6 +208,14 @@ export class FileEditorStore {
   private _lastKnownEmpty = true;
   /** A revert fetched while a flush was in flight waits its turn. */
   private _recheckQueued = false;
+  /**
+   * An edit (or line-ending change) arrived while a write was in flight.
+   * That write captured the buffer at its start, so it persisted stale
+   * content; on settle we must re-flush the current buffer instead of
+   * reporting "clean" — otherwise the edit is silently lost while the
+   * UI shows saved.
+   */
+  private _editedDuringWrite = false;
   private _disposed = false;
   /** Unregisters the FILESYSTEM feed callback; called by `dispose()`. */
   private _unsubscribeFilesystem: (() => void) | null = null;
@@ -387,7 +395,11 @@ export class FileEditorStore {
   noteEdit(): void {
     const snap = this._snapshot;
     if (snap.phase !== "ready" || snap.readOnly || snap.conflict) return;
-    if (snap.saveState !== "writing") {
+    if (snap.saveState === "writing") {
+      // The in-flight write already snapshotted the (now stale) buffer;
+      // mark for a re-flush on settle rather than losing this edit.
+      this._editedDuringWrite = true;
+    } else {
       this._update({ saveState: "editing" });
     }
     this._armDebounce(AUTOSAVE_DEBOUNCE_MS);
@@ -433,8 +445,22 @@ export class FileEditorStore {
   }
 
   private _onWriteSettled(outcome: FileWriteOutcome): void {
+    const editedDuringWrite = this._editedDuringWrite;
+    this._editedDuringWrite = false;
     if (outcome.ok) {
       this._baselineSha256 = outcome.sha256;
+      if (editedDuringWrite) {
+        // The buffer changed while this write was in flight, so it wrote
+        // stale content. Re-flush the current buffer instead of going
+        // clean — never report "saved" over an unpersisted edit.
+        this._update({
+          saveState: "editing",
+          writeFailures: 0,
+          lastSavedAt: Date.now(),
+        });
+        void this.flush();
+        return;
+      }
       this._update({
         saveState: "clean",
         writeFailures: 0,
@@ -529,6 +555,13 @@ export class FileEditorStore {
     if (snap.lineEnding === ending) return;
     this._update({ lineEnding: ending });
     if (snap.phase !== "ready" || snap.readOnly || snap.conflict !== null) {
+      return;
+    }
+    if (this._flushInFlight !== null) {
+      // A write is mid-flight and serialized the OLD ending; re-flush on
+      // settle so the new ending actually reaches disk (setLineEnding is
+      // a one-shot action with no follow-up edit to trigger recovery).
+      this._editedDuringWrite = true;
       return;
     }
     // Force a write even from a clean state — flush no-ops when clean.

@@ -43,8 +43,9 @@ function createMockDeckManager() {
 function createMockConnection() {
   const frameCallbacks = new Map<number, (payload: Uint8Array) => void>();
   return {
-    onFrame(feedId: number, cb: (payload: Uint8Array) => void): void {
+    onFrame(feedId: number, cb: (payload: Uint8Array) => void): () => void {
       frameCallbacks.set(feedId, cb);
+      return () => frameCallbacks.delete(feedId);
     },
     // Simulate a received Control frame for testing dispatchAction wiring.
     simulateFrame(feedId: number, payload: Uint8Array): void {

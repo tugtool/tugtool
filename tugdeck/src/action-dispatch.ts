@@ -249,16 +249,16 @@ export function dispatchAction(payload: Record<string, unknown>): void {
  * disposer; tests that re-initialize the action-dispatch wiring
  * should.
  *
- * The Control-frame `onFrame` callback is not reversible — `TugConnection.onFrame`
- * has no dispose surface today — so it stays registered for the lifetime
- * of the connection.
+ * The Control-frame `onFrame` unsubscribe is registered into the
+ * disposer set like every other acquisition ([L27]).
  */
 export function initActionDispatch(
   connection: TugConnection,
   deckManager: DeckManager
 ): () => void {
-  // Register Control frame callback
-  connection.onFrame(FeedId.CONTROL, (payload: Uint8Array) => {
+  // Register Control frame callback; its unsubscribe joins `disposers`
+  // below so the teardown fully unwires it ([L27]).
+  const controlUnsub = connection.onFrame(FeedId.CONTROL, (payload: Uint8Array) => {
     try {
       const json = textDecoder.decode(payload);
       const data = JSON.parse(json) as Record<string, unknown>;
@@ -1042,7 +1042,7 @@ export function initActionDispatch(
   // `getAppLifecycle()` is guaranteed non-null here because
   // `DeckManager` registers the lifecycle before `initActionDispatch`
   // is called.
-  const disposers: Array<() => void> = [];
+  const disposers: Array<() => void> = [controlUnsub];
   const appLifecycle = getAppLifecycle();
   if (appLifecycle !== null) {
     disposers.push(

@@ -53,7 +53,7 @@ function createMockDeckManager(): {
 
 function createMockConnection() {
   return {
-    onFrame: (_id: number, _cb: (payload: Uint8Array) => void) => {},
+    onFrame: (_id: number, _cb: (payload: Uint8Array) => void) => () => {},
   };
 }
 

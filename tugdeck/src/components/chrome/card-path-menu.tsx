@@ -39,7 +39,7 @@ export interface CardPathMenuProps {
 }
 
 /** Split an absolute path into innermost-first segments. */
-function segmentsOf(path: string): string[] {
+export function segmentsOf(path: string): string[] {
   return path.split("/").filter((s) => s.length > 0).reverse();
 }
 

@@ -400,14 +400,14 @@ function suppressTabTooltip(trigger: Element): boolean {
 }
 
 /** Max visible tab-title length before center truncation. */
-const TAB_TITLE_MAX = 24;
+export const TAB_TITLE_MAX = 24;
 
 /**
  * Middle-truncate `s` to at most `max` chars, keeping the head and tail
  * with an ellipsis between (so a file's extension stays visible). BBEdit
  * truncates document tabs the same way.
  */
-function centerTruncate(s: string, max: number): string {
+export function centerTruncate(s: string, max: number): string {
   if (s.length <= max) return s;
   const keep = max - 1;
   const head = Math.ceil(keep / 2);
@@ -793,11 +793,15 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   })();
 
   // Build overflow dropdown items from overflowTabs (icon + label each). [D07]
+  // File tabs draw their label from `cardTitleStore` (the basename), same
+  // as the visible tabs — the static `card.title` is just "File".
   const overflowDropdownItems: TugPopupMenuItem[] = overflowTabs.map((tab) => {
     const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
+    const override =
+      tab.componentId === "file" ? cardTitleStore.get(tab.id) : null;
     return {
       id: tab.id,
-      label: tab.title,
+      label: centerTruncate(override ?? tab.title, TAB_TITLE_MAX),
       icon: renderIcon(iconName),
     };
   });

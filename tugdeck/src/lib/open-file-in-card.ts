@@ -123,8 +123,24 @@ export function openFileInCard(
       } else {
         // "newTab": a new File tab in the frontmost File card's pane,
         // seeded with the path (becomes the pane's active card).
+        // `addCardToPane` only flips the deck's first responder when its
+        // pane is already the active one; when the target pane sits
+        // behind another (e.g. a Dev card on top), activate the new card
+        // explicitly so it raises + focuses like `new` / `reuse` do —
+        // otherwise the file opens invisibly in a background pane.
+        const outgoing = store.getFirstResponderCardId();
         const newId = store.addCardToPane(frontmost.paneId, "file", seed);
-        if (newId !== null) return;
+        if (newId !== null) {
+          if (store.getFirstResponderCardId() !== newId) {
+            transferFocusForActivation({
+              outgoingCardId: outgoing,
+              incomingCardId: newId,
+              store,
+              commitMutation: () => store.activateCard(newId),
+            });
+          }
+          return;
+        }
       }
     }
   }
