@@ -19,7 +19,7 @@
 
 ### Phase Overview {#phase-overview}
 
-#### Context {#context}
+$#### Context {#context}
 
 `/btw` (a "side question") lets you ask Claude something about the current work — "what was that config file again?" — and get a one-shot answer from the full conversation context, **without tools and without adding anything to the transcript**, even while Claude is mid-turn. It is the inverse of a subagent: full context, no tools, versus no context, full tools.
 
