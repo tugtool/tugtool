@@ -1,0 +1,131 @@
+/* @tug-pairings {
+  --tugx-completion-popup-fg           | --tugx-completion-popup-bg           | content
+  --tugx-completion-popup-border       | --tugx-completion-popup-bg           | informational
+  --tugx-completion-popup-row-sel-fg   | --tugx-completion-popup-row-sel-bg   | control
+  --tugx-completion-popup-placeholder  | --tugx-completion-popup-bg           | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                              | Surface                              | Role          | Context                                            |
+ * |--------------------------------------|--------------------------------------|---------------|----------------------------------------------------|
+ * | --tugx-completion-popup-fg           | --tugx-completion-popup-bg           | content       | .tug-completion-popup-input / -row (color)         |
+ * | --tugx-completion-popup-border       | --tugx-completion-popup-bg           | informational | .tug-completion-popup (border-color)               |
+ * | --tugx-completion-popup-row-sel-fg   | --tugx-completion-popup-row-sel-bg   | control       | .tug-completion-popup-row[data-selected] (bg + fg) |
+ * | --tugx-completion-popup-placeholder  | --tugx-completion-popup-bg           | content       | .tug-completion-popup-input::placeholder (color)   |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ----
+ *
+ * Shares the overlay surface family with TugCompletionMenu / TugPopover:
+ * same background, foreground, border, and shadow tokens. The highlighted
+ * row uses the accent selection surface, same as the composer's
+ * completion popup.
+ */
+
+body {
+  --tugx-completion-popup-bg:          var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-completion-popup-fg:          var(--tug7-element-global-text-normal-default-rest);
+  --tugx-completion-popup-border:      var(--tug7-element-global-border-normal-default-rest);
+  --tugx-completion-popup-shadow:      var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-completion-popup-row-sel-bg:  var(--tug7-surface-selection-primary-normal-selected-rest);
+  --tugx-completion-popup-row-sel-fg:  var(--tug7-element-selection-text-normal-selected-rest);
+  --tugx-completion-popup-placeholder: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-completion-popup-icon:        var(--tug7-element-global-icon-normal-muted-rest);
+}
+
+/* ---- Backdrop — full-canvas press-catcher for click-outside dismissal ---- */
+.tug-completion-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Opt back into pointer events (the overlay root is pass-through). */
+  pointer-events: auto;
+  z-index: var(--tug-z-overlay-popup);
+  display: flex;
+  justify-content: center;
+  /* Xcode drops the field ~28% down the window rather than dead-center. */
+  align-items: flex-start;
+  padding-top: 22vh;
+}
+
+/* ---- Panel ---- */
+.tug-completion-popup {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 70vw);
+  max-height: 60vh;
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  background-color: var(--tugx-completion-popup-bg);
+  color: var(--tugx-completion-popup-fg);
+  border: 1px solid var(--tugx-completion-popup-border);
+  border-radius: var(--tug-radius-lg);
+  box-shadow: var(--tugx-completion-popup-shadow);
+  overflow: hidden;
+}
+
+/* ---- Search field ---- */
+.tug-completion-popup-field {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-lg) var(--tug-space-xl);
+}
+
+.tug-completion-popup-field-icon {
+  flex-shrink: 0;
+  width: var(--tug-icon-size-lg);
+  height: var(--tug-icon-size-lg);
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  color: var(--tugx-completion-popup-icon);
+}
+
+.tug-completion-popup-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  color: var(--tugx-completion-popup-fg);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xl);
+  line-height: 1.2;
+}
+
+.tug-completion-popup-input::placeholder {
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  color: var(--tugx-completion-popup-placeholder);
+}
+
+/* ---- Result list ---- */
+.tug-completion-popup-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--tug-space-xs) 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--tugx-completion-popup-border);
+}
+
+.tug-completion-popup-row {
+  padding: var(--tug-space-sm) var(--tug-space-xl);
+  /* @tug-renders-on: --tugx-completion-popup-bg */
+  color: var(--tugx-completion-popup-fg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.tug-completion-popup-row[data-selected="true"] {
+  /* @tug-renders-on: --tugx-completion-popup-row-sel-bg */
+  background-color: var(--tugx-completion-popup-row-sel-bg);
+  color: var(--tugx-completion-popup-row-sel-fg);
+}
+
+/* Matched characters — weight only, no color change (mirrors the
+   composer's .tug-completion-match). */
+.tug-completion-popup-match {
+  font-weight: 700;
+}

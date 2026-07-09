@@ -14,7 +14,8 @@ private let tugAtomsPasteboardType = NSPasteboard.PasteboardType("dev.tug.prompt
 /// Protocol for bridge callbacks from WebKit to AppDelegate
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
-    func bridgeChoosePath(kind: String, initialPath: String?, completion: @escaping (String?) -> Void)
+    func bridgeChoosePath(kind: String, initialPath: String?, suggestedName: String?, completion: @escaping (String?) -> Void)
+    func bridgeOpenDroppedFiles(_ urls: [URL])
     func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
@@ -201,6 +202,44 @@ private final class WaveProgressView: NSView {
     }
 }
 
+/// WKWebView subclass that intercepts file drops onto the deck. WebKit's
+/// default is to navigate the whole view to the dropped `file://` URL,
+/// which would blow the deck away — so a drop of editable text files is
+/// claimed here and handed to `onFilesDropped` (each opens in a File
+/// card). Any other drag (text into a field, the web's own dnd) falls
+/// through to `super`.
+final class DeckWebView: WKWebView {
+    /// Editable text files dropped onto the deck. Set by MainWindow.
+    var onFilesDropped: (([URL]) -> Void)?
+
+    private func editableDroppedFiles(_ sender: NSDraggingInfo) -> [URL] {
+        guard let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] else { return [] }
+        return urls.filter { AppDelegate.isEditableFile($0) }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        editableDroppedFiles(sender).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        editableDroppedFiles(sender).isEmpty ? super.draggingUpdated(sender) : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        editableDroppedFiles(sender).isEmpty ? super.prepareForDragOperation(sender) : true
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let files = editableDroppedFiles(sender)
+        guard !files.isEmpty else { return super.performDragOperation(sender) }
+        onFilesDropped?(files)
+        return true
+    }
+}
+
 /// Main window containing the WKWebView for tugdeck dashboard
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
@@ -306,7 +345,11 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
         #endif
 
-        webView = WKWebView(frame: .zero, configuration: config)
+        let deckWebView = DeckWebView(frame: .zero, configuration: config)
+        deckWebView.onFilesDropped = { [weak self] urls in
+            self?.bridgeDelegate?.bridgeOpenDroppedFiles(urls)
+        }
+        webView = deckWebView
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
@@ -990,8 +1033,9 @@ extension MainWindow: WKScriptMessageHandler {
             guard let body = message.body as? [String: Any],
                   let requestId = body["id"] as? String else { return }
             let initialPath = body["initialPath"] as? String
+            let suggestedName = body["suggestedName"] as? String
             let kind = (body["kind"] as? String) ?? "directory"
-            bridgeDelegate?.bridgeChoosePath(kind: kind, initialPath: initialPath) { [weak self] path in
+            bridgeDelegate?.bridgeChoosePath(kind: kind, initialPath: initialPath, suggestedName: suggestedName) { [weak self] path in
                 guard let self = self else { return }
                 let idArg = self.escapeForJS(requestId)
                 let pathArg: String

@@ -11,6 +11,7 @@ import { setTugbankClient } from "./lib/tugbank-singleton";
 import { DeckManager } from "./deck-manager";
 import { initActionDispatch } from "./action-dispatch";
 import { initHostMenuState } from "./lib/host-menu-state";
+import { initRecentDocuments } from "./lib/recent-documents";
 import { cardServicesStore } from "./lib/card-services-store";
 import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { restoreDevSessions } from "./lib/dev-session-restore";
@@ -326,6 +327,12 @@ if (!container) {
   // host, which validates the menu bar from it. See
   // `lib/host-menu-state.ts` for the wire contract.
   initHostMenuState(deck);
+
+  // Seed the Open Recent list from tugbank and mirror it to the host.
+  // After initHostMenuState (the publisher exists) and after tugbank
+  // ready (its cache is populated), so the first push carries the
+  // persisted MRU.
+  initRecentDocuments();
 
   // Install `window.__tug` test-harness surface when
   // `window.__tugTestMode === true`. The attach is a no-op otherwise;

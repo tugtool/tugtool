@@ -27,6 +27,7 @@ import { transferFocusForActivation } from "@/focus-transfer";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
 import { CanvasOverlayRoot } from "./canvas-overlay-root";
+import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
@@ -624,6 +625,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         * canvas-overlay-root.tsx for the full contract. [D01, D07, D09]
         */}
       <CanvasOverlayRoot />
+      {/* Deck-global Open Quickly popup (File ▸ Open Quickly). Renders
+        * nothing until opened; portals into the overlay root above. */}
+      <OpenQuicklyOverlay />
       </div>
     </ResponderScope>
   );

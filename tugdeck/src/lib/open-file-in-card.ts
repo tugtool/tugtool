@@ -41,6 +41,7 @@ import {
   findFileCardByPath,
   getOpenFileCard,
 } from "./file-card-open-registry";
+import { noteRecentDocument } from "./recent-documents";
 
 /** Read the deck-wide open-target default straight from the tugbank cache. */
 function readOpenTarget(): FileEditorOpenTarget {
@@ -100,6 +101,10 @@ export function openFileInCard(
   path: string,
   line?: number,
 ): void {
+  // Every real open flows through here — record it for Open Recent
+  // before the card work, so drops / Open Quickly / menu all feed it.
+  noteRecentDocument(path);
+
   const existing = findFileCardByPath(path);
   if (existing) {
     transferFocusForActivation({

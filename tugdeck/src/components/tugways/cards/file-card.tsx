@@ -66,6 +66,8 @@ import {
   clearFileMenuState,
 } from "@/lib/host-menu-state";
 import { readSaveMode } from "@/lib/open-file-in-card";
+import { reserveUntitledNumber } from "@/lib/untitled-naming";
+import { noteRecentDocument } from "@/lib/recent-documents";
 import { openPathInOS } from "@/lib/os-open";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { useFileSaveSheets } from "./file-card-save-sheets";
@@ -111,6 +113,9 @@ export interface FileCardBagContent {
   /** True when the buffer is a manual-mode untitled buffer —
    * restore re-enters `openUntitled` and finds the aside. */
   untitled: boolean;
+  /** Session number behind the untitled name ("Untitled-2", …); null
+   * for a titled card or a legacy bag. */
+  untitledNumber: number | null;
   anchor: { line: number; ch: number };
   scrollTop: number;
 }
@@ -127,6 +132,8 @@ function coerceBagContent(state: unknown): FileCardBagContent | null {
     path,
     draftId,
     untitled: obj.untitled === true,
+    untitledNumber:
+      typeof obj.untitledNumber === "number" ? obj.untitledNumber : null,
     anchor: {
       line: typeof anchor?.line === "number" ? anchor.line : 1,
       ch: typeof anchor?.ch === "number" ? anchor.ch : 0,
@@ -265,12 +272,18 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   const runSaveAsPanel = useCallback(async (): Promise<boolean> => {
     const snap = store.getSnapshot();
     const initial = snap.draftId !== null ? undefined : (snap.path ?? undefined);
-    const newPath = await pickPath("save", initial);
+    // Untitled buffer: seed the panel with its session name ("Untitled-2").
+    const suggested =
+      snap.untitled && snap.fileName !== null ? snap.fileName : undefined;
+    const newPath = await pickPath("save", initial, suggested);
     if (newPath === null) return false;
     // Report the real write outcome — not merely "a path was picked" — so
     // the close guard only proceeds to destroy the card when the buffer
     // actually reached disk. A swallowed failure here is silent data loss.
-    return (await store.saveAs(newPath)) === "ok";
+    const ok = (await store.saveAs(newPath)) === "ok";
+    // A successful Save As creates (and binds) a document — a recent.
+    if (ok) noteRecentDocument(newPath);
+    return ok;
   }, [store]);
   const saveAs = useCallback(() => {
     void runSaveAsPanel();
@@ -400,6 +413,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         path: snap.draftId !== null ? null : snap.path,
         draftId: snap.draftId,
         untitled: snap.untitled,
+        untitledNumber: snap.untitledNumber,
         anchor: positions?.anchor ?? { line: 1, ch: 0 },
         scrollTop: positions?.scrollTop ?? 0,
       };
@@ -412,7 +426,15 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         scrollTop: content.scrollTop,
       };
       if (content.untitled && content.draftId !== null) {
-        void store.openUntitled(content.draftId);
+        // Raise the session floor so a fresh untitled card never reuses
+        // this restored number, then rebind under the same name.
+        if (content.untitledNumber !== null) {
+          reserveUntitledNumber(content.untitledNumber);
+        }
+        void store.openUntitled(
+          content.draftId,
+          content.untitledNumber ?? undefined,
+        );
       } else if (content.draftId !== null) {
         void store.openDraft(content.draftId);
       } else if (content.path !== null) {

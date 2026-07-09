@@ -1,4 +1,5 @@
 import Cocoa
+import UniformTypeIdentifiers
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var window: MainWindow!
@@ -48,6 +49,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// and the first paint is driven by `revealWebView` in
     /// `MainWindow.bridgeFrontendReady`.
     private var frontendHasLoadedOnce = false
+    /// Text files handed to the app (Dock/Finder open, "Open With…") before
+    /// the deck is live. Flushed to `open-file` control frames once
+    /// `bridgeFrontendReady` fires; opened immediately when already live.
+    private var pendingOpenPaths: [String] = []
     private var makerMenu: NSMenuItem!
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
@@ -74,10 +79,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var windowMenu: NSMenu!
     private var windowPaneListAnchor: NSMenuItem?
 
+    /// File ▸ Open Recent submenu — rebuilt on open by the NSMenuDelegate
+    /// from `menuState.recentDocuments`, filtered to still-existing files.
+    private var openRecentMenu: NSMenu!
+
     /// Cached menu-relevant frontend state, replaced wholesale on every
     /// `menuState` push from tugdeck. All pull-based menu validation
     /// (`validateMenuItem(_:)`) and dynamic menu building read from here.
     private var menuState = MenuState.empty
+
+    /// UTIs a File card can edit — text and everything that conforms to it
+    /// (source code, JSON, XML, Markdown, …). The Open File… / choosePath
+    /// file panels restrict to these so a binary (image, PDF, archive) can't
+    /// be chosen into an editor that only renders text.
+    static let editableContentTypes: [UTType] = [.text, .sourceCode, .plainText]
 
     // Theme menu state
     private var themeMenu: NSMenu!
@@ -398,6 +413,52 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
 
+    /// Files handed to the app by the OS: dropped on the Dock icon, opened
+    /// from Finder ("Open With Tug"), or double-clicked when Tug is the
+    /// handler. Each text file opens in a File card. If the deck isn't live
+    /// yet (cold launch by opening a file), the paths queue and flush on
+    /// `bridgeFrontendReady`.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        openFilesFromOS(urls)
+    }
+
+    /// Open each editable text file in `urls` in a File card. Shared by the
+    /// OS open path (`application(_:open:)`) and deck-canvas file drops
+    /// (`DeckWebView`). Non-text files and folders are ignored; opens made
+    /// before the deck is live queue and flush on `bridgeFrontendReady`.
+    func openFilesFromOS(_ urls: [URL]) {
+        for url in urls where url.isFileURL {
+            guard AppDelegate.isEditableFile(url) else { continue }
+            let path = url.path
+            if frontendHasLoadedOnce {
+                sendControl("open-file", params: ["path": path])
+            } else {
+                pendingOpenPaths.append(path)
+            }
+        }
+    }
+
+    /// Flush any queued open paths once the deck is live. Called from
+    /// `bridgeFrontendReady`.
+    func flushPendingOpenPaths() {
+        guard !pendingOpenPaths.isEmpty else { return }
+        let paths = pendingOpenPaths
+        pendingOpenPaths.removeAll()
+        for path in paths {
+            sendControl("open-file", params: ["path": path])
+        }
+    }
+
+    /// Whether `url` is a text file a File card can edit — a regular file
+    /// whose UTI conforms to one of {@link editableContentTypes}. Guards
+    /// the OS open path so a folder or binary handed to the app is ignored.
+    static func isEditableFile(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentTypeKey]),
+              values.isRegularFile == true,
+              let type = values.contentType else { return false }
+        return editableContentTypes.contains { type.conforms(to: $0) }
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return false
     }
@@ -546,6 +607,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // BuildInfo.profile.
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
+
+        // Text-file section: New Text File / Open File… form their own group
+        // under a divider, distinct from the card creators above.
+        fileMenu.addItem(NSMenuItem.separator())
         // New Text File (⌥⌘N): a new untitled manual buffer — no file
         // exists until the first Save.
         fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextFile(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextFile"))
@@ -554,6 +619,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // web layer reuses an existing File card bound to the chosen
         // path or opens a new one (action-dispatch.ts `open-file`).
         fileMenu.addItem(NSMenuItem(title: "Open File…", action: #selector(openFileInEditor(_:)), keyEquivalent: "o").identified("file.openFile"))
+
+        // Open Recent ▸ — a dynamic submenu rebuilt on open from the
+        // menuState MRU, filtered to files that still exist (NSMenuDelegate
+        // `menuNeedsUpdate`). Disabled when the list is empty.
+        let openRecentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "").identified("file.openRecent")
+        let openRecentSubmenu = NSMenu(title: "Open Recent")
+        openRecentSubmenu.delegate = self
+        openRecentItem.submenu = openRecentSubmenu
+        self.openRecentMenu = openRecentSubmenu
+        fileMenu.addItem(openRecentItem)
+
+        // Open Quickly (⇧⌘O): the deck-global fuzzy file-search popup
+        // (action-dispatch.ts `open-quickly` → OpenQuicklyOverlay).
+        fileMenu.addItem(NSMenuItem(title: "Open Quickly…", action: #selector(openQuickly(_:)), keyEquivalent: "o", modifierMask: [.command, .shift]).identified("file.openQuickly"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -979,10 +1058,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = AppDelegate.editableContentTypes
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.sendControl("open-file", params: ["path": url.path])
         }
+    }
+
+    @objc private func openQuickly(_ sender: Any) {
+        sendControl("open-quickly")
+    }
+
+    @objc private func openRecentDocument(_ sender: Any) {
+        guard let item = sender as? NSMenuItem,
+              let path = item.representedObject as? String else { return }
+        sendControl("open-file", params: ["path": path])
+    }
+
+    @objc private func clearRecentDocuments(_ sender: Any) {
+        sendControl("clear-recent-documents")
     }
 
     @objc private func saveActiveEditor(_ sender: Any) {
@@ -1369,6 +1463,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 : (file.dirty || file.untitled || file.conflict)
         case "file.saveAs", "file.saveACopy":
             return menuState.file != nil
+        // Open Quickly needs a project (the frontmost card's workspace) to
+        // search; disabled when none is open.
+        case "file.openQuickly":
+            return menuState.openQuickly
         case "file.revertToSaved":
             guard let file = menuState.file else { return false }
             return file.dirty && file.hasPath
@@ -1504,7 +1602,7 @@ extension AppDelegate: BridgeDelegate {
         }
     }
 
-    func bridgeChoosePath(kind: String, initialPath: String?, completion: @escaping (String?) -> Void) {
+    func bridgeChoosePath(kind: String, initialPath: String?, suggestedName: String?, completion: @escaping (String?) -> Void) {
         // `save` kind: an NSSavePanel choosing a NEW file path (the File
         // card's Move To… / Save As…). The panel returns the path only —
         // the web layer performs the write through its own fs surface.
@@ -1528,6 +1626,12 @@ extension AppDelegate: BridgeDelegate {
                 // not the OS default (Desktop).
                 panel.directoryURL = URL(fileURLWithPath: sourceTree)
             }
+            // Pre-fill the untitled buffer's session name ("Untitled-2") when
+            // no path hint set one.
+            if panel.nameFieldStringValue.isEmpty,
+               let suggestedName = suggestedName, !suggestedName.isEmpty {
+                panel.nameFieldStringValue = suggestedName
+            }
             panel.beginSheetModal(for: window) { response in
                 guard response == .OK, let url = panel.url else {
                     completion(nil)
@@ -1546,6 +1650,11 @@ extension AppDelegate: BridgeDelegate {
         panel.allowsMultipleSelection = false
         panel.message = wantFile ? "Choose a file" : "Choose a directory"
         panel.prompt = "Choose"
+        // A file picker only edits text: restrict to text UTIs so binaries
+        // (images, PDFs, archives) can't be chosen into a File card.
+        if wantFile {
+            panel.allowedContentTypes = AppDelegate.editableContentTypes
+        }
         if let initialPath = initialPath, !initialPath.isEmpty {
             var isDir: ObjCBool = false
             let resolved = (initialPath as NSString).expandingTildeInPath
@@ -1644,10 +1753,19 @@ extension AppDelegate: BridgeDelegate {
         completion(makerModeEnabled, sourceTreePath)
     }
 
+    func bridgeOpenDroppedFiles(_ urls: [URL]) {
+        openFilesFromOS(urls)
+    }
+
     func bridgeFrontendReady() {
         DispatchQueue.main.async {
             self.aboutMenuItem?.isEnabled = true
             self.settingsMenuItem?.isEnabled = true
+
+            // Open any files the OS handed us before the deck was live
+            // (cold launch by dropping a file on the icon). Control frames
+            // reach the renderer now that frontendReady has fired.
+            self.flushPendingOpenPaths()
 
             // First frontendReady is the initial mount — no replay
             // needed (the OS hasn't told tugdeck anything that needs
@@ -1719,6 +1837,10 @@ extension AppDelegate: NSMenuDelegate {
         }
         if menu === windowMenu {
             rebuildWindowPaneList(menu)
+            return
+        }
+        if menu === openRecentMenu {
+            rebuildOpenRecentMenu(menu)
             return
         }
         guard menu === themeMenu else { return }
@@ -1844,6 +1966,39 @@ extension AppDelegate: NSMenuDelegate {
 
     /// Refresh the Window menu's dynamic pane-list slice in place: remove
     /// exactly the `window.pane.*` items, then re-insert the current panes
+    /// Rebuild File ▸ Open Recent from the MRU, filtered to files that
+    /// still exist and capped at 10. Each item carries its absolute path
+    /// in `representedObject`; a trailing Clear Menu empties the list.
+    /// Existence is checked here, at open time, so a since-deleted file
+    /// simply doesn't appear.
+    private func rebuildOpenRecentMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let fm = FileManager.default
+        var shown = 0
+        for path in menuState.recentDocuments {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else { continue }
+            let item = NSMenuItem(
+                title: (path as NSString).lastPathComponent,
+                action: #selector(openRecentDocument(_:)),
+                keyEquivalent: ""
+            ).identified("file.openRecent.\(shown)")
+            item.representedObject = path
+            item.toolTip = path
+            menu.addItem(item)
+            shown += 1
+            if shown >= 10 { break }
+        }
+        if shown == 0 {
+            let empty = NSMenuItem(title: "No Recent Documents", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Clear Menu", action: #selector(clearRecentDocuments(_:)), keyEquivalent: "").identified("file.openRecent.clear"))
+    }
+
     /// (checkmark on the focused one) directly after the anchor separator.
     /// Sectioned management — never a wholesale rebuild — because this menu
     /// is NSApp.windowsMenu and AppKit owns auto-added window entries in it.
@@ -1986,6 +2141,12 @@ struct MenuState {
     var dev: Dev?
     var file: File?
     var edit: Edit = .disabled
+    /// Recent-document paths (newest first) for File ▸ Open Recent. The
+    /// submenu delegate filters these to files that still exist.
+    var recentDocuments: [String] = []
+    /// Whether Open Quickly is available — the frontmost card is in a
+    /// project. Gates File ▸ Open Quickly.
+    var openQuickly: Bool = false
     /// Whether a card is selected. `false` when the deck is deselected (a
     /// click on the empty canvas cleared the active card) — the card / pane
     /// navigation commands stay active in that state so the user can
@@ -2048,6 +2209,10 @@ struct MenuState {
                 conflict: rawFile["conflict"] as? Bool ?? false
             )
         }
+        if let rawRecents = payload["recentDocuments"] as? [String] {
+            recentDocuments = rawRecents
+        }
+        openQuickly = payload["openQuickly"] as? Bool ?? false
         if let rawEdit = payload["edit"] as? [String: Any] {
             edit = Edit(
                 cut: rawEdit["cut"] as? Bool ?? false,

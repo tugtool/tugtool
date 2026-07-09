@@ -70,11 +70,13 @@ export function isPathPickerAvailable(): boolean {
 /**
  * Open the host's picker for `kind`, resolving the chosen absolute path, or
  * `null` on cancel / when the picker is unavailable. `initialPath` hints the
- * panel's starting directory.
+ * panel's starting directory; `suggestedName` pre-fills a `save` panel's
+ * filename field (e.g. an untitled buffer's "Untitled-2").
  */
 export function pickPath(
   kind: PathPickerKind,
   initialPath?: string,
+  suggestedName?: string,
 ): Promise<string | null> {
   const handler = pathHandler();
   if (handler === undefined) return Promise.resolve(null);
@@ -82,6 +84,11 @@ export function pickPath(
   const id = `path-${(nextId += 1)}`;
   return new Promise<string | null>((resolve) => {
     pending.set(id, resolve);
-    handler.postMessage({ id, kind, initialPath: initialPath ?? null });
+    handler.postMessage({
+      id,
+      kind,
+      initialPath: initialPath ?? null,
+      suggestedName: suggestedName ?? null,
+    });
   });
 }

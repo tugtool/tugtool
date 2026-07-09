@@ -48,6 +48,7 @@ import {
   readAside,
   type AsideRecord,
 } from "./file-aside";
+import { formatUntitledName } from "./untitled-naming";
 
 /**
  * Which save contract this store enforces. `automatic` is the
@@ -146,6 +147,12 @@ export interface FileEditorSnapshot {
   pendingAsideConflict: PendingAsideConflict | null;
   /** Non-null while the buffer is an untitled draft. */
   draftId: string | null;
+  /**
+   * Session number for an untitled buffer (1 → "Untitled", 2 →
+   * "Untitled-2", …); null once bound to a real path. Rides the bag so
+   * the name survives restore.
+   */
+  untitledNumber: number | null;
   /** Basename for the card title. */
   fileName: string | null;
   /**
@@ -203,6 +210,7 @@ const EMPTY_SNAPSHOT: FileEditorSnapshot = {
   untitled: false,
   pendingAsideConflict: null,
   draftId: null,
+  untitledNumber: null,
   fileName: null,
   seedContent: null,
   readOnly: false,
@@ -424,7 +432,7 @@ export class FileEditorStore {
    * anywhere until the first Save; crash-safety rides an aside keyed by
    * the draft id. An existing aside for this draft restores it dirty.
    */
-  async openUntitled(draftId: string): Promise<void> {
+  async openUntitled(draftId: string, untitledNumber?: number): Promise<void> {
     this._clearDebounce();
     this._resetAsideState();
     this._baselineSha256 = null;
@@ -439,7 +447,8 @@ export class FileEditorStore {
       path: null,
       draftId,
       untitled: true,
-      fileName: "Untitled",
+      untitledNumber: untitledNumber ?? null,
+      fileName: formatUntitledName(untitledNumber),
       seedContent: "",
       saveState: "clean",
     });
@@ -567,6 +576,7 @@ export class FileEditorStore {
       fileName: baseName(newPath),
       draftId: null,
       untitled: false,
+      untitledNumber: null,
       readOnly: false,
       seedContent: content,
       saveState: editedDuringWrite ? "editing" : "clean",

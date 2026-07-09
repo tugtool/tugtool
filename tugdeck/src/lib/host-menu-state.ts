@@ -29,6 +29,8 @@
 
 import type { DeckState } from "../layout-tree";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
+import { cardSessionBindingStore } from "./card-session-binding-store";
+import { frontmostProjectBinding } from "./frontmost-project";
 
 /**
  * Edit-menu capability block: per-action enablement for the native
@@ -309,6 +311,17 @@ export interface MenuStatePayload {
   file: MenuStateFileBlock | null;
   /** Edit-menu capabilities of the current first responder. */
   edit: MenuStateEditBlock;
+  /**
+   * Recent-document paths (newest first) for File ▸ Open Recent. The host
+   * filters to files that still exist and caps the visible list.
+   */
+  recentDocuments: string[];
+  /**
+   * Whether Open Quickly is available — true iff the frontmost card
+   * belongs to a project (its session binding has a `projectDir`). Gates
+   * File ▸ Open Quickly.
+   */
+  openQuickly: boolean;
 }
 
 /**
@@ -391,6 +404,8 @@ export class HostMenuStatePublisher {
    * all-disabled until the first push.
    */
   private editCapabilities: MenuStateEditBlock = EMPTY_EDIT_CAPABILITIES;
+  /** Recent-document MRU, mirrored outward for the Open Recent submenu. */
+  private recentDocuments: string[] = [];
   private lastSent: string | null = null;
   private flushScheduled = false;
 
@@ -428,6 +443,11 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  setRecentDocuments(paths: string[]): void {
+    this.recentDocuments = paths;
+    this.scheduleFlush();
+  }
+
   private scheduleFlush(): void {
     if (this.flushScheduled) return;
     this.flushScheduled = true;
@@ -455,6 +475,9 @@ export class HostMenuStatePublisher {
       dev,
       file,
       edit: this.editCapabilities,
+      recentDocuments: this.recentDocuments,
+      // Open Quickly is available when the frontmost card is in a project.
+      openQuickly: frontmostProjectBinding()?.projectDir ? true : false,
     };
     const serialized = JSON.stringify(payload);
     if (serialized === this.lastSent) return;
@@ -501,6 +524,9 @@ export function initHostMenuState(deck: DeckSource): void {
     publisher.setDeckProjection(projectDeckState(deck.getSnapshot()));
   };
   deck.subscribe(push);
+  // Session bindings appear/disappear without a deck mutation, and Open
+  // Quickly's gate reads them — re-project so the flush recomputes it.
+  cardSessionBindingStore.subscribe(push);
   push();
 }
 
@@ -563,4 +589,13 @@ export function registerEditCapsRefresher(refresh: (() => void) | null): void {
 /** Ask the provider to recompute and republish the edit capabilities. */
 export function requestEditMenuStateRefresh(): void {
   editCapsRefresher?.();
+}
+
+/**
+ * Publish the recent-document list to the host (File ▸ Open Recent). A
+ * no-op before {@link initHostMenuState} runs; the recents module calls
+ * it at boot and on every list change.
+ */
+export function publishRecentDocuments(paths: string[]): void {
+  activePublisher?.setRecentDocuments(paths);
 }

@@ -44,6 +44,9 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { openFileInCard } from "@/lib/open-file-in-card";
+import { allocateUntitledNumber } from "@/lib/untitled-naming";
+import { clearRecentDocuments } from "@/lib/recent-documents";
+import { openOpenQuickly } from "@/lib/open-quickly-store";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -499,6 +502,18 @@ export function initActionDispatch(
     openFileInCard(deckManager, path, line);
   });
 
+  // clear-recent-documents: File ▸ Open Recent ▸ Clear Menu. Empties the
+  // MRU list and re-publishes it to the host.
+  registerAction("clear-recent-documents", () => {
+    clearRecentDocuments();
+  });
+
+  // open-quickly: File ▸ Open Quickly (⇧⌘O). Opens the deck-global
+  // file-search popup (OpenQuicklyOverlay); Return there opens the file.
+  registerAction("open-quickly", () => {
+    openOpenQuickly();
+  });
+
   // Save verbs (Both): trivial responder-chain adapters. The Control-frame
   // name equals the chain-action name, and the File card (its editor)
   // handles them — save is editor-owned (it owns the document), like
@@ -530,6 +545,7 @@ export function initActionDispatch(
     const newId = deckManager.addCard("file", {
       draftId,
       untitled: true,
+      untitledNumber: allocateUntitledNumber(),
       anchor: { line: 1, ch: 0 },
       scrollTop: 0,
     });
