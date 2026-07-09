@@ -152,16 +152,31 @@
   transform: translateY(var(--dev-pulse-strip-spark-offset-y));
 }
 
-/* The sparkline's popover trigger: a bare button wrapper that adds no box of
- * its own, so wrapping the sparkline never shifts the strip layout. The
- * pointer cursor is the only affordance that it expands. */
+/* The sparkline's popover trigger: a button wrapper that wears the same
+ * ghost-control hover/active tint as the PULSE legend, so both entry points to
+ * the expanded views read as one discoverable pair. The padding gives the tint
+ * a pill to fill; a matching negative margin absorbs it so wrapping the
+ * sparkline never shifts the strip layout. */
 .dev-pulse-strip-spark-trigger {
   display: inline-flex;
   align-items: center;
-  padding: 0;
+  padding: 3px 5px;
+  margin: -3px -5px;
   border: none;
-  background: transparent;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
   cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.dev-pulse-strip-spark-trigger:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+/* While the detail popover is open the trigger stays lit (Radix data-state),
+   mirroring the legend pill. */
+.dev-pulse-strip-spark-trigger[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
 }
 
 /* The outgoing layer rides absolutely atop the incoming during the fade
