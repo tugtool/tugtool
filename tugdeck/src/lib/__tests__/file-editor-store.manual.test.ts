@@ -222,6 +222,44 @@ describe("manual mode — dirty + aside flush target", () => {
     expect(await store.saveAs("/nope.txt")).toBe("error");
     expect(io.files.has("/nope.txt")).toBe(false);
   });
+
+  test("a double save issues one real write, not a spurious conflict", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "edited\n";
+    store.noteEdit();
+    // Two concurrent saves (double ⌘S / menu racing keyboard). Without the
+    // single-flight latch the second reissues a write against the stale
+    // baseline the first just changed → a 409 conflict for our own bytes.
+    const [r1, r2] = await Promise.all([store.save(), store.save()]);
+    expect(r1).toBe("ok");
+    expect(r2).toBe("ok");
+    const realWrites = io.writes.filter((w) => w.path === "/f.txt" && !w.delete);
+    expect(realWrites.length).toBe(1);
+    expect(store.getSnapshot().conflict).toBeNull();
+    expect(store.getSnapshot().saveState).toBe("clean");
+  });
+
+  test("setLineEnding during an in-flight save re-flushes, staying dirty", async () => {
+    seedDisk("/f.txt", "a\nb\n");
+    let buf = "a\nb\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "a\nb\nc\n";
+    store.noteEdit();
+    const saving = store.save(); // now in "writing"
+    expect(store.getSnapshot().saveState).toBe("writing");
+    store.setLineEnding("CRLF"); // must not be dropped mid-save
+    await saving;
+    // The write serialized the old ending, so the buffer stays dirty with
+    // the new ending recorded — never clean-with-the-wrong-ending on disk.
+    expect(store.getSnapshot().lineEnding).toBe("CRLF");
+    expect(store.getSnapshot().saveState).toBe("editing");
+  });
 });
 
 describe("manual mode — open-time aside restore", () => {

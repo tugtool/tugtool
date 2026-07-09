@@ -288,6 +288,13 @@ export class FileEditorStore {
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _flushInFlight: Promise<void> | null = null;
   /**
+   * A manual-mode real-file `save()` in flight. A second ⌘S waits on it
+   * rather than reissuing a write against the baseline the first save is
+   * about to change (which would 409 → a spurious conflict for the user's
+   * own bytes).
+   */
+  private _saveInFlight: Promise<void> | null = null;
+  /**
    * Whether the buffer's last known content was empty — sampled at
    * open, flush, and revert time (the bridge is gone by dispose time,
    * so dispose-time draft GC reads this instead).
@@ -371,7 +378,11 @@ export class FileEditorStore {
       fileName: baseName(path),
     });
     const outcome = await readFileFromDisk(path);
-    if (this._disposed) return;
+    // A newer openPath (or openUntitled) may have superseded this one while
+    // the read was in flight — every other async settle in this store makes
+    // the same check; without it a slow open would clobber a fast one's
+    // binding with the wrong baseline.
+    if (this._disposed || this._snapshot.path !== path) return;
     if (!outcome.ok) {
       this._update({
         phase: "error",
@@ -431,6 +442,10 @@ export class FileEditorStore {
       return;
     }
     writer.seed(result.sha256);
+    // The user typed while the aside read was in flight — their keystrokes
+    // own the buffer now; leave the (seeded) aside in place rather than
+    // clobbering them with a stale restore.
+    if (this._snapshot.saveState !== "clean") return;
     const record = result.record;
     this._bridge?.replaceText(record.content);
     this._update({
@@ -514,7 +529,7 @@ export class FileEditorStore {
       // The old document's set-aside record is superseded by the real
       // file we just wrote — discard it. `openPath(newPath)` re-keys the
       // writer and reseeds the sha chain for the new identity.
-      await this._asideWriter?.delete();
+      await this._deleteAside();
     } else if (wasDraft && oldPath !== null) {
       // Draft GC — hash-conditional removal of the old draft file.
       void writeFileToDisk({
@@ -542,15 +557,39 @@ export class FileEditorStore {
    * renders as the conflict/missing sheet.
    */
   async save(): Promise<FileSaveResult> {
+    // Single-flight: if a save is already writing, wait for it before
+    // evaluating this one. A concurrent second ⌘S must not reissue a write
+    // against the baseline the in-flight save is about to change — that
+    // 409s into a spurious "changed by another application" conflict for
+    // the user's own bytes. After it settles we re-check dirty state below,
+    // so a real edit made during the first save still gets saved here.
+    while (this._saveInFlight !== null) await this._saveInFlight;
+
     const snap = this._snapshot;
     if (snap.phase !== "ready" || snap.readOnly || this._bridge === null) {
       return "noop";
     }
     if (snap.path === null) return "needs-path";
     if (snap.saveState === "clean" && snap.conflict === null) return "ok";
-    const path = snap.path;
+
+    let done!: () => void;
+    this._saveInFlight = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    try {
+      return await this._performSave(snap.path);
+    } finally {
+      this._saveInFlight = null;
+      done();
+    }
+  }
+
+  /** The real-file write behind {@link save}, run under the single-flight latch. */
+  private async _performSave(path: string): Promise<FileSaveResult> {
+    const bridge = this._bridge;
+    if (bridge === null) return "noop";
     this._clearDebounce();
-    const content = serializeEol(this._bridge.getText(), snap.lineEnding);
+    const content = serializeEol(bridge.getText(), this._snapshot.lineEnding);
     this._lastKnownEmpty = content === "";
     this._update({ saveState: "writing" });
     const outcome = await writeFileToDisk({
@@ -576,7 +615,24 @@ export class FileEditorStore {
         void this._flushAside();
         return "ok";
       }
-      await this._asideWriter?.delete();
+      // Drain any in-flight aside write before deleting it — a create-new
+      // the server orders after a bare delete would resurrect a stale aside
+      // for a document we're now reporting clean ([P08]).
+      await this._deleteAside();
+      if (this._disposed) return "noop";
+      if (this._editedDuringWrite) {
+        // An edit landed while we drained/deleted the aside — stay dirty
+        // and re-capture it rather than reporting clean over it.
+        this._editedDuringWrite = false;
+        this._update({
+          saveState: "editing",
+          conflict: null,
+          writeFailures: 0,
+          lastSavedAt: Date.now(),
+        });
+        void this._flushAside();
+        return "ok";
+      }
       this._update({
         saveState: "clean",
         conflict: null,
@@ -645,7 +701,7 @@ export class FileEditorStore {
    */
   async revertToSaved(): Promise<void> {
     this._clearDebounce();
-    await this._asideWriter?.delete();
+    await this._deleteAside();
     await this._recheckDisk({ force: true });
   }
 
@@ -662,7 +718,7 @@ export class FileEditorStore {
    */
   async discardAside(): Promise<void> {
     this._clearDebounce();
-    await this._asideWriter?.delete();
+    await this._deleteAside();
     if (!this._disposed) this._update({ saveState: "clean" });
   }
 
@@ -810,6 +866,23 @@ export class FileEditorStore {
   }
 
   /**
+   * Delete the current document's aside, first draining any in-flight aside
+   * write and suppressing a queued re-flush. A bare delete that races a
+   * first (create-new) aside write can server-order BEFORE it, so the write
+   * lands after and resurrects a stale aside for a document we've since
+   * saved — the next open would then offer to restore already-saved edits
+   * ([P08]).
+   */
+  private async _deleteAside(): Promise<void> {
+    this._asideEditedDuringWrite = false;
+    if (this._asideFlushInFlight !== null) {
+      await this._asideFlushInFlight;
+      if (this._disposed) return;
+    }
+    await this._asideWriter?.delete();
+  }
+
+  /**
    * Write the unsaved buffer to the set-aside record (never the real
    * file). Only fires while the buffer is dirty; a mid-flight edit marks
    * the aside for a re-flush on settle so the record never lags behind
@@ -882,6 +955,10 @@ export class FileEditorStore {
       return;
     }
     writer.seed(result.sha256);
+    // The user typed while the aside read was in flight — their keystrokes
+    // own the buffer now; don't clobber them with a restore or a conflict
+    // sheet. The seeded writer keeps the next flush chained correctly.
+    if (this._snapshot.saveState !== "clean") return;
     const record = result.record;
     if (record.baselineSha256 === diskSha256) {
       // Same base bytes → the aside is a clean superset of what's on disk;
@@ -939,7 +1016,7 @@ export class FileEditorStore {
     if (choice === "reload") {
       // Discard buffer edits for the disk version (both modes); in manual
       // mode the aside is superseded and deleted.
-      if (this._saveMode === "manual") await this._asideWriter?.delete();
+      if (this._saveMode === "manual") await this._deleteAside();
       this._update({ conflict: null });
       await this._recheckDisk({ force: true });
       return;
@@ -982,10 +1059,13 @@ export class FileEditorStore {
     if (snap.phase !== "ready" || snap.readOnly || snap.conflict !== null) {
       return;
     }
-    if (this._flushInFlight !== null) {
-      // A write is mid-flight and serialized the OLD ending; re-flush on
-      // settle so the new ending actually reaches disk (setLineEnding is
-      // a one-shot action with no follow-up edit to trigger recovery).
+    if (this._snapshot.saveState === "writing") {
+      // A real-file write is mid-flight (automatic flush or manual save) and
+      // serialized the OLD ending; re-flush on settle so the new ending
+      // actually reaches disk (setLineEnding is a one-shot action with no
+      // follow-up edit to trigger recovery). Keyed on `writing`, not
+      // `_flushInFlight`, because a manual save() sets the former, not the
+      // latter — checking the wrong flag dropped the change silently.
       this._editedDuringWrite = true;
       return;
     }
@@ -1177,6 +1257,11 @@ export class FileEditorStore {
     }
     const diverged = outcome.file.sha256 !== this._baselineSha256;
     if (!diverged && opts?.force !== true) return;
+    // A non-force recheck is an external-change auto-revert that applies
+    // only to a clean buffer. If the user typed during the read RTT their
+    // edits now own the buffer — don't clobber them; the next flush or
+    // conflict check adjudicates. `force` (revert/reload) reverts anyway.
+    if (opts?.force !== true && this._snapshot.saveState !== "clean") return;
     this._baselineSha256 = outcome.file.sha256;
     if (this._bridge) {
       this._bridge.replaceText(outcome.file.content);
