@@ -308,17 +308,34 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 **Implications:**
 - A new global design-decision entry in `tuglaws/design-decisions.md` (written in the Phase 3 docs step), cross-referencing [D97], [D101], [D108].
 
-#### [P12] `ShellSessionStore` is the single feed consumer; exchanges enter the transcript via a typed ingest (DECIDED) {#p12-shell-store}
+#### [P12] `ShellSessionStore` is the single feed consumer; exchanges enter the transcript through `CodeSessionStore` at start AND settle (DECIDED) {#p12-shell-store}
 
-**Decision:** A per-card `ShellSessionStore` (the `SideQuestionStore` triple pattern in `card-services-store.ts`: filter → feed-store → store) is the sole consumer of `SHELL_OUTPUT` frames. It owns shell lifecycle state (session liveness, cwd, in-flight exchange) and forwards each settled exchange into `CodeSessionStore` through a typed public ingest (`ingestShellExchange(exchange)`) that dispatches a reducer event minting the shell turn.
+**Decision:** A per-card `ShellSessionStore` (the `SideQuestionStore` triple pattern in `card-services-store.ts`: filter → feed-store → store) is the sole consumer of `SHELL_OUTPUT` frames. It owns shell *session* state (liveness, cwd) but **does not own the in-flight exchange's transcript presence**. Instead it forwards the exchange lifecycle into `CodeSessionStore` through one typed public ingest, `ingestShellExchange(event)`, called twice per exchange: on `exchange_started` (mint an **uncommitted** shell turn — the live-edge row) and on `exchange_complete` (settle that same turn in place with output + exit code + `cwdAfter`). A `kill` settles the turn with `exitCode: null`.
 
 **Rationale:**
 - Keeps `CodeSessionStore`'s feed filter untouched (`CODE_OUTPUT`/`SESSION_STATE` only) and its reducer pure; one consumer chain, no dual-ingest races.
-- Mirrors the shipped side-question triple, so the wiring pattern is already proven and tested.
+- **Single-snapshot data source.** `DevTranscriptDataSource` projects rows from *one* `CodeSessionStore` snapshot today (user / assistant / ghost rows, ghosts from `queuedSends` in that same snapshot). Rendering the in-flight exchange out of a *second* store (`ShellSessionStore`) would force the data source to compose two snapshots — real, avoidable work. Minting the uncommitted turn through `CodeSessionStore` keeps the data source single-snapshot; the shell live edge reuses the exact uncommitted-turn machinery the Claude live edge already uses.
+- Mirrors the shipped side-question triple for the *feed wiring*, so that half is proven and tested.
 
 **Implications:**
 - `CardServices` gains `shellSessionStore` (+ filter/feed-store internals and `_dispose` teardown) in `tugdeck/src/lib/card-services-store.ts`; `DevCardServices` threads it to the card (`use-dev-card-services.ts`, `dev-card.tsx`).
-- The prompt entry's `$`-route dispatch ([P02]) calls `shellSessionStore.exec(command)`.
+- The prompt entry's `$`-route dispatch ([P02]) calls `shellSessionStore.exec(command)`; the store emits `SHELL_INPUT`, folds `SHELL_OUTPUT` for session state (cwd/liveness), and mirrors the exchange lifecycle into `codeSessionStore.ingestShellExchange`.
+- `ingestShellExchange` dispatches a reducer event with a `phase` (`"started" | "complete"`) keyed by `exchange_id`; the reducer mints-then-settles the shell turn. Restore ([P07]) reuses the **settle** path only (ledgered exchanges are always already-complete), inserting positionally instead of appending.
+- `ShellExchangeMessage.exitCode` is `null` while in flight and after a kill; `output` accretes only at settle (or per-chunk if [Q02] lands on streaming).
+
+#### [P13] Route-aware submit button; serial exec on the `$` route (DECIDED) {#p13-route-aware-submit}
+
+**Decision:** The Z5 submit button's mode becomes route-aware. Today `resolveSubmitButtonView` (`tug-prompt-entry-submit-button.ts`) is a pure projection from `DevSubmitButtonMode`, which is derived **entirely from the Claude session lifecycle** (`code-session-store/lifecycle-state`). On the `$` route the button's mode is instead composed from `ShellSessionStore` in-flight state: an exchange in flight → `stop` pose (→ `kill()`); otherwise `submit`. The Claude-derived mode drives Z5 only on the `❯` and `?` routes. **Serial exec:** while a `$` exchange is in flight, a second `$` submit is refused at the button (the `stop` pose is not `submit`) — no queue. `?`-route side questions are unaffected (they dispatch locally, mid-turn, bypassing Z5's send gate, per [D108]).
+
+**Rationale:**
+- Z5 is one DOM node across all modes ([L26]); a route-aware *mode selector* (not a second button) preserves that — only `data-mode`/label/icon change, never the element.
+- The shell exchange is the shell route's "turn in flight"; mapping it onto the existing `stop` pose reuses the shipped visual + the kill affordance with no new chrome.
+- Serial exec (no queue) matches a human-typed block shell — one command at a time — and sidesteps a queue/cancel UI this plan doesn't want; a busy shell simply shows `stop` until the command finishes or is killed.
+
+**Implications:**
+- A route-aware wrapper around `resolveSubmitButtonView`'s input in `tug-prompt-entry.tsx`: pick the `DevSubmitButtonMode` from either the Claude lifecycle (`❯`/`?`) or a `ShellSessionStore`-derived mode (`$`). The pure projection function itself is unchanged.
+- The `+` mid-turn-queue button (Claude-route only) stays code-route behavior; it does not appear for shell in-flight.
+- Empty-draft disabling (`data-empty`) still applies on `$` when no exchange is running.
 
 ---
 
@@ -341,7 +358,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 1. Restore path runs as today: `spawn_session(mode=resume)` → tugcode replay emits `replay_started` → committed-turn frames → `replay_complete`; the reducer folds Claude turns into `state.transcript`.
 2. In parallel (or on `replay_complete`), the deck issues `list_shell_exchanges { tug_session_id }` on CONTROL; tugcast answers `list_shell_exchanges_ok { exchanges: [...] }` from the ledger (Spec S02).
-3. `CodeSessionStore` runs the interleave once both are settled: merge-sort committed turns (by their first-message timestamp) with shell exchanges (by `settled_at`), stable within each source by sequence. Shell exchanges mint `shell`-origin turns via the same reducer event the live path uses ([P12]) — the only difference is batch + positional insert instead of append.
+3. `CodeSessionStore` runs the interleave once both are settled: merge-sort committed turns (by their first-message timestamp) with shell exchanges (by `settled_at`), stable within each source by sequence. Ledgered exchanges are always already-complete, so each mints-and-settles a `shell`-origin turn in one step through `ingestShellExchange` (the `complete`-with-no-prior-`started` path, [P12]) — the only difference from the live path is batch + positional insert instead of live-edge append.
 4. Live exchanges after restore append through the normal `ShellSessionStore → ingestShellExchange` path.
 5. HMR: stores survive, nothing re-runs. Developer ▸ Reload / app relaunch: full path re-runs from 1.
 
@@ -402,8 +419,9 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 |-------|--------------------------------------------|-----------|-----|
 | Active route | existing `RouteLifecycle` store | store + `useSyncExternalStore` (`useRoute`) | [L02] |
 | Z4B chrome per route | pure render derivation from `useRoute()` + Table T01 | render-time mapping, no new state | [L02], [L26] |
-| Shell session liveness / cwd / in-flight exchange | `ShellSessionStore` (per-card, card-services triple) | store + `useSyncExternalStore` | [L02] |
-| Shell exchanges (settled) | `CodeSessionStore.state.transcript` (shell-origin turns) | reducer event via `ingestShellExchange` | [L02] |
+| Shell session liveness / cwd | `ShellSessionStore` (per-card, card-services triple) | store + `useSyncExternalStore` | [L02] |
+| Shell exchange transcript presence (in-flight + settled) | `CodeSessionStore.state.transcript` (shell-origin turns) | reducer event via `ingestShellExchange` (mint-on-start, settle-on-complete) | [L02] |
+| Z5 submit-button mode per route | route-conditional selection of `DevSubmitButtonMode` (Claude lifecycle on `❯`/`?`; `ShellSessionStore`-derived on `$`) feeding the pure `resolveSubmitButtonView` | store reads + render-time selection; one DOM node, `data-mode`-keyed | [L02], [L26], [L06] |
 | Exchange output rendering | `TerminalBlock` imperative body | CSS + DOM (body-kind contract) | [L06] |
 | Route keybinding registration | existing keybinding map (static) | — | [L03] |
 
@@ -434,12 +452,13 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 |--------|------|----------|-------|
 | `ROUTE_ITEMS` / `ROUTE_PREFIX_ALIAS` / `RETURN_ACTION_BY_ROUTE` | const | `tugways/tug-prompt-entry.tsx` | add `?` route ([P01]) |
 | `performSubmit` route dispatch | fn edit | `tugways/tug-prompt-entry.tsx` | [P02] |
+| route-aware submit-button mode selector | fn edit | `tugways/tug-prompt-entry.tsx` | [P13] — wraps `resolveSubmitButtonView` input; pure projection unchanged |
 | `SELECT_ROUTE "?"` binding | entry | `tugways/keybinding-map.ts` | [Q05] |
 | `DevRouteShellGate` | **delete** | `cards/dev-card.tsx` | replaced by manifest ([P03]) |
 | `DevRouteIndicatorBadge` | edit | `chrome/dev-route-indicator-badge.tsx` | third branch (T01) |
 | `TurnOrigin` | type widen | `lib/code-session-store/types.ts` | `"shell"` ([P06]) |
 | `ShellExchangeMessage` | interface | `lib/code-session-store/types.ts` | Spec S04 |
-| `ingestShellExchange` | method | `lib/code-session-store.ts` | [P12] |
+| `ingestShellExchange` | method | `lib/code-session-store.ts` | [P12] — `phase: "started" \| "complete"`, keyed by `exchange_id` |
 | restore interleave | fn | `lib/code-session-store.ts` | [P07], #restore-interleave-flow |
 | `shellSessionStore` triple | fields | `lib/card-services-store.ts` | side-question precedent |
 | `DevTranscriptDataSource` | edit | `lib/dev-transcript-data-source.ts` | shell row kind |
@@ -594,12 +613,13 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 **References:** [P02] per-route submit, [D108] (unchanged surface), Risk R01, (#interim-shell-notice)
 
 **Artifacts:**
-- `performSubmit` route dispatch in `tug-prompt-entry.tsx`: `❯` → `codeSessionStore.send` (unchanged); `?` → local-command dispatch of `/btw <submitText>` through the existing `RUN_SLASH_COMMAND` responder path (reusing the branch that handles typed local commands — build the command line and follow the same `manager.sendToTarget` flow, including history push + editor clear); `$` → the interim notice (#interim-shell-notice), draft preserved.
+- `performSubmit` route dispatch in `tug-prompt-entry.tsx`: `❯` → `codeSessionStore.send` (unchanged); `?` → local-command dispatch of `/btw <submitText>` through the existing `RUN_SLASH_COMMAND` responder path (reusing the branch that handles typed local commands — build the command line and follow the same `manager.sendToTarget` flow, then clear the editor); `$` → the interim notice (#interim-shell-notice), draft preserved.
 - Empty-input guard on `?` (a bare submit opens the overlay without asking, matching bare `/btw`).
 
 **Tasks:**
 - [ ] Implement the dispatch beside the existing local-command branch; keep prefix-strip/trim semantics shared across routes.
 - [ ] `?` route: expand atoms via the existing `buildSlashCommandLine` so file mentions survive into the side question.
+- [ ] `?` route history push: record the **raw question text** with `route: "?"` — NOT the synthesized `/btw <question>` line — so ↑ recall on the `?` route returns what the user typed, not the command wrapper. (This diverges from the typed-local-command path, which records the `/command` line because that *is* what the user typed; here the `/btw` wrapper is synthetic.)
 - [ ] `$` route: adapt the `SHOW_SLASH_COMMAND_NOTICE` surface with shell-specific copy; do not clear the editor.
 - [ ] Confirm mid-turn: a `?` submit during a streaming turn dispatches (local commands bypass the send-readiness gate, [D108] [P04]).
 
@@ -746,16 +766,17 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 
 **Artifacts:**
 - Shell payload codecs in `tugdeck/src/protocol.ts` (Spec S01 frames on `FeedId.SHELL_INPUT`/`SHELL_OUTPUT`).
-- `tugdeck/src/lib/shell-session-store.ts`: the card-services triple ([P12]); snapshot `{ live, cwd, inflight: {exchangeId, command, startedAt} | null }`; `exec(command)`, `kill()`; forwards settled exchanges via `codeSessionStore.ingestShellExchange`.
+- `tugdeck/src/lib/shell-session-store.ts`: the card-services triple ([P12]); snapshot owns **session** state `{ live, cwd }` (the in-flight exchange's transcript presence lives in `CodeSessionStore`, not here — [P12]); `exec(command)`, `kill()`; folds `SHELL_OUTPUT` for `shell_state` (cwd/liveness) AND mirrors the exchange lifecycle into `codeSessionStore.ingestShellExchange` on both `exchange_started` and `exchange_complete`.
 - `card-services-store.ts`: `shellSessionStore` triple + `_dispose`; `use-dev-card-services.ts` + `dev-card.tsx` threading.
-- `code-session-store/types.ts`: `TurnOrigin` widened, `ShellExchangeMessage` added (Spec S04); `code-session-store.ts`: `ingestShellExchange` public method dispatching a reducer event that mints a committed shell-origin turn (append at live edge).
+- `code-session-store/types.ts`: `TurnOrigin` widened, `ShellExchangeMessage` added (Spec S04); `code-session-store.ts`: `ingestShellExchange(event)` public method dispatching a reducer event with `phase: "started" | "complete"` keyed by `exchange_id` — `started` mints an **uncommitted** shell-origin turn at the live edge, `complete` settles that same turn in place (output + `exitCode` + `cwdAfter`); a killed exchange settles with `exitCode: null` ([P12]).
 
 **Tasks:**
 - [ ] Implement codecs, store, ingest; fix every exhaustive `TurnOrigin`/`Message` match the compiler surfaces (selectors, data source, renderers).
+- [ ] Reducer: mint-then-settle keyed by `exchange_id`; a `complete` with no prior `started` (defensive — e.g. a restore settle, [P07]) mints-and-settles in one step.
 - [ ] `/clear` and card teardown reset `ShellSessionStore` in-memory state (the ledger is untouched — it keys by session).
 
 **Tests:**
-- [ ] Unit: codec round-trip; store lifecycle (exec → started → settled → transcript turn appended); reducer fold of a shell turn; `/clear` reset.
+- [ ] Unit: codec round-trip; reducer mint-then-settle by `exchange_id` (started → uncommitted turn present; complete → same turn settled with exit code; killed → `exitCode: null`); restore-shaped bare `complete` mints-and-settles; `/clear` reset. (Rendering assertions belong to #step-11 unit + #step-16 app-test, not here.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
@@ -775,40 +796,43 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 - `DevTranscriptDataSource` shell row kind; Z1A trailing for shell turns renders exit code + duration (not model/timestamp), Z1B/Z1C pass `null`.
 
 **Tasks:**
-- [ ] Implement block + row projection; keep in-flight exchanges rendered from `ShellSessionStore.inflight` as the live edge (ghost-row-like) until settle mints the turn.
+- [ ] Implement block + row projection. The in-flight exchange is an **uncommitted shell turn already in the `CodeSessionStore` snapshot** ([P12] — minted on `exchange_started`), so `DevTranscriptDataSource` stays single-snapshot: an uncommitted shell turn projects the live-edge row (command shown, output streaming/pending, no exit code yet), and the `exchange_complete` settle swaps it to the settled row in place. No second-store composition in the data source.
+- [ ] Distinguish the in-flight vs settled shell-block face off the message's `exitCode === null` + committed flag (mirrors how the assistant live edge reads its in-flight state).
 - [ ] Style per theme tokens (all six themes; `bun run audit:theme-contrast` if new tokens are added).
 
 **Tests:**
-- [ ] Unit: data-source projection for shell turns; block renders command/output/exit-code from a fixture exchange.
+- [ ] Unit (pure-logic `bun:test`, NO fake-DOM render): `DevTranscriptDataSource` projection maps a shell-origin turn to the shell row kind, in-flight and settled; the block's pure view-derivation (command/exit-code/duration → header + footer fields) from a fixture `ShellExchangeMessage`. Actual rendered-DOM assertions are deferred to #step-16's app-test (real app) per the project test doctrine — no `jsdom`/RTL render here.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
-- [ ] Debug app (with #step-12's flip or a harness ingest): a shell exchange renders as a distinct transcript row.
+- [ ] Debug app (with #step-12's flip or a harness ingest): a shell exchange renders as a distinct transcript row, in-flight then settled.
 
 ---
 
-#### Step 12: Shell-route submit flip + live cwd chip {#step-12}
+#### Step 12: Shell-route submit flip + route-aware Z5 + live cwd chip {#step-12}
 
-**Depends on:** #step-10, #step-5
+**Depends on:** #step-10, #step-11, #step-5
 
-**Commit:** `tugdeck(shell): $ route executes; cwd chip goes live`
+**Commit:** `tugdeck(shell): $ route executes; route-aware submit button; cwd chip goes live`
 
-**References:** [P02] dispatch, [P10] cwd chip, Risk R01, (#interim-shell-notice)
+**References:** [P02] dispatch, [P13] route-aware submit, [P10] cwd chip, Risk R01, [L26], (#interim-shell-notice)
 
 **Artifacts:**
-- The `$` branch of the per-route dispatch replaced: `shellSessionStore.exec(submitText)` (notice branch deleted); Z5 submit/stop reflects an in-flight exchange (stop → `kill()`) following the existing lifecycle-driven submit-button pattern ([L26] — same node, `data-mode` driven).
+- The `$` branch of the per-route dispatch replaced: `shellSessionStore.exec(submitText)` (notice branch deleted).
+- **Route-aware submit-button mode selector** ([P13]) in `tug-prompt-entry.tsx`: a wrapper that picks the `DevSubmitButtonMode` fed to `resolveSubmitButtonView` (`tug-prompt-entry-submit-button.ts`) from either the Claude session lifecycle (`❯`/`?` routes — today's path, unchanged) or a `ShellSessionStore`-derived mode (`$` route — an exchange in flight → `stop`; otherwise `submit`). The pure `resolveSubmitButtonView` projection is untouched; only its *input* becomes route-conditional. Z5 stays one DOM node ([L26]); `stop` on `$` fires `kill()`. Serial exec: a second `$` submit while running is refused because the button is in `stop`, not `submit` (no queue; the `+` mid-turn button stays code-route-only).
 - `dev-cwd-chip.tsx` bound to `ShellSessionStore.cwd` via `useSyncExternalStore` (fallback face retained pre-spawn).
 
 **Tasks:**
-- [ ] Flip the dispatch; wire stop-on-shell-route to `kill()`.
+- [ ] Flip the dispatch; implement the route-aware mode selector; wire `stop` on `$` to `kill()`.
+- [ ] Confirm the Claude-route Z5 behavior is byte-for-byte unchanged (the selector is a pass-through on `❯`/`?`).
 - [ ] Bind the chip; verify width stability as cwd changes (end-truncate long paths, full path in `title`/right-click copy).
 
 **Tests:**
-- [ ] Unit: dispatch on `$` calls `exec`; chip face follows store cwd.
+- [ ] Unit (pure-logic `bun:test`, NO fake-DOM render): the route-aware mode selector — `$` + in-flight → `stop`, `$` + idle → `submit`, `❯`/`?` → passes the Claude lifecycle mode through unchanged; `$`-route dispatch calls `shellSessionStore.exec`; the cwd chip's face-string derivation follows a `ShellSessionStore` snapshot's `cwd` (string → face, not a rendered chip). Chip-in-DOM and end-to-end exec assertions are #step-16's app-test.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
-- [ ] Debug app: `ls` on the `$` route executes and renders; `cd tugdeck` then `pwd` shows cwd statefulness and the chip updates.
+- [ ] Debug app: `ls` on the `$` route executes and renders; a long-runner (`sleep 5`) shows the `stop` pose and a second submit is refused until it finishes or is killed; `cd tugdeck` then `pwd` shows cwd statefulness and the chip updates; `❯`/`?` submit behavior is visibly unchanged.
 
 ---
 
