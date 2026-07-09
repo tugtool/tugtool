@@ -29,7 +29,17 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::warn;
 
-use crate::fs_read::{fs_error, guard_absolute_path, mtime_ms, sha256_hex};
+use crate::fs_read::{MAX_READ_BYTES, fs_error, guard_absolute_path, mtime_ms, sha256_hex};
+
+/// Max request body for a write. `fs_read` serves files up to
+/// `MAX_READ_BYTES` (8 MiB); the JSON envelope escapes the content (a
+/// control byte becomes `\u00XX`, up to 6×) and adds the `path`/baseline
+/// fields, so the body ceiling must sit well above the file-content
+/// ceiling — otherwise a file that opened fine would 413 on save, silently
+/// removing the crash-safety net (manual mode) or wedging autosave. Sized
+/// for the worst-case escaping so "anything that reads can be written back"
+/// holds; loopback-only keeps the larger ceiling off the DoS surface.
+pub(crate) const MAX_WRITE_BODY_BYTES: usize = 6 * (MAX_READ_BYTES as usize) + 64 * 1024;
 
 /// JSON body for `POST /api/fs/write`. `baselineSha256: null` requests
 /// create-new semantics. `delete: true` removes the file instead of
@@ -71,6 +81,30 @@ pub(crate) fn asides_root() -> Option<PathBuf> {
     {
         dirs::data_dir().map(|data| data.join("Tug/Autosave Information"))
     }
+}
+
+/// Process-wide monotonic counter that makes every temp filename unique, so
+/// two concurrent writes can never share — and corrupt — one temp file. The
+/// former `pid`-only suffix collided for same-process concurrent writes to
+/// one path; this and the per-path lock below close that race.
+fn next_temp_seq() -> u64 {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Serialize writes to the same file: two concurrent writes to one path must
+/// not interleave read-adjudicate-rename (a lost update). A fixed pool of
+/// locks indexed by path hash gives same-path writes the same lock with no
+/// per-path map to grow or GC; distinct paths that collide onto one lock
+/// just over-serialize briefly — immaterial for debounced autosave writes.
+fn write_lock_for(path: &Path) -> &'static std::sync::Mutex<()> {
+    use std::hash::{Hash, Hasher};
+    const SHARDS: usize = 64;
+    static LOCKS: std::sync::OnceLock<Vec<std::sync::Mutex<()>>> = std::sync::OnceLock::new();
+    let locks = LOCKS.get_or_init(|| (0..SHARDS).map(|_| std::sync::Mutex::new(())).collect());
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut hasher);
+    &locks[(hasher.finish() as usize) % SHARDS]
 }
 
 /// Read the target's current bytes for the baseline comparison.
@@ -159,9 +193,10 @@ fn write_file(
         .flatten();
 
     let temp_path = parent.join(format!(
-        ".{}.tug-tmp-{}",
+        ".{}.tug-tmp-{}-{}",
         file_name.to_string_lossy(),
-        std::process::id()
+        std::process::id(),
+        next_temp_seq(),
     ));
     let write_result = (|| -> std::io::Result<()> {
         use std::io::Write;
@@ -213,6 +248,11 @@ pub(crate) async fn post_fs_write(
         ..
     } = request;
     let result = tokio::task::spawn_blocking(move || {
+        // Serialize concurrent writes to the same path (lost-update / shared
+        // temp race). Held for the whole read-adjudicate-rename.
+        let _lock = write_lock_for(&canonical)
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         write_file(&canonical, &content, baseline_sha256.as_deref(), delete)
     })
     .await;
@@ -328,6 +368,47 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["deleted"], true);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn concurrent_writes_to_one_path_leave_no_torn_file_or_temp() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("hot.txt"));
+        std::fs::write(&*path, "seed").unwrap();
+
+        let mut handles = Vec::new();
+        for i in 0..16 {
+            let path = Arc::clone(&path);
+            handles.push(thread::spawn(move || {
+                // Same lock the handler takes: serialize the read + write so
+                // the baseline can't go stale under us, and use a unique temp.
+                let _lock = write_lock_for(&path)
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let disk = std::fs::read(&*path).unwrap();
+                write_file(&path, &format!("write-{i}"), Some(&sha256_hex(&disk)), false)
+            }));
+        }
+        for h in handles {
+            let _ = h.join();
+        }
+
+        // The final file is exactly one clean write — never torn or interleaved.
+        let final_content = std::fs::read_to_string(&*path).unwrap();
+        assert!(
+            (0..16).any(|i| final_content == format!("write-{i}")),
+            "unexpected final content: {final_content:?}"
+        );
+        // No temp residue from any of the 16 writes.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("tug-tmp"))
+            .collect();
+        assert!(leftovers.is_empty());
     }
 
     #[test]

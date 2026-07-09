@@ -9,7 +9,7 @@
 use axum::Extension;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -258,7 +258,13 @@ pub(crate) fn build_app(
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))
         .route("/api/fs/read", get(crate::fs_read::get_fs_read))
-        .route("/api/fs/write", post(crate::fs_write::post_fs_write))
+        .route(
+            "/api/fs/write",
+            // Per-route body limit above axum's 2 MB default so an 8 MiB
+            // file (the read cap) still saves through the JSON envelope.
+            post(crate::fs_write::post_fs_write)
+                .layer(DefaultBodyLimit::max(crate::fs_write::MAX_WRITE_BODY_BYTES)),
+        )
         .with_state(router)
         .layer(cors);
 

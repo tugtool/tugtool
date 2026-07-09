@@ -13,7 +13,7 @@
 //! the frontend can present them.
 
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use axum::extract::{ConnectInfo, Query};
@@ -83,6 +83,15 @@ pub(crate) fn guard_absolute_path(raw: &str) -> Result<PathBuf, (StatusCode, Val
         path = &expanded;
     }
     if !path.is_absolute() {
+        return Err(fs_error(StatusCode::BAD_REQUEST, "bad_path"));
+    }
+    // Reject `..` traversal. `resolve_to_claude_form` leaves `..` intact for
+    // a path that does not exist yet (canonicalize fails, so it returns the
+    // raw path), and `fs_write`'s parent-creation carve-out gates on a
+    // lexical `starts_with` against the Tug roots — which a `..` segment
+    // slips straight past to `create_dir_all` outside the root. No
+    // legitimate caller sends `..`; both fs endpoints share this guard.
+    if path.components().any(|c| c == Component::ParentDir) {
         return Err(fs_error(StatusCode::BAD_REQUEST, "bad_path"));
     }
     let canonical = resolve_to_claude_form(path);
@@ -243,6 +252,21 @@ mod tests {
         let err = guard_absolute_path("relative/file.txt").unwrap_err();
         assert_eq!(err.0, StatusCode::BAD_REQUEST);
         assert_eq!(err.1["error"], "bad_path");
+    }
+
+    #[test]
+    fn parent_dir_traversal_is_rejected() {
+        // A `..` segment must never survive the guard — it defeats
+        // fs_write's lexical Tug-root check on parent creation.
+        for traversal in [
+            "/Users/me/Library/Application Support/Tug/Autosave Information/../../../../tmp/x.json",
+            "/project/../etc/passwd",
+            "~/../../../tmp/escape.txt",
+        ] {
+            let err = guard_absolute_path(traversal).unwrap_err();
+            assert_eq!(err.0, StatusCode::BAD_REQUEST, "expected reject for {traversal}");
+            assert_eq!(err.1["error"], "bad_path");
+        }
     }
 
     #[test]
