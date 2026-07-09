@@ -194,6 +194,25 @@
   text-align: right;
 }
 
+/* Usage-ratio signal parity with the CONTEXT status cell: when the total
+   crosses the caution/danger thresholds the cell paints its numerator, the
+   popup echoes the same tone on the two places that show that same total —
+   the dial's center readout (via the gauge's published value-text hook) and
+   the `used` summary value. The category legend keeps its per-tone colors;
+   only the total picks up the warning. */
+.dev-context-popover-body[data-context-threshold="caution"] .dev-context-popover-gauge {
+  --tugx-gauge-value-text-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+.dev-context-popover-body[data-context-threshold="danger"] .dev-context-popover-gauge {
+  --tugx-gauge-value-text-color: var(--tug7-element-global-text-normal-danger-rest);
+}
+.dev-context-popover-body[data-context-threshold="caution"] .dev-context-popover-summary-value-used {
+  color: var(--tug7-element-global-text-normal-caution-rest);
+}
+.dev-context-popover-body[data-context-threshold="danger"] .dev-context-popover-summary-value-used {
+  color: var(--tug7-element-global-text-normal-danger-rest);
+}
+
 /* ============================================================================
    State-change log — 5-column row grid inside the shared scroller
    ========================================================================= */

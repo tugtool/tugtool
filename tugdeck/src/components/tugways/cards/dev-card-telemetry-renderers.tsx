@@ -768,6 +768,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const contextPopover = (
     <ContextPopoverContent
       breakdown={contextBreakdown}
+      threshold={contextThreshold}
     />
   );
   const statePopover = (

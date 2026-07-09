@@ -605,8 +605,16 @@ function formatContextPercent(used: number, max: number): string {
  */
 export function ContextPopoverContent({
   breakdown,
+  threshold = "normal",
 }: {
   breakdown: ContextBreakdown | null;
+  /**
+   * Usage-ratio tone the CONTEXT status cell paints its numerator with
+   * (`caution` ≥ 0.75, `danger` ≥ 0.9). Threaded through so the popup's
+   * total — the same value the cell flags — carries the same signal on
+   * the dial readout and the `used` row rather than reverting to white.
+   */
+  threshold?: "normal" | "caution" | "danger";
 }): React.ReactElement {
   if (breakdown === null) {
     return (
@@ -623,6 +631,7 @@ export function ContextPopoverContent({
         segments={breakdown.segments}
         contextMax={breakdown.contextMax}
         totalUsed={breakdown.totalUsed}
+        threshold={threshold}
       />
     </TugPopupListFrame>
   );
@@ -638,13 +647,15 @@ function ContextBreakdownBody({
   segments,
   contextMax,
   totalUsed,
+  threshold,
 }: {
   segments: ReadonlyArray<TugArcGaugeSegment>;
   contextMax: number;
   totalUsed: number;
+  threshold: "normal" | "caution" | "danger";
 }): React.ReactElement {
   return (
-    <div className="dev-context-popover-body">
+    <div className="dev-context-popover-body" data-context-threshold={threshold}>
       <div className="dev-context-popover-gauge">
         <TugArcGauge
           min={0}
@@ -678,7 +689,7 @@ function ContextBreakdownBody({
         <span className="dev-context-popover-summary-percent">
           {formatContextPercent(totalUsed, contextMax)}
         </span>
-        <span className="dev-context-popover-summary-value">
+        <span className="dev-context-popover-summary-value dev-context-popover-summary-value-used">
           {formatTokensCaps(totalUsed)}
         </span>
         <span className="dev-context-popover-summary-label">max</span>
