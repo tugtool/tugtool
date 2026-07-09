@@ -20,6 +20,10 @@ interface WriteCall {
 const io = {
   files: new Map<string, { content: string; sha256: string; readOnly: boolean }>(),
   writes: [] as WriteCall[],
+  // When set, the next non-delete write to any path fails with this
+  // transport error (models a `denied`/`error`/network failure the plain
+  // conditional-write fake can't otherwise produce).
+  writeError: null as string | null,
 };
 
 const shaOf = (content: string): string => `sha:${content}`;
@@ -52,6 +56,11 @@ mock.module("@/lib/file-io", () => ({
       baselineSha256: req.baselineSha256,
       delete: req.delete === true,
     });
+    if (io.writeError !== null && req.delete !== true) {
+      const error = io.writeError;
+      io.writeError = null;
+      return { ok: false, error };
+    }
     const existing = io.files.get(req.path);
     if (existing && req.baselineSha256 === null) {
       return { ok: false, error: "conflict", diskSha256: existing.sha256 };
@@ -138,6 +147,7 @@ function seedAside(path: string, record: Record<string, unknown>) {
 beforeEach(() => {
   io.files = new Map();
   io.writes = [];
+  io.writeError = null;
 });
 
 describe("manual mode — dirty + aside flush target", () => {
@@ -186,6 +196,31 @@ describe("manual mode — dirty + aside flush target", () => {
     await store.saveAs("/b.txt");
     expect(store.getSnapshot().saveMode).toBe("manual");
     expect(store.getSnapshot().path).toBe("/b.txt");
+  });
+
+  test("saveAs reports 'ok' once the buffer reaches disk", async () => {
+    let buf = "hello\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openUntitled("draft-1");
+    buf = "hello\n";
+    store.noteEdit();
+    expect(await store.saveAs("/new.txt")).toBe("ok");
+    expect(io.files.get("/new.txt")!.content).toBe("hello\n");
+  });
+
+  test("saveAs surfaces a write failure instead of swallowing it", async () => {
+    // A swallowed failure here is the data-loss path: a close guard that
+    // reads saveAs as success would destroy the card over unsaved edits.
+    let buf = "hello\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openUntitled("draft-2");
+    buf = "hello\n";
+    store.noteEdit();
+    io.writeError = "denied";
+    expect(await store.saveAs("/nope.txt")).toBe("error");
+    expect(io.files.has("/nope.txt")).toBe(false);
   });
 });
 

@@ -470,10 +470,13 @@ export class FileEditorStore {
    * Re-anchor the buffer to `newPath` (Move To… / the missing-file
    * banner's Save As…): write the current buffer there (create-new),
    * delete the old draft when this was one, and bind to the new path.
+   * Returns the write outcome so callers gate on success — a swallowed
+   * failure here would let a close guard destroy the card and strand the
+   * edits in an orphaned aside.
    */
-  async saveAs(newPath: string): Promise<void> {
+  async saveAs(newPath: string): Promise<FileSaveResult> {
     const snap = this._snapshot;
-    if (this._bridge === null || snap.phase !== "ready") return;
+    if (this._bridge === null || snap.phase !== "ready") return "noop";
     this._clearDebounce();
     const content = serializeEol(this._bridge.getText(), snap.lineEnding);
     const oldPath = snap.path;
@@ -495,13 +498,17 @@ export class FileEditorStore {
         baselineSha256: outcome.diskSha256,
       });
     }
-    if (this._disposed) return;
+    if (this._disposed) return "noop";
     if (!outcome.ok) {
       tugDevLogStore.warn("file-editor-store", "saveAs failed", {
         error: outcome.error,
         newPath,
       });
-      return;
+      return outcome.error === "conflict"
+        ? "conflict"
+        : outcome.error === "missing"
+          ? "missing"
+          : "error";
     }
     if (this._saveMode === "manual") {
       // The old document's set-aside record is superseded by the real
@@ -518,6 +525,7 @@ export class FileEditorStore {
       });
     }
     await this.openPath(newPath);
+    return "ok";
   }
 
   /** Explicit save (⌘S / File ▸ Save): flush pending edits now. */

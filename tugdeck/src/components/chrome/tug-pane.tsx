@@ -1021,6 +1021,10 @@ export function TugPane({
     [manager, keyboardTabNavSenderId],
   );
 
+  // Single-flight latch for the tab-× close guard, so a double-click on a
+  // tab's × doesn't stack two sheets ([P06]).
+  const closeTabGuardRunningRef = useRef(false);
+
   const { ResponderScope, responderRef } = useResponder({
     id: stackId,
     kind: "card",
@@ -1039,7 +1043,23 @@ export function TugPane({
       },
       [TUG_ACTIONS.CLOSE_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;
-        store.removeCard(stackId, event.value);
+        const targetId = event.value;
+        // The tab × is a close gesture like the pane X — it must honour the
+        // target card's close guard ([P06], Risk R02) rather than destroy a
+        // dirty manual File card silently. Only the mounted active card
+        // registers a guard; a background tab (or a card that opts out, e.g.
+        // the Dev card's picker-cancel) has none and closes directly.
+        const guard = getCardCloseGuard(targetId);
+        if (!guard) {
+          store.removeCard(stackId, targetId);
+          return;
+        }
+        if (closeTabGuardRunningRef.current) return;
+        closeTabGuardRunningRef.current = true;
+        void guard().then((decision) => {
+          closeTabGuardRunningRef.current = false;
+          if (decision === "close") store.removeCard(stackId, targetId);
+        });
       },
       [TUG_ACTIONS.ADD_TAB]: (event: ActionEvent) => {
         if (typeof event.value !== "string") return;

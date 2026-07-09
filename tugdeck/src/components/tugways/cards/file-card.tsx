@@ -263,8 +263,10 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     const initial = snap.draftId !== null ? undefined : (snap.path ?? undefined);
     const newPath = await pickPath("save", initial);
     if (newPath === null) return false;
-    await store.saveAs(newPath);
-    return true;
+    // Report the real write outcome — not merely "a path was picked" — so
+    // the close guard only proceeds to destroy the card when the buffer
+    // actually reached disk. A swallowed failure here is silent data loss.
+    return (await store.saveAs(newPath)) === "ok";
   }, [store]);
   const saveAs = useCallback(() => {
     void runSaveAsPanel();

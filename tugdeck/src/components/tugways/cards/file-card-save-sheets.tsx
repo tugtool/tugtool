@@ -11,7 +11,8 @@
  * every sheet looks like the rest of the app ([use-tug-components]).
  *
  * Classic button order: destructive-alternative left, Cancel, default
- * right; Return = default; Escape / ⌘. = Cancel.
+ * right; Return = default, except a destructive default hands Return to
+ * Cancel so Enter can't fire it; Escape / ⌘. = Cancel.
  *
  * @module components/tugways/cards/file-card-save-sheets
  */
@@ -57,30 +58,44 @@ function FileSaveSheetView({
   close: (result?: string) => void;
 }): React.ReactElement {
   const focusGroup = React.useId();
-  const defaultIndex = buttons.findIndex((b) => b.isDefault);
-  useSeedKeyView(`${focusGroup}:${defaultIndex === -1 ? 0 : defaultIndex}`);
+  const nominalDefaultIndex = buttons.findIndex((b) => b.isDefault);
+  const cancelIndex = buttons.findIndex((b) => b.result === "cancel");
+  // Danger confirmations keep Return safe: when the nominal default is a
+  // destructive choice, the resting key view — and its filled emphasis —
+  // move to Cancel so Enter can't fire it, matching TugAlert's danger
+  // handling ([focus-language]). Positions are unchanged.
+  const defaultIndex =
+    buttons[nominalDefaultIndex]?.role === "danger" && cancelIndex !== -1
+      ? cancelIndex
+      : nominalDefaultIndex === -1
+        ? 0
+        : nominalDefaultIndex;
+  useSeedKeyView(`${focusGroup}:${defaultIndex}`);
 
   const cancel = buttons.find((b) => b.result === "cancel");
   const rest = buttons.filter((b) => b.result !== "cancel");
-  const renderButton = (button: SheetButton) => (
-    <TugPushButton
-      key={button.result}
-      emphasis={
-        button.isDefault
-          ? button.role && button.role !== "action"
-            ? "filled"
-            : "primary"
-          : "outlined"
-      }
-      role={button.role ?? "action"}
-      onClick={() => close(button.result)}
-      data-testid={`file-save-sheet-${button.result}`}
-      focusGroup={focusGroup}
-      focusOrder={buttons.indexOf(button)}
-    >
-      {button.label}
-    </TugPushButton>
-  );
+  const renderButton = (button: SheetButton) => {
+    const isDefault = buttons.indexOf(button) === defaultIndex;
+    return (
+      <TugPushButton
+        key={button.result}
+        emphasis={
+          isDefault
+            ? button.role && button.role !== "action"
+              ? "filled"
+              : "primary"
+            : "outlined"
+        }
+        role={button.role ?? "action"}
+        onClick={() => close(button.result)}
+        data-testid={`file-save-sheet-${button.result}`}
+        focusGroup={focusGroup}
+        focusOrder={buttons.indexOf(button)}
+      >
+        {button.label}
+      </TugPushButton>
+    );
+  };
 
   return (
     <div className="tug-alert-sheet">

@@ -1687,6 +1687,13 @@ export function useTugSheet(): {
   }, [state, manager, senderId, resolveHook]);
 
   const showSheet = useCallback((options: ShowSheetOptions): Promise<string | undefined> => {
+    // A showSheet() while a prior sheet is still pending supersedes it.
+    // Resolve the superseded promise with `undefined` (the same "no
+    // explicit result" value an Escape dismissal yields) before adopting
+    // the new resolver — orphaning it would leave its awaiter hung forever,
+    // wedging any caller that gates on the promise (e.g. a card close
+    // guard whose sheet is replaced by a conflict sheet mid-decision).
+    resolverRef.current?.(undefined);
     return new Promise<string | undefined>((resolve) => {
       resolverRef.current = resolve;
       lastResultRef.current = undefined;
