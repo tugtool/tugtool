@@ -31,7 +31,12 @@
      out one legend taller on a late mount than after a style recalc — the
      hop); taking the legend out of flow removes that layout entirely. */
   position: relative;
-  padding-top: calc(var(--tug-space-lg) + 8px);
+}
+
+/* Generous inset. Compound (0,3,0) selector needed to beat TugBox's own
+   inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
+.settings-general .settings-general-group.tug-box-bordered {
+  padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
 }
 
 /* The legend sits ON the border line, painted over it, out of flow. */
@@ -131,12 +136,22 @@
   min-width: 6rem;
 }
 
-/* One switch per row, comfortable vertical margin between them. */
+/* ≤3 switches stretch to fill a single row; 4+ use a strict 3-column
+   grid so a partial last row keeps its 1/3 tracks (see
+   file-editor-controls.css for the rationale). */
 .settings-general-switches {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--tug-space-md);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  column-gap: var(--tug-space-xl);
+  align-items: center;
+}
+
+.settings-general-switches:has(> :nth-child(4)) {
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: var(--tug-space-md);
 }
 
 /* Submit-key option groups — a label + choice-group pair per physical

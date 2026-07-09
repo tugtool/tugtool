@@ -55,50 +55,139 @@
   min-height: 0;
 }
 
-/* Quiet corner affordances over the editor (versions). Anchored to the
- * card, floated over the editor's top-right; the editor's stable
- * scrollbar gutter keeps content clear of it in practice. */
-.file-card--editor {
-  position: relative;
-}
+/* ---- Top bar ---- */
 
-.file-card-editor-affordances {
-  position: absolute;
-  top: var(--tug-space-2xs);
-  right: var(--tug-space-sm);
-  display: flex;
-  gap: var(--tug-space-2xs);
-  z-index: 1;
-}
-
-/* ---- Versions sheet content ---- */
-
-.file-card-versions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-md);
-  padding: var(--tug-space-md);
-  min-width: 320px;
-}
-
-.file-card-versions-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-2xs);
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.file-card-versions-row {
+/* A thin chrome strip above the editor: the full file path (left,
+ * BBEdit-style) and the action icons (right — Move To…, gear). Composes
+ * TugLabel / TugIconButton; layout-only rules here [L20]. */
+.file-card-top-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--tug-space-md);
+  gap: var(--tug-space-sm);
+  /* Vertical size comes from `min-height` (shared with the bottom bar
+   * so the two match); the icon buttons (28px) set the natural height. */
+  min-height: 2rem;
+  box-sizing: border-box;
+  padding: 0 var(--tug-space-sm);
+  flex: 0 0 auto;
+  /* A contrasting rule separating the chrome strip from the content —
+   * the same divider the pane title bar uses. */
+  border-bottom: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  min-width: 0;
 }
 
-.file-card-versions-footer {
+.file-card-top-bar-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* `dir="rtl"` on the element keeps the filename end visible when the
+   * strip is narrow; `text-align: left` restores normal reading order
+   * for the (LTR) path text itself. */
+  text-align: left;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.file-card-top-bar-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  flex: 0 0 auto;
+}
+
+/* ---- Bottom status bar ---- */
+
+/* A thin strip below the editor: save state, line ending, file type,
+ * caret L/C, and the doc counts (right-aligned). Layout-only rules. */
+.file-card-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-lg);
+  /* Same height as the top bar (favor the taller of the two). */
+  min-height: 2rem;
+  box-sizing: border-box;
+  /* A tad more left/right margin than the top bar. */
+  padding: 0 var(--tug-space-lg);
+  flex: 0 0 auto;
+  /* Contrasting rule vs. the editor content (pane-title-bar divider). */
+  border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  /* Collapse the line box to the glyph so `align-items: center` seats
+   * the text on the true vertical center (default leading sits low). */
+  line-height: 1;
+  /* Equal-width figures so ticking values never nudge the layout. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Short cells — no per-cell clipping needed (the bar clips + nowraps),
+ * and no overflow box means `line-height: 1` on the bar can't clip
+ * descenders while it centers the text. */
+.file-card-status-cell {
+  flex: 0 0 auto;
+}
+
+/* A cluster of related cells. */
+.file-card-status-group {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  flex: 0 0 auto;
+}
+
+/* The settable pair (line ending + file type) claims the flexible gap,
+ * pulling both right-hand clusters to the trailing edge; the save state
+ * stays alone on the left. */
+.file-card-status-group--settable {
+  margin-left: auto;
+}
+
+/* The number pair (caret + counts) is set off from the settable pair by
+ * a divider so the two groupings read as distinct. */
+.file-card-status-group--numbers {
+  padding-left: var(--tug-space-lg);
+  border-left: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+}
+
+/* Reserve width for the caret cell (left-aligned) so single→double
+ * digit changes don't reflow the counts beside it. */
+.file-card-status-caret {
+  min-width: 6rem;
+}
+
+/* ---- Options popover (the gear) ---- */
+
+/* A sized wrapper so the shared FileEditorControls read like a mini
+ * File Editor settings panel — wide enough for its 3-column switch grid
+ * to spread the way the app-card panel does. */
+.file-card-options {
+  width: 460px;
+  max-width: 90vw;
+  padding: var(--tug-space-lg);
+}
+
+/* Panel title (the popover has no tab to name it, unlike the settings
+ * card). Uppercase + letterspaced + muted, matching the popup-list
+ * title vocabulary. No rule beneath — just generous space to the first
+ * group. */
+.file-card-options-title {
+  font-size: var(--tug-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  margin-bottom: var(--tug-space-2xl);
+}
+
+/* The shared controls' legends mask the group border with a swatch of
+ * their backdrop. In the popover that backdrop is the popover surface,
+ * not the pane background — override so the swatch matches. */
+.file-card-options .file-editor-controls-group > .tug-box-legend {
+  background: var(--tugx-popover-bg);
 }
 
 /* ---- Open (empty/loading) surface ---- */

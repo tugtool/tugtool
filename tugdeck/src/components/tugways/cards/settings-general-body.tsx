@@ -9,8 +9,8 @@
  *      root, per card) and the inter-entry vertical gap. The macOS
  *      app's View menu (`WKWebView.pageZoom`) scales the whole window
  *      and composes with the per-card magnification.
- *   2. **Editor** — typography, view toggles, and submit-key policy
- *      for the prompt editor.
+ *   2. **Prompt Editor** — typography, view toggles, and submit-key
+ *      policy for the prompt editor.
  *   3. **Assistant** — the deck-wide default Model / Permission Mode /
  *      Effort new cards adopt on first open, edited through the *same*
  *      chips + sheets as the Dev card's Z4B row, bound to the deck
@@ -244,7 +244,7 @@ export function SettingsGeneralBody() {
         </TugBox>
 
         <TugBox
-          label="Editor"
+          label="Prompt Editor"
           labelPosition="legend"
           variant="bordered"
           className="settings-general-group"

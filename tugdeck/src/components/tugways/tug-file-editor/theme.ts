@@ -68,6 +68,26 @@ export const tugFileEditorTheme: Extension = EditorView.theme({
     padding: "0 var(--tugx-fileeditor-gutter-padding-x)",
     minWidth: "var(--tugx-fileeditor-gutter-min-width)",
   },
+  // Fold gutter (CM6 `foldGutter()`): center each chevron in its line
+  // box and give it breathing room + a pointer, so the ⌄/› markers sit
+  // cleanly beside the line numbers instead of crowding them.
+  ".cm-foldGutter .cm-gutterElement": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 var(--tug-space-2xs)",
+    color: "var(--tugx-fileeditor-gutter-text)",
+    cursor: "pointer",
+  },
+  // The inline "…" placeholder shown in place of a folded range.
+  ".cm-foldPlaceholder": {
+    margin: "0 var(--tug-space-2xs)",
+    padding: "0 var(--tug-space-xs)",
+    backgroundColor: "var(--tugx-fileeditor-gutter-bg)",
+    border: "1px solid var(--tugx-fileeditor-gutter-border)",
+    borderRadius: "3px",
+    color: "var(--tugx-fileeditor-gutter-text)",
+  },
   ".cm-activeLine": {
     backgroundColor: "var(--tugx-fileeditor-active-line-bg)",
   },

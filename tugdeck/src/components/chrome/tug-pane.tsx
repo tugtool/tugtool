@@ -46,7 +46,12 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
+import { CardPathMenu } from "@/components/chrome/card-path-menu";
 import { cardTitleStore } from "@/lib/card-title-store";
+import {
+  resolveCardResourcePath,
+  type CardResourcePath,
+} from "@/lib/card-resource-path";
 import * as paneContentRegistry from "@/components/chrome/pane-content-registry";
 import * as paneFrameRegistry from "@/components/chrome/pane-frame-registry";
 import * as paneRootRegistry from "@/components/chrome/pane-root-registry";
@@ -128,6 +133,13 @@ export interface CardTitleBarProps {
    */
   cardCount?: number;
   /**
+   * Resolve the filesystem resource the active card is bound to, for
+   * the Cmd-click title path menu. Returns null when the card has no
+   * resource (the menu then doesn't open). Called live at click time so
+   * a re-bound path is always current.
+   */
+  resolveResourcePath?: () => CardResourcePath | null;
+  /**
    * Whether the X button (and the imperative `requestClose()` handle)
    * routes through the close-confirm popover. When `false`, X-click and
    * Cmd-W both close the pane immediately — no popover. When `true`,
@@ -149,6 +161,7 @@ function CardTitleBar({
   closable = true,
   collapsed,
   cardCount = 1,
+  resolveResourcePath,
   confirmClose = false,
   onCollapse,
   onClose,
@@ -158,9 +171,33 @@ function CardTitleBar({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest(".tug-button")) return;
+      // Cmd-click opens the path menu (handled on the title group's
+      // click); never arm a drag for it. Pane activation already ignores
+      // metaKey (pane-focus-controller), so this leaves the gesture free.
+      if (event.metaKey) return;
       onDragStart?.(event);
     },
     [onDragStart],
+  );
+
+  // Cmd-click title path menu (Finder-style). Anchored to the title
+  // group via a virtual ref, controlled open. The resource is captured
+  // at click time so a re-bound path is always current.
+  const [pathMenuOpen, setPathMenuOpen] = useState(false);
+  const [pathResource, setPathResource] = useState<CardResourcePath | null>(null);
+  const titleGroupRef = useRef<HTMLSpanElement | null>(null);
+
+  const handleTitleClick = useCallback(
+    (event: React.MouseEvent<HTMLSpanElement>) => {
+      if (!event.metaKey) return;
+      const resource = resolveResourcePath?.() ?? null;
+      if (resource === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPathResource(resource);
+      setPathMenuOpen(true);
+    },
+    [resolveResourcePath],
   );
 
   // Controlled-mode open state for the close-confirm popover (the shared
@@ -324,15 +361,30 @@ function CardTitleBar({
       onPointerDown={handleTitleBarPointerDown}
       data-testid="tug-pane-title-bar"
     >
-      {IconComponent && (
-        <span className="tug-pane-icon" data-testid="tug-pane-icon">
-          {React.createElement(IconComponent)}
-        </span>
-      )}
+      {/* Icon + title as one Cmd-click target for the path menu. Plain
+          click falls through to drag/activation as before. */}
+      <span
+        ref={titleGroupRef}
+        className="tug-pane-title-group"
+        onClick={handleTitleClick}
+      >
+        {IconComponent && (
+          <span className="tug-pane-icon" data-testid="tug-pane-icon">
+            {React.createElement(IconComponent)}
+          </span>
+        )}
 
-      <span className="tug-pane-title" data-testid="tug-pane-title">
-        {title}
+        <span className="tug-pane-title" data-testid="tug-pane-title">
+          {title}
+        </span>
       </span>
+
+      <CardPathMenu
+        open={pathMenuOpen}
+        anchorRef={titleGroupRef}
+        resource={pathResource}
+        onOpenChange={setPathMenuOpen}
+      />
 
       <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
         <TugButton
@@ -975,6 +1027,14 @@ export function TugPane({
       () => cardTitleStore.get(activeCardId ?? null),
       [activeCardId],
     ),
+  );
+
+  // Resolve the active card's bound resource for the Cmd-click title
+  // path menu. Read live at click time (paths re-bind), keyed on the
+  // active card id — Dev card → project dir, File card → edited file.
+  const resolveResourcePath = useCallback(
+    () => resolveCardResourcePath(activeCardId ?? null),
+    [activeCardId],
   );
 
   const baseTitle = cardTitle
@@ -1684,6 +1744,7 @@ export function TugPane({
             closable={closable}
             collapsed={collapsed}
             cardCount={cards?.length ?? 1}
+            resolveResourcePath={resolveResourcePath}
             confirmClose={paneConfirmClose}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}

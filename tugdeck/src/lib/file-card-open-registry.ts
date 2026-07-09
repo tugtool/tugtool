@@ -19,6 +19,12 @@ export interface FileCardOpenEntry {
   getPath(): string | null;
   /** Move the cursor to `line` (1-based) and center it. */
   revealLine(line: number): void;
+  /**
+   * Rebind this card to a different file (the "reuse frontmost card"
+   * open target). Flushes any pending edits to the current file first,
+   * then reads `path` and reveals `line` (1-based) if given.
+   */
+  openFile(path: string, line?: number): void;
 }
 
 const entries = new Map<string, FileCardOpenEntry>();
@@ -32,6 +38,11 @@ export function registerOpenFileCard(
 
 export function unregisterOpenFileCard(cardId: string): void {
   entries.delete(cardId);
+}
+
+/** The open-file entry for `cardId`, or null when not a mounted File card. */
+export function getOpenFileCard(cardId: string): FileCardOpenEntry | null {
+  return entries.get(cardId) ?? null;
 }
 
 /**

@@ -1,0 +1,52 @@
+/* ----------------------------------------------------------------------------
+   .settings-file-editor — the File Editor settings panel
+   ----------------------------------------------------------------------------
+   The shared Editing + Display groups (`file-editor-controls.css`)
+   stacked above the defaults-only "Open Files In" box. Hosted by the
+   Settings card's "File Editor" tab; mirrors settings-general-body.css
+   so the panels read as one system.
+   ----------------------------------------------------------------------------- */
+
+.settings-file-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xl);
+  /* Extra top room: the first box's legend overhangs above its border. */
+  padding: var(--tug-space-lg) 0 var(--tug-space-xs);
+}
+
+/* The "Open Files In" box — a bordered TugBox with the legend painted
+   on the border line (see settings-general-body.css for the WebKit
+   rationale). Generous inset matching the shared controls groups. */
+.settings-file-editor-group {
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Generous inset. Compound (0,3,0) selector needed to beat TugBox's own
+   inset padding rule `.tug-box-inset.tug-box-md` (0,2,0). */
+.settings-file-editor .settings-file-editor-group.tug-box-bordered {
+  padding: var(--tug-space-2xl) var(--tug-space-2xl) var(--tug-space-xl);
+}
+
+.settings-file-editor-group > .tug-box-legend {
+  position: absolute;
+  top: 0;
+  left: var(--tug-space-lg);
+  transform: translateY(-50%);
+  background: var(--tugx-pane-bg);
+  inline-size: max-content;
+}
+
+.settings-file-editor-group > .tug-box-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+}
+
+/* The open-target choice group spans the box width. */
+.settings-file-editor-open-choice.tug-choice-group {
+  width: 100%;
+  min-width: 0;
+}

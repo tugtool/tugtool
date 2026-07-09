@@ -19,8 +19,16 @@
  */
 
 import "./tug-tab-bar.css";
-import React, { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { cn } from "@/lib/utils";
+import { cardTitleStore } from "@/lib/card-title-store";
 import { icons } from "lucide-react";
 import type { CardState } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
@@ -384,6 +392,22 @@ function suppressTabTooltip(trigger: Element): boolean {
   return trigger.getAttribute("data-overflow") !== "collapsed";
 }
 
+/** Max visible tab-title length before center truncation. */
+const TAB_TITLE_MAX = 24;
+
+/**
+ * Middle-truncate `s` to at most `max` chars, keeping the head and tail
+ * with an ellipsis between (so a file's extension stays visible). BBEdit
+ * truncates document tabs the same way.
+ */
+function centerTruncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`;
+}
+
 /**
  * TabView -- single tab button. Renders inside a TugTooltip whose
  * `suppressOpen` predicate gates opening on the live `data-overflow`
@@ -400,6 +424,20 @@ function TabView({
   onSelect,
   onClose,
 }: TabViewProps) {
+  // File cards publish their basename through `cardTitleStore` (the
+  // static registry title is just "File"); consult it live so a file
+  // tab shows the leaf filename. Scoped to file cards so a Dev card's
+  // projectDir override never leaks into its tab label.
+  const titleOverride = useSyncExternalStore(
+    cardTitleStore.subscribe,
+    useCallback(() => cardTitleStore.get(tab.id), [tab.id]),
+  );
+  const fullTitle =
+    tab.componentId === "file" && titleOverride !== null
+      ? titleOverride
+      : tab.title;
+  const displayTitle = centerTruncate(fullTitle, TAB_TITLE_MAX);
+
   const handleTabClick = () => {
     onSelect(tab.id);
   };
@@ -463,7 +501,7 @@ function TabView({
   };
 
   return (
-    <TugTooltip content={tab.title} suppressOpen={suppressTabTooltip}>
+    <TugTooltip content={fullTitle} suppressOpen={suppressTabTooltip}>
       <div
         role="tab"
         className="tug-tab"
@@ -480,14 +518,14 @@ function TabView({
             {iconNode}
           </span>
         )}
-        <span className="tug-tab-title">{tab.title}</span>
+        <span className="tug-tab-title">{displayTitle}</span>
         {tab.closable && (
           <button
             type="button"
             className="tug-tab-close"
             onClick={handleCloseClick}
             data-tug-focus="refuse"
-            aria-label={`Close ${tab.title} tab`}
+            aria-label={`Close ${fullTitle} tab`}
             data-testid={`tug-tab-close-${tab.id}`}
           >
             ×

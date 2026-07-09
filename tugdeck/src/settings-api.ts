@@ -447,6 +447,51 @@ export async function getEditorSettings(): Promise<EditorSettings | null> {
   }
 }
 
+// ── File-editor defaults ─────────────────────────────────────────────────────
+
+/**
+ * Read the deck-wide File-editor defaults from the TugbankClient cache.
+ * The raw blob is narrowed by `parseFileEditorDefaults`; this just
+ * fetches the tagged value's `value` (or null when unset).
+ */
+export function readFileEditorDefaults(client: TugbankClient): unknown {
+  const entry = client.get("dev.tugtool.file-editor", "settings");
+  if (entry && entry.kind === "json" && entry.value !== undefined) {
+    return entry.value;
+  }
+  return null;
+}
+
+/**
+ * PUT the deck-wide File-editor defaults to tugbank (fire-and-forget).
+ * New File cards adopt these on first open; see
+ * `use-file-editor-settings.ts` and `resolveFileEditorSettings`.
+ */
+export function putFileEditorDefaults(defaults: unknown): void {
+  fetch("/api/defaults/dev.tugtool.file-editor/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: defaults }),
+  }).catch((err) => {
+    console.warn("[settings] PUT fileEditorDefaults failed:", err);
+  });
+}
+
+/**
+ * PUT one File card's per-card editor settings to tugbank
+ * (fire-and-forget), keyed by cardId under `dev.file-editor`.
+ */
+export function putFileEditorCardSettings(cardId: string, settings: unknown): void {
+  const url = `/api/defaults/dev.file-editor/${encodeURIComponent(cardId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: settings }),
+  }).catch((err) => {
+    console.warn(`[settings] PUT fileEditorCardSettings failed for ${cardId}:`, err);
+  });
+}
+
 // ── Response (transcript) settings ──────────────────────────────────────────
 
 /**

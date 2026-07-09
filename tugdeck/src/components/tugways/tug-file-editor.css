@@ -86,3 +86,18 @@ body {
 .tug-file-editor .cm-editor {
   outline: none;
 }
+
+/* ---- Invisibles ---- */
+
+/* `highlightWhitespace()` marks BOTH spaces and tabs; the two settings
+ * toggles are honored independently by suppressing the glyph of the
+ * kind that is turned off. The host carries `data-show-spaces` /
+ * `data-show-tabs` (set imperatively, [L06]); the compartment itself is
+ * only active when at least one kind is on. */
+.tug-file-editor[data-show-spaces="false"] .cm-highlightSpace::before {
+  content: "";
+}
+
+.tug-file-editor[data-show-tabs="false"] .cm-highlightTab {
+  background-image: none;
+}

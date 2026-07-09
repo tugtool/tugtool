@@ -346,7 +346,11 @@ export class DeckManager implements IDeckManagerStore {
 
   private readonly lifecycleCascade: LifecycleCascadeHandle;
 
-  public addCardToPane: (paneId: string, componentId: string) => string | null;
+  public addCardToPane: (
+    paneId: string,
+    componentId: string,
+    initialContent?: unknown,
+  ) => string | null;
 
   public removeCard: (paneId: string, cardId: string) => void;
 
@@ -1878,7 +1882,11 @@ export class DeckManager implements IDeckManagerStore {
    * not, the new card becomes the stack's active-in-stack but the deck's
    * composite first-responder bit is unchanged (no lifecycle events).
    */
-  private _addCardToPane(paneId: string, componentId: string): string | null {
+  private _addCardToPane(
+    paneId: string,
+    componentId: string,
+    initialContent?: unknown,
+  ): string | null {
     const win = this.deckState.panes.find((s) => s.id === paneId);
     if (!win) {
       console.warn(`[DeckManager] addCardToPane: stack "${paneId}" not found.`);
@@ -1899,6 +1907,12 @@ export class DeckManager implements IDeckManagerStore {
       title: registration.defaultMeta.title,
       closable: registration.defaultMeta.closable !== false,
     };
+
+    // Seed the bag BEFORE construction so the card mounts through the
+    // restore path with the payload in hand (mirrors `addCard`).
+    if (initialContent !== undefined) {
+      this.cardStateCache.set(cardId, { content: initialContent });
+    }
 
     const isActiveStack = paneId === this.deckState.activePaneId;
     // Post-mutation the stack's `activeCardId` is always `cardId`; the

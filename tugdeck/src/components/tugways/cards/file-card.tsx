@@ -56,7 +56,7 @@ import {
   registerOpenFileCard,
   unregisterOpenFileCard,
 } from "@/lib/file-card-open-registry";
-import { ChevronDown, ChevronUp, FolderInput, History, X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { TugFileEditor, type TugFileEditorDelegate } from "../tug-file-editor";
 import { TugFileChooser } from "../tug-file-chooser";
@@ -65,10 +65,16 @@ import { TugPushButton } from "../tug-push-button";
 import { TugIconButton } from "../tug-icon-button";
 import { TugInput } from "../tug-input";
 import { TugLabel } from "../tug-label";
-import { useTugSheet } from "../tug-sheet";
-import { isVersionBridgeAvailable } from "@/lib/version-bridge";
+import { FileCardTopBar } from "./file-card-top-bar";
+import { FileCardStatusBar } from "./file-card-status-bar";
+import { useFileEditorSettings } from "@/lib/use-file-editor-settings";
+import { EditorStatsStore } from "@/lib/editor-stats-store";
+import {
+  extensionForLanguageId,
+  languageIdForPath,
+} from "@/lib/language-registry";
+import type { LineEnding } from "@/lib/file-editor-store";
 import { isPathPickerAvailable, pickPath } from "@/lib/native-path-picker";
-import { FileCardVersionsSheet } from "./file-card-versions-sheet";
 import {
   useCardId,
   useCardStatePreservation,
@@ -148,27 +154,38 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   const editorRef = useRef<TugFileEditorDelegate | null>(null);
   const manager = useResponderChain();
   const senderId = useId();
-  const { showSheet, renderSheet } = useTugSheet();
 
-  const openVersionsSheet = useCallback(() => {
-    const path = store.getSnapshot().path;
-    if (path === null) return;
-    void showSheet({
-      title: "Versions",
-      icon: "History",
-      displayWidth: "sm",
-      cascadeTargetId: cardId,
-      content: (close) => (
-        <FileCardVersionsSheet
-          path={path}
-          close={close}
-          onRestored={() => {
-            void store.refreshFromDisk();
-          }}
-        />
-      ),
-    });
-  }, [showSheet, store, cardId]);
+  // Card-local editor settings, seeded from the deck-wide File-editor
+  // defaults on first open, then owned by this card ([D07] pattern).
+  const { settings: editorSettings, setSetting } = useFileEditorSettings(cardId);
+
+  // Live editor stats (caret + counts) for the bottom status bar. The
+  // editor writes it; the status bar reads it — so keystroke-rate
+  // updates repaint only the strip, not the editor.
+  const [statsStore] = useState(() => new EditorStatsStore());
+
+  // Card-local syntax override from the status-bar file-type popup;
+  // null = follow the file's extension. Reset when the card rebinds to
+  // a different file (Move To…), so a new file starts on auto-detect.
+  const [languageOverrideId, setLanguageOverrideId] = useState<string | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    setLanguageOverrideId(null);
+  }, [snapshot.path]);
+  const effectiveLanguageId =
+    languageOverrideId ?? languageIdForPath(snapshot.path);
+  const effectiveLanguageExt = extensionForLanguageId(effectiveLanguageId);
+
+  // Status-bar line-ending popup: convert the buffer's newlines (arms
+  // autosave) and reflect the choice immediately.
+  const setLineEnding = useCallback(
+    (ending: LineEnding) => {
+      editorRef.current?.applyLineEnding(ending);
+      store.noteLineEnding(ending);
+    },
+    [store],
+  );
 
   // Chooser input value (empty state only). Controlled-input local
   // data; the committed value is the store's `path` binding.
@@ -271,6 +288,17 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     registerOpenFileCard(cardId, {
       getPath: () => store.getSnapshot().path,
       revealLine: (line) => editorRef.current?.revealLine(line),
+      openFile: (path, line) => {
+        // Reuse this card for a different file: flush the current
+        // buffer first (autosave may have pending edits), then open the
+        // new path and land on `line` via the pending-positions channel
+        // — the same restore path a fresh open-at-line takes.
+        pendingPositionsRef.current = {
+          anchor: { line: line ?? 1, ch: 0 },
+          scrollTop: 0,
+        };
+        void store.flush().then(() => store.openPath(path));
+      },
     });
     return () => {
       unregisterOpenFileCard(cardId);
@@ -392,6 +420,14 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   const conflict = snapshot.conflict;
   return (
     <div className="file-card file-card--editor" data-slot="file-card">
+      <FileCardTopBar
+        path={snapshot.path}
+        isDraft={snapshot.draftId !== null}
+        canMoveTo={snapshot.draftId !== null && isPathPickerAvailable()}
+        onMoveTo={saveAs}
+        settings={editorSettings}
+        onChangeSetting={setSetting}
+      />
       {findOpen ? (
         <div className="file-card-find-bar" data-slot="file-card-find-bar">
           <TugInput
@@ -435,33 +471,21 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         ref={editorRef}
         store={store}
         readOnly={snapshot.readOnly}
-        languagePath={snapshot.path ?? undefined}
+        settings={editorSettings}
+        languageExt={effectiveLanguageExt}
         className="file-card-editor"
         onFindRequested={openFindBar}
+        onStats={statsStore.set}
       />
-      {isVersionBridgeAvailable() || snapshot.draftId !== null ? (
-        <div className="file-card-editor-affordances">
-          {snapshot.draftId !== null && isPathPickerAvailable() ? (
-            <TugIconButton
-              icon={<FolderInput />}
-              aria-label="Move to a permanent location"
-              title="Move To…"
-              data-testid="file-card-move-to-button"
-              onClick={saveAs}
-            />
-          ) : null}
-          {isVersionBridgeAvailable() ? (
-            <TugIconButton
-              icon={<History />}
-              aria-label="Browse versions"
-              title="Browse Versions…"
-              data-testid="file-card-versions-button"
-              onClick={openVersionsSheet}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {renderSheet()}
+      <FileCardStatusBar
+        statsStore={statsStore}
+        saveState={snapshot.saveState}
+        lastSavedAt={snapshot.lastSavedAt}
+        lineEnding={snapshot.lineEnding}
+        onSetLineEnding={setLineEnding}
+        languageId={effectiveLanguageId}
+        onSetLanguage={setLanguageOverrideId}
+      />
       <TugPaneBanner
         visible={conflict !== null}
         variant="error"

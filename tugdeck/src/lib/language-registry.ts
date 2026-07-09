@@ -138,6 +138,100 @@ const LOADERS: Record<string, LanguageLoader> = {
   }),
 };
 
+/**
+ * Display names for the status bar, keyed by lowercase extension. Kept
+ * beside {@link LOADERS} so a language's label and grammar stay in sync.
+ * Unmapped extensions fall back to "Plain Text".
+ */
+const LANGUAGE_LABELS: Record<string, string> = {
+  js: "JavaScript",
+  jsx: "JavaScript (JSX)",
+  ts: "TypeScript",
+  tsx: "TypeScript (TSX)",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
+  rs: "Rust",
+  py: "Python",
+  json: "JSON",
+  css: "CSS",
+  html: "HTML",
+  htm: "HTML",
+  md: "Markdown",
+  markdown: "Markdown",
+  swift: "Swift",
+  sh: "Shell",
+  bash: "Shell",
+  zsh: "Shell",
+  toml: "TOML",
+  yaml: "YAML",
+  yml: "YAML",
+  c: "C",
+  h: "C",
+  cpp: "C++",
+};
+
+/** Human-readable language name for the status bar (or "Plain Text"). */
+export function languageLabelFor(path: string | null): string {
+  if (path === null) return "Plain Text";
+  const ext = fileExtension(path);
+  if (ext === null) return "Plain Text";
+  return LANGUAGE_LABELS[ext] ?? "Plain Text";
+}
+
+/** A user-pickable language for the status-bar file-type popup. */
+export interface SelectableLanguage {
+  /** Stable id (also the popup value); `"text"` for plain text. */
+  id: string;
+  /** Display name. */
+  label: string;
+  /** Representative extension whose grammar to load; null for plain text. */
+  ext: string | null;
+}
+
+/**
+ * The languages offered in the file-type popup, in menu order. One entry
+ * per distinct grammar (aliases like js/mjs collapse to one), plus a
+ * leading "Plain Text" that clears the grammar.
+ */
+export const SELECTABLE_LANGUAGES: readonly SelectableLanguage[] = [
+  { id: "text", label: "Plain Text", ext: null },
+  { id: "md", label: "Markdown", ext: "md" },
+  { id: "js", label: "JavaScript", ext: "js" },
+  { id: "jsx", label: "JavaScript (JSX)", ext: "jsx" },
+  { id: "ts", label: "TypeScript", ext: "ts" },
+  { id: "tsx", label: "TypeScript (TSX)", ext: "tsx" },
+  { id: "py", label: "Python", ext: "py" },
+  { id: "rs", label: "Rust", ext: "rs" },
+  { id: "json", label: "JSON", ext: "json" },
+  { id: "css", label: "CSS", ext: "css" },
+  { id: "html", label: "HTML", ext: "html" },
+  { id: "swift", label: "Swift", ext: "swift" },
+  { id: "sh", label: "Shell", ext: "sh" },
+  { id: "toml", label: "TOML", ext: "toml" },
+  { id: "yaml", label: "YAML", ext: "yaml" },
+  { id: "c", label: "C", ext: "c" },
+  { id: "cpp", label: "C++", ext: "cpp" },
+];
+
+/** The selectable-language id that matches `path`'s extension, else "text". */
+export function languageIdForPath(path: string | null): string {
+  if (path === null) return "text";
+  const ext = fileExtension(path);
+  if (ext === null) return "text";
+  const match = SELECTABLE_LANGUAGES.find((l) => l.ext === ext);
+  if (match !== undefined) return match.id;
+  // A grammar exists for the ext but it aliases another entry's label
+  // (e.g. mjs → JavaScript); map through the label.
+  const label = LANGUAGE_LABELS[ext];
+  const byLabel = SELECTABLE_LANGUAGES.find((l) => l.label === label);
+  return byLabel?.id ?? "text";
+}
+
+/** The representative extension for a selectable-language id (null = plain). */
+export function extensionForLanguageId(id: string): string | null {
+  return SELECTABLE_LANGUAGES.find((l) => l.id === id)?.ext ?? null;
+}
+
 /** Resolved-extension cache so each grammar loads once per session. */
 const cache = new Map<string, Promise<Extension>>();
 
@@ -161,7 +255,16 @@ export function hasLanguageFor(path: string): boolean {
  * extensions and on load failure (the editor stays plain text).
  */
 export function languageFor(path: string): Promise<Extension | null> {
-  const ext = fileExtension(path);
+  return languageForExtension(fileExtension(path));
+}
+
+/**
+ * Resolve the language support extension for a bare file extension
+ * (no dot; null for plain text). Same lazy-load + cache as
+ * {@link languageFor}; used when the file type is chosen explicitly
+ * (the status-bar file-type popup) rather than derived from a path.
+ */
+export function languageForExtension(ext: string | null): Promise<Extension | null> {
   if (ext === null) return Promise.resolve(null);
   const loader = LOADERS[ext];
   if (loader === undefined) return Promise.resolve(null);

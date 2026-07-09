@@ -32,7 +32,6 @@ import { getConnection } from "./connection-singleton";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type { FileReadErrorKind, FileWriteOutcome } from "./file-io";
 import { readFileFromDisk, writeFileToDisk } from "./file-io";
-import { checkpointFileVersion } from "./version-bridge";
 
 /** Idle debounce between the last edit and the write-through. */
 export const AUTOSAVE_DEBOUNCE_MS = 1000;
@@ -107,6 +106,20 @@ export interface FileEditorSnapshot {
   error: { kind: FileReadErrorKind; size?: number } | null;
   /** Consecutive write-transport failures (banner at threshold). */
   writeFailures: number;
+  /** Dominant newline style of the bound file (status-bar display). */
+  lineEnding: LineEnding;
+  /** Wall-clock ms of the last successful write, or null before any. */
+  lastSavedAt: number | null;
+}
+
+/** Dominant newline style of a file. */
+export type LineEnding = "LF" | "CRLF" | "CR";
+
+/** Detect the dominant newline style of `content`. */
+function detectLineEnding(content: string): LineEnding {
+  if (content.indexOf("\r\n") !== -1) return "CRLF";
+  if (content.indexOf("\r") !== -1) return "CR";
+  return "LF";
 }
 
 const EMPTY_SNAPSHOT: FileEditorSnapshot = {
@@ -120,6 +133,8 @@ const EMPTY_SNAPSHOT: FileEditorSnapshot = {
   conflict: null,
   error: null,
   writeFailures: 0,
+  lineEnding: "LF",
+  lastSavedAt: null,
 };
 
 /** Basename of an absolute path (trailing slashes ignored). */
@@ -170,12 +185,6 @@ export class FileEditorStore {
   private _baselineSha256: string | null = null;
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _flushInFlight: Promise<void> | null = null;
-  /**
-   * Whether this editing session has deposited its pre-edit version
-   * checkpoint yet. Reset on every open/revert so the NEXT first write
-   * of a session snapshots the content it is about to overwrite.
-   */
-  private _sessionCheckpointed = false;
   /**
    * Whether the buffer's last known content was empty — sampled at
    * open, flush, and revert time (the bridge is gone by dispose time,
@@ -252,7 +261,6 @@ export class FileEditorStore {
       return;
     }
     this._baselineSha256 = outcome.file.sha256;
-    this._sessionCheckpointed = false;
     this._lastKnownEmpty = outcome.file.content === "";
     this._update({
       phase: "ready",
@@ -264,6 +272,8 @@ export class FileEditorStore {
       conflict: null,
       error: null,
       writeFailures: 0,
+      lineEnding: detectLineEnding(outcome.file.content),
+      lastSavedAt: null,
     });
   }
 
@@ -342,17 +352,9 @@ export class FileEditorStore {
     await this.openPath(newPath);
   }
 
-  /**
-   * Explicit save (⌘S / File ▸ Save): flush pending edits now, then
-   * deposit the just-saved content as a version checkpoint — the macOS
-   * "Cmd-S cuts a version" behavior layered on live autosave.
-   */
+  /** Explicit save (⌘S / File ▸ Save): flush pending edits now. */
   async saveNow(): Promise<void> {
     await this.flush();
-    const snap = this._snapshot;
-    if (snap.phase === "ready" && snap.path !== null && !snap.readOnly) {
-      await checkpointFileVersion(snap.path);
-    }
   }
 
   // ── Autosave ─────────────────────────────────────────────────────────────
@@ -394,14 +396,6 @@ export class FileEditorStore {
     if (path === null) return Promise.resolve();
     const content = this._bridge.getText();
     this._lastKnownEmpty = content === "";
-    if (!this._sessionCheckpointed) {
-      // First write of this editing session: deposit the file's
-      // CURRENT (pre-edit) disk content into the macOS revision store
-      // so the write-through is never destructive. Fire-and-forget —
-      // versions are a net, not a gate on saving ([P09]).
-      this._sessionCheckpointed = true;
-      void checkpointFileVersion(path);
-    }
     this._update({ saveState: "writing" });
     const flight = writeFileToDisk(
       { path, content, baselineSha256: this._baselineSha256 },
@@ -418,7 +412,11 @@ export class FileEditorStore {
   private _onWriteSettled(outcome: FileWriteOutcome): void {
     if (outcome.ok) {
       this._baselineSha256 = outcome.sha256;
-      this._update({ saveState: "clean", writeFailures: 0 });
+      this._update({
+        saveState: "clean",
+        writeFailures: 0,
+        lastSavedAt: Date.now(),
+      });
       if (this._recheckQueued) {
         this._recheckQueued = false;
         void this._recheckDisk();
@@ -490,11 +488,22 @@ export class FileEditorStore {
 
   /**
    * Re-read disk and revert the buffer in place if it diverged from
-   * the baseline — the post-version-restore path (a restore is an
-   * external change by contract).
+   * the baseline.
    */
   refreshFromDisk(): Promise<void> {
     return this._recheckDisk();
+  }
+
+  /**
+   * Record the line-ending the user chose from the status bar. The
+   * editor separately converts the buffer's newlines (a normal edit
+   * that arms autosave); this reflects the choice in the snapshot
+   * immediately so the status bar updates without waiting for the
+   * write + disk re-detect to round-trip.
+   */
+  noteLineEnding(ending: LineEnding): void {
+    if (this._snapshot.lineEnding === ending) return;
+    this._update({ lineEnding: ending });
   }
 
   // ── External changes ─────────────────────────────────────────────────────
@@ -542,7 +551,6 @@ export class FileEditorStore {
     const diverged = outcome.file.sha256 !== this._baselineSha256;
     if (!diverged && opts?.force !== true) return;
     this._baselineSha256 = outcome.file.sha256;
-    this._sessionCheckpointed = false;
     if (this._bridge) {
       this._bridge.replaceText(outcome.file.content);
     }
@@ -552,6 +560,7 @@ export class FileEditorStore {
       saveState: "clean",
       conflict: null,
       writeFailures: 0,
+      lineEnding: detectLineEnding(outcome.file.content),
     });
   }
 

@@ -267,6 +267,17 @@ body {
    Title bar title
    ========================================================================= */
 
+/* Icon + title wrapped as one Cmd-click target for the path menu. Takes
+   the flex space the title used to; the title inside still flexes and
+   ellipsizes. */
+.tug-pane-title-group {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-inactive */
 .tug-pane-title {
   flex: 1;

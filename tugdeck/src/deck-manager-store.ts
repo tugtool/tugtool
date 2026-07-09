@@ -155,8 +155,18 @@ export interface IDeckManagerStore {
    * Add a new card to an existing pane. Returns the new card id, or
    * null if the pane or registration is not found. The new card
    * becomes the pane's active card.
+   *
+   * `initialContent`, when provided, seeds the new card's
+   * `CardStateBag.content` before construction so the card mounts
+   * through the restore path with the payload in hand — the same
+   * channel `addCard` uses for parameterized openers (e.g. open-file's
+   * "new tab in frontmost card" target).
    */
-  addCardToPane: (paneId: string, componentId: string) => string | null;
+  addCardToPane: (
+    paneId: string,
+    componentId: string,
+    initialContent?: unknown,
+  ) => string | null;
 
   /**
    * Remove a card. If the card was the last card in its pane, the

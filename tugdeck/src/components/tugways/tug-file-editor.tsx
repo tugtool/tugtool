@@ -71,8 +71,10 @@ import {
   keymap,
   highlightActiveLine,
   highlightActiveLineGutter,
+  highlightWhitespace,
   lineNumbers as cmLineNumbers,
 } from "@codemirror/view";
+import { foldGutter as cmFoldGutter, indentUnit } from "@codemirror/language";
 import {
   defaultKeymap,
   history,
@@ -107,7 +109,12 @@ import type {
   FileEditorStore,
   FilePositions,
 } from "@/lib/file-editor-store";
-import { languageFor, tugHighlightStyle } from "@/lib/language-registry";
+import {
+  DEFAULT_FILE_EDITOR_SETTINGS,
+  type FileEditorSettings,
+} from "@/lib/file-editor-settings";
+import type { EditorStats } from "@/lib/editor-stats-store";
+import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
 
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
@@ -133,6 +140,70 @@ const readOnlyCompartment = new Compartment();
 
 /** Reconfigurable language/highlighting slot (installed per file type). */
 const languageCompartment = new Compartment();
+
+/** Reconfigurable code-folding gutter. */
+const foldGutterCompartment = new Compartment();
+
+/** Reconfigurable whitespace rendering (`highlightWhitespace` or empty). */
+const whitespaceCompartment = new Compartment();
+
+/** Reconfigurable indent unit + tab width (soft tabs / spaces per tab). */
+const tabConfigCompartment = new Compartment();
+
+/** Reconfigurable active-line highlight (line + gutter cell). */
+const activeLineCompartment = new Compartment();
+
+/**
+ * The `[tabSize, indentUnit]` pair for a given settings snapshot. Soft
+ * tabs make the Tab key (via `indentWithTab` → `insertTab`) insert
+ * `tabSize` spaces; hard tabs insert a literal `\t`. `tabSize` also
+ * sets how a literal tab already in the file is rendered/measured.
+ */
+function tabConfigFor(settings: FileEditorSettings): Extension {
+  const unit = settings.softTabs ? " ".repeat(settings.tabSize) : "\t";
+  return [EditorState.tabSize.of(settings.tabSize), indentUnit.of(unit)];
+}
+
+/** Doc-derived stats (recomputed only when the document changes). */
+interface DocStats {
+  lines: number;
+  words: number;
+  chars: number;
+}
+
+/** Whitespace-delimited word count. */
+function countWords(text: string): number {
+  const matches = text.match(/\S+/g);
+  return matches === null ? 0 : matches.length;
+}
+
+/** The active-line-highlight extensions for a settings snapshot. */
+function activeLineFor(settings: FileEditorSettings): Extension {
+  return settings.highlightActiveLine
+    ? [highlightActiveLine(), highlightActiveLineGutter()]
+    : [];
+}
+
+/**
+ * Whitespace rendering. `highlightWhitespace()` marks both spaces
+ * (`.cm-highlightSpace`) and tabs (`.cm-highlightTab`); which glyphs
+ * actually paint is narrowed by the host's `data-show-spaces` /
+ * `data-show-tabs` attributes in CSS, so the two toggles are
+ * independent without a custom decoration.
+ */
+function whitespaceFor(settings: FileEditorSettings): Extension {
+  return settings.showSpaces || settings.showTabs ? highlightWhitespace() : [];
+}
+
+/**
+ * Reflect the two invisibles toggles onto the host as data attributes
+ * the CSS reads to narrow `highlightWhitespace`'s glyphs per kind.
+ * DOM-only ([L06]) — no React state.
+ */
+function applyWhitespaceAttrs(host: HTMLElement, settings: FileEditorSettings): void {
+  host.dataset.showSpaces = String(settings.showSpaces);
+  host.dataset.showTabs = String(settings.showTabs);
+}
 
 /**
  * Marks a store-driven document replacement (external-change revert).
@@ -173,6 +244,12 @@ export interface TugFileEditorDelegate {
   findPrevious(): void;
   /** Count matches for the active query (0 when none / invalid). */
   getMatchCount(): number;
+  /**
+   * Convert every newline in the buffer to `ending`'s sequence — the
+   * status-bar line-ending popup. A normal edit (arms autosave, so the
+   * converted file writes through); a no-op when already uniform.
+   */
+  applyLineEnding(ending: "LF" | "CRLF" | "CR"): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,18 +272,20 @@ export interface TugFileEditorProps {
    */
   readOnly?: boolean;
   /**
-   * Soft-wrap. Off by default — code files scroll horizontally.
-   * @default false
+   * CM6 view settings (line numbers, soft wrap, soft tabs, tab width,
+   * fold gutter, active-line highlight, invisibles). Seeded from the
+   * deck-wide File-editor defaults and overridden per card by the gear
+   * popup; each field reconfigures its compartment live.
+   * @default DEFAULT_FILE_EDITOR_SETTINGS
    */
-  wrap?: boolean;
-  /** Line-number gutter. @default true */
-  lineNumbers?: boolean;
+  settings?: FileEditorSettings;
   /**
-   * Path whose extension selects the syntax-highlighting grammar
-   * (lazy-loaded through `lib/language-registry`). Plain text while
-   * the grammar chunk loads, and for unregistered extensions.
+   * File extension (no dot) whose grammar to load for syntax
+   * highlighting, or null for plain text. The File card derives this
+   * from the file's path, overridable by the status-bar file-type
+   * popup. Plain text while the grammar chunk loads.
    */
-  languagePath?: string;
+  languageExt?: string | null;
   /** Forwarded class name. */
   className?: string;
   /**
@@ -214,6 +293,12 @@ export interface TugFileEditorProps {
    * editor). The File card wires this to its find-bar toggle.
    */
   onFindRequested?: () => void;
+  /**
+   * Publish live document/selection stats (caret line/col, line/word/
+   * char counts) for the card's status bar. Fires once at mount, then
+   * on every selection or document change.
+   */
+  onStats?: (stats: EditorStats) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,11 +312,11 @@ export const TugFileEditor = React.forwardRef<
   {
     store,
     readOnly = false,
-    wrap = false,
-    lineNumbers = true,
-    languagePath,
+    settings = DEFAULT_FILE_EDITOR_SETTINGS,
+    languageExt,
     className,
     onFindRequested,
+    onStats,
   },
   ref,
 ) {
@@ -245,19 +330,22 @@ export const TugFileEditor = React.forwardRef<
 
   // Live prop/store refs read at event time [L07].
   const storeRef = useRef(store);
-  const wrapRef = useRef(wrap);
-  const lineNumbersRef = useRef(lineNumbers);
+  const settingsRef = useRef(settings);
   const readOnlyRef = useRef(readOnly);
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
+  const onStatsRef = useRef<((stats: EditorStats) => void) | undefined>(onStats);
+  // Doc-derived counts, recomputed only on document change; caret is
+  // recomputed on every selection change from the live state.
+  const docStatsRef = useRef<DocStats>({ lines: 1, words: 0, chars: 0 });
+  useLayoutEffect(() => {
+    onStatsRef.current = onStats;
+  }, [onStats]);
   useLayoutEffect(() => {
     storeRef.current = store;
   }, [store]);
   useLayoutEffect(() => {
-    wrapRef.current = wrap;
-  }, [wrap]);
-  useLayoutEffect(() => {
-    lineNumbersRef.current = lineNumbers;
-  }, [lineNumbers]);
+    settingsRef.current = settings;
+  }, [settings]);
   useLayoutEffect(() => {
     readOnlyRef.current = readOnly;
   }, [readOnly]);
@@ -303,6 +391,24 @@ export const TugFileEditor = React.forwardRef<
     });
   }, []);
 
+  // Publish caret + counts to the status bar. Caret is read live from
+  // `state`; the line/word/char counts come from `docStatsRef` (kept
+  // fresh by the update listener on document change).
+  const publishStats = useCallback((state: EditorState): void => {
+    const cb = onStatsRef.current;
+    if (cb === undefined) return;
+    const pos = state.selection.main.from;
+    const line = state.doc.lineAt(pos);
+    const doc = docStatsRef.current;
+    cb({
+      caretLine: line.number,
+      caretCol: pos - line.from + 1,
+      lines: doc.lines,
+      words: doc.words,
+      chars: doc.chars,
+    });
+  }, []);
+
   const replaceText = useCallback((next: string): void => {
     const live = viewRef.current;
     if (live === null) return;
@@ -326,31 +432,42 @@ export const TugFileEditor = React.forwardRef<
     if (host === null) return;
 
     const snapshot = storeRef.current.getSnapshot();
+    const s = settingsRef.current;
+    applyWhitespaceAttrs(host, s);
     const state = EditorState.create({
       doc: snapshot.seedContent ?? "",
       extensions: [
         history(),
         readOnlyCompartment.of(EditorState.readOnly.of(readOnlyRef.current)),
-        lineWrapCompartment.of(
-          wrapRef.current ? EditorView.lineWrapping : [],
-        ),
-        lineNumbersCompartment.of(
-          lineNumbersRef.current ? cmLineNumbers() : [],
-        ),
+        lineWrapCompartment.of(s.lineWrap ? EditorView.lineWrapping : []),
+        lineNumbersCompartment.of(s.lineNumbers ? cmLineNumbers() : []),
+        foldGutterCompartment.of(s.foldGutter ? cmFoldGutter() : []),
+        tabConfigCompartment.of(tabConfigFor(s)),
+        whitespaceCompartment.of(whitespaceFor(s)),
+        activeLineCompartment.of(activeLineFor(s)),
         languageCompartment.of([]),
-        highlightActiveLine(),
-        highlightActiveLineGutter(),
         search({ top: true }),
         // Every user edit arms the autosave debounce. Store-driven
         // replacements (external-change reverts) carry the
         // `externalReplace` annotation and must NOT re-arm it.
         EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          const isExternal = update.transactions.some(
-            (t) => t.annotation(externalReplace) === true,
-          );
-          if (isExternal) return;
-          storeRef.current.noteEdit();
+          if (update.docChanged) {
+            const doc = update.state.doc;
+            docStatsRef.current = {
+              lines: doc.lines,
+              chars: doc.length,
+              words: countWords(doc.toString()),
+            };
+            const isExternal = update.transactions.some(
+              (t) => t.annotation(externalReplace) === true,
+            );
+            // Store-driven reverts must NOT re-arm autosave; the stats
+            // above still refresh for them.
+            if (!isExternal) storeRef.current.noteEdit();
+          }
+          if (update.docChanged || update.selectionSet) {
+            publishStats(update.state);
+          }
         }),
         // Editing keymaps. The responder chain owns the Cmd-chords
         // (capture-phase preventDefault before CM6 sees them); these
@@ -371,6 +488,14 @@ export const TugFileEditor = React.forwardRef<
       getPositions,
       applyPositions,
     });
+
+    // Seed the status bar with the mounted document's stats.
+    docStatsRef.current = {
+      lines: cmView.state.doc.lines,
+      chars: cmView.state.doc.length,
+      words: countWords(cmView.state.doc.toString()),
+    };
+    publishStats(cmView.state);
 
     return () => {
       // Flush BEFORE detaching: child cleanups run before the parent
@@ -393,18 +518,46 @@ export const TugFileEditor = React.forwardRef<
   useLayoutEffect(() => {
     viewRef.current?.dispatch({
       effects: lineWrapCompartment.reconfigure(
-        wrap ? EditorView.lineWrapping : [],
+        settings.lineWrap ? EditorView.lineWrapping : [],
       ),
     });
-  }, [wrap]);
+  }, [settings.lineWrap]);
 
   useLayoutEffect(() => {
     viewRef.current?.dispatch({
       effects: lineNumbersCompartment.reconfigure(
-        lineNumbers ? cmLineNumbers() : [],
+        settings.lineNumbers ? cmLineNumbers() : [],
       ),
     });
-  }, [lineNumbers]);
+  }, [settings.lineNumbers]);
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({
+      effects: foldGutterCompartment.reconfigure(
+        settings.foldGutter ? cmFoldGutter() : [],
+      ),
+    });
+  }, [settings.foldGutter]);
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({
+      effects: tabConfigCompartment.reconfigure(tabConfigFor(settings)),
+    });
+  }, [settings.softTabs, settings.tabSize]);
+
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({
+      effects: activeLineCompartment.reconfigure(activeLineFor(settings)),
+    });
+  }, [settings.highlightActiveLine]);
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (host !== null) applyWhitespaceAttrs(host, settings);
+    viewRef.current?.dispatch({
+      effects: whitespaceCompartment.reconfigure(whitespaceFor(settings)),
+    });
+  }, [settings.showSpaces, settings.showTabs]);
 
   useLayoutEffect(() => {
     viewRef.current?.dispatch({
@@ -421,15 +574,15 @@ export const TugFileEditor = React.forwardRef<
   // guard drops a late-resolving grammar after the card re-anchored to
   // a different file.
   useLayoutEffect(() => {
-    const path = languagePath;
-    if (path === undefined || path === "") {
+    const ext = languageExt ?? null;
+    if (ext === null) {
       viewRef.current?.dispatch({
         effects: languageCompartment.reconfigure([]),
       });
       return;
     }
     let alive = true;
-    void languageFor(path).then((language) => {
+    void languageForExtension(ext).then((language) => {
       if (!alive) return;
       const live = viewRef.current;
       if (live === null) return;
@@ -442,7 +595,7 @@ export const TugFileEditor = React.forwardRef<
     return () => {
       alive = false;
     };
-  }, [languagePath]);
+  }, [languageExt]);
 
   // ---- Search (host-owned Find UI, delegate-driven) ----
 
@@ -505,6 +658,23 @@ export const TugFileEditor = React.forwardRef<
     live.focus();
   }, []);
 
+  const applyLineEndingFn = useCallback(
+    (ending: "LF" | "CRLF" | "CR"): void => {
+      const live = viewRef.current;
+      if (live === null) return;
+      const eol = ending === "CRLF" ? "\r\n" : ending === "CR" ? "\r" : "\n";
+      const current = live.state.doc.toString();
+      const next = current.replace(/\r\n|\r|\n/g, eol);
+      if (next === current) return;
+      // A normal change (no externalReplace annotation) so the update
+      // listener arms autosave and the converted file writes through.
+      live.dispatch({
+        changes: { from: 0, to: live.state.doc.length, insert: next },
+      });
+    },
+    [],
+  );
+
   useImperativeHandle(
     ref,
     (): TugFileEditorDelegate => ({
@@ -522,8 +692,9 @@ export const TugFileEditor = React.forwardRef<
         if (live !== null) cmFindPrevious(live);
       },
       getMatchCount: getMatchCountFn,
+      applyLineEnding: applyLineEndingFn,
     }),
-    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn],
+    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, applyLineEndingFn],
   );
 
   // ---- Context menu ----
@@ -696,9 +867,8 @@ export const TugFileEditor = React.forwardRef<
     [pasteWithTransform],
   );
 
-  // SAVE — flush pending edits now and cut a version checkpoint of
-  // the saved state (the macOS "⌘S still works" behavior layered on
-  // live autosave).
+  // SAVE — flush pending edits now (⌘S still works on top of live
+  // autosave; it just forces the debounce to fire immediately).
   const handleSave = useCallback((): ActionHandlerResult => {
     return () => {
       void storeRef.current.saveNow();
