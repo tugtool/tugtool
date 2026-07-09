@@ -88,10 +88,12 @@ export function CompactionProgressSheet({
       />
       {cancelable ? (
         <div className="tug-sheet-actions">
-          {/* The sheet's live default: seeded (see useSeedKeyView above) so it
-              wears the filled + double-ring default treatment and Return
-              triggers it — Cancel is the only action a running compaction
-              offers. */}
+          {/* The sheet's live default: seeded (see useSeedKeyView above) and
+              opted into `persistentDefaultRing` so it wears the filled +
+              double-ring default treatment (via `data-default-ring`) the whole
+              time it is shown — not only while the seeded key view happens to be
+              projecting `data-key-view-kbd` — and Return triggers it. Cancel is
+              the only action a running compaction offers. */}
           <TugPushButton
             emphasis="primary"
             role="action"
@@ -99,6 +101,7 @@ export function CompactionProgressSheet({
             data-testid="compaction-cancel"
             focusGroup={cancelFocusGroup}
             focusOrder={0}
+            persistentDefaultRing
           >
             Cancel
           </TugPushButton>
