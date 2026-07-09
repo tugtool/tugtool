@@ -209,14 +209,19 @@ export class FileEditorStore {
   /** A revert fetched while a flush was in flight waits its turn. */
   private _recheckQueued = false;
   private _disposed = false;
+  /** Unregisters the FILESYSTEM feed callback; called by `dispose()`. */
+  private _unsubscribeFilesystem: (() => void) | null = null;
 
   constructor() {
     const conn = getConnection();
     if (conn) {
-      conn.onFrame(FeedId.FILESYSTEM, (payload: Uint8Array) => {
-        if (this._disposed) return;
-        this._onFilesystemFrame(payload);
-      });
+      this._unsubscribeFilesystem = conn.onFrame(
+        FeedId.FILESYSTEM,
+        (payload: Uint8Array) => {
+          if (this._disposed) return;
+          this._onFilesystemFrame(payload);
+        },
+      );
     }
   }
 
@@ -612,6 +617,12 @@ export class FileEditorStore {
       );
     }
     this._disposed = true;
+    // Unregister the FILESYSTEM feed callback — the closure pins this
+    // store for the life of the connection otherwise, so every closed
+    // File card would leak a dead instance (and add O(cards) work to
+    // every filesystem frame).
+    this._unsubscribeFilesystem?.();
+    this._unsubscribeFilesystem = null;
     this._listeners.clear();
     this._bridge = null;
   }

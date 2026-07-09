@@ -212,10 +212,22 @@ describe.skipIf(!SHOULD_RUN)("at0210: File card top bar + gear options", () => {
         );
         expect(statusText).toContain("Windows (CRLF)");
 
+        // Word count (middle of "lines / words / characters") before edit.
+        const wordsBefore = await app.evalJS<number>(
+          `parseInt(document.querySelector('${CARD} [data-testid="file-card-status-counts"]').innerText.split("/")[1].replace(/[^0-9]/g,""), 10)`,
+        );
+
         // Type an edit → autosave writes. CM6 normalizes to \n
         // internally, so the store must re-serialize to CRLF at the
         // write boundary; the file must NOT be flattened to LF.
         await typeIntoEditor(app, "EDIT ");
+
+        // The incremental word count picked up the one new word.
+        await app.waitForCondition<boolean>(
+          `parseInt(document.querySelector('${CARD} [data-testid="file-card-status-counts"]').innerText.split("/")[1].replace(/[^0-9]/g,""), 10) === ${wordsBefore + 1}`,
+          { timeoutMs: 8000 },
+        );
+
         const disk = await waitForDisk(file, (c) => c.includes("EDIT"));
         expect(disk.includes("\r\n")).toBe(true);
         // No bare LF: every "\n" is part of a "\r\n".

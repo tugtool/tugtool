@@ -55,25 +55,23 @@ export type FeedStoreFilter = (feedId: FeedIdValue, decoded: unknown) => boolean
  * Lifecycle:
  * - Constructed with a connection, a list of feed IDs, an optional
  *   decoder, and an optional filter.
- * - Subscribes to each feed ID via `connection.onFrame()`.
+ * - Subscribes to each feed ID via `connection.onFrame()`, capturing the
+ *   returned unsubscribe.
  * - On each frame: decodes the payload, runs the optional filter, and
  *   (if accepted) replaces the internal map (new reference) so
  *   `useSyncExternalStore` detects the change.
- * - Disposed when the card unmounts (subscriptions remain registered on
- *   `TugConnection` — the connection is long-lived and callbacks are
- *   accumulated; we track our own callbacks to remove them on dispose).
- *
- * Note: `TugConnection.onFrame()` does not return an unsubscribe function in
- * the current implementation. The store keeps its own cleanup by patching the
- * callback list. Because connections are long-lived and cards are relatively
- * few, leaking a small number of stale callbacks is acceptable for now; the
- * architecture doc notes this as a future improvement.
+ * - Disposed when the card unmounts — `dispose()` unregisters every feed
+ *   callback from the (long-lived) connection, so a closed card leaves
+ *   nothing behind. The connection outlives the store; without the
+ *   unregister the callback closure would pin this store forever.
  */
 export class FeedStore {
   private _data: Map<number, unknown> = new Map();
   private _listeners: Array<() => void> = [];
   private _disposed = false;
   private _filter?: FeedStoreFilter;
+  /** Unregisters the feed callbacks; called by `dispose()`. */
+  private _frameUnsubs: Array<() => void> = [];
 
   constructor(
     connection: TugConnection,
@@ -83,7 +81,7 @@ export class FeedStore {
   ) {
     this._filter = filter;
     for (const feedId of feedIds) {
-      connection.onFrame(feedId, (payload: Uint8Array) => {
+      const unsub = connection.onFrame(feedId, (payload: Uint8Array) => {
         if (this._disposed) return;
         try {
           const decoded = decode(payload);
@@ -106,6 +104,7 @@ export class FeedStore {
           console.error(`[FeedStore] failed to decode payload for feed 0x${feedId.toString(16)}:`, err);
         }
       });
+      this._frameUnsubs.push(unsub);
     }
   }
 
@@ -133,9 +132,11 @@ export class FeedStore {
     this._filter = filter;
   }
 
-  /** Dispose the store. Subsequent frames are ignored. */
+  /** Dispose the store: unregister feed callbacks and drop listeners. */
   dispose(): void {
     this._disposed = true;
+    for (const unsub of this._frameUnsubs) unsub();
+    this._frameUnsubs = [];
     this._listeners = [];
   }
 }

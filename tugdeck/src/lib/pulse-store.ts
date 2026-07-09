@@ -165,20 +165,22 @@ export class PulseStore {
     this.conn = conn;
     // Live lines fold as the commentator speaks — including while the
     // tail load is still pending (the merge dedupes by line identity).
-    this.conn.onFrame(FeedId.PULSE, (payload) => {
-      const line = parsePulseFrame(payload);
-      if (line === null) return;
-      this.fold([
-        {
-          key: lineKey(line.at, line.beat),
-          text: line.text,
-          ...(line.intent !== undefined ? { intent: line.intent } : {}),
-          scopes: Object.freeze([...line.scopes]),
-          beat: line.beat,
-          atMs: line.at,
-        },
-      ]);
-    });
+    this.disposers.push(
+      this.conn.onFrame(FeedId.PULSE, (payload) => {
+        const line = parsePulseFrame(payload);
+        if (line === null) return;
+        this.fold([
+          {
+            key: lineKey(line.at, line.beat),
+            text: line.text,
+            ...(line.intent !== undefined ? { intent: line.intent } : {}),
+            scopes: Object.freeze([...line.scopes]),
+            beat: line.beat,
+            atMs: line.at,
+          },
+        ]);
+      }),
+    );
     this.disposers.push(
       subscribeToListPulseLinesOk((payload) => this.onTail(payload)),
     );

@@ -99,11 +99,16 @@ export class TestFrameChannel {
     return this.recordedFrames.filter((f) => !isStateChangeFrame(f));
   }
 
-  onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {
+  onFrame(feedId: number, callback: (payload: Uint8Array) => void): () => void {
     if (!this.frameCallbacks.has(feedId)) {
       this.frameCallbacks.set(feedId, []);
     }
-    this.frameCallbacks.get(feedId)!.push(callback);
+    const list = this.frameCallbacks.get(feedId)!;
+    list.push(callback);
+    return () => {
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
   }
 
   /**

@@ -114,6 +114,7 @@ import {
   type FileEditorSettings,
 } from "@/lib/file-editor-settings";
 import type { EditorStats } from "@/lib/editor-stats-store";
+import { countWords, wordCountDelta } from "@/lib/word-count";
 import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
 
 import { useOptionalResponder } from "./use-responder";
@@ -169,12 +170,6 @@ interface DocStats {
   lines: number;
   words: number;
   chars: number;
-}
-
-/** Whitespace-delimited word count. */
-function countWords(text: string): number {
-  const matches = text.match(/\S+/g);
-  return matches === null ? 0 : matches.length;
 }
 
 /** The active-line-highlight extensions for a settings snapshot. */
@@ -447,10 +442,15 @@ export const TugFileEditor = React.forwardRef<
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             const doc = update.state.doc;
+            // Lines/chars are O(1) off CM6's rope; the word count is
+            // maintained incrementally in O(change size) from the
+            // changeset — never a full re-scan (see `word-count.ts`).
             docStatsRef.current = {
               lines: doc.lines,
               chars: doc.length,
-              words: countWords(doc.toString()),
+              words:
+                docStatsRef.current.words +
+                wordCountDelta(update.changes, update.startState.doc, doc),
             };
             const isExternal = update.transactions.some(
               (t) => t.annotation(externalReplace) === true,

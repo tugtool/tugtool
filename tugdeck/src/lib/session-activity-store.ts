@@ -195,7 +195,7 @@ export class SessionActivityStore {
       // The store routes by the frame's own `tug_session_id`, so it sees
       // every session — unlike the per-card `subscribeSessionFeed`, which
       // filters to one.
-      conn.onFrame(FeedId.ACTIVITY, (payload) => {
+      this.disposers.push(conn.onFrame(FeedId.ACTIVITY, (payload) => {
         const frame = parseActivityFrame(payload);
         if (frame === null) return;
         // Bin by receipt time — frames arrive ~real-time (≤250 ms) and
@@ -210,7 +210,7 @@ export class SessionActivityStore {
             at,
           );
         }
-      });
+      }));
     }
   }
 

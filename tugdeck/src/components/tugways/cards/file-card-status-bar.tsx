@@ -131,6 +131,7 @@ export function FileCardStatusBar({
           </span>
           <span
             className="file-card-status-cell file-card-status-counts"
+            data-testid="file-card-status-counts"
             title="lines / words / characters"
           >
             {`${stats.lines.toLocaleString()} / ${stats.words.toLocaleString()} / ${stats.chars.toLocaleString()}`}

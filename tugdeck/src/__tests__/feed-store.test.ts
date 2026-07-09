@@ -24,11 +24,12 @@ class MockConnection {
   private callbacks: Map<number, Array<(payload: Uint8Array) => void>> = new Map();
   private cached: Map<number, Uint8Array> = new Map();
 
-  onFrame(feedId: number, callback: (payload: Uint8Array) => void): void {
+  onFrame(feedId: number, callback: (payload: Uint8Array) => void): () => void {
     if (!this.callbacks.has(feedId)) {
       this.callbacks.set(feedId, []);
     }
-    this.callbacks.get(feedId)!.push(callback);
+    const list = this.callbacks.get(feedId)!;
+    list.push(callback);
     // Mirror `TugConnection.onFrame`'s synchronous replay-on-subscribe
     // behavior so the filter-runs-on-replay test exercises the same code
     // path the real connection uses.
@@ -36,6 +37,15 @@ class MockConnection {
     if (cached) {
       callback(cached);
     }
+    return () => {
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
+  }
+
+  /** Number of live callbacks registered for `feedId` (leak check). */
+  callbackCount(feedId: number): number {
+    return this.callbacks.get(feedId)?.length ?? 0;
   }
 
   /** Dispatch a frame on the live path. */
@@ -246,5 +256,22 @@ describe("FeedStore filter", () => {
     expect(
       (store.getSnapshot().get(FeedId.SESSION_SIDEBAND) as { payload: string }).payload,
     ).toBe("c");
+  });
+
+  test("dispose unregisters every feed callback (no leak)", () => {
+    const { conn, mock } = makeMockConn();
+    const store = new FeedStore(
+      conn,
+      [FeedId.SESSION_SIDEBAND, FeedId.PULSE] as readonly FeedIdValue[],
+    );
+    expect(mock.callbackCount(FeedId.SESSION_SIDEBAND)).toBe(1);
+    expect(mock.callbackCount(FeedId.PULSE)).toBe(1);
+
+    store.dispose();
+
+    // The connection outlives the store; without unregistering, the
+    // callback closures would pin the dead store forever.
+    expect(mock.callbackCount(FeedId.SESSION_SIDEBAND)).toBe(0);
+    expect(mock.callbackCount(FeedId.PULSE)).toBe(0);
   });
 });

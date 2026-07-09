@@ -21,6 +21,7 @@ const FEED_ID = 0x52 as const; // SESSION_STATE
 function frameSource(): SessionFrameSource & {
   push: (feedId: number, json: unknown) => void;
   pushRaw: (feedId: number, bytes: Uint8Array) => void;
+  count: (feedId: number) => number;
 } {
   const callbacks = new Map<number, Array<(payload: Uint8Array) => void>>();
   return {
@@ -28,6 +29,12 @@ function frameSource(): SessionFrameSource & {
       const list = callbacks.get(feedId) ?? [];
       list.push(callback);
       callbacks.set(feedId, list);
+      return () => {
+        const cur = callbacks.get(feedId);
+        if (cur === undefined) return;
+        const idx = cur.indexOf(callback);
+        if (idx >= 0) cur.splice(idx, 1);
+      };
     },
     push(feedId, json) {
       const bytes = new TextEncoder().encode(JSON.stringify(json));
@@ -35,6 +42,9 @@ function frameSource(): SessionFrameSource & {
     },
     pushRaw(feedId, bytes) {
       for (const cb of callbacks.get(feedId) ?? []) cb(bytes);
+    },
+    count(feedId) {
+      return callbacks.get(feedId)?.length ?? 0;
     },
   };
 }
@@ -70,15 +80,19 @@ describe("subscribeSessionFeed", () => {
     expect(seen[0].state).toBe("mine");
   });
 
-  test("dispose stops delivery without unregistering the source callback", () => {
+  test("dispose stops delivery AND unregisters the source callback", () => {
     const source = frameSource();
     const seen: SessionFeedSample[] = [];
     const dispose = subscribeSessionFeed(source, FEED_ID, "session-a", (s) =>
       seen.push(s),
     );
+    expect(source.count(FEED_ID)).toBe(1);
 
     source.push(FEED_ID, { tug_session_id: "session-a", n: 1 });
     dispose();
+    // No leaked callback: dispose unregisters from the source, not just
+    // a local tombstone.
+    expect(source.count(FEED_ID)).toBe(0);
     source.push(FEED_ID, { tug_session_id: "session-a", n: 2 });
 
     expect(seen).toHaveLength(1);

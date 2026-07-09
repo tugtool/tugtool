@@ -20,9 +20,10 @@
  * not apply to the transport — the consuming store decides what, if
  * anything, enters a `useSyncExternalStore` snapshot).
  *
- * `TugConnection.onFrame` does not return an unsubscribe; like `FeedStore`,
- * disposal is a local tombstone — the callback stays registered on the
- * long-lived connection but drops every frame after `dispose`.
+ * Disposal actually unregisters the callback from the (long-lived)
+ * connection via the unsubscribe `onFrame` returns — a per-card
+ * subscription that only tombstoned would pin its closure for the life
+ * of the connection.
  *
  * @module lib/session-feed
  */
@@ -36,7 +37,10 @@ import { defaultDecode } from "./feed-store";
  * frame source and real payload bytes.
  */
 export interface SessionFrameSource {
-  onFrame(feedId: FeedIdValue, callback: (payload: Uint8Array) => void): void;
+  onFrame(
+    feedId: FeedIdValue,
+    callback: (payload: Uint8Array) => void,
+  ): () => void;
 }
 
 /** A decoded session-feed payload: a JSON object tagged with its session. */
@@ -58,7 +62,7 @@ export function subscribeSessionFeed(
   decode: (payload: Uint8Array) => unknown = defaultDecode,
 ): () => void {
   let disposed = false;
-  source.onFrame(feedId, (payload: Uint8Array) => {
+  const unsubscribe = source.onFrame(feedId, (payload: Uint8Array) => {
     if (disposed) return;
     let decoded: unknown;
     try {
@@ -73,5 +77,6 @@ export function subscribeSessionFeed(
   });
   return () => {
     disposed = true;
+    unsubscribe();
   };
 }

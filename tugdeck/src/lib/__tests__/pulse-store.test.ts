@@ -29,10 +29,14 @@ class FakeConnection {
   send(feedId: FeedIdValue, payload: Uint8Array): void {
     this.frames.push({ feedId, payload });
   }
-  onFrame(feedId: number, callback: FrameCallback): void {
+  onFrame(feedId: number, callback: FrameCallback): () => void {
     const list = this.frameSubscribers.get(feedId) ?? [];
     list.push(callback);
     this.frameSubscribers.set(feedId, list);
+    return () => {
+      const idx = list.indexOf(callback);
+      if (idx >= 0) list.splice(idx, 1);
+    };
   }
   pushPulseFrame(line: Record<string, unknown>): void {
     const payload = new TextEncoder().encode(JSON.stringify(line));
