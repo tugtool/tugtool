@@ -1,30 +1,37 @@
 /**
  * use-file-editor-settings.ts — one File card's editor settings: read
- * the card-local values (seeded from the deck-wide defaults on first
- * open), and write them back when the gear popup changes one.
+ * the resolved values, and write them back when the gear popup changes
+ * one.
  *
- * Default-then-card-local, mirroring `use-model.ts`:
+ * Default-then-card-local:
  *
  *   - Per-card values persist at `dev.file-editor/<cardId>` and always
  *     win once present.
- *   - The deck-wide defaults at `dev.tugtool.file-editor/settings` seed
- *     a card with nothing of its own. On first mount a fresh card pins
- *     the resolved defaults into its per-card slot, so a later change to
- *     the deck defaults never disturbs an already-open card ("settings
- *     apply when the file is opened; from then on the card owns them").
+ *   - The deck-wide defaults at `dev.tugtool.file-editor/settings` apply
+ *     to any card with nothing of its own.
+ *   - There is NO mount-time write. A card resolves `persisted ??
+ *     defaults ?? built-in` live, so an untouched card follows the deck
+ *     defaults (even if the user edits them in Settings while it is
+ *     open) and leaves no per-card tugbank entry to accumulate. The
+ *     FIRST gear change snapshots the full current settings into the
+ *     card's own slot, and from then on the card owns them — "settings
+ *     apply when the file is opened; once tuned, the card owns them."
  *
- * Both surfaces are pure tugbank state — no IPC, no session round-trip
- * (unlike model). Writing a setting is an optimistic local-cache write
- * plus a fire-and-forget PUT.
+ * This deliberately does NOT pin on mount (an earlier version did): that
+ * both leaked a per-card blob for every card ever opened and could pin
+ * hardcoded defaults if the deck-defaults frame had not yet cached at
+ * mount. Resolving live avoids both.
+ *
+ * Pure tugbank state — no IPC, no session round-trip. Writing a setting
+ * is an optimistic local-cache write plus a fire-and-forget PUT.
  *
  * Laws: [L02] both reads enter through `useTugbankValue`
- * (useSyncExternalStore); [L07] the seed effect reads current state at
- * fire time; no localStorage — persistence is tugbank only.
+ * (useSyncExternalStore); no localStorage — persistence is tugbank only.
  *
  * @module lib/use-file-editor-settings
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
@@ -81,36 +88,27 @@ export function useFileEditorSettings(
     null,
   );
 
+  // Resolve live: the card's own persisted values win; otherwise the
+  // deck-wide defaults (which update in place if the user edits them in
+  // Settings while this untouched card is open); otherwise the built-in
+  // defaults. No mount-time write — a card that is never customized
+  // leaves no per-card tugbank entry to accumulate, and there is no race
+  // against the defaults frame landing after mount.
   const settings = useMemo(
     () => resolveFileEditorSettings(persisted, defaults),
     [persisted, defaults],
   );
 
-  // Pre-armed by a manual `setSetting` so the seed effect never clobbers
-  // a change the user just made.
-  const sentRef = useRef(false);
-
+  // The first gear change snapshots the FULL current settings into the
+  // card's own slot (`{ ...settings, ...partial }`), so from then on the
+  // card is card-local and no longer tracks deck-default changes — the
+  // "settings apply when opened, then the card owns them" contract.
   const setSetting = useCallback(
     (partial: Partial<FileEditorSettings>) => {
-      sentRef.current = true;
-      const next = { ...settings, ...partial };
-      writePersistedFileEditorSettings(cardId, next);
+      writePersistedFileEditorSettings(cardId, { ...settings, ...partial });
     },
     [cardId, settings],
   );
-
-  // First-open seed: a card with nothing persisted pins the resolved
-  // defaults into its per-card slot, freezing it against later changes
-  // to the deck defaults. Fires at most once per mount.
-  useEffect(() => {
-    if (sentRef.current) return;
-    if (persisted !== null) {
-      sentRef.current = true;
-      return;
-    }
-    sentRef.current = true;
-    writePersistedFileEditorSettings(cardId, settings);
-  }, [cardId, persisted, settings]);
 
   return { settings, setSetting };
 }

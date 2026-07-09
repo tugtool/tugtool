@@ -122,6 +122,21 @@ function detectLineEnding(content: string): LineEnding {
   return "LF";
 }
 
+/**
+ * Serialize the editor's text to the file's chosen newline style. The
+ * editor (CM6) always hands back `\n`-only text — it normalizes line
+ * breaks internally regardless of what the file used — so the on-disk
+ * newline representation is owned HERE, at the write boundary: normalize
+ * to `\n` defensively, then expand to the target sequence. This is what
+ * makes the status-bar line-ending choice (and a CRLF/CR file's original
+ * style) actually persist to disk rather than being flattened to LF.
+ */
+function serializeEol(text: string, ending: LineEnding): string {
+  const lf = text.replace(/\r\n?/g, "\n");
+  if (ending === "LF") return lf;
+  return lf.replace(/\n/g, ending === "CRLF" ? "\r\n" : "\r");
+}
+
 const EMPTY_SNAPSHOT: FileEditorSnapshot = {
   phase: "empty",
   path: null,
@@ -312,7 +327,7 @@ export class FileEditorStore {
     const snap = this._snapshot;
     if (this._bridge === null || snap.phase !== "ready") return;
     this._clearDebounce();
-    const content = this._bridge.getText();
+    const content = serializeEol(this._bridge.getText(), snap.lineEnding);
     const oldPath = snap.path;
     const oldBaseline = this._baselineSha256;
     const wasDraft = snap.draftId !== null;
@@ -394,8 +409,11 @@ export class FileEditorStore {
 
     const path = snap.path;
     if (path === null) return Promise.resolve();
-    const content = this._bridge.getText();
-    this._lastKnownEmpty = content === "";
+    const rawText = this._bridge.getText();
+    this._lastKnownEmpty = rawText === "";
+    // The file's newline style is owned here — the editor always hands
+    // back `\n`-only text (see `serializeEol`).
+    const content = serializeEol(rawText, snap.lineEnding);
     this._update({ saveState: "writing" });
     const flight = writeFileToDisk(
       { path, content, baselineSha256: this._baselineSha256 },
@@ -495,15 +513,24 @@ export class FileEditorStore {
   }
 
   /**
-   * Record the line-ending the user chose from the status bar. The
-   * editor separately converts the buffer's newlines (a normal edit
-   * that arms autosave); this reflects the choice in the snapshot
-   * immediately so the status bar updates without waiting for the
-   * write + disk re-detect to round-trip.
+   * Change the file's newline style (the status-bar line-ending popup).
+   * The buffer text is unchanged — the newline representation is applied
+   * at the write boundary (`serializeEol`) — so this records the choice
+   * and forces a re-serialize write of the current content, unless the
+   * file is read-only or mid-conflict.
    */
-  noteLineEnding(ending: LineEnding): void {
-    if (this._snapshot.lineEnding === ending) return;
+  setLineEnding(ending: LineEnding): void {
+    const snap = this._snapshot;
+    if (snap.lineEnding === ending) return;
     this._update({ lineEnding: ending });
+    if (snap.phase !== "ready" || snap.readOnly || snap.conflict !== null) {
+      return;
+    }
+    // Force a write even from a clean state — flush no-ops when clean.
+    if (this._snapshot.saveState === "clean") {
+      this._update({ saveState: "editing" });
+    }
+    void this.flush();
   }
 
   // ── External changes ─────────────────────────────────────────────────────

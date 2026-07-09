@@ -188,8 +188,15 @@ function useTabOverflow(
   const rafIdRef = useRef<number | null>(null);
 
   // Serialised title key for dependency tracking -- triggers re-measurement
-  // when any tab title changes.
-  const titleKey = cards.map((c) => c.title).join("|");
+  // when any tab title changes. File tabs draw their label from
+  // `cardTitleStore` (the static `card.title` is just "File"), so fold the
+  // per-card override in and subscribe to it — otherwise binding a file
+  // (label "File" → "foo.py") would widen the tabs without recomputing
+  // overflow, leaving them clipped until an unrelated resize.
+  const overrideKey = useSyncExternalStore(cardTitleStore.subscribe, () =>
+    cards.map((c) => cardTitleStore.get(c.id) ?? "").join("|"),
+  );
+  const titleKey = `${cards.map((c) => c.title).join("|")}|${overrideKey}`;
 
   useLayoutEffect(() => {
     const bar = barRef.current;

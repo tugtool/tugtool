@@ -52,7 +52,11 @@ export function SettingsFileEditorBody() {
     defaultsStore.set(partial);
 
   return (
-    <div className="settings-file-editor" data-testid="settings-file-editor">
+    <div
+      className="settings-file-editor"
+      data-slot="settings-file-editor"
+      data-testid="settings-file-editor"
+    >
       <FileEditorControls settings={defaults} onChange={onChange} />
 
       <ResponderScope>

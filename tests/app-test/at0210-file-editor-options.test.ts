@@ -44,6 +44,44 @@ function mkFixture(): { dir: string; file: string } {
   return { dir, file };
 }
 
+/** A fixture whose newlines are CRLF (Windows). */
+function mkCrlfFixture(): { dir: string; file: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0210-crlf-"));
+  const file = path.join(dir, "windows.txt");
+  const crlf =
+    Array.from({ length: 6 }, (_, i) => `line ${i + 1}`).join("\r\n") + "\r\n";
+  fs.writeFileSync(file, crlf, "utf8");
+  return { dir, file };
+}
+
+/** Type into the editor through CM6's real beforeinput pipeline. */
+async function typeIntoEditor(app: App, text: string): Promise<void> {
+  await app.evalJS<boolean>(
+    `(function(){
+      var el = document.querySelector(${JSON.stringify(EDITOR_CONTENT)});
+      if (!el) return false;
+      el.focus();
+      return document.execCommand("insertText", false, ${JSON.stringify(text)});
+    })()`,
+  );
+}
+
+/** Poll the real file on disk until `predicate` holds. */
+async function waitForDisk(
+  file: string,
+  predicate: (content: string) => boolean,
+  timeoutMs = 8000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let last = "";
+  while (Date.now() < deadline) {
+    last = fs.readFileSync(file, "utf8");
+    if (predicate(last)) return last;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`[at0210] disk predicate unmet in ${timeoutMs}ms; last:\n${last.slice(0, 200)}`);
+}
+
 async function seedFileCard(app: App, filePath: string): Promise<void> {
   await app.seedDeckState({
     state: {
@@ -145,6 +183,43 @@ describe.skipIf(!SHOULD_RUN)("at0210: File card top bar + gear options", () => {
           timeoutMs: 15000,
         });
         expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(true);
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "autosave preserves a file's CRLF line endings on write",
+    async () => {
+      const { dir, file } = mkCrlfFixture();
+      const app = await launchTugApp({ testName: "at0210-crlf" });
+      try {
+        await seedFileCard(app, file);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(EDITOR_CONTENT)});
+            return el !== null && el.innerText.indexOf("line 1") !== -1;
+          })()`,
+          { timeoutMs: 15000 },
+        );
+
+        // The status bar detected the file's newline style.
+        const statusText = await app.evalJS<string>(
+          `document.querySelector('${CARD} [data-slot="file-card-status-bar"]').innerText`,
+        );
+        expect(statusText).toContain("Windows (CRLF)");
+
+        // Type an edit → autosave writes. CM6 normalizes to \n
+        // internally, so the store must re-serialize to CRLF at the
+        // write boundary; the file must NOT be flattened to LF.
+        await typeIntoEditor(app, "EDIT ");
+        const disk = await waitForDisk(file, (c) => c.includes("EDIT"));
+        expect(disk.includes("\r\n")).toBe(true);
+        // No bare LF: every "\n" is part of a "\r\n".
+        expect(disk.split("\r\n").length).toBe(disk.split("\n").length);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

@@ -61,6 +61,7 @@ export function FileEditorControls({ settings, onChange }: FileEditorControlsPro
     <ResponderScope>
       <div
         className="file-editor-controls"
+        data-slot="file-editor-controls"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         <TugBox

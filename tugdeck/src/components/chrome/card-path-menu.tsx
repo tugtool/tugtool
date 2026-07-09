@@ -9,6 +9,9 @@
  * programmatically-opened popover shape the close-confirm popover in
  * the title bar uses. Display-only for now: no per-segment navigation.
  *
+ * Laws: composes `TugPopover` + `TugPopupList` (each keeps its own
+ * tokens [L20]); anchored controlled-open popover, no card-local state.
+ *
  * @module components/chrome/card-path-menu
  */
 

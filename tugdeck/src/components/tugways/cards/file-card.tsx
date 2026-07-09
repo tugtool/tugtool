@@ -177,13 +177,10 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     languageOverrideId ?? languageIdForPath(snapshot.path);
   const effectiveLanguageExt = extensionForLanguageId(effectiveLanguageId);
 
-  // Status-bar line-ending popup: convert the buffer's newlines (arms
-  // autosave) and reflect the choice immediately.
+  // Status-bar line-ending popup: the store owns the on-disk newline
+  // representation (applied at the write boundary) and re-serializes.
   const setLineEnding = useCallback(
-    (ending: LineEnding) => {
-      editorRef.current?.applyLineEnding(ending);
-      store.noteLineEnding(ending);
-    },
+    (ending: LineEnding) => store.setLineEnding(ending),
     [store],
   );
 

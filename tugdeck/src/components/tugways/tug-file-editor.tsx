@@ -244,12 +244,6 @@ export interface TugFileEditorDelegate {
   findPrevious(): void;
   /** Count matches for the active query (0 when none / invalid). */
   getMatchCount(): number;
-  /**
-   * Convert every newline in the buffer to `ending`'s sequence — the
-   * status-bar line-ending popup. A normal edit (arms autosave, so the
-   * converted file writes through); a no-op when already uniform.
-   */
-  applyLineEnding(ending: "LF" | "CRLF" | "CR"): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -658,23 +652,6 @@ export const TugFileEditor = React.forwardRef<
     live.focus();
   }, []);
 
-  const applyLineEndingFn = useCallback(
-    (ending: "LF" | "CRLF" | "CR"): void => {
-      const live = viewRef.current;
-      if (live === null) return;
-      const eol = ending === "CRLF" ? "\r\n" : ending === "CR" ? "\r" : "\n";
-      const current = live.state.doc.toString();
-      const next = current.replace(/\r\n|\r|\n/g, eol);
-      if (next === current) return;
-      // A normal change (no externalReplace annotation) so the update
-      // listener arms autosave and the converted file writes through.
-      live.dispatch({
-        changes: { from: 0, to: live.state.doc.length, insert: next },
-      });
-    },
-    [],
-  );
-
   useImperativeHandle(
     ref,
     (): TugFileEditorDelegate => ({
@@ -692,9 +669,8 @@ export const TugFileEditor = React.forwardRef<
         if (live !== null) cmFindPrevious(live);
       },
       getMatchCount: getMatchCountFn,
-      applyLineEnding: applyLineEndingFn,
     }),
-    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, applyLineEndingFn],
+    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn],
   );
 
   // ---- Context menu ----
