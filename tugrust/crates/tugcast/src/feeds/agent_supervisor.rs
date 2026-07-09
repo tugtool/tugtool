@@ -5294,8 +5294,7 @@ mod tests {
         // tug id — the persisted payload itself is untagged (the bridge
         // merges the raw line, pre-splice), and the client drops untagged
         // sideband frames per the [D06]/[D11] session filter.
-        let received_json: serde_json::Value =
-            serde_json::from_slice(&received.payload).unwrap();
+        let received_json: serde_json::Value = serde_json::from_slice(&received.payload).unwrap();
         assert_eq!(
             received_json.get("tug_session_id").and_then(|v| v.as_str()),
             Some("sess-1"),

@@ -302,8 +302,9 @@ mod tests {
         assert_eq!(body["readOnly"], true);
 
         // Restore writability so the tempdir can clean up everywhere.
+        use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&path).unwrap().permissions();
-        perms.set_readonly(false);
+        perms.set_mode(0o644);
         std::fs::set_permissions(&path, perms).unwrap();
     }
 }

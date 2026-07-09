@@ -1411,10 +1411,13 @@ mod tests {
         // hits. Only the filesystem fallback can clear it.
         git_output(repo, &["worktree", "lock", &worktree.to_string_lossy()]).unwrap();
         assert!(
-            !git_output(repo, &["worktree", "remove", "--force", &worktree.to_string_lossy()])
-                .unwrap()
-                .status
-                .success(),
+            !git_output(
+                repo,
+                &["worktree", "remove", "--force", &worktree.to_string_lossy()]
+            )
+            .unwrap()
+            .status
+            .success(),
             "precondition: git must refuse to remove the locked worktree"
         );
         assert!(worktree.exists(), "precondition: worktree still present");
@@ -1423,7 +1426,10 @@ mod tests {
         remove_dash_worktree(repo, &branch, &worktree, &mut warnings);
 
         assert!(!worktree.exists(), "fallback must remove the directory");
-        assert!(warnings.is_empty(), "no warning when the directory is gone: {warnings:?}");
+        assert!(
+            warnings.is_empty(),
+            "no warning when the directory is gone: {warnings:?}"
+        );
     }
 
     #[serial]

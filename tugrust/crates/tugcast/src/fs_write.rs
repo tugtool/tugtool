@@ -239,7 +239,8 @@ mod tests {
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, "externally changed").unwrap();
 
-        let (status, body) = write_file(&path, "mine", Some(&sha256_hex(b"what I last saw")), false);
+        let (status, body) =
+            write_file(&path, "mine", Some(&sha256_hex(b"what I last saw")), false);
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"], "conflict");
         assert_eq!(body["diskSha256"], sha256_hex(b"externally changed"));
@@ -305,8 +306,7 @@ mod tests {
         assert!(path.exists());
 
         // Matching baseline → removed.
-        let (status, body) =
-            write_file(&path, "", Some(&sha256_hex(b"draft content")), true);
+        let (status, body) = write_file(&path, "", Some(&sha256_hex(b"draft content")), true);
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["deleted"], true);
         assert!(!path.exists());
