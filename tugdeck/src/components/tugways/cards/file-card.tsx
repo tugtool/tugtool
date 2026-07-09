@@ -463,20 +463,25 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   // returned by `registerCardCloseGuard` runs on cleanup ([L27]).
   useLayoutEffect(() => {
     if (!isManual) return;
-    return registerCardCloseGuard(cardId, async () => {
-      const snap = store.getSnapshot();
-      if (snap.saveState === "clean") return "close";
-      const choice = await sheets.presentCloseSheet(snap.fileName ?? "Untitled");
-      if (choice === "cancel") return "cancel";
-      if (choice === "dont-save") {
-        await store.discardAside();
-        return "close";
-      }
-      const result = await store.save();
-      if (result === "needs-path") {
-        return (await runSaveAsPanel()) ? "close" : "cancel";
-      }
-      return result === "ok" ? "close" : "cancel";
+    return registerCardCloseGuard(cardId, {
+      // The pane activates this card before running the sheet when the
+      // buffer is dirty, so the user decides looking at the content.
+      needsDecision: () => store.getSnapshot().saveState !== "clean",
+      run: async () => {
+        const snap = store.getSnapshot();
+        if (snap.saveState === "clean") return "close";
+        const choice = await sheets.presentCloseSheet(snap.fileName ?? "Untitled");
+        if (choice === "cancel") return "cancel";
+        if (choice === "dont-save") {
+          await store.discardAside();
+          return "close";
+        }
+        const result = await store.save();
+        if (result === "needs-path") {
+          return (await runSaveAsPanel()) ? "close" : "cancel";
+        }
+        return result === "ok" ? "close" : "cancel";
+      },
     });
   }, [isManual, cardId, store, sheets, runSaveAsPanel]);
 
@@ -743,8 +748,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         onSave={() => void doSave()}
         canSave={
           !snapshot.readOnly &&
-          snapshot.conflict === null &&
-          (isDirty || snapshot.untitled)
+          (isDirty || snapshot.untitled || snapshot.conflict !== null)
         }
         onRevealInFinder={revealInFinder}
         settings={editorSettings}
@@ -861,7 +865,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
               </TugPushButton>
               <TugPushButton
                 data-testid="file-card-conflict-overwrite"
-                role="destructive"
+                role="danger"
                 onClick={() => {
                   void store.resolveConflict("overwrite");
                 }}

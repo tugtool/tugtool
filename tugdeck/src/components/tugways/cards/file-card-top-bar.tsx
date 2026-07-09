@@ -48,9 +48,10 @@ export interface FileCardTopBarProps {
   onSave: () => void;
   /**
    * Whether Save is currently possible (manual mode) — mirrors the File ▸
-   * Save menu gate: not read-only, no unresolved conflict, and either dirty
-   * or untitled. Disables the Save button so it can't beep or re-raise a
-   * conflict from a clean/blocked state.
+   * Save menu gate: not read-only, and dirty, untitled, or conflicted.
+   * A conflict keeps Save ENABLED as the re-entry to the conflict sheet
+   * after a Cancel (the write re-adjudicates and re-presents); only a
+   * clean titled buffer or a read-only file disables it.
    */
   canSave: boolean;
   /** Reveal the bound file in the Finder (path click); absent for untitled. */

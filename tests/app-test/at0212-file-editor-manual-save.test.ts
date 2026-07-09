@@ -413,6 +413,278 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
   );
 
   test(
+    "a conflict sheet preempting the close sheet resolves the guard (no wedge)",
+    async () => {
+      const { dir, file } = mkFixture();
+      const app = await launchTugApp({ testName: "at0212-preempt" });
+      try {
+        await seedFileCard(app, file);
+        await waitForEditor(app, "alpha");
+        await typeIntoEditor(app, "MINE ");
+        await waitForSaveCell(app, "Edited");
+        await settle();
+
+        // Another app changes the file, then the user clicks X: the close
+        // sheet goes up while the divergence is still undetected.
+        fs.writeFileSync(file, "FOREIGN CONTENT\n", "utf8");
+        await app.nativeClickAtElement(CLOSE_BUTTON);
+        await settle();
+        await waitSheetButton(app, "dont-save");
+
+        // An activation recheck detects the divergence mid-decision; the
+        // conflict sheet preempts the close sheet. The superseded guard
+        // promise must resolve (as cancel) — an orphaned promise wedges
+        // guardRunningRef and silently swallows every later close. Retry
+        // the synthetic activation: the recheck deliberately no-ops while
+        // an aside flush is in flight, so a single dispatch can be
+        // swallowed by the debounced aside write.
+        {
+          const deadline = Date.now() + 15000;
+          let up = false;
+          while (Date.now() < deadline && !up) {
+            await app.evalJS<null>(
+              `(document.dispatchEvent(new Event("visibilitychange")), null)`,
+            );
+            await new Promise((r) => setTimeout(r, 250));
+            up = await app.evalJS<boolean>(
+              `document.querySelector('[data-testid="file-save-sheet-save-anyway"]') !== null`,
+            );
+          }
+          expect(up).toBe(true);
+        }
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector('[data-testid="file-save-sheet-dont-save"]') !== null`,
+          ),
+        ).toBe(false);
+        await settle();
+
+        // Cancel to the badge state. Save must stay ENABLED under the
+        // cancelled conflict — it is the re-entry to the sheet; a save
+        // re-adjudicates against disk and re-presents.
+        await app.click(`[data-testid="file-save-sheet-cancel"]`);
+        await settle();
+        await waitMenuEnabled(app, "file.save", true);
+        // Click into the editor first: the preempted close sheet never ran
+        // its own focus-restore, so re-anchor the chain with a real gesture
+        // before dispatching the save.
+        await app.nativeClickAtElement(EDITOR_CONTENT);
+        await settle();
+        await dispatchControl(app, "save");
+        await settle();
+        await waitSheetButton(app, "save-anyway");
+        await settle();
+        await app.click(`[data-testid="file-save-sheet-save-anyway"]`);
+        await settle();
+        await waitForSaveCell(app, "Saved");
+        expect(fs.readFileSync(file, "utf8")).toContain("MINE ");
+
+        // The guard must not be wedged: a clean-card X-click closes.
+        await app.nativeClickAtElement(CLOSE_BUTTON);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${EDITOR_CONTENT}') === null`,
+          { timeoutMs: 15000 },
+        );
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "the tab-bar × consults the close guard on a dirty card",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0212-tab-"));
+      const fileA = path.join(dir, "a.txt");
+      const fileB = path.join(dir, "b.txt");
+      fs.writeFileSync(fileA, ORIGINAL, "utf8");
+      fs.writeFileSync(fileB, "other\n", "utf8");
+      const app = await launchTugApp({ testName: "at0212-tab-close" });
+      try {
+        // Two file cards in ONE pane so the tab bar renders; A is active.
+        await app.seedDeckState({
+          state: {
+            cards: [
+              { id: "A", componentId: "file", title: "File", closable: true },
+              { id: "B", componentId: "file", title: "File", closable: true },
+            ],
+            panes: [
+              {
+                id: "p1",
+                position: { x: 40, y: 40 },
+                size: { width: 760, height: 560 },
+                cardIds: ["A", "B"],
+                activeCardId: "A",
+                title: "",
+                acceptsFamilies: ["standard"],
+              },
+            ],
+            activePaneId: "p1",
+            hasFocus: true,
+          },
+          cardStates: {
+            A: { content: { path: fileA, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+            B: { content: { path: fileB, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+          },
+          focusCardId: "A",
+        });
+        await waitForEditor(app, "alpha");
+        await typeIntoEditor(app, "UNSAVED ");
+        await waitForSaveCell(app, "Edited");
+        await settle();
+
+        // The tab × is a close gesture like the pane X — it must raise the
+        // close sheet for a dirty card, never destroy it silently.
+        await app.click(`[data-testid="tug-tab-close-A"]`);
+        await settle();
+        await waitSheetButton(app, "cancel");
+        await settle();
+        await app.click(`[data-testid="file-save-sheet-cancel"]`);
+        await settle();
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${EDITOR_CONTENT}') !== null`,
+        );
+        expect(await saveCell(app)).toBe("Edited");
+
+        // Don't Save via the tab × closes the tab without writing.
+        await app.click(`[data-testid="tug-tab-close-A"]`);
+        await settle();
+        await waitSheetButton(app, "dont-save");
+        await settle();
+        await app.click(`[data-testid="file-save-sheet-dont-save"]`);
+        await settle();
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="tug-tab-close-A"]') === null`,
+          { timeoutMs: 15000 },
+        );
+        expect(fs.readFileSync(fileA, "utf8")).toBe(ORIGINAL);
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "pane close visits a dirty background tab before the pane dies",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0212-visit-"));
+      const fileA = path.join(dir, "a.txt");
+      const fileB = path.join(dir, "b.txt");
+      fs.writeFileSync(fileA, ORIGINAL, "utf8");
+      fs.writeFileSync(fileB, "other\n", "utf8");
+      const app = await launchTugApp({ testName: "at0212-visit-dirty" });
+      const B_EDITOR = `[data-card-id="B"] [data-slot="tug-file-editor"] .cm-content`;
+      const B_SAVE_CELL = `[data-card-id="B"] [data-testid="file-card-status-save"]`;
+      try {
+        await app.seedDeckState({
+          state: {
+            cards: [
+              { id: "A", componentId: "file", title: "File", closable: true },
+              { id: "B", componentId: "file", title: "File", closable: true },
+            ],
+            panes: [
+              {
+                id: "p1",
+                position: { x: 40, y: 40 },
+                size: { width: 760, height: 560 },
+                cardIds: ["A", "B"],
+                activeCardId: "A",
+                title: "",
+                acceptsFamilies: ["standard"],
+              },
+            ],
+            activePaneId: "p1",
+            hasFocus: true,
+          },
+          cardStates: {
+            A: { content: { path: fileA, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+            B: { content: { path: fileB, anchor: { line: 1, ch: 0 }, scrollTop: 0 } },
+          },
+          focusCardId: "A",
+        });
+        await waitForEditor(app, "alpha");
+
+        // Dirty card B, then return to the (clean) card A — the user's
+        // scenario: the dirty buffer sits in a BACKGROUND tab.
+        await app.click(`[data-testid="tug-tab-B"]`);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector('${B_EDITOR}');
+            return el !== null && el.innerText.indexOf("other") !== -1;
+          })()`,
+          { timeoutMs: 15000 },
+        );
+        await settle();
+        const typed = await app.evalJS<boolean>(
+          `(function(){
+            var el = document.querySelector('${B_EDITOR}');
+            if (!el) return false;
+            el.focus();
+            return document.execCommand("insertText", false, "UNSAVED ");
+          })()`,
+        );
+        expect(typed).toBe(true);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector('${B_SAVE_CELL}');
+            return el !== null && el.innerText.indexOf("Edited") === 0;
+          })()`,
+          { timeoutMs: 15000 },
+        );
+        await app.click(`[data-testid="tug-tab-A"]`);
+        await settle();
+
+        // Pane X: the whole pane is going away, so the dirty background
+        // tab must be VISITED — activated and asked — never dropped
+        // behind the Close-N-Tabs popover.
+        await app.nativeClickAtElement(CLOSE_BUTTON);
+        await settle();
+        await waitSheetButton(app, "dont-save");
+        // Visited: B's editor is the visible one while its sheet asks.
+        expect(
+          await app.evalJS<boolean>(
+            `(function(){
+              var el = document.querySelector('${B_EDITOR}');
+              return el !== null && el.offsetParent !== null;
+            })()`,
+          ),
+        ).toBe(true);
+        await settle();
+
+        // Cancel aborts the whole pane close; the edits survive.
+        await app.click(`[data-testid="file-save-sheet-cancel"]`);
+        await settle();
+        expect(
+          await app.evalJS<string>(`document.querySelector('${B_SAVE_CELL}').innerText`),
+        ).toStartWith("Edited");
+
+        // X again: Don't Save finishes the close directly — the visit
+        // sequence collected the explicit decision, so the Close-N-Tabs
+        // popover is superseded (no double prompt). The buffer's edits
+        // never reach disk.
+        await app.nativeClickAtElement(CLOSE_BUTTON);
+        await settle();
+        await waitSheetButton(app, "dont-save");
+        await settle();
+        await app.click(`[data-testid="file-save-sheet-dont-save"]`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-card-id="B"]') === null`,
+          { timeoutMs: 15000 },
+        );
+        expect(fs.readFileSync(fileB, "utf8")).toBe("other\n");
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "New Text File opens a second Untitled editor",
     async () => {
       const { dir, file } = mkFixture();

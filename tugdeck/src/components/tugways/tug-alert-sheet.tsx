@@ -66,12 +66,17 @@ export function TugAlertSheetView({
     icon === undefined ? <Info aria-hidden="true" /> : icon;
   // Author the actions into the sheet's trapped focus mode: Tab walks Cancel →
   // confirm, with the confirm button seeded as the live default so it opens
-  // filled+ring (an action confirm promotes its `primary` tint to the role fill;
-  // a danger confirm keeps its fill). Single-button alerts seed the lone confirm.
+  // filled+ring (an action confirm promotes its `primary` tint to the role
+  // fill). Danger keeps Return safe by seeding Cancel when present — same
+  // rule as TugAlert — so Return can't fire a destructive confirm; the
+  // danger fill stays on the confirm as role signaling. Single-button
+  // alerts seed the lone confirm.
   const focusGroup = React.useId();
   const CANCEL_ORDER = 0;
   const CONFIRM_ORDER = 1;
-  useSeedKeyView(`${focusGroup}:${CONFIRM_ORDER}`);
+  const seedOrder =
+    confirmRole === "danger" && cancelLabel !== null ? CANCEL_ORDER : CONFIRM_ORDER;
+  useSeedKeyView(`${focusGroup}:${seedOrder}`);
   return (
     <div className="tug-alert-sheet">
       <div

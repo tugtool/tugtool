@@ -50,7 +50,7 @@ import { CardPathMenu } from "@/components/chrome/card-path-menu";
 import { cardTitleStore } from "@/lib/card-title-store";
 import {
   getCardCloseGuard,
-  type CardCloseGuard,
+  type CardCloseDecision,
 } from "@/lib/card-close-guard";
 import {
   resolveCardResourcePath,
@@ -109,6 +109,13 @@ export interface CardTitleBarHandle {
     message: string;
     confirmLabel: string;
     onConfirm: () => void;
+    /**
+     * Which cards' close guards this gesture must consult: `"active"`
+     * (single-card close — Cmd-W's close-active-tab) or `"pane"` (the
+     * whole pane is going away — Close All; every hosted card's guard
+     * runs, visiting each dirty card). Defaults to `"active"`.
+     */
+    guardScope?: "active" | "pane";
   }) => void;
 }
 
@@ -144,12 +151,14 @@ export interface CardTitleBarProps {
    */
   resolveResourcePath?: () => CardResourcePath | null;
   /**
-   * Resolve the close guard registered by the active card, if any.
-   * A registered guard supersedes the `confirmClose` popover for that card
-   * at every close site; Option-click still bypasses it. Called live at
-   * close time so the guard always reflects the current active card.
+   * Resolve the close decision for a close gesture, if any card demands
+   * one. `"active"` consults only the active card's guard (single-card
+   * close); `"pane"` composes every hosted card's guard — the pane visits
+   * each dirty card before it dies. A resolved decision supersedes the
+   * `confirmClose` popover; Option-click still bypasses it. Called live at
+   * close time so the guards always reflect current cards.
    */
-  resolveCloseGuard?: () => CardCloseGuard | null;
+  resolveCloseGuard?: (scope: "active" | "pane") => CardCloseDecision | null;
   /**
    * Whether the X button (and the imperative `requestClose()` handle)
    * routes through the close-confirm popover. When `false`, X-click and
@@ -269,14 +278,14 @@ function CardTitleBar({
   // (`!confirmClose` short-circuit) as well as ⌘W and the imperative
   // handle — Option-click bypasses it at the call site.
   const withCloseDecision = useCallback(
-    (proceed: () => void): boolean => {
-      const guard = resolveCloseGuard?.() ?? null;
-      if (!guard) return false;
+    (proceed: () => void, scope: "active" | "pane"): boolean => {
+      const decision = resolveCloseGuard?.(scope) ?? null;
+      if (!decision) return false;
       if (guardRunningRef.current) return true;
       guardRunningRef.current = true;
-      void guard().then((decision) => {
+      void decision().then((outcome) => {
         guardRunningRef.current = false;
-        if (decision === "close") proceed();
+        if (outcome === "close") proceed();
       });
       return true;
     },
@@ -308,8 +317,9 @@ function CardTitleBar({
       }
       // A registered close guard supersedes the confirm popover — even on
       // a non-`confirmClose` pane, where a plain X-click would otherwise
-      // close immediately.
-      if (withCloseDecision(() => onClose?.())) return;
+      // close immediately. The X kills the whole pane, so every hosted
+      // card's guard runs, not just the active one.
+      if (withCloseDecision(() => onClose?.(), "pane")) return;
       if (!confirmClose) {
         onClose?.();
       } else {
@@ -337,7 +347,7 @@ function CardTitleBar({
         onClose?.();
         return;
       }
-      if (withCloseDecision(() => onClose?.())) return;
+      if (withCloseDecision(() => onClose?.(), "pane")) return;
       if (!confirmClose) {
         onClose?.();
         return;
@@ -370,18 +380,20 @@ function CardTitleBar({
         if (confirmClose) openCloseConfirm(paneCloseIntent());
         else onClose?.();
       };
-      // ⌘W has no Option-bypass; the guard always gets first say.
-      if (withCloseDecision(proceed)) return;
+      // ⌘W has no Option-bypass; the guard always gets first say. This
+      // handle closes the whole pane, so run every hosted card's guard.
+      if (withCloseDecision(proceed, "pane")) return;
       proceed();
     },
-    requestCloseWith: ({ needsConfirm, message, confirmLabel, onConfirm }) => {
+    requestCloseWith: ({ needsConfirm, message, confirmLabel, onConfirm, guardScope }) => {
       const proceed = () => {
         if (needsConfirm) openCloseConfirm({ message, confirmLabel, onConfirm });
         else onConfirm();
       };
-      // The active card's guard runs first; a multi-tab pane still keeps
-      // its "Close N Tabs?" popover after the guard resolves `"close"`.
-      if (withCloseDecision(proceed)) return;
+      // The caller says whose guards this gesture answers to; a multi-tab
+      // pane still keeps its "Close N Tabs?" popover after the guards
+      // resolve `"close"`.
+      if (withCloseDecision(proceed, guardScope ?? "active")) return;
       proceed();
     },
   }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent, withCloseDecision]);
@@ -951,6 +963,8 @@ export function TugPane({
       message: count > 1 ? `Close ${count} Tabs?` : "Close Card?",
       confirmLabel: count > 1 ? "Close All" : "Close",
       onConfirm: () => onClose?.(),
+      // Every hosted card dies with the pane — visit each dirty one.
+      guardScope: "pane",
     });
   }, [onClose]);
 
@@ -1045,10 +1059,11 @@ export function TugPane({
         if (typeof event.value !== "string") return;
         const targetId = event.value;
         // The tab × is a close gesture like the pane X — it must honour the
-        // target card's close guard rather than destroy a
-        // dirty manual File card silently. Only the mounted active card
-        // registers a guard; a background tab (or a card that opts out, e.g.
-        // the Dev card's picker-cancel) has none and closes directly.
+        // target card's close guard rather than destroy a dirty manual File
+        // card silently. A card that opts out (e.g. the Dev card's
+        // picker-cancel) registers none and closes directly. A dirty
+        // background tab is VISITED (activated) before its sheet, so the
+        // decision is made looking at the buffer it concerns.
         const guard = getCardCloseGuard(targetId);
         if (!guard) {
           store.removeCard(stackId, targetId);
@@ -1056,7 +1071,10 @@ export function TugPane({
         }
         if (closeTabGuardRunningRef.current) return;
         closeTabGuardRunningRef.current = true;
-        void guard().then((decision) => {
+        if (guard.needsDecision() && activeCardIdRef.current !== targetId) {
+          performSelectCard(targetId);
+        }
+        void guard.run().then((decision) => {
           closeTabGuardRunningRef.current = false;
           if (decision === "close") store.removeCard(stackId, targetId);
         });
@@ -1111,12 +1129,53 @@ export function TugPane({
     [activeCardId],
   );
 
-  // Resolve the active card's close guard live at close time; the
-  // ref keeps it correct even between renders as the active card changes.
-  const resolveCloseGuard = useCallback(() => {
-    const id = activeCardIdRef.current;
-    return id ? getCardCloseGuard(id) : null;
-  }, []);
+  // Resolve the close decision for a close gesture, live at close time;
+  // the refs keep it correct between renders as cards and activation
+  // change. `"active"` consults only the active card (single-card close);
+  // `"pane"` composes every hosted card's guard — background tabs stay
+  // mounted (`display: none`), so their stores are live and their guards
+  // registered. The composite VISITS each card that needs a decision
+  // (activates it before prompting) so the user chooses looking at the
+  // buffer in question; any `"cancel"` aborts the whole close.
+  const resolveCloseGuard = useCallback(
+    (scope: "active" | "pane"): CardCloseDecision | null => {
+      const activeId = activeCardIdRef.current;
+      if (scope === "active") {
+        const guard = activeId ? getCardCloseGuard(activeId) : null;
+        return guard ? guard.run : null;
+      }
+      const ids = [
+        ...(activeId ? [activeId] : []),
+        ...(cardsRef.current ?? [])
+          .map((c) => c.id)
+          .filter((id) => id !== activeId),
+      ];
+      const guarded = ids.filter((id) => getCardCloseGuard(id) !== null);
+      if (guarded.length === 0) return null;
+      // All guards clean → no decisions to collect; fall through to the
+      // normal confirm-popover flow so a multi-tab pane keeps its
+      // "Close N Tabs?" stray-click protection. When any card IS dirty,
+      // the visit sequence collects an explicit per-card decision and
+      // supersedes the popover — asking again after would double-prompt.
+      if (!guarded.some((id) => getCardCloseGuard(id)?.needsDecision() === true)) {
+        return null;
+      }
+      return async () => {
+        for (const id of guarded) {
+          // Re-resolve at visit time: an earlier decision (e.g. Save) may
+          // have replaced or released this card's guard.
+          const guard = getCardCloseGuard(id);
+          if (!guard) continue;
+          if (guard.needsDecision() && activeCardIdRef.current !== id) {
+            performSelectCard(id);
+          }
+          if ((await guard.run()) === "cancel") return "cancel";
+        }
+        return "close";
+      };
+    },
+    [performSelectCard],
+  );
 
   const baseTitle = cardTitle
     ? `${cardTitle} : ${effectiveMeta.title}`

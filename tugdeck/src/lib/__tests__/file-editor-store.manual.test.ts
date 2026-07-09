@@ -198,6 +198,38 @@ describe("manual mode — dirty + aside flush target", () => {
     expect(store.getSnapshot().path).toBe("/b.txt");
   });
 
+  test("saveAs rebinds in place — phase never leaves ready (no flash)", async () => {
+    seedDisk("/old.txt", "content\n");
+    seedDisk("/target.txt", "existing target\n");
+    let buf = "content\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/old.txt");
+    buf = "content edited\n";
+    store.noteEdit();
+    // Record every phase the snapshot passes through during the Save As.
+    // A drop to "loading"/"empty" unmounts the live editor (losing undo,
+    // caret, scroll) and flashes the chooser in the card.
+    const phases: string[] = [];
+    const unsub = store.subscribe(() => phases.push(store.getSnapshot().phase));
+    // Target exists (the NSSavePanel Replace flow): create-new conflicts,
+    // the retry overwrites.
+    expect(await store.saveAs("/target.txt")).toBe("ok");
+    unsub();
+    expect(phases.every((p) => p === "ready")).toBe(true);
+    const snap = store.getSnapshot();
+    expect(snap.path).toBe("/target.txt");
+    expect(snap.fileName).toBe("target.txt");
+    expect(snap.saveState).toBe("clean");
+    expect(io.files.get("/target.txt")!.content).toBe("content edited\n");
+    // The next save round-trips against the rebound baseline: one clean
+    // conditional write, no spurious conflict.
+    buf = "content edited more\n";
+    store.noteEdit();
+    expect(await store.save()).toBe("ok");
+    expect(io.files.get("/target.txt")!.content).toBe("content edited more\n");
+  });
+
   test("saveAs reports 'ok' once the buffer reaches disk", async () => {
     let buf = "hello\n";
     const store = new FileEditorStore({ saveMode: "manual" });
@@ -293,6 +325,74 @@ describe("manual mode — dirty + aside flush target", () => {
     expect(await store.resolveMissing()).toBe("conflict");
     expect(store.getSnapshot().conflict?.reason).toBe("hash");
     expect(io.files.get("/f.txt")!.content).toBe("FOREIGN\n"); // not clobbered
+  });
+
+  test("conflict reload clears the armed debounce (no aside resurrection)", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "mine\n";
+    store.noteEdit();
+    await store.flush();
+    await tick();
+    seedDisk("/f.txt", "theirs\n");
+    await store.recheckOnActivation();
+    expect(store.getSnapshot().conflict?.reason).toBe("hash");
+    // Typing during the cancelled conflict arms the aside debounce; the
+    // reload must clear it, or a late fire recreates the aside holding the
+    // edits the user just discarded.
+    buf = "mine plus more\n";
+    store.noteEdit();
+    await store.resolveConflict("reload");
+    const timer = (store as unknown as { _debounceTimer: unknown })._debounceTimer;
+    expect(timer).toBeNull();
+    expect(io.files.has(asidePathFor("/f.txt"))).toBe(false);
+    expect(store.getSnapshot().saveState).toBe("clean");
+  });
+
+  test("a missing conflict on a clean buffer goes dirty on the next edit", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    // File deleted under a CLEAN buffer — the watcher path sets the
+    // conflict without touching saveState.
+    io.files.delete("/f.txt");
+    fsFrame(store, "/f.txt", "Removed");
+    await tick();
+    expect(store.getSnapshot().conflict?.reason).toBe("missing");
+    expect(store.getSnapshot().saveState).toBe("clean");
+    // The user cancels the sheet and types: the buffer must read dirty and
+    // the aside must capture — otherwise the close guard sees clean and
+    // destroys the edits silently.
+    buf = "typed after cancel\n";
+    store.noteEdit();
+    expect(store.getSnapshot().saveState).toBe("editing");
+    await store.flush();
+    await tick();
+    const aside = JSON.parse(io.files.get(asidePathFor("/f.txt"))!.content);
+    expect(aside.content).toBe("typed after cancel\n");
+  });
+
+  test("resolveMissing recreates the file even from a clean buffer", async () => {
+    seedDisk("/f.txt", "disk\n");
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => "disk\n"));
+    await store.openPath("/f.txt");
+    io.files.delete("/f.txt");
+    fsFrame(store, "/f.txt", "Removed");
+    await tick();
+    expect(store.getSnapshot().conflict?.reason).toBe("missing");
+    expect(store.getSnapshot().saveState).toBe("clean");
+    // "Save" in the missing sheet means RECREATE — it must not no-op on
+    // save()'s clean short-circuit.
+    expect(await store.resolveMissing()).toBe("ok");
+    expect(io.files.get("/f.txt")!.content).toBe("disk\n");
+    expect(store.getSnapshot().conflict).toBeNull();
+    expect(store.getSnapshot().saveState).toBe("clean");
   });
 
   test("edits during a cancelled conflict still reach the aside", async () => {

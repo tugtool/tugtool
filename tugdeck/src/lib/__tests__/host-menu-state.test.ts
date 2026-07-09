@@ -386,7 +386,7 @@ describe("computeFileMenuGates (Spec S02)", () => {
     conflict: false,
   };
 
-  test("automatic-mode Save stays enabled even when clean (no-beep guard, [P07])", () => {
+  test("automatic-mode Save stays enabled even when clean (no-beep guard)", () => {
     expect(computeFileMenuGates({ ...base, mode: "automatic" }).save).toBe(true);
   });
 
@@ -399,10 +399,21 @@ describe("computeFileMenuGates (Spec S02)", () => {
     expect(computeFileMenuGates({ ...base, untitled: true, hasPath: false }).save).toBe(true);
   });
 
-  test("read-only or conflicted disables Save in either mode", () => {
+  test("read-only disables Save in either mode", () => {
     expect(computeFileMenuGates({ ...base, mode: "automatic", readOnly: true }).save).toBe(false);
+    expect(computeFileMenuGates({ ...base, dirty: true, readOnly: true }).save).toBe(false);
+  });
+
+  test("a conflict disables automatic Save but keeps manual Save live", () => {
+    // Automatic: flush no-ops on conflict, so an enabled Save would be a
+    // live shortcut to a stub. Manual: Save is the re-entry to the conflict
+    // sheet after a Cancel — gating it off would strand Save Anyway.
     expect(computeFileMenuGates({ ...base, mode: "automatic", conflict: true }).save).toBe(false);
-    expect(computeFileMenuGates({ ...base, dirty: true, conflict: true }).save).toBe(false);
+    expect(computeFileMenuGates({ ...base, dirty: true, conflict: true }).save).toBe(true);
+    expect(computeFileMenuGates({ ...base, conflict: true }).save).toBe(true);
+    expect(
+      computeFileMenuGates({ ...base, conflict: true, readOnly: true }).save,
+    ).toBe(false);
   });
 
   test("Revert needs dirty + a path; Reload needs a path", () => {

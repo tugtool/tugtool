@@ -1358,8 +1358,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // and never reaches the web view.
         case "file.save":
             guard let file = menuState.file else { return false }
-            return !file.readOnly && !file.conflict
-                && (file.mode == "automatic" || file.dirty || file.untitled)
+            // Manual mode: a conflict keeps Save ENABLED — it is the
+            // re-entry to the conflict sheet after a Cancel (the write
+            // re-adjudicates and re-presents). Automatic mode keeps the
+            // conflict gate: its flush no-ops on conflict. Mirrors
+            // computeFileMenuGates in host-menu-state.ts.
+            if file.readOnly { return false }
+            return file.mode == "automatic"
+                ? !file.conflict
+                : (file.dirty || file.untitled || file.conflict)
         case "file.saveAs", "file.saveACopy":
             return menuState.file != nil
         case "file.revertToSaved":

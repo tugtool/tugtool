@@ -255,12 +255,22 @@ export interface FileMenuGates {
  * to unit-test the gate matrix the Swift `validateMenuItem` mirrors —
  * notably that automatic-mode Save stays enabled (else its ⌘S would beep
  * instead of flushing) while a clean titled manual card disables it.
+ *
+ * A manual-mode conflict ENABLES Save rather than gating it off: the user
+ * may have cancelled the conflict sheet (the badge state), and Save is
+ * then the re-entry — it re-issues the conditional write, which
+ * re-adjudicates against the current disk and re-presents the sheet. With
+ * Save gated off there, "Save Anyway" would be unreachable after a Cancel.
+ * Automatic mode keeps the conflict gate: its flush no-ops on conflict, so
+ * an enabled Save would be a live shortcut to a stub.
  */
 export function computeFileMenuGates(block: MenuStateFileBlock): FileMenuGates {
-  const saveWritable = !block.readOnly && !block.conflict;
   return {
     save:
-      saveWritable && (block.mode === "automatic" || block.dirty || block.untitled),
+      !block.readOnly &&
+      (block.mode === "automatic"
+        ? !block.conflict
+        : block.dirty || block.untitled || block.conflict),
     saveAs: true,
     saveACopy: true,
     revert: block.dirty && block.hasPath,

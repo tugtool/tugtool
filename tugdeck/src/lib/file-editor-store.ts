@@ -536,9 +536,11 @@ export class FileEditorStore {
     }
     if (this._saveMode === "manual") {
       // The old document's set-aside record is superseded by the real
-      // file we just wrote — discard it. `openPath(newPath)` re-keys the
-      // writer and reseeds the sha chain for the new identity.
+      // file we just wrote — discard it, and re-key the writer for the
+      // new identity (its sha chain reseeds on its next create-new).
       await this._deleteAside();
+      if (this._disposed) return "noop";
+      this._asideWriter = new AsideWriter(asidePathFor(newPath));
     } else if (wasDraft && oldPath !== null) {
       // Draft GC — hash-conditional removal of the old draft file.
       void writeFileToDisk({
@@ -548,7 +550,36 @@ export class FileEditorStore {
         delete: true,
       });
     }
-    await this.openPath(newPath);
+
+    // Rebind IN PLACE — same document, new identity. Save As must keep
+    // the live editor (undo stack, caret, scroll) exactly as a rename
+    // adoption does; a re-open through `openPath` would drop the phase to
+    // "loading", unmount the editor, and flash the chooser. The buffer IS
+    // the just-written content, so no re-seed is needed and the write's
+    // own sha is the new baseline.
+    const editedDuringWrite =
+      this._bridge !== null &&
+      serializeEol(this._bridge.getText(), snap.lineEnding) !== content;
+    this._baselineSha256 = outcome.sha256;
+    this._lastKnownEmpty = content === "";
+    this._update({
+      path: newPath,
+      fileName: baseName(newPath),
+      draftId: null,
+      untitled: false,
+      readOnly: false,
+      seedContent: content,
+      saveState: editedDuringWrite ? "editing" : "clean",
+      conflict: null,
+      writeFailures: 0,
+      lastSavedAt: Date.now(),
+    });
+    // A keystroke landed during the write RTT: the file holds stale
+    // bytes. Stay dirty and re-capture the aside — never report clean
+    // over an unpersisted edit.
+    if (editedDuringWrite && this._saveMode === "manual") {
+      void this._flushAside();
+    }
     return "ok";
   }
 
@@ -741,7 +772,10 @@ export class FileEditorStore {
   async resolveMissing(): Promise<FileSaveResult> {
     if (this._snapshot.conflict?.reason !== "missing") return "noop";
     this._baselineSha256 = null;
-    this._update({ conflict: null });
+    // Mark editing even when the buffer never diverged from the deleted
+    // file: "Save" here means RECREATE, and save()'s clean short-circuit
+    // would otherwise turn it into a no-op that leaves nothing on disk.
+    this._update({ conflict: null, saveState: "editing" });
     return this.save();
   }
 
@@ -758,7 +792,15 @@ export class FileEditorStore {
     const snap = this._snapshot;
     if (snap.phase !== "ready" || snap.readOnly) return;
     if (snap.conflict) {
-      if (this._saveMode === "manual") this._armDebounce(AUTOSAVE_DEBOUNCE_MS);
+      if (this._saveMode === "manual") {
+        // The buffer is diverging from its last-saved bytes, so it must
+        // read as dirty even when the conflict was raised from a clean
+        // state (a missing file under a clean buffer) — otherwise the
+        // aside's editing-gate never opens, the dirty dot never shows, and
+        // the close guard sees "clean" and destroys the edits silently.
+        if (snap.saveState === "clean") this._update({ saveState: "editing" });
+        this._armDebounce(AUTOSAVE_DEBOUNCE_MS);
+      }
       return;
     }
     if (snap.saveState === "writing") {
@@ -1044,7 +1086,11 @@ export class FileEditorStore {
     if (conflict === null) return;
     if (choice === "reload") {
       // Discard buffer edits for the disk version (both modes); in manual
-      // mode the aside is superseded and deleted.
+      // mode the aside is superseded and deleted. Clear the debounce first
+      // (as revertToSaved does): edits typed during the conflict armed it,
+      // and a late fire during the reload's read RTT would recreate the
+      // aside holding the very edits the user just chose to discard.
+      this._clearDebounce();
       if (this._saveMode === "manual") await this._deleteAside();
       this._update({ conflict: null });
       await this._recheckDisk({ force: true });
