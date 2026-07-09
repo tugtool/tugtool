@@ -66,7 +66,7 @@ describe("routeTopLevelEvent — synthetic user events", () => {
       CTX,
     );
     expect(result.messages.length).toBe(1);
-    const frame = result.messages[0] as Record<string, unknown>;
+    const frame = result.messages[0] as unknown as Record<string, unknown>;
     expect(frame.type).toBe("goal_feedback");
     expect((frame.condition as string).startsWith("the file TURNS.txt")).toBe(true);
     expect((frame.reason as string).length).toBeGreaterThan(0);

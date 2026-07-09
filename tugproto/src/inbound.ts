@@ -242,6 +242,20 @@ export interface HooksQuery {
   request_id: string;
 }
 
+/**
+ * Ask a `/btw` side question — a one-shot query answered from the live
+ * conversation with no tools, never entering history. tugcode forwards it as
+ * a `control_request { subtype: "side_question", question }` on Claude's
+ * stdin; the reply comes back as a `side_question_answer` frame keyed by
+ * `request_id`. Works idle or mid-turn (the control-request round-trip is
+ * turn-state-independent).
+ */
+export interface SideQuestion {
+  type: "side_question";
+  request_id: string;
+  question: string;
+}
+
 // ---------------------------------------------------------------------------
 // The union + the verb vocabulary (single source of truth)
 // ---------------------------------------------------------------------------
@@ -264,7 +278,8 @@ export type InboundMessage =
   | RewindPreview
   | SessionRewind
   | SkillsInventoryQuery
-  | HooksQuery;
+  | HooksQuery
+  | SideQuestion;
 
 /**
  * The canonical list of inbound verb names — the ONE place the verb set is
@@ -291,6 +306,7 @@ export const INBOUND_VERBS = [
   "session_rewind",
   "skills_inventory_query",
   "hooks_query",
+  "side_question",
 ] as const satisfies ReadonlyArray<InboundMessage["type"]>;
 
 /** A recognized inbound verb name. */

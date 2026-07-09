@@ -62,12 +62,14 @@ pass-throughs, probe-verified on claude 2.1.204; see
 [slash-commands.md](slash-commands.md) and
 `tugcode/probes/goal-loop/FINDINGS.md`.)
 
-`/btw` — hidden by probe evidence rather than deferral: claude itself
-refuses it over the headless bridge ("/btw isn't available in this
-environment"), so the notice is more honest than a round-trip to a
-refusal. A Tug-native side-question surface is possible future work
-(the exchange would have to be built Tug-side; upstream offers no
-headless channel).
+(`/btw` — graduated to a Tug-local command. The earlier "hidden" note was
+half-right: claude *does* refuse the **user-text** `/btw` over the headless
+bridge ("/btw isn't available in this environment"). But `/btw` is not a
+text-expanding slash command — it is a `side_question` **control-request**,
+serviced by the same inbound handler as `initialize`/`interrupt`/`set_model`.
+tugcode drives that control-request and renders the answer in a non-modal
+overlay; probe-verified serviced idle AND mid-turn on claude 2.1.204 — see
+[slash-commands.md](slash-commands.md) and `tugcode/probes/btw/FINDINGS.md`.)
 
 ### Plugin / advisor / dev-loop config
 `/advisor`, `/plugin`, `/reload-plugins`, `/reload-skills` — plugin and

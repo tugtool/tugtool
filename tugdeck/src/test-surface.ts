@@ -144,8 +144,14 @@ import {
  * row-parse counters) so the resume-performance baseline and budget
  * app-tests assert internal splits without scraping the log stream.
  * Additive; major stays `1`.
+ *
+ * `1.14.0`: adds {@link TugTestSurface.ingestSideQuestionAnswer} — settles a
+ * dev card's `SideQuestionStore` with a decoded `side_question_answer`
+ * payload, so the `/btw` overlay app-test can render an answer (and assert the
+ * transcript stays clean) without a live claude round-trip. Additive; major
+ * stays `1`.
  */
-export const SURFACE_VERSION = "1.13.0" as const;
+export const SURFACE_VERSION = "1.14.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -717,6 +723,15 @@ export interface TugTestSurface {
    * git round-trip. Requires a prior `bindDevSession(cardId)`.
    */
   ingestGitDiff(cardId: string, payload: unknown): void;
+
+  /**
+   * Settle a bound dev card's `SideQuestionStore` with a decoded
+   * `side_question_answer` payload, as if a matching CODE_OUTPUT frame had
+   * landed — so the `/btw` overlay renders its answer without a live claude
+   * round-trip. The payload's `request_id` must match a pending (loading)
+   * exchange (i.e. a prior `/btw` ask). Requires a prior `bindDevSession`.
+   */
+  ingestSideQuestionAnswer(cardId: string, payload: unknown): void;
 
   /**
    * Read a bound dev card's perf instrumentation: the
@@ -1609,6 +1624,17 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         );
       }
       services.gitDiffStore._ingestForTest(payload);
+    },
+
+    ingestSideQuestionAnswer(cardId: string, payload: unknown): void {
+      const services = cardServicesStore.getServices(cardId);
+      if (services === null) {
+        throw new Error(
+          `ingestSideQuestionAnswer: card "${cardId}" has no bound session — ` +
+            `call bindDevSession("${cardId}") first`,
+        );
+      }
+      services.sideQuestionStore._ingestForTest(payload);
     },
 
     getSessionPerf(cardId: string): {

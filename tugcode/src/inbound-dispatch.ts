@@ -197,6 +197,12 @@ export const INBOUND_HANDLERS: InboundHandlers = {
       writeLine,
     );
   },
+
+  // `/btw` side question — forward as a `side_question` control-request on
+  // Claude's stdin; the correlated `control_response` becomes a
+  // `side_question_answer` frame. Turn-state-independent (idle or mid-turn).
+  side_question: (msg, { sessionManager }) =>
+    sessionManager?.handleSideQuestion(msg),
 };
 
 /**

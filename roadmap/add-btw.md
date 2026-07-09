@@ -92,7 +92,7 @@ Explicit `{#anchor}` on every heading cited later; kebab-case; no phase numbers.
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Does Claude service a `side_question` control-request over stream-json, idle AND mid-turn? (OPEN) {#q01-side-question-servicing}
+#### [Q01] Does Claude service a `side_question` control-request over stream-json, idle AND mid-turn? (DECIDED) {#q01-side-question-servicing}
 
 **Question:** When tugcode writes `{"type":"control_request","request_id":"…","request":{"subtype":"side_question","question":"…"}}` to Claude's stdin in a stream-json session, does Claude answer with a `control_response` carrying `{ response: <text>|null, synthetic: <bool> }` — (a) while idle between turns, and (b) **while a turn is actively streaming**?
 
@@ -100,9 +100,9 @@ Explicit `{#anchor}` on every heading cited later; kebab-case; no phase numbers.
 
 **Plan to resolve:** #step-1 probe. Drive Claude directly with tugcode's `buildClaudeArgs` vector; seed a session with a memorable fact; fire the control-request idle and again mid-turn (during a long streaming turn); capture the `control_response`(s) and confirm the main turn is unperturbed.
 
-**Resolution:** OPEN — resolved at #step-2.
+**Resolution:** **DECIDED — YES for both.** The #step-1 probe (`tugcode/probes/btw/FINDINGS.md`, capture `capture-btw-control-2026-07-09T00-53-51-510Z.*`, CLI 2.1.204) fired a `side_question` control-request idle and again 6s into a long streaming essay turn. Both were serviced with the correct context-aware answer (`XYLOPHONE-42`). The mid-turn `control_response` arrived **33s / ~75 frames before** the essay's own `result`, and the essay completed uninterrupted — genuine mid-turn concurrency. **Branch A (native control-request); no fork fallback ([P06]) needed.**
 
-#### [Q02] What does the `side_question` response look like on the wire — single settled answer, or streamed progress? (OPEN) {#q02-response-shape}
+#### [Q02] What does the `side_question` response look like on the wire — single settled answer, or streamed progress? (DECIDED) {#q02-response-shape}
 
 **Question:** Does the stream-json path deliver one terminal `control_response`, or intermediate progress frames first (the remote path's `onProgress` carried retry/streaming info: `{...Sxy, retryAt}`)? Does `synthetic: true` ever appear (the CLI surfaces synthetic answers differently), and should the overlay distinguish it?
 
@@ -110,7 +110,7 @@ Explicit `{#anchor}` on every heading cited later; kebab-case; no phase numbers.
 
 **Plan to resolve:** #step-1 captures reveal the frame sequence; record in FINDINGS.
 
-**Resolution:** OPEN — resolved at #step-2.
+**Resolution:** **DECIDED — single settled answer, one leading progress frame.** Each side question emits a two-frame sequence: (1) `{"type":"system","subtype":"control_request_progress","request_id","status":"started"}` (the stream-json analogue of the remote path's `onProgress`, observed carrying only `status:"started"`), then (2) the terminal `control_response`. The answer arrives **whole** in the terminal frame — not streamed token-by-token. `synthetic` was `false` and present in both captures. → the `side_question_answer` frame is a one-shot ([P05]); progressive rendering stays deferred ([#non-goals]). tugcode ignores the progress frame and correlates only the terminal `control_response`.
 
 ---
 
@@ -127,7 +127,7 @@ Explicit `{#anchor}` on every heading cited later; kebab-case; no phase numbers.
 
 - **Risk:** A `control_response` arriving while `activeTurn !== null` could be handed to `dispatchEventToTurn` and corrupt the streaming turn.
 - **Mitigation:** In `handleClaudeLine`, the `control_response` correlation for pending side-questions runs **before** the `system/init` wake check and before turn routing — exactly where `pendingRewindRequests` / `initializeRequestId` are caught today ([#control-roundtrip]). A correlated side-question response is consumed and `return`s; only uncorrelated ones fall through.
-- **Residual risk:** If Claude tags the response differently than `initialize`/rewind do, the correlation predicate needs adjustment — the probe's capture is the source of truth for the exact shape.
+- **Residual risk:** Resolved by #step-1. The capture confirms the response is a plain `control_response` tagged by `event.response.request_id` (same as `initialize`/rewind), caught before turn routing. The mid-turn capture proved a `control_response` arriving while the essay turn streamed did not perturb turn routing. The predicate is: `event.type === "control_response"` && `event.response?.request_id ∈ pendingSideQuestions`.
 
 ---
 
@@ -256,7 +256,7 @@ The card wires it in `card-services-store.ts` (where `hooksInventoryStore` is co
   ```
   Added to `INBOUND_VERBS` + the `InboundMessage` union in `tugproto/src/inbound.ts`, and to `INBOUND_HANDLERS` in `tugcode/src/inbound-dispatch.ts`.
 - **tugcode → Claude (control-request):** `sendControlRequest(stdin, request_id, { subtype: "side_question", question })`. The client's `request_id` is reused as the control `request_id` so one map keys the whole round-trip.
-- **Claude → tugcode (control-response):** `{ type:"control_response", response:{ subtype:"success", request_id, response:{ response: string|null, synthetic: boolean } } }` — exact nesting confirmed at #step-1; parser tolerant of a missing `synthetic` (default `false`).
+- **Claude → tugcode (control-response):** `{ type:"control_response", response:{ subtype:"success", request_id, response:{ response: string|null, synthetic: boolean } } }` — **exact nesting confirmed at #step-1** (`FINDINGS.md`): correlate on `event.response.request_id`; answer is `event.response.response.response` (string|null); flag is `event.response.response.synthetic` (may be absent → default `false`). A leading `{ type:"system", subtype:"control_request_progress", request_id, status:"started" }` frame precedes it and is **ignored** by the correlation predicate (it is not a `control_response`).
 - **tugcode → client (new outbound frame):**
   ```ts
   interface SideQuestionAnswer {
@@ -370,13 +370,13 @@ interface SideQuestionSnapshot {
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Probe `side_question` control-request | pending | — |
-| #step-2 | Decision gate: resolve Q01/Q02 | pending | — |
-| #step-3 | tugcode: inbound verb + control round-trip + frame | pending | — |
-| #step-4 | tugdeck: SideQuestionStore + wire types | pending | — |
-| #step-5 | tugdeck: `/btw` local command + overlay + mid-turn exception | pending | — |
-| #step-6 | Docs + design decision + reload-clean app-test | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Probe `side_question` control-request | done | 7520cc942 |
+| #step-2 | Decision gate: resolve Q01/Q02 | done | 9ccb2db27 |
+| #step-3 | tugcode: inbound verb + control round-trip + frame | done | acd887551 |
+| #step-4 | tugdeck: SideQuestionStore + wire types | done | ec7c63b9d |
+| #step-5 | tugdeck: `/btw` local command + overlay + mid-turn exception | done | 17a5abaa8 |
+| #step-6 | Docs + design decision + reload-clean app-test | done | 2cddcca5f |
+| #step-7 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Probe `side_question` control-request {#step-1}
 

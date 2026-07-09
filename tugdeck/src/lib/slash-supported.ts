@@ -92,13 +92,11 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   "plan",
   // (`/tasks` and its alias `/bashes` graduated to Tug-local commands —
   // they open the WORK popover; see LOCAL_SLASH_COMMANDS.)
-  // /btw is refused headless by claude itself ("/btw isn't available in
-  // this environment", zero-cost local response — probe-verified on
-  // 2.1.204, tugcode/probes/goal-loop/FINDINGS.md#q03-btw) and absent
-  // from the catalog. Hidden so it fails honestly with the notice
-  // instead of round-tripping to a refusal; a Tug-side side-question
-  // surface is follow-on work (roadmap/slash-command-plan.md #roadmap).
-  "btw",
+  // (`/btw` graduated to a Tug-local command — it drives claude's native
+  // `side_question` control-request and renders the answer in a non-modal
+  // overlay; see LOCAL_SLASH_COMMANDS and tugcode/probes/btw/FINDINGS.md.
+  // The user-text path is still refused headless — the control-request is a
+  // different door.)
   "autofix-pr",
   "workflows", // workflow-orchestration progress view.
   "fork", // forked-subagent spawn; interactive, no bridge surface yet.

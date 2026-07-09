@@ -123,6 +123,11 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "View the configured hooks for this session",
   },
   {
+    name: "btw",
+    description: "Ask a quick side question, answered from the conversation with no tools",
+    takesArgs: true,
+  },
+  {
     name: "copy",
     description: "Copy the most recent assistant message to the clipboard",
   },

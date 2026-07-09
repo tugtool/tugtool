@@ -46,6 +46,8 @@ import type {
   RewindPreviewResult,
   RewindResult,
   ReplayWindow,
+  SideQuestion,
+  SideQuestionAnswer,
 } from "./types.ts";
 import { join, dirname, resolve } from "node:path";
 import { realpath, readdir } from "node:fs/promises";
@@ -3201,6 +3203,18 @@ export class SessionManager {
   >();
 
   /**
+   * In-flight `/btw` side questions, keyed by the `request_id` the client
+   * minted (reused verbatim as the control `request_id`, so one map keys the
+   * whole round-trip). Each entry carries the originating `question` for
+   * logging. The `control_response` is caught turn-free in
+   * {@link handleClaudeLine} — the same pre-routing pattern as the
+   * `initialize` handshake and {@link pendingRewindRequests} — which is why a
+   * side question answers idle *and* mid-turn (the correlation is
+   * turn-state-independent). Cleared on correlation.
+   */
+  private pendingSideQuestions = new Map<string, { question: string }>();
+
+  /**
    * Cached JSONL read for the `/rewind` preview batch ([#step-7-3]). The sheet
    * fires one `rewind_preview` per row when it opens — all while idle, so the
    * session JSONL is stable — and each needs to know whether its anchor is
@@ -4768,6 +4782,19 @@ export class SessionManager {
     ) {
       return;
     }
+    // `/btw` side-question control-response correlation. Like the
+    // `initialize` handshake and rewind, it must be caught turn-free before
+    // turn routing — but UNLIKE them, the response can arrive mid-turn (the
+    // whole point of `/btw`), and this pre-routing catch is exactly why that
+    // works: a correlated response is consumed and does not reach
+    // `dispatchEventToTurn` (Risk R01). Uncorrelated responses fall through.
+    if (
+      event.type === "control_response" &&
+      this.pendingSideQuestions.size > 0 &&
+      this.trySideQuestionControlResponse(event)
+    ) {
+      return;
+    }
     // Wake bracket detector ([D07]). The harness's built-in scheduler
     // fires ScheduleWakeup / CronCreate timers between turns and emits
     // a fresh `system/init` to bracket the resulting assistant turn.
@@ -6279,6 +6306,46 @@ export class SessionManager {
   }
 
   /**
+   * Handle a `/btw` side question: forward it as a `side_question`
+   * control-request on claude's stdin, reusing the client's `request_id` as
+   * the control `request_id` so the whole round-trip is keyed by one id. The
+   * `control_response` is correlated turn-free in
+   * {@link trySideQuestionControlResponse}, so this works idle or mid-turn.
+   * Claude applies the side-question semantics itself (system-reminder
+   * framing, tool suppression, cache reuse, history exclusion) — tugcode is
+   * transport only ([P01]).
+   */
+  handleSideQuestion(msg: SideQuestion): void {
+    if (!this.claudeProcess) {
+      console.log("No active claude process for side_question");
+      this.emitSideQuestionAnswer(msg.request_id, null, false);
+      return;
+    }
+    this.pendingSideQuestions.set(msg.request_id, { question: msg.question });
+    sendControlRequest(this.claudeProcess.stdin, msg.request_id, {
+      subtype: "side_question",
+      question: msg.question,
+    });
+  }
+
+  /** Emit a {@link SideQuestionAnswer} frame (overlay-only; see [P05]). */
+  private emitSideQuestionAnswer(
+    requestId: string,
+    answer: string | null,
+    synthetic: boolean,
+  ): void {
+    const frame: SideQuestionAnswer = {
+      type: "side_question_answer",
+      tug_session_id: this.sessionId,
+      request_id: requestId,
+      answer,
+      synthetic,
+      ipc_version: 2,
+    };
+    writeLine(frame);
+  }
+
+  /**
    * Handle model change: send set_model control_request to claude stdin.
    */
   handleModelChange(model: string): void {
@@ -6786,6 +6853,38 @@ export class SessionManager {
       // rewind completes — never here.
       pending.resolve({ canRewind, error });
     }
+    return true;
+  }
+
+  /**
+   * Correlate a turn-free `control_response` against
+   * {@link pendingSideQuestions} (`/btw`). Returns `true` when the response
+   * matched a pending side question (and was consumed into a
+   * `side_question_answer` frame), `false` when it did not (the caller lets it
+   * fall through). Mirrors the `initialize`/rewind correlation: the
+   * `request_id` lives on the inner `response` object, and the settled answer
+   * is doubly nested at `response.response.{response,synthetic}` (confirmed by
+   * the #step-1 probe capture). Runs BEFORE turn routing so a mid-turn
+   * response is caught the same way an idle one is (Risk R01).
+   */
+  private trySideQuestionControlResponse(
+    event: Record<string, unknown>,
+  ): boolean {
+    const response = event.response as Record<string, unknown> | undefined;
+    if (!response || typeof response !== "object") return false;
+    const requestId = response.request_id as string | undefined;
+    if (typeof requestId !== "string") return false;
+    if (!this.pendingSideQuestions.has(requestId)) return false;
+    this.pendingSideQuestions.delete(requestId);
+
+    // Settled payload: `response.response = { response: string|null,
+    // synthetic: boolean }`. A `subtype:"error"` or a missing inner payload
+    // degrades to a null answer rather than throwing.
+    const inner = response.response as Record<string, unknown> | undefined;
+    const answer =
+      typeof inner?.response === "string" ? (inner.response as string) : null;
+    const synthetic = inner?.synthetic === true;
+    this.emitSideQuestionAnswer(requestId, answer, synthetic);
     return true;
   }
 

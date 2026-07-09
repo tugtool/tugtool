@@ -34,8 +34,12 @@ describe("classifySlashCommand", () => {
     }
   });
 
-  test("/btw is hidden (refused headless by claude itself; probe-verified)", () => {
-    expect(classifySlashCommand("btw")).toBe("hidden");
+  test("/btw is supported-local (native side_question control-request; probe-verified on 2.1.204)", () => {
+    // Graduated out of the hidden set: the user-text path is still refused
+    // headless, but the `side_question` control-request is a different door —
+    // serviced idle AND mid-turn (tugcode/probes/btw/FINDINGS.md).
+    expect(classifySlashCommand("btw")).toBe("supported-local");
+    expect(HIDDEN_SLASH_COMMANDS.has("btw")).toBe(false);
   });
 
   test("/tasks and /bashes are supported-local (the WORK popover surface)", () => {

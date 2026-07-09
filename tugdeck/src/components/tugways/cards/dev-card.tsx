@@ -52,6 +52,10 @@ import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
+import {
+  SideQuestionOverlay,
+  type SideQuestionOverlayHandle,
+} from "./side-question-overlay";
 import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
@@ -107,6 +111,7 @@ import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-s
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
+import type { SideQuestionStore } from "@/lib/side-question-store";
 import { deriveDevCardBannerSpec, humanizeErrorSummary } from "./dev-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
@@ -457,6 +462,8 @@ export interface DevCardServices {
   skillsInventoryStore: SkillsInventoryStore;
   /** Single-shot `/hooks` request/response store ([#step-12c]). */
   hooksInventoryStore: HooksInventoryStore;
+  /** Ephemeral `/btw` side-question history store (Spec S02). */
+  sideQuestionStore: SideQuestionStore;
   /**
    * Delegate handle for the embedded `TugPromptEntry`. Owned by the
    * hook because the `/` completion provider's position-0 gate reads
@@ -2122,7 +2129,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, entryDelegateRef } = services;
+  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
@@ -2842,6 +2849,9 @@ export function DevCardBody({
   // command just opens the same surface (no separate sheet). Null while
   // the row isn't the current Z2 datum, in which case the call no-ops.
   const statusRowRef = useRef<DevTelemetryStatusRowHandle>(null);
+  // Handle on the `/btw` side-question overlay so the slash command can open
+  // it non-modally, mid-turn ([P02]).
+  const sideQuestionOverlayRef = useRef<SideQuestionOverlayHandle>(null);
   // Pane-scoped bulletin API, captured from inside the provider by
   // `PaneBulletinAnchor` (rendered below) so `/copy` can raise its
   // confirmation toast in this card.
@@ -2907,6 +2917,15 @@ export function DevCardBody({
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),
     hooks: () => hooksSheet.openHooksSheet(),
+    // `/btw` (arg) — ask a side question and open the non-modal overlay. The
+    // trailing text is the question (`takesArgs`). Un-gated and pre-`canSubmit`
+    // like every local command, so it works idle AND mid-turn with no
+    // `performSubmit` change ([P04]). A bare `/btw` just opens the overlay
+    // (history / earlier asks) without asking.
+    btw: (arg) => {
+      if (arg.trim().length > 0) sideQuestionStore.ask(arg);
+      sideQuestionOverlayRef.current?.open();
+    },
     // Copy the most recent assistant message (committed transcript only, read
     // live at click time per [L07]) to the clipboard, with a pane-scoped
     // confirmation bulletin. No message yet → caution; clipboard failure →
@@ -3489,6 +3508,21 @@ export function DevCardBody({
                 task-list state plus a popover with the full list, so
                 no separate pinned strip is needed.
               */}
+              {/* Non-modal `/btw` mini-pane ([P02]). Its trigger is an
+                  OUT-OF-FLOW zero-size anchor pinned to the top-right corner of
+                  this (position:relative) Z2 status row, so the pane opens
+                  upward (`side="top"`), right-aligned (`align="end"`), its
+                  bottom just above Z2 — floating over the transcript's tail
+                  without inerting it (a streaming turn stays visible) and
+                  without ever displacing the Z2 status cells. Gated on Z2 having
+                  content (a `/btw` only exists on a bound session) so an empty
+                  status bar still collapses via `:empty`. */}
+              {effectiveStatusBarContent != null && (
+                <SideQuestionOverlay
+                  ref={sideQuestionOverlayRef}
+                  store={sideQuestionStore}
+                />
+              )}
               {effectiveStatusBarContent != null && (
                 <div
                   className="dev-card-status-bar-main"

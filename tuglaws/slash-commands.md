@@ -110,9 +110,23 @@ The slash-command plan (`roadmap/slash-command-plan.md`) exercised every path
 on probe evidence: `/goal` and `/loop` graduated from hidden-as-marker to
 pass-throughs with lifecycle plumbing (goal state tracking, wake-trigger
 chips); `/tasks` (alias `/bashes`) graduated to supported-local (its surface
-is the WORK popover, [D107]); and `/btw` moved the other way — probed,
-found refused headless by claude itself, and hidden with the notice rather
-than left to round-trip to a refusal.
+is the WORK popover, [D107]); and `/btw` graduated to supported-local via a
+**fourth support mechanism** — a native **control-request** (see below), a
+different door than the user-text path that claude refuses headless.
+
+**Control-request commands (a fourth mechanism).** Beyond text pass-through, a
+local surface, and hidden-with-notice, a command can be serviced by driving one
+of claude's native **inbound control-requests** — the same channel tugcode
+already uses for `initialize`/`interrupt`/`set_model`/`set_permission_mode`.
+`/btw` is the exemplar: it is *not* a text-expanding slash command (that path is
+refused headless, `num_turns:0`), it is a `control_request { subtype:
+"side_question", question }`. tugcode forwards it and correlates the turn-free
+`control_response` into a `side_question_answer` frame; the answer renders in a
+non-modal overlay and **never enters the transcript**. Probe-verified serviced
+idle AND mid-turn on claude 2.1.204 (`tugcode/probes/btw/FINDINGS.md`). When a
+command reads as "hidden — refused headless," check whether the *text* path is
+the only door: a control-request subtype in the CLI's inbound dispatch is a
+different, servicing door.
 
 **The tie-breaker is honesty**: a command must either work (pass-through /
 local surface) or visibly refuse (hidden notice). Accidental pass-through of a

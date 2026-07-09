@@ -1,0 +1,206 @@
+/**
+ * side-question-overlay.css — the `/btw` mini-pane appearance ([L06]).
+ *
+ * The pane reads like a small floating pane: a titlebar-colored header with a
+ * `message-square-dashed` glyph, a mini-transcript body of stacked You/Bot
+ * exchanges, and a footer. The trigger anchor is an OUT-OF-FLOW zero-size point
+ * pinned to the top-right corner of the Z2 status row (never an in-flow child
+ * of the Z2 flex row — an in-flow anchor would displace the status cells); the
+ * pane opens upward, right-aligned, its bottom just above Z2.
+ */
+
+/* Zero-size trigger anchor, positioned at the top-right corner of the (already
+   position:relative) Z2 status bar. Absolute so it is OUT OF FLOW and cannot
+   disturb the status row's flex layout. `side="top"` opens the pane above this
+   point; `align="end"` right-aligns it to the card. */
+.side-question-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* The pane surface. `tug-popover-content` owns background / border / radius /
+   shadow; we zero its padding so the header can bleed to the titlebar color,
+   clip children to the radius, and fix the width. */
+.side-question-pane.tug-popover-content {
+  padding: 0;
+  width: 420px;
+  max-width: min(420px, calc(100vw - 24px));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header — titlebar color, glyph + title, like a mini pane's title bar. */
+.side-question-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-titlebar-active);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+.side-question-header-icon {
+  color: var(--tug7-element-tone-icon-normal-active-rest);
+  flex: 0 0 auto;
+}
+
+.side-question-header-title {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.78rem;
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* Body — the stacked mini-transcript. Caps its height and scrolls the rest. */
+.side-question-body {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--tug-space-xs) 0;
+}
+
+.side-question-empty {
+  padding: var(--tug-space-md);
+  font-family: var(--tug-font-family-sans);
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* One ask/answer exchange. Stacked exchanges are separated by a hairline. */
+.side-question-exchange {
+  position: relative;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+}
+
+.side-question-exchange + .side-question-exchange {
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+/* One line of the pair: [avatar] [text]. The answer text spans the full
+   remaining width (copy lives on its own row below, not a reserved column). */
+.side-question-line {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  column-gap: var(--tug-space-sm);
+}
+
+.side-question-line[data-role="bot"] {
+  margin-top: var(--tug-space-xs);
+}
+
+.side-question-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+/* Colored avatars — matching the transcript's participant icon flavors. */
+.side-question-avatar[data-role="you"] {
+  color: var(--tug7-element-tone-icon-normal-accent-rest);
+}
+
+.side-question-avatar[data-role="bot"] {
+  color: var(--tug7-element-tone-icon-normal-active-rest);
+}
+
+.side-question-text {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  font-weight: var(--tug-font-weight-regular); /* the question is not bold */
+  color: var(--tug7-element-global-text-normal-default-rest);
+  min-width: 0; /* let long content wrap, not widen the grid */
+  overflow-wrap: anywhere;
+}
+
+/* Loading / error answer poses. */
+.side-question-answer[data-phase="error"] {
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-caution-rest);
+}
+
+/* A CLI-synthesized answer carries a subtle leading marker. */
+.side-question-exchange[data-synthetic] .side-question-answer::before {
+  content: "◇ ";
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Markdown answer — mini scale, flush with the text column. The markdown
+   block ships a 1rem horizontal `--tugx-md-block-padding-x`; zero it here so
+   the answer prose aligns to the same left edge as the question text (no extra
+   indent), and trim the first/last block's stray vertical margin. */
+.side-question-markdown {
+  font-size: 0.82rem;
+  --tugx-md-block-padding-x: 0px;
+}
+
+.side-question-markdown > :first-child {
+  margin-top: 0;
+}
+
+.side-question-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* Copy affordance for a settled answer — its own row beneath the answer.
+   The ghost icon-text button carries its own inline padding (0.5rem, the 2xs
+   size), so we start the row that much LEFT of the answer text column: the
+   button's icon/label then sits flush with the answer text, and the ghost
+   hover/press background is free to hang left into the avatar gutter. */
+.side-question-answer-actions {
+  display: flex;
+  justify-content: flex-start;
+  padding-left: calc(20px + var(--tug-space-sm) - 0.5rem);
+  margin-top: 2px;
+}
+
+/* Per-exchange dismiss (cancel / remove). */
+.side-question-dismiss {
+  position: absolute;
+  top: var(--tug-space-xs);
+  right: var(--tug-space-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.side-question-exchange:hover .side-question-dismiss,
+.side-question-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.side-question-dismiss:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* Footer — actions right-aligned, above a hairline. */
+.side-question-footer {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}

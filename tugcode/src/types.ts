@@ -25,6 +25,7 @@ import type {
   SessionRewind,
   SkillsInventoryQuery,
   HooksQuery,
+  SideQuestion,
   InboundMessage,
 } from "@tugproto/inbound";
 export type {
@@ -47,6 +48,7 @@ export type {
   SessionRewind,
   SkillsInventoryQuery,
   HooksQuery,
+  SideQuestion,
   InboundMessage,
 };
 export type {
@@ -792,6 +794,26 @@ export interface HooksInventory {
 }
 
 /**
+ * tugcode → client answer to a {@link SideQuestion} `/btw` — the settled
+ * one-shot reply Claude returned to a `side_question` control-request,
+ * correlated back by `request_id`. Ephemeral and overlay-only: it is
+ * deliberately **NOT** in `KNOWN_CODE_OUTPUT_TYPES`, so the code-session store
+ * drops it and it never becomes a transcript row (upholds the side question's
+ * "never enters history" contract and keeps replay/reload clean). Read instead
+ * by tugdeck's dedicated per-session `SideQuestionStore` feed. `answer` is
+ * `null` when Claude returned no response; `synthetic` flags a CLI-synthesized
+ * answer (default `false`).
+ */
+export interface SideQuestionAnswer {
+  type: "side_question_answer";
+  tug_session_id: string;
+  request_id: string;
+  answer: string | null;
+  synthetic: boolean;
+  ipc_version: number;
+}
+
+/**
  * API retry notification. Claude Code retries up to 10 times with exponential backoff.
  */
 export interface ApiRetry {
@@ -1375,6 +1397,7 @@ export type OutboundMessage =
   | RewindResult
   | SkillsInventory
   | HooksInventory
+  | SideQuestionAnswer
   | PromptAnchor
   | UnknownEvent;
 

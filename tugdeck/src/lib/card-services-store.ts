@@ -39,6 +39,7 @@ import { FileTreeStore } from "./filetree-store";
 import { GitDiffStore } from "./git-diff-store";
 import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
+import { SideQuestionStore } from "./side-question-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -99,6 +100,15 @@ export interface CardServices {
    */
   readonly hooksInventoryStore: HooksInventoryStore;
   readonly hooksInventoryFeedStore: FeedStore;
+  /**
+   * `/btw` side-question store (Spec S02) and its CODE_OUTPUT feed (filtered
+   * to `type === "side_question_answer"` for this session). Keeps an ephemeral
+   * ask/answer history; overlay-only, never dispatched to the code-session
+   * store ([P05]). NOT a `KNOWN_CODE_OUTPUT_TYPES` member, so the transcript
+   * never sees a side question.
+   */
+  readonly sideQuestionStore: SideQuestionStore;
+  readonly sideQuestionFeedStore: FeedStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -435,6 +445,29 @@ class CardServicesStore {
       binding.tugSessionId,
     );
 
+    // `/btw` side questions (Spec S02): a CODE_OUTPUT feed narrowed to this
+    // session's `side_question_answer` frames, plus the ephemeral ask/answer
+    // history store. The frame is deliberately absent from
+    // `KNOWN_CODE_OUTPUT_TYPES`, so it reaches ONLY this dedicated feed and
+    // never the code-session (transcript) store ([P05]).
+    const sideQuestionFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      (decoded as { type?: unknown }).type === "side_question_answer" &&
+      (decoded as { tug_session_id?: unknown }).tug_session_id ===
+        binding.tugSessionId;
+    const sideQuestionFeedStore = new FeedStore(
+      connection,
+      [FeedId.CODE_OUTPUT],
+      undefined,
+      sideQuestionFilter,
+    );
+    const sideQuestionStore = new SideQuestionStore(
+      sideQuestionFeedStore,
+      FeedId.CODE_OUTPUT,
+      binding.tugSessionId,
+    );
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -527,6 +560,8 @@ class CardServicesStore {
       skillsInventoryFeedStore,
       hooksInventoryStore,
       hooksInventoryFeedStore,
+      sideQuestionStore,
+      sideQuestionFeedStore,
       fileCompletionProvider,
     };
   }
@@ -548,6 +583,8 @@ class CardServicesStore {
     services.skillsInventoryFeedStore.dispose();
     services.hooksInventoryStore.dispose();
     services.hooksInventoryFeedStore.dispose();
+    services.sideQuestionStore.dispose();
+    services.sideQuestionFeedStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────

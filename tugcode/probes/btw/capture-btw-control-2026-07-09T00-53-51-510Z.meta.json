@@ -1,0 +1,19 @@
+{
+  "cli": "2.1.204",
+  "sessionId": "039fcd25-696f-471c-9908-214ee2c9c292",
+  "capture": "capture-btw-control-2026-07-09T00-53-51-510Z",
+  "stdoutLines": 108,
+  "results": 2,
+  "systemInit": 2,
+  "controlResponses": 2,
+  "controlResponseSamples": [
+    "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"btw-idle-1\",\"response\":{\"response\":\"XYLOPHONE-42\",\"synthetic\":false}}}",
+    "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"btw-midturn-1\",\"response\":{\"response\":\"XYLOPHONE-42\",\"synthetic\":false}}}"
+  ],
+  "midturnSentAt": "2026-07-09T00:54:35.518Z",
+  "midturnResponseBeforeEssayResult": true,
+  "xylophoneOnWire": 5,
+  "jsonlExists": true,
+  "jsonlMentionsSideQuestionText": false,
+  "jsonlLen": 25086
+}
