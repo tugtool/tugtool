@@ -341,10 +341,17 @@ export function detectTriggerInsertion(
 }
 
 /**
- * Walk backward from `pos` looking for a registered trigger character
- * at the head of an unbroken token. Stops at whitespace, the atom
- * character (U+FFFC), or doc start. Returns the trigger char and its
- * offset, or null if the scan hit a stop char before a trigger.
+ * Walk backward from `pos` to the head of the unbroken token the caret
+ * sits in (stopping at whitespace, the atom character U+FFFC, or doc
+ * start), then report a trigger only if that head character is a
+ * registered trigger. Returns the trigger char and its offset, or null.
+ *
+ * Only the token's FIRST character counts — a trigger glued mid-token
+ * ({@link beginsTokenAt} calls out `foo@bar`, `x/cmd`) is part of the
+ * word, not a trigger. This matters for pasted file paths like
+ * `@tuglaws/tuglaws.m`: the inner `/` must NOT shadow the leading `@`,
+ * or backspacing into the paste would fire slash-command completion
+ * (position-gated → empty) instead of file completion on the `@`.
  *
  * The atom char is a stop because accepted completions occupy a
  * single U+FFFC code point — once accepted, an `@…` is no longer a
@@ -355,13 +362,16 @@ export function scanBackForTrigger(
   pos: number,
   providers: Record<string, CompletionProvider>,
 ): { trigger: string; anchorOffset: number } | null {
+  let head = -1;
   for (let i = pos - 1; i >= 0; i--) {
     const ch = doc.sliceString(i, i + 1);
-    if (ch === TUG_ATOM_CHAR) return null;
-    if (/\s/.test(ch)) return null;
-    if (lookupCompletionProvider(providers, ch) !== undefined) {
-      return { trigger: ch, anchorOffset: i };
-    }
+    if (ch === TUG_ATOM_CHAR || /\s/.test(ch)) break;
+    head = i;
+  }
+  if (head === -1) return null;
+  const ch = doc.sliceString(head, head + 1);
+  if (lookupCompletionProvider(providers, ch) !== undefined) {
+    return { trigger: ch, anchorOffset: head };
   }
   return null;
 }

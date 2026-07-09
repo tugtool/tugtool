@@ -119,6 +119,23 @@ describe("word-savvy query derivation", () => {
     expect(field.query).toBe("foo");
   });
 
+  test("backspacing into a pasted @path is not shadowed by an inner slash", () => {
+    // A pasted "@tuglaws/tuglaws.m" — the inner "/" is also a registered
+    // trigger, but it is part of the word, not the token head. Backspacing
+    // over a trailing space must reopen FILE completion on the leading "@",
+    // never slash-command completion anchored at the inner "/".
+    const backspaced = makeState("@tuglaws/tuglaws.m ", 19).update({
+      changes: { from: 18, to: 19 },
+      selection: EditorSelection.cursor(18),
+      userEvent: "delete.backward",
+    }).state;
+    const field = backspaced.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.trigger).toBe("@");
+    expect(field.anchorOffset).toBe(0);
+    expect(field.query).toBe("tuglaws/tuglaws.m");
+  });
+
   test("a user click into the middle of a token opens with the whole token", () => {
     const clicked = makeState("@srcfile", 8).update({
       selection: EditorSelection.cursor(3),
