@@ -61,7 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // File menu state
     private var closeMenuItem: NSMenuItem!
     private var closeAllCardTabsMenuItem: NSMenuItem!
-    /// Save As… — its ⇧⌘S key equivalent is toggled per frontmost card ([P07]).
+    /// Save As… — its ⇧⌘S key equivalent is toggled per frontmost card.
     private var fileSaveAsMenuItem: NSMenuItem!
 
     // View menu state
@@ -547,7 +547,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
         // New Text File (⌥⌘N): a new untitled manual buffer — no file
-        // exists until the first Save ([P02], [P10]).
+        // exists until the first Save.
         fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextFile(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextFile"))
 
         // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
@@ -590,7 +590,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // chord; the web keybinding-map entry covers browser-only dev.
         fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
         // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
-        // updateMenuState only while a File card is frontmost ([P07]); a
+        // updateMenuState only while a File card is frontmost; a
         // static ⇧⌘S would eat the Dev card's Shell-route chord.
         fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
         fileMenu.addItem(fileSaveAsMenuItem)
@@ -1273,7 +1273,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             window.editingUndoManager()?.removeAllActions()
         }
 
-        // Dynamic ⇧⌘S for Save As… ([P07]): assign the chord ONLY while a
+        // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a
         // File card is frontmost; clear it otherwise so ⇧⌘S falls through
         // to the web view's Shell-route chord. Set here — outside AppKit's
         // key-equivalent scan — not in validateMenuItem.
@@ -1349,11 +1349,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         switch id {
-        // File-card save verbs (Spec S02). Gated on the File menu block,
+        // File-card save verbs. Gated on the File menu block,
         // which rides the payload only while a File card is frontmost.
         // Automatic-mode Save must stay enabled whenever writable so its
         // ⌘S never validates disabled — a disabled matching chord beeps
-        // and never reaches the web view ([P07]).
+        // and never reaches the web view.
         case "file.save":
             guard let file = menuState.file else { return false }
             return !file.readOnly && !file.conflict
@@ -1915,7 +1915,7 @@ struct MenuState {
 
     /// File-card state; nil unless the active card is a File card. Gates
     /// the classic File menu (Save / Save As… / Save a Copy… / Revert /
-    /// Reload) and drives the dynamic ⇧⌘S assignment ([P07], Spec S02).
+    /// Reload) and drives the dynamic ⇧⌘S assignment.
     struct File {
         let cardId: String
         /// "manual" | "automatic" — automatic Save is always live.

@@ -54,7 +54,7 @@ function readOpenTarget(): FileEditorOpenTarget {
 
 /**
  * Read the deck-wide save-mode default straight from the tugbank cache
- * ([P01]) — the mode a newly mounted File card adopts. Missing → the
+ * — the mode a newly mounted File card adopts. Missing → the
  * shipping default ({@link parseSaveMode}). No settings UI exposes it.
  */
 export function readSaveMode(): SaveMode {
@@ -126,7 +126,7 @@ export function openFileInCard(
       if (target === "reuse") {
         const entry = getOpenFileCard(frontmost.cardId);
         // Never rebind a dirty card — rebinding tears down its buffer and
-        // prompting mid-open is hostile; fall through to a fresh card ([P11]).
+        // prompting mid-open is hostile; fall through to a fresh card.
         if (entry !== null && !entry.isDirty()) {
           transferFocusForActivation({
             outgoingCardId: store.getFirstResponderCardId(),

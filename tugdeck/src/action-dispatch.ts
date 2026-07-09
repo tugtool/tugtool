@@ -524,7 +524,7 @@ export function initActionDispatch(
 
   // new-text-file (Control only): File ▸ New Text File (⌥⌘N). Opens a new
   // untitled manual buffer in its own File card — no file exists until the
-  // first Save ([P10]). Not responder-routed; menu-only, like show-card.
+  // first Save. Not responder-routed; menu-only, like show-card.
   registerAction("new-text-file", () => {
     const draftId = crypto.randomUUID();
     const newId = deckManager.addCard("file", {

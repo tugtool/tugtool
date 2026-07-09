@@ -1,6 +1,6 @@
 /**
  * file-card-save-sheets.tsx — the pane-modal sheets a manual-mode File
- * card presents (Spec S03): close-with-unsaved-changes, external-change
+ * card presents: close-with-unsaved-changes, external-change
  * conflict, missing-file, revert, reload, and the open-time aside
  * conflict.
  *
@@ -13,6 +13,10 @@
  * Classic button order: destructive-alternative left, Cancel, default
  * right; Return = default, except a destructive default hands Return to
  * Cancel so Enter can't fire it; Escape / ⌘. = Cancel.
+ *
+ * Laws: [L06] appearance via CSS (the sheet is layout over TugAlert's
+ * visual); [L11] the buttons are controls that emit the card's decision;
+ * [L19] authoring guide; [L20] composed TugPushButton keeps its own tokens.
  *
  * @module components/tugways/cards/file-card-save-sheets
  */
@@ -98,7 +102,7 @@ function FileSaveSheetView({
   };
 
   return (
-    <div className="tug-alert-sheet">
+    <div className="tug-alert-sheet" data-slot="file-save-sheet">
       <div className="tug-alert-body" data-has-message="true">
         <div className="tug-alert-icon" aria-hidden="true">
           <TriangleAlert />

@@ -10,7 +10,7 @@
  * Registration returns its own release ([L27]); the card releases on
  * unmount. Only the mounted active card can be dirty-in-memory, so at
  * most one guard is live per pane — background tabs are unmounted bags and
- * their asides on disk are the safety net ([P06]).
+ * their asides on disk are the safety net.
  *
  * @module lib/card-close-guard
  */

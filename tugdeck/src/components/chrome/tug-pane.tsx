@@ -144,7 +144,7 @@ export interface CardTitleBarProps {
    */
   resolveResourcePath?: () => CardResourcePath | null;
   /**
-   * Resolve the close guard registered by the active card, if any ([P06]).
+   * Resolve the close guard registered by the active card, if any.
    * A registered guard supersedes the `confirmClose` popover for that card
    * at every close site; Option-click still bypasses it. Called live at
    * close time so the guard always reflects the current active card.
@@ -257,11 +257,11 @@ function CardTitleBar({
   );
 
   // Single-flight latch so a second close gesture while the guard sheet is
-  // already up is swallowed rather than stacking a second sheet ([P06]).
+  // already up is swallowed rather than stacking a second sheet.
   const guardRunningRef = useRef(false);
 
-  // Consult the active card's close guard, if one is registered ([P06],
-  // Risk R02). Returns `true` when a guard exists and has taken ownership
+  // Consult the active card's close guard, if one is registered. Returns
+  // `true` when a guard exists and has taken ownership
   // of the close decision (it runs `proceed` only on `"close"`); returns
   // `false` when there is no guard, so the caller falls back to its
   // existing `confirmClose`-or-immediate behavior. Every close site routes
@@ -301,14 +301,14 @@ function CardTitleBar({
         return;
       }
       // Option-click is the power-user escape hatch: close immediately,
-      // bypassing both the guard and the confirm popover ([P06]).
+      // bypassing both the guard and the confirm popover.
       if (event.altKey) {
         onClose?.();
         return;
       }
       // A registered close guard supersedes the confirm popover — even on
       // a non-`confirmClose` pane, where a plain X-click would otherwise
-      // close immediately (Risk R02).
+      // close immediately.
       if (withCloseDecision(() => onClose?.())) return;
       if (!confirmClose) {
         onClose?.();
@@ -370,7 +370,7 @@ function CardTitleBar({
         if (confirmClose) openCloseConfirm(paneCloseIntent());
         else onClose?.();
       };
-      // ⌘W has no Option-bypass; the guard always gets first say ([P06]).
+      // ⌘W has no Option-bypass; the guard always gets first say.
       if (withCloseDecision(proceed)) return;
       proceed();
     },
@@ -1022,7 +1022,7 @@ export function TugPane({
   );
 
   // Single-flight latch for the tab-× close guard, so a double-click on a
-  // tab's × doesn't stack two sheets ([P06]).
+  // tab's × doesn't stack two sheets.
   const closeTabGuardRunningRef = useRef(false);
 
   const { ResponderScope, responderRef } = useResponder({
@@ -1045,7 +1045,7 @@ export function TugPane({
         if (typeof event.value !== "string") return;
         const targetId = event.value;
         // The tab × is a close gesture like the pane X — it must honour the
-        // target card's close guard ([P06], Risk R02) rather than destroy a
+        // target card's close guard rather than destroy a
         // dirty manual File card silently. Only the mounted active card
         // registers a guard; a background tab (or a card that opts out, e.g.
         // the Dev card's picker-cancel) has none and closes directly.
@@ -1111,7 +1111,7 @@ export function TugPane({
     [activeCardId],
   );
 
-  // Resolve the active card's close guard live at close time ([P06]); the
+  // Resolve the active card's close guard live at close time; the
   // ref keeps it correct even between renders as the active card changes.
   const resolveCloseGuard = useCallback(() => {
     const id = activeCardIdRef.current;

@@ -1,3 +1,7 @@
+/* @tug-pairings: none — layout only; the icon/text body colors come from
+   `tug-alert.css` (TugAlert owns those tokens) and each button is a
+   TugPushButton that keeps its own [L20]. */
+
 /**
  * file-card-save-sheets.css — layout for the multi-button File save sheets
  * (close / conflict / missing). Reuses TugAlert's icon + text body; the

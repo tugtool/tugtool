@@ -869,7 +869,7 @@ export const TugFileEditor = React.forwardRef<
 
   // SAVE — automatic mode: flush pending edits now (⌘S forces the debounce
   // to fire). Manual mode: route to the card's save() + needs-path panel
-  // flow, since ⌘S must write the REAL file, not the aside ([P12]).
+  // flow, since ⌘S must write the REAL file, not the aside.
   //
   // The work runs INLINE (not as a returned continuation): the `save`
   // control action dispatches via `sendToFirstResponder`, which DISCARDS

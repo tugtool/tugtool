@@ -1,13 +1,22 @@
 /**
- * FileEditorStore — the live-autosave engine behind one File card.
+ * FileEditorStore — the save engine behind one File card, in either of
+ * two modes fixed at construction from the deck-wide `save-mode` default.
  *
- * Implements the saveless document model: the buffer the user sees is
- * continuously written through to disk (a short idle debounce coalesces
- * keystrokes; hard flush points override the timer), so there is no dirty
- * state and closing the card is always safe. Every write is conditional on
- * the last-known disk hash; a mismatch surfaces as a `conflict` the card
- * renders as a non-modal banner — external edits are never silently lost,
- * and neither are the user's.
+ * **Manual** (the shipping default) is the classic document model: edits
+ * stay in the buffer as dirty state, an idle debounce writes only a
+ * crash-safety set-aside record — never the real file — and the real file
+ * changes only on an explicit save verb (Save / Save As… / Save a Copy… /
+ * Revert / Reload). A dirty buffer gates card close.
+ *
+ * **Automatic** is the live-autosave model: the buffer is continuously
+ * written through to disk (a short idle debounce coalesces keystrokes;
+ * hard flush points override the timer), so there is no dirty state and
+ * closing the card is always safe.
+ *
+ * Both modes make every real-file write conditional on the last-known disk
+ * hash; a mismatch surfaces as a `conflict` — a modal sheet in manual
+ * mode, a non-modal banner in automatic — so external edits and the user's
+ * own are never silently lost.
  *
  * External changes: the store subscribes to the FILESYSTEM feed (0x10) and
  * filters the per-workspace event batches for its own canonical path. When
@@ -41,7 +50,7 @@ import {
 } from "./file-aside";
 
 /**
- * Which save contract this store enforces ([P01]). `automatic` is the
+ * Which save contract this store enforces. `automatic` is the
  * saveless live-autosave model (every debounce writes the real file);
  * `manual` is the classic document model — edits stay in the buffer and
  * the debounce writes only a set-aside record, until an explicit save.
@@ -113,7 +122,7 @@ export function draftPathFor(draftId: string): string {
   return `~/Library/Application Support/Tug/Drafts/draft-${draftId}.txt`;
 }
 
-/** An unsaved-aside restore that needs a user decision ([P10], Table T01). */
+/** An unsaved-aside restore that needs a user decision. */
 export interface PendingAsideConflict {
   /** Buffer text held in the aside from a prior session. */
   asideContent: string;
@@ -124,18 +133,18 @@ export interface PendingAsideConflict {
 /** Immutable snapshot rendered by the File card. */
 export interface FileEditorSnapshot {
   phase: FileEditorPhase;
-  /** Which save contract is in force ([P01]); fixed at construction. */
+  /** Which save contract is in force; fixed at construction. */
   saveMode: SaveMode;
   /** Canonicalized absolute path, once bound. */
   path: string | null;
-  /** True while a manual buffer has no file identity yet ([P10]). */
+  /** True while a manual buffer has no file identity yet. */
   untitled: boolean;
   /**
    * A prior-session aside whose baseline diverged from the current disk
-   * file — the card presents the open-conflict sheet (Spec S03 #6).
+   * file — the card presents the open-conflict sheet.
    */
   pendingAsideConflict: PendingAsideConflict | null;
-  /** Non-null while the buffer is an untitled draft ([P10]). */
+  /** Non-null while the buffer is an untitled draft. */
   draftId: string | null;
   /** Basename for the card title. */
   fileName: string | null;
@@ -275,7 +284,7 @@ export class FileEditorStore {
    * The save contract, fixed at construction. Held off the snapshot so a
    * state-resetting `_update({ ...EMPTY_SNAPSHOT })` (open, rebind) can
    * re-apply it — a rebind must never silently revert a manual card to
-   * automatic ([P01]).
+   * automatic.
    */
   private readonly _saveMode: SaveMode;
   /** Writer for the current document's set-aside record (manual mode). */
@@ -411,7 +420,7 @@ export class FileEditorStore {
   }
 
   /**
-   * Bind the card to a NEW untitled manual buffer ([P10]): no file exists
+   * Bind the card to a NEW untitled manual buffer: no file exists
    * anywhere until the first Save; crash-safety rides an aside keyed by
    * the draft id. An existing aside for this draft restores it dirty.
    */
@@ -549,7 +558,7 @@ export class FileEditorStore {
   }
 
   /**
-   * Manual-mode explicit save ([P12]): write the current buffer to the
+   * Manual-mode explicit save: write the current buffer to the
    * REAL file (conditional on the last-known disk hash), and on success
    * discard the aside and go clean. An untitled buffer has no path yet —
    * `"needs-path"` tells the card to run the save panel then `saveAs`.
@@ -617,7 +626,7 @@ export class FileEditorStore {
       }
       // Drain any in-flight aside write before deleting it — a create-new
       // the server orders after a bare delete would resurrect a stale aside
-      // for a document we're now reporting clean ([P08]).
+      // for a document we're now reporting clean.
       await this._deleteAside();
       if (this._disposed) return "noop";
       if (this._editedDuringWrite) {
@@ -750,7 +759,7 @@ export class FileEditorStore {
   flush(opts?: { keepalive?: boolean }): Promise<void> {
     this._clearDebounce();
     // In manual mode `flush()` is the ASIDE path, never the real file
-    // ([P12]): lifecycle callers (pagehide, unmount, close-handoff) must
+    //: lifecycle callers (pagehide, unmount, close-handoff) must
     // persist the crash-recovery record without an unrequested real-file
     // write. The real file is only written by the explicit save verbs.
     if (this._saveMode === "manual") {
@@ -871,7 +880,7 @@ export class FileEditorStore {
    * first (create-new) aside write can server-order BEFORE it, so the write
    * lands after and resurrects a stale aside for a document we've since
    * saved — the next open would then offer to restore already-saved edits
-   * ([P08]).
+   *.
    */
   private async _deleteAside(): Promise<void> {
     this._asideEditedDuringWrite = false;
@@ -886,7 +895,7 @@ export class FileEditorStore {
    * Write the unsaved buffer to the set-aside record (never the real
    * file). Only fires while the buffer is dirty; a mid-flight edit marks
    * the aside for a re-flush on settle so the record never lags behind
-   * the buffer — the writer's own sha chain absorbs write races ([P08]).
+   * the buffer — the writer's own sha chain absorbs write races.
    */
   private _flushAside(opts?: { keepalive?: boolean }): Promise<void> {
     const snap = this._snapshot;
@@ -935,7 +944,7 @@ export class FileEditorStore {
   }
 
   /**
-   * After a manual open, consult the document's aside ([#aside-lifecycle]):
+   * After a manual open, consult the document's aside:
    * a matching baseline restores the edits silently (dirty); a diverged
    * baseline surfaces `pendingAsideConflict` for the open-conflict sheet;
    * an invalid aside is deleted; an unread aside is left untouched.
@@ -972,7 +981,7 @@ export class FileEditorStore {
       return;
     }
     // Diverged base → the disk file moved on since these edits were set
-    // aside; the user decides (Table T01 last row). Buffer shows disk.
+    // aside; the user decides. Buffer shows disk.
     this._update({
       pendingAsideConflict: {
         asideContent: record.content,
@@ -982,7 +991,7 @@ export class FileEditorStore {
   }
 
   /**
-   * Resolve the open-conflict sheet ([#aside-lifecycle]). `keep` seeds the
+   * Resolve the open-conflict sheet. `keep` seeds the
    * buffer from the aside (dirty), conditioning the next save on the
    * current disk bytes; `disk` discards the aside and keeps disk content.
    */
@@ -1026,7 +1035,7 @@ export class FileEditorStore {
     }
     this._baselineSha256 = conflict.diskSha256;
     if (this._saveMode === "manual") {
-      // Save Anyway ([P12]): route to the REAL-file save path, NOT
+      // Save Anyway: route to the REAL-file save path, NOT
       // `flush()` — which now writes the aside and would silently drop the
       // user's decision. `save()` deletes the aside on the ok settle.
       this._update({ conflict: null });
@@ -1086,7 +1095,7 @@ export class FileEditorStore {
     const root = frame.workspace_key.replace(/\/+$/, "");
     const full = (p: string): string => `${root}/${p}`;
 
-    // Rename-follow ([P05]). (a) An explicit `Renamed { from, to }` whose
+    // Rename-follow. (a) An explicit `Renamed { from, to }` whose
     // `from` is our path (the Linux/Windows path) → adopt `to` directly.
     const renamed = frame.events.find(
       (e) => e.kind === "Renamed" && e.from !== undefined && full(e.from) === snap.path,
@@ -1118,7 +1127,7 @@ export class FileEditorStore {
       if (this._saveMode === "manual") {
         // Dirty manual buffer: the unsaved edits live only in the buffer,
         // so a disk change is a genuine external divergence. Read disk and
-        // raise the conflict immediately ([P04]) — never merge, never
+        // raise the conflict immediately — never merge, never
         // silently revert.
         void this._raiseConflictIfDiverged();
         return;
@@ -1133,7 +1142,7 @@ export class FileEditorStore {
   /**
    * Manual-mode watcher/focus path: re-read disk and, if it diverged from
    * the baseline the dirty buffer is based on, raise the hash conflict the
-   * card renders as the modal conflict sheet (Table T01).
+   * card renders as the modal conflict sheet.
    */
   private async _raiseConflictIfDiverged(): Promise<void> {
     const path = this._snapshot.path;
@@ -1157,7 +1166,7 @@ export class FileEditorStore {
   }
 
   /**
-   * Try to adopt a rename from a macOS Removed+Created batch ([P05]):
+   * Try to adopt a rename from a macOS Removed+Created batch:
    * read each `Created` candidate (same-basename first, else the sole
    * creation) and adopt the first whose disk sha equals our baseline —
    * unsaved edits never touch disk, so a moved file still hashes to the
@@ -1216,8 +1225,8 @@ export class FileEditorStore {
   }
 
   /**
-   * Focus-time backstop for files outside the watcher's workspace roots
-   * ([P09]). Clean → silent reload; manual + dirty → raise the conflict on
+   * Focus-time backstop for files outside the watcher's workspace roots.
+   * Clean → silent reload; manual + dirty → raise the conflict on
    * divergence. A no-op while a write is in flight or a sheet is pending.
    */
   async recheckOnActivation(): Promise<void> {

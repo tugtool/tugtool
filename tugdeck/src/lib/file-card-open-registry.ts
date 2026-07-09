@@ -20,7 +20,7 @@ export interface FileCardOpenEntry {
   /**
    * True when the card has unsaved in-memory edits (manual mode). The
    * `"reuse"` open target never rebinds a dirty card — rebinding tears
-   * down the buffer ([P11]).
+   * down the buffer.
    */
   isDirty(): boolean;
   /** Move the cursor to `line` (1-based) and center it. */

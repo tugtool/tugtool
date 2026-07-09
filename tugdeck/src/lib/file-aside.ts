@@ -37,7 +37,7 @@ const ASIDES_ROOT = "~/Library/Application Support/Tug/Autosave Information";
 /** Current aside record schema version. */
 const ASIDE_VERSION = 1;
 
-/** One set-aside autosave record (Spec S01). */
+/** One set-aside autosave record. */
 export interface AsideRecord {
   version: number;
   /** Canonical document path; null for an untitled buffer. */
@@ -170,7 +170,7 @@ export async function readAside(
 }
 
 /**
- * Hash-chained writer for a single aside file ([P08]). Tracks the aside's
+ * Hash-chained writer for a single aside file. Tracks the aside's
  * own last-written sha256 and conditions each rewrite on it: the first
  * write is create-new (`baselineSha256: null`); a `conflict` (a stale
  * aside from a prior crash, or a torn chain) is absorbed by one retry

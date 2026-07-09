@@ -1,12 +1,15 @@
 /**
  * FileCard — the File card body: open a text file from disk, edit it in
- * a `TugFileEditor`, with live autosave-in-place.
+ * a `TugFileEditor`, and save it in one of two modes.
  *
- * Saveless model: the card's `FileEditorStore` continuously writes the
- * buffer through to disk (debounced), so the card has no dirty state
- * and no close protection — closing is always safe. What persists in
- * the card bag is positions only (`{ path, anchor, scrollTop }`);
- * content always comes from disk on restore.
+ * Save modes (from the deck-wide `save-mode` default, resolved by the
+ * store): **manual** — the classic document model, with dirty state, a
+ * crash-safety set-aside record, explicit Save / Save As… / Save a Copy… /
+ * Revert / Reload, and a close guard that prompts when the buffer is dirty;
+ * **automatic** — live autosave-in-place with no dirty state, where closing
+ * is always safe. The card bag persists positions only
+ * (`{ path, anchor, scrollTop }`); content comes from disk (or the aside)
+ * on restore.
  *
  * Body states, rendered from the store snapshot:
  *
@@ -21,12 +24,13 @@
  *     component, stable key/type/renderer across the transition).
  *   - `error`   — read failure detail with a Try Again affordance.
  *
- * Conflict banner: `TugPaneBanner` (card-scoped, error variant). Its
- * footer buttons drive `store.resolveConflict` — "Reload from disk"
- * replaces the buffer; "Keep mine" re-issues the write against the
- * disk hash the conflict reported. A missing-file conflict (deleted
- * under the editor) offers Close only; the buffer is preserved and
- * autosave paused until the user chooses.
+ * Conflict UX: automatic mode renders a card-scoped `TugPaneBanner`
+ * (error variant) whose footer buttons drive `store.resolveConflict` —
+ * "Reload from disk" replaces the buffer, "Keep mine" re-issues the write
+ * against the disk hash the conflict reported. Manual mode raises the modal
+ * save sheets (see `file-card-save-sheets`) for external-change,
+ * missing-file, revert, reload, and open-time aside conflicts. Either way
+ * the buffer is preserved until the user chooses.
  *
  * Read-only files: the store never arms autosave and the editor
  * mounts read-only; the title shows a lock suffix.
@@ -104,7 +108,7 @@ export interface FileCardBagContent {
   /** Draft id for an untitled buffer (content autosaves under the
    * drafts directory); null for a path-bound card. */
   draftId: string | null;
-  /** True when the buffer is a manual-mode untitled buffer ([P10]) —
+  /** True when the buffer is a manual-mode untitled buffer —
    * restore re-enters `openUntitled` and finds the aside. */
   untitled: boolean;
   anchor: { line: number; ch: number };
@@ -174,8 +178,8 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   const focusManager = useFocusManager();
   const senderId = useId();
 
-  // Pane-modal sheet host for the manual save/close/conflict sheets
-  // (Spec S03). `renderSheet()` is mounted once in the card body.
+  // Pane-modal sheet host for the manual save/close/conflict sheets.
+  // `renderSheet()` is mounted once in the card body.
   const { showSheet, renderSheet } = useTugSheet();
   const sheets = useFileSaveSheets(showSheet);
 
@@ -290,7 +294,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   }, [store]);
 
   // Save (⌘S / File ▸ Save) — manual explicit save; an untitled buffer
-  // routes through the save panel ([P10]).
+  // routes through the save panel.
   const doSave = useCallback(async (): Promise<boolean> => {
     const result = await store.save();
     if (result === "needs-path") return runSaveAsPanel();
@@ -381,7 +385,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     cardDidResize: () => reclaimFocusDestination(),
   });
 
-  // ---- Card state preservation (positions only, [P07]) ----
+  // ---- Card state preservation (positions only) ----
 
   useCardStatePreservation<FileCardBagContent | undefined>({
     onSave: () => {
@@ -422,7 +426,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       reclaimFocusDestination();
       // Focus-time recheck: files outside the watcher's workspace roots
       // get no FILESYSTEM events, so activation is when an external change
-      // is caught ([P09]).
+      // is caught.
       void store.recheckOnActivation();
     },
   });
@@ -478,7 +482,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   // ---- Conflict / missing sheet presentation (manual mode) ----
   //
-  // A store `conflict` in manual mode is a modal sheet (Table T01), not
+  // A store `conflict` in manual mode is a modal sheet, not
   // the automatic-mode banner. Single-flight via a ref so a snapshot
   // change while the sheet is up never stacks a second one; Cancel leaves
   // the conflict set (the status-bar badge) without re-prompting.
@@ -547,7 +551,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       void store.flush({ keepalive: true });
     };
     // `visibilitychange` fires on BOTH hide and show; flush on hide, but
-    // recheck disk ONLY when becoming visible ([P09]) — an unguarded
+    // recheck disk ONLY when becoming visible — an unguarded
     // recheck would issue a disk read on every hide too.
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -584,7 +588,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     };
   }, [cardId, snapshot.fileName, snapshot.readOnly, isManual, isDirty]);
 
-  // ---- Menu-state file block (drives the native File menu, [P07]) ----
+  // ---- Menu-state file block (drives the native File menu) ----
   //
   // Publish the block whenever the card is bound (ready); clear it
   // otherwise and on unmount ([L27]). The publisher only rides it onto
@@ -674,7 +678,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
               data-testid="file-card-new-draft"
               onClick={() => {
                 // Manual: an untitled buffer with no file identity until
-                // the first Save ([P10]). Automatic: a real draft file.
+                // the first Save. Automatic: a real draft file.
                 if (isManual) void store.openUntitled(cardId);
                 else void store.openDraft(cardId);
               }}

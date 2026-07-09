@@ -221,8 +221,8 @@ export interface MenuStateDevBlock {
 }
 
 /**
- * File-card block, published by the File card's menu-state effect ([P07],
- * Spec S02). Rides the payload only while its card is the focused pane's
+ * File-card block, published by the File card's menu-state effect. Rides
+ * the payload only while its card is the focused pane's
  * active card, exactly like the dev block. Gates the classic File menu
  * items (Save / Save As… / Save a Copy… / Revert / Reload).
  */
@@ -241,7 +241,7 @@ export interface MenuStateFileBlock {
   conflict: boolean;
 }
 
-/** Per-item enablement for the File menu, derived from a block (Spec S02). */
+/** Per-item enablement for the File menu, derived from a block. */
 export interface FileMenuGates {
   save: boolean;
   saveAs: boolean;
@@ -251,10 +251,10 @@ export interface FileMenuGates {
 }
 
 /**
- * Compute the File menu enablement from a block (Spec S02). Pure; exported
+ * Compute the File menu enablement from a block. Pure; exported
  * to unit-test the gate matrix the Swift `validateMenuItem` mirrors —
  * notably that automatic-mode Save stays enabled (else its ⌘S would beep
- * instead of flushing, [P07]) while a clean titled manual card disables it.
+ * instead of flushing) while a clean titled manual card disables it.
  */
 export function computeFileMenuGates(block: MenuStateFileBlock): FileMenuGates {
   const saveWritable = !block.readOnly && !block.conflict;
@@ -510,7 +510,7 @@ export function clearDevMenuState(cardId: string): void {
 }
 
 /**
- * Publish (or refresh) a File card's menu block ([P07]). Called by the
+ * Publish (or refresh) a File card's menu block. Called by the
  * File card's menu-state effect on every relevant snapshot change; a
  * no-op before {@link initHostMenuState} runs.
  */
