@@ -216,6 +216,8 @@ The contract is surface-wide, not body-kind-specific: any new inner scroller a b
 
 **D21.** Interface-first development: define TypeScript interfaces, mock backend, then implement frontend.
 
+**D109.** `TugConnection.onFrame` returns an unsubscribe closure (mirroring `onDisconnectState`); short-lived subscribers (per-card stores) capture it and release on `dispose()`. The `_disposed` guard is retained as a secondary safety, not as the leak fix. [L27]
+
 ---
 
 ## Tugbank

@@ -89,6 +89,24 @@ This law is the React-reconciliation complement to [L23]. L23 governs what to do
 
 ---
 
+## Lifecycle & Resource Ownership
+
+### L27. Every acquisition returns its release; the shorter-lived party calls it on teardown. {#l27}
+
+A *resource* is anything whose acquisition wires one object's lifetime into another's: a feed callback registered on the long-lived `TugConnection`, an event listener, a timer or reconnect/backoff timeout, an observer, a `requestAnimationFrame` loop, a store subscription, a tugcast/WebSocket handle, an `AbortController`. Acquiring one is a debt. The debt is paid by releasing it, and the code that acquired it owns the debt.
+
+No registration API may return `void`. Registration returns an unregister closure — the shape `onDisconnectState` and `useSyncExternalStore`'s `subscribe` already establish. The party whose lifetime is **shorter than the resource owner's** captures that closure and invokes it in its `dispose()` / cleanup path. A per-card store that subscribes to the app-lifetime connection and outlives its own `dispose()` is, by definition, a leak.
+
+**Every leak is a bug — plain and simple, true now and true forever.** There is no "acceptable" number of leaked callbacks and no "future improvement" deferral for a leak; a comment claiming either is wrong and must be deleted, not honored.
+
+**Inert is not released.** A `_disposed` flag (or any guard) that makes a stale callback early-return stops it from *doing* anything, but the callback — and everything its closure captures — is still wired in and still retained. Guarding a dead registration is belt-and-suspenders on top of disposal, never a substitute for it.
+
+**Fix the class, not the instance.** When you find one caller leaking a given registration API, audit *every* caller of that API and fix the whole pattern in one pass; a leak found is a leak class found.
+
+The test: *when this object is disposed, is every lifetime it wired into something longer-lived now unwired?* Walk each acquisition — listener, timer, subscription, observer, frame callback — and confirm a matching release runs on teardown. If any acquisition has no releasing counterpart, it leaks. [D109]
+
+---
+
 ## Component Architecture
 
 ### L19. Every component follows the component authoring guide. {#l19}
