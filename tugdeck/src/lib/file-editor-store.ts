@@ -731,16 +731,36 @@ export class FileEditorStore {
     if (!this._disposed) this._update({ saveState: "clean" });
   }
 
+  /**
+   * Missing-sheet "Save": recreate a file deleted under the editor by
+   * writing the buffer as a NEW file. Conditioning on a null baseline means
+   * that if another process recreated the path meanwhile, this conflicts
+   * (raising the conflict sheet) instead of silently clobbering it — the
+   * missing-file Save must adjudicate, never overwrite blind.
+   */
+  async resolveMissing(): Promise<FileSaveResult> {
+    if (this._snapshot.conflict?.reason !== "missing") return "noop";
+    this._baselineSha256 = null;
+    this._update({ conflict: null });
+    return this.save();
+  }
+
   // ── Autosave ─────────────────────────────────────────────────────────────
 
   /**
    * Note one buffer edit. Arms (or re-arms) the idle debounce. No-op for
-   * read-only files and while a conflict is unresolved — the user must
-   * choose before any further bytes move.
+   * read-only files. A conflict freezes real-file writes until the user
+   * chooses — but the buffer keeps changing, so in manual mode the aside
+   * (crash-safety) stays current so a crash mid-conflict loses nothing;
+   * `flush()` is the aside path in manual mode and never the real file.
    */
   noteEdit(): void {
     const snap = this._snapshot;
-    if (snap.phase !== "ready" || snap.readOnly || snap.conflict) return;
+    if (snap.phase !== "ready" || snap.readOnly) return;
+    if (snap.conflict) {
+      if (this._saveMode === "manual") this._armDebounce(AUTOSAVE_DEBOUNCE_MS);
+      return;
+    }
     if (snap.saveState === "writing") {
       // The in-flight write already snapshotted the (now stale) buffer;
       // mark for a re-flush on settle rather than losing this edit.

@@ -497,8 +497,15 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       if (conflict.reason === "missing") {
         const choice = await sheets.presentMissingSheet(fileName);
         if (choice === "save") {
-          const path = store.getSnapshot().path;
-          if (path !== null) await store.saveAs(path);
+          // Recreate the deleted file. If another process recreated the
+          // path meanwhile, this returns a hash conflict — present it here
+          // rather than clobber the reappeared file silently.
+          if ((await store.resolveMissing()) === "conflict") {
+            const c = await sheets.presentConflictSheet(fileName);
+            if (c === "save-anyway") await store.resolveConflict("overwrite");
+            else if (c === "reload") await store.resolveConflict("reload");
+            else if (c === "save-as") await runSaveAsPanel();
+          }
         } else if (choice === "save-as") {
           await runSaveAsPanel();
         } else if (choice === "dont-save") {
@@ -623,8 +630,12 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   // ---- Focus the editor when a fresh untitled buffer opens ----
   //
   // New Text File (⌥⌘N) should drop the caret straight into the editor so
-  // the user can type immediately. Only the active card's body is mounted,
-  // so this focuses only the card in front. Fires once per open.
+  // the user can type immediately. Route through `reclaimFocusDestination`
+  // so the focus resolves the key-card gate (never steal focus from an open
+  // sheet) and repairs the chain, not just DOM focus — a bare `focus()` is
+  // the resting-editor footgun. In a layout effect the editor is already
+  // mounted and its responder registered, so no frame wait is needed. Fires
+  // once per open.
   const untitledFocusedRef = useRef(false);
   useLayoutEffect(() => {
     if (snapshot.phase !== "ready") {
@@ -633,9 +644,9 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     }
     if (snapshot.untitled && !untitledFocusedRef.current) {
       untitledFocusedRef.current = true;
-      requestAnimationFrame(() => editorRef.current?.focus());
+      reclaimFocusDestination();
     }
-  }, [snapshot.phase, snapshot.untitled]);
+  }, [snapshot.phase, snapshot.untitled, reclaimFocusDestination]);
 
   // ---- Apply restored positions once the file binds ----
 
@@ -730,6 +741,11 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         canMoveTo={snapshot.draftId !== null && isPathPickerAvailable()}
         onMoveTo={saveAs}
         onSave={() => void doSave()}
+        canSave={
+          !snapshot.readOnly &&
+          snapshot.conflict === null &&
+          (isDirty || snapshot.untitled)
+        }
         onRevealInFinder={revealInFinder}
         settings={editorSettings}
         onChangeSetting={setSetting}

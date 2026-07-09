@@ -128,12 +128,23 @@ describe("readAside", () => {
     }
   });
 
-  test("wrong-path payload → invalid (deletable)", async () => {
+  test("wrong-path payload → unreadable (a collision; never delete)", async () => {
+    // A valid aside keyed to a DIFFERENT document (an FNV-1a key collision)
+    // belongs to that other file's crash-recovery — leave it in place.
     io.readOutcome = {
       ok: true,
       file: { path: "p", content: JSON.stringify(record()), sha256: "s" },
     };
     const result = await mod.readAside("aside-path", { path: "/abs/OTHER.txt" });
+    expect(result.kind).toBe("unreadable");
+  });
+
+  test("corrupt payload → invalid (deletable)", async () => {
+    io.readOutcome = {
+      ok: true,
+      file: { path: "p", content: "{ not valid json", sha256: "s" },
+    };
+    const result = await mod.readAside("aside-path", { path: "/abs/notes.txt" });
     expect(result.kind).toBe("invalid");
   });
 

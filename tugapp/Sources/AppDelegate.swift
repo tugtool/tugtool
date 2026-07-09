@@ -821,7 +821,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // File ▸ New submenu. Compile-time gated so release bundles
             // never expose the gallery + hello-world creation surfaces.
             mMenu.addItem(NSMenuItem.separator())
-            mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("maker.galleryCard"))
+            // No ⌥⌘N here: File ▸ New Text File owns that chord now and wins
+            // in menu order, so this item's shortcut was dead. Menu-only.
+            mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "").identified("maker.galleryCard"))
             mMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]).identified("maker.helloCard"))
             // New Card in Active Pane (⌘T): the tab-creation chord.
             // Validated against deck state (needs a pane to add to).
@@ -2028,7 +2030,10 @@ struct MenuState {
            let cardId = rawFile["cardId"] as? String {
             file = File(
                 cardId: cardId,
-                mode: rawFile["mode"] as? String ?? "automatic",
+                // Default to the shipping mode (manual): a malformed block
+                // then gates Save on dirty/untitled rather than validating it
+                // always-on the way an "automatic" default would.
+                mode: rawFile["mode"] as? String ?? "manual",
                 dirty: rawFile["dirty"] as? Bool ?? false,
                 untitled: rawFile["untitled"] as? Bool ?? false,
                 readOnly: rawFile["readOnly"] as? Bool ?? false,

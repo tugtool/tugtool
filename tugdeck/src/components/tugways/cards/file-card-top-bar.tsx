@@ -46,6 +46,13 @@ export interface FileCardTopBarProps {
   onMoveTo: () => void;
   /** Save the buffer to the real file (manual mode — a plain Save). */
   onSave: () => void;
+  /**
+   * Whether Save is currently possible (manual mode) — mirrors the File ▸
+   * Save menu gate: not read-only, no unresolved conflict, and either dirty
+   * or untitled. Disables the Save button so it can't beep or re-raise a
+   * conflict from a clean/blocked state.
+   */
+  canSave: boolean;
   /** Reveal the bound file in the Finder (path click); absent for untitled. */
   onRevealInFinder?: () => void;
   /** The card-local editor settings the gear popover displays. */
@@ -61,6 +68,7 @@ export function FileCardTopBar({
   canMoveTo,
   onMoveTo,
   onSave,
+  canSave,
   onRevealInFinder,
   settings,
   onChangeSetting,
@@ -91,6 +99,7 @@ export function FileCardTopBar({
             aria-label="Save"
             title="Save"
             onClick={onSave}
+            disabled={!canSave}
           />
         ) : canMoveTo ? (
           <TugIconButton

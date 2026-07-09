@@ -24,12 +24,14 @@
 import "../tug-alert.css";
 import "./file-card-save-sheets.css";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { TugButtonRole } from "@/components/tugways/tug-push-button";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
+import { useSpatialOrder } from "@/components/tugways/use-spatial-order";
+import type { SpatialOrder } from "@/components/tugways/spatial-order";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 
@@ -75,6 +77,27 @@ function FileSaveSheetView({
         ? 0
         : nominalDefaultIndex;
   useSeedKeyView(`${focusGroup}:${defaultIndex}`);
+
+  // Arrow-plane ring over the button row in VISUAL order (Cancel on the
+  // left, then the right-hand cluster) so Left/Right and Up/Down walk the
+  // 3–4 choices — the doctrine's dialog-row navigation ([focus-language]).
+  // This view renders inside the sheet's FocusModeScope, so the ring binds
+  // to the sheet's trapped focus mode. [L03]
+  const spatialOrder = React.useMemo<SpatialOrder>(() => {
+    const cancelIdx = buttons.findIndex((b) => b.result === "cancel");
+    const visual = [
+      ...(cancelIdx !== -1 ? [cancelIdx] : []),
+      ...buttons.map((_, i) => i).filter((i) => buttons[i].result !== "cancel"),
+    ];
+    const nodes = visual.map((i) => `${focusGroup}:${i}`);
+    return {
+      rings: [
+        { axis: "horizontal", nodes, closed: true },
+        { axis: "vertical", nodes, closed: true },
+      ],
+    };
+  }, [focusGroup, buttons]);
+  useSpatialOrder(spatialOrder);
 
   const cancel = buttons.find((b) => b.result === "cancel");
   const rest = buttons.filter((b) => b.result !== "cancel");
@@ -249,12 +272,25 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
     [showSheet],
   );
 
-  return {
-    presentCloseSheet,
-    presentConflictSheet,
-    presentMissingSheet,
-    presentRevertSheet,
-    presentReloadSheet,
-    presentOpenConflictSheet,
-  };
+  // Stable identity: the presenters are each `useCallback`-stable, so the
+  // returned object must be too — the card's close-guard registration
+  // effect depends on it and would otherwise re-run every render.
+  return useMemo(
+    () => ({
+      presentCloseSheet,
+      presentConflictSheet,
+      presentMissingSheet,
+      presentRevertSheet,
+      presentReloadSheet,
+      presentOpenConflictSheet,
+    }),
+    [
+      presentCloseSheet,
+      presentConflictSheet,
+      presentMissingSheet,
+      presentRevertSheet,
+      presentReloadSheet,
+      presentOpenConflictSheet,
+    ],
+  );
 }

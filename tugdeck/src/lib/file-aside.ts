@@ -90,54 +90,82 @@ export function asidePathForUntitled(draftId: string): string {
  * `expected` carries whichever identity the caller opened with: a
  * `path` for a titled document, a `draftId` for an untitled buffer.
  */
-export function parseAside(
+/**
+ * Why a parse produced no usable record. `corrupt` is a
+ * garbled/wrong-version/wrong-shape file, safe to delete; `foreign` is a
+ * structurally valid aside keyed to a DIFFERENT document (an FNV-1a key
+ * collision) — it belongs to another file's crash-recovery and must be
+ * left in place, never deleted.
+ */
+export type AsideParseOutcome =
+  | { kind: "record"; record: AsideRecord }
+  | { kind: "corrupt" }
+  | { kind: "foreign" };
+
+/**
+ * Classify the aside JSON against the identity the caller opened with,
+ * separating corruption (delete-safe) from an identity mismatch (a key
+ * collision that must be preserved).
+ */
+export function parseAsideOutcome(
   json: string,
   expected: { path: string } | { draftId: string },
-): AsideRecord | null {
+): AsideParseOutcome {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch {
-    return null;
+    return { kind: "corrupt" };
   }
-  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw !== "object" || raw === null) return { kind: "corrupt" };
   const record = raw as Record<string, unknown>;
 
-  if (record.version !== ASIDE_VERSION) return null;
-  if (typeof record.content !== "string") return null;
+  if (record.version !== ASIDE_VERSION) return { kind: "corrupt" };
+  if (typeof record.content !== "string") return { kind: "corrupt" };
   if (
     record.lineEnding !== "LF" &&
     record.lineEnding !== "CRLF" &&
     record.lineEnding !== "CR"
   ) {
-    return null;
+    return { kind: "corrupt" };
   }
-  if (typeof record.editedAt !== "number") return null;
+  if (typeof record.editedAt !== "number") return { kind: "corrupt" };
 
   const path = record.path === null ? null : record.path;
   const draftId = record.draftId === null ? null : record.draftId;
-  if (path !== null && typeof path !== "string") return null;
-  if (draftId !== null && typeof draftId !== "string") return null;
-
-  if ("path" in expected) {
-    if (path !== expected.path) return null;
-    if (record.baselineSha256 !== null && typeof record.baselineSha256 !== "string") {
-      return null;
-    }
-  } else {
-    if (draftId !== expected.draftId) return null;
+  if (path !== null && typeof path !== "string") return { kind: "corrupt" };
+  if (draftId !== null && typeof draftId !== "string") return { kind: "corrupt" };
+  if (record.baselineSha256 !== null && typeof record.baselineSha256 !== "string") {
+    return { kind: "corrupt" };
   }
 
+  // A structurally valid record keyed to another document is a collision,
+  // not corruption — the caller must not destroy the other file's aside.
+  const identityMatches =
+    "path" in expected ? path === expected.path : draftId === expected.draftId;
+  if (!identityMatches) return { kind: "foreign" };
+
   return {
-    version: ASIDE_VERSION,
-    path,
-    draftId,
-    content: record.content,
-    lineEnding: record.lineEnding,
-    baselineSha256:
-      typeof record.baselineSha256 === "string" ? record.baselineSha256 : null,
-    editedAt: record.editedAt,
+    kind: "record",
+    record: {
+      version: ASIDE_VERSION,
+      path,
+      draftId,
+      content: record.content,
+      lineEnding: record.lineEnding,
+      baselineSha256:
+        typeof record.baselineSha256 === "string" ? record.baselineSha256 : null,
+      editedAt: record.editedAt,
+    },
   };
+}
+
+export function parseAside(
+  json: string,
+  expected: { path: string } | { draftId: string },
+): AsideRecord | null {
+  const outcome = parseAsideOutcome(json, expected);
+  return outcome.kind === "record" ? outcome.record : null;
 }
 
 /**
@@ -164,9 +192,12 @@ export async function readAside(
     // delete a payload we failed to read.
     return { kind: "unreadable" };
   }
-  const record = parseAside(outcome.file.content, expected);
-  if (record === null) return { kind: "invalid" };
-  return { kind: "record", record, sha256: outcome.file.sha256 };
+  const parsed = parseAsideOutcome(outcome.file.content, expected);
+  // A foreign aside (FNV-1a key collision) belongs to another document —
+  // treat it like an unread payload: leave it on disk, never delete it.
+  if (parsed.kind === "foreign") return { kind: "unreadable" };
+  if (parsed.kind === "corrupt") return { kind: "invalid" };
+  return { kind: "record", record: parsed.record, sha256: outcome.file.sha256 };
 }
 
 /**

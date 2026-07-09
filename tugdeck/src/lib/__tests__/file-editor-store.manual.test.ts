@@ -260,6 +260,65 @@ describe("manual mode — dirty + aside flush target", () => {
     expect(store.getSnapshot().lineEnding).toBe("CRLF");
     expect(store.getSnapshot().saveState).toBe("editing");
   });
+
+  test("resolveMissing recreates a deleted file", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "edited\n";
+    store.noteEdit();
+    io.files.delete("/f.txt");
+    await store.refreshFromDisk();
+    expect(store.getSnapshot().conflict?.reason).toBe("missing");
+    expect(await store.resolveMissing()).toBe("ok");
+    expect(io.files.get("/f.txt")!.content).toBe("edited\n");
+    expect(store.getSnapshot().conflict).toBeNull();
+  });
+
+  test("resolveMissing conflicts instead of clobbering a reappeared file", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "edited\n";
+    store.noteEdit();
+    io.files.delete("/f.txt");
+    await store.refreshFromDisk();
+    expect(store.getSnapshot().conflict?.reason).toBe("missing");
+    // Another process recreated the file meanwhile.
+    seedDisk("/f.txt", "FOREIGN\n");
+    expect(await store.resolveMissing()).toBe("conflict");
+    expect(store.getSnapshot().conflict?.reason).toBe("hash");
+    expect(io.files.get("/f.txt")!.content).toBe("FOREIGN\n"); // not clobbered
+  });
+
+  test("edits during a cancelled conflict still reach the aside", async () => {
+    seedDisk("/f.txt", "disk\n");
+    let buf = "disk\n";
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => buf));
+    await store.openPath("/f.txt");
+    buf = "mine\n";
+    store.noteEdit();
+    await store.flush();
+    await tick();
+    // External change raises a hash conflict; the user cancels (leaves it set).
+    seedDisk("/f.txt", "theirs\n");
+    await store.recheckOnActivation();
+    expect(store.getSnapshot().conflict?.reason).toBe("hash");
+    // The user keeps typing during the cancelled conflict.
+    buf = "mine plus more\n";
+    store.noteEdit();
+    await store.flush();
+    await tick();
+    // The aside captured the new edits (crash-safety) — real file untouched.
+    const aside = JSON.parse(io.files.get(asidePathFor("/f.txt"))!.content);
+    expect(aside.content).toBe("mine plus more\n");
+    expect(io.files.get("/f.txt")!.content).toBe("theirs\n");
+  });
 });
 
 describe("manual mode — open-time aside restore", () => {
@@ -336,9 +395,26 @@ describe("manual mode — open-time aside restore", () => {
     expect(io.files.has(asidePathFor("/f.txt"))).toBe(false);
   });
 
-  test("an invalid aside is deleted; the open proceeds clean", async () => {
+  test("a corrupt aside is deleted; the open proceeds clean", async () => {
     seedDisk("/f.txt", "disk\n");
-    // Aside keyed to a different path → invalid on read.
+    // Unparseable content → corrupt → safe to delete.
+    io.files.set(asidePathFor("/f.txt"), {
+      content: "{ not json",
+      sha256: shaOf("{ not json"),
+      readOnly: false,
+    });
+    const store = new FileEditorStore({ saveMode: "manual" });
+    store.attachEditor(bridge(() => "disk\n"));
+    await store.openPath("/f.txt");
+    await tick();
+    expect(store.getSnapshot().saveState).toBe("clean");
+    expect(io.files.has(asidePathFor("/f.txt"))).toBe(false);
+  });
+
+  test("a foreign (wrong-path) aside is preserved, not deleted", async () => {
+    seedDisk("/f.txt", "disk\n");
+    // A valid aside keyed to a different path is a key collision belonging
+    // to another document — leave it on disk, open clean, don't restore it.
     seedAside(asidePathFor("/f.txt"), {
       version: 1,
       path: "/OTHER.txt",
@@ -353,7 +429,7 @@ describe("manual mode — open-time aside restore", () => {
     await store.openPath("/f.txt");
     await tick();
     expect(store.getSnapshot().saveState).toBe("clean");
-    expect(io.files.has(asidePathFor("/f.txt"))).toBe(false);
+    expect(io.files.has(asidePathFor("/f.txt"))).toBe(true);
   });
 });
 
