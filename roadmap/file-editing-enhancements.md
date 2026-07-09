@@ -13,7 +13,7 @@
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-07-08 |
+| Last updated | 2026-07-09 |
 
 ---
 
@@ -139,8 +139,8 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Risk R02: Close-gate coverage gaps** {#r02-close-gate-gaps}
 
-- **Risk:** Close paths are plural (X button, ⌘W, ⌥⌘W close-all, pane close, Option-click bypass); missing one lets a dirty card die without its prompt.
-- **Mitigation:** The guard hooks the single funnel — `CardTitleBar.requestClose` / `requestCloseWith` in `tugdeck/src/components/chrome/tug-pane.tsx`, which all keyboard/menu/mouse close paths already route through. Option-click bypass is *deliberately preserved* ([P06]): the aside survives it, so nothing is lost.
+- **Risk:** Close paths are plural (X button, ⌘W, ⌥⌘W close-all, pane close, Option-click bypass); missing one lets a dirty card die without its prompt. **The "single funnel" is a partial truth**: a plain X-click on a card whose pane does NOT set `confirmClose` (the File card's case today) short-circuits inside `CardTitleBar` — both `handleClosePointerUp` and the keyboard-activation `handleCloseClick` call `onClose?.()` **directly** when `!confirmClose`, never touching `requestClose`. So hooking only `requestClose`/`requestCloseWith` would leave the most common gesture (clicking the X) bypassing the guard.
+- **Mitigation:** The guard consultation must live in **all four** `CardTitleBar` close sites — `handleClosePointerUp`, `handleCloseClick`, `requestClose`, `requestCloseWith` — not just the two imperative-handle ones. They all live inside one component, so it is still a single shared helper (`consultGuardThen(proceed)`), but the plan names every site. Option-click bypass is *deliberately preserved* ([P06]): the aside survives it, so nothing is lost. Note the X path closes the **entire pane** (`handleTitleBarClose` → `onClose`), so the guard gates a pane close; that is correct because the dirty card is the pane's active/mounted card and background tabs' asides are already flushed.
 - **Residual risk:** Background tabs close without prompting (their bodies are unmounted, no live guard) — by design; their asides persist and restore on reopen.
 
 ---
@@ -205,7 +205,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 **Decision:** A new module-level registry (`tugdeck/src/lib/card-close-guard.ts`) maps cardId → `guard: () => Promise<"close" | "cancel">`, registered by the File card body ([L27]: registration returns its release). `CardTitleBar.requestClose` / `requestCloseWith` in `tug-pane.tsx` consult the registry: a registered guard supersedes the `confirmClose` popover for that card; `"close"` proceeds, `"cancel"` aborts. Option-click bypass is preserved unchanged. App quit does not prompt ([Q02]): the existing pagehide/unmount keepalive flush persists the aside, and reopening restores the edits dirty.
 
 **Rationale:**
-- Every close gesture (X click, ⌘W, ⌥⌘W, pane close, menu Close) already funnels through `requestClose`/`requestCloseWith` — one seam, no scattering.
+- Every close gesture (X click, ⌘W, ⌥⌘W, pane close, menu Close) funnels through `CardTitleBar` — but through **four** sites, not one: the X button's `handleClosePointerUp`/`handleCloseClick` call `onClose` directly on a non-`confirmClose` pane, while ⌘W/close-all use the `requestClose`/`requestCloseWith` handle. The guard consultation goes in a shared helper called from all four (see Risk R02). No scattering across files — all four are in `tug-pane.tsx`.
 - Option-click force-close is safe *because of* the aside: the edits survive on disk and restore on reopen. Prompting there would break the established escape hatch for no safety gain.
 - Only the mounted active card can be dirty-in-memory (background tabs are bags); their asides are already flushed, so closing them silently is lossless.
 
@@ -231,7 +231,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 #### [P09] Focus-time recheck backstops the watcher (DECIDED) {#p09-focus-recheck}
 
-**Decision:** On card activation (`onCardActivated` in `file-card.tsx`'s `useCardStatePreservation` wiring) and on window focus (`visibilitychange` → visible / `focus`), the store rechecks disk: clean → existing `refreshFromDisk()` silent reload; manual + dirty → compare disk sha to baseline and raise the conflict sheet on divergence.
+**Decision:** On card activation (`onCardActivated` in `file-card.tsx`'s `useCardStatePreservation` wiring) and on window becoming visible (a `visibilitychange` listener that acts **only** when `document.visibilityState === "visible"` — the same event fires on hide, where the existing `flushOnHide` handler already runs; a bare `visibilitychange` recheck would fire a disk read on every hide too), the store rechecks disk: clean → existing `refreshFromDisk()` silent reload; manual + dirty → compare disk sha to baseline and raise the conflict sheet on divergence.
 
 **Rationale:** The FILESYSTEM feed only watches the session workspace root ([#watch-coverage]); files opened from elsewhere get no events. Checking on activation is exactly what NSDocument-based apps do when the app becomes active.
 
@@ -252,6 +252,18 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 **Rationale:** Rebinding tears down the buffer; prompting mid-open is hostile. Opening a fresh card is always safe and cheap.
 
 **Implications:** One added method on `FileCardOpenEntry` (`file-card-open-registry.ts`); path-keyed reuse of an already-bound card (`findFileCardByPath`) is unaffected — activating a dirty card that already shows the requested path is fine.
+
+#### [P12] Two distinct write targets; `flush()` is the aside path, `save()` is the real-file path (DECIDED) {#p12-write-targets}
+
+**Decision:** In manual mode the store has two write paths that must never be confused. `flush()` (and every existing lifecycle caller — `onSave`, `pagehide`/`visibilitychange`, unmount, `[L23]` close-handoff, all of which call `store.flush({keepalive})` directly in `file-card.tsx`) writes the **aside**. The **real file** is written only by the explicit save verbs: `save()`, `saveAs()`, `saveACopy()`, and the conflict resolution `resolveConflict("overwrite")` — which in manual mode routes to the real-file save path with the baseline pre-seeded from `conflict.diskSha256`, NOT to `flush()`.
+
+**Rationale:**
+- The existing `resolveConflict("overwrite")` ends with `await this.flush()`. Once `flush()` is repointed at the aside (the whole premise of manual mode), an unchanged overwrite arm would flush the aside, report success, and never touch the real file — silently discarding the user's "Save Anyway" decision in the exact flow the feature exists to protect. This is a data-integrity trap and must be closed explicitly.
+- Lifecycle callers must hit the aside (never the real file) so that closing/quitting a dirty manual card persists the crash-recovery payload without an unrequested real-file write.
+
+**Implications:**
+- `resolveConflict` branches on `saveMode`: automatic keeps `flush()`; manual seeds `_baselineSha256 = conflict.diskSha256`, clears the conflict, and calls the real-file save, deleting the aside on the ok settle.
+- A unit test must assert that, in manual mode, the overwrite arm issues a write to the **real path** (not the aside path) and that the aside is deleted afterward.
 
 ---
 
@@ -287,7 +299,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 | Any (both modes) | renamed | `Renamed{from,to}` or Removed+Created pairing ([P05]) | Follow: rebind path/fileName, re-key aside, update title/tab; no prompt |
 | Dirty (manual), card closed | modified while away | open-time aside check (aside.baselineSha256 ≠ disk sha) | **Open-conflict sheet** (Spec S03: Keep My Changes / Use Disk Version) |
 
-Conflict sheet resolutions (dirty + modified): **Save Anyway** → `resolveConflict("overwrite")` semantics (re-issue conditioned on the reported disk hash); **Reload from Disk** → `resolveConflict("reload")` + delete aside; **Save As…** → save panel → `saveAs` (disk file keeps the foreign version — the classic "keep both"); **Cancel** → stay dirty, conflict badge in the status bar, save disabled until resolved (matches the existing `noteEdit`/`flush` conflict no-op discipline).
+Conflict sheet resolutions (dirty + modified): **Save Anyway** → write the **real file** conditioned on the reported disk hash, then delete the aside on ok settle (in manual mode this must route through the real-file save path, NOT `flush()` — which now targets the aside; see [P12]); **Reload from Disk** → `resolveConflict("reload")` + delete aside; **Save As…** → save panel → `saveAs` (disk file keeps the foreign version — the classic "keep both"); **Cancel** → stay dirty, conflict badge in the status bar, save disabled until resolved (matches the existing `noteEdit`/`flush` conflict no-op discipline).
 
 #### Watch coverage gap {#watch-coverage}
 
@@ -298,7 +310,7 @@ Conflict sheet resolutions (dirty + modified): **Save Anyway** → `resolveConfl
 1. **Edit** in manual mode → `noteEdit()` → `saveState: "editing"` (dirty) + debounce arms → `_flushAside()` writes **Spec S01** JSON (hash-chained, [P08]). The real file is untouched.
 2. **⌘S** → real-file conditional write (existing `flush` body, target = real path) → on ok: `saveState: "clean"`, `_baselineSha256` updated, aside deleted (conditional `delete: true`).
 3. **Quit / crash** → last aside flush (pagehide keepalive, or simply the last debounced flush) survives.
-4. **Reopen** (card restore or fresh `openPath`) → read disk, read aside: no aside → normal open; aside with `baselineSha256 === disk.sha256` → seed buffer from `aside.content` + `aside.lineEnding`, `saveState: "editing"` (silent, NSDocument-style); aside with mismatched baseline → open-conflict sheet (**Table T01** last row); aside that fails validation (wrong `path`, unparsable) → delete it, normal open ([Q01] opportunistic cleanup).
+4. **Reopen** (card restore or fresh `openPath`) → read disk, read aside: no aside → normal open; aside with `baselineSha256 === disk.sha256` → seed buffer from `aside.content` + `aside.lineEnding`, `saveState: "editing"` (silent, NSDocument-style); aside with mismatched baseline → open-conflict sheet (**Table T01** last row); `"invalid"` aside (parseable but wrong `path`/version) → delete it, normal open ([Q01] opportunistic cleanup); `"unreadable"` aside (transport/`too_large`) → leave it on disk, normal open (never delete a payload we couldn't read — watch-item, Step 2).
 5. **Untitled** ([P10]): same flow keyed by draftId; first Save runs the panel, then converts to a path-keyed document (aside deleted).
 
 ---
@@ -328,6 +340,7 @@ TS (`host-menu-state.ts`), published by the File card via new `publishFileMenuSt
 ```ts
 interface MenuStateFileBlock {
   cardId: string;
+  mode: "manual" | "automatic"; // gates Save differently (see below)
   dirty: boolean;      // manual: saveState !== "clean"; automatic: false
   untitled: boolean;   // path === null (manual) — Save must run the panel
   readOnly: boolean;
@@ -336,16 +349,18 @@ interface MenuStateFileBlock {
 }
 ```
 
-Swift (`AppDelegate.swift` `MenuState`): add `struct File { cardId, dirty, untitled, readOnly, hasPath, conflict }`, parsed in `MenuState.init(payload:)`. Menu items and gates (`validateMenuItem`, keyed on `.identified` ids):
+Swift (`AppDelegate.swift` `MenuState`): add `struct File { cardId, mode, dirty, untitled, readOnly, hasPath, conflict }`, parsed in `MenuState.init(payload:)`. Menu items and gates (`validateMenuItem`, keyed on `.identified` ids):
 
 | Item | Id | Key | Enabled iff |
 |---|---|---|---|
 | New Text File | `file.newTextFile` | ⌥⌘N | always |
-| Save | `file.save` (exists) | ⌘S | `file != nil && !readOnly && !conflict && (dirty \|\| untitled)` |
+| Save | `file.save` (exists) | ⌘S | `file != nil && !readOnly && !conflict && (mode == "automatic" \|\| dirty \|\| untitled)` |
 | Save As… | `file.saveAs` | ⇧⌘S *dynamic* ([P07]) | `file != nil` |
 | Save a Copy… | `file.saveACopy` | ⌥⇧⌘S | `file != nil` |
 | Revert to Saved | `file.revertToSaved` | — | `file != nil && dirty && hasPath` |
 | Reload from Disk | `file.reloadFromDisk` | — | `file != nil && hasPath` |
+
+**Automatic-mode Save must stay enabled** (whenever `!readOnly && !conflict`) to preserve today's "flush now + checkpoint" ⌘S. If Save validated disabled for an automatic card, the beep-eats-chord rule ([P07], #assumptions) would make ⌘S *beep* in the packaged app instead of flushing — an unforced regression of the retained feature. Manual mode adds the `dirty || untitled` requirement (a clean titled document has nothing to save).
 
 Selectors dispatch `sendControl("new-text-file")`, `sendControl("save-as")`, `sendControl("save-a-copy")`, `sendControl("revert-to-saved")`, `sendControl("reload-from-disk")`; Save keeps `sendControl("save")`. `updateMenuState` sets `file.saveAs`'s `keyEquivalent`/`keyEquivalentModifierMask` when `file != nil` and clears it otherwise.
 
@@ -488,7 +503,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Tasks:**
 - [ ] FNV-1a 64-bit hex over the canonical path (BigInt); `asidePathFor(path)` / `asidePathForUntitled(draftId)` returning tilde paths under `~/Library/Application Support/Tug/Autosave Information/`.
-- [ ] `parseAside(json, expectedPathOrDraftId)` — strict validation (version, field types, path/draftId match); invalid → null.
+- [ ] `parseAside(json, expectedPathOrDraftId)` — strict validation (version, field types, path/draftId match); invalid → null. **Distinguish outcomes for the caller:** `readAside` must return a three-way result — `{ record }` (valid), `"invalid"` (parseable but wrong/corrupt → safe to delete, [Q01]), or `"unreadable"` (transport error, `not_found`, or `too_large` — an aside for a file near the 8 MiB `MAX_READ_BYTES` cap can exceed it once JSON-escaped). The caller MUST NOT delete on `"unreadable"` — deleting there destroys the crash-recovery payload it failed to read. Only `"invalid"` is deletable.
 - [ ] `AsideWriter` (or equivalent) owning the sha chain: first write `baselineSha256: null`; on `conflict` retry with the reported `diskSha256`; subsequent writes conditioned on the last ok `sha256`. `write(record, {keepalive?})`, `delete()` (conditional `delete: true`), `read()` re-seeding the chain.
 
 **Tests:**
@@ -510,10 +525,10 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 **Artifacts:** `FileEditorStore` mode branch; `openUntitled`; open-time aside restore; `file-editor-store.manual.test.ts`.
 
 **Tasks:**
-- [ ] Ctor option `{ saveMode?: "manual" | "automatic" }` (default `"automatic"` — the card flips the default in #step-10); `saveMode` + `untitled` on the snapshot.
+- [ ] Ctor option `{ saveMode?: "manual" | "automatic" }` (default `"automatic"` — the card flips the default in #step-10); `saveMode` + `untitled` on the snapshot. **Guard against the reset wipe:** `openPath` resets state via `{ ...EMPTY_SNAPSHOT, phase: "loading", … }`; since a rebind (`saveAs`→`openPath`, rename-follow) reuses the same store, `saveMode` must NOT be reset by that spread — hold it in a private field (`_saveMode`) and re-apply it into every `_update` that resets the snapshot (or keep it off `EMPTY_SNAPSHOT` and merge it back), else a Save As on a manual card silently reverts to automatic. Unit-test a rebind preserves the mode.
 - [ ] Manual `noteEdit`/debounce: dirty = `saveState: "editing"`; the debounce flushes the **aside** (internal `_flushAside()`, using the Step-2 writer; content `\n`-normalized, `lineEnding` recorded). Real file untouched. Reuse the `_editedDuringWrite` discipline for aside flushes (aside writer races are absorbed by its sha chain, but a mid-flight edit must re-flush).
 - [ ] `setLineEnding` in manual mode: record + mark dirty (no real-file write).
-- [ ] `openPath` (manual): after the disk read, consult the aside per [#aside-lifecycle] — silent dirty restore on baseline match; expose a mismatch as a new snapshot field the card renders as the open-conflict sheet (e.g. `pendingAsideConflict: { asideContent, asideLineEnding } | null`) with resolver `resolveAsideConflict("keep" | "disk")`; invalid aside → delete, normal open.
+- [ ] `openPath` (manual): after the disk read, consult the aside per [#aside-lifecycle] — silent dirty restore on baseline match; expose a mismatch as a new snapshot field the card renders as the open-conflict sheet (e.g. `pendingAsideConflict: { asideContent, asideLineEnding } | null`) with resolver `resolveAsideConflict("keep" | "disk")`; `"invalid"` aside → delete + normal open; `"unreadable"` aside → keep on disk + normal open (never delete an unread payload).
 - [ ] `openUntitled(draftId)`: `phase: "ready"`, `path: null`, `fileName: "Untitled"`, empty seed; aside keyed by draftId; restore path for an existing untitled aside.
 - [ ] Lifecycle: pagehide/unmount `flush({keepalive})` targets the aside in manual mode; `dispose()` leaves the aside on disk (that is the restore payload); [L23] close-handoff likewise flushes the aside.
 
@@ -532,7 +547,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Commit:** `File editor: manual save verbs and external-change reconciliation`
 
-**References:** [P02] Classic verbs, [P04] Reconciliation, [P08], Table T01, Spec S03 semantics, (#reconciliation-matrix)
+**References:** [P02] Classic verbs, [P04] Reconciliation, [P08], [P12] Write targets, Table T01, Spec S03 semantics, (#reconciliation-matrix, #p12-write-targets)
 
 **Artifacts:** `save()`, `saveACopy(path)`, `revertToSaved()`, `reloadFromDisk()`; manual conflict-on-watch; aside deletion on the discard paths.
 
@@ -542,11 +557,12 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 - [ ] `saveACopy(path)`: write only; no rebind, no dirty change, no aside change.
 - [ ] `revertToSaved()` / `reloadFromDisk()`: `_recheckDisk({force:true})` + delete aside + `clean`. (Confirm sheets live in the card; the store methods are unconditional.)
 - [ ] `_onFilesystemFrame` manual branch: dirty + hit → read disk; diverged → `conflict {reason:"hash", diskSha256}` (immediately, per [P04]); clean branch unchanged (silent reload). Automatic branch byte-identical to today.
-- [ ] `resolveConflict` gains the aside bookkeeping: `"reload"` deletes the aside; `"overwrite"` deletes it on the subsequent ok settle.
+- [ ] `resolveConflict` branches on `saveMode` ([P12]): `"reload"` → force recheck + delete aside (both modes). `"overwrite"` → automatic keeps the existing `flush()`; **manual** seeds `_baselineSha256 = conflict.diskSha256`, clears the conflict, and routes to the **real-file** save path (`save()`), deleting the aside on the ok settle — it MUST NOT call `flush()`, which now writes the aside and would silently drop the user's "Save Anyway".
 
 **Tests:**
 - [ ] Save round-trip: dirty → save → clean + aside deleted; conflict outcome → conflict snapshot, aside retained.
 - [ ] Watcher frame while dirty (synthetic frame, mocked read divergence) → conflict raised without a write.
+- [ ] **Manual `resolveConflict("overwrite")` issues a write to the REAL path (not the aside path) and deletes the aside afterward** — the [P12] data-integrity guard; assert the write target explicitly via the mocked `file-io` call args.
 - [ ] Save Anyway / Reload arms including aside deletion; Save a Copy leaves state untouched.
 - [ ] Revert/Reload clear dirty and delete the aside.
 
@@ -557,18 +573,20 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Commit:** `Pane chrome: async per-card close guard`
 
-**References:** [P06] Close gate, Risk R02, (#current-architecture)
+**References:** [P06] Close gate, Risk R02, [L03] (registrations events depend on), (#current-architecture)
 
 **Artifacts:** `tugdeck/src/lib/card-close-guard.ts`; guard consultation in `chrome/tug-pane.tsx`.
 
 **Tasks:**
 - [ ] Registry: `registerCardCloseGuard(cardId, guard: () => Promise<"close" | "cancel">): () => void` ([L27] returned release), `getCardCloseGuard(cardId)`.
-- [ ] `CardTitleBar.requestClose` / `requestCloseWith`: when the closing card has a guard and the gesture is not the Option-click bypass, await the guard instead of (or before) the `confirmClose` popover; `"close"` → proceed (`onClose` / `onConfirm`), `"cancel"` → no-op. Multi-tab ⌘W (`handleChromeClose`) and Close All (`handleCloseAll`) route through the same consultation for the active card; pane-close of a multi-card stack keeps its "Close N Tabs?" popover and additionally runs the active card's guard (background tabs have no live guard by construction — see #assumptions).
+- [ ] Shared helper in `CardTitleBar` — `consultGuardThen(proceed: () => void)`: if the (active/closing) card has a registered guard, await it and call `proceed()` only on `"close"`; otherwise call `proceed()` immediately. **Call it from all FOUR close sites** — `handleClosePointerUp`, `handleCloseClick`, `requestClose`, `requestCloseWith` (Risk R02: the first two call `onClose` directly on a non-`confirmClose` pane, so hooking only the imperative handle would leave a plain X-click bypassing the guard). Option-click (`event.altKey`) still bypasses the guard entirely.
+- [ ] Preserve existing behavior when there is no guard and no dirty card: a `confirmClose` pane still opens its popover; a plain pane still closes immediately. The guard supersedes only when registered.
+- [ ] Multi-tab ⌘W (`handleChromeClose`) and Close All (`handleCloseAll`) route their active-card close through the same consultation; pane-close of a multi-card stack keeps its "Close N Tabs?" popover and additionally runs the active card's guard (background tabs have no live guard by construction — see #assumptions).
 - [ ] Guard runs must be single-flight per card (a second ⌘W while the sheet is up is a no-op).
 
 **Tests:**
 - [ ] Unit test of the registry (register/release/leak-check per the L27 test pattern in the codebase).
-- [ ] Behavior is exercised end-to-end in #step-10's app-test (no fake-DOM chrome tests — #test-non-goals).
+- [ ] Behavior is exercised end-to-end in #step-10's app-test — specifically a **plain X-click** on a dirty file card (the `!confirmClose` short-circuit path) must show the sheet, not close silently (no fake-DOM chrome tests — #test-non-goals).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test src && bunx vite build`
@@ -585,7 +603,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Tasks:**
 - [ ] `useFileSaveSheets` presenting the six Spec S03 sheets via `useTugSheet` (model-picker pattern; `renderSheet()` in the card body; `presentAlertSheet` for the two-button ones).
-- [ ] Close guard registration (manual mode, mounted card): dirty → close sheet → Don't Save = `deleteAside` + `"close"`; Save = `save()` (untitled → `pickPath("save")` first, panel cancel → `"cancel"`) then `"close"` on success; Cancel → `"cancel"`. Clean → `"close"` immediately.
+- [ ] Close guard registration (manual mode, mounted card) — register in a `useLayoutEffect` ([L03]: the close gesture may fire before a passive effect commits, mirroring the card's existing `registerOpenFileCard` layout-effect), release on cleanup ([L27]). Guard body: dirty → close sheet → Don't Save = `deleteAside` + `"close"`; Save = `save()` (untitled → `pickPath("save")` first, panel cancel → `"cancel"`) then `"close"` on success; Cancel → `"cancel"`. Clean → `"close"` immediately.
 - [ ] Conflict presentation: effect observing `snapshot.conflict` (manual) presents the conflict/missing sheet; `pendingAsideConflict` presents the open-conflict sheet. Cancel leaves a status-bar conflict badge.
 - [ ] Add `TUG_ACTIONS.SAVE_AS` / `SAVE_A_COPY` / `REVERT_TO_SAVED` / `RELOAD_FROM_DISK` to `action-vocabulary.ts` with docstring entries (List L01 — the CONTROL adapters follow in #step-7).
 - [ ] Responder handlers at the card scope for `SAVE_AS` (panel → `saveAs`), `SAVE_A_COPY` (panel → `saveACopy`), `REVERT_TO_SAVED` (sheet → `revertToSaved`), `RELOAD_FROM_DISK` (dirty → sheet; clean → direct); manual-mode `SAVE` handler in `tug-file-editor.tsx` routes to `store.save()` (and surfaces `"needs-path"` to the card's panel flow) instead of `saveNow()`.
@@ -611,12 +629,13 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Tasks:**
 - [ ] `MenuStateFileBlock`, `MenuStatePayload.file`, `publishFileMenuState`/`clearFileMenuState` — mirror the dev block (Map keyed by cardId; serialized only when that card is the focused pane's active card).
-- [ ] File card effect publishing the block from the snapshot (dirty/untitled/readOnly/hasPath/conflict) and clearing on unmount ([L27]).
+- [ ] File card effect publishing the block from the snapshot (mode/dirty/untitled/readOnly/hasPath/conflict) and clearing on unmount ([L27]).
 - [ ] Both-flavor adapters in `action-dispatch.ts` for the four chain actions added in #step-6 (`registerAction(name, () => sendToFirstResponder({action: name}))`, the `save` adapter pattern).
 - [ ] `new-text-file` CONTROL action: add a File card with bag `{ draftId, untitled: true }` (the `initialContent` seam), then activate it (the `transferFocusForActivation` pattern used by the `newTab` open-target fix).
 
 **Tests:**
-- [ ] Unit: file-block projection (given snapshots → block fields); payload includes `file` only when the file card is frontmost (extend the existing `host-menu-state` tests).
+- [ ] Unit: file-block projection (given snapshots → block fields, incl. `mode`); payload includes `file` only when the file card is frontmost (extend the existing `host-menu-state` tests).
+- [ ] Unit: Save-gate predicate — automatic card (`mode: "automatic"`, clean) → Save enabled; clean titled manual card → Save disabled; read-only or conflicted → disabled (mirrors the Spec S02 gate so the TS side is verified even though Swift `validateMenuItem` has no test harness).
 - [ ] Unit: adapter registrations dispatch to the first responder (existing `action-dispatch.test.ts` patterns; mocks return callable unsubscribes per L27).
 
 **Checkpoint:**
@@ -635,12 +654,12 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 **Tasks:**
 - [ ] Items per Spec S02 (`.identified` ids; the `NSMenuItem(title:action:keyEquivalent:modifierMask:)` convenience for ⌥⌘N / ⌥⇧⌘S): New Text File after New Git Card; Save As… / Save a Copy… after Save; separator; Revert to Saved; Reload from Disk.
 - [ ] Selectors call `sendControl` with the List L01 action names (follow `saveActiveEditor(_:)`).
-- [ ] `MenuState`: add `File` struct + `init(payload:)` parsing; `validateMenuItem` cases per the Spec S02 gate column.
+- [ ] `MenuState`: add `File` struct (incl. `mode`) + `init(payload:)` parsing; `validateMenuItem` cases per the Spec S02 gate column — note the Save gate's `mode == "automatic" || dirty || untitled` clause so an automatic card's ⌘S never validates disabled (else it beeps instead of flushing).
 - [ ] `updateMenuState`: locate `file.saveAs` and set `keyEquivalent = "s"`, `keyEquivalentModifierMask = [.command, .shift]` when `menuState.file != nil`, else clear to `""` ([P07]).
 
 **Tests:**
 - [ ] Build: `xcodebuild`/`just` app build path used by `just app-test-build` compiles warning-free.
-- [ ] Behavioral verification lands in #step-10's app-test (menu commands via `dispatchControlAction` equivalents) plus manual menu inspection: with a dev card frontmost, ⇧⌘S still switches the prompt route (no beep); with a dirty file card frontmost, Save/Save As enable.
+- [ ] Behavioral verification lands in #step-10's app-test (menu commands via `dispatchControlAction` equivalents) plus manual menu inspection: with a dev card frontmost, ⇧⌘S still switches the prompt route (no beep); with a dirty file card frontmost, Save/Save As enable; with an **automatic** file card frontmost (seeded), ⌘S still flushes (no beep).
 
 **Checkpoint:**
 - [ ] Full app build succeeds (`just app-test-build` build phase or the project's standard build recipe).
@@ -658,7 +677,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 **Tasks:**
 - [ ] Handle `Renamed { from, to }` frames (extend `parseFilesystemFrame` — events currently parse only `{kind, path}`; `Renamed` events serialize `from`/`to` per the serde enum in `tugcast-core/src/types.rs`): resolved `from` matches → adopt.
 - [ ] macOS pairing: batch contains `Removed` for our path → collect `Created` candidates; same-basename first, else a sole `Created`; `readFileFromDisk(candidate)` and adopt iff `sha256 === _baselineSha256`; else missing-file flow. Adoption = update `path`/`fileName` snapshot, migrate the aside to the new key (write new, delete old), leave dirty state and baseline untouched. Both modes.
-- [ ] `recheckOnActivation()`: no-op while `writing`/sheet-pending; clean → `refreshFromDisk()`; manual dirty → read + raise conflict on divergence. Wire from `onCardActivated` and a window `focus`/`visibilitychange` listener in `file-card.tsx` (listener release on unmount, [L27]).
+- [ ] `recheckOnActivation()`: no-op while `writing`/sheet-pending; clean → `refreshFromDisk()`; manual dirty → read + raise conflict on divergence. Wire from `onCardActivated` and a `visibilitychange` listener in `file-card.tsx` that acts **only when `document.visibilityState === "visible"`** ([P09] watch-item: the same event fires on hide, where `flushOnHide` already runs — an unguarded recheck would issue a disk read on every hide). `useLayoutEffect` registration, listener release on unmount ([L03], [L27]).
 
 **Tests:**
 - [ ] Unit (synthetic frames, mocked reads): `Renamed` adoption; Removed+Created pairing happy path; ambiguity (two creations, no basename match) → missing flow; hash mismatch → missing flow; dirty state preserved across adoption; aside re-keyed.
@@ -673,7 +692,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Commit:** `File editor: manual save is the default; app-test coverage`
 
-**References:** [P01], [P06], [P10], Table T01, Spec S03, (#success-criteria)
+**References:** [P01], [P06], [P10], [P12] Write targets, Table T01, Spec S03, (#success-criteria)
 
 **Artifacts:** `readSaveMode()` default `"manual"` wired in `file-card.tsx`; at0209/at0210 updates; `tests/app-test/at0211-file-editor-manual-save.test.ts`.
 
@@ -681,7 +700,8 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 - [ ] Card resolves `save-mode` (tugbank `dev.tugtool.file-editor`, default `"manual"`) and constructs the store with it; the empty-phase "New Untitled File" affordance routes to `openUntitled` in manual mode.
 - [ ] at0209 (live autosave): seed the `save-mode: "automatic"` deck default (tugbank helper) before opening the card, so it keeps exercising automatic mode as real coverage of the retained feature.
 - [ ] at0210: adjust save-cell copy expectations if touched ("Saved" ↔ "Edited" wording per mode); seed automatic where the old expectations are load-bearing, or update to manual expectations — prefer updating to manual since that's the shipping default.
-- [ ] at0211 (new): (1) open file → type → status "Edited", disk unchanged (read file via harness) → `dispatchControlAction("save")` → "Saved", disk updated; (2) modify the file externally while dirty → conflict sheet appears → "Save Anyway" wins; repeat → "Reload from Disk" reverts buffer; (3) dirty close via `dispatchControlAction("close")` → sheet → Don't Save closes without writing; (4) `dispatchControlAction("new-text-file")` → Untitled card, type, close → Save → save panel path (drive `pickPath` result via the harness's native-dialog seam if available; otherwise assert the needs-path save flow and cancel); (5) aside restore: type, close card via Option-bypass path or harness reload, reopen same file → content restored dirty. Respect the harness realities: `SHOULD_RUN` gate, generous `waitForCondition` timeouts (the cold-start popover flake precedent from at0210 — use ≥15000 ms), reveal-scroll clears the sticky header.
+- [ ] at0211 (new) — **every scenario opens a real file with a real disk path so no path lands in an NSSavePanel** (a native modal panel would block the harness until timeout; nothing in `tests/app-test/_harness/` can drive or cancel a native panel). Scenarios: (1) open file → type → status "Edited", disk unchanged (read file via harness) → `dispatchControlAction("save")` → "Saved", disk updated; (2) modify the file externally while dirty → conflict sheet appears → "Save Anyway" writes the buffer to disk (verify real file content changed — the [P12] guard); reset and repeat → "Reload from Disk" reverts buffer; (3) dirty close via **a plain X-click** (`nativeClickAtElement` on the close button — exercises the `!confirmClose` short-circuit, Risk R02) AND via `dispatchControlAction("close")` → sheet → Don't Save closes without writing; (4) aside restore: type into a titled file, close via Option-bypass (or harness reload), reopen same file → content restored dirty, status "Edited". Respect the harness realities: `SHOULD_RUN` gate, generous `waitForCondition` timeouts (the cold-start popover flake precedent from at0210 — use ≥15000 ms), reveal-scroll clears the sticky header.
+- [ ] Untitled/needs-path Save and Save As… panel routing are covered at the **unit level** (`file-editor-store.manual.test.ts`: `save()` on `path === null` returns `"needs-path"`; `saveAs`/`saveACopy` given a path write and rebind) — NOT in at0211, to keep every app-test path panel-free. New Text File is still smoke-tested in at0211 (`dispatchControlAction("new-text-file")` → an Untitled card appears and accepts typing), stopping short of the Save that would open the panel.
 
 **Tests:**
 - [ ] `just app-test at0209 at0210 at0211` green (2 runs to shake flakes).
