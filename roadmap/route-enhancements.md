@@ -1,0 +1,958 @@
+## Route Enhancements — `code | shell | btw` {#route-enhancements}
+
+**Purpose:** Make the Dev card's route choice group real: `btw` joins as a third route with per-route Z4B chrome, and the `shell` route — cosmetic since the prompt-entry-zones phase — gains an actual block-oriented execution backend whose command/output exchanges thread into the transcript as durable, visually distinct rows.
+
+---
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | `main` (implemented on a `tugutil dash` worktree) |
+| Last updated | 2026-07-09 |
+
+---
+
+### Phase Overview {#phase-overview}
+
+#### Context {#context}
+
+The Dev card's Z4A route choice group ([D97]) has shown `Code | Shell` for months, but the Shell route is a lie: `TugPromptEntry.performSubmit` calls `codeSessionStore.send()` unconditionally — text typed on the `$` route goes to Claude Code. The `SHELL_INPUT`/`SHELL_OUTPUT` feed IDs (0x60/0x61) are reserved but unwired in both `tugdeck/src/protocol.ts` and `tugrust/crates/tugcast-core/src/protocol.rs`, and the transcript's `TurnOrigin` type reserves a `#s` shell origin it never mints (`tugdeck/src/lib/code-session-store/types.ts`). Meanwhile `/btw` side questions ([D108]) shipped as a slash command + overlay with no home in the card's conceptual model, and the Z4B chrome cluster overloads one set of chips across routes via disable-scatter (`DevRouteShellGate`).
+
+The unifying model (decided in discussion, now plan of record): **routes are recipients**. `❯` code = Claude on the record, `$` shell = the machine, `?` btw = Claude off the record. The transcript becomes *the session's record of what happened* — no longer a strict mirror of Claude's context — with shell exchanges as visually distinct non-context rows and `/btw` remaining deliberately ephemeral (never transcript ink, per [D108]).
+
+#### Strategy {#strategy}
+
+- **Three phases, strictly ordered.** Phase 1 is a probe that settles the shell execution architecture ([Q01]–[Q04]) before any backend code is written — the probe-then-plan rhythm that made `roadmap/add-btw.md` land cleanly. Phase 2 is deck-only route/Z4B chrome work (including the `btw` route), shippable before any backend exists. Phase 3 builds the shell backend, wire, ledger, transcript threading, and rendering on the probe's findings.
+- **Build up, never strip down.** The shell is block-oriented exec (command → captured output → exit code), not a TTY emulator. Capabilities are added deliberately (cwd state, env, chains); interactive TUIs are detected and declined, never half-supported.
+- **Raw always renders; richness accretes.** Every command runs and renders via the generic terminal block; a curated command-block registry (the [D101] grammar) adds bespoke rendering over time.
+- **Exploit the fossils.** `TurnOrigin` `#s` reservation, the reserved shell feed IDs, the shipped `$SHELL` route-identity badge branch, the `TerminalBlock` body kind, bundled instance-scoped tmux, and the sqlite-ledger + CONTROL-tail-fetch pattern (`pulse_lines` / `list_pulse_lines`) are all already in the tree.
+- **One reducer funnel stays sacred.** Live shell frames and restore-time ledger rows both enter the transcript through `CodeSessionStore`'s reducer, exactly as live tugcode frames and JSONL replay do today.
+
+#### Success Criteria (Measurable) {#success-criteria}
+
+- Typing a command on the `$` route executes it against a real shell and renders the exchange (command, output, exit code) as a transcript row — verified by an app-test driving the real app.
+- A Developer ▸ Reload (and app relaunch + resume) reconstructs the transcript with shell rows interleaved at their original positions among Claude turns — verified by an app-test asserting row order across reload.
+- Typing a question on the `?` route round-trips through the native `side_question` control request and renders in the existing overlay; the transcript row count is unchanged by the exchange (the [D108] invariant, already pinned by `at0211`).
+- Route flips swap the Z4B chrome per the manifest (Table T01) with no layout jump within a route — geometry-asserted in an app-test.
+- Zero regressions: full `bun test` (tugdeck, tugcode), `cargo nextest run`, `bunx vite build`, and the app-test suite pass at every step boundary.
+
+#### Scope {#scope}
+
+1. Shell execution architecture probe with committed FINDINGS.md (Phase 1).
+2. `btw` as a third route: choice-group item, `?` prefix, keybinding, per-route submit dispatch (Phase 2).
+3. Per-route Z4B chrome manifest replacing the `DevRouteShellGate` disable-scatter (Phase 2).
+4. tugcast shell execution service + `SHELL_INPUT`/`SHELL_OUTPUT` wire + sqlite exchange ledger (Phase 3).
+5. Shell exchanges as transcript rows: `shell` turn origin, `shell_exchange` Message kind, `TerminalBlock`-based rendering, restore interleave (Phase 3).
+6. On-demand share gesture (compose an exchange into the prompt entry) and live cwd chip (Phase 3).
+7. Command-block registry skeleton on the [D101] grammar (Phase 3).
+8. Docs: global design-decision entries, tuglaws updates (Phases 2 and 3).
+
+#### Non-goals (Explicitly out of scope) {#non-goals}
+
+- **TTY emulation / interactive TUIs** — no vim, htop, pagers, curses. Detected and declined gracefully.
+- **Always-in-context shell sharing** — Claude never sees shell exchanges implicitly; only the explicit share gesture. Documented non-goal until someone misses it.
+- **WORK-cell persistence** (pinnable WORK popover / Z0B zone) — tabled; orthogonal to routes.
+- **Bespoke command renderers beyond the registry skeleton** — `git status`-style rich blocks are follow-ons; this plan ships the registry and the generic block only.
+- **`/btw` transcript ink** — [D108] stands; the `?` route reuses the existing overlay surface.
+- **Multi-shell / shell tabs** — one shell session per Dev card.
+
+#### Dependencies / Prerequisites {#dependencies}
+
+- Shipped `/btw` feature ([D108], `roadmap/add-btw.md`) — the `?` route dispatches into `SideQuestionStore.ask` via the existing local-command machinery.
+- Bundled static tmux (fetched via `fetch-tmux.sh`; instance-scoped server labels via `tugcore::instance::tmux_socket_label()`, see `tugrust/crates/tugcast/src/feeds/terminal.rs`) — candidate backend for [Q01].
+- `TerminalBlock` body kind (`tugdeck/src/components/tugways/body-kinds/terminal-block.tsx`) — the shell row's rendering substrate.
+- sqlite ledger precedent (`tugrust/crates/tugcast/src/session_ledger.rs`) and CONTROL tail-fetch precedent (`list_pulse_lines` in `tugrust/crates/tugcast/src/feeds/pulse.rs`).
+
+#### Constraints {#constraints}
+
+- Rust workspace enforces `-D warnings`; all suites green at every commit boundary.
+- Tuglaws apply to all tugdeck work: [L01] one render, [L02] external state via `useSyncExternalStore`, [L03] `useLayoutEffect` registrations, [L06] appearance via CSS/DOM, [L26] mount identity.
+- No `localStorage`/`sessionStorage`/IndexedDB — persistent deck state goes through tugbank defaults; shell history goes through the tugcast ledger.
+- HMR must never reload data/transcript; Developer ▸ Reload is the true hard refresh that re-resumes (baked-in invariant).
+- App-tests run via `just app-test` from the worktree root; real measured geometry, no mocks/jsdom.
+
+#### Assumptions {#assumptions}
+
+- One Dev card ↔ one Claude session ↔ one shell session at a time; the shell's exchanges stamp the currently bound `tug_session_id`.
+- The user's login shell (`HostFactsStore.shellPath`) is POSIX-compatible enough for a sentinel/exec protocol (probe verifies for zsh/bash/fish).
+- Shell exchange volume is modest (human-typed commands), so a sqlite ledger and full-tail fetch at restore are cheap.
+
+---
+
+### Reference and Anchor Conventions (MANDATORY) {#reference-conventions}
+
+This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings, kebab-case anchors without phase numbers, stable two-digit labels (`[P01]` plan-local decisions, `[Q01]` open questions, `S01` specs, `T01` tables, `R01` risks, `M01` milestones), `**Depends on:**` lines citing `#step-N` anchors, and rich `**References:**` lines on every step. `[D##]` citations refer to the global `tuglaws/design-decisions.md`.
+
+---
+
+### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
+
+#### [Q01] Shell execution backend (OPEN) {#q01-exec-backend}
+
+**Question:** What process architecture backs the block-oriented shell session — (a) a tmux-backed session (bundled tmux, `send-keys` + output capture), (b) a long-lived `$SHELL` child driven by a sentinel protocol over a PTY or pipes, or (c) one-shot `$SHELL -c` per command with explicit cwd/env threading?
+
+**Why it matters:** This decides relaunch survival (tmux sessions outlive tugcast; a child shell does not), exit-code/output-boundary capture (trivial with sentinels, awkward with raw tmux), and the amount of new supervision code in `feeds/shell.rs`.
+
+**Options (if known):**
+- (a) tmux-backed: free relaunch survival and instance isolation (`tmux_server_args()` precedent in `feeds/terminal.rs`); boundary capture needs a sentinel *inside* the tmux pane anyway.
+- (b) sentinel-driven child: simplest correct boundaries (`printf '<sentinel> %s\n' $?` after each command; read until sentinel); dies with tugcast — restart semantics must be defined ([Q04]).
+- (c) one-shot per command: trivially robust, but `cd`/env state requires shell-state serialization tricks; weakest fit for the persistent-session POR.
+
+**Plan to resolve:** Phase 1 probe (#step-1) builds minimal spikes of (a) and (b) and records findings; (c) is the documented fallback.
+
+**Resolution:** OPEN — resolved by #step-2 into [P09]'s final form.
+
+#### [Q02] Exchange protocol: output capture, boundaries, streaming (OPEN) {#q02-exchange-protocol}
+
+**Question:** What exactly does one "exchange" carry on the wire — combined stdout/stderr or separated? Streamed chunks or settled-whole? How are exit code, duration, and post-command cwd captured?
+
+**Why it matters:** Fixes Spec S01 (the `SHELL_OUTPUT` frame family) and the `shell_exchange` Message shape (Spec S04); streaming vs settled decides whether `TerminalBlock`'s streaming mode (its `streamingStore`/`PropertyStore` path) is needed for live output.
+
+**Options (if known):**
+- Settled-whole exchanges (simplest; matches the `/btw` answer model) with a size cap.
+- Chunk-streamed output frames between `exchange_started`/`exchange_complete` brackets (matches long-running commands like builds; `TerminalBlock` already supports streaming).
+
+**Plan to resolve:** Phase 1 probe measures capture latency and chunking behavior under the chosen backend; long-running commands (`cargo build`) decide whether streaming is required for v1.
+
+**Resolution:** OPEN — resolved by #step-2.
+
+#### [Q03] Non-interactive hardening (OPEN) {#q03-hardening}
+
+**Question:** Which environment and detection measures keep the block shell non-interactive — `PAGER=cat`, `GIT_PAGER=cat`, `TERM=dumb`, `GIT_TERMINAL_PROMPT=0`, closed/null stdin? How is a command that still blocks awaiting input detected and surfaced (timeout + kill affordance)?
+
+**Why it matters:** A single hung `git log` (pager) or `ssh` (password prompt) with no kill affordance makes the shell route unusable; the env recipe is also part of the honest "supported capabilities" story.
+
+**Plan to resolve:** Phase 1 probe runs a gauntlet (pager commands, stdin-wanting commands, TUI launches) under the candidate env and records what leaks through; the kill affordance design lands in Spec S01's `exchange` lifecycle.
+
+**Resolution:** OPEN — resolved by #step-2.
+
+#### [Q04] Relaunch / restart semantics (OPEN) {#q04-relaunch-semantics}
+
+**Question:** When tugcast restarts (or the app relaunches), does the shell session survive (tmux) or restart fresh in the project dir (child shell)? Either way, how is the boundary surfaced to the user (a system-note-style divider? the cwd chip resetting)?
+
+**Why it matters:** The transcript's shell rows persist via the ledger regardless, but a user mid-`cd` deserves to know their shell state reset; silently losing cwd/env is a trust break.
+
+**Plan to resolve:** Follows [Q01]'s backend choice; probe records tmux-session survival across a tugcast restart.
+
+**Resolution:** OPEN — resolved by #step-2.
+
+#### [Q05] `btw` route keybinding (OPEN) {#q05-btw-keybinding}
+
+**Question:** Is `⇧⌘B` free for `SELECT_ROUTE "?"` (alongside `⇧⌘C` code / `⇧⌘S` shell in `tugdeck/src/components/tugways/keybinding-map.ts`), or does it collide with a WebKit/system default worth preventing?
+
+**Why it matters:** Cheap, but a silent collision (e.g. a browser "bold" default leaking into non-editor focus) would make the shortcut flaky.
+
+**Plan to resolve:** Check `keybinding-map.ts` and test in the debug app during #step-3; `preventDefaultOnMatch: true` mirrors the existing route shortcuts.
+
+**Resolution:** OPEN — resolved in #step-3 (no plan update needed; record the choice in the keybinding-map comment).
+
+---
+
+### Risks and Mitigations {#risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| Shell-route submits currently reach Claude; behavior change surprises a habituated user | low | low | Phase 2 interim notice (Spec S03 note); Phase 3 makes the route real | User feedback after Phase 2 |
+| Restore interleave misorders shell rows vs Claude turns | high | med | Single merge point ([P07]), timestamp discipline in the ledger, app-test pinning row order across reload (R02) | Any reordering seen in `at`-test or manual reload |
+| Z4B manifest swap causes layout jump / focus loss | med | med | Width stabilization within route (existing `TugStableOverlay` pattern in `dev-route-indicator-badge.tsx`); mount-identity rules [L26]; geometry app-test (R04) | Visual jump on route flip |
+| Hung interactive command with no kill affordance | high | med | [Q03] hardening env + timeout + per-exchange stop control in Spec S01 | Any hang reproduced post-probe |
+| tmux backend drift across macOS versions | med | low | tmux is bundled/static (project-controlled); probe pins the version contract | tmux upgrade in `fetch-tmux.sh` |
+
+**Risk R01: Shell route behavior flip** {#r01-shell-route-flip}
+
+- **Risk:** Users who (mistakenly or deliberately) used the `$` route to talk to Claude lose that path when Phase 2 gates it.
+- **Mitigation:** The Phase 2 interim state shows a clear client-side notice (the [D14] unsupported-command notice pattern); the code route is one click away; Phase 3 delivers the real behavior.
+- **Residual risk:** None meaningful — the current behavior is an accident of the unconditional `send()`.
+
+**Risk R02: Interleave consistency across reload/resume** {#r02-interleave-consistency}
+
+- **Risk:** Shell rows appear at different positions live vs after Developer ▸ Reload vs after app relaunch, breaking the "one record" promise.
+- **Mitigation:** One interleave algorithm in one place (the restore path in `CodeSessionStore`), ledger rows carry wall-clock + monotonic sequence, app-test asserts identical row order before/after reload.
+- **Residual risk:** Clock skew between tugcode JSONL timestamps and tugcast ledger stamps could flip adjacent rows recorded within the same second; the monotonic sequence within each source bounds the damage to cross-source adjacency.
+
+**Risk R04: Z4B chrome swap geometry** {#r04-z4b-geometry}
+
+- **Risk:** Per-route show/hide reflows the toolbar mid-interaction.
+- **Mitigation:** Swaps happen only on explicit route gestures (allowed by design — Z4B is the centred-floating slot whose occupancy is not contract, [D97]); within a route every chip keeps width-stabilized faces; app-test asserts Z5 submit button and Z4A group positions are unmoved by route flips.
+- **Residual risk:** The centred cluster re-centers with different content widths across routes — accepted and intended.
+
+---
+
+### Design Decisions {#design-decisions}
+
+#### [P01] Routes are recipients; `btw` is the third route (DECIDED) {#p01-routes-are-recipients}
+
+**Decision:** The Z4A choice group carries three routes — `❯` Code (Claude on the record), `$` Shell (the machine), `?` btw (Claude off the record) — with route value `"?"`, label `btw` (lowercase, matching the `/btw` branding), icon `MessageSquareDashed` (the side-question overlay's icon).
+
+**Rationale:**
+- Unifies `/btw` into the card's conceptual model without giving it transcript ink; the Slack-channel metaphor from the originating discussion is literally "who receives this text".
+- The choice-group's geometry accommodates three near-equal-width labels after minor tuning.
+
+**Implications:**
+- `ROUTE_ITEMS`, `ROUTE_PREFIX_ALIAS` (add `"?" → "?"`), `RETURN_ACTION_BY_ROUTE` (`"?": "submit"` — side questions are single-line asks) in `tugdeck/src/components/tugways/tug-prompt-entry.tsx`.
+- A `SELECT_ROUTE` keybinding (`⇧⌘B`, [Q05]) in `keybinding-map.ts`.
+- `/btw` remains a slash command too — the route and the command are two entries to the same surface ([D108] unchanged).
+
+#### [P02] Per-route submit dispatch in `TugPromptEntry` (DECIDED) {#p02-per-route-submit}
+
+**Decision:** `performSubmit`'s unconditional `codeSessionStore.send()` is replaced by a per-route dispatch: `❯` → `codeSessionStore.send(wireText, wireAtoms)` (unchanged); `?` → dispatch `RUN_SLASH_COMMAND` with `/btw <text>` through the existing local-command responder path; `$` → interim client-side notice (Phase 2), then the shell send (Phase 3, [P12]).
+
+**Rationale:**
+- The `?` route reuses the entire shipped `/btw` machinery — `matchLocalSlashCommand` → `manager.sendToTarget(targetId, RUN_SLASH_COMMAND)` → the dev card's `slashCommandSurfaces.btw` handler → `SideQuestionStore.ask` — including mid-turn dispatch ([D108] [P04]) and history recording, with zero new plumbing.
+- The current Shell behavior (silently sending to Claude) is a defect, not a feature; an honest notice beats a lie.
+
+**Implications:**
+- Route dispatch lives beside the existing local-command branch in `performSubmit` (`tug-prompt-entry.tsx`); the empty-input guard, prefix strip (`computeSubmitText` + `ROUTE_PREFIX_ALIAS`), and history push apply to all routes.
+- History entries already carry `route`; the `RouteHistoryProvider` per-route timeline works unchanged.
+
+#### [P03] Per-route Z4B chrome manifest (DECIDED) {#p03-z4b-manifest}
+
+**Decision:** A declarative manifest (Table T01) maps route → visible Z4B chips with **show/hide** semantics, replacing `DevRouteShellGate`'s disable-scatter (`dev-card.tsx`, the `disabled={isShell}` props on Session/Mode/Model/Effort chips).
+
+**Rationale:**
+- Route changes are explicit user gestures; swapping the centred-floating cluster on them is Z4B working as designed ([D97]: occupancy is a layout decision, not contract). Within a route, chips stay width-stabilized (the `feedback_fixed_width_buttons` doctrine); across routes, re-centring is intended.
+- Disabled-but-visible Claude chips on the Shell route communicate the wrong thing once shell is real.
+
+**Implications:**
+- A `DevRouteChromeManifest` mapping renders the cluster; `DevRouteIndicatorBadge` gains a third branch (Table T01); the focus-cycle orders (`DEV_CYCLE_ORDER_*`) skip hidden chips naturally (unregistered stops drop out of the walk, per the existing disabled-chip behavior).
+- `DevRouteIndicatorBadge` keeps its single-mount identity across flips ([L26] — the badge's documented mount-identity contract extends to three branches).
+
+#### [P04] Block-oriented shell; no TTY emulator (DECIDED — POR) {#p04-block-shell}
+
+**Decision:** The shell surface is block-oriented command/output exchanges (Warp-style) rendered as transcript rows. No terminal emulation, no interactive TUIs, no cursor addressing.
+
+**Rationale:**
+- The transcript is the card's one scrolling surface; a TTY grid inside it is a different product.
+- Capabilities are built up deliberately (exec → cwd state → env → chains), never stripped down from a full terminal.
+
+**Implications:**
+- `TerminalBlock` (ANSI-aware, static + streaming modes, flat/virtualized rendering) is the rendering substrate — no xterm.js, no new emulator dependency.
+- [Q03] hardening keeps commands non-interactive by construction.
+
+#### [P05] Raw always renders; richness accretes via a command-block registry (DECIDED — POR) {#p05-command-registry}
+
+**Decision:** Every command executes and renders via the generic terminal block. A `COMMAND_BLOCK_REGISTRY` on the [D101] grammar (bespoke registrations / default block / governance test) lets curated commands gain bespoke rendering over time. The registry ships as a skeleton; bespoke renderers are follow-ons.
+
+**Rationale:**
+- An execution allowlist would kill the shell as a terminal replacement on day one; enhancement-not-permission is the [D101] lesson applied to commands.
+
+**Implications:**
+- `resolveCommandBlock(command) → renderer` beside the tool-block dispatch; default = `TerminalBlock`-based generic exchange block; governance test pins classification rules.
+
+#### [P06] Shell exchanges are transcript rows with `shell` turn origin (DECIDED) {#p06-shell-transcript-rows}
+
+**Decision:** Each settled exchange becomes a transcript turn with `TurnOrigin` `"shell"` (activating the reserved `#s` addressing) carrying one `shell_exchange` Message (Spec S04), rendered by a shell exchange block that composes `TerminalBlock`, styled as visually distinct **non-context ink**.
+
+**Rationale:**
+- Option B from the originating discussion: one scrolling record of the working session. The `#s` reservation in `types.ts` documents this as the original intent.
+- Distinct styling (shell identity gutter icon, subdued frame) keeps "what does Claude know" legible — shell rows are visibly not context.
+
+**Implications:**
+- `TurnOrigin` widens to `"user" | "assistant" | "shell"`; `turn-metric.md`'s addressing doc and any exhaustive-match sites update.
+- `DevTranscriptDataSource` (`tugdeck/src/lib/dev-transcript-data-source.ts`) maps shell turns to a shell row kind; Z1A/Z1B per-turn chrome renders shell-appropriate trailing content (exit code, duration — not model/tokens).
+- The global docs step records the doctrine change: the transcript is the session's record of what happened, not a strict mirror of Claude's context ([P11]).
+
+#### [P07] Persistence: tugcast ledger + CONTROL tail-fetch + deck-side interleave (DECIDED) {#p07-ledger-interleave}
+
+**Decision:** tugcast persists every settled exchange in a sqlite ledger table keyed by `tug_session_id` (Spec S02). Live exchanges reach the deck as `SHELL_OUTPUT` frames. At restore (Developer ▸ Reload, app relaunch), the deck fetches the bound session's exchange tail via a `list_shell_exchanges` / `list_shell_exchanges_ok` CONTROL pair (the `list_pulse_lines` shape) and `CodeSessionStore` interleaves ledger rows with replayed Claude turns by timestamp.
+
+**Rationale:**
+- The Claude JSONL replay lives in tugcode (`tugcode/src/replay.ts`) and must not learn about shell content; shell persistence is tugcast's job (it owns the shell service and the sqlite precedents).
+- One deterministic merge point in the deck's restore path keeps live and restored transcripts identical (R02).
+
+**Implications:**
+- Exchanges stamp `tug_session_id` at settle time — the transcript identity is the Claude session, so `/clear` (new session) naturally starts a fresh shell record while the old session's record stays intact for resume.
+- Ledger rows carry wall-clock ms + per-session monotonic sequence; the interleave sorts committed Claude turns and shell rows by timestamp with source-stable tiebreak.
+- HMR never re-runs the interleave (HMR preserves store state — the baked-in invariant); only true restore paths do.
+
+#### [P08] Claude visibility: never implicit; on-demand share gesture (DECIDED — POR) {#p08-share-gesture}
+
+**Decision:** Claude never sees shell exchanges implicitly. A per-exchange **Share** affordance composes the command + output (fenced, with exit code) into the prompt entry on the code route for the user to edit and send. Always-in-context is a documented non-goal.
+
+**Rationale:**
+- "Claude sees it because you said it" is the honest semantics; no ledger↔JSONL correlation machinery needed.
+
+**Implications:**
+- The share affordance lives in the shell exchange block's chrome (beside Copy); it sets the route to `❯` and inserts text via the prompt-entry editor API.
+
+#### [P09] Shell session: one per card, spawned in the project dir, owned by tugcast (DECIDED — backend per [Q01]) {#p09-shell-session}
+
+**Decision:** Each Dev card gets at most one shell session, lazily started on first `$`-route submit, spawn cwd = the card's bound project dir, owned and supervised by a new `feeds/shell.rs` service in tugcast. The concrete process architecture is [Q01]'s probe outcome; instance isolation follows the `tmux_socket_label()` / `TUG_INSTANCE_ID` precedent if tmux-backed.
+
+**Rationale:**
+- Per-card matches the card's one-project binding and the cwd chip's meaning; lazy start costs nothing for cards that never use the shell.
+
+**Implications:**
+- Session lifecycle (spawn, health, teardown on card close, [Q04] restart semantics) lives in `feeds/shell.rs`; the deck holds no process state.
+
+#### [P10] cwd chip on the shell route (DECIDED) {#p10-cwd-chip}
+
+**Decision:** The shell route's Z4B cluster includes a `Cwd` chip (label-top, matching the Project chip's grammar) showing the shell session's current working directory, falling back to the project dir before the session first spawns.
+
+**Rationale:**
+- Project answers "where is this card anchored"; Cwd answers "where is the shell standing" — the pairing makes stateful cwd legible.
+
+**Implications:**
+- The chip reads `ShellSessionStore` ([P12]) via `useSyncExternalStore` [L02]; post-command cwd arrives on each settled exchange (Spec S01). The chip component ships in Phase 2 wired to the fallback; Phase 3 binds it live.
+
+#### [P11] Transcript doctrine: the session's record, not a context mirror (DECIDED) {#p11-transcript-doctrine}
+
+**Decision:** The Dev transcript's contract changes from "mirror of Claude's context" to "the session's record of what happened". Non-context rows (shell exchanges) must be visually distinct; context-affecting and non-context ink must never be confusable. `/btw` remains excluded entirely ([D108] unchanged) — asides are meta-conversation, not session work.
+
+**Rationale:**
+- Threading shell work into one record is the whole point of Option B; the doctrine must be explicit so future features don't blur the line by accident.
+
+**Implications:**
+- A new global design-decision entry in `tuglaws/design-decisions.md` (written in the Phase 3 docs step), cross-referencing [D97], [D101], [D108].
+
+#### [P12] `ShellSessionStore` is the single feed consumer; exchanges enter the transcript via a typed ingest (DECIDED) {#p12-shell-store}
+
+**Decision:** A per-card `ShellSessionStore` (the `SideQuestionStore` triple pattern in `card-services-store.ts`: filter → feed-store → store) is the sole consumer of `SHELL_OUTPUT` frames. It owns shell lifecycle state (session liveness, cwd, in-flight exchange) and forwards each settled exchange into `CodeSessionStore` through a typed public ingest (`ingestShellExchange(exchange)`) that dispatches a reducer event minting the shell turn.
+
+**Rationale:**
+- Keeps `CodeSessionStore`'s feed filter untouched (`CODE_OUTPUT`/`SESSION_STATE` only) and its reducer pure; one consumer chain, no dual-ingest races.
+- Mirrors the shipped side-question triple, so the wiring pattern is already proven and tested.
+
+**Implications:**
+- `CardServices` gains `shellSessionStore` (+ filter/feed-store internals and `_dispose` teardown) in `tugdeck/src/lib/card-services-store.ts`; `DevCardServices` threads it to the card (`use-dev-card-services.ts`, `dev-card.tsx`).
+- The prompt entry's `$`-route dispatch ([P02]) calls `shellSessionStore.exec(command)`.
+
+---
+
+### Deep Dives {#deep-dives}
+
+#### Current-state inventory (verified 2026-07-09) {#current-state-inventory}
+
+- **Shell route today:** `ROUTE_ITEMS` in `tugdeck/src/components/tugways/tug-prompt-entry.tsx` defines `❯ Code` / `$ Shell`; `performSubmit` sends every submission via `codeSessionStore.send(wireText, wireAtoms)` regardless of route. Route-sensitivity today: `RETURN_ACTION_BY_ROUTE` (Return semantics), prefix strip via `ROUTE_PREFIX_ALIAS` + `computeSubmitText`, per-route history timelines, and `DevRouteShellGate` in `dev-card.tsx` (renders children with `isShell` to set `disabled` on the Session/Mode/Model/Effort chips).
+- **Z4B cluster** (in `dev-card.tsx`'s `indicatorsContent`): `DevRouteIndicatorBadge` (`chrome/dev-route-indicator-badge.tsx` — two branches: Code = Claude Code version + drift, Shell = `$SHELL` path from `HostFactsStore.shellPath`; width-stabilized via `TugStableOverlay`; single-mount contract), then gate-wrapped `DevSessionIdBadge`, `effectivePromptStatusContent` (the Project chip, built inline in `dev-card.tsx` around `formatProjectChipText`), `PermissionModeChip`, `ModelChip`, `EffortChip`, then `effectiveFooterContent`.
+- **Keybindings:** `keybinding-map.ts` — `⇧⌘C` → `SELECT_ROUTE "❯"`, `⇧⌘S` → `SELECT_ROUTE "$"`, both `preventDefaultOnMatch: true`.
+- **Route state:** `RouteLifecycle` (`tugdeck/src/lib/route-lifecycle.ts`) — per-prompt-entry store + synchronous will/did delegate; `useRoute()` for renderers; every trigger funnels through `setRoute`.
+- **Transcript row model:** `code-session-store/types.ts` — `Message` union (`user_message | assistant_text | assistant_thinking | system_note | tool_use`), `TurnOrigin = "user" | "assistant"` with the doc comment explicitly reserving `#s` shell. Rows project via `DevTranscriptDataSource` (user / assistant / ghost row kinds).
+- **Restore:** `dev-session-restore.ts` re-asserts bindings and re-issues `spawn_session(mode=resume)`; tugcode's `replay.ts` translates the Claude JSONL into synthetic frames bracketed by `replay_started`/`replay_complete`; the same reducer folds them (`KNOWN_CODE_OUTPUT_TYPES` gate in `code-session-store.ts`).
+- **Wire reservations:** `SHELL_OUTPUT: 0x60`, `SHELL_INPUT: 0x61` in `tugdeck/src/protocol.ts` and `tugrust/crates/tugcast-core/src/protocol.rs` — named, tested, unconsumed.
+- **tugcast assets:** `feeds/terminal.rs` (legacy PTY-tmux bridge with instance-scoped tmux server args — borrowable plumbing, not the shell service), `session_ledger.rs` (sqlite, two tables, trigger-based cascade — the ledger pattern), `feeds/pulse.rs` (`pulse_lines` capped ledger + `list_pulse_lines` CONTROL tail-fetch — the restore-fetch pattern).
+- **Rendering assets:** `body-kinds/terminal-block.tsx` (ANSI parsing, static/streaming modes, sticky header with Copy, flat/virtualized body); `BashToolBlock` shows the compose-TerminalBlock pattern for command/output data.
+- **/btw assets:** `SideQuestionStore` (`lib/side-question-store.ts`), overlay (`cards/side-question-overlay.tsx`), local dispatch via `slashCommandSurfaces.btw` in `dev-card.tsx`, `at0211` app-test, [D108].
+
+#### Restore interleave flow {#restore-interleave-flow}
+
+1. Restore path runs as today: `spawn_session(mode=resume)` → tugcode replay emits `replay_started` → committed-turn frames → `replay_complete`; the reducer folds Claude turns into `state.transcript`.
+2. In parallel (or on `replay_complete`), the deck issues `list_shell_exchanges { tug_session_id }` on CONTROL; tugcast answers `list_shell_exchanges_ok { exchanges: [...] }` from the ledger (Spec S02).
+3. `CodeSessionStore` runs the interleave once both are settled: merge-sort committed turns (by their first-message timestamp) with shell exchanges (by `settled_at`), stable within each source by sequence. Shell exchanges mint `shell`-origin turns via the same reducer event the live path uses ([P12]) — the only difference is batch + positional insert instead of append.
+4. Live exchanges after restore append through the normal `ShellSessionStore → ingestShellExchange` path.
+5. HMR: stores survive, nothing re-runs. Developer ▸ Reload / app relaunch: full path re-runs from 1.
+
+#### Interim Phase 2 shell-route behavior {#interim-shell-notice}
+
+Between Phase 2 and Phase 3 the `$` route's submit dispatch shows the existing client-side notice surface (`SHOW_SLASH_COMMAND_NOTICE` pattern in `performSubmit`, adapted with a shell-specific reason/copy: "Shell execution isn't wired up yet") instead of silently sending to Claude. The draft is preserved (no `editor.clear()`), so nothing is lost. This is deliberately a small, throwaway branch — Phase 3's Step flips it to `shellSessionStore.exec`.
+
+---
+
+### Specification {#specification}
+
+**Spec S01: SHELL wire frames (provisional until [Q01]/[Q02] resolve)** {#s01-shell-wire}
+
+All shell frames are JSON payloads on the reserved feed IDs, session-scoped like other per-card feeds. Provisional shapes; #step-2 finalizes:
+
+- `SHELL_INPUT` (deck → tugcast): `{ type: "exec", card_id, tug_session_id, exchange_id, command }` and `{ type: "kill", card_id, exchange_id }`.
+- `SHELL_OUTPUT` (tugcast → deck): `{ type: "exchange_started", exchange_id, command, cwd, started_at }` · zero or more `{ type: "exchange_output", exchange_id, chunk }` (only if [Q02] lands on streaming) · `{ type: "exchange_complete", exchange_id, exit_code, cwd_after, duration_ms, output? }` (settled-whole carries `output` here) · `{ type: "shell_state", live, cwd }` (lifecycle/liveness for the cwd chip and restart notices per [Q04]).
+
+**Spec S02: Shell exchange ledger + CONTROL pair** {#s02-shell-ledger}
+
+A sqlite table in tugcast (beside `session_ledger.rs`'s db or its own file, implementer's choice following that module's conventions): `shell_exchanges(id INTEGER PK, tug_session_id TEXT, seq INTEGER, command TEXT, output TEXT, exit_code INTEGER, cwd TEXT, cwd_after TEXT, started_at_ms INTEGER, settled_at_ms INTEGER)`, indexed by `tug_session_id`. Capped per session (500 exchanges; oldest evicted) — cap logged, not silent. CONTROL pair `list_shell_exchanges { tug_session_id }` → `list_shell_exchanges_ok { exchanges }` follows the `list_pulse_lines` request/response shape in `feeds/pulse.rs`. Only settled exchanges are ledgered; an exchange in flight at crash is lost (matches the "record of what happened" doctrine — it never settled).
+
+**Spec S03: Per-route Z4B chrome manifest** {#s03-chrome-manifest}
+
+**Table T01: Route → Z4B chips** {#t01-route-chrome}
+
+| Route | Identity badge (`DevRouteIndicatorBadge` branch) | Chips shown |
+|-------|--------------------------------------------------|-------------|
+| `❯` code | `CLAUDE CODE` / version (drift-aware) — unchanged | Session · Project · Mode · Model · Effort |
+| `$` shell | `SHELL` / `$SHELL` path — unchanged | Project · Cwd |
+| `?` btw | `CLAUDE CODE` / version (the btw recipient is the bound session) | Session · Project |
+
+Semantics: chips absent from a route's row **unmount** (show/hide, not disable). The identity badge itself never unmounts ([L26] single-mount contract; it swaps branch content only). Focus-cycle stops for hidden chips drop out of the Tab walk (existing unregistered-stop behavior). `DevRouteShellGate` is deleted.
+
+**Spec S04: `shell_exchange` Message + shell turn** {#s04-shell-message}
+
+New `Message` kind in `code-session-store/types.ts`:
+
+```ts
+interface ShellExchangeMessage {
+  kind: "shell_exchange";
+  id: string;               // exchange_id
+  command: string;
+  output: string;           // ANSI-bearing combined stream ([Q02] may split)
+  exitCode: number | null;  // null = killed/aborted
+  cwd: string;              // cwd at exec
+  cwdAfter: string | null;
+  startedAtMs: number;
+  settledAtMs: number;
+}
+```
+
+A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `shell_exchange` message; `TurnCost` zeros; Z1A trailing renders exit code + duration instead of model/timestamp-token chrome. `TurnOrigin` widens to `"user" | "assistant" | "shell"` — every exhaustive `switch`/match over `TurnOrigin` updates (the compiler enumerates the sites).
+
+#### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
+
+| State | Zone (appearance / local-data / structure) | Mechanism | Law |
+|-------|--------------------------------------------|-----------|-----|
+| Active route | existing `RouteLifecycle` store | store + `useSyncExternalStore` (`useRoute`) | [L02] |
+| Z4B chrome per route | pure render derivation from `useRoute()` + Table T01 | render-time mapping, no new state | [L02], [L26] |
+| Shell session liveness / cwd / in-flight exchange | `ShellSessionStore` (per-card, card-services triple) | store + `useSyncExternalStore` | [L02] |
+| Shell exchanges (settled) | `CodeSessionStore.state.transcript` (shell-origin turns) | reducer event via `ingestShellExchange` | [L02] |
+| Exchange output rendering | `TerminalBlock` imperative body | CSS + DOM (body-kind contract) | [L06] |
+| Route keybinding registration | existing keybinding map (static) | — | [L03] |
+
+---
+
+### Definitive Symbol Inventory {#symbol-inventory}
+
+#### New files {#new-files}
+
+| File | Purpose |
+|------|---------|
+| `tugrust/crates/tugcast/probes/shell-exec/` (scripts + `FINDINGS.md`) | Phase 1 probe artifacts |
+| `tugrust/crates/tugcast/src/feeds/shell.rs` | Shell execution service: session lifecycle, exec, capture, SHELL frames |
+| `tugrust/crates/tugcast/src/shell_ledger.rs` | sqlite exchange ledger + CONTROL pair handlers (Spec S02) |
+| `tugdeck/src/lib/shell-session-store.ts` | Per-card shell store ([P12]) |
+| `tugdeck/src/components/tugways/chrome/dev-route-chrome-manifest.tsx` | Table T01 as code: route → chip cluster renderer |
+| `tugdeck/src/components/tugways/chrome/dev-cwd-chip.tsx` (+ css if needed) | Cwd chip ([P10]) |
+| `tugdeck/src/components/tugways/cards/shell-exchange-block.tsx` (+ css) | Shell turn renderer composing `TerminalBlock` ([P06]) |
+| `tugdeck/src/components/tugways/cards/dev-command-block-registry.ts` | `COMMAND_BLOCK_REGISTRY` skeleton ([P05]) |
+| `tests/app-test/at02xx-route-chrome.test.ts` | Phase 2 route/chrome app-test |
+| `tests/app-test/at02xx-shell-route.test.ts` | Phase 3 shell e2e + restore-interleave app-test |
+
+(`at02xx` numbers assigned from `tuglaws/app-test-inventory.md`'s next free slots at implementation time.)
+
+#### Symbols to add / modify {#symbols}
+
+| Symbol | Kind | Location | Notes |
+|--------|------|----------|-------|
+| `ROUTE_ITEMS` / `ROUTE_PREFIX_ALIAS` / `RETURN_ACTION_BY_ROUTE` | const | `tugways/tug-prompt-entry.tsx` | add `?` route ([P01]) |
+| `performSubmit` route dispatch | fn edit | `tugways/tug-prompt-entry.tsx` | [P02] |
+| `SELECT_ROUTE "?"` binding | entry | `tugways/keybinding-map.ts` | [Q05] |
+| `DevRouteShellGate` | **delete** | `cards/dev-card.tsx` | replaced by manifest ([P03]) |
+| `DevRouteIndicatorBadge` | edit | `chrome/dev-route-indicator-badge.tsx` | third branch (T01) |
+| `TurnOrigin` | type widen | `lib/code-session-store/types.ts` | `"shell"` ([P06]) |
+| `ShellExchangeMessage` | interface | `lib/code-session-store/types.ts` | Spec S04 |
+| `ingestShellExchange` | method | `lib/code-session-store.ts` | [P12] |
+| restore interleave | fn | `lib/code-session-store.ts` | [P07], #restore-interleave-flow |
+| `shellSessionStore` triple | fields | `lib/card-services-store.ts` | side-question precedent |
+| `DevTranscriptDataSource` | edit | `lib/dev-transcript-data-source.ts` | shell row kind |
+| `FeedId::SHELL_*` consumers | new | tugcast `router.rs` / `feeds/mod.rs` | wire the reserved IDs |
+| `encodeShellInput` / shell payload codecs | fns | `tugdeck/src/protocol.ts` | Spec S01 |
+
+---
+
+### Documentation Plan {#documentation-plan}
+
+- [ ] `tuglaws/design-decisions.md`: new global entry — transcript doctrine ([P11]) + shell-in-transcript + `btw` route; supersede-note on [D97]'s Z4A occupant row (three routes) and on [D108] (surface unchanged; `?` route added as an entry point).
+- [ ] `tuglaws/turn-metric.md` (or the addressing doc that reserves `#s`): mark `#s` active.
+- [ ] `tuglaws/route-lifecycle.md`: three-route reality, per-route submit dispatch.
+- [ ] `tuglaws/app-test-inventory.md`: register the new `at`-tests.
+- [ ] Auto-memory: shell service + ledger reference entry (per-project memory conventions).
+
+---
+
+### Test Plan Concepts {#test-plan-concepts}
+
+#### Test Categories {#test-categories}
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| **Unit (bun test)** | Route dispatch table, manifest mapping, reducer shell-turn fold, interleave ordering, ledger payload codecs | Phases 2–3 deck logic |
+| **Rust (cargo nextest)** | `feeds/shell.rs` exec/capture lifecycle, ledger CRUD + cap, CONTROL pair | Phase 3 tugcast |
+| **App-test (`just app-test`)** | Real-app route cycling + chrome geometry; shell exchange e2e; row order across Developer ▸ Reload | Phase 2 and 3 exit gates |
+| **Probe (manual, committed findings)** | Backend selection gauntlet | Phase 1 |
+
+#### What stays out of tests {#test-non-goals}
+
+- jsdom render tests / mock-store assertions — banned project-wide; app-tests drive the real app instead.
+- Bespoke command renderers — none ship in this plan; the registry governance test covers classification only.
+- tmux internals — the probe pins behavior once; the service's Rust tests exercise the service contract, not tmux itself.
+
+---
+
+### Execution Steps {#execution-steps}
+
+> **Commit after all checkpoints pass.** Commits go through `tugutil dash commit` on the plan's dash worktree, per repo policy.
+
+#### Step Status Ledger {#step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | Shell execution probe | pending | — |
+| #step-2 | Resolve Q01–Q04; finalize Specs S01/S02/S04 | pending | — |
+| #step-3 | `btw` third route in the prompt entry | pending | — |
+| #step-4 | Per-route submit dispatch | pending | — |
+| #step-5 | Per-route Z4B chrome manifest | pending | — |
+| #step-6 | Route chrome app-test + geometry | pending | — |
+| #step-7 | Phase 2 integration checkpoint + docs | pending | — |
+| #step-8 | tugcast shell service (`feeds/shell.rs`) | pending | — |
+| #step-9 | Shell exchange ledger + CONTROL pair | pending | — |
+| #step-10 | Deck wire + `ShellSessionStore` + reducer ingest | pending | — |
+| #step-11 | Shell turn rendering | pending | — |
+| #step-12 | Shell-route submit flip + live cwd chip | pending | — |
+| #step-13 | Restore interleave | pending | — |
+| #step-14 | Share gesture | pending | — |
+| #step-15 | Command-block registry skeleton | pending | — |
+| #step-16 | Shell e2e + restore app-test | pending | — |
+| #step-17 | Phase 3 integration checkpoint + docs | pending | — |
+
+**Milestone M01: probe findings committed** {#m01-probe} — after #step-2.
+**Milestone M02: route chrome shipped** {#m02-chrome} — after #step-7.
+**Milestone M03: shell in the transcript** {#m03-shell} — after #step-17.
+
+---
+
+#### Step 1: Shell execution probe {#step-1}
+
+**Commit:** `probe(shell-exec): backend spikes + FINDINGS for block-oriented shell`
+
+**References:** [Q01] backend, [Q02] exchange protocol, [Q03] hardening, [Q04] relaunch semantics, [P04] block shell, [P09] shell session, (#current-state-inventory, #s01-shell-wire)
+
+**Artifacts:**
+- `tugrust/crates/tugcast/probes/shell-exec/` — spike scripts for backends (a) tmux-backed and (b) sentinel-driven child, a hardening gauntlet, and `FINDINGS.md` answering Q01–Q04 with evidence.
+
+**Tasks:**
+- [ ] Spike (a): bundled tmux (`tmux_server_args()` isolation per `feeds/terminal.rs`) — create session, run a command with an in-pane sentinel (`; printf '\n<SENTINEL> %s %s\n' $? "$PWD"`), capture output; measure boundary reliability, ANSI fidelity, and session survival across a tugcast (tmux-client) restart.
+- [ ] Spike (b): long-lived `$SHELL` child over a PTY (or pipes) driven by the same sentinel protocol; measure the same, plus behavior on shell crash/exit.
+- [ ] Hardening gauntlet under `PAGER=cat GIT_PAGER=cat TERM=dumb GIT_TERMINAL_PROMPT=0` with stdin from `/dev/null` (or PTY equivalent): `git log` (pager), `ssh localhost` (prompt), `vim` / `htop` (TUI), `sleep 60` (long-runner + kill), `cargo build` (streaming volume). Record what hangs, what leaks control sequences, what the kill path looks like.
+- [ ] Verify sentinel protocol on zsh, bash, fish (the `HostFactsStore.shellPath` population).
+- [ ] Time capture latency for settled-whole vs chunked reads on a large-output command (informs [Q02] streaming decision).
+- [ ] Write `FINDINGS.md`: recommendation per question, with the failure evidence for rejected options.
+
+**Tests:**
+- [ ] N/A (probe; findings document is the artifact).
+
+**Checkpoint:**
+- [ ] `FINDINGS.md` exists and states an unambiguous recommendation for Q01–Q04, each backed by recorded spike output.
+
+---
+
+#### Step 2: Resolve Q01–Q04; finalize Specs S01/S02/S04 {#step-2}
+
+**Depends on:** #step-1
+
+**Commit:** `plan(update): roadmap/route-enhancements.md — probe resolutions`
+
+**References:** [Q01]–[Q04], Spec S01, Spec S02, Spec S04, [P07] ledger, [P09] shell session, (#restore-interleave-flow)
+
+**Artifacts:**
+- This plan document updated: each Q resolution flipped to DECIDED with the chosen option folded into [P09] (backend), Spec S01 (final frame shapes, streaming or settled), Spec S02 (any schema deltas), Spec S04 (output shape), and [Q04]'s restart-semantics note; affected step Tasks in Phase 3 adjusted to match.
+
+**Tasks:**
+- [ ] Fold `FINDINGS.md` recommendations into the plan sections above; leave the Q entries in place marked DECIDED with pointers.
+- [ ] Re-check Phase 3 steps (#step-8 – #step-13) against the resolved specs; edit Tasks where the backend choice changes them.
+
+**Tests:**
+- [ ] N/A (plan document update).
+
+**Checkpoint:**
+- [ ] No Phase 3 step references an unresolved option; grep the plan for `(OPEN)` — only [Q05] (resolved in #step-3) may remain.
+
+---
+
+#### Step 3: `btw` third route in the prompt entry {#step-3}
+
+**Commit:** `tugdeck(routes): btw joins the route choice group`
+
+**References:** [P01] routes are recipients, [Q05] keybinding, (#current-state-inventory)
+
+*(No dependency on Phase 1 — Phase 2 is deck-only and may start in parallel with #step-1.)*
+
+**Artifacts:**
+- Three-route `ROUTE_ITEMS` (`{ value: "?", label: "btw", icon: <MessageSquareDashed /> }`), `ROUTE_PREFIX_ALIAS` gaining `"?" → "?"`, `RETURN_ACTION_BY_ROUTE` gaining `"?": "submit"` in `tugdeck/src/components/tugways/tug-prompt-entry.tsx`.
+- `SELECT_ROUTE "?"` keybinding in `tugdeck/src/components/tugways/keybinding-map.ts` (⇧⌘B pending [Q05] conflict check; `preventDefaultOnMatch: true`, comment records the check).
+- Choice-group geometry tuning so three items sit comfortably (adjust the group's sizing tokens/CSS only as needed; note the current two-item footprint was called "a little too wide").
+
+**Tasks:**
+- [ ] Add the route constants + icon import; verify the route-prefix extension flips to `?` when typed at offset 0 (it reads `ROUTE_PREFIX_ALIAS` generically).
+- [ ] Add the keybinding after confirming ⇧⌘B is unbound in `keybinding-map.ts` and untrapped in the debug app ([Q05]); pick an alternative modifier combo if trapped and record why.
+- [ ] Tune the choice-group width for three items; confirm no Z4A/Z5 shift (the group is leading-fixed).
+- [ ] Verify route persistence round-trip: the preserved-state payload stores the route string generically (`coerceRestorePayload` in `tug-prompt-entry.tsx`) — confirm `"?"` restores.
+
+**Tests:**
+- [ ] Prompt-entry unit tests: prefix `?` flips route; Return submits on `?`; history entries stamp `route: "?"`.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test src/components/tugways/__tests__/ && bunx vite build`
+- [ ] In the debug app: click/keyboard/prefix all select `btw`; route survives Developer ▸ Reload.
+
+---
+
+#### Step 4: Per-route submit dispatch {#step-4}
+
+**Depends on:** #step-3
+
+**Commit:** `tugdeck(routes): per-route submit dispatch — btw asks, shell notices`
+
+**References:** [P02] per-route submit, [D108] (unchanged surface), Risk R01, (#interim-shell-notice)
+
+**Artifacts:**
+- `performSubmit` route dispatch in `tug-prompt-entry.tsx`: `❯` → `codeSessionStore.send` (unchanged); `?` → local-command dispatch of `/btw <submitText>` through the existing `RUN_SLASH_COMMAND` responder path (reusing the branch that handles typed local commands — build the command line and follow the same `manager.sendToTarget` flow, including history push + editor clear); `$` → the interim notice (#interim-shell-notice), draft preserved.
+- Empty-input guard on `?` (a bare submit opens the overlay without asking, matching bare `/btw`).
+
+**Tasks:**
+- [ ] Implement the dispatch beside the existing local-command branch; keep prefix-strip/trim semantics shared across routes.
+- [ ] `?` route: expand atoms via the existing `buildSlashCommandLine` so file mentions survive into the side question.
+- [ ] `$` route: adapt the `SHOW_SLASH_COMMAND_NOTICE` surface with shell-specific copy; do not clear the editor.
+- [ ] Confirm mid-turn: a `?` submit during a streaming turn dispatches (local commands bypass the send-readiness gate, [D108] [P04]).
+
+**Tests:**
+- [ ] Unit: dispatch table routes each of the three routes correctly; `$` preserves the draft; `?` empty-submit opens overlay only.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app: typing a question on `btw` renders the answer in the side-question overlay, idle and mid-turn; `$` submit shows the notice and keeps the draft.
+
+---
+
+#### Step 5: Per-route Z4B chrome manifest {#step-5}
+
+**Depends on:** #step-3
+
+**Commit:** `tugdeck(routes): per-route Z4B chrome manifest replaces DevRouteShellGate`
+
+**References:** [P03] manifest, [P10] cwd chip, Spec S03, Table T01, Risk R04, [D97] (Z4B occupancy), (#current-state-inventory)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/chrome/dev-route-chrome-manifest.tsx`: renders the Z4B cluster from `useRoute()` + Table T01; hosts the identity badge (never unmounted) and mounts/unmounts the per-route chips.
+- `tugdeck/src/components/tugways/chrome/dev-cwd-chip.tsx`: label-top `Cwd` chip (Project-chip grammar: `TugPushButton layout="label-top"`, right-click copy via `useCopyableButton`), reading project dir as its fallback face until Phase 3 binds `ShellSessionStore` ([P10]).
+- Third branch in `DevRouteIndicatorBadge` (Table T01's btw row: Claude Code identity), extending the documented single-mount/width-stabilization contract to three faces.
+- `DevRouteShellGate` deleted from `dev-card.tsx`; `indicatorsContent` now composes the manifest component (Project chip / `effectivePromptStatusContent` passes into it as the always-present slot).
+
+**Tasks:**
+- [ ] Build the manifest component; wire `dev-card.tsx`'s `indicatorsContent` to it, threading the existing chip elements (Session badge, Project content, Mode/Model/Effort chips) as slots so their focus orders and stores stay put.
+- [ ] Extend `DevRouteIndicatorBadge` with the btw branch; extend its `TugStableOverlay` reservations to the widest of three faces.
+- [ ] Remove all `disabled={isShell}` scatter; confirm the focus cycle (Tab walk) skips unmounted chips cleanly.
+- [ ] Verify [L26]: route flips must not remount the identity badge or the surviving chips (React tree shape stable across branches — same component types at same positions per route where shared).
+
+**Tests:**
+- [ ] Unit: manifest mapping per route matches Table T01; cwd chip renders fallback face.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app: flipping code→shell→btw swaps chips per T01 with no visible jump of Z4A or Z5.
+
+---
+
+#### Step 6: Route chrome app-test + geometry {#step-6}
+
+**Depends on:** #step-4, #step-5
+
+**Commit:** `app-test(routes): route cycling, chrome manifest, btw round-trip`
+
+**References:** [P01]–[P03], Spec S03, Table T01, Risk R04, (#success-criteria)
+
+**Artifacts:**
+- `tests/app-test/at02xx-route-chrome.test.ts` (number from `app-test-inventory.md`): drives the real app — cycles routes via click and ⇧⌘ shortcuts; asserts per-route chip presence/absence by `data-slot`; asserts Z4A group and Z5 submit button rects unmoved across flips; submits a `?` question using the `ingestSideQuestionAnswer` harness and asserts the overlay answer + unchanged transcript entry count (the [D108] invariant beside `at0211`).
+
+**Tasks:**
+- [ ] Write the test with real measured geometry (no estimates); reuse `at0211`'s selectors where shared.
+- [ ] Register the test in `tuglaws/app-test-inventory.md`.
+
+**Tests:**
+- [ ] The app-test itself.
+
+**Checkpoint:**
+- [ ] `just app-test at02xx-route-chrome` (from the worktree root) passes.
+
+---
+
+#### Step 7: Phase 2 integration checkpoint + docs {#step-7}
+
+**Depends on:** #step-6
+
+**Commit:** `docs(routes): three-route chrome — tuglaws + design decisions`
+
+**References:** [P01]–[P03], [P10], Table T01, Milestone M02, (#documentation-plan)
+
+**Artifacts:**
+- `tuglaws/design-decisions.md`: [D97] Z4A occupant row updated (three routes); a new global entry (or [D108] addendum) recording the `?` route as `/btw`'s second entry point.
+- `tuglaws/route-lifecycle.md` updated for three routes + per-route submit dispatch.
+
+**Tasks:**
+- [ ] Write the docs; run the full verification battery.
+- [ ] Verify the full Phase 2 surface together: routes, dispatch, chrome, persistence, app-tests.
+
+**Tests:**
+- [ ] Full suites (aggregate).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`; `cd tugcode && bun test`; `cd tugrust && cargo nextest run`; `just app-test` (route + btw families) — all green. **Milestone M02.**
+
+---
+
+#### Step 8: tugcast shell service (`feeds/shell.rs`) {#step-8}
+
+**Depends on:** #step-2
+
+**Commit:** `tugcast(shell): block-exec shell service on the reserved SHELL feeds`
+
+**References:** [P04] block shell, [P09] shell session, [Q01]–[Q04] resolutions, Spec S01, (#current-state-inventory)
+
+**Artifacts:**
+- `tugrust/crates/tugcast/src/feeds/shell.rs`: per-card shell session (lazy spawn in project dir, backend per [Q01], instance-scoped), `SHELL_INPUT` handling (`exec`, `kill`), exchange lifecycle emission on `SHELL_OUTPUT` (Spec S01), hardening env ([Q03]), timeout + kill path, `shell_state` liveness frames, teardown on card close, [Q04] restart semantics.
+- Registration in `feeds/mod.rs` + routing in `router.rs` following the existing feed-wiring pattern.
+
+**Tasks:**
+- [ ] Implement per the resolved specs; borrow tmux plumbing from `feeds/terminal.rs` if [Q01]=tmux (server args, version check), or PTY plumbing if child-backend.
+- [ ] Enforce the hardening env and stdin policy on every exec.
+- [ ] Emit `cwd_after` per exchange (sentinel-captured) for the cwd chip.
+
+**Tests:**
+- [ ] Rust integration tests: exec round-trip (echo), exit-code capture (false → 1), cwd persistence (`cd /tmp` then `pwd`), kill of a long-runner, TUI decline/timeout path, per-card isolation (two sessions don't share cwd).
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` green (with `-D warnings`).
+
+---
+
+#### Step 9: Shell exchange ledger + CONTROL pair {#step-9}
+
+**Depends on:** #step-8
+
+**Commit:** `tugcast(shell): sqlite exchange ledger + list_shell_exchanges CONTROL pair`
+
+**References:** [P07] ledger, Spec S02, (#restore-interleave-flow)
+
+**Artifacts:**
+- `tugrust/crates/tugcast/src/shell_ledger.rs`: Spec S02 schema, insert-on-settle from `feeds/shell.rs`, per-session cap with logged eviction, `list_shell_exchanges`/`list_shell_exchanges_ok` CONTROL handlers (following `list_pulse_lines` in `feeds/pulse.rs` and the CONTROL registration pattern in `control.rs`).
+
+**Tasks:**
+- [ ] Implement schema + CRUD following `session_ledger.rs` conventions (connection handling, migrations, tests).
+- [ ] Stamp `tug_session_id` from the card's current binding at settle time; exchanges on an unbound card are still executed but ledgered under the card's next-bound session only if in flight — settled-while-unbound exchanges log a warning and skip the ledger (edge case; record in code comment).
+
+**Tests:**
+- [ ] Rust: insert/list round-trip, cap eviction, per-session isolation, CONTROL pair payload shape.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` green.
+
+---
+
+#### Step 10: Deck wire + `ShellSessionStore` + reducer ingest {#step-10}
+
+**Depends on:** #step-9
+
+**Commit:** `tugdeck(shell): ShellSessionStore + shell_exchange transcript ingest`
+
+**References:** [P06] shell rows, [P12] shell store, Spec S01, Spec S04, (#state-zone-mapping)
+
+**Artifacts:**
+- Shell payload codecs in `tugdeck/src/protocol.ts` (Spec S01 frames on `FeedId.SHELL_INPUT`/`SHELL_OUTPUT`).
+- `tugdeck/src/lib/shell-session-store.ts`: the card-services triple ([P12]); snapshot `{ live, cwd, inflight: {exchangeId, command, startedAt} | null }`; `exec(command)`, `kill()`; forwards settled exchanges via `codeSessionStore.ingestShellExchange`.
+- `card-services-store.ts`: `shellSessionStore` triple + `_dispose`; `use-dev-card-services.ts` + `dev-card.tsx` threading.
+- `code-session-store/types.ts`: `TurnOrigin` widened, `ShellExchangeMessage` added (Spec S04); `code-session-store.ts`: `ingestShellExchange` public method dispatching a reducer event that mints a committed shell-origin turn (append at live edge).
+
+**Tasks:**
+- [ ] Implement codecs, store, ingest; fix every exhaustive `TurnOrigin`/`Message` match the compiler surfaces (selectors, data source, renderers).
+- [ ] `/clear` and card teardown reset `ShellSessionStore` in-memory state (the ledger is untouched — it keys by session).
+
+**Tests:**
+- [ ] Unit: codec round-trip; store lifecycle (exec → started → settled → transcript turn appended); reducer fold of a shell turn; `/clear` reset.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+
+---
+
+#### Step 11: Shell turn rendering {#step-11}
+
+**Depends on:** #step-10
+
+**Commit:** `tugdeck(shell): shell exchange rows — TerminalBlock-based, non-context ink`
+
+**References:** [P06] shell rows, [P11] doctrine, Spec S04, (#current-state-inventory)
+
+**Artifacts:**
+- `shell-exchange-block.tsx` (+ css): composes `TerminalBlock` (static mode; streaming per [Q02] if resolved that way) with the command as `headerLabel`, exit-code/duration footer badges, distinct non-context framing (shell gutter icon per the `TugTranscriptEntry` participant iconography — the `Shell` lucide glyph the choice group already uses; subdued frame tokens).
+- `DevTranscriptDataSource` shell row kind; Z1A trailing for shell turns renders exit code + duration (not model/timestamp), Z1B/Z1C pass `null`.
+
+**Tasks:**
+- [ ] Implement block + row projection; keep in-flight exchanges rendered from `ShellSessionStore.inflight` as the live edge (ghost-row-like) until settle mints the turn.
+- [ ] Style per theme tokens (all six themes; `bun run audit:theme-contrast` if new tokens are added).
+
+**Tests:**
+- [ ] Unit: data-source projection for shell turns; block renders command/output/exit-code from a fixture exchange.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app (with #step-12's flip or a harness ingest): a shell exchange renders as a distinct transcript row.
+
+---
+
+#### Step 12: Shell-route submit flip + live cwd chip {#step-12}
+
+**Depends on:** #step-10, #step-5
+
+**Commit:** `tugdeck(shell): $ route executes; cwd chip goes live`
+
+**References:** [P02] dispatch, [P10] cwd chip, Risk R01, (#interim-shell-notice)
+
+**Artifacts:**
+- The `$` branch of the per-route dispatch replaced: `shellSessionStore.exec(submitText)` (notice branch deleted); Z5 submit/stop reflects an in-flight exchange (stop → `kill()`) following the existing lifecycle-driven submit-button pattern ([L26] — same node, `data-mode` driven).
+- `dev-cwd-chip.tsx` bound to `ShellSessionStore.cwd` via `useSyncExternalStore` (fallback face retained pre-spawn).
+
+**Tasks:**
+- [ ] Flip the dispatch; wire stop-on-shell-route to `kill()`.
+- [ ] Bind the chip; verify width stability as cwd changes (end-truncate long paths, full path in `title`/right-click copy).
+
+**Tests:**
+- [ ] Unit: dispatch on `$` calls `exec`; chip face follows store cwd.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app: `ls` on the `$` route executes and renders; `cd tugdeck` then `pwd` shows cwd statefulness and the chip updates.
+
+---
+
+#### Step 13: Restore interleave {#step-13}
+
+**Depends on:** #step-10
+
+**Commit:** `tugdeck(shell): restore-time interleave of ledgered exchanges`
+
+**References:** [P07] ledger interleave, Risk R02, Spec S02, (#restore-interleave-flow)
+
+**Artifacts:**
+- CONTROL client for `list_shell_exchanges` in the deck (following the existing CONTROL request/response client pattern used by `list_pulse_lines`/`list_card_bindings` consumers); interleave in `CodeSessionStore`'s restore path per #restore-interleave-flow (fetch on/after `replay_complete`, merge-sort by timestamp, source-stable tiebreak, turns minted through the same reducer event as live ingest).
+
+**Tasks:**
+- [ ] Implement fetch + interleave; guarantee HMR does not re-run it (restore-path-only trigger, matching the existing replay lifecycle hooks in `dev-card-restore-gate.ts` / `dev-session-restore.ts`).
+- [ ] Handle the empty-ledger and ledger-only (no Claude turns yet) cases.
+
+**Tests:**
+- [ ] Unit: interleave ordering fixtures — shell rows between turns, before first turn, after last turn; same-timestamp tiebreak; idempotence (running restore twice never duplicates rows).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app: run Claude turn → shell command → Claude turn; Developer ▸ Reload reproduces the exact row order.
+
+---
+
+#### Step 14: Share gesture {#step-14}
+
+**Depends on:** #step-11
+
+**Commit:** `tugdeck(shell): on-demand share — compose an exchange into the prompt entry`
+
+**References:** [P08] share gesture, [P11] doctrine, (#non-goals)
+
+**Artifacts:**
+- A **Share** affordance in the shell exchange block's chrome (beside Copy): sets the route to `❯` (via `RouteLifecycle.setRoute` through the prompt entry's exposed handle or responder action), inserts a fenced `command + output + exit code` block into the editor for the user to edit and send. Truncation for oversized outputs (cap with a "…truncated" marker; full output stays in the row).
+
+**Tasks:**
+- [ ] Implement using the existing editor insertion API (the same surface `/btw`'s overlay and atoms use for programmatic content); never auto-send.
+
+**Tests:**
+- [ ] Unit: share composes the expected text and flips the route; oversized output truncates.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+- [ ] Debug app: Share on an exchange lands editable content in the code-route editor.
+
+---
+
+#### Step 15: Command-block registry skeleton {#step-15}
+
+**Depends on:** #step-11
+
+**Commit:** `tugdeck(shell): COMMAND_BLOCK_REGISTRY skeleton on the D101 grammar`
+
+**References:** [P05] registry, [D101] visibility policy grammar, (#non-goals)
+
+**Artifacts:**
+- `dev-command-block-registry.ts`: `registerCommandBlock(matcher, renderer)` + `resolveCommandBlock(command)` defaulting to the generic shell exchange block; a governance test pinning the classification rules (no double registration; default is total). No bespoke renderers ship ([P05] — follow-ons).
+
+**Tasks:**
+- [ ] Implement registry + resolution in the shell exchange block's render path.
+
+**Tests:**
+- [ ] Governance test per [D101]'s test shape (`__tests__/dev-tool-visibility-policy.test.ts` as the model).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
+
+---
+
+#### Step 16: Shell e2e + restore app-test {#step-16}
+
+**Depends on:** #step-12, #step-13
+
+**Commit:** `app-test(shell): exchange e2e + restore interleave order`
+
+**References:** [P06], [P07], Risk R02, (#success-criteria)
+
+**Artifacts:**
+- `tests/app-test/at02xx-shell-route.test.ts`: real app — submit `echo`/`cd`/`pwd` on the `$` route; assert transcript rows (command, output, exit code) and cwd chip; interleave a Claude turn; Developer ▸ Reload; assert identical row order and shell row content; assert shell rows carry the non-context styling hook (`data-` attribute).
+- Registration in `tuglaws/app-test-inventory.md`.
+
+**Tasks:**
+- [ ] Write the test (fast, exiting; no real-claude dependency — use the harness's session tooling for the Claude turn or scope to shell rows + reload if a real turn is too heavy).
+
+**Tests:**
+- [ ] The app-test itself.
+
+**Checkpoint:**
+- [ ] `just app-test at02xx-shell-route` (from the worktree root) passes.
+
+---
+
+#### Step 17: Phase 3 integration checkpoint + docs {#step-17}
+
+**Depends on:** #step-14, #step-15, #step-16
+
+**Commit:** `docs(shell): transcript doctrine + shell service — tuglaws, design decisions, memory`
+
+**References:** [P04]–[P12], Milestone M03, (#documentation-plan, #success-criteria)
+
+**Artifacts:**
+- `tuglaws/design-decisions.md`: the global doctrine entry ([P11]) + shell-in-transcript decision (service, ledger, interleave, share gesture, registry), cross-referencing [D97]/[D101]/[D108].
+- `#s` marked active in the addressing doc; `route-lifecycle.md` final state; app-test inventory entries verified.
+- Auto-memory reference entry for the shell service + ledger.
+
+**Tasks:**
+- [ ] Write docs; sweep the plan's Step Status Ledger to `done` with commit hashes.
+- [ ] Full verification battery across every suite.
+
+**Tests:**
+- [ ] Full suites (aggregate).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`; `cd tugcode && bun test`; `cd tugrust && cargo nextest run`; `just app-test` — all green. **Milestone M03.**
+
+---
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** A Dev card with three real routes — `❯` code (unchanged), `$` shell (block-oriented execution threading durable, visually distinct exchanges into the transcript, with live cwd chrome and an on-demand share gesture), and `?` btw (the native side-question surface) — each with route-appropriate Z4B chrome.
+
+#### Phase Exit Criteria ("Done means…") {#exit-criteria}
+
+- [ ] Probe FINDINGS.md committed; Q01–Q04 DECIDED in this document (M01).
+- [ ] Three-route chrome shipped with per-route Z4B manifest and passing geometry app-test (M02).
+- [ ] Shell exchanges execute, render, persist, and interleave identically across live / Developer ▸ Reload / relaunch, with share gesture and registry skeleton (M03).
+- [ ] All suites green: tugdeck + tugcode `bun test`, `cargo nextest run`, `bunx vite build`, `just app-test`.
+
+**Acceptance tests:**
+- [ ] `at02xx-route-chrome` (route cycling, chrome manifest, btw round-trip).
+- [ ] `at02xx-shell-route` (exchange e2e, cwd, restore interleave order).
+
+#### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
+
+- [ ] Bespoke command renderers (`git status`, `ls`, build-progress blocks) via the registry.
+- [ ] Streamed live output for long-running commands (if [Q02] resolved settled-whole for v1).
+- [ ] Pinnable WORK popover (tabled from the originating discussion).
+- [ ] Shell-history recall integration (↑ on the `$` route already scopes per route; deeper shell-native history is a follow-on).
+
+| Checkpoint | Verification |
+|------------|--------------|
+| M01 probe | `FINDINGS.md` + plan Q resolutions committed |
+| M02 chrome | `just app-test at02xx-route-chrome` |
+| M03 shell | `just app-test at02xx-shell-route` + full suites |
