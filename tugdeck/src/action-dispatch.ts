@@ -499,20 +499,47 @@ export function initActionDispatch(
     openFileInCard(deckManager, path, line);
   });
 
-  // save (Both): flush the focused editor's pending edits to disk via
-  // the responder chain. Trivial adapter — Control-frame name and
-  // chain-action name are identical (TUG_ACTIONS.SAVE = "save"). The
-  // File ▸ Save menu item carries ⌘S (AppKit swallows the chord at the
-  // menubar); the keybinding-map entry covers browser-only dev. An
-  // unhandled dispatch (no editing surface focused) is a silent no-op.
-  registerAction(TUG_ACTIONS.SAVE, () => {
-    if (responderChainManagerRef) {
-      responderChainManagerRef.sendToFirstResponder({
-        action: TUG_ACTIONS.SAVE,
-        phase: "discrete",
+  // Save verbs (Both): trivial responder-chain adapters. The Control-frame
+  // name equals the chain-action name, and the File card (its editor)
+  // handles them — save is editor-owned (it owns the document), like
+  // cut/copy. The active card's editor is kept as the first responder
+  // across moves/resizes by the card's `cardDidMove`/`cardDidResize` focus
+  // reclaim, so `sendToFirstResponder` reaches it even after a title-bar
+  // drag. An unhandled dispatch (no editing surface focused) is a no-op.
+  for (const action of [
+    TUG_ACTIONS.SAVE,
+    TUG_ACTIONS.SAVE_AS,
+    TUG_ACTIONS.SAVE_A_COPY,
+    TUG_ACTIONS.REVERT_TO_SAVED,
+    TUG_ACTIONS.RELOAD_FROM_DISK,
+  ] as const) {
+    registerAction(action, () => {
+      if (responderChainManagerRef) {
+        responderChainManagerRef.sendToFirstResponder({ action, phase: "discrete" });
+      } else {
+        console.warn(`${action}: responder chain manager not registered yet`);
+      }
+    });
+  }
+
+  // new-text-file (Control only): File ▸ New Text File (⌥⌘N). Opens a new
+  // untitled manual buffer in its own File card — no file exists until the
+  // first Save ([P10]). Not responder-routed; menu-only, like show-card.
+  registerAction("new-text-file", () => {
+    const draftId = crypto.randomUUID();
+    const newId = deckManager.addCard("file", {
+      draftId,
+      untitled: true,
+      anchor: { line: 1, ch: 0 },
+      scrollTop: 0,
+    });
+    if (newId !== null && deckManager.getFirstResponderCardId() !== newId) {
+      transferFocusForActivation({
+        outgoingCardId: deckManager.getFirstResponderCardId(),
+        incomingCardId: newId,
+        store: deckManager,
+        commitMutation: () => deckManager.activateCard(newId),
       });
-    } else {
-      console.warn(`${TUG_ACTIONS.SAVE}: responder chain manager not registered yet`);
     }
   });
 

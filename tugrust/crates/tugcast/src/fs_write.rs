@@ -14,8 +14,10 @@
 //! observes a partial file.
 //!
 //! Loopback-only; same any-absolute-path + secret-denylist posture as
-//! `fs_read`. Missing parent directories are created only under the Tug
-//! drafts root (untitled-buffer autosave); elsewhere they are an error.
+//! `fs_read`. Missing parent directories are created only under a
+//! Tug-owned root — the drafts root (untitled-buffer autosave) or the
+//! Autosave Information root (manual-mode set-aside autosave); elsewhere
+//! they are an error.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -53,6 +55,21 @@ pub(crate) fn drafts_root() -> Option<PathBuf> {
     #[cfg(not(target_os = "macos"))]
     {
         dirs::data_dir().map(|data| data.join("Tug/Drafts"))
+    }
+}
+
+/// The directory manual-mode set-aside autosave records live in. The
+/// second Tug-owned root under which `fs_write` will create missing
+/// parent directories.
+pub(crate) fn asides_root() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|home| home.join("Library/Application Support/Tug/Autosave Information"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        dirs::data_dir().map(|data| data.join("Tug/Autosave Information"))
     }
 }
 
@@ -125,8 +142,9 @@ fn write_file(
         return fs_error(StatusCode::BAD_REQUEST, "bad_path");
     };
     if !parent.is_dir() {
-        let under_drafts = drafts_root().is_some_and(|root| parent.starts_with(&root));
-        if !under_drafts {
+        let under_tug_root = drafts_root().is_some_and(|root| parent.starts_with(&root))
+            || asides_root().is_some_and(|root| parent.starts_with(&root));
+        if !under_tug_root {
             return fs_error(StatusCode::NOT_FOUND, "parent_missing");
         }
         if std::fs::create_dir_all(parent).is_err() {
@@ -320,5 +338,41 @@ mod tests {
         let (status, body) = write_file(&path, "content", None, false);
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"], "parent_missing");
+    }
+
+    #[test]
+    fn missing_parents_under_asides_root_are_created() {
+        use std::ffi::OsString;
+        use std::sync::Mutex;
+
+        // Env mutation is process-global; serialize with the other
+        // HOME/env-sensitive tests via a local mutex, and restore after.
+        static ENV_MUTEX: Mutex<()> = Mutex::new(());
+        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let home = tempfile::tempdir().unwrap();
+        let prior: Option<OsString> = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+
+        // asides_root() now resolves under the temp HOME; a nested aside
+        // path has no existing parent and must be created by the write.
+        let root = asides_root().expect("asides_root under temp HOME");
+        assert!(root.starts_with(home.path()));
+        let path = root.join("aside-deadbeef.json");
+        assert!(!path.parent().unwrap().exists());
+
+        let (status, body) = write_file(&path, "{}", None, false);
+
+        unsafe {
+            match &prior {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        assert_eq!(status, StatusCode::OK, "body: {body}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
     }
 }

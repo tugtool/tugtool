@@ -26,7 +26,12 @@ import { TugPopupButton, type TugPopupButtonItem } from "../tug-popup-button";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { EditorStatsStore } from "@/lib/editor-stats-store";
-import type { FileSaveState, LineEnding } from "@/lib/file-editor-store";
+import type {
+  FileConflict,
+  FileSaveState,
+  LineEnding,
+  SaveMode,
+} from "@/lib/file-editor-store";
 import { SELECTABLE_LANGUAGES } from "@/lib/language-registry";
 
 const LINE_ENDING_LABEL: Record<LineEnding, string> = {
@@ -49,7 +54,10 @@ const LANGUAGE_ITEMS: TugPopupButtonItem<string>[] = SELECTABLE_LANGUAGES.map(
 
 export interface FileCardStatusBarProps {
   statsStore: EditorStatsStore;
+  saveMode: SaveMode;
   saveState: FileSaveState;
+  /** Unresolved divergence — shows a conflict badge (manual mode). */
+  conflict: FileConflict | null;
   lastSavedAt: number | null;
   lineEnding: LineEnding;
   /** Change the buffer's line-ending style. */
@@ -60,17 +68,32 @@ export interface FileCardStatusBarProps {
   onSetLanguage: (id: string) => void;
 }
 
-/** Save-state cell copy: transient while dirty, timestamped when clean. */
-function saveText(saveState: FileSaveState, lastSavedAt: number | null): string {
+/**
+ * Save-state cell copy. Automatic mode is the saveless live-autosave
+ * wording ("Saving…" / "Unsaved" / "Saved"); manual mode is the classic
+ * document wording ("Saving…" / "Edited" / "Saved"), plus a conflict
+ * badge when an external change is unresolved.
+ */
+function saveText(
+  saveMode: SaveMode,
+  saveState: FileSaveState,
+  conflict: FileConflict | null,
+  lastSavedAt: number | null,
+): string {
+  if (saveMode === "manual" && conflict !== null) {
+    return conflict.reason === "missing" ? "File deleted" : "File changed";
+  }
   if (saveState === "writing") return "Saving…";
-  if (saveState === "editing") return "Unsaved";
+  if (saveState === "editing") return saveMode === "manual" ? "Edited" : "Unsaved";
   if (lastSavedAt === null) return "Saved";
   return `Saved: ${new Date(lastSavedAt).toLocaleTimeString()}`;
 }
 
 export function FileCardStatusBar({
   statsStore,
+  saveMode,
   saveState,
+  conflict,
   lastSavedAt,
   lineEnding,
   onSetLineEnding,
@@ -101,8 +124,11 @@ export function FileCardStatusBar({
         <span
           className="file-card-status-cell file-card-status-save"
           data-testid="file-card-status-save"
+          data-conflict={
+            saveMode === "manual" && conflict !== null ? "true" : undefined
+          }
         >
-          {saveText(saveState, lastSavedAt)}
+          {saveText(saveMode, saveState, conflict, lastSavedAt)}
         </span>
 
         {/* Settable pair, pushed to the right edge. */}

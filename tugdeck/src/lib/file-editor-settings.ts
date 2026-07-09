@@ -28,6 +28,7 @@
  */
 
 import type { TaggedValue } from "@/lib/tugbank-client";
+import type { SaveMode } from "@/lib/file-editor-store";
 
 /**
  * Where a newly opened file is routed when no card already holds it:
@@ -74,6 +75,24 @@ export const FILE_EDITOR_DOMAIN = "dev.file-editor";
  */
 export const FILE_EDITOR_DEFAULTS_DOMAIN = "dev.tugtool.file-editor";
 export const FILE_EDITOR_DEFAULTS_KEY = "settings";
+
+/**
+ * tugbank key (under {@link FILE_EDITOR_DEFAULTS_DOMAIN}) for the deck-wide
+ * save-mode default ([P01]). A separate key from the view `settings` blob;
+ * deliberately unexposed in the Settings UI. Values: `"manual"` |
+ * `"automatic"`, missing → {@link DEFAULT_FILE_EDITOR_SAVE_MODE}.
+ */
+export const FILE_EDITOR_SAVE_MODE_KEY = "save-mode";
+
+/** The save contract a File card adopts when nothing is configured. */
+export const DEFAULT_FILE_EDITOR_SAVE_MODE: SaveMode = "manual";
+
+/** Coerce an untrusted stored save-mode value to a {@link SaveMode}. */
+export function parseSaveMode(entry: TaggedValue | undefined): SaveMode {
+  const value = entry?.value;
+  if (value === "manual" || value === "automatic") return value;
+  return DEFAULT_FILE_EDITOR_SAVE_MODE;
+}
 
 /** The view settings a File card uses when nothing else is configured. */
 export const DEFAULT_FILE_EDITOR_SETTINGS: FileEditorSettings = {

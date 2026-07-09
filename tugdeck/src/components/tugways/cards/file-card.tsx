@@ -56,6 +56,15 @@ import {
   registerOpenFileCard,
   unregisterOpenFileCard,
 } from "@/lib/file-card-open-registry";
+import { registerCardCloseGuard } from "@/lib/card-close-guard";
+import {
+  publishFileMenuState,
+  clearFileMenuState,
+} from "@/lib/host-menu-state";
+import { readSaveMode } from "@/lib/open-file-in-card";
+import { openPathInOS } from "@/lib/os-open";
+import { useTugSheet } from "@/components/tugways/tug-sheet";
+import { useFileSaveSheets } from "./file-card-save-sheets";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { TugFileEditor, type TugFileEditorDelegate } from "../tug-file-editor";
@@ -80,6 +89,8 @@ import {
   useCardStatePreservation,
 } from "../use-card-state-preservation";
 import { useResponderChain } from "../responder-chain-provider";
+import { useFocusManager } from "../use-focusable";
+import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +104,9 @@ export interface FileCardBagContent {
   /** Draft id for an untitled buffer (content autosaves under the
    * drafts directory); null for a path-bound card. */
   draftId: string | null;
+  /** True when the buffer is a manual-mode untitled buffer ([P10]) —
+   * restore re-enters `openUntitled` and finds the aside. */
+  untitled: boolean;
   anchor: { line: number; ch: number };
   scrollTop: number;
 }
@@ -108,6 +122,7 @@ function coerceBagContent(state: unknown): FileCardBagContent | null {
   return {
     path,
     draftId,
+    untitled: obj.untitled === true,
     anchor: {
       line: typeof anchor?.line === "number" ? anchor.line : 1,
       ch: typeof anchor?.ch === "number" ? anchor.ch : 0,
@@ -149,11 +164,20 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   // One autosave engine per mounted card body. Disk is authoritative
   // and positions ride the bag, so recreating the store on a cold
   // remount is cheap — it re-reads the file.
-  const [store] = useState(() => new FileEditorStore());
+  const [store] = useState(() => new FileEditorStore({ saveMode: readSaveMode() }));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const isManual = snapshot.saveMode === "manual";
+  const isDirty = snapshot.saveState !== "clean";
   const editorRef = useRef<TugFileEditorDelegate | null>(null);
   const manager = useResponderChain();
+  const cardLifecycle = useCardLifecycle();
+  const focusManager = useFocusManager();
   const senderId = useId();
+
+  // Pane-modal sheet host for the manual save/close/conflict sheets
+  // (Spec S03). `renderSheet()` is mounted once in the card body.
+  const { showSheet, renderSheet } = useTugSheet();
+  const sheets = useFileSaveSheets(showSheet);
 
   // Card-local editor settings, seeded from the deck-wide File-editor
   // defaults on first open, then owned by this card ([D07] pattern).
@@ -232,16 +256,128 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   );
 
   // Move To… / Save As… — NSSavePanel chooses the new path; the store
-  // re-anchors the buffer there (and GCs the old draft).
-  const saveAs = useCallback(() => {
+  // re-anchors the buffer there (and GCs the old draft). Resolves whether
+  // a path was chosen and written (the close guard awaits it).
+  const runSaveAsPanel = useCallback(async (): Promise<boolean> => {
     const snap = store.getSnapshot();
-    void pickPath("save", snap.draftId !== null ? undefined : (snap.path ?? undefined)).then(
-      (newPath) => {
-        if (newPath === null) return;
-        void store.saveAs(newPath);
-      },
-    );
+    const initial = snap.draftId !== null ? undefined : (snap.path ?? undefined);
+    const newPath = await pickPath("save", initial);
+    if (newPath === null) return false;
+    await store.saveAs(newPath);
+    return true;
   }, [store]);
+  const saveAs = useCallback(() => {
+    void runSaveAsPanel();
+  }, [runSaveAsPanel]);
+
+  // Reveal the bound file in the Finder (path click) — opens its containing
+  // folder, the same reveal the transcript file references use.
+  const revealInFinder = useCallback(() => {
+    const path = store.getSnapshot().path;
+    if (path === null) return;
+    const slash = path.lastIndexOf("/");
+    openPathInOS(slash > 0 ? path.slice(0, slash) : "/", "folder");
+  }, [store]);
+
+  // Save a Copy… — write the buffer elsewhere without rebinding or
+  // clearing the dirty bit.
+  const runSaveACopy = useCallback(async () => {
+    const newPath = await pickPath("save", store.getSnapshot().path ?? undefined);
+    if (newPath === null) return;
+    await store.saveACopy(newPath);
+  }, [store]);
+
+  // Save (⌘S / File ▸ Save) — manual explicit save; an untitled buffer
+  // routes through the save panel ([P10]).
+  const doSave = useCallback(async (): Promise<boolean> => {
+    const result = await store.save();
+    if (result === "needs-path") return runSaveAsPanel();
+    // conflict / missing → the presentation effect raises the sheet.
+    return result === "ok";
+  }, [store, runSaveAsPanel]);
+
+  // Revert to Saved — confirm, then discard edits back to disk.
+  const doRevert = useCallback(async () => {
+    const ok = await sheets.presentRevertSheet(
+      store.getSnapshot().fileName ?? "Untitled",
+    );
+    if (ok) await store.revertToSaved();
+  }, [store, sheets]);
+
+  // Reload from Disk — confirm only while dirty; a clean buffer reloads
+  // without a sheet.
+  const doReload = useCallback(async () => {
+    const snap = store.getSnapshot();
+    if (snap.saveState === "clean") {
+      await store.reloadFromDisk();
+      return;
+    }
+    const ok = await sheets.presentReloadSheet(snap.fileName ?? "Untitled");
+    if (ok) await store.reloadFromDisk();
+  }, [store, sheets]);
+
+  // Single dispatcher wired to the editor's save-verb chain actions.
+  const onSaveCommand = useCallback(
+    (
+      command:
+        | "save"
+        | "save-as"
+        | "save-a-copy"
+        | "revert-to-saved"
+        | "reload-from-disk",
+    ) => {
+      switch (command) {
+        case "save":
+          void doSave();
+          break;
+        case "save-as":
+          void runSaveAsPanel();
+          break;
+        case "save-a-copy":
+          void runSaveACopy();
+          break;
+        case "revert-to-saved":
+          void doRevert();
+          break;
+        case "reload-from-disk":
+          void doReload();
+          break;
+      }
+    },
+    [doSave, runSaveAsPanel, runSaveACopy, doRevert, doReload],
+  );
+
+  // ---- Focus destination reclaim ([P20], focus-language.md) ----
+  //
+  // A title-bar interaction (a reposition drag, or even a zero-move click)
+  // promotes the pane as first responder and fires `cardDidMove`. Without
+  // restoring the card's focus destination, the editor is no longer the
+  // first responder, and every first-responder-routed accelerator —
+  // notably ⌘S `save` — walks up from the wrong node and misses the
+  // editor's handler. Re-assert the destination through the sanctioned
+  // gate: an open card-modal sheet keeps its key view (`adoptKeyCard`),
+  // otherwise focus the editor (which re-promotes it via `focusin`). This
+  // is the same reclaim the Dev card runs; it is what keeps
+  // `sendToFirstResponder` reliable across moves.
+  const reclaimFocusDestination = useCallback((): void => {
+    if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
+    if (focusManager?.adoptKeyCard(cardId) === true) return;
+    // `focusResponder`, not a bare `editor.focus()`: it promotes the editor
+    // to first responder BEFORE focusing, so it repairs the case where the
+    // editor still holds DOM focus but the chain first responder was pulled
+    // onto the pane by a title-bar drag (a bare focus() would no-op).
+    const editorResponderId = editorRef.current?.responderId();
+    if (editorResponderId !== undefined && manager) {
+      manager.focusResponder(editorResponderId);
+    } else {
+      editorRef.current?.focus();
+    }
+  }, [cardLifecycle, focusManager, cardId, manager]);
+
+  useCardDelegate(cardId, {
+    cardDidMove: () => reclaimFocusDestination(),
+    cardDidResize: () => reclaimFocusDestination(),
+  });
 
   // ---- Card state preservation (positions only, [P07]) ----
 
@@ -257,6 +393,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       return {
         path: snap.draftId !== null ? null : snap.path,
         draftId: snap.draftId,
+        untitled: snap.untitled,
         anchor: positions?.anchor ?? { line: 1, ch: 0 },
         scrollTop: positions?.scrollTop ?? 0,
       };
@@ -268,14 +405,23 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         anchor: content.anchor,
         scrollTop: content.scrollTop,
       };
-      if (content.draftId !== null) {
+      if (content.untitled && content.draftId !== null) {
+        void store.openUntitled(content.draftId);
+      } else if (content.draftId !== null) {
         void store.openDraft(content.draftId);
       } else if (content.path !== null) {
         void store.openPath(content.path);
       }
     },
     onCardActivated: () => {
-      editorRef.current?.focus();
+      // Resolve the destination through the same gate as the move reclaim,
+      // so an open sheet keeps its key view rather than being clobbered by
+      // a raw editor focus (focus-language.md L68).
+      reclaimFocusDestination();
+      // Focus-time recheck: files outside the watcher's workspace roots
+      // get no FILESYSTEM events, so activation is when an external change
+      // is caught ([P09]).
+      void store.recheckOnActivation();
     },
   });
 
@@ -284,6 +430,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   useLayoutEffect(() => {
     registerOpenFileCard(cardId, {
       getPath: () => store.getSnapshot().path,
+      isDirty: () => store.getSnapshot().saveState !== "clean",
       revealLine: (line) => editorRef.current?.revealLine(line),
       openFile: (path, line) => {
         // Reuse this card for a different file: flush the current
@@ -302,17 +449,116 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     };
   }, [cardId, store]);
 
+  // ---- Close guard (manual mode) ----
+  //
+  // A dirty manual buffer must not die silently. Register in a layout
+  // effect ([L03]: a close gesture may fire before a passive effect
+  // commits, mirroring the open-file registration above); the release
+  // returned by `registerCardCloseGuard` runs on cleanup ([L27]).
+  useLayoutEffect(() => {
+    if (!isManual) return;
+    return registerCardCloseGuard(cardId, async () => {
+      const snap = store.getSnapshot();
+      if (snap.saveState === "clean") return "close";
+      const choice = await sheets.presentCloseSheet(snap.fileName ?? "Untitled");
+      if (choice === "cancel") return "cancel";
+      if (choice === "dont-save") {
+        await store.discardAside();
+        return "close";
+      }
+      const result = await store.save();
+      if (result === "needs-path") {
+        return (await runSaveAsPanel()) ? "close" : "cancel";
+      }
+      return result === "ok" ? "close" : "cancel";
+    });
+  }, [isManual, cardId, store, sheets, runSaveAsPanel]);
+
+  // ---- Conflict / missing sheet presentation (manual mode) ----
+  //
+  // A store `conflict` in manual mode is a modal sheet (Table T01), not
+  // the automatic-mode banner. Single-flight via a ref so a snapshot
+  // change while the sheet is up never stacks a second one; Cancel leaves
+  // the conflict set (the status-bar badge) without re-prompting.
+  const conflictSheetUpRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!isManual) return;
+    const conflict = snapshot.conflict;
+    if (conflict === null || conflictSheetUpRef.current) return;
+    conflictSheetUpRef.current = true;
+    const fileName = snapshot.fileName ?? "Untitled";
+    void (async () => {
+      if (conflict.reason === "missing") {
+        const choice = await sheets.presentMissingSheet(fileName);
+        if (choice === "save") {
+          const path = store.getSnapshot().path;
+          if (path !== null) await store.saveAs(path);
+        } else if (choice === "save-as") {
+          await runSaveAsPanel();
+        } else if (choice === "dont-save") {
+          // Free the user from the "jail": drop the aside (which also marks
+          // the buffer clean, so the close guard won't re-prompt) and close.
+          await store.discardAside();
+          manager?.sendToTarget(cardId, {
+            action: TUG_ACTIONS.CLOSE,
+            sender: senderId,
+            phase: "discrete",
+          });
+        }
+      } else {
+        const choice = await sheets.presentConflictSheet(fileName);
+        if (choice === "save-anyway") await store.resolveConflict("overwrite");
+        else if (choice === "reload") await store.resolveConflict("reload");
+        else if (choice === "save-as") await runSaveAsPanel();
+      }
+      conflictSheetUpRef.current = false;
+    })();
+  }, [
+    isManual,
+    snapshot.conflict,
+    snapshot.fileName,
+    store,
+    sheets,
+    runSaveAsPanel,
+    manager,
+    cardId,
+    senderId,
+  ]);
+
+  // ---- Open-time aside conflict sheet ----
+  const asideConflictUpRef = useRef(false);
+  useLayoutEffect(() => {
+    const pending = snapshot.pendingAsideConflict;
+    if (pending === null || asideConflictUpRef.current) return;
+    asideConflictUpRef.current = true;
+    const fileName = snapshot.fileName ?? "Untitled";
+    void sheets.presentOpenConflictSheet(fileName).then((choice) => {
+      store.resolveAsideConflict(choice);
+      asideConflictUpRef.current = false;
+    });
+  }, [snapshot.pendingAsideConflict, snapshot.fileName, store, sheets]);
+
   // ---- Store lifecycle + final flush ----
 
   useLayoutEffect(() => {
     const flushOnHide = () => {
       void store.flush({ keepalive: true });
     };
+    // `visibilitychange` fires on BOTH hide and show; flush on hide, but
+    // recheck disk ONLY when becoming visible ([P09]) — an unguarded
+    // recheck would issue a disk read on every hide too.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void store.recheckOnActivation();
+      } else {
+        flushOnHide();
+      }
+    };
     window.addEventListener("pagehide", flushOnHide);
-    document.addEventListener("visibilitychange", flushOnHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("pagehide", flushOnHide);
-      document.removeEventListener("visibilitychange", flushOnHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       void store.flush({ keepalive: true });
       store.dispose();
     };
@@ -322,17 +568,68 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   useLayoutEffect(() => {
     if (snapshot.fileName !== null) {
-      cardTitleStore.set(
-        cardId,
-        snapshot.readOnly ? `${snapshot.fileName} (read-only)` : snapshot.fileName,
-      );
+      const base = snapshot.readOnly
+        ? `${snapshot.fileName} (read-only)`
+        : snapshot.fileName;
+      // Manual mode marks unsaved changes with a small dot AFTER the name,
+      // so the filename doesn't hop as the dirty bit sets and clears.
+      cardTitleStore.set(cardId, isManual && isDirty ? `${base} •` : base);
     } else {
       cardTitleStore.clear(cardId);
     }
     return () => {
       cardTitleStore.clear(cardId);
     };
-  }, [cardId, snapshot.fileName, snapshot.readOnly]);
+  }, [cardId, snapshot.fileName, snapshot.readOnly, isManual, isDirty]);
+
+  // ---- Menu-state file block (drives the native File menu, [P07]) ----
+  //
+  // Publish the block whenever the card is bound (ready); clear it
+  // otherwise and on unmount ([L27]). The publisher only rides it onto
+  // the payload while this card is the focused pane's active card.
+  useLayoutEffect(() => {
+    if (snapshot.phase !== "ready") {
+      clearFileMenuState(cardId);
+      return () => clearFileMenuState(cardId);
+    }
+    publishFileMenuState(cardId, {
+      cardId,
+      mode: snapshot.saveMode,
+      dirty: isManual && snapshot.saveState !== "clean",
+      untitled: snapshot.untitled,
+      readOnly: snapshot.readOnly,
+      hasPath: snapshot.path !== null,
+      conflict: snapshot.conflict !== null,
+    });
+    return () => clearFileMenuState(cardId);
+  }, [
+    cardId,
+    isManual,
+    snapshot.phase,
+    snapshot.saveMode,
+    snapshot.saveState,
+    snapshot.untitled,
+    snapshot.readOnly,
+    snapshot.path,
+    snapshot.conflict,
+  ]);
+
+  // ---- Focus the editor when a fresh untitled buffer opens ----
+  //
+  // New Text File (⌥⌘N) should drop the caret straight into the editor so
+  // the user can type immediately. Only the active card's body is mounted,
+  // so this focuses only the card in front. Fires once per open.
+  const untitledFocusedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (snapshot.phase !== "ready") {
+      untitledFocusedRef.current = false;
+      return;
+    }
+    if (snapshot.untitled && !untitledFocusedRef.current) {
+      untitledFocusedRef.current = true;
+      requestAnimationFrame(() => editorRef.current?.focus());
+    }
+  }, [snapshot.phase, snapshot.untitled]);
 
   // ---- Apply restored positions once the file binds ----
 
@@ -374,7 +671,10 @@ export function FileCardContent({ cardId }: { cardId: string }) {
             <TugPushButton
               data-testid="file-card-new-draft"
               onClick={() => {
-                void store.openDraft(cardId);
+                // Manual: an untitled buffer with no file identity until
+                // the first Save ([P10]). Automatic: a real draft file.
+                if (isManual) void store.openUntitled(cardId);
+                else void store.openDraft(cardId);
               }}
               disabled={snapshot.phase === "loading"}
             >
@@ -420,8 +720,11 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       <FileCardTopBar
         path={snapshot.path}
         isDraft={snapshot.draftId !== null}
+        saveMode={snapshot.saveMode}
         canMoveTo={snapshot.draftId !== null && isPathPickerAvailable()}
         onMoveTo={saveAs}
+        onSave={() => void doSave()}
+        onRevealInFinder={revealInFinder}
         settings={editorSettings}
         onChangeSetting={setSetting}
       />
@@ -472,19 +775,23 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         languageExt={effectiveLanguageExt}
         className="file-card-editor"
         onFindRequested={openFindBar}
+        onSaveCommand={onSaveCommand}
         onStats={statsStore.set}
       />
       <FileCardStatusBar
         statsStore={statsStore}
+        saveMode={snapshot.saveMode}
         saveState={snapshot.saveState}
+        conflict={snapshot.conflict}
         lastSavedAt={snapshot.lastSavedAt}
         lineEnding={snapshot.lineEnding}
         onSetLineEnding={setLineEnding}
         languageId={effectiveLanguageId}
         onSetLanguage={setLanguageOverrideId}
       />
+      {renderSheet()}
       <TugPaneBanner
-        visible={conflict !== null}
+        visible={conflict !== null && snapshot.saveMode === "automatic"}
         variant="error"
         tone="caution"
         label={conflict?.reason === "missing" ? "File deleted" : "File changed"}

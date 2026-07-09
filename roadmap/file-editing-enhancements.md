@@ -460,17 +460,17 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | fs_write: Autosave Information root | pending | — |
-| #step-2 | Aside helpers (`file-aside.ts`) | pending | — |
-| #step-3 | Store manual-mode core | pending | — |
-| #step-4 | Save verbs + reconciliation in the store | pending | — |
-| #step-5 | Card close guard in pane chrome | pending | — |
-| #step-6 | File card manual UI: sheets, status, guard, routing | pending | — |
-| #step-7 | Menu-state file block + control actions | pending | — |
-| #step-8 | Swift File menu | pending | — |
-| #step-9 | Rename-follow + focus recheck | pending | — |
-| #step-10 | Flip default; app-tests | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | fs_write: Autosave Information root | done | 04b09a8fd |
+| #step-2 | Aside helpers (`file-aside.ts`) | done | a2b7511ad |
+| #step-3 | Store manual-mode core | done | 308e25e2a |
+| #step-4 | Save verbs + reconciliation in the store | done | 95b51c8d3 |
+| #step-5 | Card close guard in pane chrome | done | f4c41bad2 |
+| #step-6 | File card manual UI: sheets, status, guard, routing | done | fba569c05 |
+| #step-7 | Menu-state file block + control actions | done | 529adb34c |
+| #step-8 | Swift File menu | done | febed6dc0 |
+| #step-9 | Rename-follow + focus recheck | done | f507a3749 |
+| #step-10 | Flip default; app-tests | done | fa7526819 |
+| #step-11 | Integration checkpoint | done | (verification) |
 
 #### Step 1: fs_write — Autosave Information root {#step-1}
 

@@ -89,7 +89,20 @@ function deckShape() {
   };
 }
 
+/**
+ * Seed the deck-wide save-mode default to "automatic" BEFORE the card
+ * mounts. Manual is now the shipping default ([P01]); this test exercises
+ * the retained automatic live-autosave path, so it opts in explicitly —
+ * `setTugbankValue` populates the same client cache `readSaveMode` reads.
+ */
+async function seedAutomaticSaveMode(app: App): Promise<void> {
+  await app.evalJS<null>(
+    `(window.__tug.setTugbankValue("dev.tugtool.file-editor","save-mode",{kind:"string",value:"automatic"}), null)`,
+  );
+}
+
 async function seedFileCard(app: App, filePath: string): Promise<void> {
+  await seedAutomaticSaveMode(app);
   await app.seedDeckState({
     state: deckShape(),
     cardStates: {

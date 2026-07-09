@@ -17,6 +17,12 @@
 export interface FileCardOpenEntry {
   /** The card's canonically-bound path, or null before binding. */
   getPath(): string | null;
+  /**
+   * True when the card has unsaved in-memory edits (manual mode). The
+   * `"reuse"` open target never rebinds a dirty card — rebinding tears
+   * down the buffer ([P11]).
+   */
+  isDirty(): boolean;
   /** Move the cursor to `line` (1-based) and center it. */
   revealLine(line: number): void;
   /**

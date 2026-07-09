@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   computeEditCapabilities,
+  computeFileMenuGates,
   EMPTY_EDIT_CAPABILITIES,
   HostMenuStatePublisher,
   projectDeckState,
@@ -9,6 +10,7 @@ import {
   requestEditMenuStateRefresh,
   type MenuStateDevBlock,
   type MenuStateEditBlock,
+  type MenuStateFileBlock,
   type MenuStatePayload,
 } from "../host-menu-state";
 import { TUG_ACTIONS } from "../../components/tugways/action-vocabulary";
@@ -226,6 +228,51 @@ describe("HostMenuStatePublisher", () => {
     expect(posted).toHaveLength(2);
   });
 
+  const fileBlock = (cardId: string): MenuStateFileBlock => ({
+    cardId,
+    mode: "manual",
+    dirty: true,
+    untitled: false,
+    readOnly: false,
+    hasPath: true,
+    conflict: false,
+  });
+
+  test("attaches the file block only for the focused pane's active file card", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(
+      projectDeckState(deck([card("a", { componentId: "file" })], [pane("p1", ["a"])])),
+    );
+    publisher.setFileBlock("a", fileBlock("a"));
+    await settle();
+    expect(posted[0].file).toEqual(fileBlock("a"));
+  });
+
+  test("non-file active card rides with file: null even when a block exists", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setFileBlock("b", fileBlock("b"));
+    publisher.setDeckProjection(
+      projectDeckState(deck([card("a", { componentId: "dev" })], [pane("p1", ["a"])])),
+    );
+    await settle();
+    expect(posted[0].file).toBeNull();
+  });
+
+  test("clearing the file block reverts the payload to file: null", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(
+      projectDeckState(deck([card("a", { componentId: "file" })], [pane("p1", ["a"])])),
+    );
+    publisher.setFileBlock("a", fileBlock("a"));
+    await settle();
+    publisher.clearFileBlock("a");
+    await settle();
+    expect(posted[1].file).toBeNull();
+  });
+
   test("posts again when the projection actually changes", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
@@ -325,5 +372,50 @@ describe("edit-caps refresher registry", () => {
     registerEditCapsRefresher(null);
     requestEditMenuStateRefresh(); // no registered refresher → no-op
     expect(calls).toBe(1);
+  });
+});
+
+describe("computeFileMenuGates (Spec S02)", () => {
+  const base: MenuStateFileBlock = {
+    cardId: "c",
+    mode: "manual",
+    dirty: false,
+    untitled: false,
+    readOnly: false,
+    hasPath: true,
+    conflict: false,
+  };
+
+  test("automatic-mode Save stays enabled even when clean (no-beep guard, [P07])", () => {
+    expect(computeFileMenuGates({ ...base, mode: "automatic" }).save).toBe(true);
+  });
+
+  test("a clean titled manual card disables Save", () => {
+    expect(computeFileMenuGates(base).save).toBe(false);
+  });
+
+  test("a dirty or untitled manual card enables Save", () => {
+    expect(computeFileMenuGates({ ...base, dirty: true }).save).toBe(true);
+    expect(computeFileMenuGates({ ...base, untitled: true, hasPath: false }).save).toBe(true);
+  });
+
+  test("read-only or conflicted disables Save in either mode", () => {
+    expect(computeFileMenuGates({ ...base, mode: "automatic", readOnly: true }).save).toBe(false);
+    expect(computeFileMenuGates({ ...base, mode: "automatic", conflict: true }).save).toBe(false);
+    expect(computeFileMenuGates({ ...base, dirty: true, conflict: true }).save).toBe(false);
+  });
+
+  test("Revert needs dirty + a path; Reload needs a path", () => {
+    expect(computeFileMenuGates(base).revert).toBe(false);
+    expect(computeFileMenuGates({ ...base, dirty: true }).revert).toBe(true);
+    expect(computeFileMenuGates({ ...base, dirty: true, hasPath: false }).revert).toBe(false);
+    expect(computeFileMenuGates(base).reload).toBe(true);
+    expect(computeFileMenuGates({ ...base, hasPath: false }).reload).toBe(false);
+  });
+
+  test("Save As… and Save a Copy… are always enabled for a bound card", () => {
+    const gates = computeFileMenuGates(base);
+    expect(gates.saveAs).toBe(true);
+    expect(gates.saveACopy).toBe(true);
   });
 });

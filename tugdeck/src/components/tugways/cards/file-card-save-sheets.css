@@ -1,0 +1,22 @@
+/**
+ * file-card-save-sheets.css — layout for the multi-button File save sheets
+ * (close / conflict / missing). Reuses TugAlert's icon + text body; the
+ * only bespoke bit is the action row: the Cancel button sits alone on the
+ * left, the remaining choices group on the right ending in the default.
+ *
+ * Layout only — colors and the icon/text body come from `tug-alert.css`
+ * (`--tugx-alert-*`).
+ */
+
+.file-save-sheet-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--tugx-alert-space-b);
+}
+
+/* The right-hand cluster (the non-Cancel choices, default last). */
+.file-save-sheet-actions-right {
+  display: flex;
+  gap: var(--tugx-alert-space-a);
+}

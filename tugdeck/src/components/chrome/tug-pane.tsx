@@ -49,6 +49,10 @@ import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { CardPathMenu } from "@/components/chrome/card-path-menu";
 import { cardTitleStore } from "@/lib/card-title-store";
 import {
+  getCardCloseGuard,
+  type CardCloseGuard,
+} from "@/lib/card-close-guard";
+import {
   resolveCardResourcePath,
   type CardResourcePath,
 } from "@/lib/card-resource-path";
@@ -140,6 +144,13 @@ export interface CardTitleBarProps {
    */
   resolveResourcePath?: () => CardResourcePath | null;
   /**
+   * Resolve the close guard registered by the active card, if any ([P06]).
+   * A registered guard supersedes the `confirmClose` popover for that card
+   * at every close site; Option-click still bypasses it. Called live at
+   * close time so the guard always reflects the current active card.
+   */
+  resolveCloseGuard?: () => CardCloseGuard | null;
+  /**
    * Whether the X button (and the imperative `requestClose()` handle)
    * routes through the close-confirm popover. When `false`, X-click and
    * Cmd-W both close the pane immediately — no popover. When `true`,
@@ -162,6 +173,7 @@ function CardTitleBar({
   collapsed,
   cardCount = 1,
   resolveResourcePath,
+  resolveCloseGuard,
   confirmClose = false,
   onCollapse,
   onClose,
@@ -244,6 +256,33 @@ function CardTitleBar({
     [],
   );
 
+  // Single-flight latch so a second close gesture while the guard sheet is
+  // already up is swallowed rather than stacking a second sheet ([P06]).
+  const guardRunningRef = useRef(false);
+
+  // Consult the active card's close guard, if one is registered ([P06],
+  // Risk R02). Returns `true` when a guard exists and has taken ownership
+  // of the close decision (it runs `proceed` only on `"close"`); returns
+  // `false` when there is no guard, so the caller falls back to its
+  // existing `confirmClose`-or-immediate behavior. Every close site routes
+  // its proceed action through here, so the guard covers the plain X-click
+  // (`!confirmClose` short-circuit) as well as ⌘W and the imperative
+  // handle — Option-click bypasses it at the call site.
+  const withCloseDecision = useCallback(
+    (proceed: () => void): boolean => {
+      const guard = resolveCloseGuard?.() ?? null;
+      if (!guard) return false;
+      if (guardRunningRef.current) return true;
+      guardRunningRef.current = true;
+      void guard().then((decision) => {
+        guardRunningRef.current = false;
+        if (decision === "close") proceed();
+      });
+      return true;
+    },
+    [resolveCloseGuard],
+  );
+
   const handleClosePointerUp = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -261,18 +300,23 @@ function CardTitleBar({
         setCloseOpen(false);
         return;
       }
-      // Option-click is the power-user escape hatch: close the pane
-      // immediately, no confirmation. On a `confirmClose` pane a plain
-      // click opens the confirm popover instead — two clicks to
-      // discard a pane. On a pane that doesn't opt in, a plain click
-      // is functionally identical to Option-click.
-      if (event.altKey || !confirmClose) {
+      // Option-click is the power-user escape hatch: close immediately,
+      // bypassing both the guard and the confirm popover ([P06]).
+      if (event.altKey) {
+        onClose?.();
+        return;
+      }
+      // A registered close guard supersedes the confirm popover — even on
+      // a non-`confirmClose` pane, where a plain X-click would otherwise
+      // close immediately (Risk R02).
+      if (withCloseDecision(() => onClose?.())) return;
+      if (!confirmClose) {
         onClose?.();
       } else {
         openCloseConfirm(paneCloseIntent());
       }
     },
-    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent],
+    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent, withCloseDecision],
   );
 
   const handleCloseClick = useCallback(
@@ -289,13 +333,18 @@ function CardTitleBar({
         setCloseOpen(false);
         return;
       }
-      if (event?.altKey || !confirmClose) {
+      if (event?.altKey) {
+        onClose?.();
+        return;
+      }
+      if (withCloseDecision(() => onClose?.())) return;
+      if (!confirmClose) {
         onClose?.();
         return;
       }
       openCloseConfirm(paneCloseIntent());
     },
-    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent],
+    [closeOpen, onClose, confirmClose, openCloseConfirm, paneCloseIntent, withCloseDecision],
   );
 
   // Confirm / cancel callbacks for the shared `TugConfirmPopover`. Confirm closes
@@ -317,20 +366,25 @@ function CardTitleBar({
   // slipping past it.
   React.useImperativeHandle(ref, () => ({
     requestClose: () => {
-      if (confirmClose) {
-        openCloseConfirm(paneCloseIntent());
-      } else {
-        onClose?.();
-      }
+      const proceed = () => {
+        if (confirmClose) openCloseConfirm(paneCloseIntent());
+        else onClose?.();
+      };
+      // ⌘W has no Option-bypass; the guard always gets first say ([P06]).
+      if (withCloseDecision(proceed)) return;
+      proceed();
     },
     requestCloseWith: ({ needsConfirm, message, confirmLabel, onConfirm }) => {
-      if (needsConfirm) {
-        openCloseConfirm({ message, confirmLabel, onConfirm });
-      } else {
-        onConfirm();
-      }
+      const proceed = () => {
+        if (needsConfirm) openCloseConfirm({ message, confirmLabel, onConfirm });
+        else onConfirm();
+      };
+      // The active card's guard runs first; a multi-tab pane still keeps
+      // its "Close N Tabs?" popover after the guard resolves `"close"`.
+      if (withCloseDecision(proceed)) return;
+      proceed();
     },
-  }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent]);
+  }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent, withCloseDecision]);
 
   const handleCollapsePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -1036,6 +1090,13 @@ export function TugPane({
     () => resolveCardResourcePath(activeCardId ?? null),
     [activeCardId],
   );
+
+  // Resolve the active card's close guard live at close time ([P06]); the
+  // ref keeps it correct even between renders as the active card changes.
+  const resolveCloseGuard = useCallback(() => {
+    const id = activeCardIdRef.current;
+    return id ? getCardCloseGuard(id) : null;
+  }, []);
 
   const baseTitle = cardTitle
     ? `${cardTitle} : ${effectiveMeta.title}`
@@ -1745,6 +1806,7 @@ export function TugPane({
             collapsed={collapsed}
             cardCount={cards?.length ?? 1}
             resolveResourcePath={resolveResourcePath}
+            resolveCloseGuard={resolveCloseGuard}
             confirmClose={paneConfirmClose}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}

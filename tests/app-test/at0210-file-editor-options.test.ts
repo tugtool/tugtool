@@ -83,6 +83,13 @@ async function waitForDisk(
 }
 
 async function seedFileCard(app: App, filePath: string): Promise<void> {
+  // Manual is the shipping default ([P01]); this test's clean-file "Saved"
+  // cell and the CRLF-autosave scenario are automatic-mode behaviors, so
+  // opt into automatic before the card mounts (populates the same client
+  // cache `readSaveMode` reads).
+  await app.evalJS<null>(
+    `(window.__tug.setTugbankValue("dev.tugtool.file-editor","save-mode",{kind:"string",value:"automatic"}), null)`,
+  );
   await app.seedDeckState({
     state: {
       cards: [{ id: "A", componentId: "file", title: "File", closable: true }],

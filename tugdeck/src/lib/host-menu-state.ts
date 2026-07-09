@@ -220,6 +220,54 @@ export interface MenuStateDevBlock {
   hasTurns: boolean;
 }
 
+/**
+ * File-card block, published by the File card's menu-state effect ([P07],
+ * Spec S02). Rides the payload only while its card is the focused pane's
+ * active card, exactly like the dev block. Gates the classic File menu
+ * items (Save / Save As… / Save a Copy… / Revert / Reload).
+ */
+export interface MenuStateFileBlock {
+  cardId: string;
+  /** Save contract — automatic Save is always live; manual gates on dirty. */
+  mode: "manual" | "automatic";
+  /** Unsaved changes (manual). Automatic mode is always `false`. */
+  dirty: boolean;
+  /** Untitled buffer (manual, `path === null`) — Save runs the panel. */
+  untitled: boolean;
+  readOnly: boolean;
+  /** A disk file is bound — gates Revert / Reload. */
+  hasPath: boolean;
+  /** An unresolved external-change conflict — Save disabled until resolved. */
+  conflict: boolean;
+}
+
+/** Per-item enablement for the File menu, derived from a block (Spec S02). */
+export interface FileMenuGates {
+  save: boolean;
+  saveAs: boolean;
+  saveACopy: boolean;
+  revert: boolean;
+  reload: boolean;
+}
+
+/**
+ * Compute the File menu enablement from a block (Spec S02). Pure; exported
+ * to unit-test the gate matrix the Swift `validateMenuItem` mirrors —
+ * notably that automatic-mode Save stays enabled (else its ⌘S would beep
+ * instead of flushing, [P07]) while a clean titled manual card disables it.
+ */
+export function computeFileMenuGates(block: MenuStateFileBlock): FileMenuGates {
+  const saveWritable = !block.readOnly && !block.conflict;
+  return {
+    save:
+      saveWritable && (block.mode === "automatic" || block.dirty || block.untitled),
+    saveAs: true,
+    saveACopy: true,
+    revert: block.dirty && block.hasPath,
+    reload: block.hasPath,
+  };
+}
+
 /** Deck-derived half of the payload (everything except the dev block). */
 export interface MenuStateDeckProjection {
   panes: MenuStatePaneEntry[];
@@ -247,6 +295,8 @@ export interface MenuStatePayload {
   selectionActive: boolean;
   /** Dev-card session block; null unless the active card is a dev card. */
   dev: MenuStateDevBlock | null;
+  /** File-card block; null unless the active card is a File card. */
+  file: MenuStateFileBlock | null;
   /** Edit-menu capabilities of the current first responder. */
   edit: MenuStateEditBlock;
 }
@@ -320,6 +370,12 @@ export class HostMenuStatePublisher {
    */
   private readonly devBlocks = new Map<string, MenuStateDevBlock>();
   /**
+   * Per-card File blocks, same rider discipline as {@link devBlocks}:
+   * every mounted File card publishes its own; the flush picks the one
+   * whose card is the focused pane's active card.
+   */
+  private readonly fileBlocks = new Map<string, MenuStateFileBlock>();
+  /**
    * Edit-menu capabilities of the current first responder. A single
    * publisher (the responder-chain provider) feeds this; defaults to
    * all-disabled until the first push.
@@ -347,6 +403,16 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
+  setFileBlock(cardId: string, block: MenuStateFileBlock): void {
+    this.fileBlocks.set(cardId, block);
+    this.scheduleFlush();
+  }
+
+  clearFileBlock(cardId: string): void {
+    if (!this.fileBlocks.delete(cardId)) return;
+    this.scheduleFlush();
+  }
+
   setEditCapabilities(caps: MenuStateEditBlock): void {
     this.editCapabilities = caps;
     this.scheduleFlush();
@@ -368,11 +434,16 @@ export class HostMenuStatePublisher {
       activeCard?.component === "dev" && focusedActiveCardId !== null
         ? (this.devBlocks.get(focusedActiveCardId) ?? null)
         : null;
+    const file =
+      activeCard?.component === "file" && focusedActiveCardId !== null
+        ? (this.fileBlocks.get(focusedActiveCardId) ?? null)
+        : null;
     const payload: MenuStatePayload = {
       panes,
       activeCard,
       selectionActive,
       dev,
+      file,
       edit: this.editCapabilities,
     };
     const serialized = JSON.stringify(payload);
@@ -436,6 +507,20 @@ export function publishDevMenuState(cardId: string, block: MenuStateDevBlock): v
 /** Drop a dev card's session block (card unmount / services teardown). */
 export function clearDevMenuState(cardId: string): void {
   activePublisher?.clearDevBlock(cardId);
+}
+
+/**
+ * Publish (or refresh) a File card's menu block ([P07]). Called by the
+ * File card's menu-state effect on every relevant snapshot change; a
+ * no-op before {@link initHostMenuState} runs.
+ */
+export function publishFileMenuState(cardId: string, block: MenuStateFileBlock): void {
+  activePublisher?.setFileBlock(cardId, block);
+}
+
+/** Drop a File card's menu block (card unmount). */
+export function clearFileMenuState(cardId: string): void {
+  activePublisher?.clearFileBlock(cardId);
 }
 
 /**

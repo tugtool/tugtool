@@ -903,3 +903,44 @@ describe("initActionDispatch: spawn_session_ok", () => {
     expect(cardSessionBindingStore.getBinding("card-ack-bad")).toBeUndefined();
   });
 });
+
+// ---- manual save verbs + new-text-file ----
+
+describe("initActionDispatch: manual save verbs", () => {
+  beforeEach(() => {
+    _resetForTest();
+  });
+
+  const verbs = [
+    TUG_ACTIONS.SAVE_AS,
+    TUG_ACTIONS.SAVE_A_COPY,
+    TUG_ACTIONS.REVERT_TO_SAVED,
+    TUG_ACTIONS.RELOAD_FROM_DISK,
+  ];
+
+  for (const action of verbs) {
+    it(`dispatches '${action}' to the first responder`, () => {
+      const conn = createMockConnection();
+      const deck = createMockDeckManager();
+      initActionDispatch(conn as any, deck as any);
+      const dispatched: ActionEvent[] = [];
+      registerResponderChainManager({
+        sendToFirstResponder: (e: ActionEvent) => {
+          dispatched.push(e);
+          return true;
+        },
+      } as any);
+
+      dispatchAction({ action });
+      expect(dispatched).toEqual([{ action, phase: "discrete" }]);
+    });
+  }
+
+  it("'new-text-file' adds a File card (untitled buffer)", () => {
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+    dispatchAction({ action: "new-text-file" });
+    expect(deck._addCardCalls).toContain("file");
+  });
+});

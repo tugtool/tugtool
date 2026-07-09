@@ -61,6 +61,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // File menu state
     private var closeMenuItem: NSMenuItem!
     private var closeAllCardTabsMenuItem: NSMenuItem!
+    /// Save As… — its ⇧⌘S key equivalent is toggled per frontmost card ([P07]).
+    private var fileSaveAsMenuItem: NSMenuItem!
 
     // View menu state
     private var viewMenu: NSMenu!
@@ -544,6 +546,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // BuildInfo.profile.
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
+        // New Text File (⌥⌘N): a new untitled manual buffer — no file
+        // exists until the first Save ([P02], [P10]).
+        fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextFile(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextFile"))
 
         // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
         // web layer reuses an existing File card bound to the chosen
@@ -584,6 +589,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // swallows ⌘S at the menubar, so the menu item must carry the
         // chord; the web keybinding-map entry covers browser-only dev.
         fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
+        // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
+        // updateMenuState only while a File card is frontmost ([P07]); a
+        // static ⇧⌘S would eat the Dev card's Shell-route chord.
+        fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
+        fileMenu.addItem(fileSaveAsMenuItem)
+        // Save a Copy… (⌥⇧⌘S) and the revert/reload verbs collide with
+        // nothing, so they stay statically bound.
+        fileMenu.addItem(NSMenuItem(title: "Save a Copy…", action: #selector(saveACopyActiveEditor(_:)), keyEquivalent: "s", modifierMask: [.command, .option, .shift]).identified("file.saveACopy"))
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(NSMenuItem(title: "Revert to Saved", action: #selector(revertActiveEditor(_:)), keyEquivalent: "").identified("file.revertToSaved"))
+        fileMenu.addItem(NSMenuItem(title: "Reload from Disk", action: #selector(reloadActiveEditor(_:)), keyEquivalent: "").identified("file.reloadFromDisk"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -973,6 +989,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("save")
     }
 
+    @objc private func saveAsActiveEditor(_ sender: Any) {
+        sendControl("save-as")
+    }
+
+    @objc private func saveACopyActiveEditor(_ sender: Any) {
+        sendControl("save-a-copy")
+    }
+
+    @objc private func revertActiveEditor(_ sender: Any) {
+        sendControl("revert-to-saved")
+    }
+
+    @objc private func reloadActiveEditor(_ sender: Any) {
+        sendControl("reload-from-disk")
+    }
+
+    @objc private func newTextFile(_ sender: Any) {
+        sendControl("new-text-file")
+    }
+
     @objc private func nextTheme(_ sender: Any) {
         sendControl("next-theme")
     }
@@ -1236,6 +1272,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuState.edit.nativeUndoToken != previousToken {
             window.editingUndoManager()?.removeAllActions()
         }
+
+        // Dynamic ⇧⌘S for Save As… ([P07]): assign the chord ONLY while a
+        // File card is frontmost; clear it otherwise so ⇧⌘S falls through
+        // to the web view's Shell-route chord. Set here — outside AppKit's
+        // key-equivalent scan — not in validateMenuItem.
+        if let saveAs = fileSaveAsMenuItem {
+            if menuState.file != nil {
+                saveAs.keyEquivalent = "s"
+                saveAs.keyEquivalentModifierMask = [.command, .shift]
+            } else {
+                saveAs.keyEquivalent = ""
+                saveAs.keyEquivalentModifierMask = []
+            }
+        }
     }
 
     /// Card count of the focused pane (0 when nothing is focused). Drives
@@ -1299,6 +1349,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         switch id {
+        // File-card save verbs (Spec S02). Gated on the File menu block,
+        // which rides the payload only while a File card is frontmost.
+        // Automatic-mode Save must stay enabled whenever writable so its
+        // ⌘S never validates disabled — a disabled matching chord beeps
+        // and never reaches the web view ([P07]).
+        case "file.save":
+            guard let file = menuState.file else { return false }
+            return !file.readOnly && !file.conflict
+                && (file.mode == "automatic" || file.dirty || file.untitled)
+        case "file.saveAs", "file.saveACopy":
+            return menuState.file != nil
+        case "file.revertToSaved":
+            guard let file = menuState.file else { return false }
+            return file.dirty && file.hasPath
+        case "file.reloadFromDisk":
+            guard let file = menuState.file else { return false }
+            return file.hasPath
         // Deck-state tier.
         case "file.closeCard":
             return focusedPaneActiveCardClosable
@@ -1445,6 +1512,12 @@ extension AppDelegate: BridgeDelegate {
                     panel.nameFieldStringValue = (resolved as NSString).lastPathComponent
                     panel.directoryURL = URL(fileURLWithPath: resolved).deletingLastPathComponent()
                 }
+            } else if let sourceTree = ProcessManager.readTugbank(
+                domain: TugConfig.domain, key: TugConfig.keySourceTreePath
+            ), !sourceTree.isEmpty {
+                // No hint (an untitled buffer): default to the project root,
+                // not the OS default (Desktop).
+                panel.directoryURL = URL(fileURLWithPath: sourceTree)
             }
             panel.beginSheetModal(for: window) { response in
                 guard response == .OK, let url = panel.url else {
@@ -1840,6 +1913,20 @@ struct MenuState {
         let hasTurns: Bool
     }
 
+    /// File-card state; nil unless the active card is a File card. Gates
+    /// the classic File menu (Save / Save As… / Save a Copy… / Revert /
+    /// Reload) and drives the dynamic ⇧⌘S assignment ([P07], Spec S02).
+    struct File {
+        let cardId: String
+        /// "manual" | "automatic" — automatic Save is always live.
+        let mode: String
+        let dirty: Bool
+        let untitled: Bool
+        let readOnly: Bool
+        let hasPath: Bool
+        let conflict: Bool
+    }
+
     /// Edit-menu capabilities of the current first responder, projected
     /// from the web responder chain's `validateAction` (the suite's
     /// single source of truth for whether the focused surface handles an
@@ -1888,6 +1975,7 @@ struct MenuState {
     var panes: [Pane] = []
     var activeCard: ActiveCard?
     var dev: Dev?
+    var file: File?
     var edit: Edit = .disabled
     /// Whether a card is selected. `false` when the deck is deselected (a
     /// click on the empty canvas cleared the active card) — the card / pane
@@ -1934,6 +2022,18 @@ struct MenuState {
                 permissionMode: rawDev["permissionMode"] as? String ?? "default",
                 hasAssistantMessage: rawDev["hasAssistantMessage"] as? Bool ?? false,
                 hasTurns: rawDev["hasTurns"] as? Bool ?? false
+            )
+        }
+        if let rawFile = payload["file"] as? [String: Any],
+           let cardId = rawFile["cardId"] as? String {
+            file = File(
+                cardId: cardId,
+                mode: rawFile["mode"] as? String ?? "automatic",
+                dirty: rawFile["dirty"] as? Bool ?? false,
+                untitled: rawFile["untitled"] as? Bool ?? false,
+                readOnly: rawFile["readOnly"] as? Bool ?? false,
+                hasPath: rawFile["hasPath"] as? Bool ?? false,
+                conflict: rawFile["conflict"] as? Bool ?? false
             )
         }
         if let rawEdit = payload["edit"] as? [String: Any] {

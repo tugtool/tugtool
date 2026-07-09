@@ -226,6 +226,15 @@ export interface TugFileEditorDelegate {
   /** Land DOM focus on the editing surface. */
   focus(): void;
   /**
+   * The editor's responder id. A caller that needs the editor to become
+   * the chain FIRST RESPONDER — not merely DOM-focused — uses this with
+   * `manager.focusResponder(id)`: a bare `focus()` is a no-op when the
+   * editor already holds DOM focus, so it can't repair a DOM-focus /
+   * first-responder divergence (e.g. after a title-bar drag promoted the
+   * pane). See responder-chain.md § "Bringing DOM focus in sync".
+   */
+  responderId(): string;
+  /**
    * Move the cursor to the start of `line` (1-based, clamped) and
    * center it in the scrollport. The transcript's open-at-line links
    * land here.
@@ -283,6 +292,15 @@ export interface TugFileEditorProps {
    */
   onFindRequested?: () => void;
   /**
+   * Route a save-verb chain action (⌘S and the File menu items) up to the
+   * card, which owns the save panels and confirm sheets. In manual mode
+   * `SAVE` routes here too (the card's `save()` + needs-path panel flow);
+   * in automatic mode `SAVE` stays the in-editor `saveNow()` flush.
+   */
+  onSaveCommand?: (
+    command: "save" | "save-as" | "save-a-copy" | "revert-to-saved" | "reload-from-disk",
+  ) => void;
+  /**
    * Publish live document/selection stats (caret line/col, line/word/
    * char counts) for the card's status bar. Fires once at mount, then
    * on every selection or document change.
@@ -305,6 +323,7 @@ export const TugFileEditor = React.forwardRef<
     languageExt,
     className,
     onFindRequested,
+    onSaveCommand,
     onStats,
   },
   ref,
@@ -322,7 +341,11 @@ export const TugFileEditor = React.forwardRef<
   const settingsRef = useRef(settings);
   const readOnlyRef = useRef(readOnly);
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
+  const onSaveCommandRef = useRef<TugFileEditorProps["onSaveCommand"]>(onSaveCommand);
   const onStatsRef = useRef<((stats: EditorStats) => void) | undefined>(onStats);
+  useLayoutEffect(() => {
+    onSaveCommandRef.current = onSaveCommand;
+  }, [onSaveCommand]);
   // Doc-derived counts, recomputed only on document change; caret is
   // recomputed on every selection change from the live state.
   const docStatsRef = useRef<DocStats>({ lines: 1, words: 0, chars: 0 });
@@ -657,6 +680,7 @@ export const TugFileEditor = React.forwardRef<
     (): TugFileEditorDelegate => ({
       view: () => viewRef.current,
       focus: () => viewRef.current?.focus(),
+      responderId: () => responderId,
       revealLine: revealLineFn,
       setSearchQuery: setSearchQueryFn,
       clearSearch: clearSearchFn,
@@ -670,7 +694,7 @@ export const TugFileEditor = React.forwardRef<
       },
       getMatchCount: getMatchCountFn,
     }),
-    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn],
+    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, responderId],
   );
 
   // ---- Context menu ----
@@ -843,12 +867,33 @@ export const TugFileEditor = React.forwardRef<
     [pasteWithTransform],
   );
 
-  // SAVE — flush pending edits now (⌘S still works on top of live
-  // autosave; it just forces the debounce to fire immediately).
+  // SAVE — automatic mode: flush pending edits now (⌘S forces the debounce
+  // to fire). Manual mode: route to the card's save() + needs-path panel
+  // flow, since ⌘S must write the REAL file, not the aside ([P12]).
+  //
+  // The work runs INLINE (not as a returned continuation): the `save`
+  // control action dispatches via `sendToFirstResponder`, which DISCARDS
+  // the continuation — a returned `() => …` would silently never run, so
+  // File ▸ Save would do nothing.
   const handleSave = useCallback((): ActionHandlerResult => {
-    return () => {
+    if (storeRef.current.getSnapshot().saveMode === "manual") {
+      onSaveCommandRef.current?.("save");
+    } else {
       void storeRef.current.saveNow();
-    };
+    }
+  }, []);
+
+  const handleSaveAs = useCallback((): ActionHandlerResult => {
+    onSaveCommandRef.current?.("save-as");
+  }, []);
+  const handleSaveACopy = useCallback((): ActionHandlerResult => {
+    onSaveCommandRef.current?.("save-a-copy");
+  }, []);
+  const handleRevertToSaved = useCallback((): ActionHandlerResult => {
+    onSaveCommandRef.current?.("revert-to-saved");
+  }, []);
+  const handleReloadFromDisk = useCallback((): ActionHandlerResult => {
+    onSaveCommandRef.current?.("reload-from-disk");
   }, []);
 
   const handleFind = useCallback((): ActionHandlerResult => {
@@ -875,6 +920,10 @@ export const TugFileEditor = React.forwardRef<
     [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
     [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
     [TUG_ACTIONS.SAVE]: handleSave,
+    [TUG_ACTIONS.SAVE_AS]: handleSaveAs,
+    [TUG_ACTIONS.SAVE_A_COPY]: handleSaveACopy,
+    [TUG_ACTIONS.REVERT_TO_SAVED]: handleRevertToSaved,
+    [TUG_ACTIONS.RELOAD_FROM_DISK]: handleReloadFromDisk,
     [TUG_ACTIONS.FIND]: handleFind,
     [TUG_ACTIONS.FIND_NEXT]: handleFindNext,
     [TUG_ACTIONS.FIND_PREVIOUS]: handleFindPrevious,

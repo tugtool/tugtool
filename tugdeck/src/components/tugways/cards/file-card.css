@@ -73,7 +73,10 @@
    * so the two match); the icon buttons (28px) set the natural height. */
   min-height: 2rem;
   box-sizing: border-box;
-  padding: 0 var(--tug-space-sm);
+  /* Match the pane title bar's horizontal padding so the action icons
+   * (Save, gear) line up directly under the title bar's collapse/close
+   * buttons. */
+  padding: 0 var(--tug-space-md);
   flex: 0 0 auto;
   /* A contrasting rule separating the chrome strip from the content —
    * the same divider the pane title bar uses. */
@@ -96,10 +99,23 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
+/* A bound file's path is clickable — hover underlines it; a click reveals
+ * the file in the Finder. */
+.file-card-top-bar-path[data-revealable] {
+  cursor: pointer;
+}
+
+.file-card-top-bar-path[data-revealable]:hover {
+  text-decoration: underline;
+}
+
 .file-card-top-bar-actions {
   display: flex;
   align-items: center;
-  gap: var(--tug-space-2xs);
+  /* No gap — the title bar's collapse/close controls sit adjacent (gap 0),
+   * so matching that (plus the shared --tug-space-md edge padding) lines
+   * the Save/gear icons up directly beneath them. */
+  gap: 0;
   flex: 0 0 auto;
 }
 
@@ -151,6 +167,9 @@
  * stays alone on the left. */
 .file-card-status-group--settable {
   margin-left: auto;
+  /* Breathing room between the popups and the divider, so the gap on the
+   * popups' side reads the same as the numeric group's inset. */
+  padding-right: var(--tug-space-md);
 }
 
 /* The number pair (caret + counts) is set off from the settable pair by

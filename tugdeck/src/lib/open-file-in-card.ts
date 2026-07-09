@@ -30,10 +30,13 @@ import { getTugbankClient } from "./tugbank-singleton";
 import {
   FILE_EDITOR_DEFAULTS_DOMAIN,
   FILE_EDITOR_DEFAULTS_KEY,
+  FILE_EDITOR_SAVE_MODE_KEY,
   DEFAULT_FILE_EDITOR_OPEN_TARGET,
   parseFileEditorDefaults,
+  parseSaveMode,
   type FileEditorOpenTarget,
 } from "./file-editor-settings";
+import type { SaveMode } from "./file-editor-store";
 import {
   findFileCardByPath,
   getOpenFileCard,
@@ -47,6 +50,18 @@ function readOpenTarget(): FileEditorOpenTarget {
     client.get(FILE_EDITOR_DEFAULTS_DOMAIN, FILE_EDITOR_DEFAULTS_KEY),
   );
   return defaults?.openTarget ?? DEFAULT_FILE_EDITOR_OPEN_TARGET;
+}
+
+/**
+ * Read the deck-wide save-mode default straight from the tugbank cache
+ * ([P01]) — the mode a newly mounted File card adopts. Missing → the
+ * shipping default ({@link parseSaveMode}). No settings UI exposes it.
+ */
+export function readSaveMode(): SaveMode {
+  const client = getTugbankClient();
+  return parseSaveMode(
+    client?.get(FILE_EDITOR_DEFAULTS_DOMAIN, FILE_EDITOR_SAVE_MODE_KEY),
+  );
 }
 
 /**
@@ -110,7 +125,9 @@ export function openFileInCard(
     if (frontmost !== null) {
       if (target === "reuse") {
         const entry = getOpenFileCard(frontmost.cardId);
-        if (entry !== null) {
+        // Never rebind a dirty card — rebinding tears down its buffer and
+        // prompting mid-open is hostile; fall through to a fresh card ([P11]).
+        if (entry !== null && !entry.isDirty()) {
           transferFocusForActivation({
             outgoingCardId: store.getFirstResponderCardId(),
             incomingCardId: frontmost.cardId,

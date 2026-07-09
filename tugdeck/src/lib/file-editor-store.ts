@@ -32,6 +32,21 @@ import { getConnection } from "./connection-singleton";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type { FileReadErrorKind, FileWriteOutcome } from "./file-io";
 import { readFileFromDisk, writeFileToDisk } from "./file-io";
+import {
+  AsideWriter,
+  asidePathFor,
+  asidePathForUntitled,
+  readAside,
+  type AsideRecord,
+} from "./file-aside";
+
+/**
+ * Which save contract this store enforces ([P01]). `automatic` is the
+ * saveless live-autosave model (every debounce writes the real file);
+ * `manual` is the classic document model — edits stay in the buffer and
+ * the debounce writes only a set-aside record, until an explicit save.
+ */
+export type SaveMode = "manual" | "automatic";
 
 /** Idle debounce between the last edit and the write-through. */
 export const AUTOSAVE_DEBOUNCE_MS = 1000;
@@ -70,6 +85,19 @@ export type FileEditorPhase = "empty" | "loading" | "ready" | "error";
 /** Autosave sub-state while `phase === "ready"`. */
 export type FileSaveState = "clean" | "editing" | "writing";
 
+/**
+ * Outcome of a manual-mode `save()`. `needs-path` means the buffer is
+ * untitled and the card must run the save panel then `saveAs`; the rest
+ * mirror the write outcomes the card surfaces as sheets.
+ */
+export type FileSaveResult =
+  | "ok"
+  | "needs-path"
+  | "conflict"
+  | "missing"
+  | "error"
+  | "noop";
+
 /** Unresolved divergence between the buffer and the disk. */
 export interface FileConflict {
   reason: "hash" | "missing";
@@ -85,11 +113,28 @@ export function draftPathFor(draftId: string): string {
   return `~/Library/Application Support/Tug/Drafts/draft-${draftId}.txt`;
 }
 
+/** An unsaved-aside restore that needs a user decision ([P10], Table T01). */
+export interface PendingAsideConflict {
+  /** Buffer text held in the aside from a prior session. */
+  asideContent: string;
+  /** The line ending that aside recorded. */
+  asideLineEnding: LineEnding;
+}
+
 /** Immutable snapshot rendered by the File card. */
 export interface FileEditorSnapshot {
   phase: FileEditorPhase;
+  /** Which save contract is in force ([P01]); fixed at construction. */
+  saveMode: SaveMode;
   /** Canonicalized absolute path, once bound. */
   path: string | null;
+  /** True while a manual buffer has no file identity yet ([P10]). */
+  untitled: boolean;
+  /**
+   * A prior-session aside whose baseline diverged from the current disk
+   * file — the card presents the open-conflict sheet (Spec S03 #6).
+   */
+  pendingAsideConflict: PendingAsideConflict | null;
   /** Non-null while the buffer is an untitled draft ([P10]). */
   draftId: string | null;
   /** Basename for the card title. */
@@ -132,14 +177,22 @@ function detectLineEnding(content: string): LineEnding {
  * style) actually persist to disk rather than being flattened to LF.
  */
 function serializeEol(text: string, ending: LineEnding): string {
-  const lf = text.replace(/\r\n?/g, "\n");
+  const lf = normalizeLf(text);
   if (ending === "LF") return lf;
   return lf.replace(/\n/g, ending === "CRLF" ? "\r\n" : "\r");
 }
 
+/** Normalize any newline style to `\n` (the aside's stored representation). */
+function normalizeLf(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
+}
+
 const EMPTY_SNAPSHOT: FileEditorSnapshot = {
   phase: "empty",
+  saveMode: "automatic",
   path: null,
+  untitled: false,
+  pendingAsideConflict: null,
   draftId: null,
   fileName: null,
   seedContent: null,
@@ -159,10 +212,22 @@ function baseName(path: string): string {
   return slash === -1 ? trimmed : trimmed.slice(slash + 1);
 }
 
+/**
+ * One FILESYSTEM event. `path` is present for Created / Modified /
+ * Removed; `from`/`to` for a `Renamed` event (the Linux/Windows path —
+ * macOS FSEvents delivers renames as Removed+Created pairs instead).
+ */
+interface FilesystemEvent {
+  kind: string;
+  path?: string;
+  from?: string;
+  to?: string;
+}
+
 /** Shape of one FILESYSTEM frame after the workspace_key splice. */
 interface FilesystemFrame {
   workspace_key: string;
-  events: Array<{ kind: string; path: string }>;
+  events: FilesystemEvent[];
 }
 
 /** Parse a FILESYSTEM frame payload; null when malformed. */
@@ -173,16 +238,26 @@ function parseFilesystemFrame(payload: Uint8Array): FilesystemFrame | null {
     const obj = parsed as Record<string, unknown>;
     if (typeof obj.workspace_key !== "string") return null;
     if (!Array.isArray(obj.events)) return null;
-    return {
-      workspace_key: obj.workspace_key,
-      events: obj.events.filter(
-        (e): e is { kind: string; path: string } =>
-          e !== null &&
-          typeof e === "object" &&
-          typeof (e as Record<string, unknown>).kind === "string" &&
-          typeof (e as Record<string, unknown>).path === "string",
-      ),
-    };
+    const events: FilesystemEvent[] = [];
+    for (const raw of obj.events) {
+      if (raw === null || typeof raw !== "object") continue;
+      const e = raw as Record<string, unknown>;
+      if (typeof e.kind !== "string") continue;
+      if (
+        typeof e.path !== "string" &&
+        typeof e.from !== "string" &&
+        typeof e.to !== "string"
+      ) {
+        continue;
+      }
+      events.push({
+        kind: e.kind,
+        path: typeof e.path === "string" ? e.path : undefined,
+        from: typeof e.from === "string" ? e.from : undefined,
+        to: typeof e.to === "string" ? e.to : undefined,
+      });
+    }
+    return { workspace_key: obj.workspace_key, events };
   } catch {
     return null;
   }
@@ -196,6 +271,18 @@ export class FileEditorStore {
   private _snapshot: FileEditorSnapshot = EMPTY_SNAPSHOT;
   private _listeners = new Set<() => void>();
   private _bridge: FileEditorBridge | null = null;
+  /**
+   * The save contract, fixed at construction. Held off the snapshot so a
+   * state-resetting `_update({ ...EMPTY_SNAPSHOT })` (open, rebind) can
+   * re-apply it — a rebind must never silently revert a manual card to
+   * automatic ([P01]).
+   */
+  private readonly _saveMode: SaveMode;
+  /** Writer for the current document's set-aside record (manual mode). */
+  private _asideWriter: AsideWriter | null = null;
+  /** An aside flush in flight; a mid-flight edit re-flushes on settle. */
+  private _asideFlushInFlight: Promise<void> | null = null;
+  private _asideEditedDuringWrite = false;
   /** sha256 the next write is conditioned on. */
   private _baselineSha256: string | null = null;
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -220,7 +307,9 @@ export class FileEditorStore {
   /** Unregisters the FILESYSTEM feed callback; called by `dispose()`. */
   private _unsubscribeFilesystem: (() => void) | null = null;
 
-  constructor() {
+  constructor(opts?: { saveMode?: SaveMode }) {
+    this._saveMode = opts?.saveMode ?? "automatic";
+    this._snapshot = { ...EMPTY_SNAPSHOT, saveMode: this._saveMode };
     const conn = getConnection();
     if (conn) {
       this._unsubscribeFilesystem = conn.onFrame(
@@ -273,8 +362,10 @@ export class FileEditorStore {
   /** Bind the card to `path`: read it and enter `ready` (or `error`). */
   async openPath(path: string): Promise<void> {
     this._clearDebounce();
+    this._resetAsideState();
     this._update({
       ...EMPTY_SNAPSHOT,
+      saveMode: this._saveMode,
       phase: "loading",
       path,
       fileName: baseName(path),
@@ -302,6 +393,50 @@ export class FileEditorStore {
       writeFailures: 0,
       lineEnding: detectLineEnding(outcome.file.content),
       lastSavedAt: null,
+    });
+    if (this._saveMode === "manual") {
+      await this._restoreAsideForPath(outcome.file.path, outcome.file.sha256);
+    }
+  }
+
+  /**
+   * Bind the card to a NEW untitled manual buffer ([P10]): no file exists
+   * anywhere until the first Save; crash-safety rides an aside keyed by
+   * the draft id. An existing aside for this draft restores it dirty.
+   */
+  async openUntitled(draftId: string): Promise<void> {
+    this._clearDebounce();
+    this._resetAsideState();
+    this._baselineSha256 = null;
+    this._lastKnownEmpty = true;
+    const asidePath = asidePathForUntitled(draftId);
+    const writer = new AsideWriter(asidePath);
+    this._asideWriter = writer;
+    this._update({
+      ...EMPTY_SNAPSHOT,
+      saveMode: this._saveMode,
+      phase: "ready",
+      path: null,
+      draftId,
+      untitled: true,
+      fileName: "Untitled",
+      seedContent: "",
+      saveState: "clean",
+    });
+    const result = await readAside(asidePath, { draftId });
+    if (this._disposed || this._snapshot.draftId !== draftId) return;
+    if (result.kind === "unreadable") return;
+    if (result.kind === "invalid") {
+      void writer.delete();
+      return;
+    }
+    writer.seed(result.sha256);
+    const record = result.record;
+    this._bridge?.replaceText(record.content);
+    this._update({
+      seedContent: record.content,
+      lineEnding: record.lineEnding,
+      saveState: "editing",
     });
   }
 
@@ -368,7 +503,12 @@ export class FileEditorStore {
       });
       return;
     }
-    if (wasDraft && oldPath !== null) {
+    if (this._saveMode === "manual") {
+      // The old document's set-aside record is superseded by the real
+      // file we just wrote — discard it. `openPath(newPath)` re-keys the
+      // writer and reseeds the sha chain for the new identity.
+      await this._asideWriter?.delete();
+    } else if (wasDraft && oldPath !== null) {
       // Draft GC — hash-conditional removal of the old draft file.
       void writeFileToDisk({
         path: oldPath,
@@ -383,6 +523,139 @@ export class FileEditorStore {
   /** Explicit save (⌘S / File ▸ Save): flush pending edits now. */
   async saveNow(): Promise<void> {
     await this.flush();
+  }
+
+  /**
+   * Manual-mode explicit save ([P12]): write the current buffer to the
+   * REAL file (conditional on the last-known disk hash), and on success
+   * discard the aside and go clean. An untitled buffer has no path yet —
+   * `"needs-path"` tells the card to run the save panel then `saveAs`.
+   * A `conflict`/`missing` outcome sets the snapshot conflict the card
+   * renders as the conflict/missing sheet.
+   */
+  async save(): Promise<FileSaveResult> {
+    const snap = this._snapshot;
+    if (snap.phase !== "ready" || snap.readOnly || this._bridge === null) {
+      return "noop";
+    }
+    if (snap.path === null) return "needs-path";
+    if (snap.saveState === "clean" && snap.conflict === null) return "ok";
+    const path = snap.path;
+    this._clearDebounce();
+    const content = serializeEol(this._bridge.getText(), snap.lineEnding);
+    this._lastKnownEmpty = content === "";
+    this._update({ saveState: "writing" });
+    const outcome = await writeFileToDisk({
+      path,
+      content,
+      baselineSha256: this._baselineSha256,
+    });
+    if (this._disposed) return "noop";
+    if (outcome.ok) {
+      this._baselineSha256 = outcome.sha256;
+      const editedDuringWrite = this._editedDuringWrite;
+      this._editedDuringWrite = false;
+      if (editedDuringWrite) {
+        // The buffer changed mid-save, so the real file holds stale bytes.
+        // Stay dirty and re-capture the aside; the user's next save writes
+        // the current buffer — never report clean over an unsaved edit.
+        this._update({
+          saveState: "editing",
+          conflict: null,
+          writeFailures: 0,
+          lastSavedAt: Date.now(),
+        });
+        void this._flushAside();
+        return "ok";
+      }
+      await this._asideWriter?.delete();
+      this._update({
+        saveState: "clean",
+        conflict: null,
+        writeFailures: 0,
+        lastSavedAt: Date.now(),
+      });
+      return "ok";
+    }
+    if (outcome.error === "conflict") {
+      this._update({
+        saveState: "editing",
+        conflict: { reason: "hash", diskSha256: outcome.diskSha256 },
+      });
+      return "conflict";
+    }
+    if (outcome.error === "missing") {
+      this._update({ saveState: "editing", conflict: { reason: "missing" } });
+      return "missing";
+    }
+    this._update({
+      saveState: "editing",
+      writeFailures: this._snapshot.writeFailures + 1,
+    });
+    tugDevLogStore.warn("file-editor-store", "manual save failed", {
+      error: outcome.error,
+    });
+    return "error";
+  }
+
+  /**
+   * Write a copy of the current buffer to `targetPath` without rebinding
+   * or changing dirty state (Save a Copy…). Create-new, with the same
+   * NSSavePanel-confirmed overwrite retry as `saveAs`.
+   */
+  async saveACopy(targetPath: string): Promise<"ok" | "error" | "noop"> {
+    const snap = this._snapshot;
+    if (snap.phase !== "ready" || this._bridge === null) return "noop";
+    const content = serializeEol(this._bridge.getText(), snap.lineEnding);
+    let outcome = await writeFileToDisk({
+      path: targetPath,
+      content,
+      baselineSha256: null,
+    });
+    if (!outcome.ok && outcome.error === "conflict") {
+      outcome = await writeFileToDisk({
+        path: targetPath,
+        content,
+        baselineSha256: outcome.diskSha256,
+      });
+    }
+    if (this._disposed) return "noop";
+    if (!outcome.ok) {
+      tugDevLogStore.warn("file-editor-store", "saveACopy failed", {
+        error: outcome.error,
+        targetPath,
+      });
+      return "error";
+    }
+    return "ok";
+  }
+
+  /**
+   * Discard buffer edits and reload the on-disk version (Revert to Saved /
+   * Reload from Disk — the card owns the confirm sheet; the store method
+   * is unconditional). Deletes the aside and goes clean.
+   */
+  async revertToSaved(): Promise<void> {
+    this._clearDebounce();
+    await this._asideWriter?.delete();
+    await this._recheckDisk({ force: true });
+  }
+
+  /** Alias of {@link revertToSaved}: reload the disk version, discarding edits. */
+  reloadFromDisk(): Promise<void> {
+    return this.revertToSaved();
+  }
+
+  /**
+   * Discard the set-aside record WITHOUT reloading the buffer — the
+   * close-sheet "Don't Save": the card is about to be destroyed, so the
+   * aside must not survive to restore the abandoned edits. Marking clean
+   * stops the unmount keepalive flush from re-creating it.
+   */
+  async discardAside(): Promise<void> {
+    this._clearDebounce();
+    await this._asideWriter?.delete();
+    if (!this._disposed) this._update({ saveState: "clean" });
   }
 
   // ── Autosave ─────────────────────────────────────────────────────────────
@@ -412,6 +685,13 @@ export class FileEditorStore {
    */
   flush(opts?: { keepalive?: boolean }): Promise<void> {
     this._clearDebounce();
+    // In manual mode `flush()` is the ASIDE path, never the real file
+    // ([P12]): lifecycle callers (pagehide, unmount, close-handoff) must
+    // persist the crash-recovery record without an unrequested real-file
+    // write. The real file is only written by the explicit save verbs.
+    if (this._saveMode === "manual") {
+      return this._flushAside(opts);
+    }
     const snap = this._snapshot;
     if (
       snap.phase !== "ready" ||
@@ -512,6 +792,132 @@ export class FileEditorStore {
     }
   }
 
+  // ── Set-aside autosave (manual mode) ─────────────────────────────────────
+
+  /** Drop the current document's aside writer and in-flight bookkeeping. */
+  private _resetAsideState(): void {
+    this._asideWriter = null;
+    this._asideFlushInFlight = null;
+    this._asideEditedDuringWrite = false;
+  }
+
+  /**
+   * Write the unsaved buffer to the set-aside record (never the real
+   * file). Only fires while the buffer is dirty; a mid-flight edit marks
+   * the aside for a re-flush on settle so the record never lags behind
+   * the buffer — the writer's own sha chain absorbs write races ([P08]).
+   */
+  private _flushAside(opts?: { keepalive?: boolean }): Promise<void> {
+    const snap = this._snapshot;
+    const writer = this._asideWriter;
+    if (
+      snap.phase !== "ready" ||
+      snap.readOnly ||
+      snap.saveState !== "editing" ||
+      this._bridge === null ||
+      writer === null
+    ) {
+      return this._asideFlushInFlight ?? Promise.resolve();
+    }
+    if (this._asideFlushInFlight !== null) {
+      this._asideEditedDuringWrite = true;
+      return this._asideFlushInFlight;
+    }
+    const rawText = this._bridge.getText();
+    this._lastKnownEmpty = rawText === "";
+    const record: AsideRecord = {
+      version: 1,
+      path: snap.path,
+      draftId: snap.draftId,
+      // The aside stores `\n`-normalized text; the line ending is a
+      // separate field applied at real-save time (`serializeEol`).
+      content: normalizeLf(rawText),
+      lineEnding: snap.lineEnding,
+      baselineSha256: this._baselineSha256,
+      editedAt: Date.now(),
+    };
+    const flight = writer.write(record, opts).then((outcome) => {
+      this._asideFlushInFlight = null;
+      if (this._disposed) return;
+      const edited = this._asideEditedDuringWrite;
+      this._asideEditedDuringWrite = false;
+      if (!outcome.ok) {
+        tugDevLogStore.warn("file-editor-store", "aside flush failed", {
+          error: outcome.error,
+        });
+        return;
+      }
+      if (edited) void this._flushAside();
+    });
+    this._asideFlushInFlight = flight;
+    return flight;
+  }
+
+  /**
+   * After a manual open, consult the document's aside ([#aside-lifecycle]):
+   * a matching baseline restores the edits silently (dirty); a diverged
+   * baseline surfaces `pendingAsideConflict` for the open-conflict sheet;
+   * an invalid aside is deleted; an unread aside is left untouched.
+   */
+  private async _restoreAsideForPath(
+    path: string,
+    diskSha256: string,
+  ): Promise<void> {
+    const asidePath = asidePathFor(path);
+    const writer = new AsideWriter(asidePath);
+    this._asideWriter = writer;
+    const result = await readAside(asidePath, { path });
+    if (this._disposed || this._snapshot.path !== path) return;
+    if (result.kind === "unreadable") return;
+    if (result.kind === "invalid") {
+      void writer.delete();
+      return;
+    }
+    writer.seed(result.sha256);
+    const record = result.record;
+    if (record.baselineSha256 === diskSha256) {
+      // Same base bytes → the aside is a clean superset of what's on disk;
+      // restore it dirty, NSDocument-style, with no prompt.
+      this._bridge?.replaceText(record.content);
+      this._update({
+        seedContent: record.content,
+        lineEnding: record.lineEnding,
+        saveState: "editing",
+      });
+      return;
+    }
+    // Diverged base → the disk file moved on since these edits were set
+    // aside; the user decides (Table T01 last row). Buffer shows disk.
+    this._update({
+      pendingAsideConflict: {
+        asideContent: record.content,
+        asideLineEnding: record.lineEnding,
+      },
+    });
+  }
+
+  /**
+   * Resolve the open-conflict sheet ([#aside-lifecycle]). `keep` seeds the
+   * buffer from the aside (dirty), conditioning the next save on the
+   * current disk bytes; `disk` discards the aside and keeps disk content.
+   */
+  resolveAsideConflict(choice: "keep" | "disk"): void {
+    const pending = this._snapshot.pendingAsideConflict;
+    if (pending === null) return;
+    if (choice === "disk") {
+      void this._asideWriter?.delete();
+      this._update({ pendingAsideConflict: null });
+      return;
+    }
+    this._bridge?.replaceText(pending.asideContent);
+    this._update({
+      seedContent: pending.asideContent,
+      lineEnding: pending.asideLineEnding,
+      saveState: "editing",
+      pendingAsideConflict: null,
+    });
+  }
+
   // ── Conflict resolution ──────────────────────────────────────────────────
 
   /**
@@ -523,6 +929,9 @@ export class FileEditorStore {
     const conflict = this._snapshot.conflict;
     if (conflict === null) return;
     if (choice === "reload") {
+      // Discard buffer edits for the disk version (both modes); in manual
+      // mode the aside is superseded and deleted.
+      if (this._saveMode === "manual") await this._asideWriter?.delete();
       this._update({ conflict: null });
       await this._recheckDisk({ force: true });
       return;
@@ -531,6 +940,14 @@ export class FileEditorStore {
       return;
     }
     this._baselineSha256 = conflict.diskSha256;
+    if (this._saveMode === "manual") {
+      // Save Anyway ([P12]): route to the REAL-file save path, NOT
+      // `flush()` — which now writes the aside and would silently drop the
+      // user's decision. `save()` deletes the aside on the ok settle.
+      this._update({ conflict: null });
+      await this.save();
+      return;
+    }
     this._update({ conflict: null, saveState: "editing" });
     await this.flush();
   }
@@ -579,8 +996,27 @@ export class FileEditorStore {
     const frame = parseFilesystemFrame(payload);
     if (frame === null) return;
     const root = frame.workspace_key.replace(/\/+$/, "");
+    const full = (p: string): string => `${root}/${p}`;
+
+    // Rename-follow ([P05]). (a) An explicit `Renamed { from, to }` whose
+    // `from` is our path (the Linux/Windows path) → adopt `to` directly.
+    const renamed = frame.events.find(
+      (e) => e.kind === "Renamed" && e.from !== undefined && full(e.from) === snap.path,
+    );
+    if (renamed?.to !== undefined) {
+      void this._adoptRename(full(renamed.to));
+      return;
+    }
+    // (b) macOS delivers renames as Removed{ours} + Created{new} in one
+    // batch. When our file was removed, try to adopt a hash-matching
+    // creation before falling back to the missing-file flow.
+    if (frame.events.some((e) => e.kind === "Removed" && e.path !== undefined && full(e.path) === snap.path)) {
+      void this._tryAdoptRemovedRename(frame, root);
+      return;
+    }
+
     const hit = frame.events.some(
-      (event) => `${root}/${event.path}` === snap.path,
+      (event) => event.path !== undefined && full(event.path) === snap.path,
     );
     if (!hit) return;
     if (snap.saveState === "writing") {
@@ -589,12 +1025,130 @@ export class FileEditorStore {
       this._recheckQueued = true;
       return;
     }
-    if (snap.saveState === "editing" || snap.conflict !== null) {
-      // Unflushed edits: the conditional write adjudicates; never revert
-      // out from under the user.
+    if (snap.conflict !== null) return;
+    if (snap.saveState === "editing") {
+      if (this._saveMode === "manual") {
+        // Dirty manual buffer: the unsaved edits live only in the buffer,
+        // so a disk change is a genuine external divergence. Read disk and
+        // raise the conflict immediately ([P04]) — never merge, never
+        // silently revert.
+        void this._raiseConflictIfDiverged();
+        return;
+      }
+      // Automatic: unflushed edits; the conditional write adjudicates —
+      // never revert out from under the user.
       return;
     }
     void this._recheckDisk();
+  }
+
+  /**
+   * Manual-mode watcher/focus path: re-read disk and, if it diverged from
+   * the baseline the dirty buffer is based on, raise the hash conflict the
+   * card renders as the modal conflict sheet (Table T01).
+   */
+  private async _raiseConflictIfDiverged(): Promise<void> {
+    const path = this._snapshot.path;
+    if (path === null) return;
+    const outcome = await readFileFromDisk(path);
+    if (this._disposed || this._snapshot.path !== path) return;
+    if (this._snapshot.saveState !== "editing" || this._snapshot.conflict !== null) {
+      return;
+    }
+    if (!outcome.ok) {
+      if (outcome.error === "not_found") {
+        this._update({ conflict: { reason: "missing" } });
+      }
+      return;
+    }
+    if (outcome.file.sha256 !== this._baselineSha256) {
+      this._update({
+        conflict: { reason: "hash", diskSha256: outcome.file.sha256 },
+      });
+    }
+  }
+
+  /**
+   * Try to adopt a rename from a macOS Removed+Created batch ([P05]):
+   * read each `Created` candidate (same-basename first, else the sole
+   * creation) and adopt the first whose disk sha equals our baseline —
+   * unsaved edits never touch disk, so a moved file still hashes to the
+   * last-saved baseline. Zero or ambiguous matches → the missing-file
+   * flow (a prompt, never a wrong rebind).
+   */
+  private async _tryAdoptRemovedRename(
+    frame: FilesystemFrame,
+    root: string,
+  ): Promise<void> {
+    const path = this._snapshot.path;
+    if (path === null) return;
+    const created = frame.events
+      .filter((e) => e.kind === "Created" && e.path !== undefined)
+      .map((e) => `${root}/${e.path}`);
+    const ourBase = baseName(path);
+    let candidates = created.filter((c) => baseName(c) === ourBase);
+    if (candidates.length === 0 && created.length === 1) candidates = created;
+    for (const candidate of candidates) {
+      const outcome = await readFileFromDisk(candidate);
+      if (this._disposed || this._snapshot.path !== path) return;
+      if (outcome.ok && outcome.file.sha256 === this._baselineSha256) {
+        await this._adoptRename(outcome.file.path);
+        return;
+      }
+    }
+    // No hash-matching candidate in this batch — the file is gone (a
+    // rename the watcher couldn't pair, or a real delete). We follow moves
+    // only for in-workspace files, via the watcher's paired events above;
+    // out-of-workspace moves fall here, and the missing sheet's Don't Save
+    // lets the user close without a jail.
+    if (this._snapshot.conflict === null) {
+      this._update({ conflict: { reason: "missing" } });
+    }
+  }
+
+  /**
+   * Follow a rename to `newPath` (both modes): rebind path / fileName and
+   * re-key the aside (write the current buffer to the new key, delete the
+   * old), leaving dirty state and baseline untouched — this is
+   * `presentedItemDidMove(to:)` behavior, no prompt.
+   */
+  private async _adoptRename(newPath: string): Promise<void> {
+    const oldPath = this._snapshot.path;
+    if (oldPath === null || newPath === oldPath) return;
+    const wasDirty = this._snapshot.saveState === "editing";
+    const oldWriter = this._asideWriter;
+    if (this._saveMode === "manual") {
+      this._asideWriter = new AsideWriter(asidePathFor(newPath));
+    }
+    this._update({ path: newPath, fileName: baseName(newPath) });
+    if (this._saveMode === "manual") {
+      void oldWriter?.delete();
+      if (wasDirty) void this._flushAside();
+    }
+  }
+
+  /**
+   * Focus-time backstop for files outside the watcher's workspace roots
+   * ([P09]). Clean → silent reload; manual + dirty → raise the conflict on
+   * divergence. A no-op while a write is in flight or a sheet is pending.
+   */
+  async recheckOnActivation(): Promise<void> {
+    const snap = this._snapshot;
+    if (snap.phase !== "ready" || snap.path === null) return;
+    if (
+      snap.saveState === "writing" ||
+      snap.conflict !== null ||
+      snap.pendingAsideConflict !== null ||
+      this._flushInFlight !== null ||
+      this._asideFlushInFlight !== null
+    ) {
+      return;
+    }
+    if (snap.saveState === "editing") {
+      if (this._saveMode === "manual") await this._raiseConflictIfDiverged();
+      return;
+    }
+    await this._recheckDisk();
   }
 
   /**

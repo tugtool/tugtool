@@ -457,6 +457,19 @@ export const TUG_ACTIONS = {
   //                         not "persist or lose". Dispatched by ⌘S and
   //                         File ▸ Save; handled by editing surfaces
   //                         that own a disk binding (`TugFileEditor`).
+  // SAVE_AS:                payload — none. Manual-mode "Save As…": run the
+  //                         save panel and re-anchor the buffer to the
+  //                         chosen path (the classic ⇧⌘S). Dispatched by
+  //                         File ▸ Save As…; handled at the File card scope.
+  // SAVE_A_COPY:            payload — none. Write a copy of the buffer to a
+  //                         chosen path without rebinding or clearing the
+  //                         dirty bit (⌥⇧⌘S). File ▸ Save a Copy….
+  // REVERT_TO_SAVED:        payload — none. Discard buffer edits back to the
+  //                         last saved version (after a confirm sheet).
+  //                         File ▸ Revert to Saved.
+  // RELOAD_FROM_DISK:       payload — none. Reload the on-disk version,
+  //                         discarding edits (confirm sheet only while
+  //                         dirty). File ▸ Reload from Disk.
   // OPEN_FILE:              payload — `{ path: string, line?: number }`
   //                         via `dispatchAction` / Control frames, or a
   //                         chain dispatch whose `value` is the path
@@ -484,6 +497,10 @@ export const TUG_ACTIONS = {
   FIND_NEXT:              "find-next",
   FIND_PREVIOUS:          "find-previous",
   SAVE:                   "save",
+  SAVE_AS:                "save-as",
+  SAVE_A_COPY:            "save-a-copy",
+  REVERT_TO_SAVED:        "revert-to-saved",
+  RELOAD_FROM_DISK:       "reload-from-disk",
   OPEN_FILE:              "open-file",
   REVEAL_IN_FINDER:       "reveal-in-finder",
 
