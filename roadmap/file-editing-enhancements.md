@@ -40,7 +40,7 @@ The design keeps the one genuinely good piece of modern NSDocument machinery: **
 - Closing a dirty card presents Don't Save / Cancel / Save; each button does what it says (app-test).
 - Editing the file on disk while a manual card is dirty presents the conflict sheet within the watcher debounce window; all four resolutions behave per **Table T01** (app-test for the Save Anyway and Reload paths).
 - Renaming the open file on disk (within the session workspace) rebinds the card — path, title, tab — without a prompt (app-test or unit test at the store layer with synthetic frames).
-- File menu items enable/disable per **Spec S02** gates (manual verification + `menu-state` unit tests).
+- File menu items enable/disable per **Spec S02** gates and Save As… carries ⇧⌘S only while a file card is frontmost (machine-asserted in at0211 via `app.menuItemState`/`app.menuSnapshot`; TS gate predicate also unit-tested).
 - Automatic mode still passes its existing coverage (at0209 seeded to automatic; `bun test src` store tests green).
 - Full verification green: `bunx tsc --noEmit`, `bun test src`, `bunx vite build`, `cd tugrust && cargo nextest run`, `just app-test at0209 at0210 at0211`.
 
@@ -68,6 +68,7 @@ The design keeps the one genuinely good piece of modern NSDocument machinery: **
 - tugcast fs endpoints `/api/fs/read`, `/api/fs/write` (`tugrust/crates/tugcast/src/fs_read.rs`, `fs_write.rs`).
 - `menuState` WKScriptMessage pipeline (`tugdeck/src/lib/host-menu-state.ts` ↔ `tugapp/Sources/AppDelegate.swift`).
 - `choosePath(kind: "save")` NSSavePanel bridge (`tugdeck/src/lib/native-path-picker.ts` ↔ `AppDelegate.bridgeChoosePath`).
+- App-test harness native-menu introspection (`app.menuSnapshot()` / `app.menuItemState(id)`, harness v1.6.0 — already in `tests/app-test/_harness/`): returns each item's live-validated `enabled` + `keyEquivalent`/`modifierMask`. Used by at0211 to machine-verify Spec S02 gates and the [P07] dynamic ⇧⌘S.
 
 #### Constraints {#constraints}
 
@@ -446,7 +447,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 - jsdom/fake-DOM render tests of sheets or menu items — banned pattern; sheets are exercised through the real app in at0211.
 - Mock-store assertion tests of React wiring — banned; `useSyncExternalStore` wiring is covered by the app-tests.
-- Swift `validateMenuItem` unit tests — no Swift test harness in-repo; gates are verified via the app-test driving `dispatchControlAction` plus manual menu inspection, and the TS gate predicates (which mirror them) are unit-tested.
+- Swift `validateMenuItem` unit tests — no Swift test harness in-repo; the *outcome* of `validateMenuItem` is instead asserted end-to-end in at0211 via the harness's native-menu introspection (`app.menuItemState`/`app.menuSnapshot` return the live-validated `enabled` and current `keyEquivalent`), and the TS gate predicates (which mirror the Swift gates) are unit-tested.
 - Crash-recovery of the keepalive fetch itself — covered by the browser contract; the restore path is tested by writing an aside and reopening.
 
 ---
@@ -659,7 +660,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Tests:**
 - [ ] Build: `xcodebuild`/`just` app build path used by `just app-test-build` compiles warning-free.
-- [ ] Behavioral verification lands in #step-10's app-test (menu commands via `dispatchControlAction` equivalents) plus manual menu inspection: with a dev card frontmost, ⇧⌘S still switches the prompt route (no beep); with a dirty file card frontmost, Save/Save As enable; with an **automatic** file card frontmost (seeded), ⌘S still flushes (no beep).
+- [ ] Behavioral verification lands in #step-10's at0211 via the harness's native-menu introspection (`app.menuItemState(id)` / `app.menuSnapshot()`, harness v1.6.0) — NOT by-hand inspection. Those verbs return each item's **live-validated** `enabled` (run through the same `validateMenuItem` sweep AppKit runs) plus `keyEquivalent`/`modifierMask`, so the Spec S02 gate matrix and the [P07] dynamic ⇧⌘S are machine-assertable. See #step-10's menu-gate scenario.
 
 **Checkpoint:**
 - [ ] Full app build succeeds (`just app-test-build` build phase or the project's standard build recipe).
@@ -692,7 +693,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 
 **Commit:** `File editor: manual save is the default; app-test coverage`
 
-**References:** [P01], [P06], [P10], [P12] Write targets, Table T01, Spec S03, (#success-criteria)
+**References:** [P01], [P06], [P07] Menu enablement, [P10], [P12] Write targets, Table T01, Spec S02, Spec S03, (#success-criteria, #s02-menu-file-block)
 
 **Artifacts:** `readSaveMode()` default `"manual"` wired in `file-card.tsx`; at0209/at0210 updates; `tests/app-test/at0211-file-editor-manual-save.test.ts`.
 
@@ -702,6 +703,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 - [ ] at0210: adjust save-cell copy expectations if touched ("Saved" ↔ "Edited" wording per mode); seed automatic where the old expectations are load-bearing, or update to manual expectations — prefer updating to manual since that's the shipping default.
 - [ ] at0211 (new) — **every scenario opens a real file with a real disk path so no path lands in an NSSavePanel** (a native modal panel would block the harness until timeout; nothing in `tests/app-test/_harness/` can drive or cancel a native panel). Scenarios: (1) open file → type → status "Edited", disk unchanged (read file via harness) → `dispatchControlAction("save")` → "Saved", disk updated; (2) modify the file externally while dirty → conflict sheet appears → "Save Anyway" writes the buffer to disk (verify real file content changed — the [P12] guard); reset and repeat → "Reload from Disk" reverts buffer; (3) dirty close via **a plain X-click** (`nativeClickAtElement` on the close button — exercises the `!confirmClose` short-circuit, Risk R02) AND via `dispatchControlAction("close")` → sheet → Don't Save closes without writing; (4) aside restore: type into a titled file, close via Option-bypass (or harness reload), reopen same file → content restored dirty, status "Edited". Respect the harness realities: `SHOULD_RUN` gate, generous `waitForCondition` timeouts (the cold-start popover flake precedent from at0210 — use ≥15000 ms), reveal-scroll clears the sticky header.
 - [ ] Untitled/needs-path Save and Save As… panel routing are covered at the **unit level** (`file-editor-store.manual.test.ts`: `save()` on `path === null` returns `"needs-path"`; `saveAs`/`saveACopy` given a path write and rebind) — NOT in at0211, to keep every app-test path panel-free. New Text File is still smoke-tested in at0211 (`dispatchControlAction("new-text-file")` → an Untitled card appears and accepts typing), stopping short of the Save that would open the panel.
+- [ ] at0211 (new) — **menu-gate + key-equivalent assertions via `app.menuItemState(id)` / `app.menuSnapshot()`** (harness v1.6.0 native-menu introspection; the returned `enabled` is the live `validateMenuItem` result, `keyEquivalent`/`modifierMask` are current). Assert the Spec S02 gate matrix against real frontmost state — (a) clean titled manual file card frontmost → `file.save` disabled, `file.revertToSaved` disabled, `file.reloadFromDisk` enabled; (b) after typing (dirty) → `file.save` and `file.revertToSaved` enabled; (c) seeded **automatic** file card frontmost (clean) → `file.save` **enabled** (the [P07]/Spec S02 no-beep guard); (d) dev card frontmost → `file.saveAs` reports `keyEquivalent === ""` (⇧⌘S released to the Shell-route chord), and a file card frontmost → `file.saveAs` reports `keyEquivalent === "s"` with `modifierMask` = ⇧⌘ (the [P07] dynamic assignment, machine-verified rather than a by-hand beep check). This replaces Step 8's manual menu inspection.
 
 **Tests:**
 - [ ] `just app-test at0209 at0210 at0211` green (2 runs to shake flakes).
@@ -720,7 +722,7 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 **References:** (#success-criteria, #exit-criteria), Table T01, Spec S02
 
 **Tasks:**
-- [ ] Walk every Success Criteria bullet against the real app (packaged build): menu enablement matrix by hand (dev card frontmost → ⇧⌘S switches route, no beep; file card dirty → Save enabled; clean titled → Save disabled), quit-with-dirty → relaunch restore, out-of-workspace file conflict via focus recheck.
+- [ ] Walk every Success Criteria bullet against the real app (packaged build). The menu-enablement matrix and ⇧⌘S assignment are already machine-verified in at0211 (`app.menuItemState`/`app.menuSnapshot`); here just spot-confirm the end-to-end feel — dev card frontmost → ⇧⌘S switches route (no beep), file card dirty → Save enabled. Then the paths at0211 can't drive: quit-with-dirty → relaunch restore, and out-of-workspace file conflict via focus recheck.
 - [ ] Re-read the tuglaws touched ([L02], [L11], [L23], [L27]) against the diff; run `bun run audit:tokens lint` for any CSS added with the sheets/status chrome.
 
 **Tests:**
@@ -757,5 +759,5 @@ All sheets are pane-modal, presented from the File card via `useTugSheet().showS
 | Close gate | at0211 close-sheet scenario |
 | Reconciliation matrix | at0211 conflict scenarios + store unit tests |
 | Rename-follow | store unit tests (synthetic frames) |
-| Menu gates + ⇧⌘S chord safety | Step 11 manual matrix |
+| Menu gates + ⇧⌘S chord safety | at0211 (`app.menuItemState`/`app.menuSnapshot`) |
 | Automatic mode retained | at0209 (seeded) + existing store tests |
