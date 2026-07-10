@@ -279,11 +279,27 @@ body {
   /* Roomier row padding + a wider icon↔text gutter for the larger icon. */
   padding: 12px 16px;
   --tugx-list-row-gap: 16px;
+  /* Top-align the leading icon with the title line rather than centering it
+     across the two-line block. */
+  align-items: flex-start;
   /* The host is a TugPushButton, whose uppercase + letter-spacing must NOT
      bleed into the row's title/description — the list row owns its own
      sentence-case typography. */
   text-transform: none;
   letter-spacing: normal;
+}
+
+/* Nudge the icon down by the title's half-leading so its cap aligns with the
+   title cap (the 14px/1.4 title line reserves ~2.8px above the glyph). */
+.tug-alert-choice .tug-list-row-leading {
+  margin-top: 2px;
+}
+
+/* The base `.tug-button svg` rule clamps icons to 1rem; the row's leading icon
+   wants to be larger. Override with enough specificity to win. */
+.tug-alert-choice .tug-list-row-leading svg {
+  width: 30px;
+  height: 30px;
 }
 
 /* ---- Actions row ---- */

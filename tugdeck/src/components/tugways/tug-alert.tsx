@@ -615,8 +615,10 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                         <TugListRow
                           variant="flush"
                           leading={
+                            // The rendered size is set in CSS (the base
+                            // `.tug-button svg` rule clamps this attribute).
                             RowIcon
-                              ? React.createElement(RowIcon, { size: 28 })
+                              ? React.createElement(RowIcon, { size: 30 })
                               : undefined
                           }
                           title={typeof b.label === "string" ? b.label : undefined}
