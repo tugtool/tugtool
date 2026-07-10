@@ -68,11 +68,8 @@ import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
 import { GalleryTugDialogButton } from "./gallery-tug-dialog-button";
 import { GallerySheet } from "./gallery-sheet";
 import { GalleryBulletin } from "./gallery-bulletin";
-import { GalleryZ2Workshop } from "./gallery-z2-workshop";
 import { GalleryPaneBulletin } from "./gallery-pane-bulletin";
 import { GalleryMarkdownView } from "./gallery-markdown-view";
-import { GalleryTranscriptMarkdown } from "./gallery-transcript-markdown";
-import { GalleryInlineCodeStudies } from "./gallery-inline-code-studies";
 import { GalleryTranscriptCopy } from "./gallery-transcript-copy";
 import { GalleryListView } from "./gallery-list-view";
 import { GalleryListViewFilter } from "./gallery-list-view-filter";
@@ -532,8 +529,8 @@ const COLOR_PICKER_SIZE = { width: 452, height: 540 } as const;
  */
 const CATEGORIES = {
   animation: { label: "Animation & Theming", icon: "Play" },
-  architecture: { label: "Architecture", icon: "GitBranch" },
-  blockRenderers: { label: "Block Renderers", icon: "Blocks" },
+  architecture: { label: "Framework & Patterns", icon: "GitBranch" },
+  blockRenderers: { label: "Transcript Blocks", icon: "Blocks" },
   buttons: { label: "Buttons", icon: "MousePointerClick" },
   dataViews: { label: "Data Views", icon: "List" },
   feedback: { label: "Feedback & Status", icon: "Activity" },
@@ -933,15 +930,17 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
-    category: CATEGORIES.dataViews,
+    category: CATEGORIES.architecture,
   });
 
-  // Keyboard-focus-cycling mode demo — the showcase + app-test surface for the
-  // `useCycleMode` primitive (⌥⇥ toggles a trapped cycle scope; Tab wraps the
-  // stops; toggle off restores the resting key view). The real consumer is the
-  // dev card; this card exercises the mechanism in isolation. A permanent card.
+  // Keyboard-focus-cycling app-test fixture for the `useCycleMode` primitive
+  // (⌥⇥ toggles a trapped cycle scope; Tab wraps the stops; toggle off restores
+  // the resting key view). The real consumer is the dev card; this card exercises
+  // the mechanism in isolation for `at0139`. Hidden from the `+` picker — a
+  // mechanism proof, not a component demo — but kept as a driven test surface.
   registerCard({
     componentId: "gallery-cycle-demo",
+    hidden: true,
     contentFactory: (cardId) => <GalleryCycleDemo cardId={cardId} />,
     defaultMeta: { title: "Cycle Mode", icon: "List", closable: true },
     family: "developer",
@@ -1022,33 +1021,6 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.dataViews,
   });
 
-  // Transcript markdown typography fixture ([P04]/[P09]) — the dev-card
-  // transcript's actual renderer (`TugMarkdownBlock`) in its 14px scope,
-  // with a sample doc covering every heading adjacency. The canonical
-  // surface for locking the transcript markdown look and feel.
-  registerCard({
-    componentId: "gallery-transcript-markdown",
-    contentFactory: (_cardId) => <GalleryTranscriptMarkdown />,
-    defaultMeta: { title: "Transcript Markdown", icon: "FileText", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.dataViews,
-  });
-
-  // Inline-code legibility spike — six treatments of one dense paragraph
-  // of real prose, stacked at reading width, to vet how (and whether) to
-  // signal inline `code` without the wash fragmenting the line.
-  registerCard({
-    componentId: "gallery-inline-code-studies",
-    contentFactory: (_cardId) => <GalleryInlineCodeStudies />,
-    defaultMeta: { title: "Inline Code Studies", icon: "FileText", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.dataViews,
-  });
-
   // Transcript COPY wiring fixture ([Q03]) — mounts the real
   // `useTranscriptCellMenu` handler over a static body (markdown + tool +
   // thinking) so `at0188` can drive real ⌘C / menu-Copy and assert the
@@ -1071,6 +1043,7 @@ export function registerGalleryCards(): void {
   // virtualization-aware path separately.
   registerCard({
     componentId: "gallery-markdown-1kb",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="1kb" />,
     defaultMeta: { title: "TugMarkdownView (1KB)", icon: "FileText", closable: true },
     family: "developer",
@@ -1085,6 +1058,7 @@ export function registerGalleryCards(): void {
   // theme-debug fixture too. Same component code, distinct id.
   registerCard({
     componentId: "gallery-markdown-50kb",
+    hidden: true,
     contentFactory: (_cardId) => <GalleryMarkdownView staticContentSize="50kb" />,
     defaultMeta: { title: "TugMarkdownView (50KB)", icon: "FileText", closable: true },
     family: "developer",
@@ -1117,22 +1091,6 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.feedback,
   });
 
-  // Design spike: configurable Z2 status area (the Shelf and Rack
-  // proposals — pinned lanes + color commentary, and macOS-style
-  // toolbar customization).
-  registerCard({
-    componentId: "gallery-z2-workshop",
-    contentFactory: (_cardId) => <GalleryZ2Workshop />,
-    defaultMeta: { title: "Z2 Status Workshop", icon: "PanelBottom", closable: true },
-    family: "developer",
-    acceptsFamilies: ["developer"],
-    sizePolicy: {
-      min: { width: 560, height: 460 },
-      preferred: { width: 800, height: 620 },
-    },
-    category: CATEGORIES.feedback,
-  });
-
   registerCard({
     componentId: "gallery-tool-call-header",
     contentFactory: (_cardId) => <GalleryBlockHeader />,
@@ -1140,7 +1098,7 @@ export function registerGalleryCards(): void {
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.feedback,
+    category: CATEGORIES.blockRenderers,
   });
 
   registerCard({
