@@ -61,6 +61,8 @@ import {
   deriveActiveTurnSnapshot,
   reduce,
   truncateTranscriptAtAnchor,
+  upsertShellTurn,
+  appendTurnInterleavingShell,
   type CodeSessionState,
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
@@ -796,6 +798,59 @@ export class CodeSessionStore {
       turnKey: mintTurnKey(),
       suppress: opts?.suppress === true,
     });
+  }
+
+  /**
+   * Mint / settle a `$`-route shell exchange as a `shell`-origin transcript
+   * turn ([P06]/[P12]). Called by `ShellSessionStore` — which owns the
+   * `SHELL_OUTPUT` feed — on `exchange_started` (mint an in-flight turn) and
+   * `exchange_complete` (settle it in place, or mint-whole for a restore /
+   * bare complete). This is the ONLY way shell content enters the transcript;
+   * `SHELL_OUTPUT` is deliberately absent from the code-session feed filter.
+   */
+  ingestShellExchange(
+    event:
+      | {
+          phase: "started";
+          exchangeId: string;
+          command: string;
+          cwd: string;
+          startedAtMs: number;
+        }
+      | {
+          phase: "complete";
+          exchangeId: string;
+          command: string;
+          output: string;
+          exitCode: number | null;
+          cwd: string;
+          cwdAfter: string | null;
+          startedAtMs: number;
+          settledAtMs: number;
+        },
+  ): void {
+    if (this._disposed) return;
+    if (event.phase === "started") {
+      this.dispatch({
+        type: "shell_exchange_started",
+        exchangeId: event.exchangeId,
+        command: event.command,
+        cwd: event.cwd,
+        startedAtMs: event.startedAtMs,
+      });
+    } else {
+      this.dispatch({
+        type: "shell_exchange_complete",
+        exchangeId: event.exchangeId,
+        command: event.command,
+        output: event.output,
+        exitCode: event.exitCode,
+        cwd: event.cwd,
+        cwdAfter: event.cwdAfter,
+        startedAtMs: event.startedAtMs,
+        settledAtMs: event.settledAtMs,
+      });
+    }
   }
 
   /**
@@ -1935,8 +1990,24 @@ export class CodeSessionStore {
             // observe one structural growth at the front rather than M.
             this._prependStaging.push(effect.entry);
           } else {
-            this._transcript = [...this._transcript, effect.entry];
+            // Append, but keep the turn interleaved with any shell rows the
+            // ledger restore ([P07]) seated ahead of it — on a Developer ▸
+            // Reload the `list_shell_exchanges` restore can land before the
+            // JSONL replay, so a bare append would strand the replayed Claude
+            // turn behind shell rows it chronologically precedes. The helper
+            // only slides past trailing shell turns; non-shell order is intact.
+            this._transcript = appendTurnInterleavingShell(
+              this._transcript,
+              effect.entry,
+            );
           }
+          break;
+        case "ingest-shell-turn":
+          // Shell exchange ([P06]/[P12]): upsert the turn — settle in place
+          // (same turnKey) or insert at its timestamp position (mint /
+          // restore interleave). Copy-on-write, disjoint from the Claude
+          // turn lifecycle.
+          this._transcript = upsertShellTurn(this._transcript, effect.entry);
           break;
         case "flush-prepend":
           // Commit the staged older batch ahead of the existing

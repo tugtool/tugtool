@@ -40,6 +40,7 @@ import { GitDiffStore } from "./git-diff-store";
 import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
+import { ShellSessionStore } from "./shell-session-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -109,6 +110,14 @@ export interface CardServices {
    */
   readonly sideQuestionStore: SideQuestionStore;
   readonly sideQuestionFeedStore: FeedStore;
+  /**
+   * `$`-route shell session (Spec S01) and its `SHELL_OUTPUT` feed (filtered to
+   * this session). Owns shell session state (`live`/`cwd`/in-flight) and
+   * mirrors each exchange into `codeSessionStore.ingestShellExchange` — the
+   * shell rows live in the transcript, not here ([P12]).
+   */
+  readonly shellSessionStore: ShellSessionStore;
+  readonly shellSessionFeedStore: FeedStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -468,6 +477,28 @@ class CardServicesStore {
       binding.tugSessionId,
     );
 
+    // `$`-route shell (Spec S01): a SHELL_OUTPUT feed narrowed to this
+    // session's frames, plus the session store that folds them and mirrors
+    // exchange rows into `codeSessionStore` ([P12]).
+    const shellSessionFilter: FeedStoreFilter = (_feedId, decoded) =>
+      typeof decoded === "object" &&
+      decoded !== null &&
+      (decoded as { tug_session_id?: unknown }).tug_session_id ===
+        binding.tugSessionId;
+    const shellSessionFeedStore = new FeedStore(
+      connection,
+      [FeedId.SHELL_OUTPUT],
+      undefined,
+      shellSessionFilter,
+    );
+    const shellSessionStore = new ShellSessionStore(
+      shellSessionFeedStore,
+      FeedId.SHELL_OUTPUT,
+      binding.tugSessionId,
+      binding.projectDir,
+      codeSessionStore,
+    );
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -562,6 +593,8 @@ class CardServicesStore {
       hooksInventoryFeedStore,
       sideQuestionStore,
       sideQuestionFeedStore,
+      shellSessionStore,
+      shellSessionFeedStore,
       fileCompletionProvider,
     };
   }
@@ -585,6 +618,8 @@ class CardServicesStore {
     services.hooksInventoryFeedStore.dispose();
     services.sideQuestionStore.dispose();
     services.sideQuestionFeedStore.dispose();
+    services.shellSessionStore.dispose();
+    services.shellSessionFeedStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -611,6 +646,19 @@ class CardServicesStore {
   getServices = (cardId: string): CardServices | null => {
     this._ensureInitialized();
     return this._services.get(cardId) ?? null;
+  };
+
+  /**
+   * Find a card's services by its bound `tug_session_id` — used to route a
+   * session-scoped CONTROL response (e.g. `list_shell_exchanges_ok`) back to
+   * the owning card's stores. Returns null if no live card holds that session.
+   */
+  getByTugSessionId = (tugSessionId: string): CardServices | null => {
+    this._ensureInitialized();
+    for (const services of this._services.values()) {
+      if (services.tugSessionId === tugSessionId) return services;
+    }
+    return null;
   };
 
   /**

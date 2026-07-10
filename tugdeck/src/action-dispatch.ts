@@ -65,6 +65,8 @@ import type {
   SessionStateChangeWireRow,
 } from "./protocol";
 import { publishListPulseLinesOk } from "./lib/pulse-store";
+import { cardServicesStore } from "./lib/card-services-store";
+import { applyRestoredShellExchanges } from "./lib/shell-session-store";
 import {
   publishSessionUpdated,
   publishListSessionsOk,
@@ -1000,6 +1002,24 @@ export function initActionDispatch(
       return;
     }
     publishListPulseLinesOk({ lines: lines as PulseLineWireRow[] });
+  });
+
+  // list_shell_exchanges_ok ([P07]): the shell-restore tail for one session.
+  // Route the ledgered exchanges to the owning card's code-session store,
+  // which interleaves them by timestamp among the JSONL-replayed Claude turns.
+  registerAction("list_shell_exchanges_ok", (payload) => {
+    const sid = payload.tug_session_id;
+    const exchanges = payload.exchanges;
+    if (typeof sid !== "string" || !Array.isArray(exchanges)) {
+      console.warn("list_shell_exchanges_ok: missing session id / exchanges", payload);
+      return;
+    }
+    const services = cardServicesStore.getByTugSessionId(sid);
+    if (services === null) return;
+    applyRestoredShellExchanges(
+      services.codeSessionStore,
+      exchanges as ReadonlyArray<Record<string, unknown>>,
+    );
   });
 
   // app-lifecycle: route macOS `NSApplicationDelegate` events into the

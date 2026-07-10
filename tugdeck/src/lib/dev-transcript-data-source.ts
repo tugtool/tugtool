@@ -95,6 +95,7 @@ import type {
   TurnEntry,
   UserMessage,
 } from "@/lib/code-session-store";
+import type { TurnOrigin } from "@/lib/code-session-store/types";
 import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import type { ContextWindowStep } from "@/lib/code-session-store/end-state";
 import { agentTokensForTurn } from "@/lib/code-session-store/select-jobs";
@@ -133,7 +134,7 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-assistant`)
  * mounts — a real queued -> sent transition, correctly a remount.
  */
-export type DevTranscriptCellKind = "user" | "assistant" | "ghost";
+export type DevTranscriptCellKind = "user" | "assistant" | "ghost" | "shell";
 
 /**
  * Typed row descriptor returned by `rowAt(index)`. Cell renderers
@@ -226,7 +227,7 @@ export interface DevRowDescriptor {
  * Messages, rendered inline.
  */
 export interface RowGroup {
-  kind: "user" | "assistant";
+  kind: "user" | "assistant" | "shell";
   /** Inclusive start index into the turn's `messages`. */
   start: number;
   /**
@@ -252,7 +253,13 @@ export interface RowGroup {
 export function walkTurnGroups(
   messages: ReadonlyArray<TurnEntry["messages"][number]>,
   ensureTrailingAssistant: boolean,
+  origin?: TurnOrigin,
 ): RowGroup[] {
+  // A `shell`-origin turn is a single exchange row — never split into
+  // user/assistant runs ([P06]). Its one `shell_exchange` message is the row.
+  if (origin === "shell") {
+    return [{ kind: "shell", start: 0, end: messages.length }];
+  }
   const groups: RowGroup[] = [];
   const n = messages.length;
   let i = 0;
@@ -389,7 +396,7 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
   const turnRowCount: number[] = new Array(transcript.length);
   for (let t = 0; t < transcript.length; t++) {
     turnStartRow[t] = slots.length;
-    pushTurnSlots(slots, walkTurnGroups(transcript[t].messages, false), t, false);
+    pushTurnSlots(slots, walkTurnGroups(transcript[t].messages, false, transcript[t].origin), t, false);
     turnRowCount[t] = slots.length - turnStartRow[t];
   }
   // A suppressed in-flight turn (the `/compact` seed) contributes zero
@@ -440,7 +447,7 @@ function rowsBeforeTurn(
 ): number {
   let cursor = 0;
   for (let i = 0; i < turnIndex; i++) {
-    cursor += walkTurnGroups(transcript[i].messages, false).length;
+    cursor += walkTurnGroups(transcript[i].messages, false, transcript[i].origin).length;
   }
   return cursor;
 }
@@ -461,7 +468,7 @@ export function userRowIndexForTurn(
   transcript: ReadonlyArray<TurnEntry>,
 ): number {
   if (turnIndex < 0 || turnIndex >= transcript.length) return -1;
-  const groups = walkTurnGroups(transcript[turnIndex].messages, false);
+  const groups = walkTurnGroups(transcript[turnIndex].messages, false, transcript[turnIndex].origin);
   const offset = groups.findIndex((g) => g.kind === "user");
   if (offset === -1) return -1;
   return rowsBeforeTurn(turnIndex, transcript) + offset;
@@ -483,7 +490,7 @@ export function assistantRowIndexForTurn(
 ): number {
   if (turnIndex < 0 || turnIndex >= transcript.length) return -1;
   const cursor = rowsBeforeTurn(turnIndex, transcript);
-  const groups = walkTurnGroups(transcript[turnIndex].messages, false);
+  const groups = walkTurnGroups(transcript[turnIndex].messages, false, transcript[turnIndex].origin);
   let lastAssistant = -1;
   for (let i = 0; i < groups.length; i++) {
     if (groups[i].kind === "assistant") lastAssistant = i;
@@ -797,6 +804,11 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
 
     // Committed turn row.
     const turn = snap.transcript[slot.turnIndex];
+    // Shell exchange ([P06]) — one row, the whole turn; the cell reads the
+    // single `shell_exchange` Message off `turn.messages[0]`.
+    if (slot.cellKind === "shell") {
+      return { kind: "shell", turn, turnKey: turn.turnKey };
+    }
     if (slot.cellKind === "user") {
       return {
         kind: "user",

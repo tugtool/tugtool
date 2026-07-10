@@ -1,0 +1,11 @@
+/* ShellExchangeBlock — a `$`-route command/output row ([P06]/[D111]).
+ * Composes the shared `BlockChrome` with no bespoke chrome: header layout,
+ * right-aligned actions, the expand/collapse chevron, and the embedded
+ * terminal are all the standard tool-block family, so the shell row reads
+ * as one of them. The command inherits the header's mono
+ * `--tugx-toolheader-detail` treatment via the `<code>` element. */
+
+.shell-exchange-command {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

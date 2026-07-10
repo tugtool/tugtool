@@ -86,6 +86,24 @@ export function endStateBadgeFor(
 }
 
 /**
+ * End-state badge for a settled `$`-route shell exchange. The shell row's
+ * Z1B ([D111]) shows the exit status where a Claude turn shows its OK /
+ * Error badge — same badge grammar (text + tone), but the exchange's own
+ * vocabulary: `exit 0` (blends in, `inherit`), `exit N` (`danger`), or
+ * `killed` (a reap / timeout, `caution`). The tone maps 1:1 onto the same
+ * `TurnEndReason` the shell turn carries, so the badge icon can reuse the
+ * shared end-state glyph set.
+ *
+ * `exitCode` is `null` for a killed / timed-out exchange; a finite number
+ * otherwise. Callers gate on a settled exchange before calling.
+ */
+export function shellEndStateBadge(exitCode: number | null): EndStateBadge {
+  if (exitCode === null) return { text: "killed", role: "caution" };
+  if (exitCode === 0) return { text: "exit 0", role: "inherit" };
+  return { text: `exit ${exitCode}`, role: "danger" };
+}
+
+/**
  * The resident context window after a turn — `window(N)`. Sum of all
  * four token fields of the turn's LAST tool-loop iteration's `usage`:
  * the model's input (`input` + `cache_read` + `cache_creation`) plus

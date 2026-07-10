@@ -149,13 +149,15 @@ export interface TugChoiceGroupProps
    */
   animated?: boolean;
   /**
-   * Optional extra horizontal padding inside each segment, giving the
-   * items more breathing room when the group should read as a touch
-   * more prominent. The selection indicator covers it automatically.
-   * Off by default.
-   * @selector [data-side-padding="xs" | "sm" | "md"]
+   * The segment's horizontal padding, as a space-scale token. OVERRIDES the
+   * `size`'s default padding when set — so a caller can make the segments
+   * TIGHTER than the default (to keep a multi-item control narrow, e.g. a
+   * route group that must fit a fixed toolbar width) or looser (more
+   * prominence). Unset → the size default. The selection indicator covers
+   * whatever padding results automatically.
+   * @selector [data-side-padding="2xs" | "xs" | "sm" | "md" | "lg"]
    */
-  sidePadding?: "xs" | "sm" | "md";
+  sidePadding?: "2xs" | "xs" | "sm" | "md" | "lg";
   /** Accessible label for the group. */
   "aria-label"?: string;
   /**
@@ -268,8 +270,9 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       const segEl = segmentRefs.current[activeIndex];
       const indEl = indicatorRef.current;
       if (!segEl || !indEl) return;
-      // `offsetWidth` is the segment's border box — `sidePadding` widens
-      // that box, so the indicator covers the extra padding for free.
+      // `offsetWidth` is the segment's live border box — whatever padding
+      // `sidePadding` resolves to (tighter or wider than the size default),
+      // the indicator is measured off the box, so it covers it for free.
       indEl.style.transform = `translateX(${segEl.offsetLeft}px)`;
       indEl.style.width = `${segEl.offsetWidth}px`;
     }, []);

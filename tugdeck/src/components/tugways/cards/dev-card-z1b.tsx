@@ -86,7 +86,10 @@ import { Check, ShieldAlert, ShieldX, Unplug } from "lucide-react";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
+import {
+  endStateBadgeFor,
+  shellEndStateBadge,
+} from "@/lib/code-session-store/end-state";
 import type {
   TurnEntry,
   TurnEndReason,
@@ -107,7 +110,7 @@ import { turnHasTiming } from "@/lib/code-session-store/telemetry";
  * `data-participant` attribute and the per-variant content choices
  * (see module docstring).
  */
-export type DevZ1BParticipant = "user" | "assistant";
+export type DevZ1BParticipant = "user" | "assistant" | "shell";
 
 export interface DevZ1BProps {
   /**
@@ -117,7 +120,9 @@ export interface DevZ1BProps {
    * instant it posts). The asst variant carries the full metrics
    * row, but only renders end-state once `turn` is defined; while
    * in-flight, the transcript-level `DevZ1C` carries the
-   * indicator (this slot is empty).
+   * indicator (this slot is empty). The shell variant ([D111])
+   * shows the exchange's exit badge + duration (no tokens), gated
+   * on the exchange being settled.
    */
   participant: DevZ1BParticipant;
   /**
@@ -165,6 +170,21 @@ export interface DevZ1BProps {
  * Z1B status / end-state row. See module docstring for layout,
  * mode dispatch, participant variants, and conformance notes.
  */
+/**
+ * Read a shell turn's exit facts for the Z1B end-state ([D111]). Returns
+ * `null` for a non-shell turn (defensive — the `"shell"` participant is only
+ * ever paired with a `shell`-origin turn). `settled` gates the end-state:
+ * while an exchange is in flight its Z1B stays empty (the block's own
+ * lifecycle dot is the running signal).
+ */
+function readShellFacts(
+  turn: TurnEntry | undefined,
+): { settled: boolean; exitCode: number | null } | null {
+  const m = turn?.messages[0];
+  if (m === undefined || m.kind !== "shell_exchange") return null;
+  return { settled: m.settledAtMs !== null, exitCode: m.exitCode };
+}
+
 export const DevZ1B: React.FC<DevZ1BProps> = ({
   participant,
   turn,
@@ -173,6 +193,8 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
   bodyText,
 }) => {
   const isUserHalf = participant === "user";
+  const isShellHalf = participant === "shell";
+  const shellSettled = isShellHalf && readShellFacts(turn)?.settled === true;
   // End-state presence — per [D19] DevZ1B is committed-end-state
   // only.
   //
@@ -181,7 +203,10 @@ export const DevZ1B: React.FC<DevZ1BProps> = ({
   //  - Assistant half: end-state shown only when `turn !== undefined`.
   //    While in-flight the transcript-level `DevZ1C` carries the
   //    indicator; this slot renders nothing.
-  const hasEndState = isUserHalf || turn !== undefined;
+  //  - Shell half ([D111]): end-state shown once the exchange settles;
+  //    while in flight the block's own lifecycle dot is the signal and
+  //    this slot stays empty.
+  const hasEndState = isUserHalf || (isShellHalf ? shellSettled : turn !== undefined);
   // End-state reason. The user half is pinned to `complete` — its
   // badge reports "the message was submitted," never the response's
   // outcome, so an interrupt / error never bleeds onto the user row.
@@ -324,7 +349,16 @@ function EndStateDisplay({
   perTurnTokens: number | undefined;
   agentTokens: number | undefined;
 }): React.ReactElement {
-  const badge = endStateBadgeFor(reason, turn?.interruptReason);
+  // The shell half reads the exchange's own exit status ([D111]) — same
+  // badge grammar as a Claude turn, its own vocabulary (`exit N` / `killed`).
+  // The icon still comes from the shared reason→glyph map, since the shell
+  // turn's `turnEndReason` mirrors the exit outcome (`buildShellTurnEntry`).
+  const shellFacts =
+    participant === "shell" ? readShellFacts(turn) : null;
+  const badge =
+    shellFacts !== null
+      ? shellEndStateBadge(shellFacts.exitCode)
+      : endStateBadgeFor(reason, turn?.interruptReason);
   return (
     <span
       className="dev-z1b-end-state"
@@ -364,6 +398,17 @@ function EndStateDisplay({
               </TugLabel>
             </>
           ) : null}
+        </>
+      ) : null}
+      {/* Shell half: exit badge + duration, no tokens (a shell exchange
+          burns none). Duration uses the same formatter as the assistant
+          time segment. */}
+      {participant === "shell" && turn !== undefined ? (
+        <>
+          <TugLabel size="xs" emphasis="calm" aria-hidden>
+            •
+          </TugLabel>
+          <TugLabel size="xs">{formatDurationMs(turn.activeMs)}</TugLabel>
         </>
       ) : null}
     </span>

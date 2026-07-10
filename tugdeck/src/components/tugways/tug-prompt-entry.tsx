@@ -49,7 +49,14 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Bot, Plus, Shell, Square } from "lucide-react";
+import {
+  ArrowUp,
+  Bot,
+  MessageSquareDashed,
+  Plus,
+  Shell,
+  Square,
+} from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
@@ -100,6 +107,8 @@ import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-exte
 import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
+import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { useResponder } from "./use-responder";
 import { useFocusable } from "./use-focusable";
 import type { ActionEvent } from "./responder-chain";
@@ -107,6 +116,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
 import {
   buildSlashCommandLine,
+  type CommandLineAtom,
   matchLocalSlashCommand,
   slashCommandName,
 } from "@/lib/slash-commands";
@@ -132,21 +142,24 @@ import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
 // ---------------------------------------------------------------------------
 
 /**
- * The two routes surfaced in the segment control. Each segment is
- * `[icon][gap][name]` — a lucide gutter glyph (matching the
- * participant iconography in `TugTranscriptEntry`) plus the route's
- * display name. The route prefix character (`>` / `$`) is no
+ * The three routes surfaced in the segment control — the recipients a
+ * submission targets: `❯` Code (Claude on the record), `$` Shell (the
+ * machine), `?` btw (Claude off the record — a native side question).
+ * Each segment is `[icon][gap][name]` — a lucide gutter glyph (matching
+ * the participant iconography in `TugTranscriptEntry`) plus the route's
+ * display name. The route prefix character (`>` / `$` / `?`) is no
  * longer painted in the segment label; it lives on as a hidden
  * power-user feature, since `route-prefix-extension` still flips the
  * route when the user types one of those characters at offset 0 of
  * the editor. The visible affordances are the segment icon + name
  * and the keyboard shortcuts wired in `keybinding-map.ts`
- * (⇧⌘C → Code, ⇧⌘S → Shell), which dispatch `SELECT_ROUTE` to this
- * entry's responder.
+ * (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘B → btw), which dispatch `SELECT_ROUTE`
+ * to this entry's responder.
  */
 const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
   { value: "❯", label: "Code",  icon: <Bot /> },
   { value: "$", label: "Shell", icon: <Shell /> },
+  { value: "?", label: "btw",   icon: <MessageSquareDashed /> },
 ];
 
 /**
@@ -154,13 +167,15 @@ const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
  *
  * `>` is an ASCII alias for the Prompt route's display character `❯`.
  * The segment control shows the chevron, but the typed greater-than is
- * keyboard-friendly and routes to the same Prompt value. Both characters
- * also act as the strip-on-match lookup at submit time per [Q09]=a.
+ * keyboard-friendly and routes to the same Prompt value. `$` flips to
+ * Shell, `?` flips to btw. All act as the strip-on-match lookup at
+ * submit time per [Q09]=a.
  */
 const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
   "❯": "❯",
   ">": "❯",
   "$": "$",
+  "?": "?",
 };
 
 /**
@@ -170,6 +185,8 @@ const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
  *   Prompts are long-form, so naïve Return should stay a newline.
  * - `$` (Shell): Return submits; Shift+Return inserts a newline.
  *   Shell invocations are typically a single line.
+ * - `?` (btw): Return submits; Shift+Return inserts a newline.
+ *   Side questions are single-line asks.
  *
  * The substrate's shift inversion means we only need to declare the
  * unshifted action per route; Shift+Return is the opposite
@@ -178,6 +195,7 @@ const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
 const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
   "❯": "newline",
   "$": "submit",
+  "?": "submit",
 };
 
 /**
@@ -186,6 +204,31 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  * most common conversation surface.
  */
 const DEFAULT_ROUTE = "❯";
+
+/** Canonical route values — shared by the dispatch and the segment control. */
+const ROUTE_SHELL = "$";
+const ROUTE_BTW = "?";
+
+/** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
+/**
+ * Route-aware Z5 submit-button mode ([P13]). On the `❯` / `?` routes the Z5
+ * button follows the Claude session lifecycle unchanged. On the `$` route it
+ * is driven by the shell session: an exchange in flight → `stop` (fires
+ * `kill`), otherwise `submit` (never inert — the empty-draft gating rides the
+ * separate `data-empty` attribute). Pure — the button's DOM node and its
+ * `resolveSubmitButtonView` projection are untouched; only the input mode is
+ * route-conditional, so Z5 stays one node ([L26]).
+ */
+export function routeAwareSubmitButtonMode(
+  route: string | null,
+  claudeMode: DevSubmitButtonMode,
+  shellInflight: boolean,
+): DevSubmitButtonMode {
+  if (route !== ROUTE_SHELL) return claudeMode;
+  return shellInflight ? { kind: "stop" } : { kind: "submit", disabled: false };
+}
 
 /**
  * Empty editing state — the draft a freshly-cleared editor holds.
@@ -468,6 +511,23 @@ export function computeSubmitText(
   return stripLeadingRoutePrefix(rawText, activeRoute, aliasMap);
 }
 
+/**
+ * Build the side-question argument for a `?`-route ([P02]) submission from
+ * the raw editor draft: expand atoms to their values (so an `@plan.md`
+ * mention survives as its path — `buildSlashCommandLine`), strip a leading
+ * `?` the power-user may have typed, and trim. An empty result means a bare
+ * submit — the caller opens the overlay without asking. Pure; exported for
+ * the unit tests.
+ */
+export function computeSideQuestionArg(
+  draftText: string,
+  draftAtoms: readonly CommandLineAtom[],
+  aliasMap: Readonly<Record<string, string>> = ROUTE_PREFIX_ALIAS,
+): string {
+  const expanded = buildSlashCommandLine(draftText, draftAtoms);
+  return computeSubmitText(expanded, ROUTE_BTW, aliasMap).trim();
+}
+
 /** Disposition of a submit that arrives while the store can't accept it. */
 export type BlockedSubmitDisposition = "drop" | "defer";
 
@@ -555,6 +615,36 @@ export function buildEditingStateFromDraftRestore(
   };
 }
 
+/**
+ * The document insertion a consumed shell share applies ([P08]) —
+ * `insert` at offset `from` (end of the current doc).
+ */
+export interface ShellShareInsertion {
+  from: number;
+  insert: string;
+}
+
+/**
+ * Apply a shell share gesture ([P08]): flip the route to the code
+ * route (`❯`) — the shared text is Claude's to receive once the user
+ * edits and sends — and compute the editor insertion. An effectively
+ * empty editor takes the share text as-is; a mid-compose draft gets it
+ * appended on its own line, never clobbered.
+ *
+ * Pure over `(routeLifecycle, doc facts)` and exported so the unit
+ * tests pin the route flip + insertion without a live editor.
+ */
+export function applyShellShare(
+  routeLifecycle: RouteLifecycle,
+  shareText: string,
+  doc: { length: number; isEffectivelyEmpty: boolean },
+): ShellShareInsertion {
+  routeLifecycle.setRoute(DEFAULT_ROUTE);
+  const insert =
+    doc.isEffectivelyEmpty || doc.length === 0 ? shareText : `\n${shareText}`;
+  return { from: doc.length, insert };
+}
+
 // ---------------------------------------------------------------------------
 // Props / delegate
 // ---------------------------------------------------------------------------
@@ -596,6 +686,13 @@ export interface TugPromptEntryProps {
   localCommandTargetId?: string;
   /** Store owning Claude Code turn state for this card. */
   codeSessionStore: CodeSessionStore;
+  /**
+   * `$`-route shell session store ([P12]/[P13]). Drives the shell-route submit
+   * (`exec`), the route-aware Z5 (`stop` while an exchange is in flight →
+   * `kill`), and the live cwd. Optional so hosts that never surface the shell
+   * route (the gallery) can omit it.
+   */
+  shellSessionStore?: ShellSessionStore;
   /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
@@ -887,6 +984,7 @@ export const TugPromptEntry = React.forwardRef<
     id,
     localCommandTargetId,
     codeSessionStore,
+    shellSessionStore,
     onAttachmentError,
     sessionMetadataStore,
     historyStore,
@@ -1177,12 +1275,14 @@ export const TugPromptEntry = React.forwardRef<
   // The mode is mirrored to a ref so `performSubmit` — the shared
   // keyboard + pointer submit path — can gate on it without going
   // stale ([L07]).
-  const submitButtonMode = useLifecycleState(codeSessionStore).submitButtonMode;
-  const submitView = resolveSubmitButtonView(submitButtonMode);
-  const submitButtonModeRef = useRef(submitButtonMode);
-  useLayoutEffect(() => {
-    submitButtonModeRef.current = submitButtonMode;
-  }, [submitButtonMode]);
+  // Claude-lifecycle mode + shell in-flight; combined into the route-aware Z5
+  // mode below, once the subscribed `route` is available ([P13]).
+  const claudeSubmitButtonMode =
+    useLifecycleState(codeSessionStore).submitButtonMode;
+  const shellInflight = useSyncExternalStore(
+    shellSessionStore?.subscribe ?? NOOP_SUBSCRIBE,
+    () => shellSessionStore?.getSnapshot().inflight != null,
+  );
 
   // Draft restore. Two store actions populate `pendingDraftRestore`:
   // a CASE A interrupt pulling a pre-content turn back to re-edit, and
@@ -1237,6 +1337,42 @@ export const TugPromptEntry = React.forwardRef<
   }
   const routeLifecycle = routeLifecycleRef.current;
 
+  // Shell share ([P08]). A Share click on an exchange row parks its
+  // composed text on the shell store; this effect observes the slot,
+  // flips the route to `❯`, seeds/appends the editor, and consumes.
+  // Mirrors the draft-restore effect above: [L02] the slot enters via
+  // useSyncExternalStore; [L03] useLayoutEffect so the doc change and
+  // route flip land in the same paint; the slot survives until an
+  // editor exists to take it (no consume on a missing view), so a
+  // share is never silently dropped. Unlike draft restore, a
+  // mid-compose draft is appended to, not skipped — the user asked
+  // for this content explicitly.
+  const pendingShellShare = useSyncExternalStore(
+    shellSessionStore?.subscribe ?? NOOP_SUBSCRIBE,
+    () => shellSessionStore?.getSnapshot().pendingShare ?? null,
+  );
+  useLayoutEffect(() => {
+    if (pendingShellShare === null || shellSessionStore === undefined) return;
+    const editor = textEditorRef.current;
+    const view = editor?.view() ?? null;
+    if (editor === null || view === null) return;
+    const { from, insert } = applyShellShare(
+      routeLifecycle,
+      pendingShellShare.text,
+      {
+        length: view.state.doc.length,
+        isEffectivelyEmpty: isEffectivelyEmpty(view),
+      },
+    );
+    view.dispatch({
+      changes: { from, insert },
+      selection: { anchor: from + insert.length },
+      scrollIntoView: true,
+    });
+    shellSessionStore.consumePendingShare();
+    editor.focus();
+  }, [pendingShellShare, shellSessionStore, routeLifecycle]);
+
   // [L02] The route is external state once the Z4B indicator reads it,
   // so it enters React through `useSyncExternalStore` only. Submit and
   // extension closures read the live value via `routeLifecycle.getRoute()`
@@ -1245,6 +1381,21 @@ export const TugPromptEntry = React.forwardRef<
     routeLifecycle.subscribe,
     routeLifecycle.getRoute,
   );
+
+  // Route-aware Z5 submit-button mode ([P13]): Claude lifecycle on `❯`/`?`, a
+  // shell-derived `submit`/`stop` on `$`. `resolveSubmitButtonView` (the pure
+  // projection) and the button DOM node are unchanged — only the input mode
+  // is route-conditional ([L26]).
+  const submitButtonMode = routeAwareSubmitButtonMode(
+    route,
+    claudeSubmitButtonMode,
+    shellInflight === true,
+  );
+  const submitView = resolveSubmitButtonView(submitButtonMode);
+  const submitButtonModeRef = useRef(submitButtonMode);
+  useLayoutEffect(() => {
+    submitButtonModeRef.current = submitButtonMode;
+  }, [submitButtonMode]);
 
   // Per-route history providers. One provider per route — each holds
   // its own cursor + in-memory "return to draft" cache, so the user's
@@ -1584,6 +1735,53 @@ export const TugPromptEntry = React.forwardRef<
     // inserted atom. Applies uniformly to `/` commands and `@` mentions.
     editor.acceptActiveCompletion();
 
+    // btw-route dispatch ([P02]). On the `?` route the whole submission is a
+    // side question — Claude off the record ([P01]) — regardless of content,
+    // so it intercepts BEFORE the local-command split (the route IS the
+    // recipient, not the leading token). It reuses the shipped `/btw` local
+    // surface via `RUN_SLASH_COMMAND`, inheriting mid-turn dispatch — this
+    // runs ahead of the send-readiness gates, exactly like the local-command
+    // path ([D108]). A bare submit (empty draft) opens the overlay without
+    // asking, matching bare `/btw`.
+    if ((routeLifecycle.getRoute() || null) === ROUTE_BTW) {
+      const draftAtoms = getAtomsInState(view.state);
+      const draftText = editor.captureState().text;
+      const question = computeSideQuestionArg(draftText, draftAtoms);
+      const targetId = localCommandTargetIdRef.current;
+      if (
+        manager !== null &&
+        targetId !== undefined &&
+        manager.nodeCanHandle(targetId, TUG_ACTIONS.RUN_SLASH_COMMAND)
+      ) {
+        manager.sendToTarget(targetId, {
+          action: TUG_ACTIONS.RUN_SLASH_COMMAND,
+          value: { name: "btw", args: question },
+          phase: "discrete",
+        });
+        // Record the RAW question (NOT a synthesized `/btw …` line) so ↑
+        // recall on the `?` route returns what the user typed. A bare
+        // overlay-open (empty ask) is not a history entry.
+        if (question.length > 0) {
+          const sessionId = snapRef.current.tugSessionId;
+          historyStore.push({
+            id: `${sessionId}-${Date.now()}`,
+            sessionId,
+            projectPath: "",
+            route: ROUTE_BTW,
+            text: question,
+            atoms: [],
+            timestamp: Date.now(),
+          });
+        }
+        editor.clear();
+        currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+        persistClearedDraft();
+        return;
+      }
+      // No responder (e.g. the gallery host) — fall through so the draft is
+      // not lost.
+    }
+
     // Slash-command interception ([D23], [#step-1c]). Accepting any
     // slash-command suggestion inserts a `type:"command"` atom and dismisses
     // the popup — uniform for every command. The local-vs-remote split is
@@ -1817,6 +2015,32 @@ export const TugPromptEntry = React.forwardRef<
       const canonical = canonicalizeBareCommandLine(submitText, catalogNames);
       if (canonical !== null) wireText = canonical;
     }
+
+    // Shell-route dispatch ([P02]/[P12]). The `$` route runs the command
+    // against the card's shell session — the exchange threads into the
+    // transcript via `ShellSessionStore` → `ingestShellExchange`, never to
+    // Claude. History records the raw command (↑ recall). A host with no
+    // shell store (the gallery) falls through to `send()` so nothing is lost.
+    if (currentRoute === ROUTE_SHELL && shellSessionStore !== undefined) {
+      shellSessionStore.exec(submitText);
+      const sessionId = snapRef.current.tugSessionId;
+      historyStore.push({
+        id: `${sessionId}-${Date.now()}`,
+        sessionId,
+        projectPath: "",
+        route: ROUTE_SHELL,
+        text: strippedText,
+        atoms: [],
+        timestamp: Date.now(),
+      });
+      onBeforeSubmitRef.current?.();
+      editor.clear();
+      onAfterSubmitRef.current?.();
+      currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+      persistClearedDraft();
+      return;
+    }
+
     codeSessionStore.send(wireText, wireAtoms);
     // Record the submission in per-session history, keyed by the
     // session's id. The route field is what lets
@@ -1980,7 +2204,13 @@ export const TugPromptEntry = React.forwardRef<
         // (never via this action), so an in-flight Return queues
         // rather than popping.
         if (submitButtonModeRef.current.kind === "stop") {
-          codeSessionStore.popInteractive();
+          // On the `$` route the Stop pose reaps the running shell command
+          // ([P13]); everywhere else it interrupts the Claude turn.
+          if (routeLifecycle.getRoute() === ROUTE_SHELL) {
+            shellSessionStore?.kill();
+          } else {
+            codeSessionStore.popInteractive();
+          }
         } else {
           performSubmit();
         }
@@ -2426,7 +2656,13 @@ export const TugPromptEntry = React.forwardRef<
             // on their own. [L11 / responder-chain-provider focus-refusal]
             data-tug-focus="refuse"
           >
-            {/* Z4A — leading-fixed slot; currently the route choice-group. */}
+            {/* Z4A — leading-fixed slot; currently the route choice-group.
+              Keeps its `xs` size (font, height) but overrides the segments'
+              horizontal padding tighter (`sidePadding="sm"` — 6px, vs the xs
+              default of 12px): with three routes the group must stay narrow
+              enough that the toolbar never overflows the card's minimum width
+              (Z4A + Z4B cluster + Z5 must fit without a horizontal scroll),
+              while keeping a little breathing room around each label. */}
             <TugChoiceGroup
               items={[...ROUTE_ITEMS]}
               value={route}

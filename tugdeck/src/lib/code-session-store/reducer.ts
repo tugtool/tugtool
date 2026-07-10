@@ -75,6 +75,8 @@ import type {
   RewindResultEvent,
   RequestRewindPreviewActionEvent,
   SessionRewindActionEvent,
+  ShellExchangeStartedActionEvent,
+  ShellExchangeCompleteActionEvent,
 } from "./events";
 import type {
   ActiveTurnSnapshot,
@@ -95,6 +97,7 @@ import type {
   PermissionDenial,
   RewindResultAck,
   RewindTurnPreview,
+  ShellExchangeMessage,
   SystemNote,
   ToolUseMessage,
   TransportState,
@@ -5080,6 +5083,174 @@ export function deriveActiveTurnSnapshot(
 }
 
 // ---------------------------------------------------------------------------
+// Shell exchanges ([P06]/[P12])
+// ---------------------------------------------------------------------------
+
+/**
+ * A turn's sort timestamp for interleaving shell exchanges among Claude turns
+ * ([P07]). The opener message's `createdAt` is the turn's start: a
+ * `user_message`'s `submitAt`, an assistant opener's mint time, a shell
+ * exchange's `startedAtMs`. Falls back to `endedAt` for an empty turn.
+ */
+function turnSortTs(turn: TurnEntry): number {
+  return turn.messages[0]?.createdAt ?? turn.endedAt;
+}
+
+/**
+ * Build a committed `shell`-origin `TurnEntry` around one exchange message.
+ * Shell turns bypass the Claude turn machinery (no scratch / activeTurn /
+ * phase) — they append directly to `transcript`. Telemetry fields are zero /
+ * null: a shell exchange has no tokens, no TTFT, no approvals.
+ */
+function buildShellTurnEntry(msg: ShellExchangeMessage): TurnEntry {
+  const end = msg.settledAtMs ?? msg.startedAtMs;
+  const wall = Math.max(0, end - msg.startedAtMs);
+  // Honest end-state so the Z1B badge reads the exchange's outcome: a
+  // settled non-zero exit is an error, a kill (null exit) is interrupted,
+  // and an in-flight or clean exit is complete. Drives `endStateBadgeFor`
+  // in the shell Z1B exactly as `turn_complete` drives it for a Claude turn.
+  const settled = msg.settledAtMs !== null;
+  const turnEndReason: TurnEndReason = !settled
+    ? "complete"
+    : msg.exitCode === null
+      ? "interrupted"
+      : msg.exitCode === 0
+        ? "complete"
+        : "error";
+  return {
+    turnKey: `shell-${msg.exchangeId}`,
+    msgId: msg.exchangeId,
+    origin: "shell",
+    messages: [msg],
+    // `result` is coarse (`success | interrupted`): a non-zero exit still ran
+    // to completion — its failure nuance rides `turnEndReason: "error"`. Only
+    // a kill / timeout is `interrupted`.
+    result: turnEndReason === "interrupted" ? "interrupted" : "success",
+    endedAt: end,
+    wallClockMs: wall,
+    awaitingApprovalMs: 0,
+    transportDowntimeMs: 0,
+    activeMs: wall,
+    ttftMs: null,
+    ttftcMs: null,
+    reconnectCount: 0,
+    maxStreamGapMs: 0,
+    turnEndReason,
+    cost: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalCostUsd: 0,
+    },
+  };
+}
+
+/**
+ * Insert a turn into `transcript` at its timestamp position (stable: a tie
+ * lands AFTER existing turns, so a live exchange whose timestamp equals the
+ * newest turn still appends). For a live shell exchange the timestamp is the
+ * newest, so this is an append; for a restored one ([P07]) it lands between
+ * the Claude turns it happened among.
+ */
+function insertTurnByTimestamp(
+  transcript: ReadonlyArray<TurnEntry>,
+  entry: TurnEntry,
+): TurnEntry[] {
+  const ts = turnSortTs(entry);
+  const next = transcript.slice();
+  let i = next.length;
+  while (i > 0 && turnSortTs(next[i - 1]) > ts) i--;
+  next.splice(i, 0, entry);
+  return next;
+}
+
+/**
+ * Append a non-shell turn, keeping it interleaved with any shell turns that
+ * were restored *ahead* of it ([P07]). Claude turns replay (and stream) in
+ * ascending-timestamp order, so relative to each other an append already is a
+ * timestamp sort — this helper only slides the new turn left past a run of
+ * trailing *shell* turns whose timestamp is greater. That is exactly the
+ * reload race: the ledger restore (`list_shell_exchanges`) can land before the
+ * JSONL replay, seating restored shell rows ahead of the Claude turns they
+ * happened among; without this the replayed Claude turn would append to the
+ * end instead of interleaving back to its own timestamp. It never reorders two
+ * non-shell turns (the walk stops at the first non-shell tail entry), so every
+ * existing Claude-path ordering is untouched.
+ *
+ * The store wrapper owns `_transcript`, so this pure helper runs there (via the
+ * `append-transcript` effect), not inside the reducer's `CodeSessionState`.
+ */
+export function appendTurnInterleavingShell(
+  transcript: ReadonlyArray<TurnEntry>,
+  entry: TurnEntry,
+): TurnEntry[] {
+  const ts = turnSortTs(entry);
+  const next = transcript.slice();
+  let i = next.length;
+  while (i > 0 && next[i - 1]!.origin === "shell" && turnSortTs(next[i - 1]!) > ts) {
+    i--;
+  }
+  next.splice(i, 0, entry);
+  return next;
+}
+
+/**
+ * Upsert a shell turn into the committed transcript ([P12]): replace the turn
+ * with the same `turnKey` in place (settle preserving mount identity / row
+ * position), or insert a new one at its timestamp position (mint). The store
+ * wrapper owns `_transcript`, so this pure helper runs there (via the
+ * `ingest-shell-turn` effect), not inside the reducer's `CodeSessionState`.
+ */
+export function upsertShellTurn(
+  transcript: ReadonlyArray<TurnEntry>,
+  entry: TurnEntry,
+): TurnEntry[] {
+  const idx = transcript.findIndex((t) => t.turnKey === entry.turnKey);
+  if (idx !== -1) {
+    const next = transcript.slice();
+    next[idx] = entry;
+    return next;
+  }
+  return insertTurnByTimestamp(transcript, entry);
+}
+
+function shellMessage(
+  event: ShellExchangeStartedActionEvent | ShellExchangeCompleteActionEvent,
+): ShellExchangeMessage {
+  const settled = event.type === "shell_exchange_complete";
+  return {
+    kind: "shell_exchange",
+    messageKey: `shell-${event.exchangeId}`,
+    createdAt: event.startedAtMs,
+    exchangeId: event.exchangeId,
+    command: event.command,
+    output: settled ? event.output : "",
+    exitCode: settled ? event.exitCode : null,
+    cwd: event.cwd,
+    cwdAfter: settled ? event.cwdAfter : null,
+    startedAtMs: event.startedAtMs,
+    settledAtMs: settled ? event.settledAtMs : null,
+  };
+}
+
+/**
+ * `exchange_started` → mint an in-flight shell turn; `exchange_complete` →
+ * settle it in place (or mint-whole for a restore / bare complete). Both build
+ * the committed `TurnEntry` (pure) and emit an `ingest-shell-turn` effect; the
+ * store wrapper upserts it into `_transcript` (which it owns) via
+ * {@link upsertShellTurn}. No `CodeSessionState` mutation — shell turns are
+ * disjoint from the Claude phase / activeTurn / scratch machinery ([P12]).
+ */
+function handleShellExchange(
+  state: CodeSessionState,
+  event: ShellExchangeStartedActionEvent | ShellExchangeCompleteActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const entry = buildShellTurnEntry(shellMessage(event));
+  return { state, effects: [{ kind: "ingest-shell-turn", entry }] };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -5094,6 +5265,9 @@ export function reduce(
   switch (event.type) {
     case "send":
       return handleSend(state, event);
+    case "shell_exchange_started":
+    case "shell_exchange_complete":
+      return handleShellExchange(state, event);
     case "mark_compaction_seed":
       return handleMarkCompactionSeed(state, event);
     case "session_init":

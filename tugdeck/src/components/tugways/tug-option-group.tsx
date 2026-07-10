@@ -146,12 +146,13 @@ export interface TugOptionGroupProps
    */
   disabled?: boolean;
   /**
-   * Optional extra horizontal padding inside each item, giving the
-   * items more breathing room when the group should read as a touch
-   * more prominent. Off by default.
-   * @selector [data-side-padding="xs" | "sm" | "md"]
+   * The item's horizontal padding, as a space-scale token. OVERRIDES the
+   * `size`'s default padding when set — so a caller can make the items
+   * TIGHTER than the default (to keep a multi-item control narrow) or looser
+   * (more prominence). Unset → the size default.
+   * @selector [data-side-padding="2xs" | "xs" | "sm" | "md" | "lg"]
    */
-  sidePadding?: "xs" | "sm" | "md";
+  sidePadding?: "2xs" | "xs" | "sm" | "md" | "lg";
   /** Accessible label for the toolbar. */
   "aria-label"?: string;
   /**

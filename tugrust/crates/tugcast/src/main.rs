@@ -21,6 +21,7 @@ mod router;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
+mod shell_ledger;
 mod terminal_registry;
 mod turn_engine;
 
@@ -282,6 +283,17 @@ async fn main() {
         crate::router::LagPolicy::Replay(crate::router::ReplayBuffer::new(1000)),
     );
     let (code_input_tx, code_input_rx) = mpsc::channel(256);
+
+    // SHELL feed — the `$` route's block-oriented shell execution. SHELL_OUTPUT
+    // is a session-scoped broadcast (exchange frames tagged by tug_session_id);
+    // SHELL_INPUT flows to the shell dispatcher (spawned below), which owns one
+    // pipe-mode shell child per session.
+    let shell_output_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::SHELL_OUTPUT,
+        feeds::shell::SHELL_BROADCAST_CAPACITY,
+        LagPolicy::Warn,
+    );
+    let (shell_input_tx, shell_input_rx) = mpsc::channel(256);
 
     // Create terminal feed. Its broadcast channel is created — and its
     // task spawned — by `register_stream_feed` below; only the input
@@ -633,6 +645,23 @@ async fn main() {
         Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
     }
 
+    // Shell-exchange ledger — non-fatal: a failure means the `$` route just
+    // won't persist exchanges (the deck degrades to no shell restore), which
+    // must not take tugcast down.
+    let shell_ledger: Option<Arc<shell_ledger::ShellLedger>> = shell_ledger::ShellLedger::default_path()
+        .and_then(|path| {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match shell_ledger::ShellLedger::open(&path) {
+                Ok(l) => Some(Arc::new(l)),
+                Err(e) => {
+                    warn!(error = %e, path = %path.display(), "failed to open shell ledger (shell persistence disabled)");
+                    None
+                }
+            }
+        });
+
     let ledger_recorder = Arc::new(LedgerSessionsRecorder::with_broadcast(
         Arc::clone(&ledger),
         client_action_tx.clone(),
@@ -702,7 +731,7 @@ async fn main() {
     };
     let spawner_factory: SpawnerFactory = default_spawner_factory(&supervisor_config);
 
-    let (supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
+    let (mut supervisor, merger_register_rx) = AgentSupervisor::new_with_ledger(
         session_state_feed.clone(),
         session_sideband_feed.clone(),
         code_output_feed.clone(),
@@ -715,6 +744,11 @@ async fn main() {
         Arc::clone(&registry),
         cancel.clone(),
     );
+    // Give the supervisor the shell ledger so `list_shell_exchanges` can read
+    // the tail the shell dispatcher writes.
+    if let Some(sl) = shell_ledger.as_ref() {
+        supervisor.set_shell_ledger(Arc::clone(sl));
+    }
 
     // PULSE — app-wide color commentary. One bridge per process: it
     // taps the shared CODE_OUTPUT broadcast for the allowlisted frame
@@ -767,6 +801,21 @@ async fn main() {
     tokio::spawn(async move {
         dispatcher_supervisor.dispatcher_task(code_input_rx).await;
     });
+    // Shell dispatcher: routes SHELL_INPUT to per-session pipe-mode shell
+    // children, publishes exchange frames on SHELL_OUTPUT, and records each
+    // settled exchange to the shell ledger for restore.
+    let shell_dispatch_feed = shell_output_feed.clone();
+    let shell_dispatch_ledger = shell_ledger.clone();
+    let shell_dispatch_cancel = cancel.clone();
+    tokio::spawn(async move {
+        feeds::shell::shell_dispatcher_task(
+            shell_input_rx,
+            shell_dispatch_feed,
+            shell_dispatch_ledger,
+            shell_dispatch_cancel,
+        )
+        .await;
+    });
     let merger_cancel = cancel.clone();
     let merger_supervisor = Arc::clone(&supervisor);
     tokio::spawn(async move {
@@ -808,6 +857,9 @@ async fn main() {
     feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
 
     feed_router.register_session_feed(&code_output_feed);
+    // SHELL_OUTPUT — session-scoped exchange frames; the reconnect tail comes
+    // from the ledger CONTROL read, not feed replay (like PULSE).
+    feed_router.register_session_feed(&shell_output_feed);
     // CONTROL stays a channel-registered stream: router-internal,
     // bidirectional, and the sink for router-emitted error frames — one
     // of the two named exemptions from the feed abstraction.
@@ -831,6 +883,7 @@ async fn main() {
     feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
+    feed_router.register_input(FeedId::SHELL_INPUT, shell_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
 

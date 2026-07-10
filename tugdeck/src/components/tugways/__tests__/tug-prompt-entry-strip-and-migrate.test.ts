@@ -20,8 +20,12 @@ import {
   buildEditingStateFromDraftRestore,
   classifyBlockedSubmit,
   coerceRestorePayload,
+  computeSideQuestionArg,
   computeSubmitText,
+  routeAwareSubmitButtonMode,
 } from "@/components/tugways/tug-prompt-entry";
+import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { CommandLineAtom } from "@/lib/slash-commands";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
@@ -30,6 +34,7 @@ const ALIAS_MAP = {
   "❯": "❯",
   ">": "❯",
   "$": "$",
+  "?": "?",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -57,6 +62,14 @@ describe("computeSubmitText — strip-on-match", () => {
     expect(computeSubmitText("$ ls", "$", ALIAS_MAP)).toBe(" ls");
   });
 
+  it("doc=`? why`, route=`?` → strips the `?` (btw route)", () => {
+    expect(computeSubmitText("? why", "?", ALIAS_MAP)).toBe(" why");
+  });
+
+  it("doc=`? why`, route=`❯` → returns text verbatim (prefix doesn't match route)", () => {
+    expect(computeSubmitText("? why", "❯", ALIAS_MAP)).toBe("? why");
+  });
+
   it("doc=`❯ hi`, route=`❯` → strips the `❯` (display character also matches)", () => {
     expect(computeSubmitText("❯ hi", "❯", ALIAS_MAP)).toBe(" hi");
   });
@@ -64,6 +77,85 @@ describe("computeSubmitText — strip-on-match", () => {
   it("strip removes ONLY the first character (no recursion)", () => {
     // `>>foo` strips one `>` → `>foo`. The remaining `>` stays put.
     expect(computeSubmitText(">>foo", "❯", ALIAS_MAP)).toBe(">foo");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// routeAwareSubmitButtonMode — the `$`-route Z5 mode selector ([P13])
+// ---------------------------------------------------------------------------
+
+describe("routeAwareSubmitButtonMode", () => {
+  const claude: DevSubmitButtonMode = { kind: "stopping" };
+
+  it("passes the Claude lifecycle mode through unchanged on `❯` and `?`", () => {
+    expect(routeAwareSubmitButtonMode("❯", claude, false)).toBe(claude);
+    expect(routeAwareSubmitButtonMode("❯", claude, true)).toBe(claude);
+    expect(routeAwareSubmitButtonMode("?", claude, true)).toBe(claude);
+    expect(routeAwareSubmitButtonMode(null, claude, true)).toBe(claude);
+  });
+
+  it("`$` + idle → submit (never inert; empty-gating rides data-empty)", () => {
+    expect(routeAwareSubmitButtonMode("$", claude, false)).toEqual({
+      kind: "submit",
+      disabled: false,
+    });
+  });
+
+  it("`$` + in-flight → stop (fires kill, ignoring the Claude mode)", () => {
+    expect(routeAwareSubmitButtonMode("$", claude, true)).toEqual({ kind: "stop" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeSideQuestionArg — the `?`-route (btw) submission transform
+// ---------------------------------------------------------------------------
+
+// Build draft text + positioned atoms from a piece list — a string piece is
+// literal text, an object piece becomes a TUG_ATOM_CHAR placeholder at its
+// document position (mirroring the editor substrate).
+function mkDraft(
+  pieces: ReadonlyArray<string | AtomSegment>,
+): { text: string; atoms: CommandLineAtom[] } {
+  let text = "";
+  const atoms: CommandLineAtom[] = [];
+  for (const piece of pieces) {
+    if (typeof piece === "string") {
+      text += piece;
+    } else {
+      atoms.push({ position: text.length, segment: piece });
+      text += TUG_ATOM_CHAR;
+    }
+  }
+  return { text, atoms };
+}
+
+describe("computeSideQuestionArg — btw-route submission", () => {
+  it("plain question passes through, trimmed", () => {
+    expect(computeSideQuestionArg("  why is this slow?  ", [])).toBe(
+      "why is this slow?",
+    );
+  });
+
+  it("strips a leading `?` the power-user typed", () => {
+    expect(computeSideQuestionArg("? explain the reducer", [], ALIAS_MAP)).toBe(
+      "explain the reducer",
+    );
+  });
+
+  it("empty / whitespace draft → empty arg (bare submit opens the overlay)", () => {
+    expect(computeSideQuestionArg("", [])).toBe("");
+    expect(computeSideQuestionArg("   ", [])).toBe("");
+  });
+
+  it("expands a file mention to its path so it survives into the question", () => {
+    const { text, atoms } = mkDraft([
+      "what does ",
+      { type: "file", value: "roadmap/plan.md", label: "plan.md" } as AtomSegment,
+      " do?",
+    ]);
+    expect(computeSideQuestionArg(text, atoms)).toBe(
+      "what does roadmap/plan.md do?",
+    );
   });
 });
 
@@ -84,6 +176,11 @@ describe("coerceRestorePayload — new shape", () => {
     });
     expect(result.route).toBe("$");
     expect(result.draft).toEqual(draft);
+  });
+
+  it("round-trips the btw route (`?`) — route is stored as an opaque string", () => {
+    const result = coerceRestorePayload({ route: "?", draft: null });
+    expect(result.route).toBe("?");
   });
 
   it("treats a malformed draft as null", () => {

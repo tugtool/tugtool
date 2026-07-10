@@ -729,7 +729,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // from the selection and writes the plain text to the clipboard;
         // enablement reuses the copy gate (MenuState.edit.copy) since both
         // need a selection.
-        editMenu.addItem(NSMenuItem(title: "Copy as Plain Text", action: #selector(performCopyAsPlainText(_:)), keyEquivalent: "c", modifierMask: [.command, .shift]).identified("edit.copyAsPlainText"))
+        // ⌥⇧⌘C — moved off ⇧⌘C, which is now the Dev card's Code route
+        // shortcut (SELECT_ROUTE `❯`). AppKit owns the chord at the menu bar,
+        // so the extra ⌥ frees ⇧⌘C to reach the web route keymap.
+        editMenu.addItem(NSMenuItem(title: "Copy as Plain Text", action: #selector(performCopyAsPlainText(_:)), keyEquivalent: "c", modifierMask: [.command, .shift, .option]).identified("edit.copyAsPlainText"))
         editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(performPaste(_:)), keyEquivalent: "v").identified("edit.paste"))
         // Paste variants — chain-action round-trips (NOT the native
         // NSText.paste selector). The web responder chain reads the
@@ -737,7 +740,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // Markdown strip), and inserts; enablement reuses the paste gate
         // (MenuState.edit.paste) since both need an editable surface.
         editMenu.addItem(NSMenuItem(title: "Paste as Quote", action: #selector(performPasteAsQuote(_:)), keyEquivalent: "v", modifierMask: [.command, .option]).identified("edit.pasteAsQuote"))
-        editMenu.addItem(NSMenuItem(title: "Paste as Plain Text", action: #selector(performPasteAsPlainText(_:)), keyEquivalent: "v", modifierMask: [.command, .shift]).identified("edit.pasteAsPlainText"))
+        // ⌥⇧⌘V — moved off ⇧⌘V to pair with the ⌥⇧⌘C copy variant.
+        editMenu.addItem(NSMenuItem(title: "Paste as Plain Text", action: #selector(performPasteAsPlainText(_:)), keyEquivalent: "v", modifierMask: [.command, .shift, .option]).identified("edit.pasteAsPlainText"))
         editMenu.addItem(NSMenuItem(title: "Delete", action: #selector(performDelete(_:)), keyEquivalent: "").identified("edit.delete"))
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())

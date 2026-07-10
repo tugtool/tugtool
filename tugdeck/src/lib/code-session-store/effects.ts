@@ -60,6 +60,18 @@ export interface SendFrameEffect {
   msg: InboundMessage;
 }
 
+/**
+ * Upsert a `shell`-origin turn into the committed transcript ([P06]/[P12]).
+ * The store wrapper applies it with {@link upsertShellTurn}: replace a turn
+ * with the same `turnKey` in place (settle), or insert at its timestamp
+ * position (mint / restore interleave). Disjoint from the Claude turn
+ * lifecycle — no phase change, no `activeTurn` touch.
+ */
+export interface IngestShellTurnEffect {
+  kind: "ingest-shell-turn";
+  entry: TurnEntry;
+}
+
 export interface AppendTranscriptEffect {
   kind: "append-transcript";
   entry: TurnEntry;
@@ -190,6 +202,7 @@ export type Effect =
   | ClearInflightEffect
   | SendFrameEffect
   | AppendTranscriptEffect
+  | IngestShellTurnEffect
   | FlushPrependEffect
   | DiscardPrependEffect
   | ScheduleTimerEffect

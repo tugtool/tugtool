@@ -28,6 +28,7 @@ import {
   deriveContextWindows,
   endStateBadgeFor,
   perTurnTokens,
+  shellEndStateBadge,
   turnWindowTokens,
 } from "@/lib/code-session-store/end-state";
 import type { TurnCost } from "@/lib/code-session-store/types";
@@ -83,6 +84,23 @@ describe("endStateBadgeFor", () => {
       text: "Lost",
       role: "caution",
     });
+  });
+});
+
+describe("shellEndStateBadge — the shell Z1B exit badge ([D111])", () => {
+  it("exit 0 blends in (inherit), mirroring the assistant OK badge", () => {
+    expect(shellEndStateBadge(0)).toEqual({ text: "exit 0", role: "inherit" });
+  });
+
+  it("a non-zero exit is danger, carrying the code", () => {
+    expect(shellEndStateBadge(1)).toEqual({ text: "exit 1", role: "danger" });
+    expect(shellEndStateBadge(127)).toEqual({ text: "exit 127", role: "danger" });
+  });
+
+  it("a null exit (kill / timeout) reads `killed` in the caution tone", () => {
+    // Caution, not danger: the reap is a user/timeout action, not a
+    // command that ran and failed.
+    expect(shellEndStateBadge(null)).toEqual({ text: "killed", role: "caution" });
   });
 });
 

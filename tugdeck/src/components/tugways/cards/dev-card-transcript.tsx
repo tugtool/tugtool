@@ -143,6 +143,9 @@ import {
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
+import { resolveCommandBlock } from "./dev-command-block-registry";
+import { composeShellShareText } from "./shell-exchange-view";
+import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -213,6 +216,7 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
+const SHELL_IDENTIFIER = "Shell";
 
 /**
  * Stable empty-atoms reference for the ghost-row defensive fallback —
@@ -477,6 +481,68 @@ const GhostRowCell = React.memo(function GhostRowCell({
 }, transcriptCellPropsEqual);
 
 // ---------------------------------------------------------------------------
+// `ShellTurnCell` — the `$`-route exchange row ([P06]). One row per
+// `shell`-origin turn, its sole `shell_exchange` Message rendered as
+// non-context ink ([P11]) inside a `participant="shell"` transcript entry.
+// ---------------------------------------------------------------------------
+interface ShellTurnCellProps {
+  index: number;
+  row: DevRowDescriptor;
+  dataSource: DevTranscriptDataSource;
+  codeSessionStore: CodeSessionStore;
+  shellSessionStore: ShellSessionStore;
+}
+const ShellTurnCell = React.memo(function ShellTurnCell({
+  row,
+  shellSessionStore,
+}: ShellTurnCellProps) {
+  const turn = row.turn;
+  const message = turn?.messages[0];
+  if (message === undefined || message.kind !== "shell_exchange") return null;
+  // Command-block registry ([P05]): a bespoke renderer claims the
+  // command family it understands; everything else renders through
+  // the generic exchange block. Resolution is total.
+  const CommandBlock = resolveCommandBlock(message.command);
+  return (
+    <div
+      className="dev-card-transcript-shell-row"
+      data-slot="dev-transcript-shell-row"
+    >
+      <TugTranscriptEntry
+        participant="shell"
+        identifier={SHELL_IDENTIFIER}
+        body={
+          // The same whole-block collapse a Bash block wears ([P02]): the
+          // chrome renders the header expand/collapse chevron, and fold-
+          // suppression opens the embedded terminal fully (no double-dip),
+          // so long output is collapsible from the header. Keyed on the
+          // exchange id so the user's expand/collapse choice persists across
+          // windowed remounts. Defaults expanded — the user just ran it.
+          <ToolBlockHistoryCollapse
+            toolUseId={message.exchangeId}
+            defaultCollapsed={false}
+          >
+            <CommandBlock
+              message={message}
+              // Share ([P08]): compose the fenced text at click time and
+              // park it on the shell store; the prompt entry consumes it
+              // (route flip + editor seed) — never auto-sent.
+              onShare={() =>
+                shellSessionStore.requestShare(composeShellShareText(message))
+              }
+            />
+          </ToolBlockHistoryCollapse>
+        }
+        // Z1B end-state row ([D111]) — the exchange's exit badge + duration,
+        // beneath the block, exactly where a Claude turn shows its OK/Error
+        // badge + timing.
+        controls={<DevZ1B participant="shell" turn={turn} />}
+      />
+    </div>
+  );
+}, transcriptCellPropsEqual);
+
+// ---------------------------------------------------------------------------
 // `AssistantTurnCell` — single renderer for the assistant row.
 //
 // Handles both the in-flight phase (data flowing from the live
@@ -725,6 +791,11 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       );
       continue;
     }
+    // shell_exchange messages never appear inside a Claude (user/assistant)
+    // turn — they are the sole content of a separate `shell`-origin turn,
+    // rendered by the data source's shell row kind ([P06]). Skip defensively
+    // so this Claude-turn loop's fall-through narrows cleanly to `tool_use`.
+    if (message.kind === "shell_exchange") continue;
     // tool_use — render top-level calls only; subagent children are
     // resolved inside their parent's wrapper.
     if (message.parentToolUseId !== undefined) continue;
@@ -1163,6 +1234,9 @@ export interface DevTranscriptHostProps {
    */
   cardId: string;
   codeSessionStore: CodeSessionStore;
+  /** Per-card shell session — the shell rows' Share gesture parks its
+   *  composed text here for the prompt entry to consume ([P08]). */
+  shellSessionStore: ShellSessionStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
    * Per-card response-settings store. The host binds it to the
@@ -1258,6 +1332,7 @@ export const DevTranscriptHost = forwardRef<
   {
     cardId,
     codeSessionStore,
+    shellSessionStore,
     sessionMetadataStore,
     responseStore,
     renderTurnTrailing,
@@ -1496,6 +1571,22 @@ export const DevTranscriptHost = forwardRef<
     },
     [codeSessionStore],
   );
+  const shellRenderer = useCallback<
+    TugListViewCellRenderer<DevTranscriptDataSource>
+  >(
+    (p) => {
+      const row = p.dataSource.rowAt(p.index);
+      return (
+        <ShellTurnCell
+          {...p}
+          row={row}
+          codeSessionStore={codeSessionStore}
+          shellSessionStore={shellSessionStore}
+        />
+      );
+    },
+    [codeSessionStore, shellSessionStore],
+  );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<DevTranscriptDataSource>>
   >(
@@ -1503,8 +1594,9 @@ export const DevTranscriptHost = forwardRef<
       "user": userRenderer,
       "assistant": assistantRenderer,
       "ghost": ghostRenderer,
+      "shell": shellRenderer,
     }),
-    [userRenderer, assistantRenderer, ghostRenderer],
+    [userRenderer, assistantRenderer, ghostRenderer, shellRenderer],
   );
 
 

@@ -121,21 +121,24 @@ export const KEYBINDINGS: KeyBinding[] = [
   // the semantics — including atom-aware HTML preservation.
   { key: "KeyX", meta: true, action: TUG_ACTIONS.CUT, preventDefaultOnMatch: true },
   { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
-  // Copy variant. ⇧⌘C strips Markdown from the selection to plain text.
-  // The exact-modifier match in `keyBindingMatchesEvent` keeps it
-  // distinct from bare ⌘C. In Tug.app the Swift Edit menu owns the chord
-  // (AppKit swallows it at the menu bar and round-trips a control frame);
-  // this entry serves browser-only dev where no Swift menu is present.
-  { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
+  // Copy variant. ⌥⇧⌘C strips Markdown from the selection to plain text.
+  // The exact-modifier match in `keyBindingMatchesEvent` keeps it distinct
+  // from bare ⌘C and from ⇧⌘C — which is the Code route shortcut
+  // (SELECT_ROUTE `❯`, below), so this variant carries the extra ⌥. In
+  // Tug.app the Swift Edit menu owns the chord (AppKit swallows it at the
+  // menu bar and round-trips a control frame); this entry serves browser-only
+  // dev where no Swift menu is present.
+  { key: "KeyC", meta: true, shift: true, alt: true, action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
   { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
   // Paste variants. ⌥⌘V wraps the clipboard as a Markdown blockquote;
-  // ⇧⌘V strips Markdown to plain text. The exact-modifier match in
-  // `keyBindingMatchesEvent` keeps these distinct from bare ⌘V. In
-  // Tug.app the Swift Edit menu owns these chords (AppKit swallows them
-  // at the menu bar and round-trips a control frame); these entries
-  // serve browser-only dev where no Swift menu is present.
+  // ⌥⇧⌘V strips Markdown to plain text (moved off ⇧⌘V to pair with the
+  // ⌥⇧⌘C copy variant). The exact-modifier match in `keyBindingMatchesEvent`
+  // keeps these distinct from bare ⌘V. In Tug.app the Swift Edit menu owns
+  // these chords (AppKit swallows them at the menu bar and round-trips a
+  // control frame); these entries serve browser-only dev where no Swift menu
+  // is present.
   { key: "KeyV", meta: true, alt: true, action: TUG_ACTIONS.PASTE_AS_QUOTE, preventDefaultOnMatch: true },
-  { key: "KeyV", meta: true, shift: true, action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
+  { key: "KeyV", meta: true, shift: true, alt: true, action: TUG_ACTIONS.PASTE_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
   // Undo / redo do NOT use preventDefaultOnMatch. Native <input> and
   // <textarea> elements rely on the browser's built-in undo stack,
   // which no JavaScript API can trigger programmatically. These
@@ -223,7 +226,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "Digit7", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 7 },
   { key: "Digit8", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 8 },
   { key: "Digit9", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 9 },
-  // tug-prompt-entry route shortcuts. ⇧⌘C / ⇧⌘S switch the
+  // tug-prompt-entry route shortcuts. ⇧⌘C / ⇧⌘S / ⇧⌘B switch the
   // route segment without leaving the editor. The handler lives on
   // tug-prompt-entry's responder (default `first-responder` scope —
   // dispatch from the editor walks up to the entry). The `value`
@@ -232,8 +235,11 @@ export const KEYBINDINGS: KeyBinding[] = [
   // `preventDefaultOnMatch` suppresses the WebView's native handling
   // (Shift+Cmd+S "Save Page As"; Shift+Cmd+C "Copy with Style") so the
   // shortcut is owned by the responder chain regardless of focus.
+  // ⇧⌘B has no WebKit default in this context (verified unbound) but
+  // carries `preventDefaultOnMatch` for symmetry with its siblings.
   { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
   { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
+  { key: "KeyB", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "?", preventDefaultOnMatch: true },
   // ⇧⌘P cycles the dev card's permission mode. Tug deliberately departs from
   // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
   // but in a GUI Shift+Tab must move focus to the previous control. So the

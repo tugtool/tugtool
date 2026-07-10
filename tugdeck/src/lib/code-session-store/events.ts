@@ -16,6 +16,36 @@ import type { PermissionMode } from "@tugproto/inbound";
 import type { ControlRequestForward } from "./types";
 
 /** Internal `send` action injected by `CodeSessionStore.send`. */
+/**
+ * A `$`-route shell exchange entered the transcript ([P06]/[P12]). NOT a wire
+ * event — `ShellSessionStore` folds `SHELL_OUTPUT` and calls
+ * `codeSessionStore.ingestShellExchange`, which dispatches these. The exchange
+ * becomes a committed `shell`-origin `TurnEntry` in `transcript` (never the
+ * Claude `activeTurn` slot), correlated by `exchangeId`.
+ */
+export interface ShellExchangeStartedActionEvent {
+  type: "shell_exchange_started";
+  exchangeId: string;
+  command: string;
+  cwd: string;
+  startedAtMs: number;
+}
+
+export interface ShellExchangeCompleteActionEvent {
+  type: "shell_exchange_complete";
+  exchangeId: string;
+  /** Present when a matching `started` exists; carried for a bare complete
+   *  (restore / no prior started) so the turn can be minted whole. */
+  command: string;
+  output: string;
+  /** `null` = killed / timed-out / in-flight. */
+  exitCode: number | null;
+  cwd: string;
+  cwdAfter: string | null;
+  startedAtMs: number;
+  settledAtMs: number;
+}
+
 export interface SendActionEvent {
   type: "send";
   /**
@@ -1191,4 +1221,6 @@ export type CodeSessionEvent =
   | RewindPreviewResultEvent
   | RewindResultEvent
   | RequestRewindPreviewActionEvent
-  | SessionRewindActionEvent;
+  | SessionRewindActionEvent
+  | ShellExchangeStartedActionEvent
+  | ShellExchangeCompleteActionEvent;

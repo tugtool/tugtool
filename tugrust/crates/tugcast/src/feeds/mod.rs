@@ -19,6 +19,7 @@ pub mod pulse;
 pub mod secret_filter;
 pub mod session_metadata;
 pub mod session_scoped;
+pub mod shell;
 pub mod stats;
 pub mod terminal;
 pub mod workspace_registry;

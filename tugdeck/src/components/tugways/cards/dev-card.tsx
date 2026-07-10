@@ -39,6 +39,9 @@ import { DevTranscriptHost, type DevTranscriptHandle } from "./dev-card-transcri
 import { useDevPlacementSlots } from "./dev-card-placement-experiment";
 import type { DevTelemetryStatusRowHandle } from "./dev-card-telemetry-renderers";
 import { DevRouteIndicatorBadge } from "../chrome/dev-route-indicator-badge";
+import { DevRouteChromeManifest } from "../chrome/dev-route-chrome-manifest";
+import { DevCwdChip } from "../chrome/dev-cwd-chip";
+import { formatPathChipText } from "../chrome/path-chip-format";
 import { DevSessionIdBadge } from "../chrome/dev-session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
@@ -62,7 +65,6 @@ import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
-import { useRoute } from "@/lib/route-lifecycle";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useDevCardServices } from "./use-dev-card-services";
 import { type LocalCommandName } from "@/lib/slash-commands";
@@ -112,6 +114,7 @@ import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
+import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { deriveDevCardBannerSpec, humanizeErrorSummary } from "./dev-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
@@ -230,9 +233,6 @@ const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "$": "Run a shell command",
 };
 
-/** Shell route value — mirrors `ROUTE_ITEMS` in `tug-prompt-entry.tsx`. */
-const ROUTE_SHELL = "$";
-
 /**
  * Focus group the dev card authors its keyboard-focus-cycling stops
  * into ([P02]/[P10]). One group per card mode — the per-card
@@ -255,8 +255,9 @@ const DEV_CYCLE_GROUP = "dev-prompt-cycle";
 // shown (status bar present AND the `pulse/enabled` default on); attachment
 // stops exist only while the editor holds image atoms — when neither is
 // present the walk runs … WORK → editor → wrap. A disabled stop (the empty
-// submit, or the chips on the Shell route) drops out of the walk via the
-// engine's interactivity filter, so the seed lands on the next live stop.
+// submit) drops out of the walk via the engine's interactivity filter, so the
+// seed lands on the next live stop; a chip a route doesn't show simply
+// unmounts (Table T01), so it is not in the walk at all.
 const DEV_CYCLE_ORDER_ROUTE = 0;
 const DEV_CYCLE_ORDER_CLAUDE_CODE = 1;
 const DEV_CYCLE_ORDER_SESSION = 2;
@@ -264,6 +265,9 @@ const DEV_CYCLE_ORDER_PROJECT = 3;
 const DEV_CYCLE_ORDER_MODE = 4;
 const DEV_CYCLE_ORDER_MODEL = 5;
 const DEV_CYCLE_ORDER_EFFORT = 6;
+// The shell route's Cwd chip shares slot 4 with Mode — the two are never in
+// the same route's Z4B cluster (Table T01), so the Tab walk never sees both.
+const DEV_CYCLE_ORDER_CWD = 4;
 const DEV_CYCLE_ORDER_SUBMIT = 7;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK take orders
@@ -286,46 +290,6 @@ const DEV_CYCLE_ORDER_ATTACHMENT_BASE = 16;
 //   "relinquish" — commit exits focus-cycling; the caret returns to the prompt.
 //   "retain"     — commit keeps cycling; the ring returns to the originating chip.
 const DEV_CYCLE_PICKER_COMMIT_DISPOSITION: "retain" | "relinquish" = "retain";
-
-/** Max characters the Z4B Project chip shows before it falls back to the
- *  leaf directory name. */
-const PROJECT_CHIP_MAX_CHARS = 16;
-
-/**
- * Display text for the Z4B Project chip. If the whole path fits within
- * {@link PROJECT_CHIP_MAX_CHARS}, it is shown verbatim. Otherwise the chip
- * shows just the leaf directory name; a leaf that is itself too long is
- * mid-truncated with an ellipsis. The full path always travels in the chip's
- * `title` (tooltip) when the shown text differs from it.
- */
-function formatProjectChipText(dir: string): string {
-  if (dir.length <= PROJECT_CHIP_MAX_CHARS) return dir;
-  const leaf = dir.replace(/\/+$/, "").split("/").pop() ?? dir;
-  if (leaf.length <= PROJECT_CHIP_MAX_CHARS) return leaf;
-  // Mid-truncate the leaf, reserving one char for the ellipsis.
-  const keep = PROJECT_CHIP_MAX_CHARS - 1;
-  const head = Math.ceil(keep / 2);
-  const tail = Math.floor(keep / 2);
-  return `${leaf.slice(0, head)}…${leaf.slice(leaf.length - tail)}`;
-}
-
-/**
- * Reads the active route from `RouteLifecycle` and yields whether it is the
- * Shell route to a render callback. Mounted inside the prompt entry's
- * indicator slot (where the provider is in scope), so the Z4B chips can pick
- * up each component's own `disabled` feature on the Shell route — the
- * Session / Mode / Model / Effort chips drive a Claude Code session, which
- * Shell has none of. The route indicator and Project chips apply to both
- * routes and stay live.
- */
-function DevRouteShellGate({
-  children,
-}: {
-  children: (isShell: boolean) => React.ReactNode;
-}): React.ReactElement {
-  return <>{children(useRoute() === ROUTE_SHELL)}</>;
-}
-
 
 /**
  * Human-readable labels for the `lastError` causes the card surfaces as
@@ -464,6 +428,8 @@ export interface DevCardServices {
   hooksInventoryStore: HooksInventoryStore;
   /** Ephemeral `/btw` side-question history store (Spec S02). */
   sideQuestionStore: SideQuestionStore;
+  /** `$`-route shell session store — session state + exchange ingest ([P12]). */
+  shellSessionStore: ShellSessionStore;
   /**
    * Delegate handle for the embedded `TugPromptEntry`. Owned by the
    * hook because the `/` completion provider's position-0 gate reads
@@ -2129,7 +2095,7 @@ export function DevCardBody({
   renderTurnTrailing,
   footerContent,
 }: DevCardBodyProps) {
-  const { codeSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, entryDelegateRef } = services;
 
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
@@ -3332,7 +3298,7 @@ export function DevCardBody({
   }, [cardId, projectDir]);
 
   const projectChipText =
-    projectDir !== null ? formatProjectChipText(projectDir) : null;
+    projectDir !== null ? formatPathChipText(projectDir) : null;
   // Right-click → Copy the full project path (not the ellipsized chip face).
   const projectCopy = useCopyableButton(`Project: ${projectDir ?? ""}`);
   const projectStatusContent = projectDir !== null ? (
@@ -3357,6 +3323,21 @@ export function DevCardBody({
       {projectCopy.contextMenu}
     </>
   ) : null;
+
+  // Shell route's Cwd chip ([P10], Table T01) — bound live to the shell
+  // session's cwd ([L02]); falls back to the project dir before the first
+  // `shell_state` (the store seeds cwd to the project dir at construction).
+  const shellCwd = useSyncExternalStore(
+    shellSessionStore.subscribe,
+    () => shellSessionStore.getSnapshot().cwd,
+  );
+  const cwdStatusContent = (
+    <DevCwdChip
+      cwd={shellCwd ?? projectDir}
+      focusGroup={DEV_CYCLE_GROUP}
+      focusOrder={DEV_CYCLE_ORDER_CWD}
+    />
+  );
 
   // Dev-only placement-experiment slots. In production this returns
   // an object with every slot undefined (the harness is gated behind
@@ -3488,6 +3469,7 @@ export function DevCardBody({
               ref={transcriptRef}
               cardId={cardId}
               codeSessionStore={codeSessionStore}
+              shellSessionStore={shellSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               responseStore={responseStore}
               renderTurnTrailing={effectiveRenderTurnTrailing}
@@ -3625,6 +3607,7 @@ export function DevCardBody({
               onResumeTyping={() => cycle.exit()}
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}
+              shellSessionStore={shellSessionStore}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
               // session fault. Surface it as a calm, dismissible bulletin
@@ -3649,48 +3632,51 @@ export function DevCardBody({
               onDoubleEscapeWhenEmpty={() => rewindSheet.openRewindSheet()}
               indicatorsContent={
                 <>
-                  <DevRouteIndicatorBadge
-                    codeSessionStore={codeSessionStore}
-                    sessionMetadataStore={sessionMetadataStore}
-                    focusGroup={DEV_CYCLE_GROUP}
-                    focusOrder={DEV_CYCLE_ORDER_CLAUDE_CODE}
+                  <DevRouteChromeManifest
+                    identityBadge={
+                      <DevRouteIndicatorBadge
+                        codeSessionStore={codeSessionStore}
+                        sessionMetadataStore={sessionMetadataStore}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_CLAUDE_CODE}
+                      />
+                    }
+                    session={
+                      <DevSessionIdBadge
+                        cardId={cardId}
+                        sessionMetadataStore={sessionMetadataStore}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_SESSION}
+                      />
+                    }
+                    project={effectivePromptStatusContent}
+                    cwd={cwdStatusContent}
+                    mode={
+                      <PermissionModeChip
+                        cardId={cardId}
+                        sessionMetadataStore={sessionMetadataStore}
+                        onOpenSheet={permissionSheet.openPermissionSheet}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_MODE}
+                      />
+                    }
+                    model={
+                      <ModelChip
+                        sessionMetadataStore={sessionMetadataStore}
+                        onOpenPicker={modelPicker.openModelPicker}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_MODEL}
+                      />
+                    }
+                    effort={
+                      <EffortChip
+                        sessionMetadataStore={sessionMetadataStore}
+                        onOpenPicker={effortPicker.openEffortPicker}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_EFFORT}
+                      />
+                    }
                   />
-                  <DevRouteShellGate>
-                    {(isShell) => (
-                      <>
-                        <DevSessionIdBadge
-                          cardId={cardId}
-                          sessionMetadataStore={sessionMetadataStore}
-                          disabled={isShell}
-                          focusGroup={DEV_CYCLE_GROUP}
-                          focusOrder={DEV_CYCLE_ORDER_SESSION}
-                        />
-                        {effectivePromptStatusContent}
-                        <PermissionModeChip
-                          cardId={cardId}
-                          sessionMetadataStore={sessionMetadataStore}
-                          onOpenSheet={permissionSheet.openPermissionSheet}
-                          disabled={isShell}
-                          focusGroup={DEV_CYCLE_GROUP}
-                          focusOrder={DEV_CYCLE_ORDER_MODE}
-                        />
-                        <ModelChip
-                          sessionMetadataStore={sessionMetadataStore}
-                          onOpenPicker={modelPicker.openModelPicker}
-                          disabled={isShell}
-                          focusGroup={DEV_CYCLE_GROUP}
-                          focusOrder={DEV_CYCLE_ORDER_MODEL}
-                        />
-                        <EffortChip
-                          sessionMetadataStore={sessionMetadataStore}
-                          onOpenPicker={effortPicker.openEffortPicker}
-                          disabled={isShell}
-                          focusGroup={DEV_CYCLE_GROUP}
-                          focusOrder={DEV_CYCLE_ORDER_EFFORT}
-                        />
-                      </>
-                    )}
-                  </DevRouteShellGate>
                   {effectiveFooterContent}
                 </>
               }

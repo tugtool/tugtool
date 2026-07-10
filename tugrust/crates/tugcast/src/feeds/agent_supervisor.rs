@@ -1061,6 +1061,11 @@ pub struct AgentSupervisor {
     /// wire a ledger they won't read from. `None` makes the new ledger
     /// CONTROL ops short-circuit with an empty / no-op response.
     pub session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+    /// The shell-exchange ledger, read by the `list_shell_exchanges` CONTROL op
+    /// (the shell service writes it; the supervisor reads it). `None` in tests
+    /// that don't exercise the shell restore path — the read yields an empty
+    /// array. Set via [`AgentSupervisor::set_shell_ledger`] in `main.rs`.
+    pub shell_ledger: Option<Arc<crate::shell_ledger::ShellLedger>>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -1821,6 +1826,7 @@ impl AgentSupervisor {
             control_tx,
             sessions_recorder,
             session_ledger,
+            shell_ledger: None,
             spawner_factory,
             merger_register_tx,
             config,
@@ -2044,6 +2050,15 @@ impl AgentSupervisor {
             "list_pulse_lines" => {
                 // App-scoped read — no session id, no payload fields.
                 self.do_list_pulse_lines().await;
+                Ok(())
+            }
+            "list_shell_exchanges" => {
+                // Session-scoped read — the deck's shell-restore tail fetch.
+                let tug_session_id = serde_json::from_slice::<serde_json::Value>(payload)
+                    .ok()
+                    .and_then(|v| v.get("tug_session_id").and_then(|s| s.as_str()).map(String::from))
+                    .unwrap_or_default();
+                self.do_list_shell_exchanges(&tug_session_id).await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -3494,6 +3509,39 @@ impl AgentSupervisor {
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("list_pulse_lines_ok serializes"),
+        ));
+    }
+
+    /// Attach the shell-exchange ledger (the read side of the
+    /// `list_shell_exchanges` CONTROL op). Called once in `main.rs` before the
+    /// supervisor is shared.
+    pub fn set_shell_ledger(&mut self, ledger: Arc<crate::shell_ledger::ShellLedger>) {
+        self.shell_ledger = Some(ledger);
+    }
+
+    /// Handle a `list_shell_exchanges { tug_session_id }` CONTROL request — the
+    /// deck's shell-restore tail read. Broadcasts `list_shell_exchanges_ok
+    /// { tug_session_id, exchanges: ShellExchangeRow[] }`, oldest-first; a
+    /// missing ledger or empty session yields an empty array.
+    async fn do_list_shell_exchanges(&self, tug_session_id: &str) {
+        let exchanges = self
+            .shell_ledger
+            .as_ref()
+            .map(|ledger| {
+                ledger.list_exchanges(tug_session_id).unwrap_or_else(|err| {
+                    warn!(error = %err, %tug_session_id, "list_shell_exchanges failed");
+                    Vec::new()
+                })
+            })
+            .unwrap_or_default();
+        let body = serde_json::json!({
+            "action": "list_shell_exchanges_ok",
+            "tug_session_id": tug_session_id,
+            "exchanges": exchanges,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_shell_exchanges_ok serializes"),
         ));
     }
 
@@ -7871,6 +7919,117 @@ mod tests {
         // must still appear on the wire (consumers gate on it).
         assert_eq!(empty["is_alive"], false);
         assert_eq!(real["is_alive"], false);
+    }
+
+    /// `list_shell_exchanges { tug_session_id }` broadcasts
+    /// `list_shell_exchanges_ok { tug_session_id, exchanges: [...] }` with the
+    /// session's rows oldest-first — the deck's shell-restore tail read.
+    #[tokio::test]
+    async fn list_shell_exchanges_returns_the_session_tail() {
+        // Build a supervisor with a shell ledger holding two exchanges.
+        let shell_ledger = Arc::new(crate::shell_ledger::ShellLedger::open_in_memory().unwrap());
+        for (cmd, code) in [("echo a", Some(0)), ("false", Some(1))] {
+            shell_ledger
+                .record_exchange(&crate::shell_ledger::NewShellExchange {
+                    tug_session_id: "s1".to_string(),
+                    command: cmd.to_string(),
+                    output: format!("out:{cmd}\n"),
+                    exit_code: code,
+                    cwd: "/proj".to_string(),
+                    cwd_after: Some("/proj".to_string()),
+                    started_at_ms: 1,
+                    settled_at_ms: 2,
+                })
+                .unwrap();
+        }
+
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, mut rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let (mut sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            CancellationToken::new(),
+        );
+        sup.set_shell_ledger(Arc::clone(&shell_ledger));
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_shell_exchanges",
+            "tug_session_id": "s1",
+        }))
+        .unwrap();
+        sup.handle_control("list_shell_exchanges", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_shell_exchanges_ok");
+        assert_eq!(response["tug_session_id"], "s1");
+        let exchanges = response["exchanges"].as_array().expect("exchanges array");
+        assert_eq!(exchanges.len(), 2);
+        // Oldest-first.
+        assert_eq!(exchanges[0]["command"], "echo a");
+        assert_eq!(exchanges[0]["exit_code"], 0);
+        assert_eq!(exchanges[1]["command"], "false");
+        assert_eq!(exchanges[1]["exit_code"], 1);
+        assert_eq!(exchanges[1]["seq"], 2);
+    }
+
+    /// An unknown session (or one with no exchanges) yields an empty array,
+    /// never an error — the "no shell history yet" restore state.
+    #[tokio::test]
+    async fn list_shell_exchanges_empty_for_unknown_session() {
+        let shell_ledger = Arc::new(crate::shell_ledger::ShellLedger::open_in_memory().unwrap());
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, mut rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let (mut sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            CancellationToken::new(),
+        );
+        sup.set_shell_ledger(shell_ledger);
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_shell_exchanges",
+            "tug_session_id": "nope",
+        }))
+        .unwrap();
+        sup.handle_control("list_shell_exchanges", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_shell_exchanges_ok");
+        assert_eq!(response["exchanges"].as_array().unwrap().len(), 0);
     }
 
     /// `list_card_bindings` reports `is_alive: true` for a session

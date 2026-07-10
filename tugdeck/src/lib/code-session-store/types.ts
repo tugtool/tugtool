@@ -108,7 +108,8 @@ export type MessageKind =
   | "assistant_text"
   | "assistant_thinking"
   | "system_note"
-  | "tool_use";
+  | "tool_use"
+  | "shell_exchange";
 
 /**
  * Fields every `Message` carries. `messageKey` is the React-row /
@@ -202,6 +203,33 @@ export interface ToolUseMessage extends MessageBase {
 }
 
 /**
+ * The single content of a `shell`-origin turn ([P06], Spec S04): one settled
+ * (or in-flight) `$`-route command/output exchange. Distinct *non-context ink*
+ * ([P11]) — a shell exchange records what the user *did*, not what Claude
+ * knows. `exitCode === null` marks an in-flight exchange (minted on
+ * `exchange_started`, before the command settles) OR a killed/timed-out one;
+ * the settled row is distinguished from in-flight by the turn's committed flag
+ * on the data-source side ([P12]).
+ */
+export interface ShellExchangeMessage extends MessageBase {
+  kind: "shell_exchange";
+  /** The tugcast `exchange_id` — correlation key for started → complete. */
+  exchangeId: string;
+  command: string;
+  /** Combined stdout+stderr, ANSI-bearing. Empty until the exchange settles. */
+  output: string;
+  /** `null` while in flight, and for a killed / timed-out exchange. */
+  exitCode: number | null;
+  /** cwd at exec time. */
+  cwd: string;
+  /** cwd after the command (a `cd` sticks). `null` while in flight. */
+  cwdAfter: string | null;
+  startedAtMs: number;
+  /** `null` while in flight; set when the exchange settles. */
+  settledAtMs: number | null;
+}
+
+/**
  * Discriminated union of every Message kind. Iteration is the substrate's
  * primary access pattern — consumers `messages.filter(m => m.kind === ...)`
  * or `messages[0]?.kind === "user_message"` instead of reaching for
@@ -212,7 +240,8 @@ export type Message =
   | AssistantText
   | AssistantThinking
   | SystemNote
-  | ToolUseMessage;
+  | ToolUseMessage
+  | ShellExchangeMessage;
 
 /**
  * Intrinsic, stated origin of a turn container (`tuglaws/turn-metric.md`
@@ -225,8 +254,13 @@ export type Message =
  * Origin is set by the turn's opener and is NEVER inferred from
  * `messages[0]` — a code-constructed turn can never masquerade as a user
  * action ([P01]).
+ *
+ * `shell` — a `$`-route command/output exchange ([P06], activating the
+ * reserved `#s` addressing). A shell turn carries exactly one
+ * `shell_exchange` Message and is visually distinct non-context ink ([P11]);
+ * it is NOT part of Claude's context.
  */
-export type TurnOrigin = "user" | "assistant";
+export type TurnOrigin = "user" | "assistant" | "shell";
 
 /**
  * Per-turn token + cost figures, frozen onto the committed `TurnEntry`

@@ -8,7 +8,7 @@
 
 ## Why a route pipe
 
-A Dev prompt entry has a *command route* — the surface a submission is sent to: `❯` Code (Claude) or `$` Shell. The route is a single scalar of state, but it is read in several places and changed from several triggers, and a slice of chrome wants to *react* when it changes. Holding it in `TugPromptEntry`'s `useState` worked while that component was its only reader; it stopped working the moment the route gained a consumer *outside* the component — the route-indicator badge, which names what the active route targets.
+A Dev prompt entry has a *command route* — the *recipient* a submission is sent to: `❯` Code (Claude on the record), `$` Shell (the machine), or `?` btw (Claude off the record — a native side question, [D108]/[D110]). The route is a single scalar of state, but it is read in several places and changed from several triggers, and a slice of chrome wants to *react* when it changes. Holding it in `TugPromptEntry`'s `useState` worked while that component was its only reader; it stopped working the moment the route gained a consumer *outside* the component — the route-indicator badge, which names what the active route targets.
 
 `RouteLifecycle` is the pipe that resolves this. It owns the authoritative route, exposes it as external state so any descendant can subscribe, and announces every change as a will/did pair so imperative reactors can prepare and respond. It is the route-scoped sibling of the deck's `CardLifecycle` ([lifecycle-delegates.md](lifecycle-delegates.md)) — the same observer-vs-delegate shape, a far smaller surface, a finer scope.
 
@@ -110,7 +110,7 @@ Handlers registered once at mount — the action handlers, the editor extension 
 
 ## Consumers today
 
-`TugPromptEntry` itself is currently the only reader. It drives the route choice-group's `value`, the editor's per-route placeholder, and the per-route Return-key action off the subscribed route. The context hooks — `useRoute`, `useRouteDelegate`, `useRouteLifecycle` — ship ready for descendant consumers; the route-indicator badge is the first planned one. The delegate surface has no consumer yet; it ships for current and future imperative reactors, matching the observer-vs-delegate completeness of `CardLifecycle`.
+`TugPromptEntry` drives the route choice-group's `value`, the editor's per-route placeholder, the per-route Return-key action, and the per-route submit dispatch ([D110]: `❯` → send; `?` → `/btw` local dispatch; `$` → `shellSessionStore.exec` — the block-oriented shell backend, [D111]) off the subscribed route. On the `$` route the Z5 submit button is route-aware (`routeAwareSubmitButtonMode`): a `stop` pose while an exchange is in flight (reaping the shell process group) and a plain submit otherwise, disjoint from the Claude turn lifecycle. Descendant consumers now read the route too via `useRoute`: the route-indicator badge (`DevRouteIndicatorBadge`) names the active route's target, and `DevRouteChromeManifest` selects the per-route Z4B chip set (Table T01) — including the live `Cwd` chip bound to `shellSessionStore.cwd`. The share gesture is a new *producer* of route changes: composing a shell exchange into the editor calls `routeLifecycle.setRoute("❯")` so the shared text lands on the code route ([D111] [P08]). The delegate/observer surface (`useRouteDelegate`) still has no consumer; it ships for future imperative reactors, matching the observer-vs-delegate completeness of `CardLifecycle`.
 
 ---
 

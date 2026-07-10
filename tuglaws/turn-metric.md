@@ -41,12 +41,14 @@ wire-`totalTurns` reconcile parsed off tugcode, and a live `+1` per
 
 A session is an ordered list of **turns**. Each turn has:
 
-- an **`origin`**: `user` | `assistant` (shell — `#s` — is reserved and not
-  emitted this phase);
+- an **`origin`**: `user` | `assistant` | `shell` (`#s` — a `$`-route command
+  exchange, threaded into the transcript as non-context ink; see [D111]);
 - a **`messages`** sequence (the content substrate);
 - a **user message present iff `origin === user`**. There is no other case.
   A turn with `origin: assistant` has no user message, because the user did
-  not submit one — and none is fabricated to stand in for the user.
+  not submit one — and none is fabricated to stand in for the user. A
+  `shell`-origin turn holds a single `shell_exchange` message and likewise
+  has no user message.
 
 ### What opens a turn
 
@@ -117,7 +119,9 @@ Each attribution row is addressed **`#{speaker}{turn}`**:
 
 - **`#u{turn}`** — a user row (genuine user submission only);
 - **`#a{turn}`** — an assistant row;
-- **`#s{turn}`** — shell, **reserved** (no shell rendering ships this phase).
+- **`#s{turn}`** — a shell row: one `$`-route command exchange (command +
+  output + exit), rendered as visually-distinct non-context ink ([D111]).
+  A `shell`-origin turn renders exactly this one row — no `#u`.
 
 There is **no `#x`** ("other") prefix. Wakes and continuations are the
 assistant speaking, so they are `#a`.

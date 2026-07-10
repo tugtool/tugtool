@@ -187,6 +187,7 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
       skillsInventoryStore: services.skillsInventoryStore,
       hooksInventoryStore: services.hooksInventoryStore,
       sideQuestionStore: services.sideQuestionStore,
+      shellSessionStore: services.shellSessionStore,
       entryDelegateRef,
     };
   }, [

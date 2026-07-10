@@ -146,6 +146,14 @@ body {
   white-space: nowrap;
 }
 
+/* An empty name (a block whose identity is carried by its containing
+ * transcript row — e.g. the shell exchange, whose `Shell` row header
+ * already names it) collapses out of the flex flow so the dot and the
+ * command sit adjacent with no orphaned row-gap. */
+.tool-call-header-name:empty {
+  display: none;
+}
+
 /* Detail — the inline file ref (file tools) or command text (command
  * tools); also the flexible spacer when empty. It centers its content in
  * a one-line box using the SAME `inline-flex; align-items: center`

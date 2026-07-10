@@ -948,6 +948,18 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0209-file-card-live-autosave.test.ts`.
 - **Summary:** The File card's saveless core loop on real temp files: opening renders disk content byte-for-byte; typing lands on disk within the autosave debounce with no explicit save; an external write racing an unflushed local edit raises the hash-conflict banner (409) instead of clobbering either side, and "Reload from Disk" adopts the external content; quitting inside the debounce window still lands the edit via the teardown flush, and a fresh process re-opens the flushed content. Native CGEvents (click + type).
 
+### Route enhancements — three-route chrome (AT0213)
+
+#### [AT0213] Three-route Dev card — per-route Z4B chrome, flanking geometry, btw round-trip
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0213-route-chrome.test.ts`.
+- **Summary:** The `code | shell | btw` Dev card. The per-route Z4B chrome manifest mounts exactly its Table T01 chip set on each route (chips a route drops UNMOUNT — code shows Session/Project/Mode/Model/Effort, shell shows Project/Cwd, btw shows Session/Project), verified across a choice-group click (→ Shell) and the ⇧⌘B keybinding (→ btw). Risk R04: the leading Z4A choice group and trailing Z5 submit button stay pixel-fixed while the centred-floating Z4B cluster swaps width. The `?`-route submission is a native side question ([P02]): submitting on btw opens the overlay and the ask + settled answer never change the transcript entry count (the [D108] invariant, beside AT0211). Guards [P01]/[P02]/[P03], Table T01. Native CGEvents (click + type + key) + a synthetic ⇧⌘B keydown.
+
+#### [AT0214] Shell route — exchange e2e, live cwd, restore interleave
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0214-shell-route.test.ts`.
+- **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="dev-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Developer ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

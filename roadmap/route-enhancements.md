@@ -28,7 +28,7 @@ The unifying model (decided in discussion, now plan of record): **routes are rec
 - **Three phases, strictly ordered.** Phase 1 is a probe that settles the shell execution architecture ([Q01]–[Q04]) before any backend code is written — the probe-then-plan rhythm that made `roadmap/add-btw.md` land cleanly. Phase 2 is deck-only route/Z4B chrome work (including the `btw` route), shippable before any backend exists. Phase 3 builds the shell backend, wire, ledger, transcript threading, and rendering on the probe's findings.
 - **Build up, never strip down.** The shell is block-oriented exec (command → captured output → exit code), not a TTY emulator. Capabilities are added deliberately (cwd state, env, chains); interactive TUIs are detected and declined, never half-supported.
 - **Raw always renders; richness accretes.** Every command runs and renders via the generic terminal block; a curated command-block registry (the [D101] grammar) adds bespoke rendering over time.
-- **Exploit the fossils.** `TurnOrigin` `#s` reservation, the reserved shell feed IDs, the shipped `$SHELL` route-identity badge branch, the `TerminalBlock` body kind, bundled instance-scoped tmux, and the sqlite-ledger + CONTROL-tail-fetch pattern (`pulse_lines` / `list_pulse_lines`) are all already in the tree.
+- **Exploit the fossils.** `TurnOrigin` `#s` reservation, the reserved shell feed IDs, the shipped `$SHELL` route-identity badge branch, the `TerminalBlock` body kind, and the sqlite-ledger + CONTROL-tail-fetch pattern (`pulse_lines` / `list_pulse_lines`) are all already in the tree.
 - **One reducer funnel stays sacred.** Live shell frames and restore-time ledger rows both enter the transcript through `CodeSessionStore`'s reducer, exactly as live tugcode frames and JSONL replay do today.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -62,7 +62,7 @@ The unifying model (decided in discussion, now plan of record): **routes are rec
 #### Dependencies / Prerequisites {#dependencies}
 
 - Shipped `/btw` feature ([D108], `roadmap/add-btw.md`) — the `?` route dispatches into `SideQuestionStore.ask` via the existing local-command machinery.
-- Bundled static tmux (fetched via `fetch-tmux.sh`; instance-scoped server labels via `tugcore::instance::tmux_socket_label()`, see `tugrust/crates/tugcast/src/feeds/terminal.rs`) — candidate backend for [Q01].
+- `tokio::process` (already a tugcast dependency) — the pipe-mode POSIX-shell child backend chosen for [Q01]/[P09] (tmux was evaluated and rejected in the probe; no tmux dependency is taken).
 - `TerminalBlock` body kind (`tugdeck/src/components/tugways/body-kinds/terminal-block.tsx`) — the shell row's rendering substrate.
 - sqlite ledger precedent (`tugrust/crates/tugcast/src/session_ledger.rs`) and CONTROL tail-fetch precedent (`list_pulse_lines` in `tugrust/crates/tugcast/src/feeds/pulse.rs`).
 
@@ -90,7 +90,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 ### Open Questions (MUST RESOLVE OR EXPLICITLY DEFER) {#open-questions}
 
-#### [Q01] Shell execution backend (OPEN) {#q01-exec-backend}
+#### [Q01] Shell execution backend (DECIDED) {#q01-exec-backend}
 
 **Question:** What process architecture backs the block-oriented shell session — (a) a tmux-backed session (bundled tmux, `send-keys` + output capture), (b) a long-lived `$SHELL` child driven by a sentinel protocol over a PTY or pipes, or (c) one-shot `$SHELL -c` per command with explicit cwd/env threading?
 
@@ -103,9 +103,9 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Phase 1 probe (#step-1) builds minimal spikes of (a) and (b) and records findings; (c) is the documented fallback.
 
-**Resolution:** OPEN — resolved by #step-2 into [P09]'s final form.
+**Resolution:** **DECIDED → (b) sentinel-driven persistent child in pipe mode** (folded into [P09]). The probe (`tugrust/crates/tugcast/probes/shell-exec/FINDINGS.md`) rejected (a) tmux — its fixed TTY grid truncated tall output (`seq 1 120` → 47 of 120 lines captured), pads with blank rows, re-wraps lines, and *renders* pagers/TUIs, all fighting the block model [P04]; tmux's one advantage (cross-restart survival) is redundant because the ledger ([P07]) makes the *record* durable regardless. Rejected (c) one-shot — no cwd/env persistence without state-serialization hacks. Option (b) gave byte-accurate boundaries, full untruncated output, cwd + env persistence (verified on zsh and bash), and pipe-mode hardening for free. **Sub-decision:** the exec shell is a **known POSIX shell** (the login shell if bash/zsh, else `/bin/zsh`), not blindly `HostFactsStore.shellPath` — the sentinel protocol is POSIX/bash/zsh syntax and fish (`$status`, different grouping) would need its own emitter; a block-exec shell need not *be* the login shell.
 
-#### [Q02] Exchange protocol: output capture, boundaries, streaming (OPEN) {#q02-exchange-protocol}
+#### [Q02] Exchange protocol: output capture, boundaries, streaming (DECIDED) {#q02-exchange-protocol}
 
 **Question:** What exactly does one "exchange" carry on the wire — combined stdout/stderr or separated? Streamed chunks or settled-whole? How are exit code, duration, and post-command cwd captured?
 
@@ -117,9 +117,9 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Phase 1 probe measures capture latency and chunking behavior under the chosen backend; long-running commands (`cargo build`) decide whether streaming is required for v1.
 
-**Resolution:** OPEN — resolved by #step-2.
+**Resolution:** **DECIDED → settled-whole for v1, combined stream; streaming frames reserved** (Spec S01, Spec S04). The probe measured arrival spread: bulk output arrives effectively all-at-once (`seq 1 100000` = 589 KB landed within 2 ms across 4 chunks; `seq 1 5000` within 0 ms), so streaming buys nothing for the common fast command. Only a *genuinely slow producer* trickles (a 20-line drip over 1.25 s showed 21 chunks), which is the `cargo build` case. v1 captures the whole exchange and emits `output` at `exchange_complete`; the Spec S01 sequence keeps the optional `exchange_output` chunk frames reserved so streaming is a cheap follow-on (`TerminalBlock` already streams). **Streams:** stdout and stderr are **combined into one ANSI-bearing string** (interleaved via `2>&1` at exec time, terminal-WYSIWYG), the sentinel riding the merged stream — Spec S04 `output` is that single string.
 
-#### [Q03] Non-interactive hardening (OPEN) {#q03-hardening}
+#### [Q03] Non-interactive hardening (DECIDED) {#q03-hardening}
 
 **Question:** Which environment and detection measures keep the block shell non-interactive — `PAGER=cat`, `GIT_PAGER=cat`, `TERM=dumb`, `GIT_TERMINAL_PROMPT=0`, closed/null stdin? How is a command that still blocks awaiting input detected and surfaced (timeout + kill affordance)?
 
@@ -127,9 +127,9 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Phase 1 probe runs a gauntlet (pager commands, stdin-wanting commands, TUI launches) under the candidate env and records what leaks through; the kill affordance design lands in Spec S01's `exchange` lifecycle.
 
-**Resolution:** OPEN — resolved by #step-2.
+**Resolution:** **DECIDED → pipe mode + hardened env + per-command `</dev/null` + timeout/signal-kill** (baked into the service, Spec S01). The recipe, all probe-verified: (1) **hardened env** on every exec — `PAGER=cat GIT_PAGER=cat TERM=dumb GIT_TERMINAL_PROMPT=0`; (2) **no controlling TTY** (pipe mode) so `isatty()` is false — pagers/color self-disable, and `/dev/tty` grabs (ssh/sudo password prompts) fail fast with exit 1 instead of hanging; (3) **per-command `{ <command> ; } </dev/null`** stdin isolation — the probe found a real desync flaw where a stdin-reading command (`cat`) swallowed the sentinel-emitter line and corrupted the protocol; the redirect fixed it while keeping the shell's own channel intact; (4) **timeout + signal-kill** — a genuine long-runner (`sleep 30`) wedges the foreground so the *next* stdin line also blocks, proving cancellation must **signal the running command's pgid** (SIGTERM→SIGKILL, the `kill` verb in Spec S01), never write another line. TUI gauntlet: vim/nano warn-and-exit, `less` dumps like `cat`, `top -l 1` snapshots — **none hang**.
 
-#### [Q04] Relaunch / restart semantics (OPEN) {#q04-relaunch-semantics}
+#### [Q04] Relaunch / restart semantics (DECIDED) {#q04-relaunch-semantics}
 
 **Question:** When tugcast restarts (or the app relaunches), does the shell session survive (tmux) or restart fresh in the project dir (child shell)? Either way, how is the boundary surfaced to the user (a system-note-style divider? the cwd chip resetting)?
 
@@ -137,7 +137,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Follows [Q01]'s backend choice; probe records tmux-session survival across a tugcast restart.
 
-**Resolution:** OPEN — resolved by #step-2.
+**Resolution:** **DECIDED → no cross-restart survival; the shell restarts fresh in the project dir; the record persists via the ledger** ([P07], [P09]). The chosen child-shell backend (b) is a child of tugcast and dies when tugcast restarts — there is no in-process state to carry across (the rejected tmux backend would have survived, but its block-model costs outweigh that, and the *record* is already durable via the ledger). On (re)spawn the session restarts in the card's project dir with cwd/env reset to defaults; the service emits `shell_state { live: true, cwd: <projectDir> }` so the cwd chip resets truthfully, plus an optional subdued system-note divider marking "shell restarted" so a user mid-`cd` understands the jump. Consistent with the doctrine ([P11]): the record is durable, the live shell is ephemeral.
 
 #### [Q05] `btw` route keybinding (OPEN) {#q05-btw-keybinding}
 
@@ -158,8 +158,8 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 | Shell-route submits currently reach Claude; behavior change surprises a habituated user | low | low | Phase 2 interim notice (Spec S03 note); Phase 3 makes the route real | User feedback after Phase 2 |
 | Restore interleave misorders shell rows vs Claude turns | high | med | Single merge point ([P07]), timestamp discipline in the ledger, app-test pinning row order across reload (R02) | Any reordering seen in `at`-test or manual reload |
 | Z4B manifest swap causes layout jump / focus loss | med | med | Width stabilization within route (existing `TugStableOverlay` pattern in `dev-route-indicator-badge.tsx`); mount-identity rules [L26]; geometry app-test (R04) | Visual jump on route flip |
-| Hung interactive command with no kill affordance | high | med | [Q03] hardening env + timeout + per-exchange stop control in Spec S01 | Any hang reproduced post-probe |
-| tmux backend drift across macOS versions | med | low | tmux is bundled/static (project-controlled); probe pins the version contract | tmux upgrade in `fetch-tmux.sh` |
+| Hung interactive command with no kill affordance | high | low | RESOLVED by probe: pipe-mode + hardened env + `</dev/null` means no gauntlet case hangs; pgid signal-kill + per-exchange timeout for the residual (Q03) | Any hang reproduced against the shipped `feeds/shell.rs` |
+| A non-POSIX login shell (fish) breaks the sentinel protocol | med | low | Exec shell is a service-chosen POSIX shell (bash/zsh, else `/bin/zsh`), never blindly `$SHELL` ([P09], Q01 sub-decision) | A user reports shell exec failing under a fish/nushell login |
 
 **Risk R01: Shell route behavior flip** {#r01-shell-route-flip}
 
@@ -278,15 +278,20 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 **Implications:**
 - The share affordance lives in the shell exchange block's chrome (beside Copy); it sets the route to `❯` and inserts text via the prompt-entry editor API.
 
-#### [P09] Shell session: one per card, spawned in the project dir, owned by tugcast (DECIDED — backend per [Q01]) {#p09-shell-session}
+#### [P09] Shell session: one per card, persistent POSIX child in pipe mode, owned by tugcast (DECIDED) {#p09-shell-session}
 
-**Decision:** Each Dev card gets at most one shell session, lazily started on first `$`-route submit, spawn cwd = the card's bound project dir, owned and supervised by a new `feeds/shell.rs` service in tugcast. The concrete process architecture is [Q01]'s probe outcome; instance isolation follows the `tmux_socket_label()` / `TUG_INSTANCE_ID` precedent if tmux-backed.
+**Decision:** Each Dev card gets at most one shell session, lazily started on first `$`-route submit, spawn cwd = the card's bound project dir, owned and supervised by a new `feeds/shell.rs` service in tugcast. The process is a **long-lived POSIX-shell child** (the login shell if it is bash/zsh, else `/bin/zsh`) spawned in **pipe mode (no PTY / no controlling TTY)**, driven by a **sentinel protocol**: after each command the service writes a sentinel emitter (`printf '\n<sentinel>\t%d\t%s\n' "$?" "$PWD"`) and reads the merged stdout+stderr stream until the sentinel, yielding exact output boundaries, exit code, and post-command cwd in one read (Q01 → option b, probe-confirmed).
 
 **Rationale:**
 - Per-card matches the card's one-project binding and the cwd chip's meaning; lazy start costs nothing for cards that never use the shell.
+- The probe (`probes/shell-exec/FINDINGS.md`) proved pipe-mode child gives byte-accurate boundaries, full untruncated output, and cwd/env persistence — where tmux truncates tall output and one-shot loses state.
 
 **Implications:**
-- Session lifecycle (spawn, health, teardown on card close, [Q04] restart semantics) lives in `feeds/shell.rs`; the deck holds no process state.
+- Session lifecycle (spawn, health, teardown on card close, [Q04] restart-fresh-in-project-dir semantics) lives in `feeds/shell.rs`; the deck holds no process state.
+- The service tracks each running command's **pgid** so the `kill` verb can signal it (SIGTERM→SIGKILL) — a wedged foreground command cannot be cancelled by writing another line (Q03).
+- Hardening is intrinsic, not optional: hardened env (`PAGER`/`GIT_PAGER`=cat, `TERM=dumb`, `GIT_TERMINAL_PROMPT=0`), per-command `{ …; } </dev/null` stdin isolation, no TTY, per-exchange timeout (Q03).
+- The exec shell is chosen by the service (POSIX guarantee), NOT taken blindly from `HostFactsStore.shellPath` — a fish login shell still gets a bash/zsh exec child.
+- No instance-scoped tmux server is needed (tmux rejected); process-group isolation is the child's own pgid.
 
 #### [P10] cwd chip on the shell route (DECIDED) {#p10-cwd-chip}
 
@@ -350,7 +355,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 - **Transcript row model:** `code-session-store/types.ts` — `Message` union (`user_message | assistant_text | assistant_thinking | system_note | tool_use`), `TurnOrigin = "user" | "assistant"` with the doc comment explicitly reserving `#s` shell. Rows project via `DevTranscriptDataSource` (user / assistant / ghost row kinds).
 - **Restore:** `dev-session-restore.ts` re-asserts bindings and re-issues `spawn_session(mode=resume)`; tugcode's `replay.ts` translates the Claude JSONL into synthetic frames bracketed by `replay_started`/`replay_complete`; the same reducer folds them (`KNOWN_CODE_OUTPUT_TYPES` gate in `code-session-store.ts`).
 - **Wire reservations:** `SHELL_OUTPUT: 0x60`, `SHELL_INPUT: 0x61` in `tugdeck/src/protocol.ts` and `tugrust/crates/tugcast-core/src/protocol.rs` — named, tested, unconsumed.
-- **tugcast assets:** `feeds/terminal.rs` (legacy PTY-tmux bridge with instance-scoped tmux server args — borrowable plumbing, not the shell service), `session_ledger.rs` (sqlite, two tables, trigger-based cascade — the ledger pattern), `feeds/pulse.rs` (`pulse_lines` capped ledger + `list_pulse_lines` CONTROL tail-fetch — the restore-fetch pattern).
+- **tugcast assets:** `feeds/terminal.rs` (legacy PTY-tmux bridge — an existing feed for reference on stdio/broadcast wiring, but the shell service is a new `feeds/shell.rs` using pipe-mode `tokio::process`, NOT tmux — see [Q01]), `session_ledger.rs` (sqlite, two tables, trigger-based cascade — the ledger pattern), `feeds/pulse.rs` (`pulse_lines` capped ledger + `list_pulse_lines` CONTROL tail-fetch — the restore-fetch pattern).
 - **Rendering assets:** `body-kinds/terminal-block.tsx` (ANSI parsing, static/streaming modes, sticky header with Copy, flat/virtualized body); `BashToolBlock` shows the compose-TerminalBlock pattern for command/output data.
 - **/btw assets:** `SideQuestionStore` (`lib/side-question-store.ts`), overlay (`cards/side-question-overlay.tsx`), local dispatch via `slashCommandSurfaces.btw` in `dev-card.tsx`, `at0211` app-test, [D108].
 
@@ -370,12 +375,16 @@ Between Phase 2 and Phase 3 the `$` route's submit dispatch shows the existing c
 
 ### Specification {#specification}
 
-**Spec S01: SHELL wire frames (provisional until [Q01]/[Q02] resolve)** {#s01-shell-wire}
+**Spec S01: SHELL wire frames (FINALIZED — [Q01]/[Q02]/[Q03]/[Q04] resolved)** {#s01-shell-wire}
 
-All shell frames are JSON payloads on the reserved feed IDs, session-scoped like other per-card feeds. Provisional shapes; #step-2 finalizes:
+All shell frames are JSON payloads on the reserved feed IDs, session-scoped like other per-card feeds:
 
-- `SHELL_INPUT` (deck → tugcast): `{ type: "exec", card_id, tug_session_id, exchange_id, command }` and `{ type: "kill", card_id, exchange_id }`.
-- `SHELL_OUTPUT` (tugcast → deck): `{ type: "exchange_started", exchange_id, command, cwd, started_at }` · zero or more `{ type: "exchange_output", exchange_id, chunk }` (only if [Q02] lands on streaming) · `{ type: "exchange_complete", exchange_id, exit_code, cwd_after, duration_ms, output? }` (settled-whole carries `output` here) · `{ type: "shell_state", live, cwd }` (lifecycle/liveness for the cwd chip and restart notices per [Q04]).
+- `SHELL_INPUT` (deck → tugcast): `{ type: "exec", card_id, tug_session_id, exchange_id, command }` and `{ type: "kill", card_id, exchange_id }` (kill signals the running command's pgid, SIGTERM→SIGKILL — Q03).
+- `SHELL_OUTPUT` (tugcast → deck):
+  - `{ type: "exchange_started", exchange_id, command, cwd, started_at }`
+  - `{ type: "exchange_complete", exchange_id, exit_code, cwd_after, duration_ms, output }` — **`output` is present and carries the whole combined (stdout+stderr, ANSI) stream** (settled-whole v1, Q02); `exit_code` is `null` for a killed/timed-out exchange.
+  - `{ type: "shell_state", live, cwd }` — liveness + cwd for the chip and the restart-reset notice (Q04).
+  - **Reserved (not emitted in v1):** `{ type: "exchange_output", exchange_id, chunk }` — the streaming-chunk frame kept in the grammar so the slow-producer streaming follow-on drops in without a wire change (Q02).
 
 **Spec S02: Shell exchange ledger + CONTROL pair** {#s02-shell-ledger}
 
@@ -402,8 +411,8 @@ interface ShellExchangeMessage {
   kind: "shell_exchange";
   id: string;               // exchange_id
   command: string;
-  output: string;           // ANSI-bearing combined stream ([Q02] may split)
-  exitCode: number | null;  // null = killed/aborted
+  output: string;           // ANSI-bearing combined stdout+stderr stream (settled-whole v1, Q02)
+  exitCode: number | null;  // null = killed/aborted/timed-out
   cwd: string;              // cwd at exec
   cwdAfter: string | null;
   startedAtMs: number;
@@ -492,7 +501,7 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 
 - jsdom render tests / mock-store assertions — banned project-wide; app-tests drive the real app instead.
 - Bespoke command renderers — none ship in this plan; the registry governance test covers classification only.
-- tmux internals — the probe pins behavior once; the service's Rust tests exercise the service contract, not tmux itself.
+- Shell backend internals below the service contract (raw `tokio::process` piping, signal delivery) — the probe pins the behavior once; the service's Rust tests exercise the exec/kill/cwd contract, not the OS process primitives.
 
 ---
 
@@ -504,23 +513,23 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Shell execution probe | pending | — |
-| #step-2 | Resolve Q01–Q04; finalize Specs S01/S02/S04 | pending | — |
-| #step-3 | `btw` third route in the prompt entry | pending | — |
-| #step-4 | Per-route submit dispatch | pending | — |
-| #step-5 | Per-route Z4B chrome manifest | pending | — |
-| #step-6 | Route chrome app-test + geometry | pending | — |
-| #step-7 | Phase 2 integration checkpoint + docs | pending | — |
-| #step-8 | tugcast shell service (`feeds/shell.rs`) | pending | — |
-| #step-9 | Shell exchange ledger + CONTROL pair | pending | — |
-| #step-10 | Deck wire + `ShellSessionStore` + reducer ingest | pending | — |
-| #step-11 | Shell turn rendering | pending | — |
-| #step-12 | Shell-route submit flip + live cwd chip | pending | — |
-| #step-13 | Restore interleave | pending | — |
-| #step-14 | Share gesture | pending | — |
-| #step-15 | Command-block registry skeleton | pending | — |
-| #step-16 | Shell e2e + restore app-test | pending | — |
-| #step-17 | Phase 3 integration checkpoint + docs | pending | — |
+| #step-1 | Shell execution probe | done | 6fc1ac45e |
+| #step-2 | Resolve Q01–Q04; finalize Specs S01/S02/S04 | done | 68c34d1d4 |
+| #step-3 | `btw` third route in the prompt entry | done | 38f635c3a |
+| #step-4 | Per-route submit dispatch | done | 01350399c |
+| #step-5 | Per-route Z4B chrome manifest | done | 56be8881b |
+| #step-6 | Route chrome app-test + geometry | done | bab6ac4a9 |
+| #step-7 | Phase 2 integration checkpoint + docs | done | 09e8d4d2b |
+| #step-8 | tugcast shell service (`feeds/shell.rs`) | done | 2eda4688f |
+| #step-9 | Shell exchange ledger + CONTROL pair | done | 252d4411d |
+| #step-10 | Deck wire + `ShellSessionStore` + reducer ingest | done | e2f891805 |
+| #step-11 | Shell turn rendering | done | 4286ad429 |
+| #step-12 | Shell-route submit flip + live cwd chip | done | 7bbac6593 |
+| #step-13 | Restore interleave | done | 225f459a4 |
+| #step-14 | Share gesture | done | a10c9ad9b |
+| #step-15 | Command-block registry skeleton | done | 0ec0d85da |
+| #step-16 | Shell e2e + restore app-test | done | ddf95d663 |
+| #step-17 | Phase 3 integration checkpoint + docs | done | cb5990a23 |
 
 **Milestone M01: probe findings committed** {#m01-probe} — after #step-2.
 **Milestone M02: route chrome shipped** {#m02-chrome} — after #step-7.
@@ -717,16 +726,18 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 **References:** [P04] block shell, [P09] shell session, [Q01]–[Q04] resolutions, Spec S01, (#current-state-inventory)
 
 **Artifacts:**
-- `tugrust/crates/tugcast/src/feeds/shell.rs`: per-card shell session (lazy spawn in project dir, backend per [Q01], instance-scoped), `SHELL_INPUT` handling (`exec`, `kill`), exchange lifecycle emission on `SHELL_OUTPUT` (Spec S01), hardening env ([Q03]), timeout + kill path, `shell_state` liveness frames, teardown on card close, [Q04] restart semantics.
+- `tugrust/crates/tugcast/src/feeds/shell.rs`: per-card shell session — lazy spawn of a **POSIX-shell child in pipe mode** (login shell if bash/zsh, else `/bin/zsh`) in the project dir ([P09]); `SHELL_INPUT` handling (`exec`, `kill`); the **sentinel protocol** (write command + `printf` sentinel emitter, read merged stdout+stderr until the sentinel, parse exit code + cwd); exchange lifecycle emission on `SHELL_OUTPUT` (Spec S01); hardening env + per-command `</dev/null` isolation ([Q03]); per-exchange timeout + pgid signal-kill; `shell_state` liveness frames; teardown on card close; [Q04] restart-fresh-in-project-dir.
 - Registration in `feeds/mod.rs` + routing in `router.rs` following the existing feed-wiring pattern.
 
 **Tasks:**
-- [ ] Implement per the resolved specs; borrow tmux plumbing from `feeds/terminal.rs` if [Q01]=tmux (server args, version check), or PTY plumbing if child-backend.
-- [ ] Enforce the hardening env and stdin policy on every exec.
+- [ ] Implement the pipe-mode sentinel-protocol child per [P09]/Spec S01. The five probe spikes in `probes/shell-exec/` are the executable reference for the protocol (sentinel format, `</dev/null` wrapping, merged-stream read, hardened env); port that behavior to Rust (`tokio::process::Command` with piped stdio, no PTY).
+- [ ] Enforce the hardening env (`PAGER`/`GIT_PAGER`=cat, `TERM=dumb`, `GIT_TERMINAL_PROMPT=0`) and `{ …; } </dev/null` stdin isolation on every exec.
+- [ ] Track the running command's pgid; `kill` sends SIGTERM→SIGKILL to it (a wedged foreground can't be cancelled by another write — Q03).
 - [ ] Emit `cwd_after` per exchange (sentinel-captured) for the cwd chip.
+- [ ] Choose the exec shell defensively: use `$SHELL` only if it is bash/zsh, else `/bin/zsh` (fish and other non-POSIX logins still get a POSIX exec child — Q01 sub-decision).
 
 **Tests:**
-- [ ] Rust integration tests: exec round-trip (echo), exit-code capture (false → 1), cwd persistence (`cd /tmp` then `pwd`), kill of a long-runner, TUI decline/timeout path, per-card isolation (two sessions don't share cwd).
+- [ ] Rust integration tests: exec round-trip (echo), exit-code capture (false → 1), cwd persistence (`cd /tmp` then `pwd`), the `</dev/null` stdin-isolation case (a `cat` doesn't desync the protocol), kill of a long-runner via pgid signal, TUI decline/timeout path, per-card isolation (two sessions don't share cwd).
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run` green (with `-D warnings`).
@@ -942,14 +953,14 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 - Auto-memory reference entry for the shell service + ledger.
 
 **Tasks:**
-- [ ] Write docs; sweep the plan's Step Status Ledger to `done` with commit hashes.
-- [ ] Full verification battery across every suite.
+- [x] Write docs; sweep the plan's Step Status Ledger to `done` with commit hashes.
+- [x] Full verification battery across every suite.
 
 **Tests:**
-- [ ] Full suites (aggregate).
+- [x] Full suites (aggregate).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`; `cd tugcode && bun test`; `cd tugrust && cargo nextest run`; `just app-test` — all green. **Milestone M03.**
+- [x] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build` (4140 pass, tsc clean, build clean); `cd tugcode && bun test` (761 pass); `cd tugrust && cargo nextest run` (1122 pass); `just app-test at0213 at0214` (VERDICT PASS) — all green. **Milestone M03.**
 
 ---
 
@@ -959,14 +970,14 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Probe FINDINGS.md committed; Q01–Q04 DECIDED in this document (M01).
-- [ ] Three-route chrome shipped with per-route Z4B manifest and passing geometry app-test (M02).
-- [ ] Shell exchanges execute, render, persist, and interleave identically across live / Developer ▸ Reload / relaunch, with share gesture and registry skeleton (M03).
-- [ ] All suites green: tugdeck + tugcode `bun test`, `cargo nextest run`, `bunx vite build`, `just app-test`.
+- [x] Probe FINDINGS.md committed; Q01–Q04 DECIDED in this document (M01).
+- [x] Three-route chrome shipped with per-route Z4B manifest and passing geometry app-test (M02).
+- [x] Shell exchanges execute, render, persist, and interleave identically across live / Developer ▸ Reload / relaunch, with share gesture and registry skeleton (M03).
+- [x] All suites green: tugdeck + tugcode `bun test`, `cargo nextest run`, `bunx vite build`, `just app-test`.
 
 **Acceptance tests:**
-- [ ] `at02xx-route-chrome` (route cycling, chrome manifest, btw round-trip).
-- [ ] `at02xx-shell-route` (exchange e2e, cwd, restore interleave order).
+- [x] `at0213-route-chrome` (route cycling, chrome manifest, btw round-trip).
+- [x] `at0214-shell-route` (exchange e2e, cwd, restore interleave order).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
