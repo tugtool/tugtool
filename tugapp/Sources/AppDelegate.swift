@@ -904,9 +904,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // File ▸ New submenu. Compile-time gated so release bundles
             // never expose the gallery + hello-world creation surfaces.
             mMenu.addItem(NSMenuItem.separator())
-            // No ⌥⌘N here: File ▸ New Text File owns that chord now and wins
-            // in menu order, so this item's shortcut was dead. Menu-only.
-            mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "").identified("maker.galleryCard"))
+            mMenu.addItem(NSMenuItem(title: "New Component Gallery Card", action: #selector(newComponentGalleryCard(_:)), keyEquivalent: "g", modifierMask: [.command, .option]).identified("maker.galleryCard"))
             mMenu.addItem(NSMenuItem(title: "New Hello World Card", action: #selector(newHelloWorldCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option, .shift]).identified("maker.helloCard"))
             // New Card in Active Pane (⌘T): the tab-creation chord.
             // Validated against deck state (needs a pane to add to).
