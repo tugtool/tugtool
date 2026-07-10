@@ -85,7 +85,9 @@ enum ShellInput {
     // `kill` reaps the session's whole process group (the shell + whatever it
     // is running), so it needs only the routing key; any `exchange_id` the
     // deck sends is ignored by serde.
-    Kill { tug_session_id: String },
+    Kill {
+        tug_session_id: String,
+    },
 }
 
 fn now_ms() -> u64 {
@@ -124,7 +126,10 @@ struct SessionShared {
 /// by the dispatcher signaling the shared pid directly, because a wedged task
 /// is blocked reading the child's stdout and could never dequeue it.
 enum ShellCmd {
-    Exec { exchange_id: String, command: String },
+    Exec {
+        exchange_id: String,
+        command: String,
+    },
 }
 
 /// A live per-session actor: the command channel plus the shared pid the
@@ -215,7 +220,11 @@ struct ExecResult {
 /// can't swallow the sentinel), then the sentinel emitter, and read the merged
 /// stream until the sentinel line. `None` exit code = the stream ended before
 /// the sentinel (the child was reaped mid-command).
-async fn run_command(child: &mut ShellChild, marker: &str, command: &str) -> std::io::Result<ExecResult> {
+async fn run_command(
+    child: &mut ShellChild,
+    marker: &str,
+    command: &str,
+) -> std::io::Result<ExecResult> {
     let line = format!(
         "{{ {command} ; }} </dev/null\nprintf '\\n%s\\t%d\\t%s\\n' \"{marker}\" \"$?\" \"$PWD\"\n"
     );
@@ -236,7 +245,11 @@ async fn run_command(child: &mut ShellChild, marker: &str, command: &str) -> std
                     if output.ends_with('\n') {
                         output.pop();
                     }
-                    return Ok(ExecResult { output, exit_code, cwd_after });
+                    return Ok(ExecResult {
+                        output,
+                        exit_code,
+                        cwd_after,
+                    });
                 }
                 output.push_str(&l);
                 output.push('\n');
@@ -287,7 +300,10 @@ async fn shell_session_task(
     let mut cwd = spawn_cwd.to_string_lossy().to_string();
 
     while let Some(cmd) = rx.recv().await {
-        let ShellCmd::Exec { exchange_id, command } = cmd;
+        let ShellCmd::Exec {
+            exchange_id,
+            command,
+        } = cmd;
 
         // Lazy spawn / respawn.
         if child.is_none() {
@@ -295,18 +311,26 @@ async fn shell_session_task(
                 Ok((sh, pid)) => {
                     child = Some(sh);
                     shared.lock().unwrap().pid = Some(pid);
-                    emit(&output, &tug_session_id, json!({ "type": "shell_state", "live": true, "cwd": cwd }));
+                    emit(
+                        &output,
+                        &tug_session_id,
+                        json!({ "type": "shell_state", "live": true, "cwd": cwd }),
+                    );
                 }
                 Err(e) => {
                     warn!(error = %e, %tug_session_id, "shell spawn failed");
                     let at = now_ms();
-                    emit(&output, &tug_session_id, json!({
-                        "type": "exchange_complete", "exchange_id": exchange_id,
-                        "command": command, "cwd": cwd,
-                        "exit_code": serde_json::Value::Null, "cwd_after": cwd,
-                        "duration_ms": 0, "output": format!("shell failed to start: {e}\n"),
-                        "started_at": at, "settled_at": at,
-                    }));
+                    emit(
+                        &output,
+                        &tug_session_id,
+                        json!({
+                            "type": "exchange_complete", "exchange_id": exchange_id,
+                            "command": command, "cwd": cwd,
+                            "exit_code": serde_json::Value::Null, "cwd_after": cwd,
+                            "duration_ms": 0, "output": format!("shell failed to start: {e}\n"),
+                            "started_at": at, "settled_at": at,
+                        }),
+                    );
                     continue;
                 }
             }
@@ -315,10 +339,14 @@ async fn shell_session_task(
 
         let started_at = now_ms();
         let cwd_before = cwd.clone();
-        emit(&output, &tug_session_id, json!({
-            "type": "exchange_started", "exchange_id": exchange_id,
-            "command": command, "cwd": cwd, "started_at": started_at,
-        }));
+        emit(
+            &output,
+            &tug_session_id,
+            json!({
+                "type": "exchange_started", "exchange_id": exchange_id,
+                "command": command, "cwd": cwd, "started_at": started_at,
+            }),
+        );
 
         let result = tokio::time::timeout(exec_timeout, run_command(sh, &marker, &command)).await;
         let (out, exit_code, cwd_after, reaped) = match result {
@@ -343,13 +371,17 @@ async fn shell_session_task(
         // command/cwd/timestamps the started frame did, because the deck
         // settles the transcript row in place from THIS frame alone (and
         // the restore path's ledger rows carry the full shape too).
-        emit(&output, &tug_session_id, json!({
-            "type": "exchange_complete", "exchange_id": exchange_id,
-            "command": command, "cwd": cwd_before,
-            "exit_code": exit_code.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null),
-            "cwd_after": cwd, "duration_ms": duration_ms, "output": out,
-            "started_at": started_at, "settled_at": settled_at,
-        }));
+        emit(
+            &output,
+            &tug_session_id,
+            json!({
+                "type": "exchange_complete", "exchange_id": exchange_id,
+                "command": command, "cwd": cwd_before,
+                "exit_code": exit_code.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null),
+                "cwd_after": cwd, "duration_ms": duration_ms, "output": out,
+                "started_at": started_at, "settled_at": settled_at,
+            }),
+        );
 
         // Persist the settled exchange for restore ([P07]). Insert-on-settle
         // only: an exchange in flight at a crash never lands (it never settled).
@@ -435,7 +467,12 @@ async fn run_dispatcher(
             continue;
         };
         match input {
-            ShellInput::Exec { tug_session_id, exchange_id, command, cwd } => {
+            ShellInput::Exec {
+                tug_session_id,
+                exchange_id,
+                command,
+                cwd,
+            } => {
                 let session = sessions.entry(tug_session_id.clone()).or_insert_with(|| {
                     let (tx, rx) = mpsc::channel(64);
                     let shared = Arc::new(Mutex::new(SessionShared::default()));
@@ -455,7 +492,15 @@ async fn run_dispatcher(
                     ));
                     ShellSession { tx, shared }
                 });
-                if session.tx.send(ShellCmd::Exec { exchange_id, command }).await.is_err() {
+                if session
+                    .tx
+                    .send(ShellCmd::Exec {
+                        exchange_id,
+                        command,
+                    })
+                    .await
+                    .is_err()
+                {
                     // Task died — drop it so the next exec respawns.
                     sessions.remove(&tug_session_id);
                 }
@@ -502,7 +547,9 @@ mod tests {
     fn kill_frame(sid: &str) -> Frame {
         Frame::new(
             FeedId::SHELL_INPUT,
-            json!({ "type": "kill", "tug_session_id": sid }).to_string().into_bytes(),
+            json!({ "type": "kill", "tug_session_id": sid })
+                .to_string()
+                .into_bytes(),
         )
     }
 
@@ -513,11 +560,7 @@ mod tests {
     /// Drive the dispatcher; collect `exchange_complete` payloads for `sid`
     /// until `count` are seen or the timeout fires. Uses a short per-exchange
     /// timeout so a genuinely-hanging command (a TUI) is reaped within the test.
-    async fn drive(
-        frames: Vec<Frame>,
-        sid: &str,
-        count: usize,
-    ) -> Vec<serde_json::Value> {
+    async fn drive(frames: Vec<Frame>, sid: &str, count: usize) -> Vec<serde_json::Value> {
         let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
         let mut rx = output.subscribe();
         let (tx, in_rx) = mpsc::channel(64);
@@ -665,7 +708,9 @@ mod tests {
             cancel.clone(),
             Duration::from_secs(3),
         ));
-        tx.send(exec_frame("s1", "e1", "echo persisted", Some("/tmp"))).await.unwrap();
+        tx.send(exec_frame("s1", "e1", "echo persisted", Some("/tmp")))
+            .await
+            .unwrap();
         // Wait for the exchange to settle.
         let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         while let Ok(Ok(f)) = tokio::time::timeout_at(deadline, rx.recv()).await {
@@ -691,8 +736,15 @@ mod tests {
         let mut rx = output.subscribe();
         let (tx, in_rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
-        let handle = tokio::spawn(shell_dispatcher_task(in_rx, output.clone(), None, cancel.clone()));
-        tx.send(exec_frame("s1", "e1", "sleep 60", None)).await.unwrap();
+        let handle = tokio::spawn(shell_dispatcher_task(
+            in_rx,
+            output.clone(),
+            None,
+            cancel.clone(),
+        ));
+        tx.send(exec_frame("s1", "e1", "sleep 60", None))
+            .await
+            .unwrap();
         // Wait for the exchange to start, then kill.
         tokio::time::sleep(Duration::from_millis(500)).await;
         tx.send(kill_frame("s1")).await.unwrap();

@@ -389,7 +389,12 @@ mod tests {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
                 let disk = std::fs::read(&*path).unwrap();
-                write_file(&path, &format!("write-{i}"), Some(&sha256_hex(&disk)), false)
+                write_file(
+                    &path,
+                    &format!("write-{i}"),
+                    Some(&sha256_hex(&disk)),
+                    false,
+                )
             }));
         }
         for h in handles {

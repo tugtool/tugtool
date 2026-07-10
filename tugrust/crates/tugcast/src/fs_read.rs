@@ -264,7 +264,11 @@ mod tests {
             "~/../../../tmp/escape.txt",
         ] {
             let err = guard_absolute_path(traversal).unwrap_err();
-            assert_eq!(err.0, StatusCode::BAD_REQUEST, "expected reject for {traversal}");
+            assert_eq!(
+                err.0,
+                StatusCode::BAD_REQUEST,
+                "expected reject for {traversal}"
+            );
             assert_eq!(err.1["error"], "bad_path");
         }
     }

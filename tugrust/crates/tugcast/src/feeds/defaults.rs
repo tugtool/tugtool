@@ -132,7 +132,9 @@ fn build_domain_entries(client: &TugbankClient) -> Vec<(String, JsonValue, usize
             "generation": generation,
             "entries": entries,
         });
-        let size = serde_json::to_vec(&domain_obj).map(|b| b.len()).unwrap_or(0);
+        let size = serde_json::to_vec(&domain_obj)
+            .map(|b| b.len())
+            .unwrap_or(0);
         out.push((domain_name.clone(), domain_obj, size));
     }
 
@@ -266,8 +268,7 @@ mod tests {
             frame.payload.len()
         );
 
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&frame.payload).expect("valid JSON");
+        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).expect("valid JSON");
         let domains = parsed
             .get("domains")
             .expect("domains key")

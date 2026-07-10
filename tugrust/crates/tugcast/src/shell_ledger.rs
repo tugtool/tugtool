@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::Serialize;
 use tracing::warn;
 
@@ -108,7 +108,9 @@ impl ShellLedger {
                 ON shell_exchanges(tug_session_id, id);
             ",
         )?;
-        Ok(Self { db: Mutex::new(conn) })
+        Ok(Self {
+            db: Mutex::new(conn),
+        })
     }
 
     /// Record a settled exchange, assigning the next per-session `seq`, then
@@ -248,12 +250,16 @@ mod tests {
     fn cap_evicts_oldest() {
         let led = ShellLedger::open_in_memory().unwrap();
         for i in 0..(MAX_EXCHANGES_PER_SESSION + 5) {
-            led.record_exchange(&ex("s1", &format!("cmd{i}"), Some(0))).unwrap();
+            led.record_exchange(&ex("s1", &format!("cmd{i}"), Some(0)))
+                .unwrap();
         }
         let rows = led.list_exchanges("s1").unwrap();
         assert_eq!(rows.len(), MAX_EXCHANGES_PER_SESSION);
         // The 5 oldest were evicted; the newest survive.
-        assert_eq!(rows.last().unwrap().command, format!("cmd{}", MAX_EXCHANGES_PER_SESSION + 4));
+        assert_eq!(
+            rows.last().unwrap().command,
+            format!("cmd{}", MAX_EXCHANGES_PER_SESSION + 4)
+        );
         assert_eq!(rows.first().unwrap().command, "cmd5");
     }
 }

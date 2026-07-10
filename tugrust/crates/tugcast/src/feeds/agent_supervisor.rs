@@ -2056,7 +2056,11 @@ impl AgentSupervisor {
                 // Session-scoped read — the deck's shell-restore tail fetch.
                 let tug_session_id = serde_json::from_slice::<serde_json::Value>(payload)
                     .ok()
-                    .and_then(|v| v.get("tug_session_id").and_then(|s| s.as_str()).map(String::from))
+                    .and_then(|v| {
+                        v.get("tug_session_id")
+                            .and_then(|s| s.as_str())
+                            .map(String::from)
+                    })
                     .unwrap_or_default();
                 self.do_list_shell_exchanges(&tug_session_id).await;
                 Ok(())
