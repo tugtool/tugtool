@@ -714,6 +714,9 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let bank = TugbankClient::open(tmp.path()).expect("open bank");
         let live: HashSet<String> = HashSet::new();
-        assert_eq!(prune_orphaned_session_keys(&bank, PROMPT_HISTORY_DOMAIN, &live), 0);
+        assert_eq!(
+            prune_orphaned_session_keys(&bank, PROMPT_HISTORY_DOMAIN, &live),
+            0
+        );
     }
 }

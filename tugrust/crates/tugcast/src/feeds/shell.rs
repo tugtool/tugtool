@@ -799,12 +799,18 @@ mod tests {
         .await;
         assert_eq!(done.len(), 2);
         assert!(
-            done[0]["output"].as_str().unwrap().contains("hello-from-rc"),
+            done[0]["output"]
+                .as_str()
+                .unwrap()
+                .contains("hello-from-rc"),
             "rc alias must expand: {:?}",
             done[0]["output"]
         );
         assert!(
-            done[1]["output"].as_str().unwrap().contains("rc-was-sourced"),
+            done[1]["output"]
+                .as_str()
+                .unwrap()
+                .contains("rc-was-sourced"),
             "rc export must be visible: {:?}",
             done[1]["output"]
         );
