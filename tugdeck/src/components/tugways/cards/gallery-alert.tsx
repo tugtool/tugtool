@@ -44,6 +44,7 @@ function GalleryAlertInner() {
 
   // Ref-based section
   const alertRef = React.useRef<TugAlertHandle>(null);
+  const chooseRef = React.useRef<TugAlertHandle>(null);
   const [refResult, setRefResult] = React.useState("none");
 
   // App-level repro (TugLogout's exact shape): an effect-driven confirm on the
@@ -130,13 +131,27 @@ function GalleryAlertInner() {
   }
 
   async function handleCreateDevCardPreview() {
-    const confirmed = await showAlert({
-      title: "Create Dev Card",
-      message: "Start a new development session",
-      confirmLabel: "Create",
-      icon: "MessageSquareText",
+    if (!chooseRef.current) return;
+    const choice = await chooseRef.current.choose({
+      title: "What's next?",
+      icon: "Compass",
+      choices: [
+        {
+          id: "dev",
+          label: "Create Dev Card",
+          description: "Start a new development session.",
+          icon: "MessageSquareText",
+          isDefault: true,
+        },
+        {
+          id: "file",
+          label: "Open Text File",
+          description: "Open an existing file to edit.",
+          icon: "FileText",
+        },
+      ],
     });
-    setCreateDevCardResult(confirmed ? "confirmed" : "cancelled");
+    setCreateDevCardResult(choice ?? "cancelled");
   }
 
   async function handleOkOnlyAlert() {
@@ -226,19 +241,28 @@ function GalleryAlertInner() {
 
       <TugSeparator />
 
-      {/* ---- Create Dev Card copy preview ---- */}
+      {/* ---- What's next? chooser preview (multi-action choose()) ---- */}
       <div className="cg-section">
-        <TugLabel className="cg-section-title">Create Dev Card (Empty-Deck Copy)</TugLabel>
+        <TugLabel className="cg-section-title">What's Next? (Empty-Deck Chooser)</TugLabel>
         <div style={labelStyle}>
-          The TugCreateDevCard empty-deck app-modal's copy, previewed through
-          the same alert chrome (the real one only opens with zero cards).
+          The TugCreateDevCard empty-deck app-modal, previewed through the same
+          chrome — the multi-action `choose()` form as rich rows (leading icon +
+          title + description) plus Cancel, in one closed arrow ring. The real
+          one only opens with zero cards.
         </div>
+        {/* Standalone TugAlert instance for the choose() preview */}
+        <TugAlert ref={chooseRef} title="What's next?" />
         <div style={{ display: "flex" }}>
-          <TugPushButton emphasis="outlined" size="sm" onClick={handleCreateDevCardPreview}>
-            Preview Create Dev Card
+          <TugPushButton
+            emphasis="outlined"
+            size="sm"
+            onClick={handleCreateDevCardPreview}
+            data-testid="gallery-preview-whats-next"
+          >
+            Preview What's Next
           </TugPushButton>
         </div>
-        <div style={resultStyle}>
+        <div style={resultStyle} data-testid="whats-next-result">
           Result: <strong>{createDevCardResult}</strong>
         </div>
       </div>

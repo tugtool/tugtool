@@ -2,19 +2,22 @@
  * TugCreateDevCard — the app-modal empty-deck affordance. A sibling of
  * {@link TugSetup} at the deck root that opens when a set-up, logged-in
  * user's deck holds no cards — the last card was closed, or the app launched
- * with an empty layout — and offers one Return-press path back to work: a
- * default double-ringed "Create" button that opens a fresh Dev card. The new
- * card becomes first responder and presents the Choose Session sheet on
- * mount.
+ * with an empty layout — and offers a "What's next?" chooser with two paths
+ * back to work: a default double-ringed "Create Dev Card" button that opens a
+ * fresh Dev card (which becomes first responder and presents the Choose
+ * Session sheet on mount), and an "Open Text File" button that runs the
+ * native Open panel and opens the chosen file in a File card.
  *
  * Drives a dedicated {@link TugAlert} instance (not the provider singleton,
  * so a logout confirm can never clobber its pending promise) from the derived
- * open state: an effect opens the alert when {@link deriveCreateDevCardOpen}
- * says so, Create resolves into `deck.addCard("dev")`, and Cancel (or Escape
- * / Cmd-.) dismisses so the user can work with an empty deck — the offer
- * re-arms after the deck next holds a card, and on every launch. If a card
- * lands by any other means while the alert is up (Cmd-N, a restored
- * layout), the alert auto-dismisses: the offer's premise is gone.
+ * open state: an effect opens the chooser when {@link deriveCreateDevCardOpen}
+ * says so. "Create Dev Card" resolves into `deck.addCard("dev")`; "Open Text
+ * File" runs `pickPath("file")` then `openFileInCard` (a cancelled panel
+ * leaves the deck empty so the chooser re-arms); Cancel (or Escape / Cmd-.)
+ * dismisses so the user can work with an empty deck — the offer re-arms after
+ * the deck next holds a card, and on every launch. If a card lands by any
+ * other means while the alert is up (Cmd-N, a restored layout), the alert
+ * auto-dismisses: the offer's premise is gone.
  *
  * Last in the app-modal precedence chain (Spec S02): gate > setup >
  * create-dev-card. During a genuine first run the setup wizard owns the empty
@@ -38,6 +41,8 @@ import {
   deriveCreateDevCardOpen,
 } from "@/lib/macos-support";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
+import { isPathPickerAvailable, pickPath } from "@/lib/native-path-picker";
+import { openFileInCard } from "@/lib/open-file-in-card";
 import { readSetupSeen, readSetupSuppressed } from "@/settings-api";
 import { useDeckManager } from "@/deck-manager-context";
 import { TugAlert, type TugAlertHandle } from "./tug-alert";
@@ -86,6 +91,12 @@ export function TugCreateDevCard(): ReactElement {
   const alertRef = useRef<TugAlertHandle>(null);
   const pendingRef = useRef(false);
 
+  // Bumped to re-arm the chooser after a flow that ends with the deck still
+  // empty and no other state change to re-run the open effect — namely
+  // cancelling the native Open panel. A ref reset alone can't re-trigger the
+  // effect; this state can.
+  const [reopenNonce, setReopenNonce] = useState(0);
+
   // A card landed while the alert was up (Cmd-N, a restored layout, any
   // path that isn't this alert's Create button): the offer's premise is
   // gone, so drop the modal state instead of stranding the user in it.
@@ -103,22 +114,56 @@ export function TugCreateDevCard(): ReactElement {
     if (handle === null) return;
     pendingRef.current = true;
     void handle
-      .alert({
-        title: "Create Dev Card",
-        message: "Start a new development session",
-        confirmLabel: "Create",
+      .choose({
+        title: "What's next?",
+        icon: "Compass",
         cancelLabel: "Cancel",
-        icon: "MessageSquareText",
+        // Rows render top-to-bottom in this order; keep any copy that names
+        // them in the same order.
+        choices: [
+          {
+            id: "dev",
+            label: "Create Dev Card",
+            description: "Start a new development session.",
+            icon: "MessageSquareText",
+            isDefault: true,
+          },
+          {
+            id: "file",
+            label: "Open Text File",
+            description: "Open an existing file to edit.",
+            icon: "FileText",
+          },
+        ],
       })
-      .then((confirmed) => {
-        pendingRef.current = false;
-        if (confirmed) {
+      .then(async (choice) => {
+        if (choice === "dev") {
+          pendingRef.current = false;
           deck.addCard("dev");
-        } else {
-          setDismissed(true);
+          return;
         }
+        if (choice === "file") {
+          // Hold pendingRef across the native Open panel so the offer never
+          // re-opens behind it.
+          let openedPath: string | null = null;
+          try {
+            openedPath = isPathPickerAvailable() ? await pickPath("file") : null;
+            if (openedPath !== null) openFileInCard(deck, openedPath);
+          } finally {
+            pendingRef.current = false;
+            // A chosen path opened a File card (deck non-empty → the offer
+            // closes on its own). A cancelled panel changed nothing, so
+            // re-arm the chooser explicitly — otherwise the user is stranded
+            // on an empty deck with no sheet.
+            if (openedPath === null) setReopenNonce((n) => n + 1);
+          }
+          return;
+        }
+        // null: Cancel / Escape — stay on the empty deck.
+        pendingRef.current = false;
+        setDismissed(true);
       });
-  }, [wantOpen, dismissed, deck]);
+  }, [wantOpen, dismissed, deck, reopenNonce]);
 
-  return <TugAlert ref={alertRef} title="Create Dev Card" />;
+  return <TugAlert ref={alertRef} title="What's next?" />;
 }

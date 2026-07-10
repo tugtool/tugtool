@@ -67,7 +67,8 @@ import React from "react";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { icons } from "lucide-react";
 import { TugPushButton } from "./tug-push-button";
-import type { TugButtonRole } from "./internal/tug-button";
+import { TugListRow } from "./tug-list-row";
+import type { TugButtonEmphasis, TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
@@ -91,6 +92,50 @@ function defaultIconForRole(role: TugButtonRole): string {
 }
 
 /* ---------------------------------------------------------------------------
+ * TugAlertChoice
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * One selectable action in the multi-action {@link TugAlertHandle.choose} form.
+ * Each choice renders as its own button in the action row and resolves the
+ * `choose()` promise with its {@link id} when picked. The default choice
+ * (exactly one — flagged via {@link isDefault}, or the last when none is
+ * flagged) wears the recommended-default look and is the Return target; the
+ * rest render `outlined`, at Cancel's weight, following the classic Mac HIG
+ * three-button layout (Don't Save / Cancel / Save).
+ */
+export interface TugAlertChoice {
+  /** Opaque value the `choose()` promise resolves to when this row is picked. */
+  id: string;
+  /** Primary line of the row. */
+  label: string;
+  /**
+   * Secondary explanatory line under {@link label}. When any choice carries a
+   * `description` (or `icon`), the chooser renders as a vertical stack of rich
+   * rows (leading icon + title + description) rather than a compact button row.
+   */
+  description?: string;
+  /** Lucide icon name (PascalCase) shown at the leading edge of the row. */
+  icon?: string;
+  /**
+   * Color domain for the row.
+   * @default "action"
+   */
+  role?: TugButtonRole;
+  /**
+   * Visual weight. Defaults to `primary` for the default choice and
+   * `outlined` for the rest.
+   */
+  emphasis?: TugButtonEmphasis;
+  /**
+   * Marks this as the Return-default (recommended-default look, seeded key
+   * view). At most one choice should set it; when none does, the last choice
+   * is the default.
+   */
+  isDefault?: boolean;
+}
+
+/* ---------------------------------------------------------------------------
  * TugAlertHandle
  * ---------------------------------------------------------------------------*/
 
@@ -110,10 +155,30 @@ export interface TugAlertHandle {
     icon?: string;
   }): Promise<boolean>;
   /**
+   * Opens the alert as a multi-action chooser: the icon/title/message with an
+   * ordered row of {@link choices} buttons plus an optional Cancel. Resolves
+   * with the chosen choice's `id`, or `null` on Cancel / Escape / Cmd-. /
+   * {@link dismiss}. The generalization of `alert()` past a single confirm
+   * button — a closed arrow ring spans Cancel + every choice.
+   */
+  choose(options: {
+    title?: string;
+    message?: string | React.ReactNode;
+    /** Lucide icon name override. Defaults to role-based icon. */
+    icon?: string;
+    /**
+     * Cancel button text; pass `null` to omit it.
+     * @default "Cancel"
+     */
+    cancelLabel?: string | null;
+    /** The selectable actions, rendered left-to-right after Cancel. */
+    choices: TugAlertChoice[];
+  }): Promise<string | null>;
+  /**
    * Closes the alert programmatically, resolving any pending `alert()`
-   * promise with false. For hosts whose precondition evaporates while
-   * the alert is open (e.g. the empty-deck offer when a card lands via
-   * Cmd-N). No-op when the alert is closed.
+   * promise with false (or a pending `choose()` promise with null). For
+   * hosts whose precondition evaporates while the alert is open (e.g. the
+   * empty-deck offer when a card lands via Cmd-N). No-op when closed.
    */
   dismiss(): void;
 }
@@ -183,18 +248,29 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     const overlayRoot = useCanvasOverlay();
     const [open, setOpen] = React.useState(false);
 
-    // Override options set by the imperative alert() call.
+    // Override options set by the imperative alert() / choose() call. `mode`
+    // discriminates the single-confirm form (default) from the multi-action
+    // chooser; `choices` is populated only in "choose" mode.
     const overrideRef = React.useRef<{
+      mode?: "confirm" | "choose";
       title?: string;
       message?: string | React.ReactNode;
       confirmLabel?: string;
       cancelLabel?: string | null;
       confirmRole?: TugButtonRole;
       icon?: string;
+      choices?: TugAlertChoice[];
     } | null>(null);
 
-    // Resolver for imperative mode. Null when not in an active promise.
-    const resolverRef = React.useRef<((value: boolean) => void) | null>(null);
+    // Resolver for imperative mode. Null when not in an active promise. The
+    // value is `boolean` for `alert()` and `string | null` for `choose()`.
+    const resolverRef = React.useRef<
+      ((value: boolean | string | null) => void) | null
+    >(null);
+
+    // The value a dismissal (Cancel / Escape / Cmd-. / dismiss()) resolves
+    // with — `false` for `alert()`, `null` for `choose()`. Set at open.
+    const dismissValueRef = React.useRef<false | null>(false);
 
     // Chain manager — null when rendered outside a ResponderChainProvider
     // (standalone previews, unit tests). Buttons fall back to calling
@@ -214,7 +290,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     // closes redundantly, which matches the "two converging close
     // paths" expectation when Radix's Cancel/Action wrappers fire
     // alongside the chain dispatch.
-    const resolveAndClose = React.useCallback((value: boolean) => {
+    const resolveAndClose = React.useCallback((value: boolean | string | null) => {
       if (resolverRef.current) {
         resolverRef.current(value);
         resolverRef.current = null;
@@ -226,8 +302,10 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       resolveAndClose(true);
     }, [resolveAndClose]);
 
+    // Dismissal resolves the mode-appropriate negative value (`false` for
+    // alert(), `null` for choose()).
     const handleCancelAction = React.useCallback(() => {
-      resolveAndClose(false);
+      resolveAndClose(dismissValueRef.current);
     }, [resolveAndClose]);
 
     // Register the alert as a chain responder so the buttons inside
@@ -259,27 +337,37 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     React.useImperativeHandle(ref, () => ({
       alert(options) {
         return new Promise<boolean>((resolve) => {
-          overrideRef.current = options ?? null;
-          resolverRef.current = resolve;
+          overrideRef.current = { mode: "confirm", ...options };
+          dismissValueRef.current = false;
+          resolverRef.current = resolve as (v: boolean | string | null) => void;
+          setOpen(true);
+        });
+      },
+      choose(options) {
+        return new Promise<string | null>((resolve) => {
+          overrideRef.current = { mode: "choose", ...options };
+          dismissValueRef.current = null;
+          resolverRef.current = resolve as (v: boolean | string | null) => void;
           setOpen(true);
         });
       },
       dismiss() {
-        resolveAndClose(false);
+        resolveAndClose(dismissValueRef.current);
       },
     }));
 
     // Resolve effective values: override (imperative) takes precedence over props.
     const override = overrideRef.current;
+    const mode = override?.mode ?? "confirm";
     const title = override?.title ?? titleProp;
     const message = override?.message ?? messageProp;
     const confirmLabel = override?.confirmLabel ?? confirmLabelProp;
-    const cancelLabel = override !== undefined && "cancelLabel" in (override ?? {})
-      ? override?.cancelLabel
+    const cancelLabel = override !== null && override !== undefined && "cancelLabel" in override
+      ? override.cancelLabel
       : cancelLabelProp;
     const confirmRole = override?.confirmRole ?? confirmRoleProp;
-    const iconName = override !== undefined && "icon" in (override ?? {})
-      ? override?.icon
+    const iconName = override !== null && override !== undefined && "icon" in override
+      ? override.icon
       : iconProp;
 
     // Resolve icon component: explicit name, role-based default, or nothing if "".
@@ -291,38 +379,117 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       ? (icons[resolvedIconName as keyof typeof icons] ?? null)
       : null;
 
+    // ---- Action buttons ----
+    // The generalized button model: Cancel (order 0, when present) followed by
+    // an ordered list of action buttons (orders 1..N). In "confirm" mode that
+    // list is the single confirm button; in "choose" mode it is one button per
+    // choice. Exactly one action button is the Radix Action / Return default —
+    // the confirm button, or the choice flagged `isDefault` (else the last).
+    const CANCEL_ORDER = 0;
+    const hasCancel = cancelLabel !== null;
+    interface ActionButtonSpec {
+      key: string;
+      order: number;
+      label: React.ReactNode;
+      /** Secondary line + leading icon, present only for rich chooser rows. */
+      description?: string;
+      icon?: string;
+      emphasis: TugButtonEmphasis;
+      role: TugButtonRole;
+      /** Wrapped in AlertDialog.Action + the Return default. */
+      isDefault: boolean;
+      onClick: () => void;
+    }
+    const actionButtons: ActionButtonSpec[] = React.useMemo(() => {
+      if (mode === "choose") {
+        const choices = override?.choices ?? [];
+        const flagged = choices.findIndex((c) => c.isDefault);
+        const defaultIndex = flagged >= 0 ? flagged : choices.length - 1;
+        return choices.map((choice, i) => {
+          // Rich rows read as a uniform list — every row `outlined`, the
+          // default marked by the resting key-view ring (seeded at open).
+          // Compact inline choices keep the recommended-default `primary` look.
+          const isRich = Boolean(choice.description || choice.icon);
+          const defaultEmphasis: TugButtonEmphasis = isRich
+            ? "outlined"
+            : i === defaultIndex
+              ? "primary"
+              : "outlined";
+          return {
+            key: choice.id,
+            order: i + 1,
+            label: choice.label,
+            description: choice.description,
+            icon: choice.icon,
+            emphasis: choice.emphasis ?? defaultEmphasis,
+            role: choice.role ?? "action",
+            isDefault: i === defaultIndex,
+            onClick: () => resolveAndClose(choice.id),
+          };
+        });
+      }
+      return [
+        {
+          key: "__confirm__",
+          order: 1,
+          label: confirmLabel,
+          emphasis: confirmRole === "action" ? "primary" : "filled",
+          role: confirmRole,
+          isDefault: true,
+          onClick: onConfirmClick,
+        },
+      ];
+      // onConfirmClick is a stable closure over refs; safe to omit.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode, override?.choices, confirmLabel, confirmRole, resolveAndClose]);
+
+    // Rich rows: a chooser whose choices carry an icon or description renders as
+    // a vertical stack of list rows (leading icon + title + description) with
+    // Cancel below, rather than a compact right-aligned button row.
+    const richRows =
+      mode === "choose" && actionButtons.some((b) => b.description || b.icon);
+
     // ---- Focus language ([P14]/[P22]/[P23]) ----
-    // Author the Cancel / Action buttons into a focus group so Tab walks them,
-    // declare a closed arrow ring over the pair (registered inside the trap's
-    // FocusModeScope by AlertSpatialOrder), and seed the engine key view on the
-    // default button at open — the ring rests there and the default button
-    // promotes to its live/filled style ([P14]). Danger keeps Return safe by
-    // defaulting to Cancel when present.
+    // Author Cancel + every action button into a focus group so Tab walks them,
+    // declare a closed arrow ring over the whole row (registered inside the
+    // trap's FocusModeScope by AlertSpatialOrder), and seed the engine key view
+    // on the default button at open — the ring rests there and the default
+    // button promotes to its live/filled style ([P14]). Danger keeps Return
+    // safe by defaulting to Cancel when present.
     const focusManager = useFocusManager();
     const buttonFocusGroup = React.useId();
-    const CANCEL_ORDER = 0;
-    const ACTION_ORDER = 1;
-    const hasCancel = cancelLabel !== null;
+    const actionCount = actionButtons.length;
+    // In rich-row mode Cancel sits below the rows (last in the ring); otherwise
+    // it leads the button row (order 0). The ring nodes are listed in visual
+    // order so an arrow roves them in reading order.
+    const richCancelOrder = actionCount + 1;
+    const effectiveCancelOrder = richRows ? richCancelOrder : CANCEL_ORDER;
     const buttonSpatialOrder = React.useMemo<SpatialOrder>(() => {
-      const nodes = hasCancel
-        ? [`${buttonFocusGroup}:${CANCEL_ORDER}`, `${buttonFocusGroup}:${ACTION_ORDER}`]
-        : [`${buttonFocusGroup}:${ACTION_ORDER}`];
+      const actionOrders = Array.from({ length: actionCount }, (_, i) => i + 1);
+      const orders = richRows
+        ? [...actionOrders, ...(hasCancel ? [richCancelOrder] : [])]
+        : [...(hasCancel ? [CANCEL_ORDER] : []), ...actionOrders];
+      const nodes = orders.map((o) => `${buttonFocusGroup}:${o}`);
       return {
         rings: [
           { axis: "horizontal", nodes, closed: true },
           { axis: "vertical", nodes, closed: true },
         ],
       };
-    }, [buttonFocusGroup, hasCancel]);
+    }, [buttonFocusGroup, hasCancel, actionCount, richRows, richCancelOrder]);
+    // The order the key view rests on at open: Cancel for a danger confirm (so
+    // Return can't destroy), otherwise the default action button / row.
+    const defaultButtonOrder =
+      mode === "confirm" && confirmRole === "danger" && hasCancel
+        ? CANCEL_ORDER
+        : (actionButtons.find((b) => b.isDefault)?.order ?? effectiveCancelOrder);
     const handleOpenAutoFocus = React.useCallback(
       (event: Event) => {
         // Stop Radix's own first-focusable walk; the engine drives focus.
         event.preventDefault();
-        const defaultOrder =
-          confirmRole === "danger" && hasCancel ? CANCEL_ORDER : ACTION_ORDER;
-        focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultOrder}`);
+        focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultButtonOrder}`);
       },
-      [confirmRole, hasCancel, focusManager, buttonFocusGroup],
+      [focusManager, buttonFocusGroup, defaultButtonOrder],
     );
 
     // IMPORTANT: Never clear overrideRef during close. The exit animation
@@ -425,33 +592,103 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                 )}
               </div>
             </div>
-            <div className="tug-alert-actions">
-              {cancelLabel !== null && (
-                <AlertDialog.Cancel asChild>
-                  <TugPushButton
-                    size="sm"
-                    emphasis="outlined"
-                    onClick={onCancelClick}
-                    focusGroup={buttonFocusGroup}
-                    focusOrder={CANCEL_ORDER}
-                  >
-                    {cancelLabel}
-                  </TugPushButton>
-                </AlertDialog.Cancel>
-              )}
-              <AlertDialog.Action asChild>
-                <TugPushButton
-                  size="sm"
-                  emphasis={confirmRole === "action" ? "primary" : "filled"}
-                  role={confirmRole}
-                  onClick={onConfirmClick}
-                  focusGroup={buttonFocusGroup}
-                  focusOrder={ACTION_ORDER}
-                >
-                  {confirmLabel}
-                </TugPushButton>
-              </AlertDialog.Action>
-            </div>
+            {richRows ? (
+              // Rich chooser: a vertical stack of list rows (leading icon +
+              // title + description), each a real button in the arrow ring,
+              // with Cancel below.
+              <>
+                <div className="tug-alert-choices">
+                  {actionButtons.map((b) => {
+                    const RowIcon = b.icon
+                      ? (icons[b.icon as keyof typeof icons] ?? null)
+                      : null;
+                    const row = (
+                      <TugPushButton
+                        className="tug-alert-choice"
+                        size="sm"
+                        emphasis={b.emphasis}
+                        role={b.role}
+                        onClick={b.onClick}
+                        focusGroup={buttonFocusGroup}
+                        focusOrder={b.order}
+                      >
+                        <TugListRow
+                          variant="flush"
+                          leading={
+                            RowIcon
+                              ? React.createElement(RowIcon, { size: 28 })
+                              : undefined
+                          }
+                          title={typeof b.label === "string" ? b.label : undefined}
+                          subtitle={b.description}
+                        />
+                      </TugPushButton>
+                    );
+                    return b.isDefault ? (
+                      <AlertDialog.Action asChild key={b.key}>
+                        {row}
+                      </AlertDialog.Action>
+                    ) : (
+                      <React.Fragment key={b.key}>{row}</React.Fragment>
+                    );
+                  })}
+                </div>
+                {hasCancel && (
+                  <div className="tug-alert-actions">
+                    <AlertDialog.Cancel asChild>
+                      <TugPushButton
+                        size="sm"
+                        emphasis="outlined"
+                        onClick={onCancelClick}
+                        focusGroup={buttonFocusGroup}
+                        focusOrder={effectiveCancelOrder}
+                      >
+                        {cancelLabel}
+                      </TugPushButton>
+                    </AlertDialog.Cancel>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="tug-alert-actions">
+                {hasCancel && (
+                  <AlertDialog.Cancel asChild>
+                    <TugPushButton
+                      size="sm"
+                      emphasis="outlined"
+                      onClick={onCancelClick}
+                      focusGroup={buttonFocusGroup}
+                      focusOrder={CANCEL_ORDER}
+                    >
+                      {cancelLabel}
+                    </TugPushButton>
+                  </AlertDialog.Cancel>
+                )}
+                {actionButtons.map((b) => {
+                  const button = (
+                    <TugPushButton
+                      size="sm"
+                      emphasis={b.emphasis}
+                      role={b.role}
+                      onClick={b.onClick}
+                      focusGroup={buttonFocusGroup}
+                      focusOrder={b.order}
+                    >
+                      {b.label}
+                    </TugPushButton>
+                  );
+                  // Exactly one action button is the semantic Radix Action (the
+                  // Return default); the rest are plain buttons in the arrow ring.
+                  return b.isDefault ? (
+                    <AlertDialog.Action asChild key={b.key}>
+                      {button}
+                    </AlertDialog.Action>
+                  ) : (
+                    <React.Fragment key={b.key}>{button}</React.Fragment>
+                  );
+                })}
+              </div>
+            )}
             </FocusModeScope>
           </AlertDialog.Content>
         </AlertDialog.Portal>

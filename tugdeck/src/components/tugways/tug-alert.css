@@ -218,6 +218,67 @@ body {
   opacity: 0.8;
 }
 
+/* ---- Rich chooser rows (choose() with per-choice icon + description) ----
+   Each row is a real TugPushButton (so it joins the alert's arrow ring and the
+   Return/click model) modeled as a filled list item: the button host paints the
+   raised block surface (no border — same look as the modal-header picker rows),
+   and a `flush` TugListRow supplies the leading icon + title + description. The
+   keyboard focus ring is the only outline and rides the accent (orange) domain,
+   independent of the row's neutral body. */
+
+.tug-alert-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-alert-space-a);
+  margin-bottom: var(--tugx-alert-space-b);
+}
+
+/* Ancestor-scoped so these win over the button's own emphasis rest/hover rules
+   (which reach two-class specificity via `:hover`). */
+.tug-alert-choices .tug-alert-choice.tug-button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  text-align: start;
+  white-space: normal;
+  /* Filled, border-free list-item surface; clip the row's hover fill to the
+     rounded corners. */
+  background: var(--tugx-block-surface);
+  border: none;
+  border-radius: var(--tugx-block-chrome-radius);
+  overflow: hidden;
+  /* Recolor the keyboard focus ring to the accent (orange) domain without
+     touching the row's action-neutral body. */
+  --tugx-focus-ring: var(--tug7-element-control-border-filled-accent-rest);
+}
+
+/* Keep the host surface constant on hover; the flush TugListRow paints the
+   hover feedback overlay on top of it. */
+.tug-alert-choices .tug-alert-choice.tug-button:hover {
+  background: var(--tugx-block-surface);
+  border: none;
+}
+
+/* Let the row fill the button and drop the selection-glyph gutter (no glyph
+   column here) so the leading icon aligns to the row's inset. */
+.tug-alert-choice .tug-button-rest-content {
+  display: block;
+  width: 100%;
+}
+.tug-alert-choice .tug-list-row {
+  --tugx-list-row-indicator-gutter: 0px;
+  /* Roomier row padding + a wider icon↔text gutter for the larger icon. */
+  padding: 12px 16px;
+  --tugx-list-row-gap: 16px;
+  /* The host is a TugPushButton, whose uppercase + letter-spacing must NOT
+     bleed into the row's title/description — the list row owns its own
+     sentence-case typography. */
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* ---- Actions row ---- */
 
 .tug-alert-actions {
