@@ -1,0 +1,222 @@
+/**
+ * gallery-transcript-registers.css — styles for the transcript-register
+ * design spike (`gallery-transcript-registers.tsx`).
+ *
+ * Two kinds of style live here:
+ *   - `.gtr-current-*` replicates the CURRENT transcript treatment (the
+ *     wake-trigger line) so the "before" is faithful without importing
+ *     the whole `dev-card.css` transcript stylesheet.
+ *   - `.gtr-line` / `.gtr-group` are the candidate "Quiet line" register.
+ *     It reads color from the real muted / subtle text tokens (not an
+ *     `opacity` fade), so the register is theme-correct.
+ *
+ * Tokens only — every value resolves to a `--tug7-*` semantic token or a
+ * `--tug-*` scale token in one hop.
+ */
+
+/* ===========================================================================
+   Layout scaffolding — blurbs, labels, panels, faux turns
+   ======================================================================== */
+
+.gtr-blurb {
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  max-width: 62ch;
+}
+
+.gtr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xl);
+}
+
+.gtr-ref-label {
+  font-size: var(--tug-font-size-xs);
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  margin-top: var(--tug-space-xs);
+}
+
+.gtr-ref-note {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-style: italic;
+}
+
+.gtr-ref-label code,
+.gtr-ref-note code,
+.gtr-blurb code {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.9em;
+}
+
+/* A faux turn — a muted identifier line over a body column, so a run of
+   candidate events reads in a transcript-like context. */
+.gtr-turn {
+  display: flex;
+  flex-direction: column;
+}
+.gtr-turn-id {
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  margin-bottom: var(--tug-space-xs);
+}
+.gtr-turn-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Prose neighbor — flush left, no horizontal block padding (matches the
+   transcript code-body's cancel of `--tugx-md-block-padding-x`). Pinned to
+   the transcript's own body size (`md` = 14px, anchored the way
+   `.dev-card-transcript-code-body .tugx-md-block { font-size: 1em }` does)
+   so the spike never inflates the assistant text. */
+.gtr-prose {
+  --tugx-md-block-padding-x: 0;
+  font-size: var(--tug-font-size-md);
+}
+
+/* Vertical rhythm inside a turn: prose ↔ events breathe with the `lg`
+   gap; a run of events wants a touch more air between them than the
+   original — see `.gtr-group` below. */
+.gtr-turn-body > * + * {
+  margin-top: var(--tug-space-lg);
+}
+
+/* ===========================================================================
+   CURRENT background line — replicates `.dev-card-transcript-wake-trigger`
+   (dev-card.css): opacity-carried de-emphasis + one trailing rule. Shown
+   as the "before" so the candidate has something to beat.
+   ======================================================================== */
+
+.gtr-current-wake {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  font-size: 0.85em;
+  opacity: 0.55;
+  user-select: none;
+}
+.gtr-current-wake::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+}
+.gtr-current-wake-label {
+  flex: 0 0 auto;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===========================================================================
+   Quiet line — icon · label · subject · meta on one line box.
+   ======================================================================== */
+
+/* A group of quiet lines. Voice-3 items want more vertical margin between
+   them than the old `sm` gutter — `md` gives a run of notices room to read
+   as discrete events rather than a dense list. */
+.gtr-group {
+  display: flex;
+  flex-direction: column;
+}
+.gtr-group > .gtr-line + .gtr-line {
+  margin-top: var(--tug-space-md);
+}
+
+.gtr-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tug-space-sm);
+  font-size: var(--tug-font-size-sm);
+  /* The one-line box every first-row item rides, so a single-line row
+     reads centered and a wrapped subject keeps the icon + label on row 1
+     — the tool-call header's alignment formula (`sm * 1.6`). */
+  --gtr-line-box: calc(var(--tug-font-size-sm) * 1.6);
+}
+
+.gtr-line-ico {
+  flex: 0 0 auto;
+  min-height: var(--gtr-line-box);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  top: 1px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The content column, right of the icon gutter. Row 1 (`head`) carries
+   label + subject; the meta drops to a second line aligned under the
+   label — a hanging right-aligned value reads as unenclosed drift on a
+   line with no frame, so the meta lives inside the column instead. */
+.gtr-line-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gtr-line-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+.gtr-line-label {
+  flex: 0 0 auto;
+  min-height: var(--gtr-line-box);
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  top: 1px;
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: nowrap;
+}
+
+.gtr-line-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--gtr-line-box);
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  top: 1px;
+  line-height: var(--gtr-line-box);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow-wrap: break-word;
+}
+
+/* Meta — the second line: exit code, token count, elapsed time. Sits
+   under the label (inside the content column), quiet + tabular. */
+.gtr-line-meta {
+  align-self: flex-start;
+  margin-top: var(--tug-space-2xs);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* Tone overrides — a background/system notice reads one step quieter than
+   a task step (its label drops to a medium weight in the muted tone); the
+   rare error row spends danger on both glyph and text. */
+.gtr-line[data-tone="subtle"] .gtr-line-label {
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.gtr-line[data-tone="subtle"] .gtr-line-ico {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+.gtr-line[data-tone="danger"] .gtr-line-ico,
+.gtr-line[data-tone="danger"] .gtr-line-label,
+.gtr-line[data-tone="danger"] .gtr-line-subject {
+  color: var(--tug7-element-global-text-normal-danger-rest);
+}

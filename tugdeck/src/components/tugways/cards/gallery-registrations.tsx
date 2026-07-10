@@ -87,6 +87,7 @@ import { GallerySplitPane } from "./gallery-split-pane";
 import { GalleryStatePreservation } from "./gallery-state-preservation";
 import { GalleryTugCue } from "./gallery-tug-cue";
 import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
+import { GalleryTranscriptRegisters } from "./gallery-transcript-registers";
 import { GalleryCommitBlock } from "./gallery-commit-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GalleryDevThinking } from "./gallery-dev-thinking";
@@ -682,6 +683,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-bash-tool-block",
     contentFactory: (_cardId) => <GalleryBashToolBlock />,
     defaultMeta: { title: "BashToolBlock", icon: "Terminal", closable: true },
+    family: "developer",
+    acceptsFamilies: ["developer"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // Transcript registers — design spike gathering the Code-route
+  // transcript's content kinds (prose, tool block, dialog, task updates,
+  // background notices) with three candidate treatments for the two
+  // problem children: task updates + background/system notices.
+  registerCard({
+    componentId: "gallery-transcript-registers",
+    contentFactory: (_cardId) => <GalleryTranscriptRegisters />,
+    defaultMeta: { title: "Transcript Registers", icon: "AlignLeft", closable: true },
     family: "developer",
     acceptsFamilies: ["developer"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
