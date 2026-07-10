@@ -80,7 +80,16 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { X } from "lucide-react";
+import {
+  AlarmClock,
+  Bell,
+  CircleDashed,
+  ClipboardCheck,
+  ClipboardList,
+  Cog,
+  Search,
+  X,
+} from "lucide-react";
 import {
   useSessionModelName,
   formatTranscriptTimestamp,
@@ -142,6 +151,7 @@ import {
 } from "@/components/tugways/cards/dev-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./dev-command-block-registry";
 import { composeShellShareText } from "./shell-exchange-view";
@@ -705,10 +715,33 @@ interface CodeRowBodyProps {
 }
 
 /**
+ * Per-run-marker glyph. The `plumbing` phrases are the fixed set from
+ * `dev-transcript-run-body.ts`; an unrecognised phrase ("Ran <tool>")
+ * and the `empty` placeholder fall to a generic icon.
+ */
+const RUN_MARKER_ICON_SIZE = 16;
+const RUN_MARKER_ICONS: Readonly<Record<string, React.ReactNode>> = {
+  "Scheduled a wake-up": <AlarmClock size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />,
+  "Searched for tools": <Search size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />,
+  "Entered plan mode": <ClipboardList size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />,
+  "Exited plan mode": <ClipboardCheck size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />,
+  "Sent a notification": <Bell size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />,
+};
+function runMarkerIcon(variant: "plumbing" | "empty", label: string): React.ReactNode {
+  if (variant === "empty")
+    return <CircleDashed size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />;
+  return (
+    RUN_MARKER_ICONS[label] ?? <Cog size={RUN_MARKER_ICON_SIZE} aria-hidden="true" />
+  );
+}
+
+/**
  * Subtle inline marker rendered in place of an assistant run's empty
  * body — either a `plumbing` trace for a hidden-tool-only run (e.g.
  * "Scheduled a wake-up") or the `empty` placeholder for a blank turn.
- * Muted, non-interactive; matches the compaction-divider tone.
+ * The Voice-3 quiet-line register: a leading glyph + the phrase. The
+ * plumbing phrase is short (rides the nowrap `label` slot); the empty
+ * placeholder is a full sentence (rides the wrapping `subject` slot).
  */
 const TranscriptRunMarker: React.FC<{
   variant: "plumbing" | "empty";
@@ -720,7 +753,12 @@ const TranscriptRunMarker: React.FC<{
     data-slot={`run-marker-${variant}`}
     role="note"
   >
-    <span className="dev-card-transcript-run-marker-label">{label}</span>
+    <TugQuietLine
+      icon={runMarkerIcon(variant, label)}
+      label={variant === "empty" ? undefined : label}
+      subject={variant === "empty" ? label : undefined}
+      tone="quiet"
+    />
   </div>
 );
 
@@ -790,9 +828,11 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
             className="dev-card-transcript-wake-trigger"
             data-slot="wake-trigger-chip"
           >
-            <span className="dev-card-transcript-wake-trigger-label">
-              {message.text}
-            </span>
+            <TugQuietLine
+              icon={<AlarmClock size={16} aria-hidden="true" />}
+              subject={message.text}
+              tone="quiet"
+            />
           </div>,
         );
         continue;

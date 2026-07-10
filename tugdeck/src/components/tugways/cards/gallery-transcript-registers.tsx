@@ -60,6 +60,7 @@ import type { ToolBlockProps } from "./blocks/types";
 import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { TugQuietLine, type TugQuietLineTone } from "@/components/tugways/tug-quiet-line";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import type {
   CodeSessionSnapshot,
@@ -93,7 +94,7 @@ const TASK_DEFS: ReadonlyArray<{ id: number; subject: string }> = [
 // the reference zone shows the real current rendering).
 // ---------------------------------------------------------------------------
 
-type EventTone = "muted" | "subtle" | "danger";
+type EventTone = TugQuietLineTone;
 
 interface EventDatum {
   icon: React.ReactNode;
@@ -115,14 +116,14 @@ const BG_EVENT: EventDatum = {
   label: "Background command completed",
   subject: '"Re-run at0212 with chain-FR wait + settles"',
   meta: "exit 0",
-  tone: "subtle",
+  tone: "quiet",
 };
 
 const WAKE_EVENT: EventDatum = {
   icon: ic(AlarmClock),
   label: "Scheduled wake-up",
   subject: "loop pacing",
-  tone: "subtle",
+  tone: "quiet",
 };
 
 const TASK_EVENTS: ReadonlyArray<EventDatum> = [
@@ -130,19 +131,19 @@ const TASK_EVENTS: ReadonlyArray<EventDatum> = [
     icon: ic(CircleCheck),
     label: "Completed",
     subject: "Route tab-× close through the close guard",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(CircleCheck),
     label: "Completed",
     subject: "Resolve sheet preemption instead of orphaning promises",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(CircleDot),
     label: "Started",
     subject: "Goal-turn lifecycle plumbing",
-    tone: "muted",
+    tone: "primary",
   },
 ];
 
@@ -155,7 +156,7 @@ const CATALOG_SYSTEM: ReadonlyArray<EventDatum> = [
     label: "Background command completed",
     subject: '"cargo nextest run"',
     meta: "exit 0",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(Terminal),
@@ -169,44 +170,44 @@ const CATALOG_SYSTEM: ReadonlyArray<EventDatum> = [
     label: "Scheduled wake-up",
     subject: "loop pacing",
     meta: "every 20m",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(Clock),
     label: "Wake scheduled",
     subject: "watching CI run",
     meta: "in 4m",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(CalendarClock),
     label: "Cron fired",
     subject: "babysit-prs",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(Bot),
     label: "Agent finished",
     subject: "Map transcript content renderers",
     meta: "49K tokens",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(Search),
     label: "Searched for a tool",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(Scissors),
     label: "Context compacted",
     subject: "freed ~48% of the window",
-    tone: "subtle",
+    tone: "quiet",
   },
   {
     icon: ic(History),
     label: "Session resumed",
     subject: "39 turns restored",
-    tone: "subtle",
+    tone: "quiet",
   },
 ];
 
@@ -215,26 +216,26 @@ const CATALOG_TASK: ReadonlyArray<EventDatum> = [
     icon: ic(ListPlus),
     label: "Created",
     subject: "Goal-turn lifecycle plumbing",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(CircleDot),
     label: "Started",
     subject: "Probe /loop modes and retest resume scheduler",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(CircleCheck),
     label: "Completed",
     subject:
       "Make conflict-sheet Return default non-destructive so a stray keypress never overwrites the file on disk",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(RotateCcw),
     label: "Reset",
     subject: "Decision gate — resolve Q01–Q04",
-    tone: "muted",
+    tone: "primary",
   },
   {
     icon: ic(CircleAlert),
@@ -268,25 +269,16 @@ function TurnFrame({
   );
 }
 
-/** One event as a quiet line. */
+/** One event as a quiet line — the real `TugQuietLine` primitive. */
 function EventLine({ d }: { d: EventDatum }): React.ReactElement {
   return (
-    <div className="gtr-line" data-tone={d.tone}>
-      <span className="gtr-line-ico">{d.icon}</span>
-      <div className="gtr-line-main">
-        <div className="gtr-line-head">
-          {d.label !== undefined ? (
-            <span className="gtr-line-label">{d.label}</span>
-          ) : null}
-          {d.subject !== undefined ? (
-            <span className="gtr-line-subject">{d.subject}</span>
-          ) : null}
-        </div>
-        {d.meta !== undefined ? (
-          <span className="gtr-line-meta">{d.meta}</span>
-        ) : null}
-      </div>
-    </div>
+    <TugQuietLine
+      icon={d.icon}
+      label={d.label}
+      subject={d.subject}
+      meta={d.meta}
+      tone={d.tone}
+    />
   );
 }
 
@@ -464,8 +456,9 @@ function ReferenceZone(): React.ReactElement {
       />
 
       <div className="gtr-ref-label">
-        Background notice — current (wake-trigger treatment,{" "}
-        <code>opacity: 0.55</code> + trailing rule)
+        Background notice — before this rollout (wake-trigger,{" "}
+        <code>opacity: 0.55</code> + trailing rule; the live transcript now
+        uses the Quiet line below)
       </div>
       <div className="gtr-current-wake">
         <span className="gtr-current-wake-label">

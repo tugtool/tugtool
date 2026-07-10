@@ -1,152 +1,28 @@
-/* @tug-pairings:
-   - --tugx-task-inline-icon-color / surrounding surface
-   The icon color composes the muted-text token; the existing
-   `--tug7-element-global-text-normal-muted-rest` ↔ surface pairing
-   in `theme-pairings.ts` covers this surface via the [L17] one-hop
-   alias. No new pairing entry needed.
-*/
+/* @tug-pairings: none — layout only; the row's geometry + color come
+   from `TugQuietLine`, which declares the foreground-on-surface pairings. */
 
 /**
- * task-inline-tool-block.css — `TaskInlineToolBlock` inline-row
- * marker styles.
+ * task-inline-tool-block.css — inter-row spacing for the `TaskCreate` /
+ * `TaskUpdate` marker.
  *
- * The marker borrows the tool-call header's *geometry* without its
- * chrome: no frame, no border, no background, but the same leading
- * status slot, the same one-line box every cross-row item rides,
- * and the same header type scale (`[icon] Verb subject`, verb bold,
- * subject muted). That makes a run of markers read in the
- * transcript's row rhythm rather than as a different species, while
- * staying lighter than a real tool-call card. Per [D100] the TASKS
- * status-bar cell stays primary — so the per-state icon carries the
- * state by *shape*, kept muted; color is reserved for the error row.
+ * The marker composes `TugQuietLine` for the row itself (icon + verb +
+ * subject geometry and color). This wrapper owns only the vertical
+ * margin that gives a run of task markers room to read as discrete
+ * events — the wider Voice-3 rhythm. Applied uniformly per row
+ * (`margin-block`, which collapses between adjacent rows) rather than an
+ * adjacency scheme, so a streamed row never hops as siblings append.
  *
- * Token sources:
- *  - The icon color uses `--tugx-task-inline-icon-color` aliased to
- *    `--tug7-element-global-text-normal-muted-rest` per [L17]
- *    one-hop. The icon owns its own slot so the error row can tint
- *    its glyph + text together via `data-tone` while the steady row
- *    keeps the icon muted under a normal-tone verb.
- *  - The verb / subject tones reuse the shared `--tugx-block-*`
- *    chrome-text tones (header text + muted detail) so a marker's
- *    type matches the tool-call header it sits beside. These are the
- *    block surface's shared tones, not the block-header's private
- *    `--tugx-toolheader-*` family ([L20]).
- *  - The one-line box repeats the header's `sm * 1.6` formula in
- *    this component's OWN slot (`--tugx-task-inline-line`) rather
- *    than reaching into `--tugx-toolheader-line` ([L20]).
- *
- * Tuglaw cross-check:
- *  - [L06] no React state for appearance. The error-vs-steady split
- *    is JSX-data-driven (different children) and the `data-tone` /
- *    `data-state` attributes carry the variant for CSS to target.
- *  - [L17] one-hop alias.
+ * Laws:
+ *  - [L06] no React state for appearance.
  *  - [L19] file pair, module docstring, `data-slot="task-inline-tool-block"`.
- *  - [L20] component-token sovereignty — owns the
- *    `--tugx-task-inline-*` slot family; reuses shared `--tugx-block-*`
- *    tones but overrides none, and reaches into no other component's
- *    family.
+ *  - [L20] component-token sovereignty — owns only
+ *    `--tugx-task-inline-row-margin`; reaches into no other family.
  */
 
 body {
-  /* Icon color — muted by default; the steady row keeps the glyph
-   * muted under a normal-tone verb so the state reads by shape, not
-   * hue. The error row overrides this (below) to danger. */
-  --tugx-task-inline-icon-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  /* Row spacing — each marker is its own block-level row, flush
-   * with the transcript's left edge (no horizontal padding, so the
-   * icon doesn't read as indented under the content above it). The
-   * vertical margin gives the run of markers room to breathe apart
-   * from the surrounding message text. It is applied uniformly per
-   * row — an earlier adjacency-driven "wider at the run's edges"
-   * scheme made streamed rows hop as their first/last status flipped
-   * when a new marker appended, so the spacing stays constant. The
-   * row gap is `sm` — the same gutter the tool-call header puts
-   * between its dot, name, and detail. */
-  --tugx-task-inline-row-margin:  var(--tug-space-2xs);
-  --tugx-task-inline-row-gap:     var(--tug-space-sm);
-
-  /* The one-line box every cross-row item rides — same `sm * 1.6`
-   * formula as the tool-call header's `--tugx-toolheader-line`, kept
-   * in this component's own slot ([L20]). A single font size across
-   * icon / verb / subject means "centered in the same line box" is
-   * also "same baseline" — the header's alignment trick. */
-  --tugx-task-inline-line: calc(var(--tug-font-size-sm) * 1.6);
+  --tugx-task-inline-row-margin: var(--tug-space-md);
 }
 
 .task-inline-tool-block {
-  display: flex;
-  /* Top-align like the tool-call header: each first-row item rides a
-   * one-line box and centers in it, so a single-line row reads
-   * centered and a wrapped subject keeps the icon + verb pinned to
-   * row 1 while the extra lines flow below. */
-  align-items: flex-start;
-  gap: var(--tugx-task-inline-row-gap);
   margin-block: var(--tugx-task-inline-row-margin);
-  /* No border, no background. The marker borrows the header's
-   * geometry, not its chrome — one marker per line, flush left,
-   * never indented beneath the message above. */
-}
-
-/* Icon slot + verb both ride the one-line box and center in it, so
- * each reads vertically centered on the first line. `min-height`
- * (not `height`) keeps a single-line row centered without clipping. */
-.task-inline-tool-block-icon,
-.task-inline-tool-block-verb {
-  flex: 0 0 auto;
-  min-height: var(--tugx-task-inline-line);
-  display: inline-flex;
-  align-items: center;
-}
-
-/* Optical nudge — same 1px drop the header gives its dot + bold name
- * so the sans verb and the muted-tone glyph land on the subject's
- * line. `top` (relative) leaves the layout boxes untouched. */
-.task-inline-tool-block-icon,
-.task-inline-tool-block-verb {
-  position: relative;
-  top: 1px;
-}
-
-.task-inline-tool-block-icon {
-  justify-content: center;
-  color: var(--tugx-task-inline-icon-color);
-}
-
-/* Verb — the bold header "name". One font size (`sm`) shared with
- * the subject; bold weight, not a larger size, keeps it primary —
- * the same treatment as `.tool-call-header-name`. */
-.task-inline-tool-block-verb {
-  font-size: var(--tug-font-size-sm);
-  font-weight: var(--tug-font-weight-semibold);
-  color: var(--tugx-block-header-text-color);
-  white-space: nowrap;
-}
-
-/* Subject — the muted detail (and the flexible spacer). Centers in
- * the one-line box for its first line via the same mechanism as the
- * verb; `flex: 1 1 auto` lets it grow so a long subject wraps below
- * row 1 while the icon + verb stay put. Mirrors
- * `.tool-call-header-detail`. */
-.task-inline-tool-block-subject {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: var(--tugx-task-inline-line);
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-  top: 1px;
-  font-size: var(--tug-font-size-sm);
-  line-height: var(--tugx-task-inline-line);
-  color: var(--tugx-block-header-detail, var(--tugx-block-text-color-muted));
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-
-/* Error row — the one place color is spent. Tint both the glyph and
- * the (subject-slot) error text danger; the row carries no verb. */
-.task-inline-tool-block[data-tone="danger"] .task-inline-tool-block-icon,
-.task-inline-tool-block[data-tone="danger"] .task-inline-tool-block-subject {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
 }

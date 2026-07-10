@@ -1,0 +1,140 @@
+/* @tug-pairings {
+  --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-content-rest | content
+  --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-content-rest | content
+  --tug7-element-global-text-normal-subtle-rest  | --tug7-surface-global-primary-normal-content-rest | informational
+  --tug7-element-global-text-normal-danger-rest  | --tug7-surface-global-primary-normal-content-rest | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                          | Role          | Context                                      |
+ * |------------------------------------------------|--------------------------------------------------|---------------|----------------------------------------------|
+ * | --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-content-rest | content       | .tug-quiet-line-label (color, primary tone)  |
+ * | --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-content-rest | content       | .tug-quiet-line-subject / -icon (color)      |
+ * | --tug7-element-global-text-normal-subtle-rest  | --tug7-surface-global-primary-normal-content-rest | informational | .tug-quiet-line-meta / -icon (color, quiet)  |
+ * | --tug7-element-global-text-normal-danger-rest  | --tug7-surface-global-primary-normal-content-rest | content       | .tug-quiet-line[data-tone="danger"] (color)  |
+ */
+
+/**
+ * tug-quiet-line.css — the shared Voice-3 event row.
+ *
+ * Layout: `[icon] [content column]`. The content column carries the
+ * label + subject on row 1 (`head`) and the meta on a second line — a
+ * right-aligned trailing value reads as unenclosed drift on a line with
+ * no frame, so the meta lives inside the column instead. Every first-row
+ * part rides the tool-call header's one-line box (`sm * 1.6`) so a
+ * single-line row reads centered and a wrapped subject keeps the icon +
+ * label pinned to row 1.
+ *
+ * Tone is carried by the `--tugx-quiet-line-*` alias family ([L20]): the
+ * base rules read the aliases, and each `data-tone` re-points them. Only
+ * this component owns these slots; it reaches into no other family.
+ */
+
+body {
+  /* Layout slots */
+  --tugx-quiet-line-gap: var(--tug-space-sm);
+  --tugx-quiet-line-box: calc(var(--tug-font-size-sm) * 1.6);
+
+  /* Tone slots — the `primary` defaults; `quiet` / `danger` re-point
+     these below. Each resolves to a base `--tug7-*` token in one hop
+     ([L17]). */
+  --tugx-quiet-line-icon-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-quiet-line-label-color: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-quiet-line-label-weight: var(--tug-font-weight-semibold);
+  --tugx-quiet-line-subject-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-quiet-line-meta-color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.tug-quiet-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tugx-quiet-line-gap);
+  font-size: var(--tug-font-size-sm);
+}
+
+/* Icon + label ride the one-line box and center in it; `min-height`
+   (not `height`) keeps a single-line row centered without clipping. The
+   1px optical drop matches the tool-call header's dot + name nudge. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-content-rest */
+.tug-quiet-line-icon {
+  flex: 0 0 auto;
+  min-height: var(--tugx-quiet-line-box);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  top: 1px;
+  color: var(--tugx-quiet-line-icon-color);
+}
+
+/* The content column, right of the icon gutter. Row 1 = label + subject;
+   the meta drops to a second line aligned under the label. */
+.tug-quiet-line-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tug-quiet-line-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tugx-quiet-line-gap);
+  min-width: 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-content-rest */
+.tug-quiet-line-label {
+  flex: 0 0 auto;
+  min-height: var(--tugx-quiet-line-box);
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  top: 1px;
+  font-weight: var(--tugx-quiet-line-label-weight);
+  color: var(--tugx-quiet-line-label-color);
+  white-space: nowrap;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-content-rest */
+.tug-quiet-line-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tugx-quiet-line-box);
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  top: 1px;
+  line-height: var(--tugx-quiet-line-box);
+  color: var(--tugx-quiet-line-subject-color);
+  overflow-wrap: break-word;
+}
+
+/* The second line — exit code, elapsed, token count. Sits under the
+   label (inside the content column), quiet + tabular. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-content-rest */
+.tug-quiet-line-meta {
+  align-self: flex-start;
+  margin-top: var(--tug-space-2xs);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tugx-quiet-line-meta-color);
+}
+
+/* Quiet tone — one step below a task step: a lighter label in the muted
+   tone over a subtle glyph. */
+.tug-quiet-line[data-tone="quiet"] {
+  --tugx-quiet-line-icon-color: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-quiet-line-label-color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-quiet-line-label-weight: var(--tug-font-weight-medium);
+}
+
+/* Danger tone — the one place color is spent: glyph + label + subject
+   the true red (the canonical error-text token, not the soft tone-surface
+   pink). */
+.tug-quiet-line[data-tone="danger"] {
+  --tugx-quiet-line-icon-color: var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-quiet-line-label-color: var(--tug7-element-global-text-normal-danger-rest);
+  --tugx-quiet-line-subject-color: var(--tug7-element-global-text-normal-danger-rest);
+}

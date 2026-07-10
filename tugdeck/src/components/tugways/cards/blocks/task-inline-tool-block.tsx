@@ -11,18 +11,17 @@
  * never duplicate work: the cell answers "what's on the list now?";
  * the marker answers "when did this happen?".
  *
- * Conformance posture. The wrapper still opts out of `BlockChrome`
- * — no frame, no status stripe, no error band, no actions cluster
- * — but it borrows the tool-call header's *geometry*: a fixed
- * leading status slot, a one-line box every cross-row item rides,
- * and the header type scale. The result reads in the transcript's
- * row rhythm (so it no longer looks like a different species) while
- * staying lighter than a real tool-call card. The status slot holds
- * a per-state icon rather than the header's animated lifecycle dot:
- * task events are discrete, terminal state changes, not live
- * phases, so a static state glyph reads truer than a pulse — and it
- * keeps task markers visually distinct from the tool calls that
- * keep the dot.
+ * Presentation. The wrapper composes `TugQuietLine` — the shared
+ * Voice-3 event row — in the `primary` tone: a per-state icon, the
+ * verb as the label, and the subject as the muted detail. It opts
+ * out of `BlockChrome` (no frame, no status stripe, no actions
+ * cluster); `TugQuietLine` gives it the tool-call header's line
+ * geometry so a run of markers reads in the transcript's row rhythm
+ * while staying lighter than a real tool-call card. The icon carries
+ * the state by *shape* (a static glyph, not the header's animated
+ * lifecycle dot) — task events are discrete, terminal state changes,
+ * not live phases. The error row switches `TugQuietLine` to the
+ * `danger` tone; the wrapper owns only the inter-row margin.
  *
  * Per-event reading. The row is `[icon] Verb subject` — the verb is
  * the bold header "name", the subject the muted detail (the
@@ -72,9 +71,9 @@
  *    subject.
  *  - [L19] file pair (`.tsx` + `.css`), exported props interface,
  *    `data-slot="task-inline-tool-block"`, this module docstring.
- *  - [L20] component-token sovereignty — owns the
- *    `--tugx-task-inline-*` slot family for layout / spacing;
- *    color comes from `TugLabel`'s own role/emphasis tokens.
+ *  - [L20] component-token sovereignty — owns only the
+ *    `--tugx-task-inline-row-margin` slot (inter-row spacing);
+ *    the row's geometry + color come from `TugQuietLine`.
  *
  * Decisions:
  *  - [D05] two-layer hybrid — but the chrome layer is intentionally
@@ -109,6 +108,7 @@ import {
 } from "@/lib/code-session-store/select-task-list";
 import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
 
 import type { ToolBlockProps } from "./types";
 
@@ -305,12 +305,12 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
         className="task-inline-tool-block"
         data-slot="task-inline-tool-block"
         data-kind={kind ?? undefined}
-        data-tone="danger"
       >
-        <span className="task-inline-tool-block-icon">
-          <CircleAlert size={MARKER_ICON_SIZE} aria-hidden="true" />
-        </span>
-        <span className="task-inline-tool-block-subject">{errorText}</span>
+        <TugQuietLine
+          icon={<CircleAlert size={MARKER_ICON_SIZE} aria-hidden="true" />}
+          subject={errorText}
+          tone="danger"
+        />
       </div>
     );
   }
@@ -327,11 +327,12 @@ const TaskInlineRow: React.FC<RowProps> = ({ baseProps, tasks }) => {
       data-kind={kind ?? undefined}
       data-state={state}
     >
-      <span className="task-inline-tool-block-icon">{markerIcon(state)}</span>
-      <span className="task-inline-tool-block-verb">{verb}</span>
-      {subject.length > 0 ? (
-        <span className="task-inline-tool-block-subject">{subject}</span>
-      ) : null}
+      <TugQuietLine
+        icon={markerIcon(state)}
+        label={verb}
+        subject={subject.length > 0 ? subject : undefined}
+        tone="primary"
+      />
     </div>
   );
 };

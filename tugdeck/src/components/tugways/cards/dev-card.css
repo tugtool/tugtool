@@ -595,21 +595,13 @@
   margin-top: var(--tug-space-lg);
 }
 
-/* Empty-run marker — a muted inline trace shown in place of an assistant
+/* Empty-run marker — an inline trace shown in place of an assistant
    run's empty body: a `plumbing` line for a hidden-tool-only run
    ("Scheduled a wake-up") or the `empty` placeholder for a blank turn.
-   Non-interactive; borrows the compaction divider's muted tone. */
+   Composes `TugQuietLine` (quiet tone) for the row; this wrapper owns
+   only spacing. */
 .dev-card-transcript-run-marker {
-  font-size: 0.85em;
-  opacity: 0.55;
   user-select: none;
-  font-style: italic;
-}
-.dev-card-transcript-run-marker[data-variant="empty"] {
-  font-style: normal;
-}
-.dev-card-transcript-run-marker-label {
-  white-space: pre-wrap;
 }
 /* Top-margins-only adjacency, matching the compaction divider: the
    marker owns the xs gap when it follows a sibling; first-in-body it
@@ -622,33 +614,13 @@
   margin-top: var(--tug-space-lg);
 }
 
-/* Wake-trigger chip — the subdued label opening a wake turn's assistant
-   body with what scheduled it ("loop pacing", a cron's prompt). Same
-   quiet register as the compaction divider, but a leading chip rather
-   than a full-width separator: label first, one trailing rule. */
+/* Wake-trigger chip — opens a wake turn's assistant body with what
+   scheduled it ("loop pacing", a cron's prompt), seeded from
+   `wake_started.wake_trigger.summary`. Composes `TugQuietLine` (quiet
+   tone) for the row; this wrapper owns only its margins. */
 .dev-card-transcript-wake-trigger {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  width: 100%;
   margin-block: var(--tug-space-xs) 0;
-  font-size: 0.85em;
-  opacity: 0.55;
   user-select: none;
-}
-.dev-card-transcript-wake-trigger::after {
-  content: "";
-  flex: 1 1 auto;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.4;
-}
-.dev-card-transcript-wake-trigger-label {
-  flex: 0 0 auto;
-  max-width: 80%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .dev-card-transcript-wake-trigger + .tug-markdown-block {
   margin-top: var(--tug-space-xs);
