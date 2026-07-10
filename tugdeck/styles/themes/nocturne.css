@@ -310,6 +310,10 @@ body {
      lighter than the column so blocks read as their own tinted panel. Bakes the
      former text-into-surface color-mix into a plain token (look unchanged). */
   --tug7-surface-card-primary-normal-block-rest: --tug-color(teal, l: 360, c: 20);
+  /* Card — Tool-block expanded content well. A step darker than the block
+     surface so an expanded body sinks into a recessed well, giving diff/edit
+     content a darker ground for its tint lines to read against. */
+  --tug7-surface-card-primary-normal-well-rest: --tug-color(teal, l: 250, c: 20);
 
   /* Card — Title Bar Element Tokens */
   --tug7-element-card-text-normal-title-active: --tug-color(teal, l: 930, c: 20);

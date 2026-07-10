@@ -146,6 +146,32 @@ body {
  * keeps its hairline. */
 .tool-block-chrome-body {
   --tugx-block-strip-border: transparent;
+  /* Recessed content well. The expanded body drops off the panel surface onto
+   * `--tugx-block-well-bg` (darker in dark themes, lighter in light) so diff /
+   * edit content has a grounded surface for its tint lines and syntax colors to
+   * read against. The header + footer strips keep the panel surface, so the
+   * chrome frames a sunk well. Body kinds read `--tugx-block-bg`, so re-scope it
+   * here as well as painting the region directly. */
+  --tugx-block-bg: var(--tugx-block-well-bg);
+  background: var(--tugx-block-well-bg);
+  /* Ring the well in the SAME hairline the header draws beneath itself
+   * (`--tugx-block-strip-border` → `--tugx-block-hairline`). The header's
+   * border-bottom already IS the well's top edge, so only the other three sides
+   * are added — the result reads as one continuous thin frame around the
+   * content. `overflow: clip` on the chrome trims the bottom edge to the
+   * panel's rounded corners. */
+  border: 1px solid var(--tugx-block-hairline);
+  border-top: 0;
+}
+
+/* When the body is the last thing in the panel (no footer strip below), round
+ * its bottom corners to the chrome radius so the well's border follows the
+ * panel's rounded corners instead of being severed square by `overflow: clip`.
+ * A body followed by a footer keeps square corners — its bottom border is then
+ * the divider above the footer, not the panel edge. */
+.tool-block-chrome-body:last-child {
+  border-bottom-left-radius: var(--tugx-block-chrome-radius);
+  border-bottom-right-radius: var(--tugx-block-chrome-radius);
 }
 
 /* Run boundary: a block that follows ANY sibling opens the run gap (gap from

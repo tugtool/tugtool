@@ -124,6 +124,15 @@ body {
    * each in `styles/themes/<name>.css`. */
   --tugx-block-surface: var(--tug7-surface-card-primary-normal-block-rest);
 
+  /* The expanded body's recessed well. Darker than the panel surface in dark
+   * themes, lighter in light themes — an intentional per-mode inversion so an
+   * expanded body sinks into a well and grounds the contrasting colors of diff
+   * / edit content. Authored per theme beside the block surface (see
+   * `--tug7-surface-card-primary-normal-well-rest`). Consumed only on the body
+   * region (`.tool-block-chrome-body`); the header + footer strips stay on the
+   * panel surface, so the chrome frames a sunk content well. */
+  --tugx-block-well-bg: var(--tug7-surface-card-primary-normal-well-rest);
+
   /* The radius worn by a tool-block panel. Every block rounds all four corners
    * — a tool call is its own card, never fused into a run. Distinct from
    * `--tugx-block-radius` (0 inside a block, since the body kinds are clipped

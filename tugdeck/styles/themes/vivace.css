@@ -338,6 +338,10 @@ body {
      Key-tinted C2 status rung, so tool blocks recede into the transcript flow
      instead of reading as tinted chrome. */
   --tug7-surface-card-primary-normal-block-rest: --tug-color(cyan, l: 925, c: 10);
+  /* Card — Tool-block expanded content well. A step lighter than the block
+     surface so an expanded body reads as a brighter recessed well, giving
+     diff/edit content a cleaner ground for its tint lines to read against. */
+  --tug7-surface-card-primary-normal-well-rest: --tug-color(cyan, l: 958, c: 10);
 
   /* Card — Title Bar Element Tokens (white-on-color, like the dark themes) */
   --tug7-element-card-text-normal-title-active: --tug-color(seafoam, l: 980, c: 4);
