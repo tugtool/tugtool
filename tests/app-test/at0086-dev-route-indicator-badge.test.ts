@@ -35,11 +35,11 @@
  *
  *     1. Default route is Code → indicator text starts with
  *        `Claude Code`; capture the badge's DOM node.
- *     2. Click the Shell choice segment → text no longer starts with
+ *     2. Pick Shell from the route popup → text no longer starts with
  *        `Claude Code` (the shell branch renders the host's shell
  *        basename or the `shell` placeholder); badge DOM node identity
  *        is preserved.
- *     3. Click the Code choice segment → text starts with
+ *     3. Pick Code from the route popup → text starts with
  *        `Claude Code` again; badge DOM node identity is preserved
  *        across the round trip.
  *
@@ -54,10 +54,11 @@ const TEST_TIMEOUT_MS = 90_000;
 
 const BADGE_SELECTOR =
   '[data-card-id="A"] [data-slot="dev-route-indicator-badge"]';
-const SHELL_SEGMENT_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(2)';
-const CODE_SEGMENT_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(1)';
+const ROUTE_TRIGGER_SELECTOR =
+  '[data-card-id="A"] .tug-prompt-entry-toolbar button[aria-label="Route"]';
+/** Route items inside the open popup (portaled), keyed by route char. */
+const SHELL_MENU_ITEM_SELECTOR = '.tug-menu-item[data-item-id="$"]';
+const CODE_MENU_ITEM_SELECTOR = '.tug-menu-item[data-item-id="❯"]';
 
 function deckShape() {
   return {
@@ -162,7 +163,8 @@ describe.skipIf(!SHOULD_RUN)(
           // resolved, otherwise the `shell` placeholder). The mount
           // identity invariant ([L26], Risk R03) is the same DOM node
           // surviving the flip.
-          await app.click(SHELL_SEGMENT_SELECTOR);
+          await app.click(ROUTE_TRIGGER_SELECTOR);
+          await app.click(SHELL_MENU_ITEM_SELECTOR);
           await app.waitForCondition<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(BADGE_SELECTOR)});
@@ -187,7 +189,8 @@ describe.skipIf(!SHOULD_RUN)(
           // Flip back to Code — the badge returns to the
           // `Claude Code …` face, and the same DOM node survives the
           // round trip.
-          await app.click(CODE_SEGMENT_SELECTOR);
+          await app.click(ROUTE_TRIGGER_SELECTOR);
+          await app.click(CODE_MENU_ITEM_SELECTOR);
           await app.waitForCondition<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(BADGE_SELECTOR)});

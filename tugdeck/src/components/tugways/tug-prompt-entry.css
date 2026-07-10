@@ -226,12 +226,6 @@ body {
   background-image: none;
 }
 
-/* No vertical nudge for the route choice-group's lucide icons — flex
-   `align-items: center` from the segment lands them at the right
-   optical center. (An earlier draft used text glyphs `❯`/`$`/`:` which
-   needed a -1px nudge; lucide SVGs have a different visual center and
-   sit naturally without one.) */
-
 /* ----------------------------------------------------------------------------
    .tug-prompt-entry-toolbar — the row under the editor
    ----------------------------------------------------------------------------
@@ -246,10 +240,10 @@ body {
   display: flex;
   flex: 0 0 auto;
   flex-direction: row;
-  /* Vertical-center every toolbar member — choice group, footer-
+  /* Vertical-center every toolbar member — route popup, footer-
      content slot, submit button — against the row's midline. When
      one item grows taller than the others (e.g. the submit button
-     vs the smaller route chips, or the footer-content carrying a
+     vs the smaller route popup, or the footer-content carrying a
      telemetry chip), all stay aligned on a shared horizontal axis
      instead of drifting to the bottom. */
   align-items: center;
@@ -260,6 +254,32 @@ body {
   margin-top: var(--tug-space-md);
   margin-bottom: var(--tug-space-md);
   padding: 0 var(--tug-space-md);
+}
+
+/* Z4A route popup trigger — the theme SELECTION color, not a control role.
+ *
+ * The trigger is a filled `TugButton` (base emphasis `filled` role `accent`),
+ * but the route control's identity is "the selected route", so it wears the
+ * theme's selection surface — the same seafoam pill the old `TugChoiceGroup`
+ * active segment and the `TugPopupMenu` item highlight use — rather than the
+ * accent (orange) role fill. Overriding via `.tug-button.<class>` (0-2-0)
+ * outweighs `.tug-button-filled-accent` (0-1-0) so the role fill is fully
+ * replaced across rest / hover / active, text + icon included. */
+.tug-button.tug-prompt-entry-route-trigger {
+  background-color: var(--tug7-surface-selection-primary-normal-selected-rest);
+  color: var(--tug7-element-selection-text-normal-selected-rest);
+  border-color: var(--tug7-surface-selection-primary-normal-selected-rest);
+}
+.tug-button.tug-prompt-entry-route-trigger svg {
+  color: var(--tug7-element-selection-text-normal-selected-rest);
+}
+.tug-button.tug-prompt-entry-route-trigger:hover:not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-selection-primary-normal-selected-hover);
+  border-color: var(--tug7-surface-selection-primary-normal-selected-hover);
+}
+.tug-button.tug-prompt-entry-route-trigger:is(:active, [data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+  background-color: var(--tug7-surface-selection-primary-normal-selected-hover);
+  border-color: var(--tug7-surface-selection-primary-normal-selected-hover);
 }
 
 /* Z5 submit-button modes [L06].

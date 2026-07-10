@@ -49,7 +49,10 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
-const ACTIVE_SEGMENT = `${TOOLBAR} .tug-choice-group-segment[data-state="active"]`;
+const ROUTE_TRIGGER = `${TOOLBAR} button[aria-label="Route"]`;
+// Width-stabilized trigger holds a hidden alternate label too — read the
+// active variant for the live route label.
+const ROUTE_LABEL = `${ROUTE_TRIGGER} [data-tug-stable="active"]`;
 const SHELL_ROWS = `${CARD} [data-slot="dev-transcript-shell-row"]`;
 const ENTRIES = `${CARD} [data-slot="tug-transcript-entry"]`;
 const CWD_CHIP = `${CARD} [data-slot="cwd-chip"]`;
@@ -246,12 +249,13 @@ describe.skipIf(!SHOULD_RUN)(
           });
           await frame({ type: "turn_complete", msg_id: "m1", result: "success" });
 
-          // --- Flip to the `$` route (choice-group click, segment 2). ---
-          await app.click(`${TOOLBAR} .tug-choice-group-segment:nth-of-type(2)`);
+          // --- Flip to the `$` route (route popup → Shell). ---
+          await app.click(ROUTE_TRIGGER);
+          await app.click(`.tug-menu-item[data-item-id="$"]`);
           await app.waitForCondition<boolean>(
             `(function(){
-              var seg = document.querySelector(${JSON.stringify(ACTIVE_SEGMENT)});
-              return seg !== null && seg.textContent.trim() === "Shell";
+              var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL)});
+              return lbl !== null && lbl.textContent.trim() === "Shell";
             })()`,
             { timeoutMs: 4000 },
           );

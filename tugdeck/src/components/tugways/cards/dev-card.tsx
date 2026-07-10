@@ -222,7 +222,7 @@ const COMPACTION_RESPAWN_TIMEOUT_MS = 15_000;
 
 /**
  * Placeholder copy for the prompt entry, keyed by the active route
- * value (`❯` Code / `$` Shell — see `ROUTE_ITEMS` in
+ * value (`❯` Code / `$` Shell / `?` btw — see `ROUTE_ITEMS` in
  * `tug-prompt-entry.tsx`). Forwarded as `placeholderByRoute`; the
  * entry shows the match for the active route and falls back to no
  * placeholder for any unlisted route. Dev-specific — the gallery
@@ -231,6 +231,7 @@ const COMPACTION_RESPAWN_TIMEOUT_MS = 15_000;
 const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "❯": "Ask Claude to build, fix, or explain",
   "$": "Run a shell command",
+  "?": "Ask a question or say something to Claude as an aside",
 };
 
 /**

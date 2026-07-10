@@ -17,7 +17,7 @@
  *      `routeLifecycle.setRoute(restored)`. A non-default route must
  *      survive close → reopen.
  *
- *   2. **The three triggers.** The choice-group click (SELECT_VALUE),
+ *   2. **The three triggers.** The route popup pick (SELECT_VALUE),
  *      the route-prefix editor extension, and the SELECT_ROUTE
  *      keybinding all now call `routeLifecycle.setRoute`. Each must
  *      still flip the route.
@@ -28,13 +28,13 @@
  *   uses, exercised by [AT0024]):
  *
  *   1. A non-default route (`$` Shell) survives `appReload` — Risk R02.
- *   2. A choice-group segment click flips `❯` Code → `$` Shell.
+ *   2. A route popup pick flips `❯` Code → `$` Shell.
  *   3. The ⇧⌘C SELECT_ROUTE keybinding flips `$` Shell → `❯` Code.
  *   4. Typing a route-prefix character flips `❯` Code → `$` Shell.
  *
- * The live route is read off the choice group's active segment
- * (`[data-state="active"]`): `TugChoiceGroup value={route}` is a direct
- * projection of `routeLifecycle.getRoute()` through `useSyncExternalStore`.
+ * The live route is read off the popup trigger's label text: the trigger
+ * paints the current route (a direct projection of
+ * `routeLifecycle.getRoute()` through `useSyncExternalStore`).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -52,7 +52,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 // Route values, mirroring `ROUTE_ITEMS` / `DEFAULT_ROUTE` in
-// `tug-prompt-entry.tsx`. The choice group renders these in this order.
+// `tug-prompt-entry.tsx`. The popup lists these in this order.
 const ROUTE_CODE = "❯";
 const ROUTE_SHELL = "$";
 
@@ -64,11 +64,17 @@ const LABEL_BY_ROUTE: Readonly<Record<string, string>> = {
 
 const EDITOR_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
-const ACTIVE_SEGMENT_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment[data-state="active"]';
-/** The Shell segment — second of the two route segments. */
-const SHELL_SEGMENT_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar .tug-choice-group-segment:nth-of-type(2)';
+/** The Z4A route popup trigger — a filled button whose text is the current
+ *  route's label. */
+const ROUTE_TRIGGER_SELECTOR =
+  '[data-card-id="A"] .tug-prompt-entry-toolbar button[aria-label="Route"]';
+/** The trigger is width-stabilized, so it holds BOTH the active label and a
+ *  hidden alternate; read the active variant to get the live route label. */
+const ROUTE_LABEL_SELECTOR = `${ROUTE_TRIGGER_SELECTOR} [data-tug-stable="active"]`;
+/** A route item inside the open popup menu (portaled), keyed by route char. */
+function routeMenuItemSelector(route: string): string {
+  return `.tug-menu-item[data-item-id="${route}"]`;
+}
 
 // ---------------------------------------------------------------------------
 // Deck shape + mount
@@ -122,29 +128,39 @@ async function mountCard(
 }
 
 // ---------------------------------------------------------------------------
-// Route readout — the live route is the active choice-group segment
+// Route readout — the live route is the popup trigger's label text
 // ---------------------------------------------------------------------------
 
-/** The label of the active route segment, e.g. `"Code"`; `null` if none. */
+/** The label painted on the route popup trigger, e.g. `"Code"`; `null` if
+ *  the trigger is not mounted. */
 async function readActiveRouteLabel(app: App): Promise<string | null> {
   return await app.evalJS<string | null>(
     `(function(){
-      var seg = document.querySelector(${JSON.stringify(ACTIVE_SEGMENT_SELECTOR)});
-      return seg ? seg.textContent.trim() : null;
+      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
+      return lbl ? lbl.textContent.trim() : null;
     })()`,
   );
 }
 
-/** Block until the active route segment is `LABEL_BY_ROUTE[route]`. */
+/** Block until the route popup trigger reads `LABEL_BY_ROUTE[route]`. */
 async function waitForRoute(app: App, route: string): Promise<void> {
   const label = LABEL_BY_ROUTE[route];
   await app.waitForCondition<boolean>(
     `(function(){
-      var seg = document.querySelector(${JSON.stringify(ACTIVE_SEGMENT_SELECTOR)});
-      return seg !== null && seg.textContent.trim() === ${JSON.stringify(label)};
+      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
+      return lbl !== null && lbl.textContent.trim() === ${JSON.stringify(label)};
     })()`,
     { timeoutMs: 4000 },
   );
+}
+
+/** Open the route popup and pick `route`, then block until it takes. The
+ *  menu applies the selection after its blink animation, so `waitForRoute`
+ *  absorbs that latency. */
+async function selectRouteViaPopup(app: App, route: string): Promise<void> {
+  await app.click(ROUTE_TRIGGER_SELECTOR);
+  await app.click(routeMenuItemSelector(route));
+  await waitForRoute(app, route);
 }
 
 /** Focus the embedded editor and wait until it is `document.activeElement`. */
@@ -208,8 +224,8 @@ async function runRoundtripScenario(): Promise<void> {
 }
 
 /**
- * Test 2 — the choice-group click trigger. A click on the Shell
- * segment dispatches SELECT_VALUE, which the entry's handler turns into
+ * Test 2 — the popup click trigger. Opening the route popup and picking
+ * Shell dispatches SELECT_VALUE, which the entry's handler turns into
  * `routeLifecycle.setRoute`.
  */
 async function runClickTriggerScenario(): Promise<void> {
@@ -218,12 +234,11 @@ async function runClickTriggerScenario(): Promise<void> {
     await mountCard(app, {});
     await waitForRoute(app, ROUTE_CODE);
 
-    await app.click(SHELL_SEGMENT_SELECTOR);
+    await selectRouteViaPopup(app, ROUTE_SHELL);
 
-    await waitForRoute(app, ROUTE_SHELL);
     expect(
       await readActiveRouteLabel(app),
-      "a choice-group click must flip the route to Shell",
+      "a route popup pick must flip the route to Shell",
     ).toBe(LABEL_BY_ROUTE[ROUTE_SHELL]);
   } finally {
     await app.close();
@@ -310,7 +325,7 @@ describe.skipIf(!SHOULD_RUN)(
       TEST_TIMEOUT_MS,
     );
     test(
-      "a choice-group click flips the route",
+      "a route popup pick flips the route",
       runClickTriggerScenario,
       TEST_TIMEOUT_MS,
     );

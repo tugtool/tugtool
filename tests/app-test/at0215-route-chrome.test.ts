@@ -4,14 +4,15 @@
  * round-trip ([P01]/[P02]/[P03], Table T01, Risk R04, roadmap/route-enhancements.md).
  *
  * Drives the REAL dev card (the manifest + chips live there, not in the
- * gallery prompt-entry wrapper), cycling routes via a choice-group click and
+ * gallery prompt-entry wrapper), cycling routes via a route popup pick and
  * the ⇧⌘ keybinding, and asserts:
  *
  *   1. **Table T01 chip presence/absence** — each route mounts exactly its
  *      chip set (chips a route drops UNMOUNT, they are not merely disabled).
- *   2. **Risk R04 geometry** — the leading Z4A choice group and the trailing
- *      Z5 submit button do NOT move when the centred-floating Z4B cluster
- *      swaps width across routes (the flanking cells are edge-pinned).
+ *   2. **Risk R04 geometry** — the leading Z4A route popup (left edge AND
+ *      width — it is width-stabilized to the widest route label) and the
+ *      trailing Z5 submit button's right edge do NOT move when the
+ *      centred-floating Z4B cluster swaps width across routes.
  *   3. **`?`-route dispatch ([P02])** — submitting on the btw route opens the
  *      side-question overlay and the exchange never touches the transcript
  *      (the [D108] invariant, beside at0211): the settled answer is injected
@@ -35,8 +36,11 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
-const CHOICE_GROUP = `${TOOLBAR} .tug-choice-group`;
-const ACTIVE_SEGMENT = `${TOOLBAR} .tug-choice-group-segment[data-state="active"]`;
+/** The Z4A route popup trigger — a filled button reading the current route's
+ *  label. Width-stabilized, so it holds a hidden alternate too; read the
+ *  active variant for the live label. */
+const ROUTE_TRIGGER = `${TOOLBAR} button[aria-label="Route"]`;
+const ROUTE_LABEL = `${ROUTE_TRIGGER} [data-tug-stable="active"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
 const TRANSCRIPT_ENTRIES = `${CARD} [data-slot="tug-transcript-entry"]`;
 const SIDE_Q_ASK = ".side-question-question";
@@ -51,14 +55,6 @@ const LABEL_BY_ROUTE: Readonly<Record<string, string>> = {
   [ROUTE_SHELL]: "Shell",
   [ROUTE_BTW]: "btw",
 };
-// Segment index (1-based `nth-of-type`) per route — the choice group renders
-// Code, Shell, btw in this order.
-const SEGMENT_NTH: Readonly<Record<string, number>> = {
-  [ROUTE_CODE]: 1,
-  [ROUTE_SHELL]: 2,
-  [ROUTE_BTW]: 3,
-};
-
 // Chip data-slots (in the dev card's Z4B cluster).
 const CHIP = {
   identity: "dev-route-indicator-badge",
@@ -108,13 +104,13 @@ function deckShape() {
   };
 }
 
-/** Block until the active route segment matches `route`. */
+/** Block until the route popup trigger reads `route`'s label. */
 async function waitForRoute(app: App, route: string): Promise<void> {
   const label = LABEL_BY_ROUTE[route];
   await app.waitForCondition<boolean>(
     `(function(){
-      var seg = document.querySelector(${JSON.stringify(ACTIVE_SEGMENT)});
-      return seg !== null && seg.textContent.trim() === ${JSON.stringify(label)};
+      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL)});
+      return lbl !== null && lbl.textContent.trim() === ${JSON.stringify(label)};
     })()`,
     { timeoutMs: 4000 },
   );
@@ -133,13 +129,17 @@ async function mountedChips(app: App): Promise<string[]> {
   return present;
 }
 
-/** Rects of the leading Z4A choice group and the trailing Z5 submit button. */
+/** Rects of the flanking cells: the leading Z4A route popup and the trailing
+ *  Z5 submit button. The popup trigger is width-stabilized to the widest
+ *  route label, so its width is invariant across routes too — the whole cell
+ *  (left edge AND width) and the submit's right edge all stay put when the
+ *  Z4B cluster resizes. */
 async function flankingRects(
   app: App,
 ): Promise<{ groupLeft: number; groupWidth: number; submitRight: number } | null> {
   return app.evalJS<{ groupLeft: number; groupWidth: number; submitRight: number } | null>(
     `(function(){
-      var g = document.querySelector(${JSON.stringify(CHOICE_GROUP)});
+      var g = document.querySelector(${JSON.stringify(ROUTE_TRIGGER)});
       var s = document.querySelector(${JSON.stringify(SUBMIT)});
       if (!g || !s) return null;
       var gr = g.getBoundingClientRect();
@@ -149,9 +149,10 @@ async function flankingRects(
   );
 }
 
+/** Open the route popup and pick `route`, then block until it takes. */
 async function clickRouteSegment(app: App, route: string): Promise<void> {
-  const nth = SEGMENT_NTH[route];
-  await app.click(`${TOOLBAR} .tug-choice-group-segment:nth-of-type(${nth})`);
+  await app.click(ROUTE_TRIGGER);
+  await app.click(`.tug-menu-item[data-item-id="${route}"]`);
   await waitForRoute(app, route);
 }
 
@@ -229,14 +230,15 @@ describe.skipIf(!SHOULD_RUN)(
           const codeRects = await flankingRects(app);
           expect(codeRects).not.toBeNull();
 
-          // --- Flip to Shell (choice-group click). ---
+          // --- Flip to Shell (route popup → Shell). ---
           await clickRouteSegment(app, ROUTE_SHELL);
           expect(
             (await mountedChips(app)).sort(),
             "shell route chips (Table T01) — no Claude-session chips, Cwd present",
           ).toEqual(EXPECTED_CHIPS[ROUTE_SHELL].map((k) => CHIP[k]).sort());
 
-          // Risk R04: the leading choice group and trailing submit did NOT
+          // Risk R04: the leading route popup (left edge AND width — it is
+          // width-stabilized) and the trailing submit's right edge did NOT
           // move when the Z4B cluster shrank.
           const shellRects = await flankingRects(app);
           expect(shellRects).not.toBeNull();
@@ -254,6 +256,7 @@ describe.skipIf(!SHOULD_RUN)(
           const btwRects = await flankingRects(app);
           expect(btwRects).not.toBeNull();
           expect(Math.abs(btwRects!.groupLeft - codeRects!.groupLeft)).toBeLessThanOrEqual(1);
+          expect(Math.abs(btwRects!.groupWidth - codeRects!.groupWidth)).toBeLessThanOrEqual(1);
           expect(Math.abs(btwRects!.submitRight - codeRects!.submitRight)).toBeLessThanOrEqual(1);
 
           // --- `?`-route submit → side-question overlay, transcript untouched. ---

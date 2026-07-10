@@ -62,7 +62,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="dev-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} [data-slot="tug-choice-group"][aria-label="Route"]`;
+const ROUTE = `${CARD} button[aria-label="Route"]`;
 // The three Z4B indicator chips now in the cycle ([P10] revised — no control
 // left behind): the route indicator (Claude Code / Shell), the Session badge,
 // and the Project button. Each is a leaf stop carrying `data-key-view-kbd`
@@ -93,9 +93,9 @@ const Z2_WORK = `${CARD} [data-priority="work"]`;
 const SHEET = '[data-slot="tug-sheet"]';
 const SHEET_OPTION = `${SHEET} [data-mode]`;
 
-// Expression: does the element at `selector` hold the keyboard key view? Works
-// for leaf stops (submit, chips, the Z2 cells — the element carries
-// `data-key-view-kbd`) and item-group stops (the route — its group root does).
+// Expression: does the element at `selector` hold the keyboard key view? Every
+// stop is a leaf (submit, the route popup trigger, the Z4B chips, the Z2 cells)
+// — the element itself carries `data-key-view-kbd` when it is the active stop.
 function hasKeyView(selector: string): string {
   return `(function(){
     var el = document.querySelector(${JSON.stringify(selector)});
@@ -134,9 +134,8 @@ const SUBMIT_HAS_KEY_VIEW = `(function(){
   return el ? el.hasAttribute("data-key-view-kbd") : false;
 })()`;
 
-// Whether the route group holds the keyboard key view. The route is an
-// item-group: its root registers the focusable, so `data-key-view-kbd` lands
-// on the group root itself (the arrow cursor `data-key-cursor` rides a child).
+// Whether the route popup trigger holds the keyboard key view. The route is a
+// single button leaf stop, so `data-key-view-kbd` lands on the button itself.
 const ROUTE_HAS_KEY_VIEW = `(function(){
   var el = document.querySelector(${JSON.stringify(ROUTE)});
   return el ? el.hasAttribute("data-key-view-kbd") : false;
@@ -150,13 +149,6 @@ const EDITOR_FOCUSED = `(function(){
 
 // Whether a popover (portaled status-cell detail) is currently open.
 const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
-
-// The editor's text content (the CodeMirror content surface). Used to prove that
-// typing actually lands after a route commit relinquishes the cycle ([P15]).
-const EDITOR_TEXT = `(function(){
-  var el = document.querySelector(${JSON.stringify(EDITOR)});
-  return el ? el.textContent : null;
-})()`;
 
 // Capability payload whose default model supports reasoning effort. The
 // EFFORT chip disables itself when the bound model lacks effort support
@@ -412,69 +404,6 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
   );
 
   test(
-    "committing the route group by keyboard relinquishes the cycle ([P15]): Space commits + exits cycling, returns the caret, and typing lands",
-    async () => {
-      const app = await launchTugApp({ testName: "at0140-cycle-devcard-commit" });
-      try {
-        await app.enableDeckTrace(true);
-        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
-        await app.waitForCondition<boolean>(
-          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
-        );
-        await app.bindDevSession("A");
-        await app.awaitEngineReady("A");
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(ROUTE)}) !== null`,
-          { timeoutMs: 8000 },
-        );
-
-        // Caret in the editor (base mode, not cycling).
-        await app.nativeClickAtElement(EDITOR);
-        await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
-
-        // ⌥⇥ enters cycling and seeds the route group (the first stop).
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-
-        // Arrow to rove the route cursor to the other choice, then Space to commit
-        // it. Under explicit commit ([P24]) arrows only ring; **Space** is the
-        // group commit (an item-group `select`) — Return no longer commits a group
-        // member, it bubbles to the scope default. In a toggleable cycle a value
-        // commit's disposition is RELINQUISH ([P15]).
-        await app.nativeKey("ArrowRight");
-        await app.nativeKey(" ");
-
-        // The cycle is relinquished: the card stops cycling, the engine returns
-        // the key view to the editor, and DOM focus lands the caret there — no
-        // caret-without-key-view desync.
-        await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
-
-        // The definitive proof the desync is gone: typing actually lands in the
-        // editor (before the fix, the cycle still owned the keys and this failed).
-        await app.nativeType("ZZZ");
-        await app.waitForCondition<boolean>(
-          `(${EDITOR_TEXT} || "").indexOf("ZZZ") !== -1`,
-          { timeoutMs: 6000 },
-        );
-      } catch (err) {
-        const tail = app.tailLog(200);
-        if (tail !== "") {
-          process.stderr.write(`\n[at0140-cycle-devcard-commit] log tail:\n${tail}\n`);
-        }
-        throw err;
-      } finally {
-        await app.close();
-      }
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  test(
     "arrows give the cycle a 2D feel: a toolbar ring + a seam to the status row; a disabled stop is skipped; the editor is not an arrow stop",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard-arrows" });
@@ -675,9 +604,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // Tab off the route (a roving item-group) onto the Claude Code chip — a
-        // toolbar leaf — then ArrowDown seams from the toolbar straight to the
-        // status row's first cell (STATE), independent of which stops are live.
+        // Tab off the route popup onto the Claude Code chip — another toolbar
+        // leaf — then ArrowDown seams from the toolbar straight to the status
+        // row's first cell (STATE), independent of which stops are live.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("ArrowDown");

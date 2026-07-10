@@ -1,9 +1,9 @@
 /**
- * TugPromptEntry — Compound composition: TugTextEditor + route segment
- * control + submit/stop button, driven by a CodeSessionStore snapshot.
+ * TugPromptEntry — Compound composition: TugTextEditor + route popup
+ * + submit/stop button, driven by a CodeSessionStore snapshot.
  *
  * Composes TugTextEditor (CM6-backed editor + atom + completion +
- * drop), TugChoiceGroup (route segment control), TugPushButton
+ * drop), TugPopupMenu (the Z4A route popup), TugPushButton
  * (submit/stop). Each composed child keeps its own tokens [L20]; the
  * entry reuses existing base-tier global / field / badge tokens per
  * [D11].
@@ -11,8 +11,8 @@
  * Route model — simplified per [D08]:
  *   - One active route at a time, owned by a per-prompt-entry
  *     `RouteLifecycle` ([D02]). Default is `❯` (Prompt).
- *   - The segment control is the canonical control: clicks dispatch
- *     SELECT_VALUE → `routeLifecycle.setRoute`.
+ *   - The route popup is the canonical control: picking an item
+ *     dispatches SELECT_VALUE → `routeLifecycle.setRoute`.
  *   - One-shot prefix detection: typing / pasting `>` `$` (or the
  *     chevron alias) at offset 0 fires `routeLifecycle.setRoute(matched)` once.
  *     The character stays in the doc as plain text per [Q05]=a.
@@ -52,6 +52,7 @@ import React, {
 import {
   ArrowUp,
   Bot,
+  ChevronDown,
   MessageSquareDashed,
   Plus,
   Shell,
@@ -104,7 +105,8 @@ import {
 } from "./tug-text-editor/atom-decoration";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-extension";
-import { TugChoiceGroup, type TugChoiceItem } from "./tug-choice-group";
+import { TugButton } from "./internal/tug-button";
+import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
@@ -141,26 +143,46 @@ import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
 // Module constants
 // ---------------------------------------------------------------------------
 
+/** One selectable route in the Z4A popup: its stored value character,
+ * display name, and the lucide gutter glyph shown on the trigger and in
+ * the menu. */
+interface RouteItem {
+  value: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
 /**
- * The three routes surfaced in the segment control — the recipients a
+ * The three routes surfaced in the route popup — the recipients a
  * submission targets: `❯` Code (Claude on the record), `$` Shell (the
  * machine), `?` btw (Claude off the record — a native side question).
- * Each segment is `[icon][gap][name]` — a lucide gutter glyph (matching
+ * Each entry is `[icon][gap][name]` — a lucide gutter glyph (matching
  * the participant iconography in `TugTranscriptEntry`) plus the route's
- * display name. The route prefix character (`>` / `$` / `?`) is no
- * longer painted in the segment label; it lives on as a hidden
- * power-user feature, since `route-prefix-extension` still flips the
- * route when the user types one of those characters at offset 0 of
- * the editor. The visible affordances are the segment icon + name
- * and the keyboard shortcuts wired in `keybinding-map.ts`
- * (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘B → btw), which dispatch `SELECT_ROUTE`
- * to this entry's responder.
+ * display name. The route prefix character (`>` / `$` / `?`) is not
+ * painted in the label; it lives on as a hidden power-user feature,
+ * since `route-prefix-extension` still flips the route when the user
+ * types one of those characters at offset 0 of the editor. The visible
+ * affordances are the trigger icon + name and the keyboard shortcuts
+ * wired in `keybinding-map.ts` (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘B → btw),
+ * which dispatch `SELECT_ROUTE` to this entry's responder.
  */
-const ROUTE_ITEMS: ReadonlyArray<TugChoiceItem> = [
-  { value: "❯", label: "Code",  icon: <Bot /> },
-  { value: "$", label: "Shell", icon: <Shell /> },
-  { value: "?", label: "btw",   icon: <MessageSquareDashed /> },
+const ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
+  { value: "❯", label: "Code",  icon: <Bot size={14} /> },
+  { value: "$", label: "Shell", icon: <Shell size={14} /> },
+  { value: "?", label: "btw",   icon: <MessageSquareDashed size={14} /> },
 ];
+
+/**
+ * The widest route label, used to width-stabilize the popup trigger so it
+ * never changes size as the route flips. `TugButton`'s `widthStabilize`
+ * overlays the active cluster with an alternate sized to this label, so the
+ * trigger always reserves the widest route's footprint. Derived from
+ * `ROUTE_ITEMS` (longest label wins) so it tracks the labels automatically.
+ */
+const WIDEST_ROUTE_LABEL = ROUTE_ITEMS.reduce(
+  (widest, item) => (item.label.length > widest.length ? item.label : widest),
+  "",
+);
 
 /**
  * Map of prefix character → route value.
@@ -205,7 +227,7 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
  */
 const DEFAULT_ROUTE = "❯";
 
-/** Canonical route values — shared by the dispatch and the segment control. */
+/** Canonical route values — shared by the dispatch and the route popup. */
 const ROUTE_SHELL = "$";
 const ROUTE_BTW = "?";
 
@@ -794,7 +816,7 @@ export interface TugPromptEntryProps {
   cautionContent?: React.ReactNode;
   /**
    * `Z4B` — the indicator slot. Optional content rendered in the
-   * toolbar between the route choice group (`Z4A`) and the submit
+   * toolbar between the route popup (`Z4A`) and the submit
    * button (`Z5`), floated to the centre of the gap between them by a
    * pair of equal flex spacers ([D05]). Content-sized; `undefined`
    * renders an empty slot, leaving `Z4A` and `Z5` at the row's edges.
@@ -887,13 +909,12 @@ export interface TugPromptEntryProps {
   /** Order of the submit within {@link submitFocusGroup}. Defaults to 0. */
   submitFocusOrder?: number;
   /**
-   * Authors the `Z4A` route choice-group into a focus group ([P02]) — the
-   * `TugChoiceGroup.focusGroup` opt-in, surfaced on the entry like
-   * {@link submitFocusGroup}. The route is a roving item-group: one Tab
-   * stop, arrows switch Code / Shell within it. Omitted by default (the
-   * route is not a walk stop). Supplied by the Dev card under its
-   * `CycleScope` so the route joins the cycle as the stop after the
-   * commit-home.
+   * Authors the `Z4A` route popup trigger into a focus group ([P02]) —
+   * forwarded to the trigger `TugButton`'s `focusGroup`, surfaced on the
+   * entry like {@link submitFocusGroup}. The trigger is one Tab stop;
+   * activating it opens the route menu. Omitted by default (the route is
+   * not a walk stop). Supplied by the Dev card under its `CycleScope` so
+   * the route joins the cycle as the stop after the commit-home.
    */
   routeFocusGroup?: string;
   /** Order of the route within {@link routeFocusGroup}. Defaults to 0. */
@@ -1321,15 +1342,15 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.consumePendingDraftRestore();
   }, [restoreSlot, codeSessionStore]);
 
-  // Stable sender id for the segment control. Derived from `id` so
+  // Stable sender id for the route control. Derived from `id` so
   // parent cards can predict it for integration tests.
   const routeIndicatorSenderId = `${id}-route-indicator`;
 
   // [D02] The route is owned by a per-prompt-entry RouteLifecycle, not
   // React state. The instance is constructed once and stays stable for
   // the component's lifetime ([D01]) — a `useRef` lazy-init is the
-  // canonical stable-instance pattern. Every route trigger (the choice
-  // group, the route-prefix extension, the SELECT_ROUTE keybinding,
+  // canonical stable-instance pattern. Every route trigger (the popup
+  // pick, the route-prefix extension, the SELECT_ROUTE keybinding,
   // and restore) funnels through `routeLifecycle.setRoute`.
   const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
   if (routeLifecycleRef.current === null) {
@@ -1381,6 +1402,11 @@ export const TugPromptEntry = React.forwardRef<
     routeLifecycle.subscribe,
     routeLifecycle.getRoute,
   );
+
+  // The route the Z4A popup trigger paints (icon + name). Falls back to
+  // the first route if the stored value is somehow unknown.
+  const currentRouteItem =
+    ROUTE_ITEMS.find((item) => item.value === route) ?? ROUTE_ITEMS[0];
 
   // Route-aware Z5 submit-button mode ([P13]): Claude lifecycle on `❯`/`?`, a
   // shell-derived `submit`/`stop` on `$`. `resolveSubmitButtonView` (the pure
@@ -2169,16 +2195,18 @@ export const TugPromptEntry = React.forwardRef<
         const nextRoute = event.value;
         if (prevRoute === nextRoute) return;
         routeLifecycle.setRoute(nextRoute);
-        // Move keyboard focus back to the editor so the user can
-        // start typing immediately — the segment button had focus
-        // from the click; this hands it back.
-        textEditorRef.current?.focus();
+        // Focus restoration is owned by the popup's focus trap
+        // (`onCloseAutoFocus`), NOT this handler: on close it returns focus
+        // to whatever held it when the menu opened — the editor caret for a
+        // mouse pick, or the trigger button (ring intact) for a keyboard
+        // pick made while cycling. An explicit `focus()` here would fight
+        // that restore and strand the trigger without its focus ring.
       },
       [TUG_ACTIONS.SELECT_ROUTE]: (event: ActionEvent) => {
         // Keyboard-shortcut path (⇧⌘C / ⇧⌘S). The keymap puts
         // the canonical route character on `event.value`; we narrow
         // to string and gate against unknown values. Same semantics
-        // as the segment-control click path above, minus the focus
+        // as the route-popup select path above, minus the focus
         // handoff (the editor already has focus when the shortcut
         // fires, since the dispatch is `first-responder` scoped).
         if (typeof event.value !== "string") return;
@@ -2656,26 +2684,58 @@ export const TugPromptEntry = React.forwardRef<
             // on their own. [L11 / responder-chain-provider focus-refusal]
             data-tug-focus="refuse"
           >
-            {/* Z4A — leading-fixed slot; currently the route choice-group.
-              Keeps its `xs` size (font, height) but overrides the segments'
-              horizontal padding tighter (`sidePadding="sm"` — 6px, vs the xs
-              default of 12px): with three routes the group must stay narrow
-              enough that the toolbar never overflows the card's minimum width
-              (Z4A + Z4B cluster + Z5 must fit without a horizontal scroll),
-              while keeping a little breathing room around each label. */}
-            <TugChoiceGroup
-              items={[...ROUTE_ITEMS]}
-              value={route}
-              senderId={routeIndicatorSenderId}
-              size="xs"
-              sidePadding="sm"
-              aria-label="Route"
-              focusGroup={routeFocusGroup}
-              focusOrder={routeFocusOrder}
-              // A focus-cycle stop. Under explicit commit ([P24]) arrows ring the
-              // route without committing; **Space** commits the cursor route, and
-              // that commit relinquishes the cycle via the mode's commit
-              // disposition ([P15]). Enter bubbles to the scope default.
+            {/* Z4A — leading-fixed slot; the route popup. A filled TugButton
+              trigger (icon + name of the current route + chevron), tinted in
+              the theme selection color to match the old choice-group's
+              selected pill (see `tug-prompt-entry-route-trigger` in the CSS),
+              opens a TugPopupMenu of the three routes, the current one
+              check-marked. It is width-stabilized to the widest route label
+              so flipping routes never resizes it. It is a control ([L11]):
+              the menu's `onSelect` dispatches SELECT_VALUE through the chain
+              (see `routeIndicatorSenderId` above), reusing this entry's
+              existing route handler. `side="top"` opens the menu upward — the
+              toolbar sits at the card's bottom edge. The single-button
+              footprint frees width for the Z4B indicator cluster's margins. */}
+            <TugPopupMenu
+              side="top"
+              align="start"
+              trigger={
+                <TugButton
+                  className="tug-prompt-entry-route-trigger"
+                  emphasis="filled"
+                  role="accent"
+                  size="sm"
+                  subtype="icon-text"
+                  icon={currentRouteItem.icon}
+                  trailingIcon={<ChevronDown size={12} />}
+                  widthStabilize={{ alternateLabel: WIDEST_ROUTE_LABEL }}
+                  aria-label="Route"
+                  focusGroup={routeFocusGroup}
+                  focusOrder={routeFocusOrder}
+                >
+                  {currentRouteItem.label}
+                </TugButton>
+              }
+              items={ROUTE_ITEMS.map((item) => ({
+                id: item.value,
+                label: item.label,
+                icon: item.icon,
+                selected: item.value === route,
+              }))}
+              onSelect={(nextRoute) => {
+                // Dispatch to this entry's own responder ([L11]) so the
+                // SELECT_VALUE handler below applies the route — the same
+                // sink the ⇧⌘C/⇧⌘S/⇧⌘B shortcuts reach. The popup runs its
+                // onSelect from the entry's render scope, so we target `id`
+                // by identity rather than routing through the parent.
+                if (manager === null) return;
+                manager.sendToTarget(id, {
+                  action: TUG_ACTIONS.SELECT_VALUE,
+                  value: nextRoute,
+                  sender: routeIndicatorSenderId,
+                  phase: "discrete",
+                });
+              }}
             />
             {/*
               Z4B — centred-floating slot; currently the indicator

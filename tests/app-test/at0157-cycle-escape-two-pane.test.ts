@@ -37,7 +37,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="dev-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} [data-slot="tug-choice-group"][aria-label="Route"]`;
+const ROUTE = `${CARD} button[aria-label="Route"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const Z2_TIME = `${CARD} [data-priority="time"]`;
 
@@ -164,9 +164,9 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
         // Tab to the TIME status cell and Return to open its popover.
-        // route→Mode→Model→Effort→submit→STATE→TIME (6 Tabs; the submit is a
-        // live stop now that the editor has content).
-        for (let i = 0; i < 6; i++) await app.nativeKey("Tab");
+        // route→Claude→Session→Project→Mode→Model→Effort→submit→STATE→TIME
+        // (9 Tabs; the submit is a live stop now that the editor has content).
+        for (let i = 0; i < 9; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
