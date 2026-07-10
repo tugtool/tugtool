@@ -18,6 +18,8 @@ import type { CardStateBag, RegionScrollSnapshot } from "./layout-tree";
 import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
+import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
+import { MODEL_DOMAIN } from "./lib/model";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
 
@@ -337,35 +339,48 @@ export function putCardState(cardId: string, bag: CardStateBag, options?: { keep
   });
 }
 
-/** DELETE a single per-card state bag from tugbank. Fire-and-forget. */
-export function deleteCardState(cardId: string): Promise<void> {
-  const url = `/api/defaults/${CARDSTATE_DOMAIN}/${encodeURIComponent(cardId)}`;
+/**
+ * Card-keyed defaults domains — one entry per card id, written as a card
+ * gains state and never removed by the close path. All accumulate the same
+ * way, so all get the same orphan sweep at startup.
+ */
+export const CARD_KEYED_DOMAINS: readonly string[] = [
+  CARDSTATE_DOMAIN,
+  PERMISSION_MODE_DOMAIN,
+  MODEL_DOMAIN,
+];
+
+/** DELETE a single defaults entry from tugbank. Fire-and-forget. */
+export function deleteDefault(domain: string, key: string): Promise<void> {
+  const url = `/api/defaults/${domain}/${encodeURIComponent(key)}`;
   return fetch(url, { method: "DELETE" })
     .then(() => {})
     .catch((err) => {
-      console.warn("[settings] DELETE cardState failed for card", cardId, err);
+      console.warn("[settings] DELETE failed for", domain, key, err);
     });
 }
 
 /**
- * Delete durable card-state bags for cards no longer present in the deck.
- * Run once at startup after the deck mounts: the close path flushes a
- * card's last bag to tugbank but never removes it, so without this sweep
- * the cardstate domain grows unbounded across the app's life — the leak
- * that bloated the store to 18 MB and stalled the boot-time DEFAULTS
- * frame. Reads the cardstate keys from the (already-populated)
- * TugbankClient cache and DELETEs any whose card id is not live.
+ * Delete durable per-card defaults for cards no longer present in the deck.
+ * Run once at startup after the deck mounts: a card's close path flushes its
+ * last bag / permission mode / model to tugbank but never removes them, so
+ * without this sweep each {@link CARD_KEYED_DOMAINS} domain grows unbounded
+ * across the app's life — the leak that bloated the store to 18 MB and
+ * stalled the boot-time DEFAULTS frame. Reads each domain's keys from the
+ * (already-populated) TugbankClient cache and DELETEs any card id not live.
  * Fire-and-forget; a failed delete just lingers until the next boot.
  */
-export function pruneOrphanedCardStates(
+export function pruneOrphanedCardDefaults(
   client: TugbankClient,
   liveCardIds: Set<string>,
 ): void {
-  const domain = client.readDomain(CARDSTATE_DOMAIN);
-  if (domain === undefined) return;
-  for (const cardId of Object.keys(domain)) {
-    if (!liveCardIds.has(cardId)) {
-      void deleteCardState(cardId);
+  for (const domain of CARD_KEYED_DOMAINS) {
+    const entries = client.readDomain(domain);
+    if (entries === undefined) continue;
+    for (const cardId of Object.keys(entries)) {
+      if (!liveCardIds.has(cardId)) {
+        void deleteDefault(domain, cardId);
+      }
     }
   }
 }

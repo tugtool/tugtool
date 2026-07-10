@@ -24,6 +24,8 @@ import {
   boundPromptHistoryForPersist,
   MAX_PERSISTED_THUMBNAILS,
   MAX_PROMPT_HISTORY_BYTES,
+  pruneOrphanedCardDefaults,
+  CARD_KEYED_DOMAINS,
   DEV_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
@@ -226,6 +228,62 @@ describe("readCardStates", () => {
 // ---------------------------------------------------------------------------
 // putPromptHistory
 // ---------------------------------------------------------------------------
+
+describe("pruneOrphanedCardDefaults", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  const tagged = (v: unknown): TaggedValue => ({ kind: "json", value: v });
+
+  test("deletes non-live card ids across every card-keyed domain", async () => {
+    // "live" is present; "dead" is orphaned. Each domain carries both.
+    const store: Record<string, Record<string, TaggedValue>> = {};
+    for (const domain of CARD_KEYED_DOMAINS) {
+      store[domain] = { live: tagged(1), dead: tagged(1) };
+    }
+    const client = makeMockClient(store);
+
+    const deletes: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") deletes.push(url as string);
+      return makeResponse(200, {});
+    }) as unknown as typeof fetch;
+
+    pruneOrphanedCardDefaults(client, new Set(["live"]));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // One DELETE per domain, all for "dead", none for "live".
+    expect(deletes.length).toBe(CARD_KEYED_DOMAINS.length);
+    for (const domain of CARD_KEYED_DOMAINS) {
+      expect(deletes).toContain(`/api/defaults/${domain}/dead`);
+      expect(deletes).not.toContain(`/api/defaults/${domain}/live`);
+    }
+  });
+
+  test("covers cardstate, permission-mode, and model", () => {
+    expect(CARD_KEYED_DOMAINS).toContain("dev.tugtool.deck.cardstate");
+    expect(CARD_KEYED_DOMAINS).toContain("dev.permission-mode");
+    expect(CARD_KEYED_DOMAINS).toContain("dev.model");
+  });
+
+  test("skips a domain absent from the cache", async () => {
+    // Only cardstate present; the other domains return undefined → skipped.
+    const client = makeMockClient({
+      "dev.tugtool.deck.cardstate": { dead: tagged(1) },
+    });
+    const deletes: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "DELETE") deletes.push(url as string);
+      return makeResponse(200, {});
+    }) as unknown as typeof fetch;
+
+    pruneOrphanedCardDefaults(client, new Set());
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(deletes).toEqual(["/api/defaults/dev.tugtool.deck.cardstate/dead"]);
+  });
+});
 
 describe("boundPromptHistoryForPersist", () => {
   const imgEntry = (id: string, thumbBytes: number): HistoryEntry => ({

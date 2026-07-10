@@ -25,7 +25,7 @@ import {
   ConnectionLifecycle,
   registerConnectionLifecycle,
 } from "./lib/connection-lifecycle";
-import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, pruneOrphanedCardStates } from "./settings-api";
+import { readLayout, readTheme, readCardStates, readDeckState, readKeyboardAccess, readFocusRingModality, pruneOrphanedCardDefaults } from "./settings-api";
 import { keyboardAccessStore, normalizeKeyboardAccessMode } from "./keyboard-access-store";
 import { focusRingModalityStore, normalizeFocusRingModality } from "./focus-ring-modality-store";
 import { getThemeSetter } from "./action-dispatch";
@@ -373,7 +373,7 @@ if (!container) {
   // a false negative. Production always boots with its persisted layout,
   // so its live-set is correct and the sweep stays meaningful there.
   if (!isTestMode) {
-    pruneOrphanedCardStates(
+    pruneOrphanedCardDefaults(
       tugbankClient,
       new Set(deck.getSnapshot().cards.map((c) => c.id)),
     );
