@@ -214,13 +214,26 @@ async fn spawn_shell_child(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        // Hardening ([Q03]): no pager, no TUI, no prompts.
+        // Hardening ([Q03]): no pager, no TUI, no prompts. Note the no-TUI
+        // guarantee comes from the no-controlling-TTY session (`setsid` below):
+        // a full-screen app checks `isatty(stdout)`, sees a pipe, and declines
+        // regardless of `TERM`. So `TERM` is safe to make color-capable.
         .env("PAGER", "cat")
         .env("GIT_PAGER", "cat")
-        .env("TERM", "dumb")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("PS1", "")
-        .env("PROMPT", "");
+        .env("PROMPT", "")
+        // Terminal colors: the deck renders ANSI SGR (ansi_up + the
+        // `--tugx-term-ansi-*` palette), so let commands emit it even though
+        // stdout is a pipe, not a TTY. A color-capable `TERM` (dumb suppresses
+        // color at the source); `CLICOLOR`/`CLICOLOR_FORCE` enable + force BSD
+        // tools (macOS `ls`, etc.) past the not-a-tty check; `FORCE_COLOR` does
+        // the same for the Node ecosystem. Only SGR color is unlocked — cursor
+        // addressing still needs a TTY, which the session denies.
+        .env("TERM", "xterm-256color")
+        .env("CLICOLOR", "1")
+        .env("CLICOLOR_FORCE", "1")
+        .env("FORCE_COLOR", "1");
     if spawn_cwd.is_dir() {
         cmd.current_dir(spawn_cwd);
     }
@@ -731,6 +744,27 @@ mod tests {
         assert!(done[0]["started_at"].as_u64().is_some());
         assert!(done[0]["settled_at"].as_u64().is_some());
         assert!(done[0]["settled_at"].as_u64() >= done[0]["started_at"].as_u64());
+    }
+
+    // macOS-gated: this asserts the color-forcing env recipe against BSD `ls`,
+    // which honors `CLICOLOR`/`CLICOLOR_FORCE`. GNU `ls` (Linux CI) ignores
+    // those and colorizes only via `--color`, so the recipe is a no-op there.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn shell_output_carries_ansi_color() {
+        // The deck renders ANSI SGR (ansi_up + the `--tugx-term-ansi-*`
+        // palette), so the feed must let commands emit color even though stdout
+        // is a pipe, not a TTY. With the color-forcing env, `ls -l /` colorizes
+        // its directory entries; the escape must survive the sentinel reader
+        // and reach the deck-facing `output` unstripped.
+        let done = drive(vec![exec_frame("s1", "e1", "ls -l /", None)], "s1", 1).await;
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0]["exit_code"], 0);
+        let out = done[0]["output"].as_str().unwrap();
+        assert!(
+            out.contains('\u{1b}'),
+            "expected an ANSI escape in colorized ls output, got: {out:?}"
+        );
     }
 
     #[tokio::test]
