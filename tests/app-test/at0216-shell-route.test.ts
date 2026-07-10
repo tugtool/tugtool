@@ -1,5 +1,5 @@
 /**
- * at0214-shell-route.test.ts — the `$` route end-to-end + restore
+ * at0216-shell-route.test.ts — the `$` route end-to-end + restore
  * interleave ([P06]/[P07], Risk R02, roadmap/route-enhancements.md).
  *
  * Drives the REAL shell backend: submitting on the `$` route sends
@@ -43,7 +43,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
 // UUID-shaped so the reload half's real `claude --resume` accepts it.
-const SID = "a7c0d1ea-0000-4000-8000-000000000214";
+const SID = "a7c0d1ea-0000-4000-8000-000000000216";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
@@ -120,7 +120,7 @@ beforeAll(() => {
   // realpath: tugcode/claude resolve `/var` → `/private/var` before encoding
   // the claude-projects subdir, and the shell's `pwd` prints the resolved
   // path — encode + exec against the SAME string.
-  projectDir = realpathSync(mkdtempSync(join(tmpdir(), "at0214-proj-")));
+  projectDir = realpathSync(mkdtempSync(join(tmpdir(), "at0216-proj-")));
   mkdirSync(join(projectDir, "sub"));
   fixtureDir = join(homedir(), ".claude", "projects", encodeProjectDir(projectDir));
   mkdirSync(fixtureDir, { recursive: true });
@@ -207,12 +207,12 @@ async function execAndSettle(
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0214: shell route — exchange e2e, cwd, restore interleave",
+  "AT0216: shell route — exchange e2e, cwd, restore interleave",
   () => {
     test(
       "echo/cd/pwd settle real exchange rows; reload reproduces the interleaved order",
       async () => {
-        const app = await launchTugApp({ testName: "at0214-shell-route" });
+        const app = await launchTugApp({ testName: "at0216-shell-route" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

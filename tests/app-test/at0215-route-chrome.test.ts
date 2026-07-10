@@ -1,5 +1,5 @@
 /**
- * at0213-route-chrome.test.ts — the three-route Dev card: per-route Z4B
+ * at0215-route-chrome.test.ts — the three-route Dev card: per-route Z4B
  * chrome manifest, flanking-cell geometry, and the `?` route's side-question
  * round-trip ([P01]/[P02]/[P03], Table T01, Risk R04, roadmap/route-enhancements.md).
  *
@@ -29,7 +29,7 @@ import { launchTugApp, type App } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SID = "at0213";
+const SID = "at0215";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
@@ -82,7 +82,7 @@ let dir = "";
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
-  dir = mkdtempSync(join(tmpdir(), "at0213-"));
+  dir = mkdtempSync(join(tmpdir(), "at0215-"));
 });
 
 afterAll(() => {
@@ -175,12 +175,12 @@ async function keybindToBtw(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0213: three-route Dev card — manifest, geometry, btw round-trip",
+  "AT0215: three-route Dev card — manifest, geometry, btw round-trip",
   () => {
     test(
       "per-route chip sets, unmoved flanking cells, and a btw ask that never touches the transcript",
       async () => {
-        const app = await launchTugApp({ testName: "at0213-route-chrome" });
+        const app = await launchTugApp({ testName: "at0215-route-chrome" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });

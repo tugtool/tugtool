@@ -960,7 +960,7 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 - [x] Full suites (aggregate).
 
 **Checkpoint:**
-- [x] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build` (4140 pass, tsc clean, build clean); `cd tugcode && bun test` (761 pass); `cd tugrust && cargo nextest run` (1122 pass); `just app-test at0213 at0214` (VERDICT PASS) — all green. **Milestone M03.**
+- [x] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build` (4140 pass, tsc clean, build clean); `cd tugcode && bun test` (761 pass); `cd tugrust && cargo nextest run` (1122 pass); `just app-test at0215 at0216` (VERDICT PASS) — all green. **Milestone M03.**
 
 ---
 
@@ -976,8 +976,8 @@ A shell turn is a `TurnEntry` with `origin: "shell"` containing exactly one `she
 - [x] All suites green: tugdeck + tugcode `bun test`, `cargo nextest run`, `bunx vite build`, `just app-test`.
 
 **Acceptance tests:**
-- [x] `at0213-route-chrome` (route cycling, chrome manifest, btw round-trip).
-- [x] `at0214-shell-route` (exchange e2e, cwd, restore interleave order).
+- [x] `at0215-route-chrome` (route cycling, chrome manifest, btw round-trip).
+- [x] `at0216-shell-route` (exchange e2e, cwd, restore interleave order).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
