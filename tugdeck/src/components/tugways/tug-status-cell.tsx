@@ -2,8 +2,10 @@
  * TugStatusCell — one cell of the dev card's Z2 telemetry status row.
  *
  * An instrument-readout cell: an IBM-1620-style endcap-rule legend
- * (`label`) above a centered value (`children`), wrapped as a popover
- * trigger so a click opens the cell's detail surface (`popover`). The
+ * (`label`) above a centered value (`children`). Activation opens the
+ * cell's detail surface: usually an internal {@link TugPopover} body
+ * (`popover`), or — when `popover` is omitted — an external surface via
+ * `onActivate` (the BTW cell pops the pinned `/btw` panel this way). The
  * cell is **button-rooted** — the activatable element is a real
  * `<button>`, not a `<span>` — so keyboard activation and the focus
  * ring come for free when the row is later authored into a focus cycle.
@@ -96,8 +98,19 @@ export interface TugStatusCellProps {
    * @default "down"
    */
   ticksDirection?: "down" | "up";
-  /** Detail surface shown when the cell is activated (the popover body). */
-  popover: React.ReactNode;
+  /**
+   * Detail surface shown in a {@link TugPopover} when the cell is activated
+   * (the popover body). Omit it and supply {@link onActivate} instead for a
+   * cell whose activation opens some *other* surface — the BTW cell pops the
+   * pinned `/btw` panel rather than an internal popover.
+   */
+  popover?: React.ReactNode;
+  /**
+   * Activation handler for a cell with no internal popover. Mutually
+   * exclusive with {@link popover}: when `popover` is omitted, the cell is a
+   * plain button that fires this on click / Space / Enter.
+   */
+  onActivate?: () => void;
   /**
    * Imperative handle on the cell's popover, forwarded to the underlying
    * {@link TugPopover}. Lets a parent open the cell programmatically — the
@@ -138,6 +151,7 @@ export function TugStatusCell({
   label,
   ticksDirection = "down",
   popover,
+  onActivate,
   popoverRef,
   valueEmpty,
   "aria-label": ariaLabel,
@@ -163,38 +177,46 @@ export function TugStatusCell({
     policy: focusPolicy,
     register: registered,
   });
+  const cellButton = (
+    <button
+      type="button"
+      data-slot="tug-status-cell"
+      className="dev-telemetry-status-cell dev-telemetry-status-anchor"
+      data-priority={priority}
+      // Not a *native* Tab stop and never steals the responder chain
+      // on click; the engine drives DOM focus here during the cycle
+      // walk (a `<button>` is programmatically focusable at -1). [L06]
+      tabIndex={-1}
+      data-tug-focus="refuse"
+      // A status cell is a pure activation trigger — clicking it must not pull
+      // card focus to the editor (the pane-focus-controller's activate →
+      // apply-focus path). Without this, a click while focus-cycling would
+      // flash the editor caret for the duration of the press, before the
+      // surface opens. The opened surface itself owns focus while open.
+      data-no-activate=""
+      data-tug-focusable={registered ? cellFocusableId : undefined}
+      // Popover-mode cells get their onClick from TugPopoverTrigger's `asChild`
+      // clone; onActivate-mode cells own it directly.
+      onClick={popover === undefined ? onActivate : undefined}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <TugStatusCellLabel label={label} ticksDirection={ticksDirection} />
+      <span
+        className="dev-telemetry-status-value-wrap"
+        data-empty={valueEmpty ? "true" : undefined}
+      >
+        {children}
+      </span>
+    </button>
+  );
+
+  // No internal popover — the cell activates some other surface via onActivate.
+  if (popover === undefined) return cellButton;
+
   return (
     <TugPopover ref={popoverRef}>
-      <TugPopoverTrigger>
-        <button
-          type="button"
-          data-slot="tug-status-cell"
-          className="dev-telemetry-status-cell dev-telemetry-status-anchor"
-          data-priority={priority}
-          // Not a *native* Tab stop and never steals the responder chain
-          // on click; the engine drives DOM focus here during the cycle
-          // walk (a `<button>` is programmatically focusable at -1). [L06]
-          tabIndex={-1}
-          data-tug-focus="refuse"
-          // A status cell is a pure popover trigger — clicking it must not pull
-          // card focus to the editor (the pane-focus-controller's activate →
-          // apply-focus path). Without this, a click while focus-cycling would
-          // flash the editor caret for the duration of the press, before the
-          // popover opens. The popover itself owns focus while open.
-          data-no-activate=""
-          data-tug-focusable={registered ? cellFocusableId : undefined}
-          aria-label={ariaLabel}
-          title={title}
-        >
-          <TugStatusCellLabel label={label} ticksDirection={ticksDirection} />
-          <span
-            className="dev-telemetry-status-value-wrap"
-            data-empty={valueEmpty ? "true" : undefined}
-          >
-            {children}
-          </span>
-        </button>
-      </TugPopoverTrigger>
+      <TugPopoverTrigger>{cellButton}</TugPopoverTrigger>
       <TugPopoverContent side="top" align="center" sideOffset={8} arrow spaceDismisses>
         {popover}
       </TugPopoverContent>

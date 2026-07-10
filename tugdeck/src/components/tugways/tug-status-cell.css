@@ -72,6 +72,11 @@
 .dev-telemetry-status-cell[data-priority="work"] {
   --tugx-dev-status-cell-width: 16ch;
 }
+/* BTW holds a small side-question count (1–2 digits) or the em-dash
+   placeholder — a narrow cell. */
+.dev-telemetry-status-cell[data-priority="btw"] {
+  --tugx-dev-status-cell-width: 10ch;
+}
 
 .dev-telemetry-status-value-wrap {
   /* Wrap centers its single child value within the static cell width —
@@ -301,9 +306,16 @@
    declares `container-type: inline-size` + `container-name: dev-status`
    so these `@container` rules can target it. As the host narrows, whole
    cells (label apparatus + value together) hide in priority order —
-   TIME first, then TOKENS, with WORK the last collapsible: a running
-   job / live goal is live "something is happening" signal. STATE /
-   CONTEXT stay as the most-persistent set. */
+   BTW first (a quiet supplementary counter), then TIME, then TOKENS,
+   with WORK the last collapsible: a running job / live goal is live
+   "something is happening" signal. STATE / CONTEXT stay as the
+   most-persistent set. */
+
+@container dev-status (max-width: 520px) {
+  .dev-telemetry-status-cell[data-priority="btw"] {
+    display: none;
+  }
+}
 
 @container dev-status (max-width: 460px) {
   .dev-telemetry-status-cell[data-priority="time"] {

@@ -40,6 +40,7 @@ import React, { useCallback, useMemo } from "react";
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { SideQuestionStore } from "@/lib/side-question-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
@@ -221,6 +222,12 @@ export interface UseDevPlacementSlotsInput {
   statusRowFocusGroup?: string;
   /** Order of the FIRST Z2 cell; the cells take consecutive orders. */
   statusRowFocusOrderBase?: number;
+  /**
+   * Forwarded to {@link DevTelemetryStatusRow} when it occupies Z2 — feeds
+   * the BTW cell's `/btw` count and its activation (opening the pinned panel).
+   */
+  sideQuestionStore?: SideQuestionStore;
+  onOpenSideQuestions?: () => void;
 }
 
 /**
@@ -252,6 +259,8 @@ export function useDevPlacementSlots(
     statusRowRef,
     statusRowFocusGroup,
     statusRowFocusOrderBase,
+    sideQuestionStore,
+    onOpenSideQuestions,
   } = input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
@@ -295,6 +304,8 @@ export function useDevPlacementSlots(
               onScrollToRow={onScrollToRow}
               focusGroup={statusRowFocusGroup}
               focusOrderBase={statusRowFocusOrderBase}
+              sideQuestionStore={sideQuestionStore}
+              onOpenSideQuestions={onOpenSideQuestions}
             />
           );
       }
@@ -306,6 +317,8 @@ export function useDevPlacementSlots(
       statusRowRef,
       statusRowFocusGroup,
       statusRowFocusOrderBase,
+      sideQuestionStore,
+      onOpenSideQuestions,
     ],
   );
 

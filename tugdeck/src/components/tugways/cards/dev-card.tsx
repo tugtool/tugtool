@@ -271,9 +271,8 @@ const DEV_CYCLE_ORDER_EFFORT = 6;
 const DEV_CYCLE_ORDER_CWD = 4;
 const DEV_CYCLE_ORDER_SUBMIT = 7;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
-// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK take orders
-// 8…12 (base + 0…4; order 13 is an intentional gap left by the TASKS+JOBS
-// → WORK merge — ordering is relative, gaps are harmless). The PULSE label
+// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK / BTW take
+// orders 8…13 (base + 0…5). The PULSE label
 // follows at 14 (its own one-node grid row beneath the status cells); the
 // editor (the text body) at 15; and the Z4C compose-phase attachment tiles
 // — one leaf stop each — the orders from 16 upward (base + tile index), so
@@ -3353,12 +3352,15 @@ export function DevCardBody({
     sessionMetadataStore,
     onScrollToRow: handleScrollToRow,
     statusRowRef,
-    // Author the Z2 status cells into the card's cycle as five leaf stops
-    // ([P10] revised) starting at order 5; the status-bar region is
-    // wrapped in a second `cycle.CycleScope` (below) sharing this card's
-    // mode id.
+    // Author the Z2 status cells into the card's cycle as six leaf stops
+    // ([P10] revised) starting at DEV_CYCLE_ORDER_STATUS_BASE; the status-bar
+    // region is wrapped in a second `cycle.CycleScope` (below) sharing this
+    // card's mode id.
     statusRowFocusGroup: DEV_CYCLE_GROUP,
     statusRowFocusOrderBase: DEV_CYCLE_ORDER_STATUS_BASE,
+    // BTW cell: its count + activation (opening the pinned `/btw` panel).
+    sideQuestionStore,
+    onOpenSideQuestions: () => sideQuestionOverlayRef.current?.open(),
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =

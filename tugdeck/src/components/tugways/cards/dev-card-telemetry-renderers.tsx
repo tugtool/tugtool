@@ -71,6 +71,7 @@ import {
   resolveModelContextMax,
 } from "@/lib/model-context-max";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { SideQuestionStore } from "@/lib/side-question-store";
 import { useSessionStateChanges } from "@/lib/session-state-changes-store";
 
 import {
@@ -282,11 +283,22 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /**
    * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
    * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
-   * WORK = base + 0…4).
+   * WORK, BTW = base + 0…5).
    */
   focusOrderBase?: number;
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
   focusPolicy?: FocusPolicy;
+  /**
+   * Side-question store for the BTW cell's count. When set, the row
+   * renders a BTW cell showing the number of `/btw` exchanges (or an
+   * em-dash when none); omitted in the gallery / fixtures.
+   */
+  sideQuestionStore?: SideQuestionStore;
+  /**
+   * Opens the pinned `/btw` panel — the BTW cell's activation. The dev
+   * card supplies it (it owns the panel's imperative handle).
+   */
+  onOpenSideQuestions?: () => void;
 }
 
 /**
@@ -512,7 +524,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   DevTelemetryStatusRowHandle,
   DevTelemetryStatusRowProps
 >(function DevTelemetryStatusRow(
-  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy },
+  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore, onOpenSideQuestions },
   ref,
 ) {
   // Handles on the CONTEXT / WORK cells' popovers so `/context` and
@@ -538,6 +550,21 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // can't drift.
   const cellOrder = (offset: number): number | undefined =>
     focusOrderBase === undefined ? undefined : focusOrderBase + offset;
+
+  // BTW count — the number of `/btw` exchanges, live via useSyncExternalStore
+  // ([L02]). The snapshot is a primitive (the count), so no render loop; the
+  // store is absent in the gallery / fixtures, where the count reads 0.
+  const btwCount = useSyncExternalStore(
+    useCallback(
+      (cb: () => void) =>
+        sideQuestionStore ? sideQuestionStore.subscribe(cb) : () => {},
+      [sideQuestionStore],
+    ),
+    useCallback(
+      () => (sideQuestionStore ? sideQuestionStore.getSnapshot().exchanges.length : 0),
+      [sideQuestionStore],
+    ),
+  );
 
   const snap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -904,6 +931,21 @@ export const DevTelemetryStatusRow = React.forwardRef<
             aria-label={workSummary}
           />
         )}
+      </TugStatusCell>
+      <TugStatusCell
+        priority="btw"
+        label="BTW"
+        onActivate={onOpenSideQuestions}
+        valueEmpty={btwCount === 0}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(5)}
+        focusPolicy={focusPolicy}
+        aria-label="Side questions"
+        title="Side questions (/btw)"
+      >
+        <span className="dev-telemetry-status-value">
+          {btwCount > 0 ? String(btwCount) : "—"}
+        </span>
       </TugStatusCell>
     </div>
   );

@@ -44,6 +44,7 @@
 .side-question-empty {
   padding: var(--tug-space-md);
   font-family: var(--tug-font-family-sans);
+  font-size: 0.82rem; /* the mini-pane scale, matching .side-question-text */
   font-style: italic;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }

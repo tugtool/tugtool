@@ -126,6 +126,13 @@ describe.skipIf(!SHOULD_RUN)(
           const baseline = await countEntries();
           expect(baseline).toBeGreaterThan(0); // the committed turn rendered
 
+          // The Z2 BTW cell reads the `/btw` count — an em-dash before any ask.
+          const btwCellValue = () =>
+            app.evalJS<string | null>(
+              `(() => { const el = document.querySelector('[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"] .dev-telemetry-status-value'); return el ? el.textContent : null; })()`,
+            );
+          expect(await btwCellValue()).toBe("—");
+
           // Type `/btw <question>` and submit. Escape first dismisses any
           // open completion menu; Cmd+Return is the editor's forced submit.
           await app.nativeClickAtElement(PROMPT);
@@ -267,6 +274,18 @@ describe.skipIf(!SHOULD_RUN)(
           await app.nativeClickAtElement(".side-question-pane [data-pinned-panel-close]");
           await app.waitForCondition<boolean>(
             `document.querySelector('.side-question-pane') === null`,
+            { timeoutMs: 4000 },
+          );
+
+          // The BTW cell now shows the exchange count (the first ask + the
+          // `check persist` ask = 2) and, like the other Z2 cells, reopens its
+          // surface — here the pinned panel — on click.
+          expect(await btwCellValue()).toBe("2");
+          await app.nativeClickAtElement(
+            `[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"]`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.side-question-pane') !== null`,
             { timeoutMs: 4000 },
           );
         } finally {
