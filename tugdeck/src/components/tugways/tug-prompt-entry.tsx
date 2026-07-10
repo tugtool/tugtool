@@ -1719,6 +1719,31 @@ export const TugPromptEntry = React.forwardRef<
   const localCommandTargetIdRef = useRef(localCommandTargetId);
   localCommandTargetIdRef.current = localCommandTargetId;
 
+  // Open the `/btw` side-question panel the MOMENT the route flips to `?`
+  // ([P02]) — not at submit. Every selection path (route popup, ⇧⌘B, typed
+  // `?` prefix) funnels through `routeLifecycle.setRoute`, so observing the
+  // lifecycle's did-change ([L03]) catches them all uniformly. It reuses the
+  // shipped `/btw` local surface via `RUN_SLASH_COMMAND` with empty args — a
+  // bare open, no ask — exactly as a bare `/btw` submit does. The panel is
+  // pinned, so flipping the route AWAY never closes it (only its `×` does).
+  useLayoutEffect(() => {
+    return routeLifecycle.observeRouteDidChange((_prev, next) => {
+      if (next !== ROUTE_BTW) return;
+      const targetId = localCommandTargetIdRef.current;
+      if (
+        manager !== null &&
+        targetId !== undefined &&
+        manager.nodeCanHandle(targetId, TUG_ACTIONS.RUN_SLASH_COMMAND)
+      ) {
+        manager.sendToTarget(targetId, {
+          action: TUG_ACTIONS.RUN_SLASH_COMMAND,
+          value: { name: "btw", args: "" },
+          phase: "discrete",
+        });
+      }
+    });
+  }, [routeLifecycle, manager]);
+
   // Force the just-cleared draft durable immediately after a submit.
   // `editor.clear()` empties the doc, but the debounced save that would
   // persist the cleared state is up to SAVE_DEBOUNCE_MS out, and WKWebView

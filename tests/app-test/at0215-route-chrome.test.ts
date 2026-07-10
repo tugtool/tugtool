@@ -248,6 +248,12 @@ describe.skipIf(!SHOULD_RUN)(
 
           // --- Flip to btw (⇧⌘B keybinding). ---
           await keybindToBtw(app);
+          // The `/btw` panel opens the MOMENT the route flips to `?` ([P02]) —
+          // before any submission.
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.side-question-pane') !== null`,
+            { timeoutMs: 4000 },
+          );
           expect(
             (await mountedChips(app)).sort(),
             "btw route chips (Table T01) — Claude identity, Session, Project",

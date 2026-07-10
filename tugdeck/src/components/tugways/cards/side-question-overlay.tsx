@@ -4,11 +4,15 @@
  *
  * `/btw <question>` asks Claude a quick side question, answered from the live
  * conversation with no tools and never entering the transcript. The answer
- * renders here in a **non-modal** {@link TugPopover} — a small "/btw" mini-pane
+ * renders here in a **pinned** {@link TugPinnedPanel} — a small "/btw" mini-pane
  * that floats over the bottom of the transcript, right-aligned to the card and
- * anchored just above the Z2 status row (the least obtrusive spot, so a
+ * sitting just above the Z2 status row (the least obtrusive spot, so a
  * streaming turn stays visible while a side answer loads — mid-turn is the
- * point, [Q01]b).
+ * point, [Q01]b). Unlike the popover it replaced, it stays put until the user
+ * closes it with the panel's `×` — clicking away or switching panes no longer
+ * dismisses it — and its bottom pointer aims at the Z2 strip. The user can drag
+ * it horizontally to a comfortable reading spot; that position persists across
+ * reloads per card ([L02]).
  *
  * The pane reads the ephemeral {@link SideQuestionStore} via
  * `useSyncExternalStore` ([L02]) and renders each exchange as a mini
@@ -30,17 +34,12 @@
 import React, {
   forwardRef,
   useImperativeHandle,
-  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { Bot, MessageSquareDashed, User, X } from "lucide-react";
 
-import {
-  TugPopover,
-  TugPopoverContent,
-  TugPopoverTrigger,
-  type TugPopoverHandle,
-} from "@/components/tugways/tug-popover";
+import { TugPinnedPanel } from "@/components/tugways/tug-pinned-panel";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -56,6 +55,12 @@ export interface SideQuestionOverlayHandle {
 
 export interface SideQuestionOverlayProps {
   store: SideQuestionStore;
+  /**
+   * Tugbank key under which the pane's horizontal drag position persists
+   * across reloads (per card, e.g. `btw:<cardId>`). Omit for an ephemeral
+   * position that resets each time the pane opens.
+   */
+  persistKey?: string;
 }
 
 /** Plain-text answer for a settled/loading/errored exchange (footer copy). */
@@ -149,8 +154,8 @@ function SideQuestionExchangeRow({
             subtype="icon-text"
             emphasis="ghost"
             size="2xs"
-            aria-label="Copy the side-question answer"
-            getText={() => exchange.answer ?? ""}
+            aria-label="Copy this side question and answer"
+            getText={() => `Q: ${exchange.question}\nA: ${exchangeAnswerText(exchange)}`}
           />
         </div>
       ) : null}
@@ -159,39 +164,33 @@ function SideQuestionExchangeRow({
 }
 
 /**
- * The `/btw` mini-pane. Uncontrolled {@link TugPopover} driven by the
- * imperative handle; the trigger is an out-of-flow zero-size anchor pinned to
- * the top-right corner of the Z2 status row, so the pane opens upward
- * (`side="top"`), right-aligned (`align="end"`), its bottom just above Z2 —
- * without ever becoming an in-flow child of the Z2 flex row.
+ * The `/btw` mini-pane. A {@link TugPinnedPanel} shown on demand: the dev card
+ * opens it via the imperative handle the instant the `/btw` route is chosen,
+ * and it stays put until the user closes it with the panel's `×`. Rendered
+ * in-DOM inside the (position:relative) Z2 status row, so it is card-scoped and
+ * grows upward over the transcript's tail; the caller CSS pins it just above Z2
+ * and fixes its width, while the panel owns the horizontal drag.
  */
 export const SideQuestionOverlay = forwardRef<
   SideQuestionOverlayHandle,
   SideQuestionOverlayProps
->(function SideQuestionOverlay({ store }, ref) {
-  const popoverRef = useRef<TugPopoverHandle>(null);
-  useImperativeHandle(ref, () => ({ open: () => popoverRef.current?.open() }), []);
+>(function SideQuestionOverlay({ store, persistKey }, ref) {
+  const [open, setOpen] = useState(false);
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
 
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const { exchanges } = snapshot;
 
   return (
-    <TugPopover ref={popoverRef} dismissOnChainActivity={false}>
-      <TugPopoverTrigger>
-        <span
-          className="side-question-anchor"
-          data-slot="side-question-anchor"
-          aria-hidden
-        />
-      </TugPopoverTrigger>
-      <TugPopoverContent
-        side="top"
-        align="end"
-        sideOffset={8}
-        spaceDismisses
-        className="side-question-pane"
-      >
-        <div className="side-question-header" data-slot="side-question-header">
+    <TugPinnedPanel
+      open={open}
+      onClose={() => setOpen(false)}
+      persistKey={persistKey}
+      className="side-question-pane"
+      aria-label="Side questions"
+      closeLabel="Close side questions"
+      header={
+        <>
           <MessageSquareDashed
             className="side-question-header-icon"
             size={14}
@@ -199,44 +198,44 @@ export const SideQuestionOverlay = forwardRef<
             aria-hidden
           />
           <span className="side-question-header-title">/btw</span>
-        </div>
-
-        <div className="side-question-body" data-slot="side-question-body">
-          {exchanges.length === 0 ? (
-            <div className="side-question-empty">No side questions yet.</div>
-          ) : (
-            exchanges.map((ex) => (
-              <SideQuestionExchangeRow
-                key={ex.id}
-                exchange={ex}
-                onDismiss={(id) => store.dismiss(id)}
-              />
-            ))
-          )}
-        </div>
-
-        {exchanges.length > 0 ? (
-          <div className="side-question-footer" data-slot="side-question-footer">
-            <BlockCopyButton
-              subtype="text"
-              emphasis="outlined"
-              size="2xs"
-              aria-label="Copy the side-question history"
-              getText={() => composeZoneCopyText(exchanges)}
+        </>
+      }
+    >
+      <div className="side-question-body" data-slot="side-question-body">
+        {exchanges.length === 0 ? (
+          <div className="side-question-empty">No side questions yet.</div>
+        ) : (
+          exchanges.map((ex) => (
+            <SideQuestionExchangeRow
+              key={ex.id}
+              exchange={ex}
+              onDismiss={(id) => store.dismiss(id)}
             />
-            <TugPushButton
-              emphasis="outlined"
-              role="action"
-              size="2xs"
-              aria-label="Clear side questions"
-              title="Clear the side-question zone"
-              onClick={() => store.clear()}
-            >
-              Clear
-            </TugPushButton>
-          </div>
-        ) : null}
-      </TugPopoverContent>
-    </TugPopover>
+          ))
+        )}
+      </div>
+
+      {exchanges.length > 0 ? (
+        <div className="side-question-footer" data-slot="side-question-footer">
+          <BlockCopyButton
+            subtype="text"
+            emphasis="outlined"
+            size="2xs"
+            aria-label="Copy the side-question history"
+            getText={() => composeZoneCopyText(exchanges)}
+          />
+          <TugPushButton
+            emphasis="outlined"
+            role="action"
+            size="2xs"
+            aria-label="Clear side questions"
+            title="Clear the side-question zone"
+            onClick={() => store.clear()}
+          >
+            Clear
+          </TugPushButton>
+        </div>
+      ) : null}
+    </TugPinnedPanel>
   );
 });

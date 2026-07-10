@@ -64,7 +64,7 @@
  *
  * ## Semantic models
  *
- * Two different "when should I close?" models are in play:
+ * Three different "when should I close?" models are in play:
  *
  * - **Chain-reactive** (popover, confirm-popover): close on any
  *   external chain activity while open. These surfaces are transient,
@@ -83,6 +83,19 @@
  *   Cmd+. The close path is routed through `cancelDialog` so the
  *   Promise API adapters (`alert()`, `useTugSheet()`) can resolve
  *   from a single chain handler.
+ *
+ * - **Pinned** (`tug-pinned-panel`): non-blocking like a popover, but
+ *   stays open until the user explicitly closes it with the panel's
+ *   `×` — no click-outside, no Escape, no card-deactivation dismissal.
+ *   Because it does NOT block interaction, it does NOT participate in
+ *   the responder chain at all (no dialog handlers, no
+ *   `observeDispatch`, no `cancelDialog`). The key structural
+ *   difference from the popover: it renders **in-DOM** inside the card
+ *   (not portaled to the deck overlay), which is what makes staying
+ *   open across card deactivation safe — it hides with its own card
+ *   rather than lingering over a neighbour. It owns its position (a
+ *   horizontal drag persisted through tugbank) instead of anchoring
+ *   via Radix Popper.
  *
  * ## Where this fits
  *

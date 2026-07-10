@@ -3493,19 +3493,21 @@ export function DevCardBody({
                 task-list state plus a popover with the full list, so
                 no separate pinned strip is needed.
               */}
-              {/* Non-modal `/btw` mini-pane ([P02]). Its trigger is an
-                  OUT-OF-FLOW zero-size anchor pinned to the top-right corner of
-                  this (position:relative) Z2 status row, so the pane opens
-                  upward (`side="top"`), right-aligned (`align="end"`), its
-                  bottom just above Z2 — floating over the transcript's tail
-                  without inerting it (a streaming turn stays visible) and
-                  without ever displacing the Z2 status cells. Gated on Z2 having
-                  content (a `/btw` only exists on a bound session) so an empty
-                  status bar still collapses via `:empty`. */}
+              {/* Pinned `/btw` mini-pane ([P02]). A TugPinnedPanel rendered
+                  in-DOM inside this (position:relative) Z2 status row, so it is
+                  card-scoped and floats just above Z2, over the transcript's
+                  tail — without inerting it (a streaming turn stays visible) and
+                  without displacing the Z2 status cells (it is absolutely
+                  positioned). It stays open until the user closes it with the
+                  panel's `×`, and the user can drag it horizontally (persisted
+                  per card). Gated on Z2 having content (a `/btw` only exists on
+                  a bound session) so an empty status bar still collapses via
+                  `:empty`. */}
               {effectiveStatusBarContent != null && (
                 <SideQuestionOverlay
                   ref={sideQuestionOverlayRef}
                   store={sideQuestionStore}
+                  persistKey={`btw:${cardId}`}
                 />
               )}
               {effectiveStatusBarContent != null && (

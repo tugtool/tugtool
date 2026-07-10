@@ -1,20 +1,23 @@
 /**
- * at0211-btw-side-question-overlay.test.ts — `/btw` opens the non-modal
- * side-question overlay and the exchange leaves the transcript untouched
+ * at0211-btw-side-question-overlay.test.ts — `/btw` opens the pinned
+ * side-question panel and the exchange leaves the transcript untouched
  * ([P02]/[P05], roadmap/add-btw.md).
  *
  * A side question is answered from the live conversation with no tools and
- * MUST NOT enter the transcript. Tug renders it in a non-modal `TugPopover`
- * anchored at the prompt entry, fed by a dedicated `SideQuestionStore` whose
- * `side_question_answer` frame is deliberately absent from
- * `KNOWN_CODE_OUTPUT_TYPES` — so the code-session (transcript) store drops it.
+ * MUST NOT enter the transcript. Tug renders it in a pinned `TugPinnedPanel`
+ * (rendered in-DOM just above the Z2 status row), fed by a dedicated
+ * `SideQuestionStore` whose `side_question_answer` frame is deliberately absent
+ * from `KNOWN_CODE_OUTPUT_TYPES` — so the code-session (transcript) store drops
+ * it.
  *
  * This standard-tier test drives one committed turn (so the transcript has
  * entries to count), types `/btw <question>` and submits, and asserts:
- *   1. the overlay opens (a side-question row appears), and
+ *   1. the panel opens (a side-question row appears), and
  *   2. the transcript entry count is UNCHANGED across the whole `/btw`
  *      exchange — the ask, and the settled answer (injected as a
- *      `side_question_answer` frame, the shape the #step-1 probe pinned).
+ *      `side_question_answer` frame, the shape the #step-1 probe pinned), and
+ *   3. the panel is PINNED — a click away does not dismiss it; only the
+ *      panel's `×` closes it.
  *
  * The mid-turn + reload-clean behaviors are covered against real claude in
  * the Step 6/7 tiers; here the answer is injected so the surface + the
@@ -196,6 +199,76 @@ describe.skipIf(!SHOULD_RUN)(
           // ...and the transcript is STILL unchanged (the [P05] invariant).
           const afterAnswer = await countEntries();
           expect(afterAnswer).toBe(baseline);
+
+          // Horizontal drag + persistence across a remount ([L02]). The panel
+          // is draggable horizontally only; the committed offset persists
+          // through tugbank, so closing and reopening it restores the dragged
+          // position rather than resetting to the right-aligned default.
+          const paneLeft = () =>
+            app.evalJS<number>(
+              `(() => { const el = document.querySelector('.side-question-pane'); return el ? el.getBoundingClientRect().left : NaN; })()`,
+            );
+          const headerCenter = await app.evalJS<{ x: number; y: number } | null>(
+            `(() => {
+               const el = document.querySelector('.side-question-pane .tug-pinned-panel-header');
+               if (!el) return null;
+               const r = el.getBoundingClientRect();
+               return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+             })()`,
+          );
+          expect(headerCenter).not.toBeNull();
+
+          const leftBeforeDrag = await paneLeft();
+          // Drag the header ~200px left; y held constant (horizontal-only).
+          await app.nativeDrag(
+            { x: headerCenter!.x, y: headerCenter!.y },
+            { x: headerCenter!.x - 200, y: headerCenter!.y },
+          );
+          await new Promise((r) => setTimeout(r, 300));
+          const leftAfterDrag = await paneLeft();
+          // Moved meaningfully left (allow slack for the interpolated trail).
+          expect(leftAfterDrag).toBeLessThan(leftBeforeDrag - 100);
+
+          // Close (unmount) and reopen via the `/btw` route → fresh mount.
+          await app.nativeClickAtElement(".side-question-pane [data-pinned-panel-close]");
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.side-question-pane') === null`,
+            { timeoutMs: 4000 },
+          );
+          await app.nativeClickAtElement(PROMPT);
+          await app.nativeType("/btw check persist");
+          await new Promise((r) => setTimeout(r, 200));
+          await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
+          await app.nativeKey("Enter", ["cmd"]);
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.side-question-pane') !== null`,
+            { timeoutMs: 6000 },
+          );
+          await new Promise((r) => setTimeout(r, 300));
+          const leftAfterReopen = await paneLeft();
+          // The reopened panel restored the dragged position (read back through
+          // tugbank), NOT the right-aligned default.
+          expect(Math.abs(leftAfterReopen - leftAfterDrag)).toBeLessThan(24);
+          expect(leftAfterReopen).toBeLessThan(leftBeforeDrag - 100);
+
+          // Pinned semantics ([P02]): a click away must NOT dismiss the panel
+          // (this is the whole point of the pinned surface — it survives losing
+          // focus, unlike the popover it replaced). Click into the prompt and
+          // confirm the panel is still mounted.
+          await app.nativeClickAtElement(PROMPT);
+          await new Promise((r) => setTimeout(r, 250));
+          const stillOpenAfterClickAway = await app.evalJS<boolean>(
+            `document.querySelector('.side-question-pane') !== null`,
+          );
+          expect(stillOpenAfterClickAway).toBe(true);
+
+          // Only the panel's `×` closes it.
+          await app.nativeClickAtElement(".side-question-pane [data-pinned-panel-close]");
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.side-question-pane') === null`,
+            { timeoutMs: 4000 },
+          );
         } finally {
           await app.close();
         }

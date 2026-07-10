@@ -1,48 +1,21 @@
 /**
  * side-question-overlay.css — the `/btw` mini-pane appearance ([L06]).
  *
- * The pane reads like a small floating pane: a titlebar-colored header with a
- * `message-square-dashed` glyph, a mini-transcript body of stacked You/Bot
- * exchanges, and a footer. The trigger anchor is an OUT-OF-FLOW zero-size point
- * pinned to the top-right corner of the Z2 status row (never an in-flow child
- * of the Z2 flex row — an in-flow anchor would displace the status cells); the
- * pane opens upward, right-aligned, its bottom just above Z2.
+ * The pane is a {@link TugPinnedPanel}: the panel owns the surface (titlebar
+ * header, `×`, bottom pointer, horizontal drag); this file only supplies the
+ * `/btw` header glyph/title, the mini-transcript body/footer, and the pane's
+ * placement — pinned just above the Z2 status row, right-aligned by default,
+ * its width fixed. The panel renders in-DOM inside the (position:relative) Z2
+ * status row, so `bottom: 100%` sits it right on top of the strip.
  */
 
-/* Zero-size trigger anchor, positioned at the top-right corner of the (already
-   position:relative) Z2 status bar. Absolute so it is OUT OF FLOW and cannot
-   disturb the status row's flex layout. `side="top"` opens the pane above this
-   point; `align="end"` right-aligns it to the card. */
-.side-question-anchor {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-/* The pane surface. `tug-popover-content` owns background / border / radius /
-   shadow; we zero its padding so the header can bleed to the titlebar color,
-   clip children to the radius, and fix the width. */
-.side-question-pane.tug-popover-content {
-  padding: 0;
+/* Placement + width. The panel's containing block is the Z2 status row, so
+   `bottom: calc(100% + gap)` floats it just above the strip; width is fixed
+   but caps to the strip's width in a narrow pane. */
+.tug-pinned-panel.side-question-pane {
+  bottom: calc(100% + var(--tug-space-sm));
   width: 420px;
-  max-width: min(420px, calc(100vw - 24px));
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Header — titlebar color, glyph + title, like a mini pane's title bar. */
-.side-question-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  padding: var(--tug-space-sm) var(--tug-space-md);
-  background-color: var(--tug7-surface-card-primary-normal-titlebar-active);
-  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  max-width: min(420px, calc(100% - 16px));
 }
 
 .side-question-header-icon {
