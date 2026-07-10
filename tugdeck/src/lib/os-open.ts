@@ -16,8 +16,12 @@
  * @module lib/os-open
  */
 
-/** Whether the path opens in an editor (`file`) or Finder (`folder`). */
-export type OsOpenKind = "file" | "folder";
+/**
+ * How the host opens `path`: `file` opens it in the default editor,
+ * `folder` opens it in Finder, `reveal` opens Finder with the file
+ * selected (highlighted) inside its containing folder.
+ */
+export type OsOpenKind = "file" | "folder" | "reveal";
 
 /**
  * Ask the host to open `path` in the OS. `path` may be absolute or

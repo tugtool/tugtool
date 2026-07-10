@@ -15,7 +15,6 @@ private let tugAtomsPasteboardType = NSPasteboard.PasteboardType("dev.tug.prompt
 protocol BridgeDelegate: AnyObject {
     func bridgeChooseSourceTree(completion: @escaping (String?) -> Void)
     func bridgeChoosePath(kind: String, initialPath: String?, suggestedName: String?, completion: @escaping (String?) -> Void)
-    func bridgeOpenDroppedFiles(_ urls: [URL])
     func bridgeSetMakerMode(enabled: Bool, completion: @escaping (Bool) -> Void)
     func bridgeGetSettings(completion: @escaping (Bool, String?) -> Void)
     func bridgeFrontendReady()
@@ -202,44 +201,6 @@ private final class WaveProgressView: NSView {
     }
 }
 
-/// WKWebView subclass that intercepts file drops onto the deck. WebKit's
-/// default is to navigate the whole view to the dropped `file://` URL,
-/// which would blow the deck away — so a drop of editable text files is
-/// claimed here and handed to `onFilesDropped` (each opens in a File
-/// card). Any other drag (text into a field, the web's own dnd) falls
-/// through to `super`.
-final class DeckWebView: WKWebView {
-    /// Editable text files dropped onto the deck. Set by MainWindow.
-    var onFilesDropped: (([URL]) -> Void)?
-
-    private func editableDroppedFiles(_ sender: NSDraggingInfo) -> [URL] {
-        guard let urls = sender.draggingPasteboard.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL] else { return [] }
-        return urls.filter { AppDelegate.isEditableFile($0) }
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        editableDroppedFiles(sender).isEmpty ? super.draggingEntered(sender) : .copy
-    }
-
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        editableDroppedFiles(sender).isEmpty ? super.draggingUpdated(sender) : .copy
-    }
-
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        editableDroppedFiles(sender).isEmpty ? super.prepareForDragOperation(sender) : true
-    }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let files = editableDroppedFiles(sender)
-        guard !files.isEmpty else { return super.performDragOperation(sender) }
-        onFilesDropped?(files)
-        return true
-    }
-}
-
 /// Main window containing the WKWebView for tugdeck dashboard
 class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     private var webView: WKWebView!
@@ -345,11 +306,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
         #endif
 
-        let deckWebView = DeckWebView(frame: .zero, configuration: config)
-        deckWebView.onFilesDropped = { [weak self] urls in
-            self?.bridgeDelegate?.bridgeOpenDroppedFiles(urls)
-        }
-        webView = deckWebView
+        webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
@@ -1093,7 +1050,20 @@ extension MainWindow: WKScriptMessageHandler {
             let expanded = (rawPath as NSString).expandingTildeInPath
             let url = URL(fileURLWithPath: expanded)
             let fm = FileManager.default
-            if kind == "folder" {
+            if kind == "reveal" {
+                // Open Finder with the file itself selected inside its
+                // folder (not merely the folder open). Falls back to opening
+                // the deepest existing ancestor if the exact path is gone.
+                if fm.fileExists(atPath: expanded) {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } else {
+                    var dir = url.deletingLastPathComponent()
+                    while !fm.fileExists(atPath: dir.path) && dir.pathComponents.count > 1 {
+                        dir = dir.deletingLastPathComponent()
+                    }
+                    NSWorkspace.shared.open(dir)
+                }
+            } else if kind == "folder" {
                 // Open the folder in Finder. If the exact path doesn't exist
                 // (e.g. the auto-memory folder before claude has reported its
                 // resolved cwd, so the encoding is still best-effort), walk up

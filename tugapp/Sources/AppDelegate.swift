@@ -422,10 +422,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         openFilesFromOS(urls)
     }
 
-    /// Open each editable text file in `urls` in a File card. Shared by the
-    /// OS open path (`application(_:open:)`) and deck-canvas file drops
-    /// (`DeckWebView`). Non-text files and folders are ignored; opens made
-    /// before the deck is live queue and flush on `bridgeFrontendReady`.
+    /// Open each editable text file in `urls` in a File card — the OS open
+    /// path (Dock-icon drop, Finder "Open With", double-click). Non-text
+    /// files and folders are ignored; opens made before the deck is live
+    /// queue and flush on `bridgeFrontendReady`.
     func openFilesFromOS(_ urls: [URL]) {
         for url in urls where url.isFileURL {
             guard AppDelegate.isEditableFile(url) else { continue }
@@ -620,6 +620,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // path or opens a new one (action-dispatch.ts `open-file`).
         fileMenu.addItem(NSMenuItem(title: "Open File…", action: #selector(openFileInEditor(_:)), keyEquivalent: "o").identified("file.openFile"))
 
+        // Open Quickly (⇧⌘O): the deck-global fuzzy file-search popup
+        // (action-dispatch.ts `open-quickly` → OpenQuicklyOverlay).
+        fileMenu.addItem(NSMenuItem(title: "Open Quickly…", action: #selector(openQuickly(_:)), keyEquivalent: "o", modifierMask: [.command, .shift]).identified("file.openQuickly"))
+
         // Open Recent ▸ — a dynamic submenu rebuilt on open from the
         // menuState MRU, filtered to files that still exist (NSMenuDelegate
         // `menuNeedsUpdate`). Disabled when the list is empty.
@@ -629,10 +633,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         openRecentItem.submenu = openRecentSubmenu
         self.openRecentMenu = openRecentSubmenu
         fileMenu.addItem(openRecentItem)
-
-        // Open Quickly (⇧⌘O): the deck-global fuzzy file-search popup
-        // (action-dispatch.ts `open-quickly` → OpenQuicklyOverlay).
-        fileMenu.addItem(NSMenuItem(title: "Open Quickly…", action: #selector(openQuickly(_:)), keyEquivalent: "o", modifierMask: [.command, .shift]).identified("file.openQuickly"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -1753,9 +1753,6 @@ extension AppDelegate: BridgeDelegate {
         completion(makerModeEnabled, sourceTreePath)
     }
 
-    func bridgeOpenDroppedFiles(_ urls: [URL]) {
-        openFilesFromOS(urls)
-    }
 
     func bridgeFrontendReady() {
         DispatchQueue.main.async {

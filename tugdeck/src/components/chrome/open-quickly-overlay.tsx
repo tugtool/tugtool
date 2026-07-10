@@ -118,9 +118,18 @@ function OpenQuicklyBody(): React.ReactElement {
     closeOpenQuickly();
   };
 
+  // The project's leaf directory name — "Open Quickly in tugtool" reads
+  // cleaner than the whole absolute path.
+  const projectLeaf =
+    projectDir !== null
+      ? (projectDir.replace(/\/+$/, "").split("/").pop() ?? "")
+      : "";
+
   return (
     <TugCompletionPopup
-      placeholder="Open Quickly"
+      placeholder={
+        projectLeaf !== "" ? `Open Quickly in ${projectLeaf}` : "Open Quickly"
+      }
       provider={stackRef.current?.provider ?? EMPTY_PROVIDER}
       onCommit={commit}
       onDismiss={closeOpenQuickly}

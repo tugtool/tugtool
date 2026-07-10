@@ -289,13 +289,12 @@ export function FileCardContent({ cardId }: { cardId: string }) {
     void runSaveAsPanel();
   }, [runSaveAsPanel]);
 
-  // Reveal the bound file in the Finder (path click) — opens its containing
-  // folder, the same reveal the transcript file references use.
+  // Reveal the bound file in the Finder (path click) — opens Finder with
+  // the file itself selected inside its folder, not merely the folder.
   const revealInFinder = useCallback(() => {
     const path = store.getSnapshot().path;
     if (path === null) return;
-    const slash = path.lastIndexOf("/");
-    openPathInOS(slash > 0 ? path.slice(0, slash) : "/", "folder");
+    openPathInOS(path, "reveal");
   }, [store]);
 
   // Save a Copy… — write the buffer elsewhere without rebinding or
