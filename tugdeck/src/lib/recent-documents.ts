@@ -30,21 +30,48 @@ export const RECENT_DOCUMENTS_KEY = "recent-documents";
  */
 export const RECENT_DOCUMENTS_STORE_LIMIT = 20;
 
+/**
+ * Hard byte ceiling on the persisted list. This value rides the boot
+ * DEFAULTS frame (it's a tugbank default), so — belt-and-suspenders on top
+ * of the count cap — the serialized list is never allowed past a few KB no
+ * matter how long individual paths are. Well under tugbank's per-entry
+ * write limit; a pathological run of very long paths trims to fit rather
+ * than growing the boot frame.
+ */
+export const RECENT_DOCUMENTS_MAX_BYTES = 16 * 1024;
+
 /** In-memory MRU, newest first. The tugbank value is the durable copy. */
 let recents: string[] = [];
 
-/** Coerce a stored tugbank value into a clean string[] (defensive). */
+/**
+ * Trim `paths` (already de-duped, newest first) to both the count cap and
+ * the byte cap — whichever binds first — keeping the newest entries.
+ */
+function capRecentDocuments(paths: string[]): string[] {
+  const out: string[] = [];
+  let bytes = 2; // the enclosing "[]"
+  for (const path of paths) {
+    if (out.length >= RECENT_DOCUMENTS_STORE_LIMIT) break;
+    // JSON-encoded size of this element, plus a comma separator.
+    const encoded = JSON.stringify(path).length + 1;
+    if (bytes + encoded > RECENT_DOCUMENTS_MAX_BYTES) break;
+    out.push(path);
+    bytes += encoded;
+  }
+  return out;
+}
+
+/** Coerce a stored tugbank value into a clean, capped string[] (defensive). */
 export function coerceRecentDocuments(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const out: string[] = [];
+  const cleaned: string[] = [];
   for (const item of raw) {
     if (typeof item !== "string" || item === "" || seen.has(item)) continue;
     seen.add(item);
-    out.push(item);
-    if (out.length >= RECENT_DOCUMENTS_STORE_LIMIT) break;
+    cleaned.push(item);
   }
-  return out;
+  return capRecentDocuments(cleaned);
 }
 
 /**
@@ -74,10 +101,7 @@ export function getRecentDocuments(): string[] {
  */
 export function noteRecentDocument(path: string): void {
   if (path === "") return;
-  const next = [path, ...recents.filter((p) => p !== path)].slice(
-    0,
-    RECENT_DOCUMENTS_STORE_LIMIT,
-  );
+  const next = capRecentDocuments([path, ...recents.filter((p) => p !== path)]);
   if (next.length === recents.length && next.every((p, i) => p === recents[i])) {
     return; // Already newest — nothing changed.
   }

@@ -762,22 +762,86 @@ export function insertDevRecentProject(existing: string[], projectDir: string): 
 }
 
 /**
+ * How many of the most recent image entries keep their inline
+ * `thumbnailDataUrl` when persisted. Thumbnails are base64 data URLs — the
+ * dominant weight in prompt history and what bloated the domain to
+ * megabytes. A recent few are genuinely useful (a recalled prompt shows
+ * its image preview); a deep history of them is pure boot-frame ballast,
+ * so older image entries persist without the thumbnail (they recall as a
+ * broken-image tile, exactly as an un-baked thumbnail already does).
+ */
+export const MAX_PERSISTED_THUMBNAILS = 4;
+
+/**
+ * Byte backstop for a single session's persisted history, held under
+ * tugbank's per-entry write cap. After thumbnail trimming the payload is
+ * normally well under this; if a pathological run of long prompts still
+ * exceeds it, the oldest whole entries are dropped until it fits.
+ */
+export const MAX_PROMPT_HISTORY_BYTES = 192 * 1024;
+
+/**
+ * Bound a session's history for persistence: keep inline thumbnails only
+ * on the most recent {@link MAX_PERSISTED_THUMBNAILS} image entries, then
+ * (backstop) drop the oldest entries until the serialized value fits
+ * {@link MAX_PROMPT_HISTORY_BYTES}. Entries are newest-last; the in-memory
+ * copy is untouched — only what reaches tugbank is trimmed.
+ */
+export function boundPromptHistoryForPersist(entries: HistoryEntry[]): HistoryEntry[] {
+  // Strip image-atom thumbnails beyond the most recent few. Walk entries
+  // newest-first (they're newest-last); keep the first
+  // MAX_PERSISTED_THUMBNAILS thumbnails encountered, strip the rest.
+  let kept = 0;
+  const trimmed = entries.map((e) => e);
+  for (let i = trimmed.length - 1; i >= 0; i--) {
+    const entry = trimmed[i];
+    if (!entry.atoms.some((a) => a.thumbnailDataUrl !== undefined)) continue;
+    let mutated = false;
+    const atoms = entry.atoms.map((a) => {
+      if (a.thumbnailDataUrl === undefined) return a;
+      if (kept < MAX_PERSISTED_THUMBNAILS) {
+        kept += 1;
+        return a;
+      }
+      mutated = true;
+      const stripped = { ...a };
+      delete stripped.thumbnailDataUrl;
+      return stripped;
+    });
+    if (mutated) trimmed[i] = { ...entry, atoms };
+  }
+  // Byte backstop: drop oldest whole entries until under the cap.
+  let start = 0;
+  const sized = () =>
+    JSON.stringify({ kind: "json", value: trimmed.slice(start) }).length;
+  while (start < trimmed.length && sized() > MAX_PROMPT_HISTORY_BYTES) {
+    start += 1;
+  }
+  return trimmed.slice(start);
+}
+
+/**
  * PUT prompt history for a session to tugbank (fire-and-forget).
+ *
+ * The value is bounded first ({@link boundPromptHistoryForPersist}) so a
+ * session's history — thumbnails especially — can never grow the boot
+ * DEFAULTS frame past the transport cap.
  *
  * Domain: `dev.tugtool.prompt.history`, key: `{sessionId}`.
  * Body format: `{ kind: "json", value: [...entries] }`
  */
 export function putPromptHistory(sessionId: string, entries: HistoryEntry[]): void {
   const url = `/api/defaults/dev.tugtool.prompt.history/${encodeURIComponent(sessionId)}`;
+  const bounded = boundPromptHistoryForPersist(entries);
   logSessionLifecycle("history.put", {
     session_id: sessionId,
     url,
-    entry_count: entries.length,
+    entry_count: bounded.length,
   });
   fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "json", value: entries }),
+    body: JSON.stringify({ kind: "json", value: bounded }),
   }).catch((err) => {
     console.warn("[settings] PUT promptHistory failed for session", sessionId, err);
   });

@@ -21,6 +21,9 @@ import {
   readDevRecentProjects,
   insertDevRecentProject,
   capDurableCardState,
+  boundPromptHistoryForPersist,
+  MAX_PERSISTED_THUMBNAILS,
+  MAX_PROMPT_HISTORY_BYTES,
   DEV_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
@@ -223,6 +226,66 @@ describe("readCardStates", () => {
 // ---------------------------------------------------------------------------
 // putPromptHistory
 // ---------------------------------------------------------------------------
+
+describe("boundPromptHistoryForPersist", () => {
+  const imgEntry = (id: string, thumbBytes: number): HistoryEntry => ({
+    id,
+    sessionId: "s",
+    projectPath: "/p",
+    route: ">",
+    text: `prompt ${id}`,
+    atoms: [
+      {
+        position: 0,
+        type: "image",
+        label: "img",
+        value: "img",
+        id: `bytes-${id}`,
+        thumbnailDataUrl: "data:image/png;base64," + "A".repeat(thumbBytes),
+      },
+    ],
+    timestamp: 0,
+  });
+
+  test("keeps thumbnails only on the most recent few image entries", () => {
+    // 10 image entries, newest last. Only the newest MAX survive with a thumb.
+    const entries = Array.from({ length: 10 }, (_, i) => imgEntry(`e${i}`, 100));
+    const out = boundPromptHistoryForPersist(entries);
+    const withThumb = out.filter((e) =>
+      e.atoms.some((a) => a.thumbnailDataUrl !== undefined),
+    );
+    expect(withThumb.length).toBe(MAX_PERSISTED_THUMBNAILS);
+    // The survivors are the newest entries (end of the array).
+    const survivorIds = new Set(withThumb.map((e) => e.id));
+    expect(survivorIds.has("e9")).toBe(true);
+    expect(survivorIds.has("e0")).toBe(false);
+    // Older entries keep their text + atom, just no thumbnail.
+    const e0 = out.find((e) => e.id === "e0");
+    expect(e0?.text).toBe("prompt e0");
+    expect(e0?.atoms[0].thumbnailDataUrl).toBeUndefined();
+    expect(e0?.atoms[0].id).toBe("bytes-e0");
+  });
+
+  test("keeps text-only history intact (nothing to strip)", () => {
+    const entries: HistoryEntry[] = [
+      { id: "a", sessionId: "s", projectPath: "/p", route: ">", text: "hi", atoms: [], timestamp: 0 },
+    ];
+    expect(boundPromptHistoryForPersist(entries)).toEqual(entries);
+  });
+
+  test("byte backstop drops oldest entries until under the cap", () => {
+    // A few very large thumbnails would exceed the byte cap even after the
+    // count trim — the backstop drops oldest whole entries so it fits.
+    const big = Math.floor(MAX_PROMPT_HISTORY_BYTES / 2);
+    const entries = Array.from({ length: 6 }, (_, i) => imgEntry(`e${i}`, big));
+    const out = boundPromptHistoryForPersist(entries);
+    const bytes = JSON.stringify({ kind: "json", value: out }).length;
+    expect(bytes).toBeLessThanOrEqual(MAX_PROMPT_HISTORY_BYTES);
+    expect(out.length).toBeLessThan(entries.length);
+    // Whatever survives is the newest tail.
+    expect(out[out.length - 1].id).toBe("e5");
+  });
+});
 
 describe("putPromptHistory", () => {
   afterEach(() => {

@@ -18,6 +18,15 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 use tugbank_core::{Error as BankError, TugbankClient, Value};
 
+/// Per-entry write cap for `/api/defaults`. Every defaults value is
+/// serialized in full into the boot DEFAULTS frame (see
+/// `feeds/defaults.rs`), so a single oversized entry is exactly the kind
+/// of write that grows that frame toward the transport's 16 MB cap. A
+/// legitimate default (theme, layout, a positions bag, a recents list) is
+/// kilobytes; anything approaching this limit is misuse, rejected at the
+/// boundary rather than allowed to accumulate and brick launch.
+const MAX_DEFAULTS_VALUE_BYTES: usize = 256 * 1024;
+
 // ── Tagged wire format ─────────────────────────────────────────────────────
 
 /// Tagged JSON representation of a `tugbank_core::Value`.
@@ -298,6 +307,30 @@ pub(crate) async fn put_key(
 ) -> Response {
     if let Some(resp) = check_loopback("put_key", addr) {
         return resp;
+    }
+
+    // Reject oversized entries at the boundary: they bloat the boot DEFAULTS
+    // frame and can push it past the transport cap, hanging launch.
+    if body.len() > MAX_DEFAULTS_VALUE_BYTES {
+        warn!(
+            domain = %domain,
+            key = %key,
+            bytes = body.len(),
+            limit = MAX_DEFAULTS_VALUE_BYTES,
+            "put_key: rejecting oversized defaults entry"
+        );
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!(
+                    "value too large: {} bytes exceeds the {} byte per-entry defaults limit",
+                    body.len(),
+                    MAX_DEFAULTS_VALUE_BYTES
+                ),
+            })),
+        )
+            .into_response();
     }
 
     // Parse body as TaggedValue.

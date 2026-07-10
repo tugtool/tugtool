@@ -50,14 +50,29 @@ export type DomainChangedCallback = (
 
 // ── TugbankClient ────────────────────────────────────────────────────────────
 
+/**
+ * Boot never blocks on tugbank longer than this. `ready()` gates the very
+ * first `await` in the app's boot (before `frontendReady` tears down the
+ * splash), so if the initial DEFAULTS frame never arrives — dropped for
+ * exceeding the transport's {@link MAX_PAYLOAD_SIZE} cap, or lost — the
+ * splash would hang forever with no visible cause. This deadline resolves
+ * `ready()` anyway, so the app boots (with whatever defaults did arrive,
+ * possibly none) instead of bricking. A healthy boot resolves in well
+ * under a second; this only fires on failure.
+ */
+const READY_TIMEOUT_MS = 10_000;
+
 export class TugbankClient {
   private readonly cache = new Map<string, DomainSnapshot>();
   private readonly listeners: DomainChangedCallback[] = [];
   private readyResolve: (() => void) | null = null;
   private readonly readyPromise: Promise<void>;
   private hasReceivedInitialFrame = false;
+  private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True when boot proceeded on the timeout, not a real DEFAULTS frame. */
+  private _bootDegraded = false;
 
-  constructor(connection: TugConnection) {
+  constructor(connection: TugConnection, readyTimeoutMs: number = READY_TIMEOUT_MS) {
     this.readyPromise = new Promise<void>((resolve) => {
       this.readyResolve = resolve;
     });
@@ -65,6 +80,36 @@ export class TugbankClient {
     connection.onFrame(FeedId.DEFAULTS, (payload: Uint8Array) => {
       this.handleDefaultsFrame(payload);
     });
+
+    // Un-brickable boot: if no DEFAULTS frame lands in time, resolve
+    // `ready()` degraded rather than hang the splash forever.
+    this.readyTimer = setTimeout(() => {
+      if (this.hasReceivedInitialFrame) return;
+      this._bootDegraded = true;
+      const msg =
+        "tugbank: no DEFAULTS frame within " +
+        `${readyTimeoutMs}ms — booting with empty defaults. The frame was ` +
+        "likely dropped for exceeding the 16 MB transport cap (a bloated " +
+        "defaults domain). App state (theme, layout, recents) may be missing.";
+      tugDevLogStore.error("tugbank-client", msg);
+      console.error(`[TugbankClient] ${msg}`);
+      this.resolveReady();
+    }, readyTimeoutMs);
+  }
+
+  /** Resolve the boot gate exactly once and cancel the deadline timer. */
+  private resolveReady(): void {
+    if (this.readyTimer !== null) {
+      clearTimeout(this.readyTimer);
+      this.readyTimer = null;
+    }
+    this.readyResolve?.();
+    this.readyResolve = null;
+  }
+
+  /** Whether boot proceeded on the timeout rather than a real frame. */
+  bootDegraded(): boolean {
+    return this._bootDegraded;
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -198,8 +243,7 @@ export class TugbankClient {
     // Resolve ready promise on first frame
     if (!this.hasReceivedInitialFrame) {
       this.hasReceivedInitialFrame = true;
-      this.readyResolve?.();
-      this.readyResolve = null;
+      this.resolveReady();
     }
   }
 }

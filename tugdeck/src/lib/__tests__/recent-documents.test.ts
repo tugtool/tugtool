@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 
 import { FILE_EDITOR_DEFAULTS_DOMAIN } from "@/lib/file-editor-settings";
 import {
+  RECENT_DOCUMENTS_MAX_BYTES,
   RECENT_DOCUMENTS_STORE_LIMIT,
   clearRecentDocuments,
   coerceRecentDocuments,
@@ -70,6 +71,18 @@ describe("coerceRecentDocuments", () => {
       (_, i) => `/f${i}.txt`,
     );
     expect(coerceRecentDocuments(many).length).toBe(RECENT_DOCUMENTS_STORE_LIMIT);
+  });
+
+  it("caps by bytes when paths are pathologically long", () => {
+    // Each path is ~4 KB; the byte cap binds well before the count cap.
+    const longPath = "/" + "x".repeat(4096);
+    const many = Array.from({ length: 20 }, (_, i) => longPath + i);
+    const out = coerceRecentDocuments(many);
+    const bytes = JSON.stringify(out).length;
+    expect(bytes).toBeLessThanOrEqual(RECENT_DOCUMENTS_MAX_BYTES);
+    expect(out.length).toBeLessThan(20);
+    // Newest-first order is preserved among the survivors.
+    expect(out[0]).toBe(longPath + "0");
   });
 });
 

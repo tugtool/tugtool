@@ -43,6 +43,14 @@ use tugcast_core::{FeedId, Frame};
 
 use crate::defaults::value_to_tagged;
 
+/// Ceiling for the assembled DEFAULTS frame, held below the web client's
+/// 16 MB transport cap (`protocol.ts` `MAX_PAYLOAD_SIZE`) with headroom for
+/// the JSON wrapper. The web client drops an over-cap frame, which would
+/// hang boot; rather than emit one, the builder sheds the largest domains
+/// until the frame fits (logging each). A degraded boot missing a bloated
+/// domain beats a launch that never completes.
+const SAFE_DEFAULTS_FRAME_BYTES: usize = 14 * 1024 * 1024;
+
 // ── Payload builder ───────────────────────────────────────────────────────────
 
 /// Build an aggregated DEFAULTS frame from the current state of `client`.
@@ -51,21 +59,47 @@ use crate::defaults::value_to_tagged;
 /// domains. On error (e.g. a domain fails to load), the domain is omitted and
 /// a warning is logged.
 fn build_defaults_frame(client: &TugbankClient) -> Frame {
-    let domains_map = build_domains_json(client);
+    let mut domains = build_domain_entries(client);
+
+    // Never emit an over-cap frame (the web client drops it and boot hangs).
+    // Sum the per-domain sizes; if over budget, shed the largest domains
+    // first — the many small critical domains (theme, layout, positions)
+    // always fit, and only a pathologically bloated domain gets dropped.
+    let approx = |name: &str, size: usize| name.len() + size + 8; // "name":<obj>,
+    let mut total: usize = 16 + domains.iter().map(|(n, _, s)| approx(n, *s)).sum::<usize>();
+    if total > SAFE_DEFAULTS_FRAME_BYTES {
+        domains.sort_by(|a, b| b.2.cmp(&a.2)); // largest first
+        while total > SAFE_DEFAULTS_FRAME_BYTES && !domains.is_empty() {
+            let (name, _, size) = domains.remove(0);
+            total -= approx(&name, size);
+            warn!(
+                domain = %name,
+                bytes = size,
+                "defaults_feed: shedding oversized domain from boot frame (would exceed transport cap)"
+            );
+        }
+    }
+
+    let mut domains_map = Map::new();
+    for (name, obj, _) in domains {
+        domains_map.insert(name, obj);
+    }
     let payload = json!({"domains": domains_map});
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
     Frame::new(FeedId::DEFAULTS, bytes)
 }
 
-/// Serialise all domains into a `serde_json::Map` suitable for the frame payload.
-fn build_domains_json(client: &TugbankClient) -> Map<String, JsonValue> {
-    let mut domains_map = Map::new();
+/// Serialise each domain into `(name, json, serialized_byte_len)`. The size
+/// is the domain object's own JSON length — used by the frame builder to
+/// keep the aggregate under the transport cap.
+fn build_domain_entries(client: &TugbankClient) -> Vec<(String, JsonValue, usize)> {
+    let mut out: Vec<(String, JsonValue, usize)> = Vec::new();
 
     let domain_names = match client.list_domains() {
         Ok(names) => names,
         Err(e) => {
             warn!(error = %e, "defaults_feed: failed to list domains");
-            return domains_map;
+            return out;
         }
     };
 
@@ -98,10 +132,11 @@ fn build_domains_json(client: &TugbankClient) -> Map<String, JsonValue> {
             "generation": generation,
             "entries": entries,
         });
-        domains_map.insert(domain_name.clone(), domain_obj);
+        let size = serde_json::to_vec(&domain_obj).map(|b| b.len()).unwrap_or(0);
+        out.push((domain_name.clone(), domain_obj, size));
     }
 
-    domains_map
+    out
 }
 
 // ── defaults_feed ─────────────────────────────────────────────────────────────
@@ -204,5 +239,47 @@ mod tests {
         let beta = &domains["domain.beta"];
         let beta_entries = beta.get("entries").expect("entries").as_object().unwrap();
         assert!(beta_entries.contains_key("key2"), "missing key2 in beta");
+    }
+
+    /// A domain that alone would blow the frame past the transport cap is
+    /// shed, while the small critical domains survive — the frame stays
+    /// under the cap so the web client never drops it (which would hang boot).
+    #[tokio::test]
+    async fn test_oversized_domain_is_shed_from_frame() {
+        let tmp = NamedTempFile::new().expect("temp file");
+        let client = TugbankClient::open(tmp.path()).expect("open failed");
+
+        // A small critical domain that must always fit.
+        client
+            .set("dev.tugtool.app", "theme", Value::String("brio".into()))
+            .expect("set app");
+        // A single domain larger than the whole safe frame budget.
+        let huge = "x".repeat(SAFE_DEFAULTS_FRAME_BYTES + 1024);
+        client
+            .set("dev.tugtool.prompt.history", "s1", Value::String(huge))
+            .expect("set history");
+
+        let frame = build_defaults_frame(&client);
+        assert!(
+            frame.payload.len() <= SAFE_DEFAULTS_FRAME_BYTES,
+            "frame ({} bytes) must stay under the safe cap",
+            frame.payload.len()
+        );
+
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&frame.payload).expect("valid JSON");
+        let domains = parsed
+            .get("domains")
+            .expect("domains key")
+            .as_object()
+            .expect("domains is object");
+        assert!(
+            domains.contains_key("dev.tugtool.app"),
+            "small critical domain must survive the shed"
+        );
+        assert!(
+            !domains.contains_key("dev.tugtool.prompt.history"),
+            "oversized domain must be shed from the boot frame"
+        );
     }
 }
