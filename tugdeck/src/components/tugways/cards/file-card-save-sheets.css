@@ -17,6 +17,10 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--tugx-alert-space-b);
+  /* The left-aligned button respects the icon column (classic Mac HIG): it
+     starts where the text starts — icon width + icon↔text gap — not under
+     the icon. Same tokens the alert-scale header consumes. */
+  padding-left: calc(var(--tugx-header-icon-alert) + var(--tugx-header-gap-alert));
 }
 
 /* The right-hand cluster (the non-Cancel choices, default last). */

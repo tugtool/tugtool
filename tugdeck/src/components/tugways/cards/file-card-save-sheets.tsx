@@ -105,6 +105,7 @@ function FileSaveSheetView({
     const isDefault = buttons.indexOf(button) === defaultIndex;
     return (
       <TugPushButton
+        size="sm"
         key={button.result}
         emphasis={
           isDefault
@@ -126,7 +127,11 @@ function FileSaveSheetView({
 
   return (
     <div className="tug-alert-sheet" data-slot="file-save-sheet">
-      <div className="tug-alert-body" data-has-message={message ? "true" : undefined}>
+      <div
+        className="tug-alert-body"
+        data-scale="alert"
+        data-has-message={message ? "true" : undefined}
+      >
         <div className="tug-alert-icon" aria-hidden="true">
           <TriangleAlert />
         </div>

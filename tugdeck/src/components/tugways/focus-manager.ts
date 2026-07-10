@@ -1037,6 +1037,20 @@ export class FocusContext {
   }
 
   /**
+   * Whether `id` is a registered focusable participating in the current
+   * mode — the same membership the Tab walk uses. A responder id that is not
+   * a registered focusable (a card, a pane, a sheet container) is not a
+   * member.
+   */
+  currentModeMember(id: string | null): boolean {
+    if (id === null) return false;
+    const record = this.focusables.get(id);
+    if (record === undefined) return false;
+    const accepted = this.walkModeSet();
+    return record.modes.some((m) => accepted.has(m));
+  }
+
+  /**
    * Resolve a focusable record's live DOM element (the responder container or
    * the focusable element carrying its id), or `null` if absent / no document.
    */
@@ -1700,8 +1714,51 @@ export class FocusManager {
   private seedKeyViewFromChain(): void {
     if (this.chain === null) return;
     const frId = this.chain.getFirstResponder();
-    if (!this.pointerPromotionActive && this.keyViewIsFinerThan(frId)) return;
-    this.activeContext().setKeyView(frId);
+    // A promotion belonging to ANOTHER card's universe must not clobber the
+    // active context's key view. At a cross-card activation click the chain
+    // promotes the incoming card's (or its pane's) responder while the
+    // OUTGOING card's context can still be the active one — writing that
+    // foreign id here corrupts the outgoing context's saved key view (e.g. a
+    // sheet's trapped default, which [P20] must restore on reactivation). The
+    // incoming card's context takes over via `setKeyCard` and seeds normally.
+    if (!this.responderInActiveUniverse(frId)) return;
+    const ctx = this.activeContext();
+    if (!this.pointerPromotionActive) {
+      if (this.keyViewIsFinerThan(frId)) return;
+      ctx.setKeyView(frId);
+      return;
+    }
+    // A pointer promotion normally coarsens the key view (click-to-focus) —
+    // but while the active context is inside a TRAPPED focus mode (a
+    // pane-modal sheet, a card-modal dialog), the trap owns the key view:
+    // the click that brings the pane back (title bar, pane chrome, sheet
+    // body, scrim) activates the card without stealing the trapped
+    // default's ring ([P16]/[P20]). Only a promotion landing on a MEMBER of
+    // the trapped mode (a field or list row registered in the sheet's own
+    // mode) still moves the key view — the same membership the Tab walk
+    // uses, so the pointer can never place the key view somewhere Tab could
+    // not.
+    if (ctx.currentFocusModeTrapped() && !ctx.currentModeMember(frId)) return;
+    ctx.setKeyView(frId);
+  }
+
+  /**
+   * Whether `responderId`'s element is related to the key card's subtree —
+   * inside the key card (an in-card responder) or containing it (the card's
+   * pane, the deck root). A responder in a DIFFERENT card/pane is foreign:
+   * its promotion must not write into the active context. `true` with no key
+   * card (the default context spans the deck), a `null` responder (an
+   * explicit clear), an unmatched id, or no DOM (unit tests).
+   */
+  private responderInActiveUniverse(responderId: string | null): boolean {
+    if (this.keyCardId === null || responderId === null) return true;
+    if (typeof document === "undefined") return true;
+    const rEl = this.elementForFocusKey(responderId);
+    const cardEl = document.querySelector(
+      `[data-card-id="${cssEscapeId(this.keyCardId)}"]`,
+    );
+    if (rEl === null || cardEl === null) return true;
+    return cardEl.contains(rEl) || rEl.contains(cardEl);
   }
 
   /**

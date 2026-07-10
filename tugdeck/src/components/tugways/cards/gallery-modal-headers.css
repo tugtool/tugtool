@@ -70,6 +70,13 @@
   gap: var(--cg-mh-gap-alert);
 }
 
+/* A title-only alert keeps the alert icon scale but centers the icon on its
+   lone title line (mirrors .tug-alert-body[data-scale="alert"] without
+   data-has-message). */
+.cg-mh-header[data-kind="alert"][data-solo] {
+  align-items: center;
+}
+
 /* ---- Icon ----------------------------------------------------------------- */
 
 /* The box owns the size; the lucide svg inside stretches to fill it, so the

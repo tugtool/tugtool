@@ -95,6 +95,7 @@ export function CompactionProgressSheet({
               projecting `data-key-view-kbd` — and Return triggers it. Cancel is
               the only action a running compaction offers. */}
           <TugPushButton
+            size="sm"
             emphasis="primary"
             role="action"
             onClick={onCancel}

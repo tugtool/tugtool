@@ -27,6 +27,7 @@ import {
   Rocket,
   RotateCcw,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
@@ -60,7 +61,12 @@ function SpecHeader({
   description,
 }: SpecHeaderProps): React.ReactElement {
   return (
-    <div className="cg-mh-header" data-kind={kind} data-icon-role={iconRole}>
+    <div
+      className="cg-mh-header"
+      data-kind={kind}
+      data-icon-role={iconRole}
+      data-solo={description ? undefined : "true"}
+    >
       <div className="cg-mh-icon" aria-hidden="true">
         {icon}
       </div>
@@ -109,16 +115,21 @@ function ShippedAlertHeader({
   iconRole,
   title,
   message,
+  alertScale = false,
 }: {
   icon: React.ReactNode;
   iconRole?: HeaderIconRole;
   title: string;
   message?: string;
+  /** Stamp `data-scale="alert"` — TugAlert / TugAlertSheet / the File save
+   *  sheets do; TugSetup / TugVersionGate render one-line headers and don't. */
+  alertScale?: boolean;
 }): React.ReactElement {
   return (
     <div
       className="tug-alert-body"
       data-icon-role={iconRole}
+      data-scale={alertScale ? "alert" : undefined}
       data-has-message={message ? "true" : undefined}
     >
       <div className="tug-alert-icon" aria-hidden="true">
@@ -208,6 +219,22 @@ function DeleteActions(): React.ReactElement {
   );
 }
 
+function SaveActions(): React.ReactElement {
+  return (
+    <div className="cg-mh-actions">
+      <TugPushButton size="sm" emphasis="filled" role="danger">
+        Don’t Save
+      </TugPushButton>
+      <TugPushButton size="sm" emphasis="filled" role="action">
+        Cancel
+      </TugPushButton>
+      <TugPushButton size="sm" emphasis="filled" role="action">
+        Save
+      </TugPushButton>
+    </div>
+  );
+}
+
 function OkAction(): React.ReactElement {
   return (
     <div className="cg-mh-actions">
@@ -238,7 +265,10 @@ export function GalleryModalHeaders(): React.ReactElement {
             <strong>Icon steps with the text block:</strong> 30px for a
             one-line header, 36px for two lines, 44px for an alert. Two-line
             and alert headers align the icon to the top of the title text;
-            the one-line header centers it on its single line.
+            the one-line header centers it on its single line. An alert keeps
+            the 44px icon even with no message (`data-scale="alert"`) —
+            centered on the lone title line; the 30px one-line case is for
+            utility-sheet headers, not alerts.
           </span>
           <span className="cg-mh-note">
             <strong>Parity check:</strong> each pair below renders the same
@@ -337,6 +367,7 @@ export function GalleryModalHeaders(): React.ReactElement {
               icon={<Trash2 />}
               title="Delete “Design System v3”?"
               message={DELETE_MESSAGE}
+              alertScale
             />
             <DeleteActions />
           </MockPanel>
@@ -356,8 +387,27 @@ export function GalleryModalHeaders(): React.ReactElement {
               icon={<History />}
               title="Can't Rewind"
               message={REWIND_MESSAGE}
+              alertScale
             />
             <OkAction />
+          </MockPanel>
+        </div>
+        <div className="cg-mh-compare">
+          <MockPanel caption="shipped — title-only alert (.tug-alert-* with data-scale=alert): alert icon scale, centered">
+            <ShippedAlertHeader
+              icon={<TriangleAlert />}
+              title="Save changes to “Untitled” before closing?"
+              alertScale
+            />
+            <SaveActions />
+          </MockPanel>
+          <MockPanel caption="spec — .cg-mh-* alert case, no message">
+            <SpecHeader
+              kind="alert"
+              icon={<TriangleAlert />}
+              title="Save changes to “Untitled” before closing?"
+            />
+            <SaveActions />
           </MockPanel>
         </div>
       </div>

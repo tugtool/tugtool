@@ -178,7 +178,7 @@ function ResumeSheetBody({
         </div>
       </PickerCellProvider>
       <div className="tug-sheet-actions">
-        <TugPushButton onClick={() => onClose()} data-testid="resume-cancel">
+        <TugPushButton size="sm" onClick={() => onClose()} data-testid="resume-cancel">
           Cancel
         </TugPushButton>
       </div>

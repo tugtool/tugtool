@@ -300,6 +300,7 @@ function EffortPickerSheetBody({
       </EffortPickerListContext.Provider>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           data-slot="effort-picker-cancel"
           emphasis="outlined"
           role="action"
@@ -310,6 +311,7 @@ function EffortPickerSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           data-slot="effort-picker-ok"
           emphasis="primary"
           onClick={confirm}

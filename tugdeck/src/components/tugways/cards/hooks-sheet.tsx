@@ -240,6 +240,7 @@ function HooksSheetBody({
       footer={
         <div className="tug-sheet-actions">
           <TugPushButton
+            size="sm"
             emphasis="primary"
             onClick={() => onClose()}
             data-testid="hooks-done"

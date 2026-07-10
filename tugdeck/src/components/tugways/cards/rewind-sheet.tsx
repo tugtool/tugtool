@@ -540,6 +540,7 @@ function RewindSheetBody({
 
         <div className="tug-sheet-actions">
           <TugPushButton
+            size="sm"
             emphasis="outlined"
             role="action"
             onClick={() => onClose()}
@@ -550,6 +551,7 @@ function RewindSheetBody({
             Cancel
           </TugPushButton>
           <TugPushButton
+            size="sm"
             emphasis="primary"
             disabled={!canApply}
             onClick={apply}

@@ -1919,6 +1919,7 @@ function DevProjectPickerForm({
           </TugLabel>
         )}
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           role="action"
           onClick={onCancel}
@@ -1928,6 +1929,7 @@ function DevProjectPickerForm({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           role="action"
           onClick={submit}

@@ -133,6 +133,7 @@ function RenameSheetBody({
       />
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           role="action"
           onClick={() => onCancel()}
@@ -143,6 +144,7 @@ function RenameSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           onClick={() => onSubmit(value)}
           data-testid="rename-save"

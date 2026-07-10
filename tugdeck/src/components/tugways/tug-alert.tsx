@@ -404,6 +404,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             {/* Classic Mac HIG layout: icon left, text right, buttons bottom-right */}
             <div
               className="tug-alert-body"
+              data-scale="alert"
               data-has-message={message ? "true" : undefined}
             >
               {IconComponent && (
@@ -428,6 +429,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
               {cancelLabel !== null && (
                 <AlertDialog.Cancel asChild>
                   <TugPushButton
+                    size="sm"
                     emphasis="outlined"
                     onClick={onCancelClick}
                     focusGroup={buttonFocusGroup}
@@ -439,6 +441,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
               )}
               <AlertDialog.Action asChild>
                 <TugPushButton
+                  size="sm"
                   emphasis={confirmRole === "action" ? "primary" : "filled"}
                   role={confirmRole}
                   onClick={onConfirmClick}

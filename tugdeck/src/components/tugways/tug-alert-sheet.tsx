@@ -81,6 +81,7 @@ export function TugAlertSheetView({
     <div className="tug-alert-sheet">
       <div
         className="tug-alert-body"
+        data-scale="alert"
         data-has-message={
           message !== undefined && message !== null ? "true" : undefined
         }
@@ -100,6 +101,7 @@ export function TugAlertSheetView({
       <div className="tug-alert-actions">
         {cancelLabel !== null ? (
           <TugPushButton
+            size="sm"
             emphasis="outlined"
             role="action"
             onClick={onCancel}
@@ -111,6 +113,7 @@ export function TugAlertSheetView({
           </TugPushButton>
         ) : null}
         <TugPushButton
+          size="sm"
           emphasis={confirmRole === "action" ? "primary" : "filled"}
           role={confirmRole}
           onClick={onConfirm}

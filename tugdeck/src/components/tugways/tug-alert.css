@@ -146,6 +146,14 @@ body {
   align-items: flex-start;
 }
 
+/* A title-only ALERT (a confirm question with no message line) keeps the
+   alert icon scale — it reads as an alert, not a utility-sheet header. The
+   icon stays centered on the lone title line. TugSetup/TugVersionGate render
+   these classes as one-line headers and don't stamp the attribute. */
+.tug-alert-body[data-scale="alert"] {
+  gap: var(--tugx-header-gap-alert);
+}
+
 /* ---- Icon container ---- */
 
 .tug-alert-icon {
@@ -160,7 +168,8 @@ body {
   justify-content: center;
 }
 
-.tug-alert-body[data-has-message] .tug-alert-icon {
+.tug-alert-body[data-has-message] .tug-alert-icon,
+.tug-alert-body[data-scale="alert"] .tug-alert-icon {
   width: var(--tugx-header-icon-alert);
   height: var(--tugx-header-icon-alert);
 }

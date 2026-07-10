@@ -452,6 +452,7 @@ function PermissionModeSheetBody({
       </PermissionModeListContext.Provider>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           role="action"
           onClick={onCancel}
@@ -462,6 +463,7 @@ function PermissionModeSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           onClick={confirm}
           data-testid="permission-mode-ok"

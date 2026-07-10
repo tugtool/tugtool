@@ -359,7 +359,7 @@ function DiffSheetBody({
       header={header}
       footer={
         <div className="tug-sheet-actions">
-          <TugPushButton emphasis="primary" onClick={() => onClose()} data-testid="diff-done" focusGroup={doneFocusGroup} focusOrder={0}>
+          <TugPushButton size="sm" emphasis="primary" onClick={() => onClose()} data-testid="diff-done" focusGroup={doneFocusGroup} focusOrder={0}>
             Done
           </TugPushButton>
         </div>

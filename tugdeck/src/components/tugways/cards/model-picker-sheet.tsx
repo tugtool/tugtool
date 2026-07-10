@@ -301,6 +301,7 @@ function ModelPickerSheetBody({
       </ModelPickerListContext.Provider>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           data-slot="model-picker-cancel"
           emphasis="outlined"
           role="action"
@@ -311,6 +312,7 @@ function ModelPickerSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           data-slot="model-picker-ok"
           emphasis="primary"
           onClick={confirm}

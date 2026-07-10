@@ -128,6 +128,7 @@ function FieldSheetBody({
       </div>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           focusGroup={focusGroup}
           focusOrder={CANCEL_ORDER}
@@ -136,6 +137,7 @@ function FieldSheetBody({
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           persistentDefaultRing
           focusGroup={focusGroup}
@@ -190,6 +192,7 @@ function ButtonsSheetBody({
       <div className="tug-sheet-actions">
         {showCancel && (
           <TugPushButton
+            size="sm"
             emphasis="outlined"
             focusGroup={focusGroup}
             focusOrder={CANCEL_ORDER}
@@ -199,6 +202,7 @@ function ButtonsSheetBody({
           </TugPushButton>
         )}
         <TugPushButton
+          size="sm"
           emphasis="primary"
           persistentDefaultRing
           focusGroup={focusGroup}
@@ -275,6 +279,7 @@ function CardSettingsSheetBody() {
       </div>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           focusGroup={focusGroup}
           focusOrder={CANCEL_ORDER}
@@ -283,6 +288,7 @@ function CardSettingsSheetBody() {
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           persistentDefaultRing
           focusGroup={focusGroup}
@@ -390,6 +396,7 @@ function SpatialSheetBody() {
         </TugRadioGroup>
         <div className="tug-sheet-actions">
           <TugPushButton
+            size="sm"
             emphasis="outlined"
             focusGroup={focusGroup}
             focusOrder={SPATIAL_CANCEL_ORDER}
@@ -398,6 +405,7 @@ function SpatialSheetBody() {
             Cancel
           </TugPushButton>
           <TugPushButton
+            size="sm"
             emphasis="primary"
             persistentDefaultRing
             focusGroup={focusGroup}
@@ -825,6 +833,7 @@ function RichChecklistContent() {
       </div>
       <div className="tug-sheet-actions">
         <TugPushButton
+          size="sm"
           emphasis="outlined"
           focusGroup={focusGroup}
           focusOrder={CANCEL_ORDER}
@@ -833,6 +842,7 @@ function RichChecklistContent() {
           Cancel
         </TugPushButton>
         <TugPushButton
+          size="sm"
           emphasis="primary"
           persistentDefaultRing
           focusGroup={focusGroup}

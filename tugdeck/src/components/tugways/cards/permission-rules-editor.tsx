@@ -739,6 +739,7 @@ function PermissionRulesSheetBody({
 
         <div className="tug-sheet-actions">
           <TugPushButton
+            size="sm"
             emphasis="primary"
             onClick={onDone}
             focusGroup={focusGroup}
