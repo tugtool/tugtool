@@ -19,6 +19,16 @@
 //! another write — it must **signal the process group** (SIGTERM→SIGKILL),
 //! which the dispatcher does out-of-band via the shared pid.
 //!
+//! The child is the **user's own shell, spawned interactive-login** (`$SHELL
+//! -il`), so it sources their startup files — PATH, exports, aliases,
+//! functions — and the `$` route feels like their terminal rather than a bare
+//! shell. A post-startup preamble then neutralizes the interactive baggage
+//! (prompt paint, precmd/preexec hooks, and the SIGTERM-ignore that would
+//! defeat the reap) and a discarded warmup exchange absorbs any rc chatter. A
+//! profile that hangs or fails the warmup can never brick the route: the child
+//! is reaped and a plain rc-less shell takes its place, flagged in the next
+//! exchange's output.
+//!
 //! # Scope + lifecycle
 //!
 //! One shell child per `tug_session_id`, lazily spawned on the first `exec`
@@ -65,6 +75,16 @@ const EXEC_TIMEOUT: Duration = Duration::from_secs(120);
 /// Grace between SIGTERM and SIGKILL when reaping a wedged process group.
 const KILL_GRACE: Duration = Duration::from_millis(400);
 
+/// Cap on the warmup probe that sources the user's rc files. Heavy profiles
+/// (nvm, pyenv, version managers) can take a second or two; past this the
+/// login shell is judged wedged and the route falls back to a plain shell.
+const WARMUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Prefixed to the first exchange after a login-shell warmup failed and the
+/// route fell back to a plain shell (no rc files sourced).
+const SAFE_MODE_NOTICE: &str =
+    "tug: your shell profile failed to load; running a plain shell without it.\n";
+
 // ---------------------------------------------------------------------------
 // Wire types (Spec S01)
 // ---------------------------------------------------------------------------
@@ -97,8 +117,8 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// The exec shell: the login shell if it is bash/zsh (the sentinel protocol is
-/// POSIX/bash/zsh syntax), else `/bin/zsh`. A fish/nushell login still gets a
+/// The exec shell: the user's `$SHELL` if it is bash/zsh (the sentinel protocol
+/// is POSIX/bash/zsh syntax), else `/bin/zsh`. A fish/nushell user still gets a
 /// POSIX exec child — a block-exec shell need not *be* the login shell.
 fn resolve_exec_shell() -> String {
     if let Ok(sh) = std::env::var("SHELL") {
@@ -147,12 +167,43 @@ struct ShellChild {
     _child: tokio::process::Child,
 }
 
-/// Spawn the shell child in pipe mode, hardened, as its own process-group
+/// Spawn the session shell, preferring the user's interactive login shell so
+/// their rc files are in force — the whole point of the `$` route is that it
+/// feels like *their* terminal, not some bare shell. A hung or broken rc file
+/// must never brick the route, so the login spawn is health-checked (see
+/// `spawn_shell_child`'s warmup); on failure the child is reaped and a plain
+/// rc-less shell takes its place, with a one-line notice for the next output.
+async fn spawn_session_shell(
+    spawn_cwd: &PathBuf,
+    marker: &str,
+) -> std::io::Result<(ShellChild, i32, Option<String>)> {
+    if let Ok((sh, pid)) = spawn_shell_child(spawn_cwd, marker, true).await {
+        return Ok((sh, pid, None));
+    }
+    let (sh, pid) = spawn_shell_child(spawn_cwd, marker, false).await?;
+    Ok((sh, pid, Some(SAFE_MODE_NOTICE.to_string())))
+}
+
+/// Spawn one shell child in pipe mode, hardened, as its own process-group
 /// leader, in `spawn_cwd`. Merges stderr into stdout (`exec 2>&1`) so the
 /// combined stream is what the deck renders and the sentinel rides.
-async fn spawn_shell_child(spawn_cwd: &PathBuf) -> std::io::Result<(ShellChild, i32)> {
+///
+/// `login` spawns the user's shell as interactive-login (`-il`), so it sources
+/// their startup files (PATH, exports, aliases, functions) exactly as their
+/// terminal does; `-i` is also what enables alias expansion. The spawn then
+/// runs a discarded warmup probe: it flushes any stdout an rc file printed and
+/// confirms the shell answers the sentinel protocol, so a wedged profile is
+/// caught here rather than corrupting the first real exchange.
+async fn spawn_shell_child(
+    spawn_cwd: &PathBuf,
+    marker: &str,
+    login: bool,
+) -> std::io::Result<(ShellChild, i32)> {
     let shell = resolve_exec_shell();
     let mut cmd = Command::new(&shell);
+    if login {
+        cmd.arg("-il");
+    }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -202,11 +253,44 @@ async fn spawn_shell_child(spawn_cwd: &PathBuf) -> std::io::Result<(ShellChild, 
         lines: BufReader::new(stdout).lines(),
         _child: child,
     };
-    // Merge stderr into stdout for the session so ordering is preserved and
-    // the sentinel (printf to stdout) terminates every exchange.
-    sh.stdin.write_all(b"exec 2>&1\n").await?;
+    // Preamble, run AFTER the shell has finished sourcing its rc files (so it
+    // wins over anything they set). Line by line:
+    //   - `exec 2>&1`: merge stderr into stdout so ordering is preserved and
+    //     the sentinel (printf to stdout) terminates every exchange.
+    //   - `trap - TERM QUIT`: an interactive shell IGNORES SIGTERM, which would
+    //     defeat the kill/timeout reap (the shell would outlive the group
+    //     signal). Reset the disposition so `reap_group` kills it as before.
+    //   - clear precmd/preexec/chpwd hooks and `unfunction` the standalone
+    //     `precmd`/`preexec` a theme may have defined (the array clear misses
+    //     those) so the prompt is not re-armed after each command.
+    //   - `unsetopt promptsp promptcr`: kill zsh's partial-line `%` marker,
+    //     which paints even with an empty prompt.
+    //   - empty every prompt parameter.
+    // Any prompt paint from before this takes effect is absorbed by the warmup
+    // exchange below and discarded, so real exchanges start clean.
+    sh.stdin
+        .write_all(
+            b"exec 2>&1\n\
+              trap - TERM QUIT\n\
+              precmd_functions=() preexec_functions=() chpwd_functions=()\n\
+              unfunction precmd preexec chpwd 2>/dev/null\n\
+              unsetopt promptsp promptcr 2>/dev/null\n\
+              PS1= PS2= PROMPT= RPROMPT= RPS1= PROMPT_COMMAND=\n",
+        )
+        .await?;
     sh.stdin.flush().await?;
-    Ok((sh, pid))
+
+    // Warmup probe: a discarded no-op exchange. It absorbs any stdout an rc
+    // file printed and confirms the shell answers the sentinel; a login shell
+    // whose profile hangs or never reaches the sentinel is unusable, so reap
+    // its process group and report failure for the plain-shell fallback.
+    match tokio::time::timeout(WARMUP_TIMEOUT, run_command(&mut sh, marker, ":")).await {
+        Ok(Ok(r)) if r.exit_code.is_some() => Ok((sh, pid)),
+        _ => {
+            reap_group(pid);
+            Err(std::io::Error::other("shell warmup failed"))
+        }
+    }
 }
 
 /// Outcome of running one command through the sentinel protocol.
@@ -298,6 +382,10 @@ async fn shell_session_task(
 ) {
     let mut child: Option<ShellChild> = None;
     let mut cwd = spawn_cwd.to_string_lossy().to_string();
+    // Prepended to the next exchange's output when a login-shell warmup failed
+    // and this session fell back to a plain shell. Set on spawn, cleared once
+    // emitted so the notice shows once per fallback, not on every command.
+    let mut pending_notice: Option<String> = None;
 
     while let Some(cmd) = rx.recv().await {
         let ShellCmd::Exec {
@@ -307,10 +395,13 @@ async fn shell_session_task(
 
         // Lazy spawn / respawn.
         if child.is_none() {
-            match spawn_shell_child(&spawn_cwd).await {
-                Ok((sh, pid)) => {
+            match spawn_session_shell(&spawn_cwd, &marker).await {
+                Ok((sh, pid, notice)) => {
                     child = Some(sh);
                     shared.lock().unwrap().pid = Some(pid);
+                    if notice.is_some() {
+                        pending_notice = notice;
+                    }
                     emit(
                         &output,
                         &tug_session_id,
@@ -349,7 +440,7 @@ async fn shell_session_task(
         );
 
         let result = tokio::time::timeout(exec_timeout, run_command(sh, &marker, &command)).await;
-        let (out, exit_code, cwd_after, reaped) = match result {
+        let (mut out, exit_code, cwd_after, reaped) = match result {
             Ok(Ok(r)) => {
                 let reaped = r.exit_code.is_none();
                 (r.output, r.exit_code, r.cwd_after, reaped)
@@ -362,6 +453,9 @@ async fn shell_session_task(
                 (String::new(), None, None, true)
             }
         };
+        if let Some(notice) = pending_notice.take() {
+            out.insert_str(0, &notice);
+        }
         if let Some(c) = &cwd_after {
             cwd = c.clone();
         }
@@ -674,6 +768,46 @@ mod tests {
         assert_eq!(done.len(), 2);
         assert_eq!(done[0]["exit_code"], serde_json::Value::Null, "vim reaped");
         assert!(done[1]["output"].as_str().unwrap().contains("recovered"));
+    }
+
+    #[tokio::test]
+    async fn login_shell_sources_user_rc() {
+        // The `$` route runs the user's shell interactive-login, so their rc
+        // files are in force: an alias defined there EXPANDS (only interactive
+        // shells expand aliases) and an exported var is visible. This is what
+        // makes the route feel like *their* terminal, not a bare shell.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".zshrc"),
+            "alias tuggreet='echo hello-from-rc'\nexport TUG_RC_MARKER=rc-was-sourced\n",
+        )
+        .unwrap();
+        // Force zsh reading THIS rc (via ZDOTDIR), independent of the dev's own
+        // login shell, so the assertion is deterministic across machines.
+        unsafe {
+            std::env::set_var("SHELL", "/bin/zsh");
+            std::env::set_var("ZDOTDIR", dir.path());
+        }
+        let done = drive(
+            vec![
+                exec_frame("s1", "e1", "tuggreet", None),
+                exec_frame("s1", "e2", "echo \"$TUG_RC_MARKER\"", None),
+            ],
+            "s1",
+            2,
+        )
+        .await;
+        assert_eq!(done.len(), 2);
+        assert!(
+            done[0]["output"].as_str().unwrap().contains("hello-from-rc"),
+            "rc alias must expand: {:?}",
+            done[0]["output"]
+        );
+        assert!(
+            done[1]["output"].as_str().unwrap().contains("rc-was-sourced"),
+            "rc export must be visible: {:?}",
+            done[1]["output"]
+        );
     }
 
     #[tokio::test]
