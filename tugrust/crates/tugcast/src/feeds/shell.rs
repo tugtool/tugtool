@@ -140,6 +140,12 @@ fn resolve_exec_shell() -> String {
 #[derive(Default)]
 struct SessionShared {
     pid: Option<i32>,
+    /// Set by the dispatcher when it reaps the in-flight exchange for a `kill`.
+    /// The signal reaches the group differently across platforms — the shell
+    /// may die (EOF → no exit code) or its foreground child may die (128+SIGTERM)
+    /// while the shell survives to emit the sentinel — so the session task reads
+    /// this to settle a killed exchange as reaped regardless of which path won.
+    killed: bool,
 }
 
 /// Commands routed to a per-session task. `kill` is NOT here — it is handled
@@ -439,8 +445,16 @@ async fn shell_session_task(
             }),
         );
 
+        shared.lock().unwrap().killed = false;
         let result = tokio::time::timeout(exec_timeout, run_command(sh, &marker, &command)).await;
+        // An out-of-band `kill` reaps the group mid-exchange. The signal settles
+        // the outcome differently across platforms — the shell dies (EOF → no
+        // exit code) or its child dies (128+SIGTERM) while the shell survives to
+        // emit the sentinel — so honor the kill flag and settle as reaped either
+        // way, rather than leaking the child's signal-death code to the deck.
+        let killed = std::mem::take(&mut shared.lock().unwrap().killed);
         let (mut out, exit_code, cwd_after, reaped) = match result {
+            Ok(Ok(r)) if killed => (r.output, None, r.cwd_after, true),
             Ok(Ok(r)) => {
                 let reaped = r.exit_code.is_none();
                 (r.output, r.exit_code, r.cwd_after, reaped)
@@ -601,7 +615,14 @@ async fn run_dispatcher(
             }
             ShellInput::Kill { tug_session_id } => {
                 if let Some(session) = sessions.get(&tug_session_id) {
-                    let pid = session.shared.lock().unwrap().pid;
+                    // Flag the kill before signaling, so the flag is visible to
+                    // the session task by the time the signal lands and its
+                    // `run_command` returns (settling the exchange as reaped).
+                    let pid = {
+                        let mut g = session.shared.lock().unwrap();
+                        g.killed = true;
+                        g.pid
+                    };
                     if let Some(pid) = pid {
                         reap_group(pid);
                     }
