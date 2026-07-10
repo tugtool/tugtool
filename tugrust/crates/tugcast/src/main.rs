@@ -364,6 +364,72 @@ async fn main() {
 
     let notify_socket_path = tugbank_notify::socket_path();
 
+    // Open the session ledger BEFORE the DEFAULTS feed. A failure here is
+    // fatal: the supervisor depends on the ledger to track session lifecycle,
+    // and limping along with no session metadata would make every future
+    // picker open misleading. Opening it here (rather than later) lets the
+    // orphaned-prompt-history prune below run before the feed builds its
+    // initial frame — keeping that frame clean and avoiding a frame rebuild
+    // per deleted key.
+    let ledger_path = SessionLedger::default_path().unwrap_or_else(|| {
+        eprintln!("tugcast: error: cannot resolve user data dir for session ledger");
+        std::process::exit(1);
+    });
+    if let Some(parent) = ledger_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "tugcast: error: failed to create ledger data dir {}: {}",
+                parent.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    }
+    let ledger = match SessionLedger::open(&ledger_path) {
+        Ok(l) => Arc::new(l),
+        Err(e) => {
+            eprintln!(
+                "tugcast: error: failed to open session ledger at {}: {}",
+                ledger_path.display(),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    // Demote any rows still marked `live` from a previous run that didn't
+    // shut down cleanly. The subprocesses they pointed at are gone; their
+    // ledger state is stale.
+    match ledger.demote_live_to_closed() {
+        Ok(0) => {}
+        Ok(n) => info!(count = n, "demoted stale live ledger rows on startup"),
+        Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
+    }
+
+    // Startup hygiene: drop per-session prompt-history entries whose session
+    // no longer exists — the leak that bloated the boot DEFAULTS frame past
+    // the transport cap and hung launch. Runs before the feed registers its
+    // change callback so the deletions don't each rebuild the frame.
+    if let Some(bank) = bank_client.as_ref() {
+        match ledger.all_session_ids() {
+            Ok(ids) => {
+                let live: std::collections::HashSet<String> = ids.into_iter().collect();
+                let removed = crate::defaults::prune_orphaned_session_keys(
+                    bank,
+                    crate::defaults::PROMPT_HISTORY_DOMAIN,
+                    &live,
+                );
+                if removed > 0 {
+                    info!(
+                        count = removed,
+                        "pruned orphaned prompt-history entries on startup"
+                    );
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to list sessions for prompt-history prune"),
+        }
+    }
+
     // Create DEFAULTS feed from the TugbankClient.
     let defaults_rx: Option<tokio::sync::watch::Receiver<Frame>> = bank_client
         .as_ref()
@@ -604,45 +670,6 @@ async fn main() {
             bank_path.display()
         );
         std::process::exit(1);
-    }
-
-    // Open the session ledger. The data dir is created on demand. A failure
-    // here is fatal: the supervisor depends on the ledger to track session
-    // lifecycle, and limping along with no session metadata would make every
-    // future picker open misleading.
-    let ledger_path = SessionLedger::default_path().unwrap_or_else(|| {
-        eprintln!("tugcast: error: cannot resolve user data dir for session ledger");
-        std::process::exit(1);
-    });
-    if let Some(parent) = ledger_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!(
-                "tugcast: error: failed to create ledger data dir {}: {}",
-                parent.display(),
-                e
-            );
-            std::process::exit(1);
-        }
-    }
-    let ledger = match SessionLedger::open(&ledger_path) {
-        Ok(l) => Arc::new(l),
-        Err(e) => {
-            eprintln!(
-                "tugcast: error: failed to open session ledger at {}: {}",
-                ledger_path.display(),
-                e
-            );
-            std::process::exit(1);
-        }
-    };
-
-    // Demote any rows still marked `live` from a previous run that didn't
-    // shut down cleanly. The subprocesses they pointed at are gone; their
-    // ledger state is stale.
-    match ledger.demote_live_to_closed() {
-        Ok(0) => {}
-        Ok(n) => info!(count = n, "demoted stale live ledger rows on startup"),
-        Err(e) => warn!(error = %e, "failed to demote stale live ledger rows"),
     }
 
     // Shell-exchange ledger — non-fatal: a failure means the `$` route just
