@@ -32,9 +32,7 @@
  *
  * Horizontal-only. The live gesture writes `style.left` directly to the DOM —
  * never React state — per [L06]; only the committed fraction round-trips
- * through tugbank on drag-end (see {@link ./tug-pinned-panel-pref}). The
- * bottom pointer rides with the panel, so after a drag it still meets the
- * container's top edge (a full-width status strip, in the `/btw` case).
+ * through tugbank on drag-end (see {@link ./tug-pinned-panel-pref}).
  *
  * @module components/tugways/tug-pinned-panel
  */
@@ -231,8 +229,6 @@ export function TugPinnedPanel({
       <div className="tug-pinned-panel-body" data-slot="tug-pinned-panel-body">
         {children}
       </div>
-
-      <span className="tug-pinned-panel-pointer" aria-hidden />
     </div>
   );
 }

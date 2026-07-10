@@ -10,9 +10,8 @@
  * streaming turn stays visible while a side answer loads — mid-turn is the
  * point, [Q01]b). Unlike the popover it replaced, it stays put until the user
  * closes it with the panel's `×` — clicking away or switching panes no longer
- * dismisses it — and its bottom pointer aims at the Z2 strip. The user can drag
- * it horizontally to a comfortable reading spot; that position persists across
- * reloads per card ([L02]).
+ * dismisses it. The user can drag it horizontally to a comfortable reading
+ * spot; that position persists across reloads per card ([L02]).
  *
  * The pane reads the ephemeral {@link SideQuestionStore} via
  * `useSyncExternalStore` ([L02]) and renders each exchange as a mini

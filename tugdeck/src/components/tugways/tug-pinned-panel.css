@@ -29,9 +29,6 @@
   /* Above the status strip's own content; the panel escapes the strip upward
      over the transcript, which sits in a lower sibling stacking context. */
   z-index: 20;
-  /* The bottom pointer pokes past the border — do NOT clip the panel root
-     (inner regions clip themselves to the radius below). */
-  overflow: visible;
   animation: tug-pinned-panel-enter 120ms ease both;
 }
 
@@ -87,19 +84,3 @@
   overflow: hidden;
 }
 
-/* Bottom pointer — a rotated square straddling the panel's bottom edge, its
-   two lower faces bordered to continue the panel outline into a downward tail
-   aimed at the container's top edge (the Z2 status strip). Rides with the
-   panel horizontally, so a drag keeps it pointing at the full-width strip. */
-.tug-pinned-panel-pointer {
-  position: absolute;
-  bottom: -6px;
-  left: 50%;
-  width: 12px;
-  height: 12px;
-  transform: translateX(-50%) rotate(45deg);
-  background-color: var(--tugx-pinned-panel-bg);
-  border-right: 1px solid var(--tugx-pinned-panel-border);
-  border-bottom: 1px solid var(--tugx-pinned-panel-border);
-  border-bottom-right-radius: 2px;
-}
