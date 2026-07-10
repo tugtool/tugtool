@@ -254,11 +254,18 @@ body {
   --tugx-focus-ring: var(--tug7-element-control-border-filled-accent-rest);
 }
 
-/* Keep the host surface constant on hover; the flush TugListRow paints the
-   hover feedback overlay on top of it. */
-.tug-alert-choices .tug-alert-choice.tug-button:hover {
+/* The button's own emphasis paints a solid role fill (and role text/border) on
+   hover and on press/active — nuclear for a list-item row. Neutralize those
+   states so the surface stays the constant block fill; the flush TugListRow
+   supplies the subtle hover highlight on top. The `:not(:disabled)` /
+   `:not([aria-disabled])` qualifiers match the base button rule's specificity so
+   these win regardless of stylesheet order. */
+.tug-alert-choices .tug-alert-choice.tug-button:hover:not(:disabled):not([aria-disabled="true"]),
+.tug-alert-choices
+  .tug-alert-choice.tug-button:is(:active, [data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
   background: var(--tugx-block-surface);
   border: none;
+  color: var(--tug7-element-control-text-outlined-action-rest);
 }
 
 /* Let the row fill the button and drop the selection-glyph gutter (no glyph

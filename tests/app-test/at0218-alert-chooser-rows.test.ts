@@ -53,6 +53,20 @@ const rowTitles = `(function(){
     .map(function(el){ return (el.textContent || "").trim(); });
 })()`;
 
+// A row's background-color at rest vs. under the press/active state
+// (`data-pressing`), which shares the hover-neutralizing rule. Returns
+// "<rest>|<pressed>"; the two halves must match — the row surface must NOT
+// swap to a solid role fill on press/hover.
+const pressStability = (rowIndex: number) => `(function(){
+  var row = document.querySelectorAll(${JSON.stringify(ROWS)})[${rowIndex}];
+  if (!row) return "no-row";
+  var rest = getComputedStyle(row).backgroundColor;
+  row.setAttribute("data-pressing", "true");
+  var pressed = getComputedStyle(row).backgroundColor;
+  row.removeAttribute("data-pressing");
+  return rest + "|" + pressed;
+})()`;
+
 // "dev" | "file" | "cancel" | "none" — which control holds the key-view ring.
 // Rows are keyed by their title; Cancel by its slot.
 const ringed = `(function(){
@@ -115,6 +129,19 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() renders rich rows in an 
 
         // 2. The default row (Create Dev Card) holds the ring on open.
         await app.waitForCondition<boolean>(`${ringed} === "dev"`, { timeoutMs: 3000 });
+
+        // 2b. The row surface stays constant under press/hover — no solid role
+        // fill (the bug this guards). Checked on both rows via `data-pressing`,
+        // which shares the hover-neutralizing rule.
+        for (const i of [0, 1]) {
+          const pair = await app.evalJS<string>(pressStability(i));
+          const [rest, pressed] = pair.split("|");
+          expect(rest, `row ${i} background must be a real surface`).not.toBe("");
+          expect(
+            pressed,
+            `row ${i} must not swap to a role fill under press/hover`,
+          ).toBe(rest);
+        }
 
         // A real screenshot of the rendered chooser (visual smoke); let the
         // open animation settle first so the capture is crisp.
