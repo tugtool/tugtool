@@ -322,6 +322,17 @@ export interface RowSlot {
    * keys on the turn's own fixed message order, not the loaded window.
    */
   userRowOrdinal: number;
+  /**
+   * 1-based ordinal of this `shell` row among ALL shell rows in the
+   * session; `0` for a non-shell row. Unlike the user/assistant address
+   * (which counts *turns* and needs the window's `firstLoadedTurnIndex`
+   * base), the shell counter is its own sequence — `#s1`, `#s2`, …
+   * independent of the surrounding Claude turns. It needs no window base
+   * because the shell ledger restores the WHOLE session's exchanges
+   * ([P07], `list_shell_exchanges` sends no window), so every shell row
+   * is always loaded and the count is complete and durable.
+   */
+  shellRowOrdinal: number;
 }
 
 /**
@@ -378,6 +389,10 @@ function pushTurnSlots(
       assistantRunOrdinal: isAssistant ? assistantOrdinal : -1,
       userRowOrdinal: isUser ? userOrdinal : -1,
       isLastAssistantOfTurn: isAssistant && i === lastAssistantGroupIndex,
+      // Session-wide 1-based shell counter, assigned in a single pass
+      // in `buildRowLayout` (a per-turn walk can't see the cross-turn
+      // running count); `0` until then and for non-shell rows.
+      shellRowOrdinal: 0,
     });
     if (isAssistant) assistantOrdinal += 1;
     if (isUser) userOrdinal += 1;
@@ -420,7 +435,20 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
       assistantRunOrdinal: -1,
       userRowOrdinal: -1,
       isLastAssistantOfTurn: false,
+      shellRowOrdinal: 0,
     });
+  }
+  // Number the shell rows in one pass: a session-wide 1-based counter in
+  // flat-row (timestamp-interleave) order. The whole session's shell
+  // exchanges are always loaded ([P07]), so this count is complete —
+  // `#s1`, `#s2`, … a sequence of its own, independent of the Claude turns
+  // interleaved among them.
+  let shellCount = 0;
+  for (const slot of slots) {
+    if (slot.cellKind === "shell") {
+      shellCount += 1;
+      slot.shellRowOrdinal = shellCount;
+    }
   }
   return {
     totalRows: slots.length,
@@ -681,6 +709,18 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     if (slot.cellKind === "user") return Math.max(0, slot.userRowOrdinal);
     if (slot.cellKind === "assistant") return Math.max(0, slot.assistantRunOrdinal);
     return 0;
+  }
+
+  /**
+   * 1-based session-wide shell counter for a `shell` row — the number
+   * behind its `#s{n}` badge. Its own sequence, independent of the Claude
+   * turn numbers (unlike {@link localTurnIndexForRow}, it needs no window
+   * base: the shell ledger restores the whole session's exchanges, so the
+   * count is always complete). `0` for a non-shell / out-of-range row.
+   */
+  shellOrdinalForRow(index: number): number {
+    const slot = this.layout(this._codeSessionStore.getSnapshot()).slots[index];
+    return slot?.shellRowOrdinal ?? 0;
   }
 
   /**

@@ -435,6 +435,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Shell row's `• cwd` clause, trailing the exec timestamp in the
+   timestamp slot. A native `<button>` reset to read as inline text:
+   it inherits the timestamp's muted color and 0.85em size (it nests
+   inside the timestamp span) so it reads as paired metadata, but it
+   is a live affordance — a pointer cursor and a hover underline cue
+   the click, which opens the directory in Finder. `nowrap` keeps the
+   path on the timestamp's line rather than breaking mid-path. */
+.dev-card-transcript .dev-card-transcript-shell-cwd {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+}
+
+.dev-card-transcript .dev-card-transcript-shell-cwd:hover {
+  text-decoration: underline;
+}
+
 /* Sequence — right-aligned within the header row so the badge
    becomes a fixed marker at the trailing edge regardless of how
    long the identifier or timestamp is. `margin-left: auto` absorbs

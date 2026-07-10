@@ -149,6 +149,7 @@ import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
+import { openPathInOS } from "@/lib/os-open";
 import {
   snapshotRowParseCounters,
   type RowParseCountersSnapshot,
@@ -493,12 +494,26 @@ interface ShellTurnCellProps {
   shellSessionStore: ShellSessionStore;
 }
 const ShellTurnCell = React.memo(function ShellTurnCell({
+  index,
   row,
+  dataSource,
   shellSessionStore,
 }: ShellTurnCellProps) {
+  // The `#s{n}` badge is its own session-wide shell counter ([P09]) —
+  // `#s1`, `#s2`, … independent of the Claude `#u`/`#a` turn numbers
+  // interleaved among the shell rows. The data source assigns it in
+  // flat-row order across the whole (always fully loaded) shell ledger.
+  const shellNumber = dataSource.shellOrdinalForRow(index);
   const turn = row.turn;
   const message = turn?.messages[0];
   if (message === undefined || message.kind !== "shell_exchange") return null;
+  // One row, no within-turn ordinal — `#s{n}` never grows a `.2` suffix.
+  const address = { speaker: "shell" as const, turn: shellNumber };
+  // Timestamp is the exec time (`startedAtMs`), the shell analog of the
+  // user row's submit time — the command "posts" the moment it runs.
+  const startedAt = message.startedAtMs;
+  const timestamp =
+    startedAt !== undefined ? formatTranscriptTimestamp(startedAt) : undefined;
   // Command-block registry ([P05]): a bespoke renderer claims the
   // command family it understands; everything else renders through
   // the generic exchange block. Resolution is total.
@@ -511,6 +526,36 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
       <TugTranscriptEntry
         participant="shell"
         identifier={SHELL_IDENTIFIER}
+        // Time • cwd — the exec time paired with the directory the
+        // command ran in (`message.cwd`, the per-exchange cwd, not the
+        // live session cwd), bulleted like the shell Z1B end-state row.
+        // The cwd is a clickable affordance: hover-underlined, it opens
+        // that directory in Finder via the host bridge — the same
+        // `openPathInOS(dir, "folder")` gesture the Project / Cwd chips use.
+        timestamp={
+          <>
+            {timestamp !== undefined && timestamp !== "" ? timestamp : null}
+            {timestamp !== undefined && timestamp !== "" ? " • " : null}
+            <button
+              type="button"
+              className="dev-card-transcript-shell-cwd"
+              title={`Open in Finder: ${message.cwd}`}
+              aria-label={`Open ${message.cwd} in Finder`}
+              // Focus-refusing ([mousedown focus default]): a cwd click
+              // opens Finder, it must never pull focus off an editor the
+              // user is composing in. `tabIndex={-1}` keeps it out of the
+              // transcript's tab order; the capture-phase `preventDefault`
+              // suppresses WebKit's mousedown focus default so the click
+              // fires without the button ever claiming focus.
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => openPathInOS(message.cwd, "folder")}
+            >
+              {message.cwd}
+            </button>
+          </>
+        }
+        address={address}
         body={
           // The same whole-block collapse a Bash block wears ([P02]): the
           // chrome renders the header expand/collapse chevron, and fold-

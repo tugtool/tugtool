@@ -166,6 +166,14 @@ const TURN_SPEAKER_PREFIX: Record<TurnSpeaker, string> = {
   shell: "s",
 };
 
+/** Human-readable speaker noun for the sequence badge's accessible name. */
+const SPEAKER_ARIA_NOUN: Record<TurnSpeaker, string> = {
+  user: "User",
+  assistant: "Assistant",
+  other: "Entry",
+  shell: "Shell",
+};
+
 /**
  * A transcript entry's address ([P09]): the session-true turn it belongs
  * to, who is speaking, and its 0-based ordinal *within* that turn among
@@ -380,7 +388,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
             <span
               className="tug-transcript-entry__sequence"
               data-slot="tug-transcript-entry-sequence"
-              aria-label={`${address.speaker === "assistant" ? "Assistant" : "User"} message ${formatTurnAddress(address).slice(1)}`}
+              aria-label={`${SPEAKER_ARIA_NOUN[address.speaker]} message ${formatTurnAddress(address).slice(1)}`}
             >
               {formatTurnAddress(address)}
             </span>

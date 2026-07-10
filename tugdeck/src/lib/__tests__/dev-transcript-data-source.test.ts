@@ -81,6 +81,30 @@ function mergedTurn(hostKey: string, steerKey: string): TurnEntry {
   });
 }
 
+/** A `shell`-origin turn — one `shell_exchange` Message, the whole turn ([P06]). */
+function shellTurn(turnKey: string, command: string): TurnEntry {
+  return turnEntry({
+    turnKey,
+    msgId: `msg-${turnKey}`,
+    origin: "shell",
+    messages: [
+      {
+        kind: "shell_exchange",
+        messageKey: `shell-${turnKey}`,
+        createdAt: 0,
+        exchangeId: turnKey,
+        command,
+        output: "",
+        exitCode: 0,
+        cwd: "/tmp",
+        cwdAfter: "/tmp",
+        startedAtMs: 1,
+        settledAtMs: 2,
+      },
+    ],
+  });
+}
+
 function activeTurn(args: {
   turnKey: string;
   isWake: boolean;
@@ -273,6 +297,34 @@ describe("[D07] row layout: variable rows per turn driven by user_message presen
     );
     expect(ds.withinTurnOrdinalForRow(0)).toBe(0); // user row
     expect(ds.withinTurnOrdinalForRow(1)).toBe(0); // assistant row
+  });
+
+  test("shell rows carry a session-wide 1-based counter, independent of Claude turns", () => {
+    // Interleave: normal turn, shell, normal turn, shell. The shell rows
+    // count #s1, #s2 as their own sequence — the Claude turns between them
+    // don't advance (or reset) the shell counter, and non-shell rows carry 0.
+    const transcript = [
+      normalTurn("t1", "hi", "yo"),
+      shellTurn("s1", "ls"),
+      normalTurn("t2", "again", "sure"),
+      shellTurn("s2", "pwd"),
+    ];
+    const layout = buildRowLayout(snapshotWith({ transcript }));
+    // rows: user, assistant, shell, user, assistant, shell
+    expect(layout.slots.map((s) => s.cellKind)).toEqual([
+      "user",
+      "assistant",
+      "shell",
+      "user",
+      "assistant",
+      "shell",
+    ]);
+    expect(layout.slots.map((s) => s.shellRowOrdinal)).toEqual([0, 0, 1, 0, 0, 2]);
+
+    const ds = new DevTranscriptDataSource(storeWith(snapshotWith({ transcript })));
+    expect(ds.shellOrdinalForRow(2)).toBe(1); // first shell row → #s1
+    expect(ds.shellOrdinalForRow(5)).toBe(2); // second shell row → #s2
+    expect(ds.shellOrdinalForRow(0)).toBe(0); // a user row carries no shell number
   });
 
   test("queued sends add one ghost row each at the tail", () => {
