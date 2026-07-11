@@ -1123,7 +1123,7 @@ export function TugPane({
 
   // Resolve the active card's bound resource for the Cmd-click title
   // path menu. Read live at click time (paths re-bind), keyed on the
-  // active card id — Dev card → project dir, File card → edited file.
+  // active card id — Dev card → project dir, Text card → edited file.
   const resolveResourcePath = useCallback(
     () => resolveCardResourcePath(activeCardId ?? null),
     [activeCardId],

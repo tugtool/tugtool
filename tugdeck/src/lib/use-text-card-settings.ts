@@ -1,13 +1,13 @@
 /**
- * use-file-editor-settings.ts — one File card's editor settings: read
+ * use-text-card-settings.ts — one Text card's editor settings: read
  * the resolved values, and write them back when the gear popup changes
  * one.
  *
  * Default-then-card-local:
  *
- *   - Per-card values persist at `dev.file-editor/<cardId>` and always
+ *   - Per-card values persist at `dev.text-card/<cardId>` and always
  *     win once present.
- *   - The deck-wide defaults at `dev.tugtool.file-editor/settings` apply
+ *   - The deck-wide defaults at `dev.tugtool.text-card/settings` apply
  *     to any card with nothing of its own.
  *   - There is NO mount-time write. A card resolves `persisted ??
  *     defaults ?? built-in` live, so an untouched card follows the deck
@@ -28,63 +28,63 @@
  * Laws: [L02] both reads enter through `useTugbankValue`
  * (useSyncExternalStore); no localStorage — persistence is tugbank only.
  *
- * @module lib/use-file-editor-settings
+ * @module lib/use-text-card-settings
  */
 
 import { useCallback, useMemo } from "react";
 
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
-import { putFileEditorCardSettings } from "@/settings-api";
+import { putTextCardCardSettings } from "@/settings-api";
 import {
-  FILE_EDITOR_DOMAIN,
-  FILE_EDITOR_DEFAULTS_DOMAIN,
-  FILE_EDITOR_DEFAULTS_KEY,
-  parseFileEditorDefaults,
-  parseFileEditorSettings,
-  resolveFileEditorSettings,
-  type FileEditorSettings,
-} from "./file-editor-settings";
+  TEXT_CARD_DOMAIN,
+  TEXT_CARD_DEFAULTS_DOMAIN,
+  TEXT_CARD_DEFAULTS_KEY,
+  parseTextCardDefaults,
+  parseTextCardSettings,
+  resolveTextCardSettings,
+  type TextCardSettings,
+} from "./text-card-settings";
 
 /**
  * Persist a card's editor settings: optimistic local-cache write (so
  * `useTugbankValue` readers re-render instantly) plus an HTTP PUT.
  */
-export function writePersistedFileEditorSettings(
+export function writePersistedTextCardSettings(
   cardId: string,
-  settings: FileEditorSettings,
+  settings: TextCardSettings,
 ): void {
   const client = getTugbankClient();
   if (client !== null) {
-    client.setLocalValue(FILE_EDITOR_DOMAIN, cardId, {
+    client.setLocalValue(TEXT_CARD_DOMAIN, cardId, {
       kind: "json",
       value: settings,
     });
   }
-  putFileEditorCardSettings(cardId, settings);
+  putTextCardCardSettings(cardId, settings);
 }
 
-export interface UseFileEditorSettingsResult {
+export interface UseTextCardSettingsResult {
   /** The resolved, card-local editor settings. */
-  settings: FileEditorSettings;
+  settings: TextCardSettings;
   /** Merge a partial change and persist it card-local. */
-  setSetting: (partial: Partial<FileEditorSettings>) => void;
+  setSetting: (partial: Partial<TextCardSettings>) => void;
 }
 
-export function useFileEditorSettings(
+export function useTextCardSettings(
   cardId: string,
-): UseFileEditorSettingsResult {
-  const persisted = useTugbankValue<FileEditorSettings | null>(
-    FILE_EDITOR_DOMAIN,
+): UseTextCardSettingsResult {
+  const persisted = useTugbankValue<TextCardSettings | null>(
+    TEXT_CARD_DOMAIN,
     cardId,
-    parseFileEditorSettings,
+    parseTextCardSettings,
     null,
   );
 
   const defaults = useTugbankValue(
-    FILE_EDITOR_DEFAULTS_DOMAIN,
-    FILE_EDITOR_DEFAULTS_KEY,
-    parseFileEditorDefaults,
+    TEXT_CARD_DEFAULTS_DOMAIN,
+    TEXT_CARD_DEFAULTS_KEY,
+    parseTextCardDefaults,
     null,
   );
 
@@ -95,7 +95,7 @@ export function useFileEditorSettings(
   // leaves no per-card tugbank entry to accumulate, and there is no race
   // against the defaults frame landing after mount.
   const settings = useMemo(
-    () => resolveFileEditorSettings(persisted, defaults),
+    () => resolveTextCardSettings(persisted, defaults),
     [persisted, defaults],
   );
 
@@ -104,8 +104,8 @@ export function useFileEditorSettings(
   // card is card-local and no longer tracks deck-default changes — the
   // "settings apply when opened, then the card owns them" contract.
   const setSetting = useCallback(
-    (partial: Partial<FileEditorSettings>) => {
-      writePersistedFileEditorSettings(cardId, { ...settings, ...partial });
+    (partial: Partial<TextCardSettings>) => {
+      writePersistedTextCardSettings(cardId, { ...settings, ...partial });
     },
     [cardId, settings],
   );

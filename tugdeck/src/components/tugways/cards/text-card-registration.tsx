@@ -1,5 +1,5 @@
 /**
- * File card registration — split from `file-card.tsx` so the card body
+ * Text card registration — split from `text-card.tsx` so the card body
  * stays a component-only Fast-Refresh boundary (mirrors the
  * `dev-card.tsx` / `dev-card-registration.tsx` split).
  *
@@ -9,19 +9,19 @@
  * walk.
  *
  * No `confirmClose`: under live autosave there is nothing unsaved to
- * lose — closing a File card is always safe.
+ * lose — closing a Text card is always safe.
  *
- * @module components/tugways/cards/file-card-registration
+ * @module components/tugways/cards/text-card-registration
  */
 
 import React from "react";
 import { registerCard } from "@/card-registry";
-import { FileCardContent } from "./file-card";
+import { TextCardContent } from "./text-card";
 
-export function registerFileCard(): void {
+export function registerTextCard(): void {
   registerCard({
-    componentId: "file",
-    contentFactory: (cardId) => <FileCardContent cardId={cardId} />,
+    componentId: "text",
+    contentFactory: (cardId) => <TextCardContent cardId={cardId} />,
     defaultMeta: { title: "File", icon: "FileText", closable: true },
     engineKind: "em",
     category: { label: "Files", icon: "FileText" },

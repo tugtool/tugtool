@@ -229,7 +229,7 @@ export interface MenuStateDevBlock {
 }
 
 /**
- * File-card block, published by the File card's menu-state effect. Rides
+ * Text-card block, published by the Text card's menu-state effect. Rides
  * the payload only while its card is the focused pane's
  * active card, exactly like the dev block. Gates the classic File menu
  * items (Save / Save As… / Save a Copy… / Revert / Reload).
@@ -313,7 +313,7 @@ export interface MenuStatePayload {
   selectionActive: boolean;
   /** Dev-card session block; null unless the active card is a dev card. */
   dev: MenuStateDevBlock | null;
-  /** File-card block; null unless the active card is a File card. */
+  /** Text-card block; null unless the active card is a Text card. */
   file: MenuStateFileBlock | null;
   /** Edit-menu capabilities of the current first responder. */
   edit: MenuStateEditBlock;
@@ -400,7 +400,7 @@ export class HostMenuStatePublisher {
   private readonly devBlocks = new Map<string, MenuStateDevBlock>();
   /**
    * Per-card File blocks, same rider discipline as {@link devBlocks}:
-   * every mounted File card publishes its own; the flush picks the one
+   * every mounted Text card publishes its own; the flush picks the one
    * whose card is the focused pane's active card.
    */
   private readonly fileBlocks = new Map<string, MenuStateFileBlock>();
@@ -471,7 +471,7 @@ export class HostMenuStatePublisher {
         ? (this.devBlocks.get(focusedActiveCardId) ?? null)
         : null;
     const file =
-      activeCard?.component === "file" && focusedActiveCardId !== null
+      activeCard?.component === "text" && focusedActiveCardId !== null
         ? (this.fileBlocks.get(focusedActiveCardId) ?? null)
         : null;
     const payload: MenuStatePayload = {
@@ -552,15 +552,15 @@ export function clearDevMenuState(cardId: string): void {
 }
 
 /**
- * Publish (or refresh) a File card's menu block. Called by the
- * File card's menu-state effect on every relevant snapshot change; a
+ * Publish (or refresh) a Text card's menu block. Called by the
+ * Text card's menu-state effect on every relevant snapshot change; a
  * no-op before {@link initHostMenuState} runs.
  */
 export function publishFileMenuState(cardId: string, block: MenuStateFileBlock): void {
   activePublisher?.setFileBlock(cardId, block);
 }
 
-/** Drop a File card's menu block (card unmount). */
+/** Drop a Text card's menu block (card unmount). */
 export function clearFileMenuState(cardId: string): void {
   activePublisher?.clearFileBlock(cardId);
 }

@@ -10,16 +10,16 @@
  * on a transparent surface — no box, no fill, no border. The full path
  * is the hover tooltip.
  *
- * The ref is a LINK into the File card: a primary click dispatches the
+ * The ref is a LINK into the Text card: a primary click dispatches the
  * `open-file` action (`{ path, line? }` through `dispatchAction`), so
  * the file the assistant just read or edited opens in an editor —
- * reusing an existing File card bound to the same path. A right-click
+ * reusing an existing Text card bound to the same path. A right-click
  * offers Open in Editor / Show in Finder via `TugContextMenu` (chain
  * actions carrying the path as `value`, handled by DeckCanvas).
  *
  * Focus discipline: the ref carries `data-tug-focus="refuse"` so
  * clicking it never steals first-responder status from wherever the
- * user is typing — the File card claims focus itself through the
+ * user is typing — the Text card claims focus itself through the
  * activation path, exactly like any other card activation.
  *
  * Laws:

@@ -1,11 +1,11 @@
 /**
- * at0209-file-card-live-autosave.test.ts — File card core loop
+ * at0209-text-card-live-autosave.test.ts — Text card core loop
  * ([AT0209]): open a real file from disk, live autosave-in-place,
  * conflict adjudication, and quit-flush + relaunch restore.
  *
  * ## Scenarios
  *
- * 1. **Open → edit → autosave → conflict → reload.** Seeds a File card
+ * 1. **Open → edit → autosave → conflict → reload.** Seeds a Text card
  *    bound to a real temp fixture, asserts the editor renders the disk
  *    content, types into the editor and asserts the edit lands ON DISK
  *    within the autosave window (no explicit save), then writes the
@@ -72,7 +72,7 @@ const EDITOR_CONTENT_SELECTOR =
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "file", title: "File", closable: true }],
+    cards: [{ id: "A", componentId: "text", title: "File", closable: true }],
     panes: [
       {
         id: "p1",
@@ -97,11 +97,11 @@ function deckShape() {
  */
 async function seedAutomaticSaveMode(app: App): Promise<void> {
   await app.evalJS<null>(
-    `(window.__tug.setTugbankValue("dev.tugtool.file-editor","save-mode",{kind:"string",value:"automatic"}), null)`,
+    `(window.__tug.setTugbankValue("dev.tugtool.text-card","save-mode",{kind:"string",value:"automatic"}), null)`,
   );
 }
 
-async function seedFileCard(app: App, filePath: string): Promise<void> {
+async function seedTextCard(app: App, filePath: string): Promise<void> {
   await seedAutomaticSaveMode(app);
   await app.seedDeckState({
     state: deckShape(),
@@ -174,14 +174,14 @@ async function waitForDisk(
 // Scenario 1: open → edit → autosave → conflict → reload
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!SHOULD_RUN)("at0209: File card live autosave", () => {
+describe.skipIf(!SHOULD_RUN)("at0209: Text card live autosave", () => {
   test(
     "open, autosave-to-disk, conflict banner, reload-from-disk",
     async () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0209-core-loop" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditorShowing(app, "fixture line 01");
         // The whole fixture is present (24 short lines all render).
         const rendered = await app.evalJS<string>(
@@ -210,17 +210,17 @@ describe.skipIf(!SHOULD_RUN)("at0209: File card live autosave", () => {
         // pane chrome — outside the card-id subtree, so the probe is
         // document-wide.
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-testid="file-card-conflict-reload"]') !== null`,
+          `document.querySelector('[data-testid="text-card-conflict-reload"]') !== null`,
           { timeoutMs: 8000 },
         );
         expect(fs.readFileSync(file, "utf8")).toBe(EXTERNAL);
 
         // Reload from disk: buffer adopts the external content, the
         // banner clears, autosave resumes cleanly.
-        await app.click('[data-testid="file-card-conflict-reload"]');
+        await app.click('[data-testid="text-card-conflict-reload"]');
         await waitForEditorShowing(app, "EXTERNAL-WRITER CONTENT");
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-testid="file-card-conflict-reload"]') === null`,
+          `document.querySelector('[data-testid="text-card-conflict-reload"]') === null`,
           { timeoutMs: 6000 },
         );
         expect(fs.readFileSync(file, "utf8")).toBe(EXTERNAL);
@@ -247,7 +247,7 @@ describe.skipIf(!SHOULD_RUN)("at0209: File card live autosave", () => {
         const appA = await launchTugApp({ testName: "at0209-quit-A" });
         let closed = false;
         try {
-          await seedFileCard(appA, file);
+          await seedTextCard(appA, file);
           await waitForEditorShowing(appA, "fixture line 01");
           await typeIntoEditor(appA, "QUIT-FLUSH-EDIT ");
           await appA.quitGracefully();
@@ -269,7 +269,7 @@ describe.skipIf(!SHOULD_RUN)("at0209: File card live autosave", () => {
       {
         const appB = await launchTugApp({ testName: "at0209-quit-B" });
         try {
-          await seedFileCard(appB, file);
+          await seedTextCard(appB, file);
           await waitForEditorShowing(appB, "QUIT-FLUSH-EDIT");
         } finally {
           await appB.close();

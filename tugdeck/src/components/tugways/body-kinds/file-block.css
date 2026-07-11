@@ -122,7 +122,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 60%;
-  /* The path is a link into the File card (open-file on click). Rest
+  /* The path is a link into the Text card (open-file on click). Rest
    * treatment is unchanged; hover reveals the affordance. */
   cursor: pointer;
 }

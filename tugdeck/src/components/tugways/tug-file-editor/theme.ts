@@ -16,7 +16,7 @@
  * recolored via `caretColor`, and native `::selection` paints ranges.
  *
  * Full-height: the editor root fills its host and the `.cm-scroller`
- * owns scrolling — the File card's body is the fixed viewport and the
+ * owns scrolling — the Text card's body is the fixed viewport and the
  * document scrolls inside it (CM6's viewport virtualization handles
  * large files from this configuration).
  *

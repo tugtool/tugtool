@@ -1,6 +1,6 @@
 /**
- * file-card-status-bar.tsx — the thin status strip at the bottom of a
- * File card's editor, in the spirit of BBEdit's document status bar.
+ * text-card-status-bar.tsx — the thin status strip at the bottom of a
+ * Text card's editor, in the spirit of BBEdit's document status bar.
  *
  * Left to right: save state (alone on the left), then two clusters on
  * the right — the **settable** pair (line-ending and syntax/file type,
@@ -9,15 +9,15 @@
  *
  * Live counts + caret ride the per-card `EditorStatsStore`
  * (`useSyncExternalStore`), so keystroke-rate updates repaint only this
- * strip; save state / line-ending come from the `FileEditorStore`
+ * strip; save state / line-ending come from the `TextCardStore`
  * snapshot the card already subscribes to. The two popups dispatch
  * through this panel's `useResponderForm` responder.
  *
- * Laws: layout-only CSS in file-card.css [L06]; stats enter through
+ * Laws: layout-only CSS in text-card.css [L06]; stats enter through
  * `useSyncExternalStore` [L02]; the popups emit actions to this panel's
  * responder ([L11]); composes real Tug components [use-tug-components].
  *
- * @module components/tugways/cards/file-card-status-bar
+ * @module components/tugways/cards/text-card-status-bar
  */
 
 import React, { useId, useSyncExternalStore } from "react";
@@ -31,7 +31,7 @@ import type {
   FileSaveState,
   LineEnding,
   SaveMode,
-} from "@/lib/file-editor-store";
+} from "@/lib/text-card-store";
 import { SELECTABLE_LANGUAGES } from "@/lib/language-registry";
 
 const LINE_ENDING_LABEL: Record<LineEnding, string> = {
@@ -52,7 +52,7 @@ const LANGUAGE_ITEMS: TugPopupButtonItem<string>[] = SELECTABLE_LANGUAGES.map(
   (lang) => ({ action: TUG_ACTIONS.SET_VALUE, value: lang.id, label: lang.label }),
 );
 
-export interface FileCardStatusBarProps {
+export interface TextCardStatusBarProps {
   statsStore: EditorStatsStore;
   saveMode: SaveMode;
   saveState: FileSaveState;
@@ -89,7 +89,7 @@ function saveText(
   return `Saved: ${new Date(lastSavedAt).toLocaleTimeString()}`;
 }
 
-export function FileCardStatusBar({
+export function TextCardStatusBar({
   statsStore,
   saveMode,
   saveState,
@@ -99,7 +99,7 @@ export function FileCardStatusBar({
   onSetLineEnding,
   languageId,
   onSetLanguage,
-}: FileCardStatusBarProps) {
+}: TextCardStatusBarProps) {
   const stats = useSyncExternalStore(statsStore.subscribe, statsStore.getSnapshot);
 
   const lineEndingSenderId = useId();
@@ -117,13 +117,13 @@ export function FileCardStatusBar({
   return (
     <ResponderScope>
       <div
-        className="file-card-status-bar"
-        data-slot="file-card-status-bar"
+        className="text-card-status-bar"
+        data-slot="text-card-status-bar"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         <span
-          className="file-card-status-cell file-card-status-save"
-          data-testid="file-card-status-save"
+          className="text-card-status-cell text-card-status-save"
+          data-testid="text-card-status-save"
           data-conflict={
             saveMode === "manual" && conflict !== null ? "true" : undefined
           }
@@ -132,7 +132,7 @@ export function FileCardStatusBar({
         </span>
 
         {/* Settable pair, pushed to the right edge. */}
-        <div className="file-card-status-group file-card-status-group--settable">
+        <div className="text-card-status-group text-card-status-group--settable">
           <TugPopupButton
             size="xs"
             label={LINE_ENDING_LABEL[lineEnding]}
@@ -148,16 +148,16 @@ export function FileCardStatusBar({
         </div>
 
         {/* Number pair, divided from the settable pair. */}
-        <div className="file-card-status-group file-card-status-group--numbers">
+        <div className="text-card-status-group text-card-status-group--numbers">
           <span
-            className="file-card-status-cell file-card-status-caret"
-            data-testid="file-card-status-caret"
+            className="text-card-status-cell text-card-status-caret"
+            data-testid="text-card-status-caret"
           >
             {`L: ${stats.caretLine}  C: ${stats.caretCol}`}
           </span>
           <span
-            className="file-card-status-cell file-card-status-counts"
-            data-testid="file-card-status-counts"
+            className="text-card-status-cell text-card-status-counts"
+            data-testid="text-card-status-counts"
             title="lines / words / characters"
           >
             {`${stats.lines.toLocaleString()} / ${stats.words.toLocaleString()} / ${stats.chars.toLocaleString()}`}

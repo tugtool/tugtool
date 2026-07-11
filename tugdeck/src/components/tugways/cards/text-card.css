@@ -2,12 +2,12 @@
    - --tug7-element-global-text-normal-default-rest / --tug7-surface-card-primary-normal-plain-rest (open/error surfaces, top/bottom bar text)
    - --tug7-element-global-divider-normal-default-rest / --tug7-surface-card-primary-normal-plain-rest (top/bottom bar rules)
    - --tug7-element-global-text-normal-muted-rest / --tugx-popover-bg (gear popover title)
-   `FileCard` composes TugFileEditor (its own token family), TugFileChooser,
+   `TextCard` composes TugFileEditor (its own token family), TugFileChooser,
    TugPaneBanner, and TugPushButton — each keeps its own tokens [L20].
 */
 
 /**
- * file-card.css — layout for the File card body plus its two chrome
+ * text-card.css — layout for the Text card body plus its two chrome
  * strips (top path bar, bottom status bar) and the gear popover.
  *
  * The card body is a full-height column. In the editor state the
@@ -21,7 +21,7 @@
  * components' token families.
  */
 
-.file-card {
+.text-card {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -33,7 +33,7 @@
 
 /* Find bar — a compact strip above the editor. Composes TugInput /
  * TugIconButton / TugLabel; layout-only rules here [L20]. */
-.file-card-find-bar {
+.text-card-find-bar {
   display: flex;
   align-items: center;
   gap: var(--tug-space-2xs);
@@ -41,20 +41,20 @@
   flex: 0 0 auto;
 }
 
-.file-card-find-bar > :first-child {
+.text-card-find-bar > :first-child {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.file-card-find-count {
+.text-card-find-count {
   white-space: nowrap;
 }
 
-.file-card--editor {
+.text-card--editor {
   overflow: hidden;
 }
 
-.file-card-editor {
+.text-card-editor {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -65,7 +65,7 @@
  * BBEdit-style) and the action icons (right — Move To…, gear). Composes
  * TugIconButton, which keeps its own tokens [L20]. */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.file-card-top-bar {
+.text-card-top-bar {
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
@@ -85,7 +85,7 @@
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.file-card-top-bar-path {
+.text-card-top-bar-path {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -101,15 +101,15 @@
 
 /* A bound file's path is clickable — hover underlines it; a click reveals
  * the file in the Finder. */
-.file-card-top-bar-path[data-revealable] {
+.text-card-top-bar-path[data-revealable] {
   cursor: pointer;
 }
 
-.file-card-top-bar-path[data-revealable]:hover {
+.text-card-top-bar-path[data-revealable]:hover {
   text-decoration: underline;
 }
 
-.file-card-top-bar-actions {
+.text-card-top-bar-actions {
   display: flex;
   align-items: center;
   /* No gap — the title bar's collapse/close controls sit adjacent (gap 0),
@@ -124,7 +124,7 @@
 /* A thin strip below the editor: save state, line ending, file type,
  * caret L/C, and the doc counts (right-aligned). */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.file-card-status-bar {
+.text-card-status-bar {
   display: flex;
   align-items: center;
   gap: var(--tug-space-lg);
@@ -150,12 +150,12 @@
 /* Short cells — no per-cell clipping needed (the bar clips + nowraps),
  * and no overflow box means `line-height: 1` on the bar can't clip
  * descenders while it centers the text. */
-.file-card-status-cell {
+.text-card-status-cell {
   flex: 0 0 auto;
 }
 
 /* A cluster of related cells. */
-.file-card-status-group {
+.text-card-status-group {
   display: flex;
   align-items: center;
   gap: var(--tug-space-md);
@@ -165,7 +165,7 @@
 /* The settable pair (line ending + file type) claims the flexible gap,
  * pulling both right-hand clusters to the trailing edge; the save state
  * stays alone on the left. */
-.file-card-status-group--settable {
+.text-card-status-group--settable {
   margin-left: auto;
   /* Breathing room between the popups and the divider, so the gap on the
    * popups' side reads the same as the numeric group's inset. */
@@ -175,23 +175,23 @@
 /* The number pair (caret + counts) is set off from the settable pair by
  * a divider so the two groupings read as distinct. */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.file-card-status-group--numbers {
+.text-card-status-group--numbers {
   padding-left: var(--tug-space-lg);
   border-left: 1px solid var(--tug7-element-global-divider-normal-default-rest);
 }
 
 /* Reserve width for the caret cell (left-aligned) so single→double
  * digit changes don't reflow the counts beside it. */
-.file-card-status-caret {
+.text-card-status-caret {
   min-width: 6rem;
 }
 
 /* ---- Options popover (the gear) ---- */
 
-/* A sized wrapper so the shared FileEditorControls read like a mini
- * File Editor settings panel — wide enough for its 3-column switch grid
+/* A sized wrapper so the shared TextCardControls read like a mini
+ * Text Card settings panel — wide enough for its 3-column switch grid
  * to spread the way the app-card panel does. */
-.file-card-options {
+.text-card-options {
   width: 460px;
   max-width: 90vw;
   padding: var(--tug-space-lg);
@@ -202,7 +202,7 @@
  * title vocabulary. No rule beneath — just generous space to the first
  * group. */
 /* @tug-renders-on: --tugx-popover-bg */
-.file-card-options-title {
+.text-card-options-title {
   font-size: var(--tug-font-size-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -214,13 +214,13 @@
 /* The shared controls' legends mask the group border with a swatch of
  * their backdrop. In the popover that backdrop is the popover surface,
  * not the pane background — override so the swatch matches. */
-.file-card-options .file-editor-controls-group > .tug-box-legend {
+.text-card-options .text-card-controls-group > .tug-box-legend {
   background: var(--tugx-popover-bg);
 }
 
 /* ---- Open (empty/loading) surface ---- */
 
-.file-card-open-surface {
+.text-card-open-surface {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -233,30 +233,30 @@
   margin: 0 auto;
 }
 
-.file-card-open-prompt {
+.text-card-open-prompt {
   margin: 0;
   font-weight: 600;
 }
 
-.file-card-open-row {
+.text-card-open-row {
   display: flex;
   align-items: center;
   gap: var(--tug-space-sm);
 }
 
-.file-card-open-row > :first-child {
+.text-card-open-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.file-card-open-alt {
+.text-card-open-alt {
   display: flex;
   justify-content: flex-start;
 }
 
 /* ---- Error surface ---- */
 
-.file-card-error-surface {
+.text-card-error-surface {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -267,12 +267,12 @@
   text-align: center;
 }
 
-.file-card-error-message {
+.text-card-error-message {
   margin: 0;
   font-weight: 600;
 }
 
-.file-card-error-path {
+.text-card-error-path {
   margin: 0;
   word-break: break-all;
 }

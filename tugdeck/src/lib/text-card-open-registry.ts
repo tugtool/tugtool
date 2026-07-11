@@ -1,20 +1,20 @@
 /**
- * file-card-open-registry.ts — live index of mounted File cards, keyed
+ * text-card-open-registry.ts — live index of mounted Text cards, keyed
  * by card id, exposing each card's bound path and a reveal hook.
  *
  * The `open-file` action uses this for path-keyed reuse: opening a
- * path that is already bound to a File card activates that card and
+ * path that is already bound to a Text card activates that card and
  * jumps to the requested line instead of spawning a duplicate — two
  * cards live-editing the same file would fight through the
  * filesystem watcher.
  *
- * Entries are registered by `FileCardContent` in a layout effect and
+ * Entries are registered by `TextCardContent` in a layout effect and
  * removed on unmount. Callbacks read live state at call time ([L07]).
  *
- * @module lib/file-card-open-registry
+ * @module lib/text-card-open-registry
  */
 
-export interface FileCardOpenEntry {
+export interface TextCardOpenEntry {
   /** The card's canonically-bound path, or null before binding. */
   getPath(): string | null;
   /**
@@ -33,21 +33,21 @@ export interface FileCardOpenEntry {
   openFile(path: string, line?: number): void;
 }
 
-const entries = new Map<string, FileCardOpenEntry>();
+const entries = new Map<string, TextCardOpenEntry>();
 
-export function registerOpenFileCard(
+export function registerOpenTextCard(
   cardId: string,
-  entry: FileCardOpenEntry,
+  entry: TextCardOpenEntry,
 ): void {
   entries.set(cardId, entry);
 }
 
-export function unregisterOpenFileCard(cardId: string): void {
+export function unregisterOpenTextCard(cardId: string): void {
   entries.delete(cardId);
 }
 
-/** The open-file entry for `cardId`, or null when not a mounted File card. */
-export function getOpenFileCard(cardId: string): FileCardOpenEntry | null {
+/** The open-file entry for `cardId`, or null when not a mounted Text card. */
+export function getOpenTextCard(cardId: string): TextCardOpenEntry | null {
   return entries.get(cardId) ?? null;
 }
 
@@ -55,9 +55,9 @@ export function getOpenFileCard(cardId: string): FileCardOpenEntry | null {
  * Find the card currently bound to `path` (exact canonical-string
  * match). Returns the card id and entry, or null.
  */
-export function findFileCardByPath(
+export function findTextCardByPath(
   path: string,
-): { cardId: string; entry: FileCardOpenEntry } | null {
+): { cardId: string; entry: TextCardOpenEntry } | null {
   for (const [cardId, entry] of entries) {
     if (entry.getPath() === path) return { cardId, entry };
   }

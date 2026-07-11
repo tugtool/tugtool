@@ -487,9 +487,9 @@ export function initActionDispatch(
     }
   });
 
-  // open-file: open a path in a File card. Path-keyed reuse — a card
+  // open-file: open a path in a Text card. Path-keyed reuse — a card
   // already bound to the path is activated (raised, focus-claimed) and
-  // jumped to the requested line; otherwise a new File card is created
+  // jumped to the requested line; otherwise a new Text card is created
   // seeded with the path so it opens directly on the file. Dispatched
   // by transcript file references (tool-call headers, file blocks,
   // file atoms) via `dispatchAction`, and by the Swift File ▸ Open…
@@ -517,7 +517,7 @@ export function initActionDispatch(
   });
 
   // Save verbs (Both): trivial responder-chain adapters. The Control-frame
-  // name equals the chain-action name, and the File card (its editor)
+  // name equals the chain-action name, and the Text card (its editor)
   // handles them — save is editor-owned (it owns the document), like
   // cut/copy. The active card's editor is kept as the first responder
   // across moves/resizes by the card's `cardDidMove`/`cardDidResize` focus
@@ -539,10 +539,10 @@ export function initActionDispatch(
     });
   }
 
-  // new-text-file (Control only): File ▸ New Text File (⌥⌘N). Opens a new
-  // untitled manual buffer in its own File card — no file exists until the
+  // new-text-card (Control only): File ▸ New Text Card (⌥⌘N). Opens a new
+  // untitled manual buffer in its own Text card — no file exists until the
   // first Save. Not responder-routed; menu-only, like show-card.
-  registerAction("new-text-file", () => {
+  registerAction("new-text-card", () => {
     const draftId = crypto.randomUUID();
     const newId = deckManager.addCard("file", {
       draftId,

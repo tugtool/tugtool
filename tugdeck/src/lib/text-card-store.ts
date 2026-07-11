@@ -1,5 +1,5 @@
 /**
- * FileEditorStore — the save engine behind one File card, in either of
+ * TextCardStore — the save engine behind one Text card, in either of
  * two modes fixed at construction from the deck-wide `save-mode` default.
  *
  * **Manual** (the shipping default) is the classic document model: edits
@@ -26,14 +26,14 @@
  *
  * The editor (CM6) remains the runtime owner of the text — the store never
  * mirrors keystrokes. It reaches the buffer through an attached
- * `FileEditorBridge` (get text at flush time, replace text on revert),
+ * `TextCardBridge` (get text at flush time, replace text on revert),
  * keeping document content out of React state entirely.
  *
  * **Laws:** [L02] React renders phase/banner state via
  * `useSyncExternalStore` on this store. [L22] DOM-driving consumers (the
  * "saving…" indicator) observe the store directly.
  *
- * @module lib/file-editor-store
+ * @module lib/text-card-store
  */
 
 import { FeedId } from "../protocol";
@@ -74,7 +74,7 @@ export interface FilePositions {
  * The editor's side of the contract. Attached by the mounted editor;
  * detached on unmount. The store never touches CM6 directly.
  */
-export interface FileEditorBridge {
+export interface TextCardBridge {
   /** Current buffer text (read at flush time). */
   getText(): string;
   /**
@@ -90,7 +90,7 @@ export interface FileEditorBridge {
 }
 
 /** Lifecycle phase of the card's file binding. */
-export type FileEditorPhase = "empty" | "loading" | "ready" | "error";
+export type TextCardPhase = "empty" | "loading" | "ready" | "error";
 
 /** Autosave sub-state while `phase === "ready"`. */
 export type FileSaveState = "clean" | "editing" | "writing";
@@ -131,9 +131,9 @@ export interface PendingAsideConflict {
   asideLineEnding: LineEnding;
 }
 
-/** Immutable snapshot rendered by the File card. */
-export interface FileEditorSnapshot {
-  phase: FileEditorPhase;
+/** Immutable snapshot rendered by the Text card. */
+export interface TextCardSnapshot {
+  phase: TextCardPhase;
   /** Which save contract is in force; fixed at construction. */
   saveMode: SaveMode;
   /** Canonicalized absolute path, once bound. */
@@ -203,7 +203,7 @@ function normalizeLf(text: string): string {
   return text.replace(/\r\n?/g, "\n");
 }
 
-const EMPTY_SNAPSHOT: FileEditorSnapshot = {
+const EMPTY_SNAPSHOT: TextCardSnapshot = {
   phase: "empty",
   saveMode: "automatic",
   path: null,
@@ -281,13 +281,13 @@ function parseFilesystemFrame(payload: Uint8Array): FilesystemFrame | null {
 }
 
 /**
- * One File card's autosave engine. Construct per card; `dispose()` on card
+ * One Text card's autosave engine. Construct per card; `dispose()` on card
  * destruction.
  */
-export class FileEditorStore {
-  private _snapshot: FileEditorSnapshot = EMPTY_SNAPSHOT;
+export class TextCardStore {
+  private _snapshot: TextCardSnapshot = EMPTY_SNAPSHOT;
   private _listeners = new Set<() => void>();
-  private _bridge: FileEditorBridge | null = null;
+  private _bridge: TextCardBridge | null = null;
   /**
    * The save contract, fixed at construction. Held off the snapshot so a
    * state-resetting `_update({ ...EMPTY_SNAPSHOT })` (open, rebind) can
@@ -355,16 +355,16 @@ export class FileEditorStore {
     };
   };
 
-  getSnapshot = (): FileEditorSnapshot => this._snapshot;
+  getSnapshot = (): TextCardSnapshot => this._snapshot;
 
-  private _update(patch: Partial<FileEditorSnapshot>): void {
+  private _update(patch: Partial<TextCardSnapshot>): void {
     this._snapshot = { ...this._snapshot, ...patch };
     for (const listener of this._listeners) listener();
   }
 
   // ── Editor bridge ────────────────────────────────────────────────────────
 
-  attachEditor(bridge: FileEditorBridge): void {
+  attachEditor(bridge: TextCardBridge): void {
     this._bridge = bridge;
   }
 
@@ -533,7 +533,7 @@ export class FileEditorStore {
     }
     if (this._disposed) return "noop";
     if (!outcome.ok) {
-      tugDevLogStore.warn("file-editor-store", "saveAs failed", {
+      tugDevLogStore.warn("text-card-store", "saveAs failed", {
         error: outcome.error,
         newPath,
       });
@@ -706,7 +706,7 @@ export class FileEditorStore {
       saveState: "editing",
       writeFailures: this._snapshot.writeFailures + 1,
     });
-    tugDevLogStore.warn("file-editor-store", "manual save failed", {
+    tugDevLogStore.warn("text-card-store", "manual save failed", {
       error: outcome.error,
     });
     return "error";
@@ -735,7 +735,7 @@ export class FileEditorStore {
     }
     if (this._disposed) return "noop";
     if (!outcome.ok) {
-      tugDevLogStore.warn("file-editor-store", "saveACopy failed", {
+      tugDevLogStore.warn("text-card-store", "saveACopy failed", {
         error: outcome.error,
         targetPath,
       });
@@ -911,7 +911,7 @@ export class FileEditorStore {
     // Transport/server failure: back off and retry from the debounce.
     const failures = this._snapshot.writeFailures + 1;
     this._update({ saveState: "editing", writeFailures: failures });
-    tugDevLogStore.warn("file-editor-store", "write failed; will retry", {
+    tugDevLogStore.warn("text-card-store", "write failed; will retry", {
       error: outcome.error,
       attempt: failures,
     });
@@ -1004,7 +1004,7 @@ export class FileEditorStore {
       const edited = this._asideEditedDuringWrite;
       this._asideEditedDuringWrite = false;
       if (!outcome.ok) {
-        tugDevLogStore.warn("file-editor-store", "aside flush failed", {
+        tugDevLogStore.warn("text-card-store", "aside flush failed", {
           error: outcome.error,
         });
         return;
@@ -1384,7 +1384,7 @@ export class FileEditorStore {
     this._disposed = true;
     // Unregister the FILESYSTEM feed callback — the closure pins this
     // store for the life of the connection otherwise, so every closed
-    // File card would leak a dead instance (and add O(cards) work to
+    // Text card would leak a dead instance (and add O(cards) work to
     // every filesystem frame).
     this._unsubscribeFilesystem?.();
     this._unsubscribeFilesystem = null;

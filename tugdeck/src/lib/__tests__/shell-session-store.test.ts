@@ -13,6 +13,7 @@ mock.module("../connection-singleton", () => ({
     send: (feedId: number, payload: Uint8Array) => {
       sentFrames.push({ feedId, payload: new TextDecoder().decode(payload) });
     },
+    onFrame: () => () => {},
   }),
 }));
 

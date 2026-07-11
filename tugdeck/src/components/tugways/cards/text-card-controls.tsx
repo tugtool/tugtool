@@ -1,8 +1,8 @@
 /**
- * file-editor-controls.tsx — the shared Editing + Display controls for
- * the File editor's view settings, rendered identically in two places:
- * the Settings card's "File Editor" tab (bound to the deck-wide
- * defaults) and each File card's gear popover (bound to that card's
+ * text-card-controls.tsx — the shared Editing + Display controls for
+ * the Text Card's view settings, rendered identically in two places:
+ * the Settings card's "Text Card" tab (bound to the deck-wide
+ * defaults) and each Text card's gear popover (bound to that card's
  * local settings). One component so the two always look the same.
  *
  * Presentational + chain-wired: the caller passes the current
@@ -12,10 +12,10 @@
  * defaults-only concern rendered by the settings body.
  *
  * Laws: controls emit actions to this panel's responder ([L11]);
- * layout lives in file-editor-controls.css [L06]; composes real Tug
+ * layout lives in text-card-controls.css [L06]; composes real Tug
  * components [use-tug-components].
  *
- * @module components/tugways/cards/file-editor-controls
+ * @module components/tugways/cards/text-card-controls
  */
 
 import React, { useId } from "react";
@@ -24,15 +24,15 @@ import { TugLabel } from "../tug-label";
 import { TugSwitch } from "../tug-switch";
 import { TugValueInput } from "../tug-value-input";
 import { useResponderForm } from "../use-responder-form";
-import { clampTabSize, type FileEditorSettings } from "@/lib/file-editor-settings";
-import "./file-editor-controls.css";
+import { clampTabSize, type TextCardSettings } from "@/lib/text-card-settings";
+import "./text-card-controls.css";
 
-export interface FileEditorControlsProps {
-  settings: FileEditorSettings;
-  onChange: (partial: Partial<FileEditorSettings>) => void;
+export interface TextCardControlsProps {
+  settings: TextCardSettings;
+  onChange: (partial: Partial<TextCardSettings>) => void;
 }
 
-export function FileEditorControls({ settings, onChange }: FileEditorControlsProps) {
+export function TextCardControls({ settings, onChange }: TextCardControlsProps) {
   const softTabsId = useId();
   const lineWrapId = useId();
   const tabSizeId = useId();
@@ -60,33 +60,33 @@ export function FileEditorControls({ settings, onChange }: FileEditorControlsPro
   return (
     <ResponderScope>
       <div
-        className="file-editor-controls"
-        data-slot="file-editor-controls"
+        className="text-card-controls"
+        data-slot="text-card-controls"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         <TugBox
           label="Tabs & Spaces"
           labelPosition="legend"
           variant="bordered"
-          className="file-editor-controls-group"
+          className="text-card-controls-group"
         >
-          <div className="file-editor-controls-switches">
+          <div className="text-card-controls-switches">
             <TugSwitch
               label="Auto-expand tabs"
               checked={settings.softTabs}
               senderId={softTabsId}
               size="md"
-              data-testid="file-card-option-soft-tabs"
+              data-testid="text-card-option-soft-tabs"
             />
             <TugSwitch
               label="Soft wrap text"
               checked={settings.lineWrap}
               senderId={lineWrapId}
               size="md"
-              data-testid="file-card-option-line-wrap"
+              data-testid="text-card-option-line-wrap"
             />
           </div>
-          <div className="file-editor-controls-row">
+          <div className="text-card-controls-row">
             <TugLabel size="sm">Spaces per tab</TugLabel>
             <TugValueInput
               value={settings.tabSize}
@@ -103,43 +103,43 @@ export function FileEditorControls({ settings, onChange }: FileEditorControlsPro
           label="Display"
           labelPosition="legend"
           variant="bordered"
-          className="file-editor-controls-group"
+          className="text-card-controls-group"
         >
-          <div className="file-editor-controls-switches">
+          <div className="text-card-controls-switches">
             <TugSwitch
               label="Line numbers"
               checked={settings.lineNumbers}
               senderId={lineNumbersId}
               size="md"
-              data-testid="file-card-option-line-numbers"
+              data-testid="text-card-option-line-numbers"
             />
             <TugSwitch
               label="Fold gutter"
               checked={settings.foldGutter}
               senderId={foldGutterId}
               size="md"
-              data-testid="file-card-option-fold-gutter"
+              data-testid="text-card-option-fold-gutter"
             />
             <TugSwitch
               label="Active line"
               checked={settings.highlightActiveLine}
               senderId={activeLineId}
               size="md"
-              data-testid="file-card-option-active-line"
+              data-testid="text-card-option-active-line"
             />
             <TugSwitch
               label="Show spaces"
               checked={settings.showSpaces}
               senderId={showSpacesId}
               size="md"
-              data-testid="file-card-option-show-spaces"
+              data-testid="text-card-option-show-spaces"
             />
             <TugSwitch
               label="Show tabs"
               checked={settings.showTabs}
               senderId={showTabsId}
               size="md"
-              data-testid="file-card-option-show-tabs"
+              data-testid="text-card-option-show-tabs"
             />
           </div>
         </TugBox>

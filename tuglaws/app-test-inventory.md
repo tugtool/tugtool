@@ -941,12 +941,12 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0194-window-shade-collapse.test.ts`.
 - **Summary:** Collapsing a card to the window-shade stub leaves no chrome protruding below the title bar (the chrome paints at the frame's border-box, not 2px taller), and a title-bar interaction (click/drag) on the *collapsed* card preserves the stored expanded height instead of committing the collapsed stub height — so re-expanding restores the card to its original height. Guards [D07] / [D27]. Native CGEvents (click + drag).
 
-### File card live autosave (AT0209)
+### Text card live autosave (AT0209)
 
-#### [AT0209] File card — open, autosave-in-place, conflict, quit-flush
+#### [AT0209] Text card — open, autosave-in-place, conflict, quit-flush
 - **Status:** ✅ open (new feature gate).
-- **Tests:** `at0209-file-card-live-autosave.test.ts`.
-- **Summary:** The File card's saveless core loop on real temp files: opening renders disk content byte-for-byte; typing lands on disk within the autosave debounce with no explicit save; an external write racing an unflushed local edit raises the hash-conflict banner (409) instead of clobbering either side, and "Reload from Disk" adopts the external content; quitting inside the debounce window still lands the edit via the teardown flush, and a fresh process re-opens the flushed content. Native CGEvents (click + type).
+- **Tests:** `at0209-text-card-live-autosave.test.ts`.
+- **Summary:** The Text card's saveless core loop on real temp files: opening renders disk content byte-for-byte; typing lands on disk within the autosave debounce with no explicit save; an external write racing an unflushed local edit raises the hash-conflict banner (409) instead of clobbering either side, and "Reload from Disk" adopts the external content; quitting inside the debounce window still lands the edit via the teardown flush, and a fresh process re-opens the flushed content. Native CGEvents (click + type).
 
 ### Route enhancements — three-route chrome (AT0215–AT0216)
 

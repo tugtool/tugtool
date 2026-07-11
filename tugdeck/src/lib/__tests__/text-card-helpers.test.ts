@@ -1,5 +1,5 @@
 /**
- * file-editor-helpers.test.ts — the pure helpers behind the File editor
+ * text-card-helpers.test.ts — the pure helpers behind the Text Card
  * feature: settings resolution/parsing, language identification, and the
  * two display-string helpers. Built pure specifically to be tested here
  * without a store or a rendered component.
@@ -8,14 +8,14 @@
 import { describe, test, expect } from "bun:test";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
-  DEFAULT_FILE_EDITOR_SETTINGS,
-  DEFAULT_FILE_EDITOR_OPEN_TARGET,
+  DEFAULT_TEXT_CARD_SETTINGS,
+  DEFAULT_TEXT_CARD_OPEN_TARGET,
   clampTabSize,
-  parseFileEditorSettings,
-  parseFileEditorDefaults,
-  resolveFileEditorSettings,
-  type FileEditorSettings,
-} from "@/lib/file-editor-settings";
+  parseTextCardSettings,
+  parseTextCardDefaults,
+  resolveTextCardSettings,
+  type TextCardSettings,
+} from "@/lib/text-card-settings";
 import {
   extensionForLanguageId,
   fileExtension,
@@ -34,57 +34,57 @@ describe("clampTabSize", () => {
     expect(clampTabSize(-3)).toBe(1);
     expect(clampTabSize(99)).toBe(16);
     expect(clampTabSize(2.6)).toBe(3);
-    expect(clampTabSize(NaN)).toBe(DEFAULT_FILE_EDITOR_SETTINGS.tabSize);
+    expect(clampTabSize(NaN)).toBe(DEFAULT_TEXT_CARD_SETTINGS.tabSize);
     // Non-finite (including Infinity) falls back to the default, not the cap.
-    expect(clampTabSize(Infinity)).toBe(DEFAULT_FILE_EDITOR_SETTINGS.tabSize);
+    expect(clampTabSize(Infinity)).toBe(DEFAULT_TEXT_CARD_SETTINGS.tabSize);
   });
 });
 
-describe("parseFileEditorSettings", () => {
+describe("parseTextCardSettings", () => {
   test("null for non-json / absent entries", () => {
-    expect(parseFileEditorSettings(undefined)).toBeNull();
-    expect(parseFileEditorSettings({ kind: "string", value: "x" } as TaggedValue)).toBeNull();
-    expect(parseFileEditorSettings(json(null))).toBeNull();
+    expect(parseTextCardSettings(undefined)).toBeNull();
+    expect(parseTextCardSettings({ kind: "string", value: "x" } as TaggedValue)).toBeNull();
+    expect(parseTextCardSettings(json(null))).toBeNull();
   });
 
   test("fills missing fields from defaults; clamps tabSize", () => {
-    const parsed = parseFileEditorSettings(json({ lineWrap: true, tabSize: 999 }));
+    const parsed = parseTextCardSettings(json({ lineWrap: true, tabSize: 999 }));
     expect(parsed).not.toBeNull();
     expect(parsed!.lineWrap).toBe(true);
     expect(parsed!.tabSize).toBe(16);
     // Untouched fields fall back to the built-in defaults.
-    expect(parsed!.lineNumbers).toBe(DEFAULT_FILE_EDITOR_SETTINGS.lineNumbers);
-    expect(parsed!.showTabs).toBe(DEFAULT_FILE_EDITOR_SETTINGS.showTabs);
+    expect(parsed!.lineNumbers).toBe(DEFAULT_TEXT_CARD_SETTINGS.lineNumbers);
+    expect(parsed!.showTabs).toBe(DEFAULT_TEXT_CARD_SETTINGS.showTabs);
   });
 
   test("ignores wrong-typed fields", () => {
-    const parsed = parseFileEditorSettings(json({ lineNumbers: "yes", tabSize: "8" }));
-    expect(parsed!.lineNumbers).toBe(DEFAULT_FILE_EDITOR_SETTINGS.lineNumbers);
-    expect(parsed!.tabSize).toBe(DEFAULT_FILE_EDITOR_SETTINGS.tabSize);
+    const parsed = parseTextCardSettings(json({ lineNumbers: "yes", tabSize: "8" }));
+    expect(parsed!.lineNumbers).toBe(DEFAULT_TEXT_CARD_SETTINGS.lineNumbers);
+    expect(parsed!.tabSize).toBe(DEFAULT_TEXT_CARD_SETTINGS.tabSize);
   });
 });
 
-describe("parseFileEditorDefaults", () => {
+describe("parseTextCardDefaults", () => {
   test("adds openTarget; defaults it when missing or invalid", () => {
-    expect(parseFileEditorDefaults(json({ openTarget: "reuse" }))!.openTarget).toBe("reuse");
-    expect(parseFileEditorDefaults(json({ openTarget: "newTab" }))!.openTarget).toBe("newTab");
-    expect(parseFileEditorDefaults(json({}))!.openTarget).toBe(DEFAULT_FILE_EDITOR_OPEN_TARGET);
-    expect(parseFileEditorDefaults(json({ openTarget: "bogus" }))!.openTarget).toBe(
-      DEFAULT_FILE_EDITOR_OPEN_TARGET,
+    expect(parseTextCardDefaults(json({ openTarget: "reuse" }))!.openTarget).toBe("reuse");
+    expect(parseTextCardDefaults(json({ openTarget: "newTab" }))!.openTarget).toBe("newTab");
+    expect(parseTextCardDefaults(json({}))!.openTarget).toBe(DEFAULT_TEXT_CARD_OPEN_TARGET);
+    expect(parseTextCardDefaults(json({ openTarget: "bogus" }))!.openTarget).toBe(
+      DEFAULT_TEXT_CARD_OPEN_TARGET,
     );
-    expect(parseFileEditorDefaults(undefined)).toBeNull();
+    expect(parseTextCardDefaults(undefined)).toBeNull();
   });
 });
 
-describe("resolveFileEditorSettings", () => {
-  const persisted: FileEditorSettings = { ...DEFAULT_FILE_EDITOR_SETTINGS, tabSize: 2 };
+describe("resolveTextCardSettings", () => {
+  const persisted: TextCardSettings = { ...DEFAULT_TEXT_CARD_SETTINGS, tabSize: 2 };
   test("persisted wins; else defaults (minus openTarget); else built-in", () => {
-    expect(resolveFileEditorSettings(persisted, null).tabSize).toBe(2);
-    const defaults = { ...DEFAULT_FILE_EDITOR_SETTINGS, tabSize: 8, openTarget: "reuse" as const };
-    const r = resolveFileEditorSettings(null, defaults);
+    expect(resolveTextCardSettings(persisted, null).tabSize).toBe(2);
+    const defaults = { ...DEFAULT_TEXT_CARD_SETTINGS, tabSize: 8, openTarget: "reuse" as const };
+    const r = resolveTextCardSettings(null, defaults);
     expect(r.tabSize).toBe(8);
     expect("openTarget" in r).toBe(false);
-    expect(resolveFileEditorSettings(null, null)).toEqual(DEFAULT_FILE_EDITOR_SETTINGS);
+    expect(resolveTextCardSettings(null, null)).toEqual(DEFAULT_TEXT_CARD_SETTINGS);
   });
 });
 

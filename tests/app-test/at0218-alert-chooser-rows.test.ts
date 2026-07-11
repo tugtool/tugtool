@@ -6,7 +6,7 @@
  * with per-choice icon + description. This drives the same form through the
  * gallery ("Preview What's Next"), which the real modal mirrors, and pins:
  *   - the choices render as a vertical stack of `.tug-alert-choice` rows in the
- *     order they were passed (Create Dev Card, then Open Text File);
+ *     order they were passed (Create Dev Card, then Open Text Card);
  *   - the default row (Create Dev Card) holds the key-view ring on open;
  *   - an arrow roves the closed ring across the rows and Cancel and wraps;
  *   - Return on the ringed default row resolves that choice (result "dev").
@@ -76,7 +76,7 @@ const ringed = `(function(){
       var t = rows[i].querySelector(".tug-list-row-title");
       var label = (t && t.textContent || "").trim();
       if (label === "Create Dev Card") return "dev";
-      if (label === "Open Text File") return "file";
+      if (label === "Open Text Card") return "file";
       return "row";
     }
   }
@@ -125,7 +125,7 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() renders rich rows in an 
         expect(
           await app.evalJS<string[]>(rowTitles),
           "rows render top-to-bottom in passed order",
-        ).toEqual(["Create Dev Card", "Open Text File"]);
+        ).toEqual(["Create Dev Card", "Open Text Card"]);
 
         // 2. The default row (Create Dev Card) holds the ring on open.
         await app.waitForCondition<boolean>(`${ringed} === "dev"`, { timeoutMs: 3000 });

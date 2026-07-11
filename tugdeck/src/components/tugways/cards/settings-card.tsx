@@ -22,7 +22,7 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import { SettingsGeneralBody } from "./settings-general-body";
-import { SettingsFileEditorBody } from "./settings-file-editor-body";
+import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsAppBody } from "./settings-app-body";
 import "./settings-card.css";
 
@@ -30,7 +30,7 @@ import "./settings-card.css";
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general" | "fileEditor" | "app";
+type SettingsTabId = "general" | "textCard" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
@@ -42,10 +42,10 @@ interface SettingsTabSpec {
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  // "Dev Card" carries the dev card's own icon; "File Editor" a file
+  // "Dev Card" carries the dev card's own icon; "Text Card" a file
   // icon; "Maker" a tool icon for the app-maker gate.
   { id: "general", label: "Dev Card", icon: "MessageSquareText" },
-  { id: "fileEditor", label: "File Editor", icon: "FileText" },
+  { id: "textCard", label: "Text Card", icon: "FileText" },
   { id: "app", label: "Maker", icon: "Wrench" },
 ];
 
@@ -91,7 +91,7 @@ export function SettingsCardContent() {
         </div>
         <div className="settings-card-panel">
           {tab === "general" ? <SettingsGeneralBody /> : null}
-          {tab === "fileEditor" ? <SettingsFileEditorBody /> : null}
+          {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}
         </div>
       </div>

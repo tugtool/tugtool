@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, it } from "bun:test";
 
-import { FILE_EDITOR_DEFAULTS_DOMAIN } from "@/lib/file-editor-settings";
+import { TEXT_CARD_DEFAULTS_DOMAIN } from "@/lib/text-card-settings";
 import {
   RECENT_DOCUMENTS_MAX_BYTES,
   RECENT_DOCUMENTS_STORE_LIMIT,
@@ -95,6 +95,6 @@ describe("clearRecentDocuments", () => {
 });
 
 // The domain constant is part of the wire contract with the Swift host.
-it("stores under the file-editor defaults domain", () => {
-  expect(FILE_EDITOR_DEFAULTS_DOMAIN).toBe("dev.tugtool.file-editor");
+it("stores under the text-card defaults domain", () => {
+  expect(TEXT_CARD_DEFAULTS_DOMAIN).toBe("dev.tugtool.text-card");
 });

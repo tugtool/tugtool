@@ -1,6 +1,6 @@
 /**
  * open-file-in-card.reuse.test.ts — the `"reuse"` open target never
- * rebinds a dirty File card ([P11]): a dirty frontmost card falls through
+ * rebinds a dirty Text card ([P11]): a dirty frontmost card falls through
  * to a fresh card instead of tearing its buffer down.
  *
  * The deck default is set through the real `setTugbankClient` seam (not a
@@ -13,9 +13,9 @@
 import { describe, test, expect, mock, beforeAll, afterAll } from "bun:test";
 import { setTugbankClient } from "@/lib/tugbank-singleton";
 
-mock.module("@/lib/file-card-open-registry", () => ({
-  findFileCardByPath: () => null,
-  getOpenFileCard: () => ({
+mock.module("@/lib/text-card-open-registry", () => ({
+  findTextCardByPath: () => null,
+  getOpenTextCard: () => ({
     getPath: () => "/old.txt",
     isDirty: () => true, // dirty frontmost card
     revealLine: () => {},
@@ -40,7 +40,7 @@ describe("reuse open target + dirty guard ([P11])", () => {
     const addCardCalls: unknown[] = [];
     const store = {
       getSnapshot: () => ({
-        cards: [{ id: "c1", componentId: "file" }],
+        cards: [{ id: "c1", componentId: "text" }],
         panes: [{ id: "p1", activeCardId: "c1", cardIds: ["c1"] }],
       }),
       getFirstResponderCardId: () => "c1",

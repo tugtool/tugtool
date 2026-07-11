@@ -1,7 +1,7 @@
 /**
  * card-path-menu.tsx — the Finder-style breadcrumb menu a Cmd-click on
  * a card's title/icon opens, showing the path to the card's bound
- * resource (Dev card → project directory, File card → edited file).
+ * resource (Dev card → project directory, Text card → edited file).
  *
  * Segments are listed innermost-first (leaf at the top, like the macOS
  * title-bar path menu), the leaf carrying a check. Anchored to the

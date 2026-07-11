@@ -5,7 +5,7 @@
  *
  * A tiny subscribable store per card. `TugFileEditor` writes it from its
  * CM6 update listener (caret on every selection change, counts on every
- * doc change); `FileCardStatusBar` reads it via `useSyncExternalStore`,
+ * doc change); `TextCardStatusBar` reads it via `useSyncExternalStore`,
  * so keystroke-rate updates repaint only the status bar — not the
  * editor. Pure UI state, never persisted.
  *

@@ -1,5 +1,5 @@
 /**
- * file-card-save-sheets.tsx — the pane-modal sheets a manual-mode File
+ * text-card-save-sheets.tsx — the pane-modal sheets a manual-mode File
  * card presents: close-with-unsaved-changes, external-change
  * conflict, missing-file, revert, reload, and the open-time aside
  * conflict.
@@ -18,11 +18,11 @@
  * visual); [L11] the buttons are controls that emit the card's decision;
  * [L19] authoring guide; [L20] composed TugPushButton keeps its own tokens.
  *
- * @module components/tugways/cards/file-card-save-sheets
+ * @module components/tugways/cards/text-card-save-sheets
  */
 
 import "../tug-alert.css";
-import "./file-card-save-sheets.css";
+import "./text-card-save-sheets.css";
 
 import React, { useCallback, useMemo } from "react";
 import { TriangleAlert } from "lucide-react";

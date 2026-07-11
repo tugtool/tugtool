@@ -145,7 +145,7 @@ function GalleryAlertInner() {
         },
         {
           id: "file",
-          label: "Open Text File",
+          label: "Open Text Card",
           description: "Open an existing file to edit.",
           icon: "FileText",
         },

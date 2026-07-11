@@ -188,7 +188,7 @@ function useTabOverflow(
   const rafIdRef = useRef<number | null>(null);
 
   // Serialised title key for dependency tracking -- triggers re-measurement
-  // when any tab title changes. File tabs draw their label from
+  // when any tab title changes. Text tabs draw their label from
   // `cardTitleStore` (the static `card.title` is just "File"), so fold the
   // per-card override in and subscribe to it — otherwise binding a file
   // (label "File" → "foo.py") would widen the tabs without recomputing
@@ -431,16 +431,16 @@ function TabView({
   onSelect,
   onClose,
 }: TabViewProps) {
-  // File cards publish their basename through `cardTitleStore` (the
+  // Text cards publish their basename through `cardTitleStore` (the
   // static registry title is just "File"); consult it live so a file
-  // tab shows the leaf filename. Scoped to file cards so a Dev card's
+  // tab shows the leaf filename. Scoped to text cards so a Dev card's
   // projectDir override never leaks into its tab label.
   const titleOverride = useSyncExternalStore(
     cardTitleStore.subscribe,
     useCallback(() => cardTitleStore.get(tab.id), [tab.id]),
   );
   const fullTitle =
-    tab.componentId === "file" && titleOverride !== null
+    tab.componentId === "text" && titleOverride !== null
       ? titleOverride
       : tab.title;
   const displayTitle = centerTruncate(fullTitle, TAB_TITLE_MAX);
@@ -793,12 +793,12 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   })();
 
   // Build overflow dropdown items from overflowTabs (icon + label each). [D07]
-  // File tabs draw their label from `cardTitleStore` (the basename), same
+  // Text tabs draw their label from `cardTitleStore` (the basename), same
   // as the visible tabs — the static `card.title` is just "File".
   const overflowDropdownItems: TugPopupMenuItem[] = overflowTabs.map((tab) => {
     const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
     const override =
-      tab.componentId === "file" ? cardTitleStore.get(tab.id) : null;
+      tab.componentId === "text" ? cardTitleStore.get(tab.id) : null;
     return {
       id: tab.id,
       label: centerTruncate(override ?? tab.title, TAB_TITLE_MAX),

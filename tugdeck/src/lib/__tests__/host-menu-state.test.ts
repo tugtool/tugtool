@@ -239,11 +239,11 @@ describe("HostMenuStatePublisher", () => {
     conflict: false,
   });
 
-  test("attaches the file block only for the focused pane's active file card", async () => {
+  test("attaches the file block only for the focused pane's active text card", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "file" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "text" })], [pane("p1", ["a"])])),
     );
     publisher.setFileBlock("a", fileBlock("a"));
     await settle();
@@ -265,7 +265,7 @@ describe("HostMenuStatePublisher", () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "file" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "text" })], [pane("p1", ["a"])])),
     );
     publisher.setFileBlock("a", fileBlock("a"));
     await settle();

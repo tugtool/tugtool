@@ -277,7 +277,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // The chain payload carries the absolute path as `value`; the
       // richer `{ path, line }` form arrives via `dispatchAction` and
       // is handled in `action-dispatch.ts`. Both converge on
-      // `openFileInCard` (path-keyed File-card reuse).
+      // `openFileInCard` (path-keyed Text-card reuse).
       [TUG_ACTIONS.OPEN_FILE]: (event: ActionEvent) => {
         if (typeof event.value !== "string" || event.value === "") return;
         openFileInCard(store, event.value);

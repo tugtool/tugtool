@@ -1,5 +1,5 @@
 /**
- * word-count.ts — word counting for the File card status bar.
+ * word-count.ts — word counting for the Text card status bar.
  *
  * A "word" is a maximal run of non-whitespace, so the word count equals
  * the number of *word-start* positions: an index `i` whose character is

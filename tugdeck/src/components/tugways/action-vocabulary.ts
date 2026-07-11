@@ -460,7 +460,7 @@ export const TUG_ACTIONS = {
   // SAVE_AS:                payload — none. Manual-mode "Save As…": run the
   //                         save panel and re-anchor the buffer to the
   //                         chosen path (the classic ⇧⌘S). Dispatched by
-  //                         File ▸ Save As…; handled at the File card scope.
+  //                         File ▸ Save As…; handled at the Text card scope.
   // SAVE_A_COPY:            payload — none. Write a copy of the buffer to a
   //                         chosen path without rebinding or clearing the
   //                         dirty bit (⌥⇧⌘S). File ▸ Save a Copy….
@@ -474,9 +474,9 @@ export const TUG_ACTIONS = {
   //                         via `dispatchAction` / Control frames, or a
   //                         chain dispatch whose `value` is the path
   //                         string (context-menu items). Open `path` in
-  //                         a File card: an existing card bound to the
+  //                         a Text card: an existing card bound to the
   //                         same path is activated and jumped to `line`;
-  //                         otherwise a new File card is created seeded
+  //                         otherwise a new Text card is created seeded
   //                         with the path. Registry handler in
   //                         `action-dispatch.ts`; chain handler on
   //                         DeckCanvas. Both call `openFileInCard`.

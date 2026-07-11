@@ -23,7 +23,7 @@
  * on the plugin and `destroy()` clears the registry entry on unmount.
  *
  * Shared by `tug-text-editor` (the prompt composer) and
- * `tug-file-editor` (the File card's editing surface) — the plugin has
+ * `tug-file-editor` (the Text card's editing surface) — the plugin has
  * no substrate-specific state.
  *
  * @module components/tugways/tug-text-editor/undo-menu-state-plugin

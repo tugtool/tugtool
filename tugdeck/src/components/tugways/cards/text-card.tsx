@@ -1,5 +1,5 @@
 /**
- * FileCard — the File card body: open a text file from disk, edit it in
+ * TextCard — the Text card body: open a text file from disk, edit it in
  * a `TugFileEditor`, and save it in one of two modes.
  *
  * Save modes (from the deck-wide `save-mode` default, resolved by the
@@ -28,7 +28,7 @@
  * (error variant) whose footer buttons drive `store.resolveConflict` —
  * "Reload from disk" replaces the buffer, "Keep mine" re-issues the write
  * against the disk hash the conflict reported. Manual mode raises the modal
- * save sheets (see `file-card-save-sheets`) for external-change,
+ * save sheets (see `text-card-save-sheets`) for external-change,
  * missing-file, revert, reload, and open-time aside conflicts. Either way
  * the buffer is preserved until the user chooses.
  *
@@ -40,10 +40,10 @@
  * state for appearance; [L09]/[L10] the card supplies content only —
  * pane owns geometry/chrome; [L23]/[L26] see body-state notes above.
  *
- * @module components/tugways/cards/file-card
+ * @module components/tugways/cards/text-card
  */
 
-import "./file-card.css";
+import "./text-card.css";
 
 import React, {
   useCallback,
@@ -54,12 +54,12 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { FileEditorStore, type FilePositions } from "@/lib/file-editor-store";
+import { TextCardStore, type FilePositions } from "@/lib/text-card-store";
 import { cardTitleStore } from "@/lib/card-title-store";
 import {
-  registerOpenFileCard,
-  unregisterOpenFileCard,
-} from "@/lib/file-card-open-registry";
+  registerOpenTextCard,
+  unregisterOpenTextCard,
+} from "@/lib/text-card-open-registry";
 import { registerCardCloseGuard } from "@/lib/card-close-guard";
 import {
   publishFileMenuState,
@@ -70,7 +70,7 @@ import { reserveUntitledNumber } from "@/lib/untitled-naming";
 import { noteRecentDocument } from "@/lib/recent-documents";
 import { openPathInOS } from "@/lib/os-open";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
-import { useFileSaveSheets } from "./file-card-save-sheets";
+import { useFileSaveSheets } from "./text-card-save-sheets";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { TugFileEditor, type TugFileEditorDelegate } from "../tug-file-editor";
@@ -80,15 +80,15 @@ import { TugPushButton } from "../tug-push-button";
 import { TugIconButton } from "../tug-icon-button";
 import { TugInput } from "../tug-input";
 import { TugLabel } from "../tug-label";
-import { FileCardTopBar } from "./file-card-top-bar";
-import { FileCardStatusBar } from "./file-card-status-bar";
-import { useFileEditorSettings } from "@/lib/use-file-editor-settings";
+import { TextCardTopBar } from "./text-card-top-bar";
+import { TextCardStatusBar } from "./text-card-status-bar";
+import { useTextCardSettings } from "@/lib/use-text-card-settings";
 import { EditorStatsStore } from "@/lib/editor-stats-store";
 import {
   extensionForLanguageId,
   languageIdForPath,
 } from "@/lib/language-registry";
-import type { LineEnding } from "@/lib/file-editor-store";
+import type { LineEnding } from "@/lib/text-card-store";
 import { isPathPickerAvailable, pickPath } from "@/lib/native-path-picker";
 import {
   useCardId,
@@ -104,7 +104,7 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 // ---------------------------------------------------------------------------
 
 /** Positions-only persistence payload — never file content. */
-export interface FileCardBagContent {
+export interface TextCardBagContent {
   /** Bound file path; null for an untitled draft. */
   path: string | null;
   /** Draft id for an untitled buffer (content autosaves under the
@@ -121,7 +121,7 @@ export interface FileCardBagContent {
 }
 
 /** Narrow an unknown restored bag payload. */
-function coerceBagContent(state: unknown): FileCardBagContent | null {
+function coerceBagContent(state: unknown): TextCardBagContent | null {
   if (state === null || typeof state !== "object") return null;
   const obj = state as Record<string, unknown>;
   const path = typeof obj.path === "string" ? obj.path : null;
@@ -168,14 +168,14 @@ function describeReadError(kind: string, size?: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// FileCardContent
+// TextCardContent
 // ---------------------------------------------------------------------------
 
-export function FileCardContent({ cardId }: { cardId: string }) {
+export function TextCardContent({ cardId }: { cardId: string }) {
   // One autosave engine per mounted card body. Disk is authoritative
   // and positions ride the bag, so recreating the store on a cold
   // remount is cheap — it re-reads the file.
-  const [store] = useState(() => new FileEditorStore({ saveMode: readSaveMode() }));
+  const [store] = useState(() => new TextCardStore({ saveMode: readSaveMode() }));
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const isManual = snapshot.saveMode === "manual";
   const isDirty = snapshot.saveState !== "clean";
@@ -190,9 +190,9 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   const { showSheet, renderSheet } = useTugSheet();
   const sheets = useFileSaveSheets(showSheet);
 
-  // Card-local editor settings, seeded from the deck-wide File-editor
+  // Card-local editor settings, seeded from the deck-wide Text Card
   // defaults on first open, then owned by this card ([D07] pattern).
-  const { settings: editorSettings, setSetting } = useFileEditorSettings(cardId);
+  const { settings: editorSettings, setSetting } = useTextCardSettings(cardId);
 
   // Live editor stats (caret + counts) for the bottom status bar. The
   // editor writes it; the status bar reads it — so keystroke-rate
@@ -399,7 +399,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   // ---- Card state preservation (positions only) ----
 
-  useCardStatePreservation<FileCardBagContent | undefined>({
+  useCardStatePreservation<TextCardBagContent | undefined>({
     onSave: () => {
       // Deactivation is a hard flush point; fire-and-forget with
       // keepalive so the write survives teardown. The bag itself is
@@ -455,7 +455,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   // ---- open-file reuse registry ----
 
   useLayoutEffect(() => {
-    registerOpenFileCard(cardId, {
+    registerOpenTextCard(cardId, {
       getPath: () => store.getSnapshot().path,
       isDirty: () => store.getSnapshot().saveState !== "clean",
       revealLine: (line) => editorRef.current?.revealLine(line),
@@ -472,7 +472,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
       },
     });
     return () => {
-      unregisterOpenFileCard(cardId);
+      unregisterOpenTextCard(cardId);
     };
   }, [cardId, store]);
 
@@ -655,7 +655,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   // ---- Focus the editor when a fresh untitled buffer opens ----
   //
-  // New Text File (⌥⌘N) should drop the caret straight into the editor so
+  // New Text Card (⌥⌘N) should drop the caret straight into the editor so
   // the user can type immediately. Route through `reclaimFocusDestination`
   // so the focus resolves the key-card gate (never steal focus from an open
   // sheet) and repairs the chain, not just DOM focus — a bare `focus()` is
@@ -688,10 +688,10 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   if (snapshot.phase === "empty" || snapshot.phase === "loading") {
     return (
-      <div className="file-card file-card--open" data-slot="file-card">
-        <div className="file-card-open-surface">
-          <TugLabel className="file-card-open-prompt">Open a file</TugLabel>
-          <div className="file-card-open-row">
+      <div className="text-card text-card--open" data-slot="text-card">
+        <div className="text-card-open-surface">
+          <TugLabel className="text-card-open-prompt">Open a file</TugLabel>
+          <div className="text-card-open-row">
             <TugFileChooser
               value={chooserValue}
               onChange={setChooserValue}
@@ -710,9 +710,9 @@ export function FileCardContent({ cardId }: { cardId: string }) {
               Open
             </TugPushButton>
           </div>
-          <div className="file-card-open-alt">
+          <div className="text-card-open-alt">
             <TugPushButton
-              data-testid="file-card-new-draft"
+              data-testid="text-card-new-draft"
               onClick={() => {
                 // Manual: an untitled buffer with no file identity until
                 // the first Save. Automatic: a real draft file.
@@ -731,15 +731,15 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 
   if (snapshot.phase === "error") {
     return (
-      <div className="file-card file-card--error" data-slot="file-card">
-        <div className="file-card-error-surface">
-          <TugLabel className="file-card-error-message">
+      <div className="text-card text-card--error" data-slot="text-card">
+        <div className="text-card-error-surface">
+          <TugLabel className="text-card-error-message">
             {describeReadError(
               snapshot.error?.kind ?? "internal",
               snapshot.error?.size,
             )}
           </TugLabel>
-          <TugLabel className="file-card-error-path">
+          <TugLabel className="text-card-error-path">
             {snapshot.path ?? ""}
           </TugLabel>
           <TugPushButton
@@ -759,8 +759,8 @@ export function FileCardContent({ cardId }: { cardId: string }) {
   // autosave sub-state [L26].
   const conflict = snapshot.conflict;
   return (
-    <div className="file-card file-card--editor" data-slot="file-card">
-      <FileCardTopBar
+    <div className="text-card text-card--editor" data-slot="text-card">
+      <TextCardTopBar
         path={snapshot.path}
         isDraft={snapshot.draftId !== null}
         saveMode={snapshot.saveMode}
@@ -776,14 +776,14 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         onChangeSetting={setSetting}
       />
       {findOpen ? (
-        <div className="file-card-find-bar" data-slot="file-card-find-bar">
+        <div className="text-card-find-bar" data-slot="text-card-find-bar">
           <TugInput
             ref={findInputRef}
             size="sm"
             value={findQuery}
             placeholder="Find in file"
             aria-label="Find in file"
-            data-testid="file-card-find-input"
+            data-testid="text-card-find-input"
             onChange={(e) => updateFindQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -794,7 +794,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
               }
             }}
           />
-          <TugLabel size="sm" className="file-card-find-count">
+          <TugLabel size="sm" className="text-card-find-count">
             {findQuery === "" ? "" : `${findMatches} matches`}
           </TugLabel>
           <TugIconButton
@@ -820,12 +820,12 @@ export function FileCardContent({ cardId }: { cardId: string }) {
         readOnly={snapshot.readOnly}
         settings={editorSettings}
         languageExt={effectiveLanguageExt}
-        className="file-card-editor"
+        className="text-card-editor"
         onFindRequested={openFindBar}
         onSaveCommand={onSaveCommand}
         onStats={statsStore.set}
       />
-      <FileCardStatusBar
+      <TextCardStatusBar
         statsStore={statsStore}
         saveMode={snapshot.saveMode}
         saveState={snapshot.saveState}
@@ -852,14 +852,14 @@ export function FileCardContent({ cardId }: { cardId: string }) {
             <>
               {isPathPickerAvailable() ? (
                 <TugPushButton
-                  data-testid="file-card-missing-save-as"
+                  data-testid="text-card-missing-save-as"
                   onClick={saveAs}
                 >
                   Save As…
                 </TugPushButton>
               ) : null}
               <TugPushButton
-                data-testid="file-card-missing-close"
+                data-testid="text-card-missing-close"
                 onClick={() => {
                   // Close the card via the chain: the walk from the card
                   // reaches the host pane's CLOSE handler ([L11] — the
@@ -877,7 +877,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
           ) : (
             <>
               <TugPushButton
-                data-testid="file-card-conflict-reload"
+                data-testid="text-card-conflict-reload"
                 onClick={() => {
                   void store.resolveConflict("reload");
                 }}
@@ -885,7 +885,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
                 Reload from Disk
               </TugPushButton>
               <TugPushButton
-                data-testid="file-card-conflict-overwrite"
+                data-testid="text-card-conflict-overwrite"
                 role="danger"
                 onClick={() => {
                   void store.resolveConflict("overwrite");
@@ -902,7 +902,7 @@ export function FileCardContent({ cardId }: { cardId: string }) {
 }
 
 /** CardHost-facing wrapper that resolves its own cardId from context. */
-export function FileCardBody() {
+export function TextCardBody() {
   const cardId = useCardId();
-  return <FileCardContent cardId={cardId ?? ""} />;
+  return <TextCardContent cardId={cardId ?? ""} />;
 }

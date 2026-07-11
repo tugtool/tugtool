@@ -13,7 +13,7 @@
  * pointer-marked promotion coarsened the key view out of the sheet's trap,
  * killing the seeded default button's ring ([P16]/[P20]).
  *
- * The file card's close sheet is the probe — its Save default is seeded
+ * The text card's close sheet is the probe — its Save default is seeded
  * via `useSeedKeyView` (keyboard ring on from the drop). Both click-back
  * targets are pinned: the pane title bar and the sheet panel itself.
  *
@@ -52,8 +52,8 @@ function mkFixture(): { dir: string; fileA: string; fileB: string } {
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "file", title: "File A", closable: true },
-      { id: "B", componentId: "file", title: "File B", closable: true },
+      { id: "A", componentId: "text", title: "File A", closable: true },
+      { id: "B", componentId: "text", title: "File B", closable: true },
     ],
     panes: [
       {

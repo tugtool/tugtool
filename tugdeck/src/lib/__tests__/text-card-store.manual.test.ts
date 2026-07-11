@@ -1,5 +1,5 @@
 /**
- * file-editor-store.manual.test.ts — manual save mode: dirty transitions,
+ * text-card-store.manual.test.ts — manual save mode: dirty transitions,
  * aside flush targeting, untitled buffers, and open-time aside restore.
  *
  * `file-io` is mocked with a faithful in-memory filesystem (conditional
@@ -85,11 +85,11 @@ mock.module("@/lib/file-io", () => ({
   },
 }));
 
-let FileEditorStore: typeof import("@/lib/file-editor-store").FileEditorStore;
+let TextCardStore: typeof import("@/lib/text-card-store").TextCardStore;
 let asidePathFor: typeof import("@/lib/file-aside").asidePathFor;
 let asidePathForUntitled: typeof import("@/lib/file-aside").asidePathForUntitled;
 beforeAll(async () => {
-  ({ FileEditorStore } = await import("@/lib/file-editor-store"));
+  ({ TextCardStore } = await import("@/lib/text-card-store"));
   ({ asidePathFor, asidePathForUntitled } = await import("@/lib/file-aside"));
 });
 
@@ -107,7 +107,7 @@ type FrameEvent = { kind: string; path?: string; from?: string; to?: string };
 
 /** Feed a synthetic FILESYSTEM frame to a store (paths are absolute). */
 function fsFrameEvents(
-  store: InstanceType<typeof FileEditorStore>,
+  store: InstanceType<typeof TextCardStore>,
   events: FrameEvent[],
 ) {
   const rel = (p?: string) => (p === undefined ? undefined : p.replace(/^\//, ""));
@@ -129,7 +129,7 @@ function fsFrameEvents(
 
 /** Feed a single-event FILESYSTEM frame naming `fullPath`. */
 function fsFrame(
-  store: InstanceType<typeof FileEditorStore>,
+  store: InstanceType<typeof TextCardStore>,
   fullPath: string,
   kind = "modified",
 ) {
@@ -152,16 +152,16 @@ beforeEach(() => {
 
 describe("manual mode — dirty + aside flush target", () => {
   test("default mode is automatic; manual is opt-in", () => {
-    expect(new FileEditorStore().getSnapshot().saveMode).toBe("automatic");
+    expect(new TextCardStore().getSnapshot().saveMode).toBe("automatic");
     expect(
-      new FileEditorStore({ saveMode: "manual" }).getSnapshot().saveMode,
+      new TextCardStore({ saveMode: "manual" }).getSnapshot().saveMode,
     ).toBe("manual");
   });
 
   test("an edit writes the aside, never the real file", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     expect(store.getSnapshot().saveState).toBe("clean");
@@ -188,7 +188,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("a rebind (saveAs) preserves the manual mode", async () => {
     seedDisk("/a.txt", "content\n");
     let buf = "content\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/a.txt");
     buf = "content edited\n";
@@ -202,7 +202,7 @@ describe("manual mode — dirty + aside flush target", () => {
     seedDisk("/old.txt", "content\n");
     seedDisk("/target.txt", "existing target\n");
     let buf = "content\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/old.txt");
     buf = "content edited\n";
@@ -232,7 +232,7 @@ describe("manual mode — dirty + aside flush target", () => {
 
   test("saveAs reports 'ok' once the buffer reaches disk", async () => {
     let buf = "hello\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openUntitled("draft-1");
     buf = "hello\n";
@@ -245,7 +245,7 @@ describe("manual mode — dirty + aside flush target", () => {
     // A swallowed failure here is the data-loss path: a close guard that
     // reads saveAs as success would destroy the card over unsaved edits.
     let buf = "hello\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openUntitled("draft-2");
     buf = "hello\n";
@@ -258,7 +258,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("a double save issues one real write, not a spurious conflict", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "edited\n";
@@ -278,7 +278,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("setLineEnding during an in-flight save re-flushes, staying dirty", async () => {
     seedDisk("/f.txt", "a\nb\n");
     let buf = "a\nb\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "a\nb\nc\n";
@@ -296,7 +296,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("resolveMissing recreates a deleted file", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "edited\n";
@@ -312,7 +312,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("resolveMissing conflicts instead of clobbering a reappeared file", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "edited\n";
@@ -330,7 +330,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("conflict reload clears the armed debounce (no aside resurrection)", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "mine\n";
@@ -355,7 +355,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("a missing conflict on a clean buffer goes dirty on the next edit", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     // File deleted under a CLEAN buffer — the watcher path sets the
@@ -379,7 +379,7 @@ describe("manual mode — dirty + aside flush target", () => {
 
   test("resolveMissing recreates the file even from a clean buffer", async () => {
     seedDisk("/f.txt", "disk\n");
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => "disk\n"));
     await store.openPath("/f.txt");
     io.files.delete("/f.txt");
@@ -398,7 +398,7 @@ describe("manual mode — dirty + aside flush target", () => {
   test("edits during a cancelled conflict still reach the aside", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "mine\n";
@@ -435,7 +435,7 @@ describe("manual mode — open-time aside restore", () => {
     });
     let buf = "";
     const replaced: string[] = [];
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t) && replaced.push(t)));
     await store.openPath("/f.txt");
 
@@ -456,7 +456,7 @@ describe("manual mode — open-time aside restore", () => {
       editedAt: 1,
     });
     let buf = "";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
 
@@ -484,7 +484,7 @@ describe("manual mode — open-time aside restore", () => {
       editedAt: 1,
     });
     let buf = "";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
 
@@ -503,7 +503,7 @@ describe("manual mode — open-time aside restore", () => {
       sha256: shaOf("{ not json"),
       readOnly: false,
     });
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => "disk\n"));
     await store.openPath("/f.txt");
     await tick();
@@ -524,7 +524,7 @@ describe("manual mode — open-time aside restore", () => {
       baselineSha256: shaOf("x"),
       editedAt: 1,
     });
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => "disk\n"));
     await store.openPath("/f.txt");
     await tick();
@@ -536,7 +536,7 @@ describe("manual mode — open-time aside restore", () => {
 describe("manual mode — untitled buffers", () => {
   test("untitled writes only the aside; restores by draftId", async () => {
     let buf = "";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openUntitled("d1");
     const snap = store.getSnapshot();
@@ -558,7 +558,7 @@ describe("manual mode — untitled buffers", () => {
     // A fresh store restores the untitled buffer from the aside.
     let buf2 = "";
     const replaced: string[] = [];
-    const store2 = new FileEditorStore({ saveMode: "manual" });
+    const store2 = new TextCardStore({ saveMode: "manual" });
     store2.attachEditor(bridge(() => buf2, (t) => replaced.push(t)));
     await store2.openUntitled("d1");
     expect(store2.getSnapshot().saveState).toBe("editing");
@@ -571,7 +571,7 @@ describe("manual mode — save verbs", () => {
   test("save() writes the real file, deletes the aside, goes clean", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
 
@@ -589,7 +589,7 @@ describe("manual mode — save verbs", () => {
   });
 
   test("save() on an untitled buffer asks the card for a path", async () => {
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     let buf = "";
     store.attachEditor(bridge(() => buf));
     await store.openUntitled("d1");
@@ -601,7 +601,7 @@ describe("manual mode — save verbs", () => {
   test("save() on a stale baseline yields a conflict, keeping the aside", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -622,7 +622,7 @@ describe("manual mode — save verbs", () => {
   test("resolveConflict('overwrite') writes the REAL file, not the aside ([P12])", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -649,7 +649,7 @@ describe("manual mode — save verbs", () => {
   test("resolveConflict('reload') discards edits + aside, reloads disk", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -669,7 +669,7 @@ describe("manual mode — save verbs", () => {
   test("saveACopy() writes elsewhere without touching state or the aside", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -688,7 +688,7 @@ describe("manual mode — save verbs", () => {
   test("revertToSaved() drops edits and the aside", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -705,7 +705,7 @@ describe("manual mode — save verbs", () => {
   test("a watcher frame while dirty raises the conflict without a write", async () => {
     seedDisk("/f.txt", "disk\n");
     let buf = "disk\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -729,7 +729,7 @@ describe("rename-follow ([P05])", () => {
   test("an explicit Renamed{from,to} rebinds the card", async () => {
     seedDisk("/a.txt", "body\n");
     let buf = "body\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/a.txt");
     fsFrameEvents(store, [{ kind: "Renamed", from: "/a.txt", to: "/b.txt" }]);
@@ -741,7 +741,7 @@ describe("rename-follow ([P05])", () => {
   test("a Removed+Created batch adopts the hash-matching creation, preserving dirty", async () => {
     seedDisk("/a.txt", "body\n");
     let buf = "body\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/a.txt");
     // Dirty: edits live only in the buffer; the moved file still hashes
@@ -769,7 +769,7 @@ describe("rename-follow ([P05])", () => {
   test("an ambiguous / non-matching batch falls to the missing-file flow", async () => {
     seedDisk("/a.txt", "body\n");
     let buf = "body\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/a.txt");
 
@@ -793,7 +793,7 @@ describe("recheckOnActivation ([P09])", () => {
   test("clean + diverged disk → silent reload", async () => {
     seedDisk("/f.txt", "v1\n");
     let buf = "v1\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
 
@@ -807,7 +807,7 @@ describe("recheckOnActivation ([P09])", () => {
   test("manual + dirty + diverged disk → conflict", async () => {
     seedDisk("/f.txt", "v1\n");
     let buf = "v1\n";
-    const store = new FileEditorStore({ saveMode: "manual" });
+    const store = new TextCardStore({ saveMode: "manual" });
     store.attachEditor(bridge(() => buf, (t) => (buf = t)));
     await store.openPath("/f.txt");
     buf = "my edit\n";
@@ -826,7 +826,7 @@ describe("automatic mode — unchanged", () => {
   test("an edit writes the real file and no aside", async () => {
     seedDisk("/a.txt", "x\n");
     let buf = "x\n";
-    const store = new FileEditorStore();
+    const store = new TextCardStore();
     store.attachEditor(bridge(() => buf));
     await store.openPath("/a.txt");
 

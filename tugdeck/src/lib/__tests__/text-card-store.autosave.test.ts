@@ -1,5 +1,5 @@
 /**
- * file-editor-store.autosave.test.ts — the in-flight-write reflush.
+ * text-card-store.autosave.test.ts — the in-flight-write reflush.
  *
  * An edit (or a line-ending change) that lands while a write is in
  * flight must NOT be lost: the in-flight write snapshotted stale
@@ -39,9 +39,9 @@ mock.module("@/lib/file-io", () => ({
     }),
 }));
 
-let FileEditorStore: typeof import("@/lib/file-editor-store").FileEditorStore;
+let TextCardStore: typeof import("@/lib/text-card-store").TextCardStore;
 beforeAll(async () => {
-  ({ FileEditorStore } = await import("@/lib/file-editor-store"));
+  ({ TextCardStore } = await import("@/lib/text-card-store"));
 });
 
 function bridge(getText: () => string) {
@@ -54,7 +54,7 @@ function bridge(getText: () => string) {
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-describe("FileEditorStore in-flight-write reflush", () => {
+describe("TextCardStore in-flight-write reflush", () => {
   beforeEach(() => {
     io.writes = [];
   });
@@ -62,7 +62,7 @@ describe("FileEditorStore in-flight-write reflush", () => {
   test("an edit during an in-flight write is re-flushed, not lost", async () => {
     let buf = "one two\n";
     io.readContent = buf;
-    const store = new FileEditorStore();
+    const store = new TextCardStore();
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt");
 
@@ -95,7 +95,7 @@ describe("FileEditorStore in-flight-write reflush", () => {
   test("setLineEnding during an in-flight write re-serializes on settle", async () => {
     let buf = "a\nb\n";
     io.readContent = buf;
-    const store = new FileEditorStore();
+    const store = new TextCardStore();
     store.attachEditor(bridge(() => buf));
     await store.openPath("/f.txt"); // detects LF
 

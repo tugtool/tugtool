@@ -1,12 +1,12 @@
 /**
- * DefaultFileEditorStore — subscribable store for the *deck-wide*
- * File-editor defaults the Settings card's "File Editor" tab edits.
+ * DefaultTextCardStore — subscribable store for the *deck-wide*
+ * Text Card defaults the Settings card's "Text Card" tab edits.
  *
- * A single deck-wide value ({@link FileEditorDefaults}): the view
- * settings plus `openTarget` a brand-new File card adopts on first open
+ * A single deck-wide value ({@link TextCardDefaults}): the view
+ * settings plus `openTarget` a brand-new Text card adopts on first open
  * when it has nothing persisted of its own. No CSS/DOM side effects — it
  * just reads and writes one tugbank json blob at
- * `dev.tugtool.file-editor/settings`. Mirrors `DefaultModelStore` /
+ * `dev.tugtool.text-card/settings`. Mirrors `DefaultModelStore` /
  * `EditorSettingsStore`.
  *
  * Writes go through `client.setLocalValue` (optimistic, and — crucially
@@ -17,48 +17,48 @@
  *
  * **Laws:** [L02] useSyncExternalStore-compatible subscribe/getSnapshot.
  *
- * @module lib/default-file-editor-store
+ * @module lib/default-text-card-store
  */
 
 import { getTugbankClient } from "./tugbank-singleton";
-import { putFileEditorDefaults } from "@/settings-api";
+import { putTextCardDefaults } from "@/settings-api";
 import {
-  DEFAULT_FILE_EDITOR_DEFAULTS,
-  FILE_EDITOR_DEFAULTS_DOMAIN,
-  FILE_EDITOR_DEFAULTS_KEY,
-  parseFileEditorDefaults,
-  type FileEditorDefaults,
-} from "./file-editor-settings";
+  DEFAULT_TEXT_CARD_DEFAULTS,
+  TEXT_CARD_DEFAULTS_DOMAIN,
+  TEXT_CARD_DEFAULTS_KEY,
+  parseTextCardDefaults,
+  type TextCardDefaults,
+} from "./text-card-settings";
 
-export class DefaultFileEditorStore {
-  private _defaults: FileEditorDefaults;
+export class DefaultTextCardStore {
+  private _defaults: TextCardDefaults;
   private _listeners: Set<() => void> = new Set();
   private _unsubscribeTugbank: (() => void) | null = null;
 
   constructor() {
-    this._defaults = this._readFromCache() ?? { ...DEFAULT_FILE_EDITOR_DEFAULTS };
+    this._defaults = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_DEFAULTS };
 
     const client = getTugbankClient();
     if (client) {
       this._unsubscribeTugbank = client.onDomainChanged((domain) => {
-        if (domain !== FILE_EDITOR_DEFAULTS_DOMAIN) return;
-        const fresh = this._readFromCache() ?? { ...DEFAULT_FILE_EDITOR_DEFAULTS };
+        if (domain !== TEXT_CARD_DEFAULTS_DOMAIN) return;
+        const fresh = this._readFromCache() ?? { ...DEFAULT_TEXT_CARD_DEFAULTS };
         this._defaults = fresh;
         for (const listener of this._listeners) listener();
       });
     }
   }
 
-  private _readFromCache(): FileEditorDefaults | null {
+  private _readFromCache(): TextCardDefaults | null {
     const client = getTugbankClient();
     if (!client) return null;
-    return parseFileEditorDefaults(
-      client.get(FILE_EDITOR_DEFAULTS_DOMAIN, FILE_EDITOR_DEFAULTS_KEY),
+    return parseTextCardDefaults(
+      client.get(TEXT_CARD_DEFAULTS_DOMAIN, TEXT_CARD_DEFAULTS_KEY),
     );
   }
 
   /** Current deck-wide defaults. (L02 — useSyncExternalStore) */
-  getSnapshot = (): FileEditorDefaults => this._defaults;
+  getSnapshot = (): TextCardDefaults => this._defaults;
 
   /** Subscribe to changes. Returns unsubscribe. (L02) */
   subscribe = (listener: () => void): (() => void) => {
@@ -72,19 +72,19 @@ export class DefaultFileEditorStore {
    * Update the deck-wide defaults. Optimistically reflects locally and
    * across open cards via `setLocalValue`, then persists.
    */
-  set(partial: Partial<FileEditorDefaults>): void {
+  set(partial: Partial<TextCardDefaults>): void {
     const next = { ...this._defaults, ...partial };
     this._defaults = next;
     for (const listener of this._listeners) listener();
 
     const client = getTugbankClient();
     if (client) {
-      client.setLocalValue(FILE_EDITOR_DEFAULTS_DOMAIN, FILE_EDITOR_DEFAULTS_KEY, {
+      client.setLocalValue(TEXT_CARD_DEFAULTS_DOMAIN, TEXT_CARD_DEFAULTS_KEY, {
         kind: "json",
         value: next,
       });
     }
-    putFileEditorDefaults(next);
+    putTextCardDefaults(next);
   }
 
   /** Dispose subscriptions. */

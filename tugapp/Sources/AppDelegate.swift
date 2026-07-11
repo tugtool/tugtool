@@ -88,7 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// (`validateMenuItem(_:)`) and dynamic menu building read from here.
     private var menuState = MenuState.empty
 
-    /// UTIs a File card can edit — text and everything that conforms to it
+    /// UTIs a Text card can edit — text and everything that conforms to it
     /// (source code, JSON, XML, Markdown, …). The Open File… / choosePath
     /// file panels restrict to these so a binary (image, PDF, archive) can't
     /// be chosen into an editor that only renders text.
@@ -415,14 +415,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     /// Files handed to the app by the OS: dropped on the Dock icon, opened
     /// from Finder ("Open With Tug"), or double-clicked when Tug is the
-    /// handler. Each text file opens in a File card. If the deck isn't live
+    /// handler. Each text file opens in a Text card. If the deck isn't live
     /// yet (cold launch by opening a file), the paths queue and flush on
     /// `bridgeFrontendReady`.
     func application(_ application: NSApplication, open urls: [URL]) {
         openFilesFromOS(urls)
     }
 
-    /// Open each editable text file in `urls` in a File card — the OS open
+    /// Open each editable text file in `urls` in a Text card — the OS open
     /// path (Dock-icon drop, Finder "Open With", double-click). Non-text
     /// files and folders are ignored; opens made before the deck is live
     /// queue and flush on `bridgeFrontendReady`.
@@ -449,7 +449,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// Whether `url` is a text file a File card can edit — a regular file
+    /// Whether `url` is a text file a Text card can edit — a regular file
     /// whose UTI conforms to one of {@link editableContentTypes}. Guards
     /// the OS open path so a folder or binary handed to the app is ignored.
     static func isEditableFile(_ url: URL) -> Bool {
@@ -608,15 +608,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
         fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
 
-        // Text-file section: New Text File / Open File… form their own group
+        // Text-card section: New Text Card / Open File… form their own group
         // under a divider, distinct from the card creators above.
         fileMenu.addItem(NSMenuItem.separator())
-        // New Text File (⌥⌘N): a new untitled manual buffer — no file
+        // New Text Card (⌥⌘N): a new untitled manual buffer — no file
         // exists until the first Save.
-        fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextFile(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextFile"))
+        fileMenu.addItem(NSMenuItem(title: "New Text Card", action: #selector(newTextCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextCard"))
 
         // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
-        // web layer reuses an existing File card bound to the chosen
+        // web layer reuses an existing Text card bound to the chosen
         // path or opens a new one (action-dispatch.ts `open-file`).
         fileMenu.addItem(NSMenuItem(title: "Open File…", action: #selector(openFileInEditor(_:)), keyEquivalent: "o").identified("file.openFile"))
 
@@ -662,14 +662,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem.separator())
 
         // Save (⌘S): flush the focused editor's pending edits to disk
-        // now. Under the File card's live autosave there is no dirty
+        // now. Under the Text card's live autosave there is no dirty
         // state — this is "write immediately + checkpoint", routed as a
         // `save` Control frame → responder-chain SAVE dispatch. AppKit
         // swallows ⌘S at the menubar, so the menu item must carry the
         // chord; the web keybinding-map entry covers browser-only dev.
         fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
         // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
-        // updateMenuState only while a File card is frontmost; a
+        // updateMenuState only while a Text card is frontmost; a
         // static ⇧⌘S would eat the Dev card's Shell-route chord.
         fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
         fileMenu.addItem(fileSaveAsMenuItem)
@@ -1103,8 +1103,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("reload-from-disk")
     }
 
-    @objc private func newTextFile(_ sender: Any) {
-        sendControl("new-text-file")
+    @objc private func newTextCard(_ sender: Any) {
+        sendControl("new-text-card")
     }
 
     @objc private func nextTheme(_ sender: Any) {
@@ -1372,7 +1372,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         // Dynamic ⇧⌘S for Save As…: assign the chord ONLY while a
-        // File card is frontmost; clear it otherwise so ⇧⌘S falls through
+        // Text card is frontmost; clear it otherwise so ⇧⌘S falls through
         // to the web view's Shell-route chord. Set here — outside AppKit's
         // key-equivalent scan — not in validateMenuItem.
         if let saveAs = fileSaveAsMenuItem {
@@ -1456,8 +1456,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         switch id {
-        // File-card save verbs. Gated on the File menu block,
-        // which rides the payload only while a File card is frontmost.
+        // Text-card save verbs. Gated on the File menu block,
+        // which rides the payload only while a Text card is frontmost.
         // Automatic-mode Save must stay enabled whenever writable so its
         // ⌘S never validates disabled — a disabled matching chord beeps
         // and never reaches the web view.
@@ -1662,7 +1662,7 @@ extension AppDelegate: BridgeDelegate {
         panel.message = wantFile ? "Choose a file" : "Choose a directory"
         panel.prompt = "Choose"
         // A file picker only edits text: restrict to text UTIs so binaries
-        // (images, PDFs, archives) can't be chosen into a File card.
+        // (images, PDFs, archives) can't be chosen into a Text card.
         if wantFile {
             panel.allowedContentTypes = AppDelegate.editableContentTypes
         }
@@ -2089,7 +2089,7 @@ struct MenuState {
         let hasTurns: Bool
     }
 
-    /// File-card state; nil unless the active card is a File card. Gates
+    /// Text-card state; nil unless the active card is a Text card. Gates
     /// the classic File menu (Save / Save As… / Save a Copy… / Revert /
     /// Reload) and drives the dynamic ⇧⌘S assignment.
     struct File {

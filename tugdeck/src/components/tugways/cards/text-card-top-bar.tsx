@@ -1,19 +1,19 @@
 /**
- * file-card-top-bar.tsx — the thin chrome strip above a File card's
+ * text-card-top-bar.tsx — the thin chrome strip above a Text card's
  * editor: the full file path on the left (BBEdit-style) and the action
  * icons on the right (Move To… for untitled drafts, plus the gear that
  * opens the editor-options popover).
  *
- * The gear popover renders the shared `FileEditorControls` (the same
- * Editing + Display groups as the Settings card's File Editor tab), so
- * the two look identical. The controls write the card-local File-editor
- * settings (`use-file-editor-settings`), so a change takes effect in
+ * The gear popover renders the shared `TextCardControls` (the same
+ * Editing + Display groups as the Settings card's Text Card tab), so
+ * the two look identical. The controls write the card-local Text Card
+ * settings (`use-text-card-settings`), so a change takes effect in
  * this card only.
  *
- * Laws: layout lives in file-card.css [L06]; composes real Tug
+ * Laws: layout lives in text-card.css [L06]; composes real Tug
  * components (no hand-rolled UI) [use-tug-components].
  *
- * @module components/tugways/cards/file-card-top-bar
+ * @module components/tugways/cards/text-card-top-bar
  */
 
 import React from "react";
@@ -23,17 +23,17 @@ import {
   Settings as SettingsIcon,
 } from "lucide-react";
 
-import type { SaveMode } from "@/lib/file-editor-store";
+import type { SaveMode } from "@/lib/text-card-store";
 import { TugIconButton } from "../tug-icon-button";
 import {
   TugPopover,
   TugPopoverContent,
   TugPopoverTrigger,
 } from "../tug-popover";
-import { FileEditorControls } from "./file-editor-controls";
-import type { FileEditorSettings } from "@/lib/file-editor-settings";
+import { TextCardControls } from "./text-card-controls";
+import type { TextCardSettings } from "@/lib/text-card-settings";
 
-export interface FileCardTopBarProps {
+export interface TextCardTopBarProps {
   /** Full bound path, or null for an unbound / untitled buffer. */
   path: string | null;
   /** Whether the buffer is an untitled draft (path is a drafts-dir file). */
@@ -57,12 +57,12 @@ export interface FileCardTopBarProps {
   /** Reveal the bound file in the Finder (path click); absent for untitled. */
   onRevealInFinder?: () => void;
   /** The card-local editor settings the gear popover displays. */
-  settings: FileEditorSettings;
+  settings: TextCardSettings;
   /** Merge a partial settings change (card-local). */
-  onChangeSetting: (partial: Partial<FileEditorSettings>) => void;
+  onChangeSetting: (partial: Partial<TextCardSettings>) => void;
 }
 
-export function FileCardTopBar({
+export function TextCardTopBar({
   path,
   isDraft,
   saveMode,
@@ -73,26 +73,26 @@ export function FileCardTopBar({
   onRevealInFinder,
   settings,
   onChangeSetting,
-}: FileCardTopBarProps) {
+}: TextCardTopBarProps) {
   const isUntitled = isDraft || path === null;
   const displayPath = isUntitled ? "Untitled" : path;
   const revealable = !isUntitled && onRevealInFinder !== undefined;
   return (
-    <div className="file-card-top-bar" data-slot="file-card-top-bar">
+    <div className="text-card-top-bar" data-slot="text-card-top-bar">
       {/* `dir="rtl"` start-truncates the strip so the filename (path tail)
           stays visible; the leading Left-to-Right mark (U+200E) anchors the
           path's leading "/" so an absolute path doesn't render with the
           slash reordered to the end (looking relative). No title tooltip —
           the full path is already shown; a click reveals it in the Finder. */}
       <span
-        className="file-card-top-bar-path"
+        className="text-card-top-bar-path"
         dir="rtl"
         data-revealable={revealable ? "true" : undefined}
         onClick={revealable ? onRevealInFinder : undefined}
       >
         {isUntitled ? displayPath : `‎${displayPath}`}
       </span>
-      <div className="file-card-top-bar-actions">
+      <div className="text-card-top-bar-actions">
         {saveMode === "manual" ? (
           // Manual mode: a plain Save writes the buffer to the real file.
           <TugIconButton
@@ -110,7 +110,7 @@ export function FileCardTopBar({
             onClick={onMoveTo}
           />
         ) : null}
-        <FileCardOptionsPopover settings={settings} onChangeSetting={onChangeSetting} />
+        <TextCardOptionsPopover settings={settings} onChangeSetting={onChangeSetting} />
       </div>
     </div>
   );
@@ -120,12 +120,12 @@ export function FileCardTopBar({
 // Options popover (the gear)
 // ---------------------------------------------------------------------------
 
-function FileCardOptionsPopover({
+function TextCardOptionsPopover({
   settings,
   onChangeSetting,
 }: {
-  settings: FileEditorSettings;
-  onChangeSetting: (partial: Partial<FileEditorSettings>) => void;
+  settings: TextCardSettings;
+  onChangeSetting: (partial: Partial<TextCardSettings>) => void;
 }) {
   return (
     // The controls dispatch chain actions of their own; keep the popover
@@ -139,11 +139,11 @@ function FileCardOptionsPopover({
         />
       </TugPopoverTrigger>
       <TugPopoverContent side="bottom" align="end" sideOffset={6}>
-        <div className="file-card-options" data-testid="file-card-options">
+        <div className="text-card-options" data-testid="text-card-options">
           {/* The app-wide settings card takes its title from the tab;
               the popover has no tab, so it carries its own. */}
-          <div className="file-card-options-title">File Editor Settings</div>
-          <FileEditorControls settings={settings} onChange={onChangeSetting} />
+          <div className="text-card-options-title">Text Card Settings</div>
+          <TextCardControls settings={settings} onChange={onChangeSetting} />
         </div>
       </TugPopoverContent>
     </TugPopover>

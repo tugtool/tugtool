@@ -1853,7 +1853,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       capabilities: { canEdit: true },
       // Target-dependent extras: a right-click on a path-bearing atom
       // chip (`<img data-atom-type="file">`) offers "Open in Editor",
-      // jumping straight from a prompt mention to the File card.
+      // jumping straight from a prompt mention to the Text card.
       extraEntries: (event) => {
         contextAtomPathRef.current = null;
         const target = event.target;
@@ -2196,7 +2196,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       [TUG_ACTIONS.MOVE_WORD_BACKWARD]: handleMoveWordBackward,
       // Context-menu "Open in Editor" on a file atom — the path was
       // captured at menu-open time; route through the deck-level
-      // open-file handler (path-keyed File-card reuse).
+      // open-file handler (path-keyed Text-card reuse).
       [TUG_ACTIONS.OPEN_FILE]: () => {
         const path = contextAtomPathRef.current;
         if (path === null) return;

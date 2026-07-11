@@ -1,6 +1,6 @@
 /**
  * file-io.ts — typed client for tugcast's `/api/fs/read` and `/api/fs/write`,
- * the disk surface behind the File card's live-autosave engine.
+ * the disk surface behind the Text card's live-autosave engine.
  *
  * Reads return the canonicalized path (the identity the filesystem watcher
  * reports events against) plus a sha256 of the content bytes — the baseline

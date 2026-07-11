@@ -1,5 +1,5 @@
 /**
- * at0212-file-editor-manual-save.test.ts — File card manual save mode
+ * at0212-text-card-manual-save.test.ts — Text card manual save mode
  * ([AT0212], roadmap/file-editing-enhancements.md). Manual is the shipping
  * default; this drives the classic document contract on real files through
  * real code paths — no mocks.
@@ -13,21 +13,21 @@
  *    (manual default); typing marks the card "Edited" WITHOUT touching
  *    disk. The File menu validates per Spec S02 (clean → Save/Revert
  *    disabled, Reload enabled; dirty → Save/Revert enabled) and Save As…
- *    carries ⇧⌘S while a file card is frontmost ([P07]).
+ *    carries ⇧⌘S while a text card is frontmost ([P07]).
  * 2. **Dirty close.** A dirty card gated by both a plain X-click (the
  *    `!confirmClose` short-circuit, Risk R02) and the `close` control
  *    action presents the close sheet; Cancel keeps it, Don't Save closes
  *    without writing.
  * 3. **Aside crash-safety.** A dirty edit is set aside under Autosave
  *    Information without touching the real file.
- * 4. **Automatic mode retained.** A seeded automatic file card keeps Save
+ * 4. **Automatic mode retained.** A seeded automatic text card keeps Save
  *    enabled even when clean (the [P07] no-beep guard).
- * 5. **New Text File.** `new-text-file` opens a second Untitled editor.
+ * 5. **New Text Card.** `new-text-card` opens a second Untitled editor.
  *
  * ## Coverage note — the explicit-save write, external-change conflict,
  * and the [P12] "Save Anyway writes the REAL file not the aside" guard are
  * verified at the real store layer in
- * `tugdeck/src/lib/__tests__/file-editor-store.manual.test.ts` (deterministic,
+ * `tugdeck/src/lib/__tests__/text-card-store.manual.test.ts` (deterministic,
  * real fs-io code paths). They are NOT asserted here because a ⌘S-driven
  * save routes through the responder chain to the editor *leaf* responder,
  * and a headless sweep (no frontmost app; synthetic focus over CM6, which
@@ -52,7 +52,7 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-file-editor"] .cm-content`;
-const SAVE_CELL = `${CARD} [data-testid="file-card-status-save"]`;
+const SAVE_CELL = `${CARD} [data-testid="text-card-status-save"]`;
 const CLOSE_BUTTON = `[data-testid="tug-pane-close-button"]`;
 
 const ORIGINAL = "alpha\nbeta\ngamma\n";
@@ -66,7 +66,7 @@ function mkFixture(): { dir: string; file: string } {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "file", title: "File", closable: true }],
+    cards: [{ id: "A", componentId: "text", title: "File", closable: true }],
     panes: [
       {
         id: "p1",
@@ -83,14 +83,14 @@ function deckShape() {
   };
 }
 
-async function seedFileCard(
+async function seedTextCard(
   app: App,
   filePath: string,
   mode: "manual" | "automatic" = "manual",
 ): Promise<void> {
   if (mode === "automatic") {
     await app.evalJS<null>(
-      `(window.__tug.setTugbankValue("dev.tugtool.file-editor","save-mode",{kind:"string",value:"automatic"}), null)`,
+      `(window.__tug.setTugbankValue("dev.tugtool.text-card","save-mode",{kind:"string",value:"automatic"}), null)`,
     );
   }
   await app.seedDeckState({
@@ -175,14 +175,14 @@ async function waitSheetButton(app: App, result: string, timeoutMs = 15000): Pro
 const CMD_MASK = 1 << 20;
 const SHIFT_MASK = 1 << 17;
 
-describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
+describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
   test(
     "edits stay off disk; menu gates + dynamic ⇧⌘S",
     async () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-gates" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
 
         // Clean titled manual card: "Saved"; Save/Revert disabled, Reload
@@ -225,7 +225,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-reclaim" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await typeIntoEditor(app, "MOVED ");
         await waitForSaveCell(app, "Edited");
@@ -276,7 +276,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-conflict" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await typeIntoEditor(app, "MINE ");
         await waitForSaveCell(app, "Edited");
@@ -312,7 +312,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-close" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await typeIntoEditor(app, "UNSAVED ");
         await waitForSaveCell(app, "Edited");
@@ -362,7 +362,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-aside" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await typeIntoEditor(app, "ASIDE-SENTINEL ");
         await waitForSaveCell(app, "Edited");
@@ -401,7 +401,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-automatic" });
       try {
-        await seedFileCard(app, file, "automatic");
+        await seedTextCard(app, file, "automatic");
         await waitForEditor(app, "alpha");
         await waitMenuEnabled(app, "file.save", true);
       } finally {
@@ -418,7 +418,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0212-preempt" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await typeIntoEditor(app, "MINE ");
         await waitForSaveCell(app, "Edited");
@@ -503,12 +503,12 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       fs.writeFileSync(fileB, "other\n", "utf8");
       const app = await launchTugApp({ testName: "at0212-tab-close" });
       try {
-        // Two file cards in ONE pane so the tab bar renders; A is active.
+        // Two text cards in ONE pane so the tab bar renders; A is active.
         await app.seedDeckState({
           state: {
             cards: [
-              { id: "A", componentId: "file", title: "File", closable: true },
-              { id: "B", componentId: "file", title: "File", closable: true },
+              { id: "A", componentId: "text", title: "File", closable: true },
+              { id: "B", componentId: "text", title: "File", closable: true },
             ],
             panes: [
               {
@@ -578,13 +578,13 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
       fs.writeFileSync(fileB, "other\n", "utf8");
       const app = await launchTugApp({ testName: "at0212-visit-dirty" });
       const B_EDITOR = `[data-card-id="B"] [data-slot="tug-file-editor"] .cm-content`;
-      const B_SAVE_CELL = `[data-card-id="B"] [data-testid="file-card-status-save"]`;
+      const B_SAVE_CELL = `[data-card-id="B"] [data-testid="text-card-status-save"]`;
       try {
         await app.seedDeckState({
           state: {
             cards: [
-              { id: "A", componentId: "file", title: "File", closable: true },
-              { id: "B", componentId: "file", title: "File", closable: true },
+              { id: "A", componentId: "text", title: "File", closable: true },
+              { id: "B", componentId: "text", title: "File", closable: true },
             ],
             panes: [
               {
@@ -685,15 +685,15 @@ describe.skipIf(!SHOULD_RUN)("at0212: File card manual save", () => {
   );
 
   test(
-    "New Text File opens a second Untitled editor",
+    "New Text Card opens a second Untitled editor",
     async () => {
       const { dir, file } = mkFixture();
-      const app = await launchTugApp({ testName: "at0212-new-text-file" });
+      const app = await launchTugApp({ testName: "at0212-new-text-card" });
       try {
-        await seedFileCard(app, file);
+        await seedTextCard(app, file);
         await waitForEditor(app, "alpha");
         await settle();
-        await dispatchControl(app, "new-text-file");
+        await dispatchControl(app, "new-text-card");
         await settle();
         await app.waitForCondition<boolean>(
           `document.querySelectorAll('[data-slot="tug-file-editor"]').length >= 2`,

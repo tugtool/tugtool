@@ -898,7 +898,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
             title={data.filePath}
             data-tug-focus="refuse"
             onClick={(event) => {
-              // Primary click opens the file in a File card at the
+              // Primary click opens the file in a Text card at the
               // block's starting line (open-file: path-keyed reuse).
               if (event.button !== 0 || event.metaKey || event.shiftKey) {
                 return;

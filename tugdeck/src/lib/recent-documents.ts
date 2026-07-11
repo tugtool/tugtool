@@ -2,7 +2,7 @@
  * recent-documents.ts — the deck's Open Recent list.
  *
  * A most-recently-used list of absolute file paths, persisted in tugbank
- * (`dev.tugtool.file-editor` / `recent-documents`) so it survives across
+ * (`dev.tugtool.text-card` / `recent-documents`) so it survives across
  * launches, and mirrored to the Swift host for the File ▸ Open Recent
  * submenu. The deck owns ordering and de-duplication; the host filters
  * the list to files that still exist and shows the top
@@ -17,10 +17,10 @@
  */
 
 import { getTugbankClient } from "./tugbank-singleton";
-import { FILE_EDITOR_DEFAULTS_DOMAIN } from "./file-editor-settings";
+import { TEXT_CARD_DEFAULTS_DOMAIN } from "./text-card-settings";
 import { publishRecentDocuments } from "./host-menu-state";
 
-/** tugbank key under {@link FILE_EDITOR_DEFAULTS_DOMAIN} for the MRU list. */
+/** tugbank key under {@link TEXT_CARD_DEFAULTS_DOMAIN} for the MRU list. */
 export const RECENT_DOCUMENTS_KEY = "recent-documents";
 
 /**
@@ -82,7 +82,7 @@ export function coerceRecentDocuments(raw: unknown): string[] {
 export function initRecentDocuments(): void {
   let raw: unknown;
   try {
-    raw = getTugbankClient()?.getValue(FILE_EDITOR_DEFAULTS_DOMAIN, RECENT_DOCUMENTS_KEY);
+    raw = getTugbankClient()?.getValue(TEXT_CARD_DEFAULTS_DOMAIN, RECENT_DOCUMENTS_KEY);
   } catch (err) {
     console.warn("[recent-documents] read failed:", err);
   }
@@ -127,12 +127,12 @@ export function clearRecentDocuments(): void {
 function persist(): void {
   try {
     getTugbankClient()?.setLocalValue(
-      FILE_EDITOR_DEFAULTS_DOMAIN,
+      TEXT_CARD_DEFAULTS_DOMAIN,
       RECENT_DOCUMENTS_KEY,
       { kind: "json", value: recents },
     );
     void fetch(
-      `/api/defaults/${FILE_EDITOR_DEFAULTS_DOMAIN}/${RECENT_DOCUMENTS_KEY}`,
+      `/api/defaults/${TEXT_CARD_DEFAULTS_DOMAIN}/${RECENT_DOCUMENTS_KEY}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

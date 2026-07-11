@@ -1,5 +1,5 @@
 /**
- * file-aside.ts — set-aside autosave records for the File card's manual
+ * file-aside.ts — set-aside autosave records for the Text card's manual
  * save mode.
  *
  * A manual-mode buffer's unsaved edits never touch the real file; instead
@@ -24,7 +24,7 @@
  * @module lib/file-aside
  */
 
-import type { LineEnding } from "@/lib/file-editor-store";
+import type { LineEnding } from "@/lib/text-card-store";
 import {
   readFileFromDisk,
   writeFileToDisk,

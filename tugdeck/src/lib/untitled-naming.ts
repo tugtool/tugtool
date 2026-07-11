@@ -1,11 +1,11 @@
 /**
- * untitled-naming.ts — session-scoped numbering for untitled File-card
+ * untitled-naming.ts — session-scoped numbering for untitled Text-card
  * buffers.
  *
- * A new untitled document (File ▸ New Text File) gets the next number in
+ * A new untitled document (File ▸ New Text Card) gets the next number in
  * a run that starts fresh at each app launch: `Untitled`, `Untitled-2`,
  * `Untitled-3`, … The number is allocated once, at creation, and rides
- * the card's bag ({@link FileCardBagContent.untitledNumber}) so it stays
+ * the card's bag ({@link TextCardBagContent.untitledNumber}) so it stays
  * stable across re-renders and a Maker ▸ Reload restore.
  *
  * The counter lives in module scope, so a true page load (app launch,

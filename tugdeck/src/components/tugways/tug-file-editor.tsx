@@ -18,8 +18,8 @@
  *
  * Document ownership: CM6 is the runtime store for the text — the
  * document never enters React state. The component binds to a
- * `FileEditorStore` (the card's autosave engine) through the
- * `FileEditorBridge` contract:
+ * `TextCardStore` (the card's autosave engine) through the
+ * `TextCardBridge` contract:
  *
  *   - mount seeds the document from `snapshot.seedContent`;
  *   - every user edit calls `store.noteEdit()` (arming the autosave
@@ -106,13 +106,13 @@ import {
 } from "@/lib/tug-native-clipboard";
 import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import type {
-  FileEditorStore,
+  TextCardStore,
   FilePositions,
-} from "@/lib/file-editor-store";
+} from "@/lib/text-card-store";
 import {
-  DEFAULT_FILE_EDITOR_SETTINGS,
-  type FileEditorSettings,
-} from "@/lib/file-editor-settings";
+  DEFAULT_TEXT_CARD_SETTINGS,
+  type TextCardSettings,
+} from "@/lib/text-card-settings";
 import type { EditorStats } from "@/lib/editor-stats-store";
 import { countWords, wordCountDelta } from "@/lib/word-count";
 import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
@@ -160,7 +160,7 @@ const activeLineCompartment = new Compartment();
  * `tabSize` spaces; hard tabs insert a literal `\t`. `tabSize` also
  * sets how a literal tab already in the file is rendered/measured.
  */
-function tabConfigFor(settings: FileEditorSettings): Extension {
+function tabConfigFor(settings: TextCardSettings): Extension {
   const unit = settings.softTabs ? " ".repeat(settings.tabSize) : "\t";
   return [EditorState.tabSize.of(settings.tabSize), indentUnit.of(unit)];
 }
@@ -173,7 +173,7 @@ interface DocStats {
 }
 
 /** The active-line-highlight extensions for a settings snapshot. */
-function activeLineFor(settings: FileEditorSettings): Extension {
+function activeLineFor(settings: TextCardSettings): Extension {
   return settings.highlightActiveLine
     ? [highlightActiveLine(), highlightActiveLineGutter()]
     : [];
@@ -186,7 +186,7 @@ function activeLineFor(settings: FileEditorSettings): Extension {
  * `data-show-tabs` attributes in CSS, so the two toggles are
  * independent without a custom decoration.
  */
-function whitespaceFor(settings: FileEditorSettings): Extension {
+function whitespaceFor(settings: TextCardSettings): Extension {
   return settings.showSpaces || settings.showTabs ? highlightWhitespace() : [];
 }
 
@@ -195,7 +195,7 @@ function whitespaceFor(settings: FileEditorSettings): Extension {
  * the CSS reads to narrow `highlightWhitespace`'s glyphs per kind.
  * DOM-only ([L06]) — no React state.
  */
-function applyWhitespaceAttrs(host: HTMLElement, settings: FileEditorSettings): void {
+function applyWhitespaceAttrs(host: HTMLElement, settings: TextCardSettings): void {
   host.dataset.showSpaces = String(settings.showSpaces);
   host.dataset.showTabs = String(settings.showTabs);
 }
@@ -258,10 +258,10 @@ export interface TugFileEditorProps {
   /**
    * The card's autosave engine. The editor seeds its document from the
    * store's snapshot at mount, reports edits via `noteEdit`, and
-   * attaches the `FileEditorBridge` so the store can read the buffer
+   * attaches the `TextCardBridge` so the store can read the buffer
    * at flush time and replace it on external-change reverts.
    */
-  store: FileEditorStore;
+  store: TextCardStore;
   /**
    * Refuse edits (permission-refused files). Reconfigures
    * `EditorState.readOnly` live; the store separately refuses to arm
@@ -272,14 +272,14 @@ export interface TugFileEditorProps {
   /**
    * CM6 view settings (line numbers, soft wrap, soft tabs, tab width,
    * fold gutter, active-line highlight, invisibles). Seeded from the
-   * deck-wide File-editor defaults and overridden per card by the gear
+   * deck-wide Text Card defaults and overridden per card by the gear
    * popup; each field reconfigures its compartment live.
-   * @default DEFAULT_FILE_EDITOR_SETTINGS
+   * @default DEFAULT_TEXT_CARD_SETTINGS
    */
-  settings?: FileEditorSettings;
+  settings?: TextCardSettings;
   /**
    * File extension (no dot) whose grammar to load for syntax
-   * highlighting, or null for plain text. The File card derives this
+   * highlighting, or null for plain text. The Text card derives this
    * from the file's path, overridable by the status-bar file-type
    * popup. Plain text while the grammar chunk loads.
    */
@@ -288,7 +288,7 @@ export interface TugFileEditorProps {
   className?: string;
   /**
    * Called when the responder chain receives `FIND` (Cmd-F inside the
-   * editor). The File card wires this to its find-bar toggle.
+   * editor). The Text card wires this to its find-bar toggle.
    */
   onFindRequested?: () => void;
   /**
@@ -319,7 +319,7 @@ export const TugFileEditor = React.forwardRef<
   {
     store,
     readOnly = false,
-    settings = DEFAULT_FILE_EDITOR_SETTINGS,
+    settings = DEFAULT_TEXT_CARD_SETTINGS,
     languageExt,
     className,
     onFindRequested,

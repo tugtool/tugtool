@@ -7,7 +7,7 @@
    `TugFileEditor` paints a CM6-backed read-write file editing surface.
    Frame and code typography come from `--tugx-block-*`; editor-specific
    slots live here under `--tugx-fileeditor-*`. The host `<div>` fills
-   its parent — the File card body owns the frame.
+   its parent — the Text card body owns the frame.
 */
 
 /**
@@ -30,7 +30,7 @@
  *    `--tugx-fileeditor-*`; no reach into other components' slots.
  */
 
-/* ---- Component-tier aliases — file-editor-specific only [L17] ---- */
+/* ---- Component-tier aliases — text-card-specific only [L17] ---- */
 
 body {
   /* Editing surface. The field surface family (not the block strip)

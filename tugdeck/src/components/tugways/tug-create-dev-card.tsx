@@ -5,8 +5,8 @@
  * with an empty layout — and offers a "What's next?" chooser with two paths
  * back to work: a default double-ringed "Create Dev Card" button that opens a
  * fresh Dev card (which becomes first responder and presents the Choose
- * Session sheet on mount), and an "Open Text File" button that runs the
- * native Open panel and opens the chosen file in a File card.
+ * Session sheet on mount), and an "Open Text Card" button that runs the
+ * native Open panel and opens the chosen file in a Text card.
  *
  * Drives a dedicated {@link TugAlert} instance (not the provider singleton,
  * so a logout confirm can never clobber its pending promise) from the derived
@@ -130,7 +130,7 @@ export function TugCreateDevCard(): ReactElement {
           },
           {
             id: "file",
-            label: "Open Text File",
+            label: "Open Text Card",
             description: "Open an existing file to edit.",
             icon: "FileText",
           },
@@ -151,7 +151,7 @@ export function TugCreateDevCard(): ReactElement {
             if (openedPath !== null) openFileInCard(deck, openedPath);
           } finally {
             pendingRef.current = false;
-            // A chosen path opened a File card (deck non-empty → the offer
+            // A chosen path opened a Text card (deck non-empty → the offer
             // closes on its own). A cancelled panel changed nothing, so
             // re-arm the chooser explicitly — otherwise the user is stranded
             // on an empty deck with no sheet.
