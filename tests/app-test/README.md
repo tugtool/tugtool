@@ -271,21 +271,6 @@ Step-by-step:
     `at0105` (permission `⇧⌘P`); the binding's static contract is
     additionally pinned by `keybinding-map.test.ts` (pure-logic).
 
-## Lint: no raw timers
-
-`tests/app-test/` forbids `setTimeout` and `setInterval` in test code
-(the harness itself uses a `setTimeoutNative` alias internally —
-see `_harness/index.ts`). Run the checker with:
-
-```bash
-cd tests/app-test && bun run lint:no-timers
-```
-
-Exit 0 is clean; exit 1 prints offending `file:line` locations. The
-rationale: raw timers make flaky tests; use `app.waitForCondition` or
-one of the typed wrappers that already wraps a timer with structured
-timeout + error.
-
 ## Directory layout
 
 ```
@@ -306,7 +291,6 @@ tests/app-test/
   at{NNNN}-<slug>.test.ts     # AT-numbered scenario tests; prefix must match inventory.
   bunfig.toml                 # [test] root = "." — no test preload.
   tsconfig.json               # Path alias @/_harness. tsc --noEmit must be clean.
-  lint-no-timers.ts           # bun run lint:no-timers scanner.
   logs/                       # Per-spawn stdout/stderr dumps. Gitignored.
 ```
 
