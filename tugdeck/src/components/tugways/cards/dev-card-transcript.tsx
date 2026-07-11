@@ -817,11 +817,15 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
         continue;
       }
       if (message.source === "scheduled") {
-        // Wake-trigger chip — a subdued label above the wake turn's
-        // assistant content naming what scheduled it ("loop pacing", a
-        // cron's prompt), seeded by the reducer from
-        // `wake_started.wake_trigger.summary`. Appearance is CSS-only
-        // ([L06]).
+        // Wake-trigger chip — a subdued marker above the wake turn's
+        // assistant content naming what scheduled it, seeded by the
+        // reducer from `wake_started.wake_trigger.summary`. A scheduled
+        // wake ("loop pacing", a cron's prompt) carries a short label; a
+        // background-agent completion carries the agent's full answer,
+        // which is markdown. Route the text through `TugMarkdownBlock`
+        // so that rich content renders formatted rather than as literal
+        // `##`/backtick source — a short label renders identically as a
+        // single paragraph. Appearance is CSS-only ([L06]).
         elements.push(
           <div
             key={message.messageKey}
@@ -830,7 +834,13 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
           >
             <TugQuietLine
               icon={<AlarmClock size={16} aria-hidden="true" />}
-              subject={message.text}
+              subject={
+                <TugMarkdownBlock
+                  key={`md-${message.text.length}`}
+                  initialText={message.text}
+                  className="dev-card-transcript-wake-trigger-md"
+                />
+              }
               tone="quiet"
             />
           </div>,

@@ -625,6 +625,21 @@
 .dev-card-transcript-wake-trigger + .tug-markdown-block {
   margin-top: var(--tug-space-xs);
 }
+/* The wake-trigger chip's text renders through `TugMarkdownBlock` so a
+   background-agent answer formats as real markdown. It rides the quiet
+   line's `subject` slot (an `inline-flex` item), so give the block full
+   row width and cancel the primitive's stand-alone horizontal padding —
+   the quiet line's icon gutter already provides the indent. Color stays
+   the muted subject tone the slot inherits. */
+.dev-card-transcript-wake-trigger .tug-quiet-line-subject:has(
+    > .dev-card-transcript-wake-trigger-md
+  ) {
+  display: block;
+}
+.dev-card-transcript-wake-trigger-md {
+  --tugx-md-block-padding-x: 0;
+  width: 100%;
+}
 
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
