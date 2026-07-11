@@ -202,7 +202,7 @@ export const SideQuestionOverlay = forwardRef<
     >
       <div className="side-question-body" data-slot="side-question-body">
         {exchanges.length === 0 ? (
-          <div className="side-question-empty">No side questions yet.</div>
+          <div className="side-question-empty">No side questions</div>
         ) : (
           exchanges.map((ex) => (
             <SideQuestionExchangeRow
