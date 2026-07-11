@@ -13,6 +13,9 @@
  *      flight (`canInterrupt`), disabled again after `turn_complete`.
  *   3. **Copy Last Response / Rewind** — flip enabled once the
  *      transcript commits a turn carrying an assistant message.
+ *   4. **Permission Mode radios + Cycle** — the inverse of Stop: enabled
+ *      idle, disabled mid-turn (`canChangeSettings` / `canSubmit`) so a
+ *      mode change can never race the running turn, re-enabled at idle.
  *
  * The turn is driven through the real `CodeSessionStore` wire path
  * (`driveDevSession` send + ingestFrame — the at0099 pattern); the
@@ -156,6 +159,12 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await app.driveDevSession("A", { op: "send", text: "hello there" });
         await expectEnabled(app, "session.stop", true);
 
+        // The Mode control locks mid-turn: the Permission Mode radios and
+        // Cycle gate on canChangeSettings (canSubmit) exactly like the Z4B
+        // chips, so a mode change can never race the running turn.
+        await expectEnabled(app, "session.permissionMode.plan", false);
+        await expectEnabled(app, "session.permissionMode.cycle", false);
+
         // Commit the turn with an assistant message.
         await frame({ type: "prompt_anchor", promptUuid: "uuid-1" });
         await frame({ type: "content_block_start", msg_id: "m1", block_index: 0, kind: "text" });
@@ -163,8 +172,10 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await frame({ type: "turn_complete", msg_id: "m1", result: "success" });
 
         // Back to idle: Stop gates off; the committed transcript
-        // enables Copy Last Response and Rewind.
+        // enables Copy Last Response and Rewind; the Mode control unlocks.
         await expectEnabled(app, "session.stop", false);
+        await expectEnabled(app, "session.permissionMode.plan", true);
+        await expectEnabled(app, "session.permissionMode.cycle", true);
         await expectEnabled(app, "edit.copyLastResponse", true);
         await expectEnabled(app, "session.rewind", true);
       } catch (err) {

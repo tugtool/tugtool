@@ -145,6 +145,7 @@ Planning history — kept for context, not authoritative.
 ## Cross-Links
 
 - [lifecycle-delegates.md](lifecycle-delegates.md) — The deck-level `TugCardDelegate` pipe that `RouteLifecycle` is modeled on. Same observer-vs-delegate split; `CardLifecycle` is deck-scoped, surfaces six moments, carries a payload-less `cardId`, and defers delegates through a `MessageChannel` drain. `RouteLifecycle` is per-prompt-entry, surfaces one moment, carries `(prev, next)`, and dispatches synchronously.
+- [turn-lifecycle.md](turn-lifecycle.md) — The Dev-session turn state machine. `routeAwareSubmitButtonMode` (above) governs the `$` shell route's Z5 button, disjoint from the Claude turn lifecycle documented there; the two share the Z5 button by route.
 - [design-decisions.md](design-decisions.md) — [D99] (`RouteLifecycle` owns the authoritative route), [D97] (the Dev card's `Z0`–`Z5` placement zones), [D98] (host facts — the route-indicator badge names a route's target from them).
 - [responder-chain.md](responder-chain.md) — the `SELECT_VALUE` and `SELECT_ROUTE` actions that reach `TugPromptEntry`'s responder and call `setRoute`.
 - [state-preservation.md](state-preservation.md) — the `onSave` / `onRestore` protocol the route rides; the persisted route is applied through `setRoute` before first paint.

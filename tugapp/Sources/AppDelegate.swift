@@ -1434,6 +1434,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 menuItem.state = (mode == menuState.dev?.permissionMode) ? .on : .off
             }
             guard devCardFrontmost else { return false }
+            // The Mode control must not change mid-turn. The whole Permission
+            // Mode submenu — the parent item, every radio, and Cycle (whose
+            // ⇧⌘P key equivalent is validated even while the menu is closed) —
+            // gates on the same `canChangeSettings` (canSubmit) the Z4B chips
+            // do, so a disabled item beeps instead of racing the running turn.
+            if id.hasPrefix("session.permissionMode") {
+                return (menuState.dev?.sessionBound ?? false)
+                    && (menuState.dev?.canChangeSettings ?? false)
+            }
             switch id {
             case "session.focusPrompt":
                 return true
@@ -2071,6 +2080,10 @@ struct MenuState {
         let cardId: String
         let sessionBound: Bool
         let canInterrupt: Bool
+        /// The Mode / Model / Effort settings may be changed (session idle —
+        /// `canSubmit`). Gates the Permission Mode submenu so a mode change
+        /// can never race a running turn, matching the disabled Z4B chips.
+        let canChangeSettings: Bool
         let permissionMode: String
         let hasAssistantMessage: Bool
         let hasTurns: Bool
@@ -2188,6 +2201,9 @@ struct MenuState {
                 cardId: cardId,
                 sessionBound: rawDev["sessionBound"] as? Bool ?? false,
                 canInterrupt: rawDev["canInterrupt"] as? Bool ?? false,
+                // Fail open: a parse miss keeps the submenu enabled (its prior
+                // behavior) rather than stranding a dead Permission Mode menu.
+                canChangeSettings: rawDev["canChangeSettings"] as? Bool ?? true,
                 permissionMode: rawDev["permissionMode"] as? String ?? "default",
                 hasAssistantMessage: rawDev["hasAssistantMessage"] as? Bool ?? false,
                 hasTurns: rawDev["hasTurns"] as? Bool ?? false

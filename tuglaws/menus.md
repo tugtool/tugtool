@@ -51,6 +51,7 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
     "cardId": "...",
     "sessionBound": true,
     "canInterrupt": false,
+    "canChangeSettings": true,     // canSubmit — false mid-turn locks Permission Mode
     "permissionMode": "default",   // live metadata ?? persisted ?? "default"
     "hasAssistantMessage": false,
     "hasTurns": false
@@ -151,7 +152,7 @@ re-validates on menu open and key-equivalent dispatch; nothing pushes
 | 2 — deck state | `panes` | `file.closeCard` (closable), `file.closeAllCardTabs` / `window.previousCard` / `window.nextCard` (focused `cardCount > 1`), `maker.newCardInPane` (≥1 pane; debug-gated Maker menu), `window.cyclePanes` (≥2 panes) |
 | 3 — edit capability | `edit` block | `edit.cut` / `edit.copy` / `edit.paste` / `edit.delete` / `edit.selectAll` / `edit.undo` / `edit.redo` and the Find trio (`edit.find` / `edit.findNext` / `edit.findPrevious`) — each gated on the focused responder handling that action; undo/redo additionally carry the focused editor's history depth |
 | 4 — card type | `activeCard.component == "dev"` | every `session.*` item, `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts` |
-| 5 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), other `session.*` items (`sessionBound`) |
+| 5 — session state | `dev` block | `session.stop` (`canInterrupt`), `session.rewind` (`sessionBound && hasTurns`), `edit.copyLastResponse` (`hasAssistantMessage`), the Permission Mode subtree `session.permissionMode*` — radios + Cycle (`sessionBound && canChangeSettings`, so a mode change never races a turn — [turn-lifecycle.md](turn-lifecycle.md)), other `session.*` items (`sessionBound`) |
 
 An item in tiers 4+5 requires both. The Session menu is
 **disabled, not hidden** — stable menu bars preserve discoverability. The

@@ -164,6 +164,7 @@ describe("HostMenuStatePublisher", () => {
     cardId,
     sessionBound: true,
     canInterrupt: false,
+    canChangeSettings: true,
     permissionMode: "default",
     hasAssistantMessage: false,
     hasTurns: false,

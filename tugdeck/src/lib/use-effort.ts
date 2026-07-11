@@ -119,7 +119,14 @@ export function useEffort({
   // per card, and send the `effort_change` frame to tugcode → respawn. The
   // single path the picker and the mount-restore both funnel through.
   const setEffort = useCallback(
-    (effort: string) => {
+    (effort: string, opts?: { fromRestore?: boolean }) => {
+      // Decline a user-initiated change while a turn is in flight so the effort
+      // respawn never tears down the running turn ([R07]) — the session
+      // lifecycle publishes `canSubmit` and this control acts only when it is
+      // set. The mount-restore seed passes `fromRestore` to bypass the gate.
+      if (!opts?.fromRestore && !codeSessionStore.getSnapshot().canSubmit) {
+        return;
+      }
       sentRef.current = true;
       sessionMetadataStore.applyEffort(effort);
       writePersistedEffort(cardId, effort);
@@ -160,7 +167,7 @@ export function useEffort({
     // needless respawn ([R07]).
     const effectiveLive = liveEffort ?? DEFAULT_EFFORT_LEVEL;
     if (seedEffort !== effectiveLive) {
-      setEffort(seedEffort);
+      setEffort(seedEffort, { fromRestore: true });
     } else {
       sentRef.current = true;
     }

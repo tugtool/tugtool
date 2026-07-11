@@ -127,7 +127,14 @@ export function useModel({
   // renders as the catalog row's "name with version" title; the authoritative
   // `system_metadata` sharpens it to the exact model id after the next turn.
   const setModel = useCallback(
-    (selector: string) => {
+    (selector: string, opts?: { fromRestore?: boolean }) => {
+      // Decline a user-initiated change while a turn is in flight so the
+      // model never races the running turn — the session lifecycle publishes
+      // `canSubmit` and this control acts only when it is set. The
+      // mount-restore seed passes `fromRestore` to bypass the gate.
+      if (!opts?.fromRestore && !codeSessionStore.getSnapshot().canSubmit) {
+        return;
+      }
       sentRef.current = true;
       sessionMetadataStore.applyModel(selector);
       writePersistedModel(cardId, selector);
@@ -159,7 +166,7 @@ export function useModel({
         ? modelIdToSelector(model, knownModelRows(models, readModelCatalog()))
         : "default";
     if (seedModel !== currentSelector) {
-      setModel(seedModel);
+      setModel(seedModel, { fromRestore: true });
     } else {
       sentRef.current = true;
     }

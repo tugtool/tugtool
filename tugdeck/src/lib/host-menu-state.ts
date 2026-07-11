@@ -214,6 +214,12 @@ export interface MenuStateDevBlock {
   sessionBound: boolean;
   /** The session's turn can be interrupted (Stop enablement). */
   canInterrupt: boolean;
+  /**
+   * The Mode / Model / Effort settings may be changed — the session is idle
+   * (`canSubmit`). Gates the Permission Mode submenu the same way the Z4B
+   * chips gate on it, so a mode change never races a running turn.
+   */
+  canChangeSettings: boolean;
   /** Effective mode: live metadata ?? persisted ?? "default". */
   permissionMode: string;
   /** The transcript holds at least one assistant message. */

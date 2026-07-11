@@ -2867,11 +2867,34 @@ export function DevCardBody({
     compactionProgressStore.clear();
   }, [compactionProgress, cardId]);
 
+  // A Mode / Model / Effort change must not race a running turn ([source→
+  // delegate]): the setter seam declines it, and the surfaces that reach those
+  // setters (the slash pickers, ⇧⇥ cycle, the Permission Mode menu) refuse up
+  // front with a caution so the refusal is visible rather than a silent no-op.
+  // Reads `canSubmit` live at invocation time ([L07]).
+  const guardTurnIdleForSetting = (noun: string): boolean => {
+    if (codeSessionStore.getSnapshot().canSubmit) return true;
+    paneBulletinRef.current?.caution(
+      `Can't change ${noun} while a turn is in flight`,
+    );
+    return false;
+  };
+
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
-    model: () => modelPicker.openModelPicker(),
-    effort: () => effortPicker.openEffortPicker(),
-    mode: () => permissionSheet.openPermissionSheet(),
+    model: () => {
+      if (guardTurnIdleForSetting("the model")) modelPicker.openModelPicker();
+    },
+    effort: () => {
+      if (guardTurnIdleForSetting("the reasoning effort")) {
+        effortPicker.openEffortPicker();
+      }
+    },
+    mode: () => {
+      if (guardTurnIdleForSetting("the permission mode")) {
+        permissionSheet.openPermissionSheet();
+      }
+    },
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
     diff: () => diffSheet.openDiffSheet(),
@@ -3206,6 +3229,7 @@ export function DevCardBody({
       // navigation (Risk R02). `cycle` reads the current mode fresh from
       // the metadata store [L07].
       [TUG_ACTIONS.CYCLE_PERMISSION_MODE]: (_event: ActionEvent) => {
+        if (!guardTurnIdleForSetting("the permission mode")) return;
         permissionMode.cycle();
       },
       // A Session ▸ Permission Mode menu pick, round-tripped through the
@@ -3217,6 +3241,7 @@ export function DevCardBody({
       [TUG_ACTIONS.SET_PERMISSION_MODE]: (event: ActionEvent) => {
         const mode = event.value;
         if (typeof mode !== "string" || !isPermissionMode(mode)) return;
+        if (!guardTurnIdleForSetting("the permission mode")) return;
         permissionMode.setMode(mode);
       },
       // Session ▸ Stop. Always means interrupt — the menu deliberately
@@ -3659,10 +3684,16 @@ export function DevCardBody({
                     project={effectivePromptStatusContent}
                     cwd={cwdStatusContent}
                     mode={
+                      // Disabled while a turn is in flight so a mode change
+                      // never races the running turn — the chips mirror the
+                      // submit button, which is a live blue arrow exactly when
+                      // `canSubmit`. The setter seam enforces this too; the
+                      // `disabled` makes the refusal visible.
                       <PermissionModeChip
                         cardId={cardId}
                         sessionMetadataStore={sessionMetadataStore}
                         onOpenSheet={permissionSheet.openPermissionSheet}
+                        disabled={!codeSnap.canSubmit}
                         focusGroup={DEV_CYCLE_GROUP}
                         focusOrder={DEV_CYCLE_ORDER_MODE}
                       />
@@ -3671,6 +3702,7 @@ export function DevCardBody({
                       <ModelChip
                         sessionMetadataStore={sessionMetadataStore}
                         onOpenPicker={modelPicker.openModelPicker}
+                        disabled={!codeSnap.canSubmit}
                         focusGroup={DEV_CYCLE_GROUP}
                         focusOrder={DEV_CYCLE_ORDER_MODEL}
                       />
@@ -3679,6 +3711,7 @@ export function DevCardBody({
                       <EffortChip
                         sessionMetadataStore={sessionMetadataStore}
                         onOpenPicker={effortPicker.openEffortPicker}
+                        disabled={!codeSnap.canSubmit}
                         focusGroup={DEV_CYCLE_GROUP}
                         focusOrder={DEV_CYCLE_ORDER_EFFORT}
                       />

@@ -120,8 +120,18 @@ export function usePermissionMode({
   // optimistically reflect it on the chip (no metadata round-trip exists —
   // see `applyPermissionMode`), and persist it per card. The single path
   // both `cycle` and the chip's behavior sheet funnel through.
+  //
+  // A user-initiated change is declined while a turn is in flight so the
+  // setting never races the running turn: the session lifecycle publishes
+  // `canSubmit` (idle/errored + online) and each control is a delegate that
+  // acts only when it is set. The mount-restore seed passes `fromRestore` to
+  // bypass the gate — it establishes the session's initial mode and may run
+  // before the first turn settles (`sessionAlive` precedes `canSubmit`).
   const setMode = useCallback(
-    (mode: PermissionMode) => {
+    (mode: PermissionMode, opts?: { fromRestore?: boolean }) => {
+      if (!opts?.fromRestore && !codeSessionStore.getSnapshot().canSubmit) {
+        return;
+      }
       // A manual change supersedes any not-yet-fired mount restore.
       sentRef.current = true;
       // Optimistic chip update + persist first, so the indicator reflects the
@@ -158,7 +168,7 @@ export function usePermissionMode({
     if (sentRef.current) return;
     if (!sessionAlive) return;
     if (seedMode === null) return;
-    setMode(seedMode);
+    setMode(seedMode, { fromRestore: true });
   }, [sessionAlive, seedMode, setMode]);
 
   const cycle = useCallback(() => {

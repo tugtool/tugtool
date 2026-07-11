@@ -105,6 +105,12 @@ No registration API may return `void`. Registration returns an unregister closur
 
 The test: *when this object is disposed, is every lifetime it wired into something longer-lived now unwired?* Walk each acquisition — listener, timer, subscription, observer, frame callback — and confirm a matching release runs on teardown. If any acquisition has no releasing counterpart, it leaks. [D109]
 
+### L28. A control acts on a lifecycle by subscribing to its published state, never by reaching into it. {#l28}
+
+A *lifecycle* — the deck's card lifecycle, a prompt entry's route, the Dev session's turn — is a **source**: it owns its timing and publishes its state as one derived projection. Everything that cares is a **delegate**: it subscribes to that projection and supplies its own component-specific response. A control must never reach *forward* into a live lifecycle to drive it, and must never re-derive the lifecycle's state from raw signals next to the source's own derivation — either fork is the coupling this law exists to forbid.
+
+Concretely, for the turn lifecycle: `CodeSessionStore`'s phase machine is the source; `deriveLifecycleSnapshot` (→ `submitButtonMode`) and `canSubmit` are its published faces ([turn-lifecycle.md](turn-lifecycle.md)). The Z5 submit button, the Z4B Mode / Model / Effort chips, the Permission Mode menu, and the ⇧⌘P / slash entry points are all delegates of that one projection — each disables or declines against the *same* `canSubmit`, so they cannot disagree about whether a turn is live. A setting that instead sent its change straight into the running turn (a live control-request, a process respawn) is a source→delegate inversion: it couples chrome to the turn and races it. The fix is never a lock bolted on top; it is to restore the direction — the setter's response to a live turn is *decline, and let the published idle state re-enable me* ([L07] reads that state live; [L02] renders it). [D01, D13]
+
 ---
 
 ## Component Architecture

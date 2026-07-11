@@ -69,6 +69,7 @@ export function useMenuStatePublication(
         cardId,
         sessionBound: cardSessionBindingStore.getBinding(cardId) !== undefined,
         canInterrupt: snap.canInterrupt,
+        canChangeSettings: snap.canSubmit,
         permissionMode: resolvePermissionMode(
           sessionMetadataStore.getSnapshot().permissionMode,
           persisted,
