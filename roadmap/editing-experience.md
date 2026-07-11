@@ -21,13 +21,15 @@
 
 #### Context {#context}
 
-Tugdeck displays file/text content in three places that have drifted apart. **Text cards** (the file editor, `tug-file-editor.tsx` → `tug-text-editor.tsx`, CodeMirror 6) highlight through **Lezer** using `tugHighlightStyle` in `lib/language-registry.ts`, reading `--tug-syntax-*` CSS variables. **Read/Write tool-call blocks** (`read-tool-block.tsx` / `write-tool-block.tsx` → `body-kinds/file-block.tsx` → `tug-code-view.tsx`) sit on the same CM6 substrate but mount **no language and no highlighting** — file snippets render as plain uncolored monospace. **Edit/Diff blocks** (`edit-tool-block.tsx` → `body-kinds/diff-block.tsx`) highlight through **Shiki** (`lib/code-block-utils.ts`, `getHighlighter().codeToTokens`), reading a *second* token vocabulary `--syntax-token-*` that aliases `--tug-syntax-*` in `styles/tug.css`. Markdown code-fences in the transcript (`lib/markdown.ts` `enhanceCodeBlocks`) are a fourth surface, also on Shiki (`codeToHtml`). So the same file colors three different ways, kept loosely in sync by hand across two tokenizers and two namespaces.
+Tugdeck displays file/text content across surfaces that have drifted apart. **Text cards** (the file editor, `tug-file-editor.tsx` → `tug-text-editor.tsx`, CodeMirror 6) highlight through **Lezer** using `tugHighlightStyle` in `lib/language-registry.ts`, reading `--tug-syntax-*` CSS variables. **Read/Write tool-call blocks** (`read-tool-block.tsx` / `write-tool-block.tsx` → `body-kinds/file-block.tsx` → `tug-code-view.tsx`) sit on the same CM6 substrate but mount **no language and no highlighting** — file snippets render as plain uncolored monospace. **Edit/Diff blocks** (`edit-tool-block.tsx` → `body-kinds/diff-block.tsx`) highlight through **Shiki** (`lib/code-block-utils.ts`, `getHighlighter().codeToTokens`), reading a *second* token vocabulary `--syntax-token-*` that aliases `--tug-syntax-*` in `styles/tug.css`. **Markdown code-fences in the live transcript** (`lib/markdown/enhance-fenced-code.ts`, driven by the pulldown-cmark wasm parser) are a fourth surface and today are **not highlighted at all** — `enhanceFencedCode` wraps a plain `<pre>` in header/copy/fold chrome with no token coloring. So the same file colors three different ways (and fences a fourth, plain), kept loosely in sync by hand across two tokenizers and two namespaces.
+
+**Live-vs-dead note (verified during vet).** The *only live Shiki consumer* is the diff renderer (`diff-block.tsx` → `lib/code-block-utils.ts` → `lib/diff/syntax-tokens-from-shiki.ts`). The older `lib/markdown.ts` (`marked` + Shiki `enhanceCodeBlocks`/`codeToHtml`) and its `_archive/cards/conversation/message-renderer.tsx` caller are **dead code** — zero live importers, `src/_archive/**` excluded from `tsconfig`. So retiring Shiki hinges on the diff migration alone; `lib/markdown.ts` is deleted as dead code, not migrated. Adding Lezer coloring to the live transcript fences is a **net-new feature** on `enhance-fenced-code.ts`, not a Shiki migration, and does not gate Shiki removal.
 
 Three more gaps compound this. (1) Text cards open at `480×300` min / `820×620` preferred while Dev cards open at `800×600` min / `850×1200` preferred (`text-card-registration.tsx` vs `dev-card-registration.tsx`) — a Text card opens small and cramped next to a Dev card. (2) Clicking a file in a tool-call header (`ToolFileRef` in `tool-file-ref.tsx`) opens the file at *most* at a bare line — Edit and Write pass no line at all — with no selection and no reveal animation, even though the exact touched hunk range is known at render time in `edit-tool-block.tsx`. (3) Text card scroll/caret/selection are **not** reliably retained across HMR, Maker ▸ Reload, or relaunch: `getPositions` (`tug-file-editor.tsx`) saves only the collapsed caret head (selection range is discarded), and `applyPositions` writes `scrollDOM.scrollTop` synchronously before CM6 has measured the freshly-read document, so CM6 re-measures and clamps and the viewport jumps — a direct L23 violation.
 
 #### Strategy {#strategy}
 
-- **One tokenizer, one namespace.** Lezer becomes the single highlighting engine for every file-display surface; `--tug-syntax-*` becomes the single token namespace; Shiki and the `--syntax-token-*` bridge are deleted. Static fragments (diff hunk sides, Read/Write snippets, markdown fences) tokenize by building a *headless* `EditorState` with the editor's exact resolved language extension, forcing a full parse with `ensureSyntaxTree`, and walking `highlightTree` — the same grammar the live editor uses, so a file colors identically everywhere. [P01], [P02]
+- **One tokenizer, one namespace.** Lezer becomes the single highlighting engine for every file-display surface; `--tug-syntax-*` becomes the single token namespace; Shiki and the `--syntax-token-*` bridge are deleted. Static fragments (diff hunk sides, live transcript code-fences) tokenize by building a *headless* `EditorState` with the editor's exact resolved language extension, forcing a full parse with `ensureSyntaxTree`, and walking `highlightTree`; Read/Write blocks are a *live* CM6 view and simply gain the editor's language extension. Same grammar as the live editor either way, so a file colors identically everywhere. [P01], [P02]
 - **The token-merge machinery is already source-agnostic.** `lib/diff/render-line.ts` (`renderLineSegments`) merges `SyntaxToken[]` (start/end + decoration) with word-level diff ranges and knows nothing about Shiki. We re-target only the token *producer*; the merge, and the `diff-match-patch` word-overlay exactly as today, are untouched. [P04]
 - **Sequence low-risk → structural.** Sizing parity first (trivial, independent), then build the shared static tokenizer, migrate each consumer onto it, delete Shiki, then fix persistence and add click-to-passage — each a clean commit with a falsifiable checkpoint.
 - **Persistence rides the existing bag + [A9] protocol.** No new persistence channel: extend the `FilePositions` payload the Text card already writes to tugbank to carry the full selection, and defer the scroll restore until CM6 has measured — mirroring the proven "scroll last" ordering in `card-host.tsx`. [P05], [P06]
@@ -37,7 +39,8 @@ Three more gaps compound this. (1) Text cards open at `480×300` min / `820×620
 
 - A newly opened Text card has byte-identical `sizePolicy` to a Dev card except a `400` min height: `min {800,400}`, `preferred {850,1200}`, no `max`. (Read the two registrations; open both in the running app and compare.) [P03]
 - The same `.ts` file shows identical syntax colors in a Text card, a Read block, and an Edit diff — all sourced from `--tug-syntax-*`, no `--syntax-token-*` references remain. (`grep -r "syntax-token" tugdeck/` returns nothing; visual compare in-app.) [P01]
-- `import { getHighlighter } from ...code-block-utils` and the `shiki` dependency are gone from the tugdeck build. (`grep -rn "shiki\|code-block-utils\|codeToTokens\|codeToHtml" tugdeck/src` returns nothing; `bunx vite build` succeeds.) [P01]
+- `import { getHighlighter } from ...code-block-utils` and the `shiki` dependency are gone from the tugdeck build. (`grep -rn "shiki\|code-block-utils\|codeToTokens\|codeToHtml" tugdeck/src --exclude-dir=_archive` returns nothing; `bunx vite build` succeeds.) [P01]
+- Live transcript code-fences render Lezer-colored tokens matching a Text card of the same code (they are plain today). (Drive in-app on an assistant message with a fenced block.) [P09]
 - Clicking a file in an Edit tool-call header opens the file scrolled to the first changed hunk with that hunk's line range **selected** and a visible one-shot zoom/flash over it. (Drive in-app on a real edit tool call.) [P07], [P08]
 - After Maker ▸ Reload with a Text card holding a non-trivial scroll offset, a caret mid-file, and a multi-line selection, all three return exactly. Same after an HMR edit to `tug-text-editor.tsx`. (app-test + manual.) [P05], [P06]
 - `cargo`-side unchanged; `cd tugdeck && bun run typecheck && bunx vite build && bun run audit:theme-contrast` all pass. [R04]
@@ -48,8 +51,8 @@ Three more gaps compound this. (1) Text cards open at `480×300` min / `820×620
 2. A shared static Lezer tokenizer (`tokenizeFragment`) in the language registry, emitting per-line `{start,end,className}` tokens from the editor's own grammars.
 3. Read/Write tool blocks (`TugCodeView`) highlighted through Lezer.
 4. Diff renderer (`diff-block.tsx`) re-targeted from Shiki to Lezer, grammar-seed ported, word-overlay unchanged.
-5. Markdown transcript code-fences (`lib/markdown.ts`) folded onto the Lezer static path.
-6. Shiki, the `--syntax-token-*` bridge, and `code-block-utils.ts` deleted.
+5. Live transcript code-fences (`lib/markdown/enhance-fenced-code.ts`) gain Lezer syntax coloring (net-new — plain today).
+6. Shiki, the `--syntax-token-*` bridge, `code-block-utils.ts`, and the dead `lib/markdown.ts` deleted.
 7. Full-selection persistence + measure-gated scroll restore for the Text card (HMR/reload/relaunch).
 8. Range-carrying `open-file` chain: reveal + select the touched passage with a zoom/flash animation.
 
@@ -106,19 +109,19 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 **Resolution:** DECIDED (see [P04]) — Step 2 extends `tugHighlightStyle` to the full standard-tag set against the existing token slots so every surface (editor included) gains the richer coverage at once. The `--tugx-syntax-operator` / `--tugx-syntax-punctuation` tokens already exist in `tug-code.css`.
 
-#### [Q02] Markdown fence highlighting output form (DECIDED) {#q02-fence-output}
+#### [Q02] Live fence highlighting output form + async-into-sync patch (DECIDED) {#q02-fence-output}
 
-**Question:** `enhanceCodeBlocks` currently builds highlighted **HTML** via Shiki `codeToHtml` and sets `innerHTML`. Do we keep an HTML-string output or switch to token spans?
+**Question:** The live fence enhancer `enhanceFencedCode` (`lib/markdown/enhance-fenced-code.ts`) is a **synchronous** DOM walk over pulldown-cmark `<pre>` output that today applies *no* coloring. `tokenizeFragment` is **async** (grammar chunks lazy-load). How does async token HTML land into a sync enhancement pass without racing the windowing engine's prune/re-render?
 
-**Why it matters:** The markdown surface is vanilla DOM (a `MessageRenderer` post-process), not React; the output shape dictates the helper API.
+**Why it matters:** A fire-and-forget async patch that writes into a `<code>` after its block has been pruned or re-`innerHTML`'d would either throw on a detached node or paint stale colors over new content.
 
 **Options (if known):**
-- A `tokenizeFragment`-backed helper that emits sanitized highlighted HTML spans (class-per-token) for `codeWrap.innerHTML`, keeping `enhanceCodeBlocks`'s DOM-building shape.
-- Rewrite the fence renderer to build DOM nodes directly.
+- A `highlightFragmentToHtml(text, langId)` helper that emits class-per-token `<span>` HTML; `enhanceFencedCode` kicks it off per `<pre>` and, on resolve, patches the `<code>` innerHTML only if the node is still connected AND its text is unchanged (guard token), so a pruned/rewritten block is skipped.
+- Move fence tokenization upstream into `parseMarkdownToSanitizedBlocks` (synchronous, pre-`innerHTML`) — rejected: that parse path is wasm/pulldown-cmark and has no grammar access, and blocking it on async grammar loads would stall the transcript.
 
 **Plan to resolve:** Resolved in this plan.
 
-**Resolution:** DECIDED (see [P09]) — Step 5 adds a small `highlightFragmentToHtml(text, langId)` helper on top of `tokenizeFragment` that emits `<span class="…">`-per-token HTML (classes only, no inline styles), preserving `enhanceCodeBlocks`'s existing `codeWrap.innerHTML` shape and its `.code-block-container` structure. The `HighlightStyle` `StyleModule` is mounted globally so those classes resolve.
+**Resolution:** DECIDED (see [P09]) — Step 5 adds `highlightFragmentToHtml(text, langId)` on top of `tokenizeFragment` (class-per-token `<span>` HTML, classes only, no inline styles) and wires it into `enhanceFencedCode`: fire per `<pre>`, and on resolve re-check `codeEl.isConnected` and that `codeEl.textContent` still equals the tokenized source before patching innerHTML. Idempotent (skip an already-colored `<pre>`). The `HighlightStyle` `StyleModule` is mounted globally so the classes resolve; the existing `.tugx-md-fenced-code` chrome is untouched.
 
 ---
 
@@ -130,6 +133,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 | `ensureSyntaxTree` cost on large inputs | med | low | Bounded parse timeout + plain-text fallback; fragments are small | Visible hitch tokenizing a big hunk/file |
 | Scroll-restore still races CM6 measure | high | med | Mirror `card-host.tsx` "scroll last"; one-shot measure gate; app-test it | Viewport jumps after reload in the test |
 | Dangling Shiki refs after deletion | low | med | grep + `bunx vite build` gate in the cleanup step | Build error or stray `--syntax-token-*` |
+| Fence async coloring races sync walk / prune | med | med | `isConnected`+unchanged-text patch guard; idempotent enhance | Console error or stale paint on transcript scroll |
 
 **Risk R01: Language coverage regression after removing Shiki** {#r01-language-coverage}
 
@@ -148,6 +152,12 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 - **Risk:** The measure-gate fires before CM6 has laid out line heights and the clamp still moves the viewport.
 - **Mitigation:** Gate scroll restore on a one-shot CM6 `updateListener`/`requestMeasure` after the seeded document binds and geometry is known, applying scroll *after* selection — the ordering `card-host.tsx` uses for form-control/scroll restore. Assert with an app-test that reads `scrollDOM.scrollTop` post-reload.
 - **Residual risk:** Extremely long files whose full height isn't known until fully parsed may need a second settle; covered by re-applying on the first post-parse measure.
+
+**Risk R05: Fence async coloring races the sync DOM walk / windowing prune** {#r05-fence-async}
+
+- **Risk:** `enhanceFencedCode` is a synchronous DOM walk but `tokenizeFragment` is async (grammar chunks lazy-load); a fire-and-forget patch could write into a `<code>` node the windowing engine has already pruned or re-`innerHTML`'d, throwing on a detached node or painting stale colors over new content.
+- **Mitigation:** On async resolve, patch only if `codeEl.isConnected` and `codeEl.textContent` still equals the tokenized source; otherwise skip. Enhancement stays idempotent (skip an already-colored `<pre>`). Covered by the Step 5 manual prune-during-highlight test.
+- **Residual risk:** A block pruned mid-highlight simply stays plain until re-enhanced on its next render — no error, no stale paint.
 
 ---
 
@@ -228,13 +238,13 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 **Implications:** A small decoration field/plugin in `tug-file-editor.tsx` (or a shared editor module) applies the mark and clears it after one cycle; the keyframe/class is shared or copied into the file-editor CSS.
 
-#### [P09] Markdown fences fold onto the Lezer static path {#p09-fences}
+#### [P09] Live transcript code-fences gain Lezer coloring (net-new) {#p09-fences}
 
-**Decision:** `enhanceCodeBlocks` (`lib/markdown.ts`) stops importing `code-block-utils`/Shiki and instead calls a `highlightFragmentToHtml(text, langId)` helper built on `tokenizeFragment`, emitting class-per-token `<span>` HTML for `codeWrap.innerHTML` and preserving the `.code-block-container` DOM shape. Language ids from fence `language-*` classes resolve through the registry (extended to accept language ids/aliases, not only extensions).
+**Decision:** The **live** fence enhancer `enhanceFencedCode` (`lib/markdown/enhance-fenced-code.ts`) — a synchronous DOM walk over pulldown-cmark `<pre>` output that applies no coloring today — gains a call to `highlightFragmentToHtml(text, langId)` (built on `tokenizeFragment`), emitting class-per-token `<span>` HTML for the `<code>` body. It resolves the fence language from the existing `readLanguage` (`<code class="language-X">`) through the registry's id→grammar path, and patches innerHTML on async resolve guarded by `isConnected` + an unchanged-text token ([Q02]). The `.tugx-md-fenced-code` chrome (header/copy/fold) is untouched. This is **net-new** — fences are plain today — not a Shiki migration.
 
-**Rationale:** Removes the last Shiki consumer so the dependency and the `--syntax-token-*` bridge can be deleted; unifies fence coloring with the editor. [Q02].
+**Rationale:** Delivers the user's "fold fences into the Lezer path" directive on the surface that is actually live, and unifies fence coloring with the editor. Note this does **not** gate Shiki removal — the only live Shiki consumer is the diff renderer ([P01]).
 
-**Implications:** The registry gains an id→grammar resolution path reusing `normalizeLanguage`-style aliasing; `code-block.css` / `.code-block-code` styling is retained.
+**Implications:** The registry gains an id→grammar resolution path reusing `normalizeLanguage`-style aliasing; `highlightFragmentToHtml` and the async-patch guard are new; the dead `lib/markdown.ts` (`marked`+Shiki `enhanceCodeBlocks`) is deleted separately in Step 6, not edited here.
 
 ---
 
@@ -266,7 +276,7 @@ Algorithm:
 **Consumers:**
 - **Read/Write** (`tug-code-view.tsx`): the read-only CM6 view already carries a `language` prop it treats as informational. Add the `languageForExtension` + `tugHighlightStyle` extensions to its extension list (it is a real `EditorView`, so it uses the *live* highlighting path, not `tokenizeFragment`). This is the simplest migration — no token plumbing.
 - **Diff** (`diff-block.tsx`): replace the Shiki `codeToTokens` effect with `tokenizeFragment` over each reconstructed hunk side (before/after), keeping the exact position-keyed `Map<"hunkIndex:lineIndex", SyntaxToken[]>` shape and the grammar-seed prepend/drop. `SyntaxToken.style` → `SyntaxToken.className`.
-- **Markdown fences** (`lib/markdown.ts`): `highlightFragmentToHtml` over the fence body ([P09]).
+- **Live transcript fences** (`lib/markdown/enhance-fenced-code.ts`): `highlightFragmentToHtml` over the `<code>` body, patched on async resolve with an `isConnected`+unchanged-text guard ([P09], [Q02]). Net-new coloring, not a Shiki migration.
 
 #### Grammar-seed port {#grammar-seed-port}
 
@@ -309,7 +319,8 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 |--------|------|----------|-------|
 | `tugHighlightStyleInner` | export const (HighlightStyle) | `lib/language-registry.ts` | raw definition, full standard-tag map ([Q01]); `tugHighlightStyle = syntaxHighlighting(tugHighlightStyleInner)` |
 | `tokenizeFragment` / `tokenizeFragmentByLangId` | export fn | `lib/language-registry.ts` | Spec S01 |
-| `highlightFragmentToHtml` | export fn | `lib/language-registry.ts` (or sibling) | class-per-token HTML for markdown fences |
+| `highlightFragmentToHtml` | export fn | `lib/language-registry.ts` (or sibling) | class-per-token HTML for live transcript fences ([P09]) |
+| `enhanceFencedCode` | fn | `lib/markdown/enhance-fenced-code.ts` | add async Lezer coloring of the `<code>` body with `isConnected`+unchanged-text patch guard |
 | `LOADERS` / `LANGUAGE_LABELS` / `SELECTABLE_LANGUAGES` | data | `lib/language-registry.ts` | add go/java/sql/dockerfile ([R01]); add id→grammar resolution |
 | `SyntaxToken` | interface | `lib/diff/syntax-tokens-from-lezer.ts` | `{start,end,className}` (was `style`) |
 | `RenderedSegment` / `renderLineSegments` | interface/fn | `lib/diff/render-line.ts` | segment carries `className` for syntax; union with word-overlay class |
@@ -326,10 +337,13 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 
 | File | Reason |
 |------|--------|
-| `tugdeck/src/lib/code-block-utils.ts` | Shiki singleton + theme — no consumers after migration |
+| `tugdeck/src/lib/code-block-utils.ts` | Shiki singleton + theme — sole live consumer (diff) migrated in Step 4 |
 | `tugdeck/src/lib/diff/syntax-tokens-from-shiki.ts` | superseded by the Lezer variant |
+| `tugdeck/src/lib/markdown.ts` | dead code (`marked`+Shiki `enhanceCodeBlocks`); only `_archive` callers, no live importer |
 | `--syntax-token-*` block in `styles/tug.css` | the Shiki bridge namespace |
 | `shiki` dependency in `tugdeck/package.json` | last consumer removed |
+
+New grammar packages to add (`bun add`): `@codemirror/lang-go`, `@codemirror/lang-java`, `@codemirror/lang-sql` (not currently installed; `@codemirror/legacy-modes` — already present — supplies dockerfile). Without these, go/java/sql diffs regress to plain ([R01]).
 
 ---
 
@@ -364,8 +378,8 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 | #step-2 | Shared static Lezer tokenizer + full tag map + language coverage | pending | — |
 | #step-3 | Read/Write blocks highlighted via Lezer | pending | — |
 | #step-4 | Diff renderer re-targeted Shiki → Lezer | pending | — |
-| #step-5 | Markdown fences on the Lezer path | pending | — |
-| #step-6 | Delete Shiki + `--syntax-token-*` bridge | pending | — |
+| #step-5 | Color live transcript code-fences (net-new) | pending | — |
+| #step-6 | Delete Shiki + bridge + dead markdown.ts | pending | — |
 | #step-7 | Rendering-unification integration checkpoint | pending | — |
 | #step-8 | Full-selection persistence + measure-gated scroll | pending | — |
 | #step-9 | Click-to-passage: range open + select + zoom flash | pending | — |
@@ -410,9 +424,9 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 - [ ] Refactor `language-registry.ts`: export `tugHighlightStyleInner = HighlightStyle.define([...])`; extend the map to the full Lezer standard-tag set against existing slots (`tags.operator`→`--tugx-syntax-operator`, `tags.punctuation`→`--tugx-syntax-punctuation`, `tags.constant(tags.variableName)`/`tags.standard(tags.name)`→`--tug-syntax-constant`, `tags.function(tags.variableName)` already mapped, etc.). Keep `tugHighlightStyle = syntaxHighlighting(tugHighlightStyleInner)`.
 - [ ] Implement `tokenizeFragment(text, ext)` per Spec S01 (headless `EditorState` + `ensureSyntaxTree` + `highlightTree`, per-line slicing, plain-text fallback). Add `PARSE_TIMEOUT_MS`.
 - [ ] Implement `tokenizeFragmentByLangId(text, langId)` — resolve a language id (e.g. `"typescript"`, `"bash"`) to a grammar via a `normalizeLanguage`-style alias map reusing `SELECTABLE_LANGUAGES`.
-- [ ] Implement `highlightFragmentToHtml(text, langId)` — class-per-token `<span>` HTML (no inline styles), for markdown fences ([Q02]).
+- [ ] Implement `highlightFragmentToHtml(text, langId)` — class-per-token `<span>` HTML (no inline styles), for the live transcript fences ([Q02]).
 - [ ] Mount `tugHighlightStyleInner.module` once (idempotent) so fragment classes resolve.
-- [ ] Extend the registry with go/java/sql grammars (`@codemirror/lang-go`, `-java`, `-sql`) and a dockerfile legacy mode; add labels + selectable entries. Verify package availability; fall back to plain text if unavailable.
+- [ ] `bun add @codemirror/lang-go @codemirror/lang-java @codemirror/lang-sql` (confirmed NOT installed today; `@codemirror/legacy-modes` is already present and supplies `mode/dockerfile`). Wire them into `LOADERS`/`LANGUAGE_LABELS`/`SELECTABLE_LANGUAGES` (dockerfile via the existing `legacy()` helper); fall back to plain text for any that resolve unavailable. Without these, go/java/sql diffs regress from Shiki's coverage to plain ([R01]).
 
 **Tests:**
 - [ ] Unit: `tokenizeFragment("const x = 1\n// c", "ts")` yields a `keyword` class on `const` (line 0) and a `comment` class on line 1; a multi-line block-comment fragment carries the comment class across lines.
@@ -463,6 +477,7 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 **Tasks:**
 - [ ] Add `syntax-tokens-from-lezer.ts`: convert per-line `highlightTree` runs → `SyntaxToken[]` with `className` (drop the Shiki `ThemedTokenLike`/`style` shape).
 - [ ] Change `SyntaxToken` to `{start,end,className}`; update `render-line.ts` `RenderedSegment` to carry `className` for syntax and union it with the word-overlay class on the same span (two-pointer merge otherwise unchanged).
+- [ ] Update the `syntax-tokens-from-shiki` import in `lib/diff/__tests__/render-line.test.ts` (and any other importer) to the new `syntax-tokens-from-lezer` module + `className` shape.
 - [ ] In `diff-block.tsx`, replace the `getHighlighter()`/`codeToTokens` effect with `tokenizeFragment(sideText, ext)` per reconstructed hunk side; keep the position-keyed `Map<"hunkIndex:lineIndex", SyntaxToken[]>`, the before/after two-pass, and the grammar-seed prepend/drop. Resolve `ext` from `data.filePath`.
 - [ ] Update the span render in `diff-block.tsx` to apply `className` for syntax instead of parsing an inline `style` string; `tugx-diff-content` spans carry syntax + word classes.
 - [ ] Port `grammar-seed.ts` language keying to the registry ext/id vocabulary; keep heuristics.
@@ -479,24 +494,28 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 
 ---
 
-#### Step 5: Markdown fences on the Lezer path {#step-5}
+#### Step 5: Color the live transcript code-fences via Lezer (net-new) {#step-5}
 
 **Depends on:** #step-2
 
-**Commit:** `refactor(markdown): highlight transcript code-fences via Lezer`
+**Commit:** `feat(transcript): syntax-color code-fences via Lezer`
 
-**References:** [P09] (#p09-fences), [Q02] (#q02-fence-output)
+**References:** [P09] (#p09-fences), [Q02] (#q02-fence-output), Risk R05 (#r05-fence-async)
 
 **Artifacts:**
-- `lib/markdown.ts` `enhanceCodeBlocks` uses `highlightFragmentToHtml`; no Shiki import.
+- `lib/markdown/enhance-fenced-code.ts` `enhanceFencedCode` gains async Lezer coloring of the `<code>` body via `highlightFragmentToHtml`.
+
+**Note:** This is **net-new** coloring — live fences are plain today (`enhanceFencedCode` only wraps `<pre>` in header/copy/fold chrome). It is NOT a Shiki migration and does NOT gate Shiki removal (the older `lib/markdown.ts` is dead code, deleted in Step 6). The live markdown surface is driven by pulldown-cmark, not `marked`.
 
 **Tasks:**
-- [ ] Rewrite `enhanceCodeBlocks` to resolve the fence language id, call `highlightFragmentToHtml(code, langId)`, and set `codeWrap.innerHTML` to the class-per-token spans, preserving the `.code-block-container`/`.code-block-header`/`.code-block-code` structure and the `language-*` label.
-- [ ] Remove the `code-block-utils` dynamic import from `markdown.ts`; keep DOMPurify sanitization of the surrounding markdown (the fence HTML is our own class-only spans).
-- [ ] Confirm `.code-block-code` styling still applies to the new spans (mount is global from Step 2).
+- [ ] In `enhanceFencedCode`, after building the fence wrapper, resolve the fence language via the existing `readLanguage` (`<code class="language-X">`) and call `highlightFragmentToHtml(codeText, langId)`.
+- [ ] Patch `codeEl.innerHTML` with the class-per-token spans **on async resolve**, guarded: skip unless `codeEl.isConnected` and `codeEl.textContent` still equals the source that was tokenized (the windowing engine may have pruned/re-rendered the block). Keep the enhancement idempotent (skip an already-colored `<pre>`).
+- [ ] Confirm the `.tugx-md-fenced-code` chrome and `tug-markdown-block`/`tug-markdown-view` styling still apply; the `StyleModule` mount is global from Step 2.
+- [ ] Leave `lib/markdown.ts` untouched here (dead; deleted in Step 6).
 
 **Tests:**
-- [ ] app-test / manual: an assistant message with a fenced ` ```ts ` block renders colored tokens matching a Text card of the same code.
+- [ ] app-test / manual: an assistant message with a fenced ` ```ts ` block renders Lezer-colored tokens matching a Text card of the same code; a fence in an unknown language stays plain.
+- [ ] Manual: scroll the transcript so a fenced block prunes and re-renders mid-highlight; confirm no stale paint and no console error (the guard holds).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun run typecheck && bunx vite build`
@@ -504,19 +523,22 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 
 ---
 
-#### Step 6: Delete Shiki + `--syntax-token-*` bridge {#step-6}
+#### Step 6: Delete Shiki + `--syntax-token-*` bridge + dead markdown.ts {#step-6}
 
-**Depends on:** #step-3, #step-4, #step-5
+**Depends on:** #step-4
 
-**Commit:** `chore(highlight): remove Shiki and the --syntax-token-* bridge`
+**Commit:** `chore(highlight): remove Shiki, the --syntax-token-* bridge, and dead markdown.ts`
 
 **References:** [P01] (#p01-single-tokenizer), (#files-to-delete), Risk R04 (#risks)
 
 **Artifacts:**
-- `code-block-utils.ts` and `syntax-tokens-from-shiki.ts` deleted; `--syntax-token-*` block removed from `styles/tug.css`; `shiki` removed from `package.json`.
+- `code-block-utils.ts`, `syntax-tokens-from-shiki.ts`, and dead `lib/markdown.ts` deleted; `--syntax-token-*` block removed from `styles/tug.css`; `shiki` removed from `package.json`.
+
+**Note:** The only live Shiki consumer is the diff renderer (migrated in #step-4), so this step's hard dependency is #step-4 alone. #step-5 (fence coloring) and #step-3 (Read/Write) do not touch Shiki.
 
 **Tasks:**
 - [ ] Delete `lib/code-block-utils.ts` and `lib/diff/syntax-tokens-from-shiki.ts`.
+- [ ] Delete the dead `lib/markdown.ts` (`marked`+Shiki `enhanceCodeBlocks`/`renderMarkdown`; zero live importers — verify with grep first). If it has a live `bun:test`, delete that too.
 - [ ] Remove the `--syntax-token-*` (and `--syntax-foreground`/`--syntax-background` if unused elsewhere) block from `styles/tug.css`.
 - [ ] Remove `shiki` from `tugdeck/package.json`; `bun install`.
 - [ ] `grep -rn "shiki\|code-block-utils\|codeToTokens\|codeToHtml\|syntax-token" tugdeck/src tugdeck/styles --exclude-dir=_archive` → zero hits (fix any straggler). Note: `src/_archive/cards/conversation/code-block.tsx` references a Shiki-era `code-block-utils` but is **dead code** — `src/_archive/**/*` is excluded from `tsconfig`, is not a Vite entry, and its import target does not exist; it neither builds nor typechecks and needs no change here (delete it opportunistically if desired).
@@ -632,7 +654,7 @@ New flow: `getPositions` captures `{anchor:{line,ch}, head:{line,ch}, scrollTop}
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] Text card `sizePolicy` = `min {800,400}`, `preferred {850,1200}`, no `max`. ([P03])
-- [ ] `grep -rn "shiki\|syntax-token\|code-block-utils" tugdeck/src tugdeck/styles --exclude-dir=_archive` → zero hits; `shiki` absent from `package.json`. (The three live consumers — `diff-block.tsx`, `markdown.ts`, `code-block-utils.ts` — are the only ones; `src/_archive` is dead, unbuilt code.) ([P01])
+- [ ] `grep -rn "shiki\|syntax-token\|code-block-utils" tugdeck/src tugdeck/styles --exclude-dir=_archive` → zero hits; `shiki` absent from `package.json`. (The sole live Shiki consumer is `diff-block.tsx` via `code-block-utils.ts`; `lib/markdown.ts` was dead code, deleted in Step 6; `src/_archive` is dead, unbuilt.) ([P01])
 - [ ] Same file colors identically in Text card / Read block / Edit diff. ([P01])
 - [ ] Reload/HMR retains scroll offset, caret, and multi-line selection. ([P05], [P06])
 - [ ] Edit-header click opens at the first hunk, selects its range, plays the zoom flash. ([P07], [P08])
