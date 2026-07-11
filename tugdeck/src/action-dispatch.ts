@@ -544,7 +544,7 @@ export function initActionDispatch(
   // first Save. Not responder-routed; menu-only, like show-card.
   registerAction("new-text-card", () => {
     const draftId = crypto.randomUUID();
-    const newId = deckManager.addCard("file", {
+    const newId = deckManager.addCard("text", {
       draftId,
       untitled: true,
       untitledNumber: allocateUntitledNumber(),

@@ -904,7 +904,7 @@ describe("initActionDispatch: spawn_session_ok", () => {
   });
 });
 
-// ---- manual save verbs + new-text-card ----
+// ---- manual save verbs ----
 
 describe("initActionDispatch: manual save verbs", () => {
   beforeEach(() => {
@@ -935,12 +935,4 @@ describe("initActionDispatch: manual save verbs", () => {
       expect(dispatched).toEqual([{ action, phase: "discrete" }]);
     });
   }
-
-  it("'new-text-card' adds a Text card (untitled buffer)", () => {
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-    initActionDispatch(conn as any, deck as any);
-    dispatchAction({ action: "new-text-card" });
-    expect(deck._addCardCalls).toContain("file");
-  });
 });

@@ -151,7 +151,7 @@ export function openFileInCard(
         // explicitly so it raises + focuses like `new` / `reuse` do —
         // otherwise the file opens invisibly in a background pane.
         const outgoing = store.getFirstResponderCardId();
-        const newId = store.addCardToPane(frontmost.paneId, "file", seed);
+        const newId = store.addCardToPane(frontmost.paneId, "text", seed);
         if (newId !== null) {
           if (store.getFirstResponderCardId() !== newId) {
             transferFocusForActivation({
@@ -167,5 +167,5 @@ export function openFileInCard(
     }
   }
 
-  store.addCard("file", seed);
+  store.addCard("text", seed);
 }

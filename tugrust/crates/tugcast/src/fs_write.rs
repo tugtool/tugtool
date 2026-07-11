@@ -1,5 +1,5 @@
 //! HTTP handler for `POST /api/fs/write` — atomic, hash-conditional file
-//! writes for the File card's live-autosave engine.
+//! writes for the Text card's live-autosave engine.
 //!
 //! Every write is conditional on the caller's `baselineSha256` (the hash
 //! of the content it last read or wrote): a mismatch means someone else

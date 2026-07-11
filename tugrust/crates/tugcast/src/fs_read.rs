@@ -1,4 +1,4 @@
-//! HTTP handler for `GET /api/fs/read` — UTF-8 file reads for the File card.
+//! HTTP handler for `GET /api/fs/read` — UTF-8 file reads for the Text card.
 //!
 //! Returns the full text of one file plus the metadata the frontend's
 //! autosave engine needs to write it back safely: the canonicalized path
