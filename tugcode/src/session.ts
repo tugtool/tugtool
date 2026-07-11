@@ -954,6 +954,33 @@ export interface ResultMetadata {
  * Per D03 (#d03-event-routing) two-tier routing architecture.
  */
 /**
+ * Clamp a `system/task_notification` summary to a terse, single-line wake
+ * label. The wake-trigger chip is a subdued marker naming what woke the
+ * session ("Agent \"X\" completed") — it is NOT a surface for the agent's
+ * answer, which renders in full under the Agent block. Claude Code
+ * 2.1.150–2.1.173 emitted a terse `summary`; 2.1.207 began packing the
+ * agent's entire final message into that same field, which the chip then
+ * rendered as a wall of raw markdown. Take the first non-empty line, strip a
+ * leading markdown heading / quote / list marker, and cap the length so the
+ * chip stays a one-liner whatever the field carries. An already-terse
+ * summary (a scheduled-wake label, an older-CLI notice) passes through
+ * unchanged. The replay path reads the JSONL envelope's own short
+ * `<summary>`, so it needs no clamp — only the live event field bloated.
+ */
+export function terseWakeSummary(summary: string): string {
+  const firstLine = summary
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstLine === undefined) return "";
+  const unmarked = firstLine.replace(/^(?:#{1,6}|>|[-*+])\s+/, "");
+  const MAX = 140;
+  return unmarked.length > MAX
+    ? `${unmarked.slice(0, MAX - 1).trimEnd()}…`
+    : unmarked;
+}
+
+/**
  * Pure factory for the {@link WakeStarted} IPC frame from a
  * `system/task_notification` event. Returns null for events that
  * are not task notifications, or for ones missing the expected
@@ -961,7 +988,8 @@ export interface ResultMetadata {
  *
  * The SDK's `SDKTaskNotificationMessage` payload
  * (`@anthropic-ai/claude-agent-sdk/sdk.d.ts:1659-1668`) is forwarded
- * verbatim onto `wake_trigger`. Missing optional fields default to
+ * onto `wake_trigger`, except `summary` is clamped to a terse label via
+ * {@link terseWakeSummary}. Missing optional fields default to
  * empty strings or "stopped" for status — permissive on the wire so
  * a malformed event doesn't drop the wake bracket entirely.
  *
@@ -995,7 +1023,7 @@ export function buildWakeStartedMessage(
       task_id: taskId,
       tool_use_id: (event.tool_use_id as string) ?? "",
       status: status ?? "stopped",
-      summary: (event.summary as string) ?? "",
+      summary: terseWakeSummary((event.summary as string) ?? ""),
       output_file: (event.output_file as string) ?? "",
     },
     ipc_version: 2,

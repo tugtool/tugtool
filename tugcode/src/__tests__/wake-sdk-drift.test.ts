@@ -37,6 +37,43 @@ import { readFileSync } from "node:fs";
 
 import type { SDKTaskNotificationMessage } from "@anthropic-ai/claude-agent-sdk";
 
+import { terseWakeSummary } from "../session.ts";
+
+describe("terseWakeSummary — wake-chip label clamp", () => {
+  test("an already-terse summary passes through unchanged", () => {
+    // The 2.1.150–2.1.173 shape: a one-line label. No clamp applies.
+    expect(terseWakeSummary('Agent "Sleep 8s then print marker" completed')).toBe(
+      'Agent "Sleep 8s then print marker" completed',
+    );
+    expect(terseWakeSummary("loop pacing")).toBe("loop pacing");
+  });
+
+  test("a full agent answer collapses to its first non-empty line", () => {
+    // The 2.1.207 regression shape: the whole final message in `summary`.
+    const answer =
+      "Here is what I found.\n\n## Summary\n\nBoth card types share one pipeline.";
+    expect(terseWakeSummary(answer)).toBe("Here is what I found.");
+  });
+
+  test("a leading markdown heading / list / quote marker is stripped", () => {
+    expect(terseWakeSummary("## Summary\n\nbody")).toBe("Summary");
+    expect(terseWakeSummary("- first bullet\n- second")).toBe("first bullet");
+    expect(terseWakeSummary("> quoted opener")).toBe("quoted opener");
+  });
+
+  test("a long single line is capped with an ellipsis", () => {
+    const long = "x".repeat(300);
+    const out = terseWakeSummary(long);
+    expect(out.length).toBe(140);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  test("empty / whitespace-only summary yields an empty label", () => {
+    expect(terseWakeSummary("")).toBe("");
+    expect(terseWakeSummary("   \n\n  ")).toBe("");
+  });
+});
+
 describe("SDK drift — SDKTaskNotificationMessage shape", () => {
   test("compile-time: every forwarded SDK-declared field is present (a removal would break tsc here)", () => {
     // Construct a value via the SDK type — if a field is renamed or
