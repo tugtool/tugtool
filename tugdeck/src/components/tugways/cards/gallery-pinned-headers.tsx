@@ -112,11 +112,10 @@ const LONG_DIFF: DiffData = {
 };
 
 /**
- * Build a 400-line terminal output. Lines vary in length so the inner
- * scroller exercises both vertical scroll past the wrapper AND
- * horizontal `scrollbar-gutter: stable` reservation. Sized over
- * `VISIBLE_THRESHOLD` (300) so both the folded-by-default preview and
- * the virtualized expanded path are exercised.
+ * Build a 400-line terminal output. Lines vary in length so the body
+ * exercises horizontal per-line scroll. Sized well over the collapse
+ * threshold so both the folded-by-default preview and the full flat
+ * expanded body are exercised.
  */
 function buildLongTerminalStdout(lineCount: number): string {
   const lines: string[] = [];

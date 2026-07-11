@@ -15,20 +15,13 @@
  * terminal-block.css — `TerminalBlock` body-kind.
  *
  * Renders ANSI-aware terminal output inline in the transcript with
- * a pinned header for the Copy affordance. The block's two visual
- * body modes are styled here:
- *
- *   1. **Flat** (`.tugx-term-pre--flat`): natural document flow,
- *      every line in the DOM. Used at or below the
- *      `VISIBLE_THRESHOLD` line count.
- *   2. **Virtualized** (`.tugx-term-scroller` + spacers + windowed
- *      `.tugx-term-pre--virtualized`): self-scrolling viewport with
- *      explicit pixel height, top/bottom spacers shrink-wrap the
- *      total content height, only the visible window is in the
- *      DOM. Used above the threshold. The scroller declares
- *      `scrollbar-gutter: stable` so the gutter is reserved
- *      regardless of content height — no horizontal layout shift
- *      when output grows past the viewport.
+ * a pinned header for the Copy affordance. The body renders flat
+ * (`.tugx-term-pre`): every retained line in natural document flow,
+ * no inner vertical scroller — the transcript owns vertical scroll,
+ * and a tool block expands/collapses in full. Long *lines* (columnar,
+ * un-wrappable output) scroll horizontally within the `<pre>` via its
+ * `overflow-x: auto`; the block never scrolls vertically inside
+ * itself.
  *
  * Header pinning:
  *  - `.tugx-term-header` is `position: sticky; top: var(--tugx-pin-stack-top, 0)`.
@@ -58,10 +51,9 @@
  *    because each theme picks its own ANSI hue/tone.
  *
  * Tuglaw cross-check:
- *   - [L06] no React state for visible state. Class-driven; the
- *     scroll listener writes spacer heights and reorders line
- *     elements imperatively; the Copy "just-copied" feedback toggles
- *     a class via DOM, not React state.
+ *   - [L06] no React state for visible state. Class-driven; the line
+ *     body is written imperatively into `.tugx-term-content`; the Copy
+ *     "just-copied" feedback toggles a class via DOM, not React state.
  *   - [L17] `--tugx-block-*` and `--tugx-term-*` each resolve to
  *     `--tug7-*` in one hop.
  *   - [L19] component-authoring guide — file pair, module
@@ -77,7 +69,6 @@ body {
    * Terminal output is denser than file/diff body text; the line-height
    * override is the deliberate distinguishing dimension. */
   --tugx-term-padding:        var(--tug-space-sm) var(--tug-space-md);
-  --tugx-term-padding-x:      var(--tug-space-md);
   --tugx-term-line-height:    1.45;
   --tugx-term-line-height-px: 20px;
 
@@ -208,8 +199,8 @@ body {
 
 /* ---- Content wrapper ---- */
 
-/* The imperative renderer writes the truncation banner, the flat or
- * virtualized line container, and the post-mortem footer into this
+/* The imperative renderer writes the truncation banner, the line
+ * container, and the post-mortem footer into this
  * div. React owns the parent `.tugx-term` outer and the
  * `.tugx-term-header` sibling above this; this div is the seam
  * between React-rendered chrome and DOM-imperative content. */
@@ -220,9 +211,9 @@ body {
 /* ---- Collapsed preview ----
  *
  * When the root carries `[data-collapsed="true"]`, the imperative
- * renderer has already replaced the body with a flat-path slice of
- * the first `collapseThreshold` lines (no virtualizer, no truncation
- * banner, no footer — see `renderTerminal`). This CSS adds the visual
+ * renderer has already replaced the body with a slice of the first
+ * `collapseThreshold` lines (no truncation banner, no footer — see
+ * `renderTerminal`). This CSS adds the visual
  * fade so the bottom of the preview reads as "more content below"
  * rather than a hard cutoff.
  *
@@ -246,7 +237,11 @@ body {
   font-size: var(--tugx-term-truncation-size);
 }
 
-/* ---- Bodies (flat + virtualized) ---- */
+/* ---- Line body ----
+   Flat: every line in document flow. `white-space: pre` preserves
+   columnar terminal formatting (no wrap); a line wider than the block
+   scrolls horizontally within the `<pre>` (`overflow-x: auto`). There
+   is no vertical inner scroll — the transcript is the scroll surface. */
 
 .tugx-term-pre {
   margin: 0;
@@ -257,11 +252,14 @@ body {
   font-size: inherit;
   line-height: inherit;
   white-space: pre;
+  /* Horizontal scroll for un-wrappable columnar lines. `overflow-y: hidden`
+     is REQUIRED, not incidental: per CSS, `overflow-x: auto` with an unset
+     `overflow-y` promotes the y-axis from `visible` to `auto`, silently making
+     the <pre> a VERTICAL scroll container — the reflow-jitter class this block
+     must never have. Pinning `hidden` keeps it horizontal-only (the pre's height
+     always equals its content, so nothing is ever clipped vertically). */
   overflow-x: auto;
-}
-
-.tugx-term-pre--virtualized {
-  padding: 0 var(--tugx-term-padding-x);
+  overflow-y: hidden;
 }
 
 .tugx-term-line {
@@ -277,35 +275,6 @@ body {
 .tugx-term-line--stderr {
   color: var(--tugx-block-tone-remove-color);
   background: var(--tugx-block-tone-remove-bg);
-}
-
-/* ---- Virtualized scroller ---- */
-
-.tugx-term-scroller {
-  position: relative;
-  overflow-y: auto;
-  overflow-x: auto;
-  /* `height` is set inline by the renderer (viewportPx) so the
-   * scroll container shrink-wraps to the configured viewport.
-   *
-   * `scrollbar-gutter: stable` reserves the vertical scrollbar
-   * gutter in layout even when content fits within the viewport
-   * (no scrollbar visible yet). Without this, the moment a
-   * streaming command's output crosses the viewport-height
-   * threshold, the gutter appears and the rightmost column of
-   * text reflows — a visible jitter. With it, the gutter is
-   * always reserved; growth past the viewport just reveals the
-   * scrollbar in place. Cheap, principled, eliminates a class of
-   * layout-shift bugs. */
-  scrollbar-gutter: stable;
-}
-
-.tugx-term-spacer {
-  /* Spacer divs grow to the heights the windowing engine reports;
-   * height is set inline.
-   */
-  width: 100%;
-  flex: 0 0 auto;
 }
 
 /* ---- Footer (exit / duration / interrupted) ---- */

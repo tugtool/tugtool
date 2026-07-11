@@ -1752,7 +1752,7 @@ export const DevTranscriptHost = forwardRef<
   }, [listMounted]);
 
   // Z0 gutter fill. The inner list permanently reserves a scrollbar gutter
-  // (`overflow-y: scroll` + `scrollbar-gutter: stable`, dev-card.css), so the
+  // (`overflow-y: scroll`, dev-card.css), so the
   // Z0 strip's full-bleed background stops one gutter-width short of the card
   // edge — invisible while a scrollbar occupies that gutter, a visible gap when
   // the transcript fits and no scrollbar shows. The strip lives inside the

@@ -33,10 +33,12 @@
  *    retired: it sat on top of the scrollbar gutter for any output
  *    tall enough to trigger scrolling.
  *  - Body (imperatively rendered into `.tugx-term-content`): the
- *    truncation banner, the flat / virtualized line container, and
- *    the post-mortem footer. The line rendering, ANSI palette, and
- *    virtualization machinery are unchanged — the header is the
- *    only structural addition.
+ *    truncation banner, the line container, and the post-mortem
+ *    footer. Lines render flat in document flow — the transcript is
+ *    the one scroll surface; a terminal block never scrolls inside
+ *    itself vertically. Long output is bounded by the collapse fold
+ *    (folded to a preview by default) and the retention cap, not by a
+ *    self-scrolling viewport.
  *
  * Embedded mode portals the Copy `<TugIconButton>` into the host
  * `BlockChrome`'s actions slot (via `ChromeActionsTargetContext`)
@@ -46,31 +48,26 @@
  *
  * Render strategy:
  *
- *   - **Flat path** for ≤ `VISIBLE_THRESHOLD` lines (default 300):
- *     every line is in the DOM. Simple, fast, no scroll container —
- *     the host owns scroll.
- *   - **Virtualized path** for > `VISIBLE_THRESHOLD` lines: the
- *     block paints its own scroll container, drives a
- *     `BlockHeightIndex` + `RenderedBlockWindow`, and only the
- *     visible window plus an overscan of two viewport heights is in
- *     the DOM. The scroller declares `scrollbar-gutter: stable` so
- *     the gutter is reserved regardless of content height (no
- *     horizontal layout shift when output grows past the viewport).
- *     This is the [D02] decision; the audit's P95 of 40 lines made
- *     40 the natural threshold.
+ *   - **Flat, always.** Every retained line is in the DOM, in
+ *     document flow — no inner scroll container. A tool block
+ *     expands/collapses in full; it does not scroll inside itself.
+ *     The collapse fold caps the *default* height (folded to a
+ *     `collapseThreshold`-line preview for long output); expanding
+ *     reveals the whole thing and grows the transcript, which is the
+ *     one and only scroll surface.
  *   - **Retention cap** at `RETAINED_LINE_CAP` (10k per [Q04]):
  *     when the parsed-line count exceeds the cap, the earliest
  *     lines are dropped and a "… N earlier lines truncated"
  *     indicator is prepended. The audit's max observed Bash output
  *     was 706 lines, so the cap is a defense against pathological
- *     streams (`watch`, log tails) rather than a hot-path concern.
+ *     streams (`watch`, log tails) — the ceiling on how many lines a
+ *     full expand ever mounts.
  *
  * Laws:
  *  - [L03] `useLayoutEffect` for the mount-render and the streaming
  *    subscription so DOM is in place before paint.
- *  - [L06] appearance changes go through CSS / DOM. The scroll
- *    listener writes spacer heights and reorders line elements
- *    imperatively — no React rerender per scroll event. The Copy
+ *  - [L06] appearance changes go through CSS / DOM. The line/footer
+ *    body is written imperatively into `.tugx-term-content`. The Copy
  *    button's `aria-label` and `onClick` are React props, but the
  *    "I just wrote text to the clipboard" feedback is a DOM class
  *    swap on the button ref so the imperative render path doesn't
@@ -85,8 +82,6 @@
  *    container refs.
  *
  * Decisions:
- *  - [D02] self-virtualizes long output via `BlockHeightIndex` +
- *    `RenderedBlockWindow`.
  *  - [D06] ANSI parsing stays in JS (`ansi_up`); see
  *    `lib/ansi/ansi-to-html.ts`.
  *  - [Q04] retained-line cap is 10k — defense against pathological
@@ -107,11 +102,6 @@ import { useResponderChain } from "@/components/tugways/responder-chain-provider
 import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
 import type { ActionHandler } from "@/components/tugways/responder-chain";
 import { ansiToHtml } from "@/lib/ansi/ansi-to-html";
-import { BlockHeightIndex } from "@/lib/block-height-index";
-import { RenderedBlockWindow } from "@/lib/rendered-block-window";
-import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
-import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
-import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";
 import {
   BlockActionsCluster,
   BlockCopyButton,
@@ -238,18 +228,7 @@ export interface TerminalBlockProps {
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, TerminalBlock persists its uncontrolled `collapsed`
    * flag into `bag.components` so a Maker > Reload restores the
-   * fold.
-   *
-   * The virtualized scroller's `scrollTop` is persisted independently
-   * via the [A9] region-scroll axis — TerminalBlock writes
-   * `data-tug-scroll-key={componentStatePreservationKey}/term-scroll`
-   * onto the scroller `<div>` so CardHost's region-scroll
-   * capture/restore loop picks it up. The two axes are split
-   * deliberately: fold is React-state (component-owned, not DOM-
-   * authority); inner scroll is DOM-authority (scrollTop lives on
-   * the scroll element).
-   *
-   * Undefined opts out of both axes (gallery, standalone).
+   * fold. Undefined opts out (gallery, standalone).
    */
   componentStatePreservationKey?: string;
 }
@@ -257,16 +236,6 @@ export interface TerminalBlockProps {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/**
- * Lines above this count switch from flat to virtualized rendering.
- * Sized so a typical command's output (a `tokei` summary, a directory
- * listing, a build log) renders fully inline without an inner scroller
- * — the user shouldn't have to scroll inside the row to read a few
- * dozen lines. Beyond this the virtualized viewport takes over so a
- * 5,000-line log doesn't crash the page.
- */
-export const VISIBLE_THRESHOLD = 300;
 
 /**
  * Default line cap for the expand / collapse axis — the one tunable
@@ -288,9 +257,7 @@ export const VISIBLE_THRESHOLD = 300;
  * This is the consumer-overridable default for the `collapseThreshold`
  * prop. A wrapper that wants a different cap passes its own; tune the
  * value here to move the default for every terminal-rendered result
- * (Bash output, RenderInput-routed terminals) at once. Distinct from
- * `VISIBLE_THRESHOLD`, which governs virtualization of the *expanded*
- * body and stays high — the two are independent concerns.
+ * (Bash output, RenderInput-routed terminals) at once.
  */
 export const DEFAULT_COLLAPSE_THRESHOLD = 25;
 
@@ -300,42 +267,6 @@ export const DEFAULT_COLLAPSE_THRESHOLD = 25;
  * ([Q04]).
  */
 export const RETAINED_LINE_CAP = 10_000;
-
-/**
- * Per-line height in pixels — matches `block-height-index.ts`'s
- * `CODE_LINE_HEIGHT`. The CSS uses `--tugx-term-line-height` for the
- * actual rule; this constant is the value the virtualizer uses for
- * its arithmetic.
- */
-export const LINE_HEIGHT_PX = 20;
-
-/**
- * Vertical padding the FLAT (`.tugx-term-pre`) rendering applies above
- * and below its lines, via `padding: var(--tugx-term-padding)` which
- * resolves to `var(--tug-space-sm) var(--tug-space-md)`. The virtualized
- * pre strips its vertical padding (line-height math expects exact
- * `LINE_HEIGHT_PX`-tall lines starting at the pre's edge), so we bake
- * the same vertical breathing room into the virtualizer's top/bottom
- * spacers as a constant offset.
- *
- * Without this match, the first line in the collapsed-preview (flat)
- * path sits at body-Y=6px, then jumps to body-Y=0 on expand — visibly
- * shifting under the user's eye when they toggle the fold cue. This
- * constant pins the offset so expand/fold preserves vertical position.
- *
- * Hardcoded to match `--tug-space-sm` (6px across the brio + harmony
- * themes). If the token changes, the visual padding parity needs to be
- * re-derived here — the constant is duplicated because imperative math
- * needs a number, not a CSS variable.
- */
-export const VIRTUALIZED_PADDING_PX = 6;
-
-/**
- * Viewport height (in lines) the virtualized scroll container caps
- * itself at. Beyond this the user scrolls. 24 lines × 20 px ≈ 480 px,
- * a comfortable inline height inside a Dev row.
- */
-export const VIRTUAL_VIEWPORT_LINES = 24;
 
 const DEFAULT_STREAMING_PATH = "terminal";
 
@@ -448,7 +379,7 @@ function buildLineElement(line: ParsedLine): HTMLElement {
   el.className = `tugx-term-line tugx-term-line--${line.source}`;
   el.innerHTML = line.html;
   // Render an empty line as a single &nbsp;-equivalent box so it
-  // takes up `LINE_HEIGHT_PX` and doesn't collapse — terminals show
+  // takes up a line height and doesn't collapse — terminals show
   // blank lines as actual blank rows.
   if (line.html === "") el.innerHTML = "&nbsp;";
   return el;
@@ -506,12 +437,14 @@ function buildFooter(data: TerminalData): HTMLElement | null {
 }
 
 /**
- * Append a flat (non-virtualized) body. Used when the visible-line
- * count is at or below `VISIBLE_THRESHOLD`. The host owns scroll.
+ * Append the line body — every line in document flow. The transcript
+ * (the host) owns vertical scroll; the block never scrolls vertically
+ * inside itself. Long lines scroll horizontally within the `<pre>`
+ * (un-wrappable columnar output), via the CSS `overflow-x: auto`.
  */
-function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
+function appendLineBody(container: HTMLElement, lines: ParsedLine[]): void {
   const pre = document.createElement("pre");
-  pre.className = "tugx-term-pre tugx-term-pre--flat";
+  pre.className = "tugx-term-pre";
   pre.dataset.slot = "terminal-pre";
   for (const line of lines) {
     pre.appendChild(buildLineElement(line));
@@ -520,331 +453,31 @@ function appendFlatBody(container: HTMLElement, lines: ParsedLine[]): void {
 }
 
 /**
- * Result of mounting a virtualized body. `cleanup` detaches the
- * scroll listener (and any other side effects) when the renderer
- * is about to rebuild the scroller. `refit` re-runs `applyUpdate`
- * against the scroller's current `scrollTop` — called whenever the
- * outer scrollport reports the terminal entering view, to recover
- * the intermittent blank-frame-after-scroll-into-view symptom.
- */
-interface VirtualizedBodyHandle {
-  cleanup: () => void;
-  refit: () => void;
-}
-
-/**
- * Append a virtualized body — a self-scrolling viewport driven by a
- * `BlockHeightIndex` + `RenderedBlockWindow`. Each line is one
- * "block" with constant `LINE_HEIGHT_PX` height. The window is
- * driven by a scroll listener that re-runs `blockWindow.update` and
- * applies the resulting enter/exit ranges + spacer heights to the
- * DOM imperatively.
- *
- * `anchor` selects the initial scrollTop:
- *  - `"top"` — scroller opens at the start of content. Right for
- *    *static* output: the user just expanded a folded preview that
- *    showed the first ~8 lines, and they want to continue reading
- *    from where the preview cut off.
- *  - `"bottom"` — scroller opens at the tail of content. Right for
- *    *streaming* output: the user wants to see the latest lines as
- *    they arrive (the historical default for live terminals).
- *
- * `getOuter` is called on each Cmd/Ctrl-wheel hit to resolve the
- * outer scrollport that should receive the routed delta. When the
- * function returns `null` the wheel handler degrades to a no-op —
- * standalone composition or gallery, where there is no outer
- * scrollport to forward to.
- *
- * Returns a {@link VirtualizedBodyHandle} carrying both `cleanup`
- * (detach the scroll listener / wheel router on body replacement)
- * and `refit` (re-run `applyUpdate` to recover from a missed first
- * paint when the outer scrollport scrolls this terminal into view).
- */
-function appendVirtualizedBody(
-  container: HTMLElement,
-  lines: ParsedLine[],
-  anchor: "top" | "bottom",
-  getOuter: () => HTMLElement | null,
-  scrollKey: string | undefined,
-  initialScrollTop: number | undefined,
-): VirtualizedBodyHandle {
-  const heightIndex = new BlockHeightIndex(Math.max(1024, lines.length));
-  for (let i = 0; i < lines.length; i += 1) {
-    heightIndex.appendBlock(LINE_HEIGHT_PX);
-  }
-
-  const viewportPx = Math.min(
-    lines.length * LINE_HEIGHT_PX,
-    VIRTUAL_VIEWPORT_LINES * LINE_HEIGHT_PX,
-  );
-  const window_ = new RenderedBlockWindow(heightIndex, viewportPx, 2);
-
-  const scroller = document.createElement("div");
-  scroller.className = "tugx-term-scroller";
-  scroller.dataset.slot = "terminal-scroller";
-  // [A9] region-scroll axis — when a key is supplied, stamp the
-  // scroller for CardHost's `captureRegionScrolls` walk. Raw {x, y}
-  // is sufficient: terminal lines are fixed-height (LINE_HEIGHT_PX),
-  // so scrollTop maps deterministically to line index across reload.
-  if (scrollKey !== undefined) {
-    scroller.setAttribute("data-tug-scroll-key", scrollKey);
-  }
-  scroller.style.height = `${viewportPx}px`;
-
-  const topSpacer = document.createElement("div");
-  topSpacer.className = "tugx-term-spacer tugx-term-spacer--top";
-  scroller.appendChild(topSpacer);
-
-  const pre = document.createElement("pre");
-  pre.className = "tugx-term-pre tugx-term-pre--virtualized";
-  pre.dataset.slot = "terminal-pre";
-  scroller.appendChild(pre);
-
-  const bottomSpacer = document.createElement("div");
-  bottomSpacer.className = "tugx-term-spacer tugx-term-spacer--bottom";
-  scroller.appendChild(bottomSpacer);
-
-  // The line elements currently in the DOM, keyed by line index.
-  // Diff the new range against this map on every update().
-  const mounted = new Map<number, HTMLElement>();
-
-  function applyUpdate(scrollTop: number): void {
-    const update = window_.update(scrollTop);
-
-    for (const range of update.exit) {
-      for (let i = range.startIndex; i < range.endIndex; i += 1) {
-        const el = mounted.get(i);
-        if (el !== undefined) {
-          el.remove();
-          mounted.delete(i);
-        }
-      }
-    }
-
-    for (const range of update.enter) {
-      for (let i = range.startIndex; i < range.endIndex; i += 1) {
-        const el = buildLineElement(lines[i]);
-        el.dataset.lineIndex = String(i);
-        mounted.set(i, el);
-        // Insert in order so DOM order matches index order.
-        const next = findNextMountedAfter(mounted, i);
-        if (next === undefined) {
-          pre.appendChild(el);
-        } else {
-          pre.insertBefore(el, next);
-        }
-      }
-    }
-
-    // Add VIRTUALIZED_PADDING_PX to both spacers so the first/last
-    // mounted line sits at the same body-Y as the flat-path
-    // rendering would (which uses CSS `padding: var(--tugx-term-
-    // padding)` on the pre). This is the constant-offset trick: the
-    // window-update math operates in the unpadded coordinate system
-    // (heightIndex), so scrollTop and content-Y differ by exactly
-    // `VIRTUALIZED_PADDING_PX` whenever firstMounted=0. The
-    // 2-viewport overscan absorbs this discrepancy for the mount
-    // range; the visual outcome is that the first/last line sit
-    // 6px below/above the scroller's edges — matching the flat pre.
-    topSpacer.style.height = `${update.topSpacerHeight + VIRTUALIZED_PADDING_PX}px`;
-    bottomSpacer.style.height = `${update.bottomSpacerHeight + VIRTUALIZED_PADDING_PX}px`;
-  }
-
-  // Attach the scroller to the document tree BEFORE the initial
-  // scrollTop assignment below. Per spec, setting `scrollTop` on a
-  // detached element is a no-op — a detached element has no
-  // scrolling box. If we keep the older "applyUpdate → set scrollTop
-  // → appendChild" order, the scrollTop write silently fails, the
-  // scroller's scrollTop defaults to 0 when it attaches, and the
-  // user sees the top-spacer's empty space instead of the tail of
-  // the rendered content. The scroller stays empty until a wheel
-  // event fires `onScroll`, which then calls `applyUpdate(0)` and
-  // re-mounts lines from the top — the "jostled by scrolling fixes
-  // it" symptom.
-  //
-  // Before the collapse-driven re-render path landed, this was a
-  // latent bug masked by the mount-once contract: the static-mode
-  // effect ran exactly once at first paint and the user typically
-  // scrolled to consume the output, so the empty initial frame went
-  // unnoticed. The collapse-driven re-render exposed it: fold→expand
-  // recreates the scroller every toggle, and now every expansion
-  // shows empty until scrolled.
-  //
-  // Attaching first means the scroller is empty (top/bottom spacers
-  // at zero height, no line elements in `pre`) for one
-  // useLayoutEffect tick — but useLayoutEffect runs before paint,
-  // so the user never sees that intermediate state. `applyUpdate`
-  // below populates the spacers + mounts lines synchronously; the
-  // browser composites the final state on its next paint.
-  container.appendChild(scroller);
-
-  // First paint — anchor at top or bottom per the caller's choice
-  // (static caller anchors at the top so an expanded preview reads
-  // top-down; streaming caller anchors at the tail so live output
-  // shows the latest lines). RenderedBlockWindow.update(scrollTop)
-  // handles the math; the scrollTop assignment after it sticks
-  // because the scroller is now part of a layout tree.
-  //
-  // When the caller supplies `initialScrollTop` (the cold-boot
-  // mount-in-saved-state path threads `useSavedRegionScroll(scrollKey)?.y`
-  // through here), the saved position wins — the scroller is CREATED
-  // at the user's last-saved position, no jump-from-0. The anchor-
-  // based default below covers the case the caller hasn't supplied a
-  // saved value (subsequent fold-toggle rebuilds, gallery uses without
-  // a card-scoped bag).
-  //
-  // Bottom-anchor math includes `2 * VIRTUALIZED_PADDING_PX` because
-  // the spacers each carry that constant offset (see `applyUpdate`),
-  // so the true scrollable height is `totalContentPx + 12`. Without
-  // the +12, the streaming caller would land 12px short of the
-  // actual bottom on first paint — the user would see the last line
-  // 12px above the scroller's bottom edge instead of pinned to it.
-  const totalContentPx = heightIndex.getTotalHeight();
-  const totalScrollableHeight = totalContentPx + 2 * VIRTUALIZED_PADDING_PX;
-  const maxScrollTop = Math.max(0, totalScrollableHeight - viewportPx);
-  const anchorScrollTop = anchor === "top" ? 0 : maxScrollTop;
-  const resolvedScrollTop =
-    initialScrollTop !== undefined
-      ? Math.max(0, Math.min(initialScrollTop, maxScrollTop))
-      : anchorScrollTop;
-  applyUpdate(resolvedScrollTop);
-  scroller.scrollTop = resolvedScrollTop;
-
-  // Scroll-state writer (validation field only). The
-  // TerminalBlock virtualizer is deterministic per `LINE_HEIGHT_PX`,
-  // so raw saved `{x, y}` already restores the same content
-  // position on cold boot — `meta.scrollHeight` is captured for
-  // symmetry with the variable-height virtualizer's geometry
-  // capture pattern and for cross-version layout-stability checks.
-  // Reader paths do not consume it today; if it disagreed with the
-  // live scrollHeight it would just be ignored.
-  //
-  // [L06] DOM-attribute write. Updated on every scroll event,
-  // alongside `applyUpdate`, so the framework's capture-time read
-  // sees the current value.
-  const writeScrollState = (): void => {
-    scroller.setAttribute(
-      "data-tug-scroll-state",
-      JSON.stringify({ scrollHeight: scroller.scrollHeight }),
-    );
-  };
-  writeScrollState();
-
-  let pendingRaf: number | null = null;
-  const onScroll = () => {
-    if (pendingRaf !== null) return;
-    pendingRaf = requestAnimationFrame(() => {
-      pendingRaf = null;
-      applyUpdate(scroller.scrollTop);
-      writeScrollState();
-    });
-  };
-  scroller.addEventListener("scroll", onScroll, { passive: true });
-
-  // Cmd/Ctrl-wheel routes to the outer card scrollport regardless of
-  // whether the cursor is over the terminal's own scroller. Without
-  // this, a long bash output would capture wheel events as soon as
-  // the cursor entered it, stuttering the outer-card skim. See
-  // `use-outer-scroll-on-modifier-wheel.ts` for the contract.
-  const detachWheelRouter = attachOuterScrollOnModifierWheel(scroller, getOuter);
-
-  return {
-    cleanup: () => {
-      if (pendingRaf !== null) {
-        cancelAnimationFrame(pendingRaf);
-        pendingRaf = null;
-      }
-      scroller.removeEventListener("scroll", onScroll);
-      detachWheelRouter();
-    },
-    // Re-run applyUpdate against the current scrollTop. Idempotent
-    // when no enter/exit ranges change. Used by the outer-scroll-
-    // into-view recovery to repaint a terminal whose first paint
-    // missed under a WebKit layer-invalidation hiccup or a similar
-    // intermittent.
-    refit: () => {
-      applyUpdate(scroller.scrollTop);
-    },
-  };
-}
-
-/**
- * Scan `mounted` for the smallest line index strictly greater than
- * `index` whose element is in the DOM. Used to keep DOM order in
- * sync with line index order during enter-range insertion.
- */
-function findNextMountedAfter(
-  mounted: Map<number, HTMLElement>,
-  index: number,
-): HTMLElement | undefined {
-  let nextIndex = Number.POSITIVE_INFINITY;
-  for (const i of mounted.keys()) {
-    if (i > index && i < nextIndex) nextIndex = i;
-  }
-  return nextIndex === Number.POSITIVE_INFINITY
-    ? undefined
-    : mounted.get(nextIndex);
-}
-
-/**
- * Result of a top-level `renderTerminal` call. `cleanup` reverts any
- * side effects the current body installed (scroll listener, wheel
- * router) so a subsequent render can replace the body safely.
- * `refit` re-runs the virtualizer's `applyUpdate` against the
- * scroller's current `scrollTop` when present — flat-path renders
- * have nothing to refit and surface a no-op here, so the React
- * shell can call `refit` unconditionally.
- */
-interface TerminalRenderHandle {
-  cleanup: () => void;
-  refit: () => void;
-}
-
-const NO_OP_TERMINAL_HANDLE: TerminalRenderHandle = {
-  cleanup: () => undefined,
-  refit: () => undefined,
-};
-
-/**
  * Top-level imperative render. Rebuilds `body` from scratch each
  * call and stamps `data-empty` on the `outer` root. The header is
  * NOT touched here — React owns the header markup (label + Copy
  * `<TugIconButton>`); this function rebuilds only what lives below
- * the header (truncation banner, flat / virtualized line container,
- * post-mortem footer). Returns a {@link TerminalRenderHandle} whose
- * `cleanup` detaches the body's listeners and whose `refit` re-runs
- * `applyUpdate` for the virtualized path (no-op for flat).
+ * the header (truncation banner, line container, post-mortem footer).
+ * Every line renders in document flow — no inner scroller; the
+ * transcript owns vertical scroll.
  *
- * **Collapsed preview path.** When `collapsed` is true,
- * the renderer skips the virtualizer entirely and renders just the
- * first `previewLineCap` lines via the flat path — same lines the
- * user would see at the top of the expanded output.
- * Truncation banner is suppressed (the fold cue carries the "more
- * exists below" signal). Footer is suppressed (post-mortem badges
- * sit at the END of the output; revealing them during a TOP-of-file
- * preview would mislead the reader into thinking the command had
- * completed within the preview). Expanding the block restores the
- * full render (truncation banner, virtualizer, footer) on the next
- * call.
- *
- * `anchor` is forwarded to `appendVirtualizedBody` when virtualizing
- * — `"top"` for static-mode renders (expand-from-preview reads top-
- * down), `"bottom"` for streaming-mode renders (latest lines visible).
- *
- * `getOuter` is forwarded to the virtualizer for the Cmd/Ctrl-wheel
- * routing contract — see `use-outer-scroll-on-modifier-wheel.ts`.
+ * **Collapsed preview path.** When `collapsed` is true, the renderer
+ * renders just the first `previewLineCap` lines — the same lines the
+ * user would see at the top of the expanded output. Truncation banner
+ * is suppressed (the fold cue carries the "more exists below" signal).
+ * Footer is suppressed (post-mortem badges sit at the END of the
+ * output; revealing them during a TOP-of-file preview would mislead
+ * the reader into thinking the command had completed within the
+ * preview). Expanding the block restores the full render (truncation
+ * banner, all lines, footer) on the next call.
  */
 function renderTerminal(
   outer: HTMLElement,
   body: HTMLElement,
   data: TerminalData,
-  getOuter: () => HTMLElement | null,
   collapsed: boolean = false,
   previewLineCap: number = DEFAULT_COLLAPSE_THRESHOLD,
-  anchor: "top" | "bottom" = "top",
-  scrollKey: string | undefined = undefined,
-  initialScrollTop: number | undefined = undefined,
-): TerminalRenderHandle {
+): void {
   body.replaceChildren();
   // Empty terminal: render the footer if any post-mortem fields are
   // set, but leave the body empty. (A bash command that emitted no
@@ -866,39 +499,24 @@ function renderTerminal(
   }
 
   // Collapsed preview path — slice to the first `previewLineCap`
-  // lines, skip the truncation banner + virtualizer + footer. The
-  // fold cue (in the React-owned header) and the CSS mask-image fade
-  // together signal "more below; click to expand."
+  // lines, skip the truncation banner + footer. The fold cue (in the
+  // React-owned header) and the CSS mask-image fade together signal
+  // "more below; click to expand."
   if (collapsed && lines.length > 0) {
-    const preview = lines.slice(0, previewLineCap);
-    appendFlatBody(body, preview);
-    return NO_OP_TERMINAL_HANDLE;
+    appendLineBody(body, lines.slice(0, previewLineCap));
+    return;
   }
 
   if (truncated > 0) {
     body.appendChild(buildTruncationIndicator(truncated));
   }
 
-  let handle: VirtualizedBodyHandle | null = null;
   if (lines.length > 0) {
-    if (lines.length <= VISIBLE_THRESHOLD) {
-      appendFlatBody(body, lines);
-    } else {
-      handle = appendVirtualizedBody(
-        body,
-        lines,
-        anchor,
-        getOuter,
-        scrollKey,
-        initialScrollTop,
-      );
-    }
+    appendLineBody(body, lines);
   }
 
   const footer = buildFooter(data);
   if (footer !== null) body.appendChild(footer);
-
-  return handle ?? NO_OP_TERMINAL_HANDLE;
 }
 
 /**
@@ -940,27 +558,6 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   // forcing a React re-render of the shell.
   const latestDataRef = React.useRef<TerminalData>(EMPTY_TERMINAL);
 
-  // Outer scrollport (context published by the host list view).
-  // Read each call into a ref so the imperative virtualizer can
-  // resolve the live node at wheel-event time without re-running
-  // the body-render effect when the outer node changes.
-  const outerScrollport = useOuterScrollport();
-  const outerScrollportRef = React.useRef<HTMLElement | null>(outerScrollport);
-  React.useLayoutEffect(() => {
-    outerScrollportRef.current = outerScrollport;
-  }, [outerScrollport]);
-  const getOuterScrollport = React.useCallback(
-    (): HTMLElement | null => outerScrollportRef.current,
-    [],
-  );
-
-  // Refit callback handed up from the most recent renderTerminal()
-  // call. Mounted via `useLayoutEffect` so the imperative renderer
-  // and React state stay in lockstep across the same paint. The
-  // outer-scrollport / IntersectionObserver effect below calls
-  // `refitRef.current?.()` on entering-view to recover from the
-  // intermittent blank-frame-after-scroll-into-view symptom.
-  const refitRef = React.useRef<(() => void) | null>(null);
   // The data prop captured at FIRST mount. Static mode renders this
   // value once and never again, even across collapse-driven
   // re-renders. Without this ref the collapse-aware re-render would
@@ -983,11 +580,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   //
   // `useBlockFoldState` owns the rest — controlled / uncontrolled
   // resolution, mount-in-saved-state, and [A9] capture — shared with
-  // the other fold-bearing body kinds. The virtualized scroller's
-  // `scrollTop` is preserved separately, on the [A9] region-scroll
-  // axis (a `data-tug-scroll-key` attribute on the scroller div): the
-  // two axes are split deliberately — fold is React state, inner
-  // scroll is DOM authority (scrollTop lives on the scroll element).
+  // the other fold-bearing body kinds.
   const lineCount = React.useMemo(
     () => quickLineCount(initialDataRef.current),
     [],
@@ -1034,47 +627,9 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // Standalone always renders an identity header — even without a
   // `headerLabel`, the header strip hosts Copy at the trailing edge.
-  // An empty strip is a fair price for the Copy affordance staying
-  // reachable across the scroll range; the alternative (a body-kind
-  // overlay) was retired with the `.tugx-term-copy` slot family
-  // because the overlay sat on top of the scrollbar gutter.
   // Embedded mode suppresses the header — the chrome owns identity
   // and Copy portals into the chrome's actions slot instead.
   const showHeader = !embedded;
-
-  // [A9] region-scroll key for the virtualized inner scroller —
-  // suffixed `/term-scroll` off the block's preservation key.
-  // Threaded through each `renderTerminal` call so the scroller div
-  // gets stamped on creation; CardHost's `captureRegionScrolls`
-  // walks the attribute on save. `undefined` when the consumer
-  // didn't opt in (gallery / standalone), which the imperative
-  // renderer treats as "don't stamp" — no attribute, no
-  // preservation.
-  const scrollKey =
-    componentStatePreservationKey === undefined
-      ? undefined
-      : `${componentStatePreservationKey}/term-scroll`;
-
-  // Mount-in-saved-state for the inner scroller. The saved scroll
-  // for this card's region-scroll axis is read synchronously in
-  // render and consumed by the FIRST `renderTerminal` call below;
-  // `appendVirtualizedBody` writes it into the scroller's
-  // `scrollTop` at creation, so the very first paint lands at the
-  // user's saved position. Subsequent `renderTerminal` calls
-  // (collapse-toggle rebuild, streaming re-render) pass `undefined`
-  // and rely on the anchor-based default; the element-identity-
-  // gated MutationObserver pass in `card-host.tsx` re-applies the
-  // bag value to the rebuilt scroller. See `state-preservation.md`.
-  const savedRegionScroll = useSavedRegionScroll(scrollKey);
-  const initialScrollTopRef = React.useRef<number | undefined>(
-    savedRegionScroll?.y,
-  );
-  const firstRenderConsumedRef = React.useRef(false);
-  const consumeInitialScrollTop = React.useCallback((): number | undefined => {
-    if (firstRenderConsumedRef.current) return undefined;
-    firstRenderConsumedRef.current = true;
-    return initialScrollTopRef.current;
-  }, []);
 
   // Static mode — re-runs whenever `collapsed` flips, so the imperative
   // body switches between the full render and the preview render
@@ -1090,23 +645,8 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const d = initialDataRef.current ?? EMPTY_TERMINAL;
     latestDataRef.current = d;
-    const handle = renderTerminal(
-      outer,
-      body,
-      d,
-      getOuterScrollport,
-      collapsed,
-      collapseThreshold,
-      "top",
-      scrollKey,
-      consumeInitialScrollTop(),
-    );
-    refitRef.current = handle.refit;
-    return () => {
-      refitRef.current = null;
-      handle.cleanup();
-    };
-  }, [collapsed, collapseThreshold, streamingStore, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
+    renderTerminal(outer, body, d, collapsed, collapseThreshold);
+  }, [collapsed, collapseThreshold, streamingStore]);
 
   // Streaming mode — Spec S05 binding. Reads sync on mount,
   // subscribes for updates, rAF-coalesces.
@@ -1130,38 +670,19 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const store = streamingStore;
 
-    let cleanup: () => void = () => undefined;
-
     function rerender(): void {
-      cleanup();
       const outerEl = outerRef.current;
       const bodyEl = bodyRef.current;
-      if (outerEl === null || bodyEl === null) {
-        cleanup = () => undefined;
-        refitRef.current = null;
-        return;
-      }
+      if (outerEl === null || bodyEl === null) return;
       const next = coerceTerminalData(store.get(streamingPath));
       latestDataRef.current = next;
-      // Streaming mode anchors the virtualized viewport at the
-      // tail — live output is read latest-first, and any new line
-      // arriving while the user is at the bottom should keep them
-      // pinned to the new tail (subsequent rerenders will re-anchor
-      // there). Static mode (the renderer's default) anchors at
-      // top, which is right for expand-from-preview reading.
-      const handle = renderTerminal(
+      renderTerminal(
         outerEl,
         bodyEl,
         next,
-        getOuterScrollport,
         collapsedStreamingRef.current,
         collapseThreshold,
-        "bottom",
-        scrollKey,
-        consumeInitialScrollTop(),
       );
-      cleanup = handle.cleanup;
-      refitRef.current = handle.refit;
     }
 
     rerender();
@@ -1181,10 +702,8 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
         pendingRaf = null;
       }
       unsubscribe();
-      refitRef.current = null;
-      cleanup();
     };
-  }, [streamingStore, streamingPath, collapseThreshold, getOuterScrollport, scrollKey, consumeInitialScrollTop]);
+  }, [streamingStore, streamingPath, collapseThreshold]);
 
   // Streaming-mode re-render on collapse toggle. The store-subscription
   // effect above is the source of truth for streaming output, but a
@@ -1205,101 +724,8 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     if (outer === null || body === null) return;
     const next = coerceTerminalData(streamingStore.get(streamingPath));
     latestDataRef.current = next;
-    // Streaming collapse-toggle re-render — keep the tail anchor
-    // to match the streaming subscription path above.
-    // Streaming-mode collapse-toggle re-renders ALWAYS run after the
-    // streaming subscription's first `rerender()` consumed the saved
-    // scroll, so this path never carries `initialScrollTop` — the
-    // element-identity-gated MutationObserver pass in `card-host.tsx`
-    // re-applies the bag value to the rebuilt scroller when needed.
-    const handle = renderTerminal(
-      outer,
-      body,
-      next,
-      getOuterScrollport,
-      collapsed,
-      collapseThreshold,
-      "bottom",
-      scrollKey,
-      undefined,
-    );
-    refitRef.current = handle.refit;
-    return () => {
-      refitRef.current = null;
-      handle.cleanup();
-    };
-  }, [collapsed, collapseThreshold, streamingStore, streamingPath, getOuterScrollport, scrollKey]);
-
-  // ---- Blank-frame recovery on scroll-into-view ----------------------
-  //
-  // Symptom: scrolling the outer card so a Bash output region enters
-  // view sometimes leaves the inner virtualized scroller painted as
-  // empty — the scroller exists with the right height, but its line
-  // elements don't appear until the user wheels inside it (which
-  // triggers `applyUpdate` and re-mounts lines). Likely causes
-  // identified during the diagnosis pass include WebKit layer-
-  // invalidation hiccups under the outer's scroll-driven clip
-  // changes, and `IntersectionObserver`-style virtualizers that
-  // miss the first paint when their parent's clip rect is still
-  // settling.
-  //
-  // The fix is the symptom-targeted refit: when the outer scrollport
-  // reports this terminal entering view (IntersectionObserver), call
-  // the virtualizer's `refit` (which re-runs `applyUpdate(scrollTop)`
-  // and re-mounts the visible window). Refit is idempotent when no
-  // enter/exit ranges change, so spurious fires are free.
-  //
-  // Also listen on the outer's `scroll` event while in view as a
-  // belt-and-suspenders: some intermittents only surface when the
-  // outer is mid-scroll, and the IO threshold buckets may not fire
-  // for sub-threshold delta. The scroll handler gates on `inView`
-  // so we don't burn cycles when the terminal is off-screen.
-  //
-  // Laws:
-  //  - [L03] `useLayoutEffect` so the IO + scroll listeners are live
-  //    from first paint; otherwise the very first scroll-into-view
-  //    could miss its refit by a frame.
-  //  - [L05] No `requestAnimationFrame`. Refit runs synchronously in
-  //    the IO / scroll callback.
-  //  - [L06] Scroll-into-view detection drives a DOM-level refit;
-  //    no React state changes from this effect.
-  //  - [L22] IO is an external store; the effect subscribes to it
-  //    directly and writes to the DOM in the callback, never
-  //    routing intersection state through React.
-  React.useLayoutEffect(() => {
-    if (outerScrollport === null) return;
-    const root = outerRef.current;
-    if (root === null) return;
-
-    let inView = false;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const enteringView = entry.isIntersecting && !inView;
-          inView = entry.isIntersecting;
-          if (enteringView) {
-            refitRef.current?.();
-          }
-        }
-      },
-      { root: outerScrollport, threshold: 0 },
-    );
-    observer.observe(root);
-
-    const onOuterScroll = (): void => {
-      if (!inView) return;
-      refitRef.current?.();
-    };
-    outerScrollport.addEventListener("scroll", onOuterScroll, {
-      passive: true,
-    });
-
-    return () => {
-      observer.disconnect();
-      outerScrollport.removeEventListener("scroll", onOuterScroll);
-    };
-  }, [outerScrollport]);
+    renderTerminal(outer, body, next, collapsed, collapseThreshold);
+  }, [collapsed, collapseThreshold, streamingStore, streamingPath]);
 
   // `getText` closure for the `BlockCopyButton` affordance —
   // reads the latest streamed-or-static data at click time. The

@@ -365,14 +365,22 @@
 .dev-card-transcript .tug-list-view {
   /* Never let the scrollbar's arrival reflow the column. `overflow-y:
      scroll` reserves the classic-scrollbar track at all times (works on
-     every WebKit, unlike the newer `scrollbar-gutter`), so the content
-     width is constant whether or not the bar is showing — the bar never
-     "appears," it is always there. On overlay-scrollbar systems the bar
-     overlays and reserves nothing either way, so no shift in that case
-     too. `scrollbar-gutter: stable` rides along for engines that honor
-     it (overlay-correct). */
+     every WebKit), so the content width is constant whether or not the bar
+     is showing — the bar never "appears," it is always there. On
+     overlay-scrollbar systems the bar overlays and reserves nothing either
+     way, so no shift in that case too. `overflow-y: scroll` alone is the
+     complete no-reflow guarantee in BOTH scrollbar modes.
+
+     Do NOT add `scrollbar-gutter: stable` here. It is redundant with the
+     above, and on overlay-scrollbar Macs it FORCES a reserved gutter that
+     contradicts overlay's "reserve nothing" — a gutter WebKit re-evaluates
+     during rapid streaming reflow, flickering the column by one
+     scrollbar-width (content jumps right, the reserved bar shoves off-edge,
+     then snaps back). The flicker is worst with a second pane snapped
+     immediately to the right, whose left edge repaints against this
+     scroller's gutter at the same x. Dropping it restores a rock-steady
+     column under streaming. */
   overflow-y: scroll;
-  scrollbar-gutter: stable;
   --tugx-list-view-row-gap: var(--tugx-dev-entry-margin);
   --tugx-list-view-padding-block: var(--tug-space-md);
   /* Start side ZEROED: the permanent Z0 row is the list's leading content,
