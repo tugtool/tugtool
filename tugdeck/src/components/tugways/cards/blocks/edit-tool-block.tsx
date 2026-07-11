@@ -320,6 +320,35 @@ export function composeEditChangeCounts(
   return countDiffStats(data.hunks);
 }
 
+/**
+ * The 1-based inclusive line range of the first hunk's *changed* lines
+ * in the after file — the tight span of its `add` lines, NOT the whole
+ * hunk (context included). Clicking the file ref flashes exactly these
+ * lines. A pure deletion (no add lines) flashes the line where content
+ * was removed. Only the `hunks` source carries line numbers.
+ */
+export function firstChangedLineRange(
+  data: DiffData | undefined,
+): { startLine: number; endLine: number } | undefined {
+  if (data === undefined || data.source !== "hunks") return undefined;
+  const first = data.hunks[0];
+  if (first === undefined) return undefined;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const line of first.lines) {
+    if (line.kind === "add" && line.after_lineno !== null) {
+      if (line.after_lineno < min) min = line.after_lineno;
+      if (line.after_lineno > max) max = line.after_lineno;
+    }
+  }
+  if (min === Infinity) {
+    // Pure deletion — no after-file lines changed; flash where the
+    // removed content sat (the hunk's after-side start).
+    return { startLine: first.after_start, endLine: first.after_start };
+  }
+  return { startLine: min, endLine: max };
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -349,12 +378,22 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? editInput.file_path;
+  // The first hunk's changed line(s) — clicking the file ref jumps to
+  // and flashes exactly these lines (not the surrounding context).
+  const firstHunkRange = React.useMemo(
+    () => firstChangedLineRange(diffData),
+    [diffData],
+  );
   // Identity: the inline file ref. Meta: the `+N −M` change summary via the
   // shared diff-stat primitive ([D06]) — the bespoke two-span markup is
   // gone.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef path={filePath} data-slot="edit-tool-block-path" />
+      <ToolFileRef
+        path={filePath}
+        range={firstHunkRange}
+        data-slot="edit-tool-block-path"
+      />
     ) : undefined;
   // Errored edits carry the failure message in `textOutput` (e.g.
   // "old_string not found"). When errored, prefer the chrome's error

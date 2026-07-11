@@ -100,6 +100,7 @@ export function openFileInCard(
   store: IDeckManagerStore,
   path: string,
   line?: number,
+  endLine?: number,
 ): void {
   // Every real open flows through here — record it for Open Recent
   // before the card work, so drops / Open Quickly / menu all feed it.
@@ -114,16 +115,21 @@ export function openFileInCard(
       commitMutation: () => store.activateCard(existing.cardId),
     });
     if (line !== undefined) {
-      existing.entry.revealLine(line);
+      existing.entry.revealLine(line, endLine);
     }
     return;
   }
 
   // No card holds this exact path. The deck default decides where it
   // lands; reuse / newTab fall through to a fresh card when the deck has
-  // no Text card yet.
+  // no Text card yet. A `line` seeds a one-time reveal + flash of the
+  // touched passage once the fresh card binds the file.
   const target = readOpenTarget();
-  const seed = { path, anchor: { line: line ?? 1, ch: 0 }, scrollTop: 0 };
+  const seed = {
+    path,
+    revealOnOpen: line === undefined ? undefined : { line, endLine },
+    scrollTop: 0,
+  };
 
   if (target !== "new") {
     const frontmost = findFrontmostTextCard(store);
@@ -139,7 +145,7 @@ export function openFileInCard(
             store,
             commitMutation: () => store.activateCard(frontmost.cardId),
           });
-          entry.openFile(path, line);
+          entry.openFile(path, line, endLine);
           return;
         }
       } else {

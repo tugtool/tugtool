@@ -374,16 +374,16 @@ New grammar packages to add (`bun add`): `@codemirror/lang-go`, `@codemirror/lan
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Text card sizing parity | pending | — |
-| #step-2 | Shared static Lezer tokenizer + full tag map + language coverage | pending | — |
-| #step-3 | Read/Write blocks highlighted via Lezer | pending | — |
-| #step-4 | Diff renderer re-targeted Shiki → Lezer | pending | — |
-| #step-5 | Color live transcript code-fences (net-new) | pending | — |
-| #step-6 | Delete Shiki + bridge + dead markdown.ts | pending | — |
-| #step-7 | Rendering-unification integration checkpoint | pending | — |
-| #step-8 | Full-selection persistence + measure-gated scroll | pending | — |
-| #step-9 | Click-to-passage: range open + select + zoom flash | pending | — |
-| #step-10 | End-to-end integration checkpoint | pending | — |
+| #step-1 | Text card sizing parity | done | 86493f752 |
+| #step-2 | Shared static Lezer tokenizer + full tag map + language coverage | done | 7044d7b8a |
+| #step-3 | Read/Write blocks highlighted via Lezer | done | a9b3747b7 |
+| #step-4 | Diff renderer re-targeted Shiki → Lezer | done | 14891a1bf |
+| #step-5 | Color live transcript code-fences (net-new) | done | df9b1b120 |
+| #step-6 | Delete Shiki + bridge + dead markdown.ts | done | 8a05b4bf8 |
+| #step-7 | Rendering-unification integration checkpoint | done | (verify) |
+| #step-8 | Full-selection persistence + measure-gated scroll | done | 341f1e96f |
+| #step-9 | Click-to-passage: range open + select + zoom flash | done | f3c905ef7 |
+| #step-10 | End-to-end integration checkpoint | done | (verify) |
 
 #### Step 1: Text card sizing parity {#step-1}
 

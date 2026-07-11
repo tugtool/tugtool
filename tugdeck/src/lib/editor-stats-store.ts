@@ -3,7 +3,7 @@
  * card's editor publishes for its status bar: caret position, and the
  * line / word / character counts.
  *
- * A tiny subscribable store per card. `TugFileEditor` writes it from its
+ * A tiny subscribable store per card. `TugTextCardEditor` writes it from its
  * CM6 update listener (caret on every selection change, counts on every
  * doc change); `TextCardStatusBar` reads it via `useSyncExternalStore`,
  * so keystroke-rate updates repaint only the status bar — not the

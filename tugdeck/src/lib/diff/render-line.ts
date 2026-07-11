@@ -1,12 +1,12 @@
 /**
- * `renderLineSegments` — merge Shiki syntax tokens with word-level
+ * `renderLineSegments` — merge Lezer syntax tokens with word-level
  * diff ranges into a flat list of decorated segments.
  *
  * The function walks the line text once, tracking the active syntax
- * style and the active word-level class. It emits a new segment
+ * class and the active word-level class. It emits a new segment
  * whenever either changes. Segments that fall inside both a syntax
  * token and a word-level range carry both decorations (the React
- * renderer applies the `style` and `className` to the same `<span>`).
+ * renderer applies both class names to the same `<span>`).
  * Segments outside any token still get emitted with empty decoration
  * so the original text is preserved verbatim.
  *
@@ -19,7 +19,7 @@
  * @module lib/diff/render-line
  */
 
-import type { SyntaxToken } from "./syntax-tokens-from-shiki";
+import type { SyntaxToken } from "./syntax-tokens-from-lezer";
 import type { WordDiffSegment } from "./parse-unified-diff";
 
 /**
@@ -40,14 +40,15 @@ export interface WordRange {
 }
 
 /**
- * One merged segment. `style` is the Shiki inline-style string (may
- * be empty); `className` is the word-level overlay class (may be
- * `null`). The renderer emits a `<span>` per segment.
+ * One merged segment. `syntaxClassName` is the Lezer highlight class
+ * (may be empty for unstyled runs); `wordClassName` is the word-level
+ * overlay class (may be `null`). The renderer emits a `<span>` per
+ * segment carrying both where present.
  */
 export interface RenderedSegment {
   text: string;
-  style: string;
-  className: string | null;
+  syntaxClassName: string;
+  wordClassName: string | null;
 }
 
 /**
@@ -95,8 +96,9 @@ export function wordRangesForSide(
  *    segment carries both decorations where applicable.
  *
  * Tokens and ranges are assumed to be sorted by `start` and
- * non-overlapping within their own list (Shiki's output is naturally
- * non-overlapping; word-range derivation also preserves this). The
+ * non-overlapping within their own list (highlightTree's output is
+ * naturally non-overlapping; word-range derivation also preserves this).
+ * The
  * algorithm is two-pointer: a single forward pass through the
  * boundary list with `tokenIdx` and `rangeIdx` cursors that advance
  * monotonically, giving true `O(syntaxTokens.length +
@@ -166,8 +168,8 @@ export function renderLineSegments(
 
     result.push({
       text: slice,
-      style: tok?.style ?? "",
-      className: range?.className ?? null,
+      syntaxClassName: tok?.className ?? "",
+      wordClassName: range?.className ?? null,
     });
   }
   return result;

@@ -16,7 +16,7 @@ describe("grammarSeedLines", () => {
 
   test("side starting inside a block comment seeds a comment opener", () => {
     const text = "   continued prose of a comment */\nconst x = 1;";
-    expect(grammarSeedLines(text, "typescript")).toEqual(["/*"]);
+    expect(grammarSeedLines(text, "ts")).toEqual(["/*"]);
   });
 
   test("mid-comment AND mid-rule seeds both, rule opener first", () => {
@@ -26,9 +26,7 @@ describe("grammarSeedLines", () => {
 
   test("a side that opens its own structures needs no seeds", () => {
     expect(grammarSeedLines(".a {\n  margin: 0;\n}", "css")).toEqual([]);
-    expect(grammarSeedLines("/* note */\nconst x = 1;", "typescript")).toEqual(
-      [],
-    );
+    expect(grammarSeedLines("/* note */\nconst x = 1;", "ts")).toEqual([]);
   });
 
   test("braces inside a seeded comment do not trigger a rule seed", () => {
@@ -40,13 +38,13 @@ describe("grammarSeedLines", () => {
 
   test("languages without C-style comments never seed a comment", () => {
     const text = "text with a stray */ marker";
-    expect(grammarSeedLines(text, "python")).toEqual([]);
-    expect(grammarSeedLines(text, "shellscript")).toEqual([]);
+    expect(grammarSeedLines(text, "py")).toEqual([]);
+    expect(grammarSeedLines(text, "sh")).toEqual([]);
   });
 
   test("rule seeding is CSS-family only", () => {
     const text = "  return x;\n}";
-    expect(grammarSeedLines(text, "typescript")).toEqual([]);
+    expect(grammarSeedLines(text, "ts")).toEqual([]);
     expect(grammarSeedLines(text, "scss")).toEqual(["seed {"]);
   });
 

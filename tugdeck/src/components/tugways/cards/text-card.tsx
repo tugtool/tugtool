@@ -1,6 +1,6 @@
 /**
  * TextCard — the Text card body: open a text file from disk, edit it in
- * a `TugFileEditor`, and save it in one of two modes.
+ * a `TugTextCardEditor`, and save it in one of two modes.
  *
  * Save modes (from the deck-wide `save-mode` default, resolved by the
  * store): **manual** — the classic document model, with dirty state, a
@@ -73,7 +73,7 @@ import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { useFileSaveSheets } from "./text-card-save-sheets";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
-import { TugFileEditor, type TugFileEditorDelegate } from "../tug-file-editor";
+import { TugTextCardEditor, type TugTextCardEditorDelegate } from "../tug-text-card-editor";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugPushButton } from "../tug-push-button";
@@ -116,8 +116,31 @@ export interface TextCardBagContent {
   /** Session number behind the untitled name ("Untitled-2", …); null
    * for a titled card or a legacy bag. */
   untitledNumber: number | null;
+  /** Selection anchor (fixed end). */
   anchor: { line: number; ch: number };
+  /** Selection head (caret / moving end). Absent in a legacy bag →
+   * restore collapses to `anchor`. */
+  head?: { line: number; ch: number };
   scrollTop: number;
+  /**
+   * A one-time reveal target for a fresh open-from-click (a tool-call
+   * file-ref): on first bind the card reveals + flashes this passage
+   * instead of silently restoring a viewport. Never written by the
+   * persistence save path — only the open seed carries it.
+   */
+  revealOnOpen?: { line: number; endLine?: number };
+}
+
+/** Narrow an unknown `{ line, ch }` pair, or undefined. */
+function coerceLineCh(
+  value: unknown,
+): { line: number; ch: number } | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.line !== "number" || typeof obj.ch !== "number") {
+    return undefined;
+  }
+  return { line: obj.line, ch: obj.ch };
 }
 
 /** Narrow an unknown restored bag payload. */
@@ -127,18 +150,30 @@ function coerceBagContent(state: unknown): TextCardBagContent | null {
   const path = typeof obj.path === "string" ? obj.path : null;
   const draftId = typeof obj.draftId === "string" ? obj.draftId : null;
   if (path === null && draftId === null) return null;
-  const anchor = obj.anchor as Record<string, unknown> | undefined;
+  const anchor = coerceLineCh(obj.anchor) ?? { line: 1, ch: 0 };
   return {
     path,
     draftId,
     untitled: obj.untitled === true,
     untitledNumber:
       typeof obj.untitledNumber === "number" ? obj.untitledNumber : null,
-    anchor: {
-      line: typeof anchor?.line === "number" ? anchor.line : 1,
-      ch: typeof anchor?.ch === "number" ? anchor.ch : 0,
-    },
+    anchor,
+    head: coerceLineCh(obj.head),
     scrollTop: typeof obj.scrollTop === "number" ? obj.scrollTop : 0,
+    revealOnOpen: coerceRevealOnOpen(obj.revealOnOpen),
+  };
+}
+
+/** Narrow an unknown `{ line, endLine? }` reveal target, or undefined. */
+function coerceRevealOnOpen(
+  value: unknown,
+): { line: number; endLine?: number } | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.line !== "number") return undefined;
+  return {
+    line: obj.line,
+    endLine: typeof obj.endLine === "number" ? obj.endLine : undefined,
   };
 }
 
@@ -179,7 +214,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const isManual = snapshot.saveMode === "manual";
   const isDirty = snapshot.saveState !== "clean";
-  const editorRef = useRef<TugFileEditorDelegate | null>(null);
+  const editorRef = useRef<TugTextCardEditorDelegate | null>(null);
   const manager = useResponderChain();
   const cardLifecycle = useCardLifecycle();
   const focusManager = useFocusManager();
@@ -256,6 +291,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // Positions restored from the bag before the editor exists; applied
   // once the file binds and the editor attaches.
   const pendingPositionsRef = useRef<FilePositions | null>(null);
+  // A one-time reveal target (open-from-click) applied once the file
+  // binds — it reveals + flashes the passage instead of restoring a
+  // viewport. Takes precedence over `pendingPositionsRef`.
+  const pendingRevealRef = useRef<{ line: number; endLine?: number } | null>(
+    null,
+  );
 
   const openPath = useCallback(
     (path: string) => {
@@ -414,16 +455,24 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         untitled: snap.untitled,
         untitledNumber: snap.untitledNumber,
         anchor: positions?.anchor ?? { line: 1, ch: 0 },
+        head: positions?.head,
         scrollTop: positions?.scrollTop ?? 0,
       };
     },
     onRestore: (state) => {
       const content = coerceBagContent(state);
       if (content === null) return;
-      pendingPositionsRef.current = {
-        anchor: content.anchor,
-        scrollTop: content.scrollTop,
-      };
+      if (content.revealOnOpen !== undefined) {
+        // A fresh open-from-click seed: reveal + flash the passage once
+        // the file binds, rather than restoring a saved viewport.
+        pendingRevealRef.current = content.revealOnOpen;
+      } else {
+        pendingPositionsRef.current = {
+          anchor: content.anchor,
+          head: content.head,
+          scrollTop: content.scrollTop,
+        };
+      }
       if (content.untitled && content.draftId !== null) {
         // Raise the session floor so a fresh untitled card never reuses
         // this restored number, then rebind under the same name.
@@ -458,16 +507,13 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     registerOpenTextCard(cardId, {
       getPath: () => store.getSnapshot().path,
       isDirty: () => store.getSnapshot().saveState !== "clean",
-      revealLine: (line) => editorRef.current?.revealLine(line),
-      openFile: (path, line) => {
+      revealLine: (line, endLine) => editorRef.current?.revealLine(line, endLine),
+      openFile: (path, line, endLine) => {
         // Reuse this card for a different file: flush the current
         // buffer first (autosave may have pending edits), then open the
-        // new path and land on `line` via the pending-positions channel
-        // — the same restore path a fresh open-at-line takes.
-        pendingPositionsRef.current = {
-          anchor: { line: line ?? 1, ch: 0 },
-          scrollTop: 0,
-        };
+        // new path and reveal + flash `line`..`endLine` once it binds
+        // via the pending-reveal channel.
+        pendingRevealRef.current = line === undefined ? null : { line, endLine };
         void store.flush().then(() => store.openPath(path));
       },
     });
@@ -678,6 +724,15 @@ export function TextCardContent({ cardId }: { cardId: string }) {
 
   useLayoutEffect(() => {
     if (snapshot.phase !== "ready") return;
+    // A pending open-from-click reveal wins over a restored viewport:
+    // reveal + flash the passage.
+    const reveal = pendingRevealRef.current;
+    if (reveal !== null) {
+      pendingRevealRef.current = null;
+      pendingPositionsRef.current = null;
+      editorRef.current?.revealLine(reveal.line, reveal.endLine);
+      return;
+    }
     const pending = pendingPositionsRef.current;
     if (pending === null) return;
     pendingPositionsRef.current = null;
@@ -814,7 +869,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
           />
         </div>
       ) : null}
-      <TugFileEditor
+      <TugTextCardEditor
         ref={editorRef}
         store={store}
         readOnly={snapshot.readOnly}

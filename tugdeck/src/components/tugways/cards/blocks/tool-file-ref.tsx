@@ -50,9 +50,16 @@ export interface ToolFileRefProps {
   /**
    * 1-based line the reference points at (e.g. a Read's `offset`).
    * Carried on the `open-file` dispatch so the editor lands on the
-   * relevant line, not just the file.
+   * relevant line, not just the file. Ignored when {@link range} is set.
    */
   line?: number;
+  /**
+   * 1-based inclusive range of the changed line(s) the reference touched
+   * (e.g. an Edit's first changed lines — not the surrounding context).
+   * When set, a click jumps to and momentarily flashes exactly these
+   * lines; takes precedence over {@link line}.
+   */
+  range?: { startLine: number; endLine: number };
   /**
    * Leading glyph. Defaults to a generic file-document icon
    * (`FileText`). A tool with a more specific shape (a notebook, say)
@@ -76,6 +83,7 @@ export function fileRefBasename(path: string): string {
 export function ToolFileRef({
   path,
   line,
+  range,
   icon,
   "data-slot": dataSlot = "tool-file-ref",
   className,
@@ -91,11 +99,28 @@ export function ToolFileRef({
         action: TUG_ACTIONS.OPEN_FILE,
         path,
       };
-      if (line !== undefined) payload.line = line;
+      if (range !== undefined) {
+        // Jump to and flash the changed line(s).
+        payload.line = range.startLine;
+        payload.endLine = range.endLine;
+      } else if (line !== undefined) {
+        payload.line = line;
+      }
       dispatchAction(payload);
     },
-    [path, line],
+    [path, line, range],
   );
+
+  const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    // Belt-and-suspenders alongside `data-no-activate` (which stops host-
+    // pane activation): suppress WebKit's mousedown focus default for the
+    // primary open gesture so the click never pulls DOM focus onto this
+    // transcript. Same guard the transcript's cwd click uses (see
+    // `dev-card-transcript`). Modified/secondary clicks fall through so
+    // text-selection gestures over the header still work.
+    if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+    event.preventDefault();
+  }, []);
 
   return (
     <TugContextMenu<string>
@@ -117,6 +142,14 @@ export function ToolFileRef({
         title={path}
         data-slot={dataSlot}
         data-tug-focus="refuse"
+        // Opening a file activates the TARGET card's pane; this ref must
+        // not also activate its OWN host pane. `pane-focus-controller`'s
+        // capture-phase pointerdown listener walks up for `data-no-activate`
+        // and short-circuits — without it the host pane activates on
+        // pointerdown and the target pane, activated by the click, flashes
+        // active then loses it back to the host.
+        data-no-activate=""
+        onMouseDown={handleMouseDown}
         onClick={handleClick}
       >
         <span className="tool-file-ref-icon" aria-hidden="true">

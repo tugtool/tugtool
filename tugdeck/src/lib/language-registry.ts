@@ -9,7 +9,7 @@
  *
  * Grammar modules are heavy, so each language loads through a dynamic
  * `import()` on first use — Vite splits them into separate chunks and
- * the base bundle carries none of them. `TugFileEditor` swaps the
+ * the base bundle carries none of them. `TugTextCardEditor` swaps the
  * resolved extension into its language Compartment when the load
  * settles; plain text renders in the meantime.
  *
@@ -26,35 +26,57 @@
  * @module lib/language-registry
  */
 
-import type { Extension } from "@codemirror/state";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
-import { tags } from "@lezer/highlight";
+import { EditorState, type Extension } from "@codemirror/state";
+import {
+  syntaxHighlighting,
+  HighlightStyle,
+  ensureSyntaxTree,
+  syntaxTree,
+} from "@codemirror/language";
+import { highlightTree, tags } from "@lezer/highlight";
+import { StyleModule } from "style-mod";
 
 // ---------------------------------------------------------------------------
 // Highlight style — Lezer tags → Tug token slots
 // ---------------------------------------------------------------------------
 
 /**
- * Token-driven highlight style. Every color reads a CSS variable so
- * the six themes restyle highlighted code live.
+ * Raw token-driven highlight style — the single source of truth for the
+ * Lezer-tag → Tug-token-slot mapping. Every color reads a CSS variable
+ * so the six themes restyle highlighted code live.
+ *
+ * Used two ways from one definition, so the live editor and every static
+ * transcript surface color identically: wrapped in `syntaxHighlighting`
+ * for the editor ({@link tugHighlightStyle}), and passed directly to
+ * `highlightTree` for static fragment tokenization ({@link
+ * tokenizeFragment}). The tag map is deliberately broad — operators,
+ * punctuation, constants, tags, and attributes each land in their own
+ * slot — so diffs and read/write snippets read as richly as the editor.
  */
-export const tugHighlightStyle: Extension = syntaxHighlighting(
-  HighlightStyle.define([
-    { tag: [tags.keyword, tags.modifier, tags.operatorKeyword], color: "var(--tug-syntax-keyword)" },
-    { tag: [tags.string, tags.special(tags.string), tags.regexp], color: "var(--tug-syntax-string)" },
-    { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--tug-syntax-number)" },
-    { tag: [tags.comment, tags.blockComment, tags.lineComment], color: "var(--tugx-syntax-comment)", fontStyle: "italic" },
-    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--tug-syntax-function)" },
-    { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--tug-syntax-type)" },
-    { tag: [tags.propertyName, tags.attributeName], color: "var(--tug-syntax-property)" },
-    { tag: [tags.definition(tags.variableName), tags.local(tags.variableName)], color: "var(--tug-syntax-variable)" },
-    { tag: [tags.meta, tags.processingInstruction], color: "var(--tug-syntax-decorator)" },
-    { tag: tags.heading, color: "var(--tug-syntax-keyword)", fontWeight: "bold" },
-    { tag: tags.emphasis, fontStyle: "italic" },
-    { tag: tags.strong, fontWeight: "bold" },
-    { tag: tags.link, color: "var(--tug-syntax-string)", textDecoration: "underline" },
-  ]),
-);
+export const tugHighlightStyleInner = HighlightStyle.define([
+  { tag: [tags.keyword, tags.modifier, tags.operatorKeyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.self], color: "var(--tug-syntax-keyword)" },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: "var(--tug-syntax-string)" },
+  { tag: tags.escape, color: "var(--tug-syntax-string-expression)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--tug-syntax-number)" },
+  { tag: [tags.comment, tags.blockComment, tags.lineComment, tags.docComment], color: "var(--tugx-syntax-comment)", fontStyle: "italic" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--tug-syntax-function)" },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--tug-syntax-type)" },
+  { tag: tags.propertyName, color: "var(--tug-syntax-property)" },
+  { tag: [tags.definition(tags.variableName), tags.local(tags.variableName)], color: "var(--tug-syntax-variable)" },
+  { tag: [tags.constant(tags.variableName), tags.standard(tags.name), tags.labelName], color: "var(--tug-syntax-constant)" },
+  { tag: [tags.meta, tags.processingInstruction, tags.annotation], color: "var(--tug-syntax-decorator)" },
+  { tag: tags.tagName, color: "var(--tug-syntax-tag)" },
+  { tag: tags.attributeName, color: "var(--tug-syntax-attribute)" },
+  { tag: [tags.operator, tags.compareOperator, tags.logicOperator, tags.arithmeticOperator, tags.bitwiseOperator, tags.updateOperator, tags.definitionOperator, tags.typeOperator, tags.derefOperator], color: "var(--tugx-syntax-operator)" },
+  { tag: [tags.punctuation, tags.separator, tags.bracket, tags.angleBracket, tags.squareBracket, tags.paren, tags.brace], color: "var(--tugx-syntax-punctuation)" },
+  { tag: tags.heading, color: "var(--tug-syntax-keyword)", fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: [tags.link, tags.url], color: "var(--tug-syntax-string)", textDecoration: "underline" },
+]);
+
+/** Editor-extension form of {@link tugHighlightStyleInner}. */
+export const tugHighlightStyle: Extension = syntaxHighlighting(tugHighlightStyleInner);
 
 // ---------------------------------------------------------------------------
 // Extension → lazy grammar
@@ -95,7 +117,14 @@ const LOADERS: Record<string, LanguageLoader> = {
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
+  go: () => import("@codemirror/lang-go").then((m) => m.go()),
+  java: () => import("@codemirror/lang-java").then((m) => m.java()),
+  sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
   // Legacy stream modes for languages without a maintained Lezer port.
+  dockerfile: legacy(async () => {
+    const m = await import("@codemirror/legacy-modes/mode/dockerfile");
+    return { mode: m.dockerFile };
+  }),
   swift: legacy(async () => {
     const m = await import("@codemirror/legacy-modes/mode/swift");
     return { mode: m.swift };
@@ -158,6 +187,10 @@ const LANGUAGE_LABELS: Record<string, string> = {
   htm: "HTML",
   md: "Markdown",
   markdown: "Markdown",
+  go: "Go",
+  java: "Java",
+  sql: "SQL",
+  dockerfile: "Dockerfile",
   swift: "Swift",
   sh: "Shell",
   bash: "Shell",
@@ -205,6 +238,10 @@ export const SELECTABLE_LANGUAGES: readonly SelectableLanguage[] = [
   { id: "json", label: "JSON", ext: "json" },
   { id: "css", label: "CSS", ext: "css" },
   { id: "html", label: "HTML", ext: "html" },
+  { id: "go", label: "Go", ext: "go" },
+  { id: "java", label: "Java", ext: "java" },
+  { id: "sql", label: "SQL", ext: "sql" },
+  { id: "dockerfile", label: "Dockerfile", ext: "dockerfile" },
   { id: "swift", label: "Swift", ext: "swift" },
   { id: "sh", label: "Shell", ext: "sh" },
   { id: "toml", label: "TOML", ext: "toml" },
@@ -274,4 +311,200 @@ export function languageForExtension(ext: string | null): Promise<Extension | nu
     cache.set(ext, pending);
   }
   return pending.catch(() => null);
+}
+
+// ---------------------------------------------------------------------------
+// Language-id aliasing (markdown fences / diff language labels)
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a free-form language id (as it appears in a markdown fence
+ * `language-X` class or a diff's detected language) to the registry's
+ * extension key. Only ids that don't already match an extension need an
+ * entry; everything else falls through to the id itself (so `"ts"`,
+ * `"py"`, … work unchanged). Unknown ids resolve to plain text.
+ */
+const LANG_ID_ALIASES: Record<string, string> = {
+  typescript: "ts",
+  javascript: "js",
+  python: "py",
+  rust: "rs",
+  golang: "go",
+  shell: "sh",
+  shellscript: "sh",
+  bash: "sh",
+  zsh: "sh",
+  "c++": "cpp",
+  cxx: "cpp",
+  yml: "yaml",
+  markdown: "md",
+  docker: "dockerfile",
+  htm: "html",
+};
+
+/** Resolve a language id/alias to a registered extension key, or null. */
+function extForLangId(langId: string): string | null {
+  const id = langId.toLowerCase().trim();
+  if (id === "") return null;
+  const aliased = LANG_ID_ALIASES[id] ?? id;
+  return aliased in LOADERS ? aliased : null;
+}
+
+/**
+ * Resolve the language support extension for a free-form language id
+ * (a markdown fence tag, a `TugCodeView` `language` prop), lazy-loading
+ * the grammar chunk. Resolves `null` for unknown ids / load failure so
+ * the surface stays plain text.
+ */
+export function languageForLangId(langId: string): Promise<Extension | null> {
+  return languageForExtension(extForLangId(langId));
+}
+
+// ---------------------------------------------------------------------------
+// Static fragment tokenization (diff hunks, read/write snippets, fences)
+// ---------------------------------------------------------------------------
+
+/** One syntax run within a single line of a fragment (line-relative). */
+export interface FragmentToken {
+  /** Start column in the line (inclusive). */
+  start: number;
+  /** End column in the line (exclusive). */
+  end: number;
+  /** Generated highlight class(es) from {@link tugHighlightStyleInner}. */
+  className: string;
+}
+
+/** Cap on the forced parse of one fragment; on timeout we fall back to
+ *  whatever the incremental tree already covers (plain text at worst). */
+const PARSE_TIMEOUT_MS = 100;
+
+/** The highlight style's generated CSS is mounted once, lazily, so the
+ *  classes `highlightTree` emits resolve to `--tug-syntax-*` colors even
+ *  outside a live `EditorView` (which would mount it itself). */
+let highlightModuleMounted = false;
+function ensureHighlightModuleMounted(): void {
+  if (highlightModuleMounted) return;
+  if (typeof document === "undefined") return;
+  const mod = tugHighlightStyleInner.module;
+  if (mod !== null) StyleModule.mount(document, mod);
+  highlightModuleMounted = true;
+}
+
+/** Offsets of each line's first character in `text` (index 0 = line 0). */
+function lineStartOffsets(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10 /* \n */) starts.push(i + 1);
+  }
+  return starts;
+}
+
+/** Index of the line containing absolute offset `pos`. */
+function lineIndexAt(starts: number[], pos: number): number {
+  // Linear from a hint would suffice, but a small binary search keeps
+  // whole-file snippets cheap.
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= pos) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * Tokenize `text` through a resolved CodeMirror language extension and
+ * return per-line syntax runs. Line N of the input maps to result[N].
+ *
+ * Builds a headless `EditorState` over the fragment, forces a full parse
+ * (`ensureSyntaxTree`), and walks `highlightTree` with the shared
+ * {@link tugHighlightStyleInner} — the exact grammar + style the live
+ * editor uses, so a fragment colors identically to the same file open in
+ * a Text card. A styled run that spans a line break (e.g. a block
+ * comment) is split at line boundaries so each line owns its own runs.
+ */
+async function tokenizeWithExtension(
+  text: string,
+  languageExt: Extension | null,
+): Promise<FragmentToken[][]> {
+  const starts = lineStartOffsets(text);
+  const perLine: FragmentToken[][] = starts.map(() => []);
+  if (languageExt === null || text.length === 0) return perLine;
+  ensureHighlightModuleMounted();
+  const state = EditorState.create({ doc: text, extensions: [languageExt] });
+  const tree = ensureSyntaxTree(state, text.length, PARSE_TIMEOUT_MS) ?? syntaxTree(state);
+  highlightTree(tree, tugHighlightStyleInner, (from, to, className) => {
+    const first = lineIndexAt(starts, from);
+    for (let line = first; line < starts.length && starts[line] < to; line++) {
+      // Line content excludes its trailing newline.
+      const contentEnd = line + 1 < starts.length ? starts[line + 1] - 1 : text.length;
+      const segStart = Math.max(from, starts[line]);
+      const segEnd = Math.min(to, contentEnd);
+      if (segEnd > segStart) {
+        perLine[line].push({
+          start: segStart - starts[line],
+          end: segEnd - starts[line],
+          className,
+        });
+      }
+    }
+  });
+  return perLine;
+}
+
+/** Per-line syntax runs for `text`, keyed by lowercase file extension. */
+export async function tokenizeFragment(
+  text: string,
+  ext: string | null,
+): Promise<FragmentToken[][]> {
+  return tokenizeWithExtension(text, await languageForExtension(ext));
+}
+
+/** Per-line syntax runs for `text`, keyed by a language id/alias. */
+export async function tokenizeFragmentByLangId(
+  text: string,
+  langId: string,
+): Promise<FragmentToken[][]> {
+  return tokenizeWithExtension(text, await languageForExtension(extForLangId(langId)));
+}
+
+/** Escape the five HTML-significant characters for safe innerHTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Highlight `text` to an HTML string (class-per-token `<span>`s, classes
+ * only — no inline styles), suitable for a `<code>` element's innerHTML.
+ * Lines are joined with `\n`; unstyled gaps are emitted as escaped text.
+ * Unknown languages return the whole text escaped and uncolored.
+ */
+export async function highlightFragmentToHtml(
+  text: string,
+  langId: string,
+): Promise<string> {
+  const perLine = await tokenizeFragmentByLangId(text, langId);
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const runs = perLine[i] ?? [];
+    let col = 0;
+    for (const run of runs) {
+      if (run.start > col) out.push(escapeHtml(line.slice(col, run.start)));
+      out.push(
+        `<span class="${run.className}">${escapeHtml(line.slice(run.start, run.end))}</span>`,
+      );
+      col = run.end;
+    }
+    if (col < line.length) out.push(escapeHtml(line.slice(col)));
+    if (i < lines.length - 1) out.push("\n");
+  }
+  return out.join("");
 }

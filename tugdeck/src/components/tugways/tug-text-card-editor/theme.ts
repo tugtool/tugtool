@@ -1,11 +1,11 @@
 /**
- * tug-file-editor/theme.ts — `EditorView.theme` extension for the File
+ * tug-text-card-editor/theme.ts — `EditorView.theme` extension for the File
  * card's editing surface.
  *
  * Follows the same token strategy as `tugCodeViewTheme` (the read-only
  * sibling): code typography rides the shared `--tugx-block-*` family,
  * editor-local concerns (gutter, selection, caret, search-match tints)
- * ride `--tugx-fileeditor-*` slots declared in `tug-file-editor.css`.
+ * ride `--tugx-textcard-*` slots declared in `tug-text-card-editor.css`.
  * All rules read CSS variables directly so brio ↔ harmony theme
  * switches propagate without remount.
  *
@@ -22,16 +22,16 @@
  *
  * Laws: [L06] appearance via CSS/DOM; [L16] rules pair element +
  * surface (or inherit an enclosing surface); [L17]/[L20] editor-local
- * slots resolve to base tokens in one hop in `tug-file-editor.css`.
+ * slots resolve to base tokens in one hop in `tug-text-card-editor.css`.
  */
 
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
-export const tugFileEditorTheme: Extension = EditorView.theme({
+export const tugTextCardEditorTheme: Extension = EditorView.theme({
   "&": {
     height: "100%",
-    backgroundColor: "var(--tugx-fileeditor-bg)",
+    backgroundColor: "var(--tugx-textcard-bg)",
     color: "var(--tugx-block-text-color)",
     fontFamily: "var(--tugx-block-code-font)",
     fontSize: "var(--tugx-block-code-font-size)",
@@ -48,25 +48,25 @@ export const tugFileEditorTheme: Extension = EditorView.theme({
     scrollbarGutter: "stable",
   },
   ".cm-content": {
-    caretColor: "var(--tugx-fileeditor-caret)",
+    caretColor: "var(--tugx-textcard-caret)",
     color: "var(--tugx-block-text-color)",
-    padding: "var(--tugx-fileeditor-content-padding)",
+    padding: "var(--tugx-textcard-content-padding)",
   },
   ".cm-line": {
-    padding: "0 var(--tugx-fileeditor-line-padding-x)",
+    padding: "0 var(--tugx-textcard-line-padding-x)",
   },
   "&.cm-focused": {
     outline: "none",
   },
   ".cm-gutters": {
-    backgroundColor: "var(--tugx-fileeditor-gutter-bg)",
-    borderRight: "1px solid var(--tugx-fileeditor-gutter-border)",
-    color: "var(--tugx-fileeditor-gutter-text)",
+    backgroundColor: "var(--tugx-textcard-gutter-bg)",
+    borderRight: "1px solid var(--tugx-textcard-gutter-border)",
+    color: "var(--tugx-textcard-gutter-text)",
     fontFamily: "var(--tugx-block-code-font)",
   },
   ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 var(--tugx-fileeditor-gutter-padding-x)",
-    minWidth: "var(--tugx-fileeditor-gutter-min-width)",
+    padding: "0 var(--tugx-textcard-gutter-padding-x)",
+    minWidth: "var(--tugx-textcard-gutter-min-width)",
   },
   // Fold gutter (CM6 `foldGutter()`): center each chevron in its line
   // box and give it breathing room + a pointer, so the ⌄/› markers sit
@@ -76,26 +76,26 @@ export const tugFileEditorTheme: Extension = EditorView.theme({
     alignItems: "center",
     justifyContent: "center",
     padding: "0 var(--tug-space-2xs)",
-    color: "var(--tugx-fileeditor-gutter-text)",
+    color: "var(--tugx-textcard-gutter-text)",
     cursor: "pointer",
   },
   // The inline "…" placeholder shown in place of a folded range.
   ".cm-foldPlaceholder": {
     margin: "0 var(--tug-space-2xs)",
     padding: "0 var(--tug-space-xs)",
-    backgroundColor: "var(--tugx-fileeditor-gutter-bg)",
-    border: "1px solid var(--tugx-fileeditor-gutter-border)",
+    backgroundColor: "var(--tugx-textcard-gutter-bg)",
+    border: "1px solid var(--tugx-textcard-gutter-border)",
     borderRadius: "3px",
-    color: "var(--tugx-fileeditor-gutter-text)",
+    color: "var(--tugx-textcard-gutter-text)",
   },
   ".cm-activeLine": {
-    backgroundColor: "var(--tugx-fileeditor-active-line-bg)",
+    backgroundColor: "var(--tugx-textcard-active-line-bg)",
   },
   ".cm-activeLineGutter": {
-    backgroundColor: "var(--tugx-fileeditor-active-line-bg)",
+    backgroundColor: "var(--tugx-textcard-active-line-bg)",
   },
   ".cm-selectionBackground, ::selection": {
-    backgroundColor: "var(--tugx-fileeditor-selection-bg)",
+    backgroundColor: "var(--tugx-textcard-selection-bg)",
   },
   // CM6's bundled search panel stays mounted-but-hidden: mounting
   // initializes the search state's `panel` field, which the match
@@ -106,10 +106,10 @@ export const tugFileEditorTheme: Extension = EditorView.theme({
     display: "none",
   },
   ".cm-searchMatch": {
-    backgroundColor: "var(--tugx-fileeditor-match-bg)",
+    backgroundColor: "var(--tugx-textcard-match-bg)",
   },
   ".cm-searchMatch-selected": {
-    backgroundColor: "var(--tugx-fileeditor-match-active-bg)",
-    outline: "1px solid var(--tugx-fileeditor-match-active-outline)",
+    backgroundColor: "var(--tugx-textcard-match-active-bg)",
+    outline: "1px solid var(--tugx-textcard-match-active-outline)",
   },
 });

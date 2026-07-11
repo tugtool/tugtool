@@ -2,7 +2,7 @@
    - --tug7-element-global-text-normal-default-rest / --tug7-surface-card-primary-normal-plain-rest (open/error surfaces, top/bottom bar text)
    - --tug7-element-global-divider-normal-default-rest / --tug7-surface-card-primary-normal-plain-rest (top/bottom bar rules)
    - --tug7-element-global-text-normal-muted-rest / --tugx-popover-bg (gear popover title)
-   `TextCard` composes TugFileEditor (its own token family), TugFileChooser,
+   `TextCard` composes TugTextCardEditor (its own token family), TugFileChooser,
    TugPaneBanner, and TugPushButton — each keeps its own tokens [L20].
 */
 
@@ -11,7 +11,7 @@
  * strips (top path bar, bottom status bar) and the gear popover.
  *
  * The card body is a full-height column. In the editor state the
- * TugFileEditor host fills it (the editor's own `.cm-scroller` is the
+ * TugTextCardEditor host fills it (the editor's own `.cm-scroller` is the
  * scrolling surface). The open and error surfaces are centered stacks.
  * The top/bottom bars carry a divider rule and muted text — each
  * color/border rule declares its surface via `@tug-renders-on` [L16].

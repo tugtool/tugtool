@@ -51,7 +51,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const EDITOR_CONTENT = `${CARD} [data-slot="tug-file-editor"] .cm-content`;
+const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 const SAVE_CELL = `${CARD} [data-testid="text-card-status-save"]`;
 const CLOSE_BUTTON = `[data-testid="tug-pane-close-button"]`;
 
@@ -577,7 +577,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
       fs.writeFileSync(fileA, ORIGINAL, "utf8");
       fs.writeFileSync(fileB, "other\n", "utf8");
       const app = await launchTugApp({ testName: "at0212-visit-dirty" });
-      const B_EDITOR = `[data-card-id="B"] [data-slot="tug-file-editor"] .cm-content`;
+      const B_EDITOR = `[data-card-id="B"] [data-slot="tug-text-card-editor"] .cm-content`;
       const B_SAVE_CELL = `[data-card-id="B"] [data-testid="text-card-status-save"]`;
       try {
         await app.seedDeckState({
@@ -696,7 +696,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         await dispatchControl(app, "new-text-card");
         await settle();
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll('[data-slot="tug-file-editor"]').length >= 2`,
+          `document.querySelectorAll('[data-slot="tug-text-card-editor"]').length >= 2`,
           { timeoutMs: 15000 },
         );
       } finally {

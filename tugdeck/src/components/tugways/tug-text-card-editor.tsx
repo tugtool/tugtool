@@ -1,5 +1,5 @@
 /**
- * TugFileEditor — CodeMirror 6-backed read-write file editing surface.
+ * TugTextCardEditor — CodeMirror 6-backed read-write file editing surface.
  *
  * The third CM6 primitive, peer to `tug-text-editor` (the prompt
  * composer) and `tug-code-view` (the read-only viewer). Forked from
@@ -48,13 +48,13 @@
  *    that mutate them (cut/copy/paste/selectAll/undo/redo/save).
  *  - [L12] `data-tug-select="custom"` exempts the CM6 surface from
  *    SelectionGuard clipping (the editor owns selection autonomously).
- *  - [L19]/[L20] file pair, `data-slot`, `--tugx-fileeditor-*` slots.
+ *  - [L19]/[L20] file pair, `data-slot`, `--tugx-textcard-*` slots.
  *  - [L21] CodeMirror 6 (MIT) — covered in `THIRD_PARTY_NOTICES.md`.
  *
- * @module components/tugways/tug-file-editor
+ * @module components/tugways/tug-text-card-editor
  */
 
-import "./tug-file-editor.css";
+import "./tug-text-card-editor.css";
 
 import React, {
   useCallback,
@@ -64,9 +64,16 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import {
+  Decoration,
   EditorView,
   keymap,
   highlightActiveLine,
@@ -74,6 +81,7 @@ import {
   highlightWhitespace,
   lineNumbers as cmLineNumbers,
 } from "@codemirror/view";
+import type { DecorationSet } from "@codemirror/view";
 import { foldGutter as cmFoldGutter, indentUnit } from "@codemirror/language";
 import {
   defaultKeymap,
@@ -124,7 +132,7 @@ import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
-import { tugFileEditorTheme } from "./tug-file-editor/theme";
+import { tugTextCardEditorTheme } from "./tug-text-card-editor/theme";
 
 // ---------------------------------------------------------------------------
 // Compartments and annotations
@@ -208,11 +216,62 @@ function applyWhitespaceAttrs(host: HTMLElement, settings: TextCardSettings): vo
 const externalReplace = Annotation.define<boolean>();
 
 // ---------------------------------------------------------------------------
+// Reveal flash — a momentary accent highlight over jumped-to lines
+// ---------------------------------------------------------------------------
+//
+// When the editor reveals a passage (a tool-call file-ref click landing
+// on the touched line(s)), a transient LINE decoration washes those
+// lines in the theme accent and fades out — a momentary "look here" that
+// leaves no persistent selection (the reveal places a plain caret, so
+// the Active-line highlight settles on the target once the flash ends).
+// Appearance only: a CM6 line decoration + a CSS `@keyframes` in
+// `tug-text-card-editor.css`, never React state ([L06]). Cleared after the
+// animation window so it neither lingers nor re-fires on later edits.
+
+/** Set the flashed line span (doc positions), or `null` to clear it. */
+const setRevealFlash = StateEffect.define<{ from: number; to: number } | null>();
+
+/** The per-line flash decoration (washes the whole `.cm-line`). */
+const revealFlashLine = Decoration.line({ class: "tug-textcard-reveal-flash" });
+
+/** How long the flash decoration lives before it is cleared (ms). Must
+ *  outlast the CSS animation so the wash completes its single fade. */
+const REVEAL_FLASH_MS = 900;
+
+const revealFlashField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (effect.is(setRevealFlash)) {
+        if (effect.value === null) {
+          deco = Decoration.none;
+        } else {
+          const { doc } = tr.state;
+          const lines: ReturnType<typeof revealFlashLine.range>[] = [];
+          let pos = effect.value.from;
+          const end = Math.min(effect.value.to, doc.length);
+          while (pos <= end) {
+            const line = doc.lineAt(pos);
+            lines.push(revealFlashLine.range(line.from));
+            if (line.to + 1 <= pos) break; // guard against zero-advance
+            pos = line.to + 1;
+          }
+          deco = Decoration.set(lines);
+        }
+      }
+    }
+    return deco;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+// ---------------------------------------------------------------------------
 // Delegate
 // ---------------------------------------------------------------------------
 
 /** Search-query configuration (mirrors `TugCodeViewSearchQuery`). */
-export interface TugFileEditorSearchQuery {
+export interface TugTextCardEditorSearchQuery {
   search: string;
   caseSensitive?: boolean;
   regexp?: boolean;
@@ -220,7 +279,7 @@ export interface TugFileEditorSearchQuery {
 }
 
 /** Imperative handle exposed via `ref`. */
-export interface TugFileEditorDelegate {
+export interface TugTextCardEditorDelegate {
   /** The live `EditorView`, or `null` if not mounted. */
   view(): EditorView | null;
   /** Land DOM focus on the editing surface. */
@@ -235,13 +294,16 @@ export interface TugFileEditorDelegate {
    */
   responderId(): string;
   /**
-   * Move the cursor to the start of `line` (1-based, clamped) and
-   * center it in the scrollport. The transcript's open-at-line links
-   * land here.
+   * Reveal line(s) and momentarily flash them in the theme accent. Places
+   * a plain caret at the start of `line` (1-based, clamped), centers it,
+   * and washes `line`..`endLine` (or just `line`) with a fading accent
+   * highlight — no persistent selection. The transcript's tool-call
+   * file-ref links land here: a Read jumps to its window start, an Edit
+   * flashes its first changed line(s).
    */
-  revealLine(line: number): void;
+  revealLine(line: number, endLine?: number): void;
   /** Set / replace the active search query (paints match highlights). */
-  setSearchQuery(query: TugFileEditorSearchQuery): void;
+  setSearchQuery(query: TugTextCardEditorSearchQuery): void;
   /** Tear down the active search and clear match highlights. */
   clearSearch(): void;
   findNext(): void;
@@ -254,7 +316,7 @@ export interface TugFileEditorDelegate {
 // Props
 // ---------------------------------------------------------------------------
 
-export interface TugFileEditorProps {
+export interface TugTextCardEditorProps {
   /**
    * The card's autosave engine. The editor seeds its document from the
    * store's snapshot at mount, reports edits via `noteEdit`, and
@@ -312,10 +374,10 @@ export interface TugFileEditorProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export const TugFileEditor = React.forwardRef<
-  TugFileEditorDelegate,
-  TugFileEditorProps
->(function TugFileEditor(
+export const TugTextCardEditor = React.forwardRef<
+  TugTextCardEditorDelegate,
+  TugTextCardEditorProps
+>(function TugTextCardEditor(
   {
     store,
     readOnly = false,
@@ -341,7 +403,7 @@ export const TugFileEditor = React.forwardRef<
   const settingsRef = useRef(settings);
   const readOnlyRef = useRef(readOnly);
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
-  const onSaveCommandRef = useRef<TugFileEditorProps["onSaveCommand"]>(onSaveCommand);
+  const onSaveCommandRef = useRef<TugTextCardEditorProps["onSaveCommand"]>(onSaveCommand);
   const onStatsRef = useRef<((stats: EditorStats) => void) | undefined>(onStats);
   useLayoutEffect(() => {
     onSaveCommandRef.current = onSaveCommand;
@@ -372,10 +434,17 @@ export const TugFileEditor = React.forwardRef<
     if (live === null) {
       return { anchor: { line: 1, ch: 0 }, scrollTop: 0 };
     }
-    const head = live.state.selection.main.head;
-    const line = live.state.doc.lineAt(head);
+    // Capture BOTH selection ends — the anchor (fixed) and the head
+    // (caret). Collapsing to the head here would silently drop a real
+    // selection, which [L23] forbids.
+    const sel = live.state.selection.main;
+    const toLineCh = (offset: number): { line: number; ch: number } => {
+      const line = live.state.doc.lineAt(offset);
+      return { line: line.number, ch: offset - line.from };
+    };
     return {
-      anchor: { line: line.number, ch: head - line.from },
+      anchor: toLineCh(sel.anchor),
+      head: toLineCh(sel.head),
       scrollTop: live.scrollDOM.scrollTop,
     };
   }, []);
@@ -383,23 +452,41 @@ export const TugFileEditor = React.forwardRef<
   const applyPositions = useCallback((positions: FilePositions): void => {
     const live = viewRef.current;
     if (live === null) return;
-    const lineNumber = Math.max(
-      1,
-      Math.min(positions.anchor.line, live.state.doc.lines),
-    );
-    const line = live.state.doc.line(lineNumber);
-    const pos = line.from + Math.min(positions.anchor.ch, line.length);
+    const toOffset = (p: { line: number; ch: number }): number => {
+      const lineNumber = Math.max(1, Math.min(p.line, live.state.doc.lines));
+      const line = live.state.doc.line(lineNumber);
+      return line.from + Math.min(p.ch, line.length);
+    };
+    const anchor = toOffset(positions.anchor);
+    // A missing `head` (an older bag, or a fresh open-at-line) restores a
+    // collapsed caret at the anchor.
+    const head = positions.head === undefined ? anchor : toOffset(positions.head);
+
     if (positions.scrollTop > 0) {
-      // A saved viewport: restore it verbatim.
-      live.dispatch({ selection: { anchor: pos } });
-      live.scrollDOM.scrollTop = positions.scrollTop;
+      // A saved viewport: restore the selection now, then the scroll
+      // offset AFTER CM6 has measured the freshly-seeded document. A
+      // synchronous `scrollTop =` here lands before CM6 knows the line
+      // heights, so it re-measures and clamps and the viewport jumps
+      // (the [L23] regression this fixes). `requestMeasure`'s write
+      // phase runs once geometry is known — the "scroll last" ordering
+      // `card-host.tsx` uses for the same reason. The `alive` capture
+      // drops the restore if the card re-anchors before it fires.
+      live.dispatch({ selection: { anchor, head } });
+      const target = positions.scrollTop;
+      live.requestMeasure({
+        read: () => null,
+        write: (_measured, view) => {
+          if (view !== viewRef.current) return;
+          view.scrollDOM.scrollTop = target;
+        },
+      });
       return;
     }
     // No saved viewport (a fresh open-at-line): center the target so a
     // deep-link into a long file lands with the line visible.
     live.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+      selection: { anchor, head },
+      effects: EditorView.scrollIntoView(head, { y: "center" }),
     });
   }, []);
 
@@ -458,6 +545,7 @@ export const TugFileEditor = React.forwardRef<
         whitespaceCompartment.of(whitespaceFor(s)),
         activeLineCompartment.of(activeLineFor(s)),
         languageCompartment.of([]),
+        revealFlashField,
         search({ top: true }),
         // Every user edit arms the autosave debounce. Store-driven
         // replacements (external-change reverts) carry the
@@ -492,7 +580,7 @@ export const TugFileEditor = React.forwardRef<
         // and history chords in browser contexts without the chain.
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         undoMenuStatePlugin,
-        tugFileEditorTheme,
+        tugTextCardEditorTheme,
       ],
     });
 
@@ -616,7 +704,7 @@ export const TugFileEditor = React.forwardRef<
 
   // ---- Search (host-owned Find UI, delegate-driven) ----
 
-  const setSearchQueryFn = useCallback((spec: TugFileEditorSearchQuery) => {
+  const setSearchQueryFn = useCallback((spec: TugTextCardEditorSearchQuery) => {
     const live = viewRef.current;
     if (live === null) return;
     // Mounting the (hidden) bundled panel initializes the search
@@ -663,21 +751,42 @@ export const TugFileEditor = React.forwardRef<
     return count;
   }, []);
 
-  const revealLineFn = useCallback((lineNumber: number): void => {
-    const live = viewRef.current;
-    if (live === null) return;
-    const clamped = Math.max(1, Math.min(lineNumber, live.state.doc.lines));
-    const pos = live.state.doc.line(clamped).from;
-    live.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "center" }),
-    });
-    live.focus();
-  }, []);
+  const revealLineFn = useCallback(
+    (startLine: number, endLine?: number): void => {
+      const live = viewRef.current;
+      if (live === null) return;
+      const doc = live.state.doc;
+      const sLine = Math.max(1, Math.min(startLine, doc.lines));
+      const eLine =
+        endLine === undefined
+          ? sLine
+          : Math.max(sLine, Math.min(endLine, doc.lines));
+      const from = doc.line(sLine).from;
+      const flashTo = doc.line(eLine).from;
+      // Place a PLAIN caret at the first changed line — no persistent
+      // selection. The momentary accent flash draws the eye; once it
+      // fades, the Active-line highlight (if enabled) settles on the
+      // caret's line. Flash spans the changed line(s) start..end.
+      live.dispatch({
+        selection: { anchor: from },
+        effects: [
+          EditorView.scrollIntoView(from, { y: "center" }),
+          setRevealFlash.of({ from, to: flashTo }),
+        ],
+      });
+      live.focus();
+      // Clear the flash after its animation window so it neither lingers
+      // nor re-fires on later edits. Guarded against a destroyed view.
+      window.setTimeout(() => {
+        viewRef.current?.dispatch({ effects: setRevealFlash.of(null) });
+      }, REVEAL_FLASH_MS);
+    },
+    [],
+  );
 
   useImperativeHandle(
     ref,
-    (): TugFileEditorDelegate => ({
+    (): TugTextCardEditorDelegate => ({
       view: () => viewRef.current,
       focus: () => viewRef.current?.focus(),
       responderId: () => responderId,
@@ -967,9 +1076,9 @@ export const TugFileEditor = React.forwardRef<
     <ResponderScope>
       <div
         ref={composedHostRef}
-        data-slot="tug-file-editor"
+        data-slot="tug-text-card-editor"
         data-tug-select="custom"
-        className={cn("tug-file-editor", className)}
+        className={cn("tug-text-card-editor", className)}
       />
       {contextMenu}
     </ResponderScope>

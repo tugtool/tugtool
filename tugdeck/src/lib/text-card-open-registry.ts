@@ -23,14 +23,18 @@ export interface TextCardOpenEntry {
    * down the buffer.
    */
   isDirty(): boolean;
-  /** Move the cursor to `line` (1-based) and center it. */
-  revealLine(line: number): void;
+  /**
+   * Reveal line(s) and momentarily flash them in the theme accent —
+   * caret at `line` (1-based), a fading accent wash over `line`..`endLine`
+   * (or just `line`). No persistent selection.
+   */
+  revealLine(line: number, endLine?: number): void;
   /**
    * Rebind this card to a different file (the "reuse frontmost card"
    * open target). Flushes any pending edits to the current file first,
-   * then reads `path` and reveals `line` (1-based) if given.
+   * then reads `path` and reveals `line`..`endLine` (1-based) if given.
    */
-  openFile(path: string, line?: number): void;
+  openFile(path: string, line?: number, endLine?: number): void;
 }
 
 const entries = new Map<string, TextCardOpenEntry>();

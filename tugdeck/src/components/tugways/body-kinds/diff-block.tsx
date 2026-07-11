@@ -30,9 +30,10 @@
  *   - Word-level intra-line highlight runs only when `diff-match-patch`
  *     is loaded; until then the line content renders plain. The library
  *     load is fired once on first relevant paint, then cached per-card.
- *   - Syntax highlighting per line is opt-in via a Shiki path (matches
- *     `FileBlock`'s convention) — the same `EXT_TO_LANG` map and the
- *     same DOM-imperative swap; failures leave the plain-text fallback.
+ *   - Syntax highlighting per line comes from the shared Lezer fragment
+ *     tokenizer (`tokenizeHunkSide` → `lib/language-registry`), the same
+ *     grammar + `--tug-syntax-*` classes the Text card editor uses;
+ *     failures leave the plain-text fallback.
  *
  * Laws:
  *  - [L02] External state enters React via `useSyncExternalStore`. The
@@ -95,7 +96,6 @@ import {
   BlockFoldCue,
   useBlockFoldState,
 } from "./affordances";
-import { detectLanguage } from "./file-block";
 import {
   parseUnifiedDiffText,
   wordLevelDiffSync,
@@ -117,13 +117,12 @@ import {
   type RenderedSegment,
   type WordRange,
 } from "@/lib/diff/render-line";
-import type { BundledLanguage } from "shiki";
 
-import { grammarSeedLines } from "@/lib/diff/grammar-seed";
 import {
-  tokensFromThemedLine,
+  tokenizeHunkSide,
   type SyntaxToken,
-} from "@/lib/diff/syntax-tokens-from-shiki";
+} from "@/lib/diff/syntax-tokens-from-lezer";
+import { fileExtension } from "@/lib/language-registry";
 import { loadTugdiffWasm } from "@/lib/lazy/load-tugdiff-wasm";
 
 // ---------------------------------------------------------------------------
@@ -880,51 +879,39 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     };
   }, [hunks]);
 
-  // -- Syntax-highlight tokens (Shiki) --------------------------------------
+  // -- Syntax-highlight tokens (Lezer) --------------------------------------
   //
-  // When `data.filePath` has a recognized extension, we lazy-load
-  // Shiki and compute per-line syntax tokens. Each hunk's *before*
-  // text (context + remove lines) and *after* text (context + add
-  // lines) are reconstructed and tokenized as whole multi-line blocks
-  // so grammar state flows across lines — a block-comment interior
-  // stays a comment, a CSS declaration stays inside its rule braces.
-  // Tokenizing lines in isolation mis-scopes exactly those cases (a
-  // bare `margin: 0;` outside braces parses as a selector).
+  // When `data.filePath` has a recognized extension, we tokenize each
+  // hunk through the shared Lezer fragment tokenizer — the same grammar
+  // + `--tug-syntax-*` classes the Text card editor uses. Each hunk's
+  // *before* text (context + remove lines) and *after* text (context +
+  // add lines) are reconstructed and tokenized as whole multi-line
+  // blocks so grammar state flows across lines — a block-comment
+  // interior stays a comment, a CSS declaration stays inside its rule
+  // braces. Tokenizing lines in isolation mis-scopes exactly those
+  // cases (a bare `margin: 0;` outside braces parses as a selector);
+  // `tokenizeHunkSide` prepends grammar-seed openers to restore state.
   //
   // Tokens are stored in a Map keyed `"<hunkIndex>:<lineIndex>"` —
   // position-keyed, not content-keyed, because the same text can
   // resolve differently depending on where it sits. Empty / unknown
-  // languages leave the map empty and the renderer falls back to
+  // extensions leave the map empty and the renderer falls back to
   // plain text + word-level overlay.
-  const language = data === undefined ? undefined : detectLanguage(data.filePath ?? "");
+  const ext = data === undefined ? null : fileExtension(data.filePath ?? "");
   const [syntaxByLine, setSyntaxByLine] = React.useState<
     ReadonlyMap<string, SyntaxToken[]>
   >(EMPTY_SYNTAX_MAP);
 
   React.useEffect(() => {
     if (hunks === null || hunks.length === 0) return;
-    if (language === undefined) return;
+    if (ext === null) return;
 
     let cancelled = false;
     (async () => {
       try {
-        const utils = await import("@/lib/code-block-utils");
-        const highlighter = await utils.getHighlighter();
-        if (cancelled) return;
-        const normalized = utils.normalizeLanguage(language);
-        const loaded = highlighter.getLoadedLanguages() as string[];
-        if (!loaded.includes(normalized)) {
-          try {
-            await (highlighter as { loadLanguage: (l: string) => Promise<void> })
-              .loadLanguage(normalized);
-          } catch {
-            return;
-          }
-          if (cancelled) return;
-        }
-
         const map = new Map<string, SyntaxToken[]>();
-        hunks.forEach((hunk, hunkIndex) => {
+        for (let hunkIndex = 0; hunkIndex < hunks.length; hunkIndex++) {
+          const hunk = hunks[hunkIndex];
           // Split the hunk into its two sides, remembering each row's
           // index in the hunk's flat line list.
           const beforeIndices: number[] = [];
@@ -942,37 +929,19 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
             }
           });
 
-          const tokenizeSide = (lines: string[], indices: number[]): void => {
-            if (lines.length === 0) return;
-            // A hunk can begin inside a block comment or a CSS rule
-            // whose opener sits above the hunk window; seed lines
-            // restore that grammar state, then their rows are dropped.
-            const text = lines.join("\n");
-            const seeds = grammarSeedLines(text, normalized);
-            const result = highlighter.codeToTokens(
-              seeds.length === 0 ? text : seeds.join("\n") + "\n" + text,
-              {
-                // `normalizeLanguage` returns plain strings; the
-                // dynamically-loaded language was verified above.
-                lang: normalized as BundledLanguage,
-                theme: utils.SYNTAX_THEME_NAME,
-              },
-            );
-            for (let row = 0; row < indices.length; row++) {
-              const themed = result.tokens[row + seeds.length];
-              if (themed === undefined) continue;
-              map.set(
-                `${hunkIndex}:${indices[row]}`,
-                tokensFromThemedLine(themed, result.fg),
-              );
-            }
-          };
+          const beforeTokens = await tokenizeHunkSide(beforeLines, ext);
+          const afterTokens = await tokenizeHunkSide(afterLines, ext);
+          if (cancelled) return;
 
-          // Context lines appear in both sides; the after-pass runs
+          // Context lines appear in both sides; the after-pass writes
           // second so they land with the after-side's grammar state.
-          tokenizeSide(beforeLines, beforeIndices);
-          tokenizeSide(afterLines, afterIndices);
-        });
+          for (let row = 0; row < beforeIndices.length; row++) {
+            map.set(`${hunkIndex}:${beforeIndices[row]}`, beforeTokens[row] ?? []);
+          }
+          for (let row = 0; row < afterIndices.length; row++) {
+            map.set(`${hunkIndex}:${afterIndices[row]}`, afterTokens[row] ?? []);
+          }
+        }
 
         if (!cancelled) setSyntaxByLine(map);
       } catch {
@@ -983,7 +952,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [hunks, language]);
+  }, [hunks, ext]);
 
   // -- Per-hunk derived render data (memoized) ------------------------------
   //
@@ -1304,8 +1273,8 @@ type WordEngineCtor = new () => {
 /**
  * Render the inner content of a line. When syntax tokens or word
  * ranges are present, the merge happens via `renderLineSegments` and
- * each output segment becomes a `<span>` carrying both its inline
- * style (Shiki) and word-level class (overlay) where applicable.
+ * each output segment becomes a `<span>` carrying both its syntax
+ * class (Lezer) and word-level class (overlay) where applicable.
  * Empty input collapses to a single non-breaking space so the row
  * preserves its baseline height.
  */
@@ -1329,40 +1298,25 @@ function renderSegment(
   segment: RenderedSegment,
   key: number,
 ): React.ReactNode {
-  const { text, style, className } = segment;
-  if (style === "" && className === null) {
+  const { text, syntaxClassName, wordClassName } = segment;
+  if (syntaxClassName === "" && wordClassName === null) {
     return <React.Fragment key={key}>{text}</React.Fragment>;
   }
+  const className =
+    wordClassName === null
+      ? syntaxClassName
+      : syntaxClassName === ""
+        ? wordClassName
+        : `${syntaxClassName} ${wordClassName}`;
   return (
     <span
       key={key}
-      className={className ?? undefined}
-      data-slot={className === null ? undefined : "diff-word"}
-      style={style === "" ? undefined : parseInlineStyle(style)}
+      className={className}
+      data-slot={wordClassName === null ? undefined : "diff-word"}
     >
       {text}
     </span>
   );
-}
-
-/**
- * Convert a `;`-separated CSS string from Shiki (e.g.
- * `"color:#79B8FF;font-style:italic"`) into the React `style` prop
- * shape (`{ color: "#79B8FF", fontStyle: "italic" }`).
- */
-function parseInlineStyle(css: string): React.CSSProperties {
-  const out: Record<string, string> = {};
-  for (const decl of css.split(";")) {
-    const colon = decl.indexOf(":");
-    if (colon < 0) continue;
-    const prop = decl.slice(0, colon).trim();
-    const value = decl.slice(colon + 1).trim();
-    if (prop.length === 0 || value.length === 0) continue;
-    // Convert kebab-case to camelCase.
-    const camel = prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-    out[camel] = value;
-  }
-  return out as React.CSSProperties;
 }
 
 /** Inline view: one row per line, 4-column grid. */

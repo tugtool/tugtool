@@ -26,8 +26,16 @@ export function registerTextCard(): void {
     engineKind: "em",
     category: { label: "Files", icon: "FileText" },
     sizePolicy: {
-      min: { width: 480, height: 300 },
-      preferred: { width: 820, height: 620 },
+      // Sized like the Dev card so a Text card opens at the same
+      // stature next to one. The 800 width floor and 850×1200 preferred
+      // match `dev-card-registration.tsx` exactly — the preferred height
+      // is deliberately taller than most canvases and `addCard` clamps
+      // both dimensions to 90% of the live canvas at creation. The only
+      // divergence is the height floor: the Dev card's 600 exists to fit
+      // its fixed 200px prompt entry + toolbars + transcript minimum,
+      // which a Text card has none of, so it can shrink to 400.
+      min: { width: 800, height: 400 },
+      preferred: { width: 850, height: 1200 },
     },
   });
 }

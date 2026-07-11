@@ -30,7 +30,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD_A = '[data-card-id="A"]';
-const EDITOR_A = `${CARD_A} [data-slot="tug-file-editor"] .cm-content`;
+const EDITOR_A = `${CARD_A} [data-slot="tug-text-card-editor"] .cm-content`;
 const SAVE_BUTTON = '[data-testid="file-save-sheet-save"]';
 const SHEET_PANEL = '[data-pane-id="p1"] [data-slot="tug-sheet"]';
 

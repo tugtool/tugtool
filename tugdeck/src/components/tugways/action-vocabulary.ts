@@ -456,7 +456,7 @@ export const TUG_ACTIONS = {
   //                         SAVE is "write immediately + checkpoint",
   //                         not "persist or lose". Dispatched by ⌘S and
   //                         File ▸ Save; handled by editing surfaces
-  //                         that own a disk binding (`TugFileEditor`).
+  //                         that own a disk binding (`TugTextCardEditor`).
   // SAVE_AS:                payload — none. Manual-mode "Save As…": run the
   //                         save panel and re-anchor the buffer to the
   //                         chosen path (the classic ⇧⌘S). Dispatched by
@@ -470,7 +470,7 @@ export const TUG_ACTIONS = {
   // RELOAD_FROM_DISK:       payload — none. Reload the on-disk version,
   //                         discarding edits (confirm sheet only while
   //                         dirty). File ▸ Reload from Disk.
-  // OPEN_FILE:              payload — `{ path: string, line?: number }`
+  // OPEN_FILE:              payload — `{ path: string, line?: number, endLine?: number }`
   //                         via `dispatchAction` / Control frames, or a
   //                         chain dispatch whose `value` is the path
   //                         string (context-menu items). Open `path` in

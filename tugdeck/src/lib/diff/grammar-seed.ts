@@ -23,45 +23,57 @@
  * @module lib/diff/grammar-seed
  */
 
-/** Languages with C-style block comments, keyed by normalized Shiki id. */
+/** Extensions whose languages have C-style block comments (registry
+ *  file-extension keys, not Shiki ids). */
 const BLOCK_COMMENT_LANGS: ReadonlySet<string> = new Set([
   "css",
   "scss",
   "less",
-  "typescript",
-  "javascript",
+  "ts",
   "tsx",
+  "mts",
+  "cts",
+  "js",
   "jsx",
-  "rust",
+  "mjs",
+  "cjs",
+  "rs",
   "go",
   "java",
   "c",
+  "h",
   "cpp",
-  "objective-c",
-  "csharp",
+  "cxx",
+  "cc",
+  "hpp",
+  "hxx",
+  "cs",
   "swift",
-  "kotlin",
-  "scala",
+  "kt",
+  "kts",
   "dart",
   "php",
+  "scala",
 ]);
 
-/** Languages where declarations live inside `selector { … }` rules. */
+/** Extensions where declarations live inside `selector { … }` rules. */
 const CSS_RULE_LANGS: ReadonlySet<string> = new Set(["css", "scss", "less"]);
 
 /**
  * Compute synthetic opener lines for one reconstructed hunk side.
  *
  * @param sideText The side's full text (lines joined with `\n`).
- * @param lang Normalized Shiki language id (see `normalizeLanguage`).
+ * @param ext Registry file-extension key (e.g. `"ts"`, `"css"`); `null`
+ *            for plain text. Unknown extensions seed nothing.
  * @returns Lines to prepend, outermost first (a rule opener precedes a
  *          comment opener, since an open comment sits inside the rule).
  */
-export function grammarSeedLines(sideText: string, lang: string): string[] {
+export function grammarSeedLines(sideText: string, ext: string | null): string[] {
+  if (ext === null) return [];
   let text = sideText;
 
   const commentSeeds: string[] = [];
-  if (BLOCK_COMMENT_LANGS.has(lang)) {
+  if (BLOCK_COMMENT_LANGS.has(ext)) {
     const open = text.indexOf("/*");
     const close = text.indexOf("*/");
     if (close !== -1 && (open === -1 || close < open)) {
@@ -73,7 +85,7 @@ export function grammarSeedLines(sideText: string, lang: string): string[] {
   }
 
   const ruleSeeds: string[] = [];
-  if (CSS_RULE_LANGS.has(lang)) {
+  if (CSS_RULE_LANGS.has(ext)) {
     const open = text.indexOf("{");
     const close = text.indexOf("}");
     if (close !== -1 && (open === -1 || close < open)) {

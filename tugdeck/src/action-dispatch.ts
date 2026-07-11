@@ -501,7 +501,9 @@ export function initActionDispatch(
       return;
     }
     const line = typeof payload.line === "number" ? payload.line : undefined;
-    openFileInCard(deckManager, path, line);
+    const endLine =
+      typeof payload.endLine === "number" ? payload.endLine : undefined;
+    openFileInCard(deckManager, path, line, endLine);
   });
 
   // clear-recent-documents: File ▸ Open Recent ▸ Clear Menu. Empties the

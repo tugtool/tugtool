@@ -24,8 +24,8 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const EDITOR_CONTENT = `${CARD} [data-slot="tug-file-editor"] .cm-content`;
-const LINE_NUMBERS = `${CARD} [data-slot="tug-file-editor"] .cm-lineNumbers`;
+const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
+const LINE_NUMBERS = `${CARD} [data-slot="tug-text-card-editor"] .cm-lineNumbers`;
 const TOP_BAR = `${CARD} [data-slot="text-card-top-bar"]`;
 const GEAR = `${CARD} [aria-label="Editor options"]`;
 const OPTIONS_PANEL = '[data-testid="text-card-options"]';

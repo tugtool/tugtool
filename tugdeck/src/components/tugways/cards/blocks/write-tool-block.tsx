@@ -185,11 +185,11 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   );
 
   const filePath = structured.filePath ?? writeInput.file_path;
-  // Identity: the path chip. The trailing result summary (size) is computed
-  // below as `resultSummary`.
+  // Identity: the path chip. A Write replaces the whole file, so a click
+  // lands at the top (line 1) and zooms it — the file's first passage.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef path={filePath} data-slot="write-tool-block-path" />
+      <ToolFileRef path={filePath} line={1} data-slot="write-tool-block-path" />
     ) : undefined;
   let body: React.ReactNode;
   if (status === "streaming") {

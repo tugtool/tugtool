@@ -98,5 +98,39 @@ export function enhanceFencedCode(container: HTMLElement): void {
     pre.replaceWith(wrapper);
     wrapper.appendChild(header);
     wrapper.appendChild(pre);
+
+    // Lezer syntax coloring — the same grammar + `--tug-syntax-*`
+    // classes the Text card editor uses. Fire-and-forget: the grammar
+    // chunk lazy-loads, so we patch the `<code>` on resolve (see
+    // `highlightFencedCode` for the prune/re-render guard).
+    if (lang !== null && codeEl !== null) highlightFencedCode(codeEl, lang);
   }
+}
+
+/**
+ * Syntax-color one fenced `<code>` element's body through the shared
+ * Lezer tokenizer, replacing its text with class-per-token spans.
+ *
+ * Async: the tokenizer (and its grammar chunk) load lazily, so by the
+ * time the HTML is ready the block may have been pruned or re-rendered
+ * by the windowing engine. We patch only a still-connected node whose
+ * text is byte-identical to what we tokenized — otherwise a stale paint
+ * would land over new content (or throw on a detached node). Failure is
+ * silent: the plain-text body is a fine fallback. The tokenizer imports
+ * dynamically so a transcript with no fences never pulls CodeMirror.
+ */
+function highlightFencedCode(codeEl: HTMLElement, lang: string): void {
+  const source = codeEl.textContent ?? "";
+  if (source === "") return;
+  void import("@/lib/language-registry")
+    .then(async ({ highlightFragmentToHtml }) => {
+      const html = await highlightFragmentToHtml(source, lang);
+      if (html === "") return;
+      if (!codeEl.isConnected) return;
+      if (codeEl.textContent !== source) return;
+      codeEl.innerHTML = html;
+    })
+    .catch(() => {
+      // Highlighting is a polish layer; leave the plain-text body.
+    });
 }

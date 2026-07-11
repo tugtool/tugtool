@@ -68,7 +68,7 @@ function rmFixture(dir: string): void {
 // ---------------------------------------------------------------------------
 
 const EDITOR_CONTENT_SELECTOR =
-  '[data-card-id="A"] [data-slot="tug-file-editor"] .cm-content';
+  '[data-card-id="A"] [data-slot="tug-text-card-editor"] .cm-content';
 
 function deckShape() {
   return {

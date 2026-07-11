@@ -1,16 +1,16 @@
 /**
- * Tests for `render-line.ts` and its companion
- * `syntax-tokens-from-shiki.ts`.
+ * Tests for `render-line.ts` (the syntax + word-level merge) and
+ * `syntax-tokens-from-lezer.ts` (per-line hunk-side tokenization).
  *
- * The merge function is pure, so these are plain unit tests over
+ * The merge function is pure, so most of these are plain unit tests over
  * input/output pairs. Together they cover:
  *
- *  - Shiki HTML round-trip: parse → tokens → reconstruct text.
  *  - Word-range derivation from `WordDiffSegment[]` (per side).
  *  - Merge: every combination of (syntax | no-syntax) ×
  *    (word-range | no-word-range), plus the interesting case where a
  *    word range crosses syntax-token boundaries (double-decorated
- *    spans).
+ *    spans carrying both class names).
+ *  - `tokenizeHunkSide`: the real Lezer grammar over a small hunk side.
  */
 
 import dmp from "diff-match-patch";
@@ -24,80 +24,9 @@ import {
   type WordRange,
 } from "../render-line";
 import {
-  tokensFromThemedLine,
+  tokenizeHunkSide,
   type SyntaxToken,
-} from "../syntax-tokens-from-shiki";
-
-// ---------------------------------------------------------------------------
-// syntax-tokens-from-shiki
-// ---------------------------------------------------------------------------
-
-describe("tokensFromThemedLine", () => {
-  test("three themed tokens map to cumulative character ranges", () => {
-    const tokens = tokensFromThemedLine([
-      { content: "const", color: "var(--syntax-token-keyword)" },
-      { content: " x ", color: "var(--syntax-foreground)" },
-      { content: "=", color: "var(--syntax-token-operator)" },
-    ]);
-    expect(tokens).toHaveLength(3);
-    expect(tokens[0]).toEqual({
-      start: 0,
-      end: 5,
-      style: "color:var(--syntax-token-keyword)",
-    });
-    expect(tokens[1]).toEqual({
-      start: 5,
-      end: 8,
-      style: "color:var(--syntax-foreground)",
-    });
-    expect(tokens[2]).toEqual({
-      start: 8,
-      end: 9,
-      style: "color:var(--syntax-token-operator)",
-    });
-  });
-
-  test("base-foreground tokens with no font style emit an empty style", () => {
-    const tokens = tokensFromThemedLine(
-      [
-        { content: "if", color: "var(--syntax-token-keyword)" },
-        { content: " (a < b)", color: "var(--syntax-foreground)" },
-      ],
-      "var(--syntax-foreground)",
-    );
-    expect(tokens).toHaveLength(2);
-    expect(tokens[1]).toEqual({ start: 2, end: 10, style: "" });
-  });
-
-  test("font-style bitmask composes with color", () => {
-    const tokens = tokensFromThemedLine([
-      { content: "// note", color: "var(--syntax-token-comment)", fontStyle: 1 },
-      { content: "bold", fontStyle: 2 },
-      { content: "link", color: "var(--syntax-token-link)", fontStyle: 4 },
-    ]);
-    expect(tokens[0].style).toBe(
-      "color:var(--syntax-token-comment);font-style:italic",
-    );
-    expect(tokens[1].style).toBe("font-weight:bold");
-    expect(tokens[2].style).toBe(
-      "color:var(--syntax-token-link);text-decoration:underline",
-    );
-  });
-
-  test("empty input and empty-content tokens yield no tokens", () => {
-    expect(tokensFromThemedLine([])).toEqual([]);
-    expect(tokensFromThemedLine([{ content: "" }])).toEqual([]);
-  });
-
-  test("token ranges reconstruct the original line length", () => {
-    const tokens = tokensFromThemedLine([
-      { content: "const", color: "c1" },
-      { content: " x = " },
-      { content: "1", color: "c2" },
-    ]);
-    expect(tokens[tokens.length - 1].end).toBe("const x = 1".length);
-  });
-});
+} from "../syntax-tokens-from-lezer";
 
 // ---------------------------------------------------------------------------
 // wordRangesForSide
@@ -153,13 +82,13 @@ describe("renderLineSegments — degenerate cases", () => {
   test("no syntax, no word ranges → one plain segment for the whole line", () => {
     const segments = renderLineSegments("hello world", null, null);
     expect(segments).toEqual([
-      { text: "hello world", style: "", className: null },
+      { text: "hello world", syntaxClassName: "", wordClassName: null },
     ]);
   });
 
   test("empty arrays behave like null", () => {
     expect(renderLineSegments("hi", [], [])).toEqual([
-      { text: "hi", style: "", className: null },
+      { text: "hi", syntaxClassName: "", wordClassName: null },
     ]);
   });
 });
@@ -169,38 +98,38 @@ describe("renderLineSegments — degenerate cases", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderLineSegments — syntax tokens only", () => {
-  test("each token becomes its own segment with the Shiki style", () => {
+  test("each token becomes its own segment with the syntax class", () => {
     const text = "const x";
     const tokens: SyntaxToken[] = [
-      { start: 0, end: 5, style: "color:#79B8FF" },
-      { start: 5, end: 7, style: "color:#E1E4E8" },
+      { start: 0, end: 5, className: "tok-kw" },
+      { start: 5, end: 7, className: "tok-var" },
     ];
     const segments = renderLineSegments(text, tokens, null);
     expect(segments).toHaveLength(2);
     expect(segments[0]).toEqual({
       text: "const",
-      style: "color:#79B8FF",
-      className: null,
+      syntaxClassName: "tok-kw",
+      wordClassName: null,
     });
     expect(segments[1]).toEqual({
       text: " x",
-      style: "color:#E1E4E8",
-      className: null,
+      syntaxClassName: "tok-var",
+      wordClassName: null,
     });
   });
 
-  test("text outside any syntax token still gets a plain-style segment", () => {
+  test("text outside any syntax token still gets a plain segment", () => {
     const text = "abcdef";
-    const tokens: SyntaxToken[] = [{ start: 2, end: 4, style: "color:#abc" }];
+    const tokens: SyntaxToken[] = [{ start: 2, end: 4, className: "tok-x" }];
     const segments = renderLineSegments(text, tokens, null);
     expect(segments).toHaveLength(3);
-    expect(segments[0]).toEqual({ text: "ab", style: "", className: null });
+    expect(segments[0]).toEqual({ text: "ab", syntaxClassName: "", wordClassName: null });
     expect(segments[1]).toEqual({
       text: "cd",
-      style: "color:#abc",
-      className: null,
+      syntaxClassName: "tok-x",
+      wordClassName: null,
     });
-    expect(segments[2]).toEqual({ text: "ef", style: "", className: null });
+    expect(segments[2]).toEqual({ text: "ef", syntaxClassName: "", wordClassName: null });
   });
 });
 
@@ -216,12 +145,8 @@ describe("renderLineSegments — word ranges only", () => {
     ];
     const segments = renderLineSegments(text, null, ranges);
     expect(segments).toEqual([
-      {
-        text: "let",
-        style: "",
-        className: "tugx-diff-word-remove",
-      },
-      { text: " x = 1", style: "", className: null },
+      { text: "let", syntaxClassName: "", wordClassName: "tugx-diff-word-remove" },
+      { text: " x = 1", syntaxClassName: "", wordClassName: null },
     ]);
   });
 
@@ -233,29 +158,23 @@ describe("renderLineSegments — word ranges only", () => {
     ];
     const segments = renderLineSegments(text, null, ranges);
     expect(segments).toHaveLength(3);
-    expect(segments[0].className).toBe("tugx-diff-word-remove");
-    expect(segments[1].className).toBeNull();
-    expect(segments[2].className).toBe("tugx-diff-word-remove");
+    expect(segments[0].wordClassName).toBe("tugx-diff-word-remove");
+    expect(segments[1].wordClassName).toBeNull();
+    expect(segments[2].wordClassName).toBe("tugx-diff-word-remove");
   });
 });
 
 // ---------------------------------------------------------------------------
-// renderLineSegments — the merge case (Shiki + word-level)
+// renderLineSegments — the merge case (syntax + word-level)
 // ---------------------------------------------------------------------------
 
 describe("renderLineSegments — merge: word range crosses syntax boundary", () => {
   test("a word range spanning two syntax tokens yields double-decorated segments at the overlap", () => {
-    // Text:        "let x = 1"
-    // Syntax:      "let"      "color:#blue"   (0..3)
-    //              " x = "    "color:#text"   (3..8)
-    //              "1"        "color:#num"    (8..9)
-    // Word range:  "let " is changed (covers token #1 entirely
-    //              + the leading space of token #2).
     const text = "let x = 1";
     const tokens: SyntaxToken[] = [
-      { start: 0, end: 3, style: "color:#blue" },
-      { start: 3, end: 8, style: "color:#text" },
-      { start: 8, end: 9, style: "color:#num" },
+      { start: 0, end: 3, className: "tok-kw" },
+      { start: 3, end: 8, className: "tok-text" },
+      { start: 8, end: 9, className: "tok-num" },
     ];
     const ranges: WordRange[] = [
       { start: 0, end: 4, className: "tugx-diff-word-remove" },
@@ -263,78 +182,25 @@ describe("renderLineSegments — merge: word range crosses syntax boundary", () 
     const segments = renderLineSegments(text, tokens, ranges);
     // Boundaries: {0, 3, 4, 8, 9} → segments (0..3)(3..4)(4..8)(8..9).
     expect(segments).toEqual([
-      // "let" — fully inside token #1 AND fully inside word range.
-      {
-        text: "let",
-        style: "color:#blue",
-        className: "tugx-diff-word-remove",
-      },
-      // " " — inside token #2 AND inside word range.
-      {
-        text: " ",
-        style: "color:#text",
-        className: "tugx-diff-word-remove",
-      },
-      // "x = " — inside token #2 only.
-      { text: "x = ", style: "color:#text", className: null },
-      // "1" — token #3.
-      { text: "1", style: "color:#num", className: null },
+      { text: "let", syntaxClassName: "tok-kw", wordClassName: "tugx-diff-word-remove" },
+      { text: " ", syntaxClassName: "tok-text", wordClassName: "tugx-diff-word-remove" },
+      { text: "x = ", syntaxClassName: "tok-text", wordClassName: null },
+      { text: "1", syntaxClassName: "tok-num", wordClassName: null },
     ]);
   });
 
   test("a word range fully inside a single syntax token still merges cleanly", () => {
     const text = "println";
-    const tokens: SyntaxToken[] = [{ start: 0, end: 7, style: "color:#abc" }];
+    const tokens: SyntaxToken[] = [{ start: 0, end: 7, className: "tok-x" }];
     const ranges: WordRange[] = [
       { start: 3, end: 4, className: "tugx-diff-word-add" },
     ];
     const segments = renderLineSegments(text, tokens, ranges);
     expect(segments).toEqual([
-      { text: "pri", style: "color:#abc", className: null },
-      {
-        text: "n",
-        style: "color:#abc",
-        className: "tugx-diff-word-add",
-      },
-      { text: "tln", style: "color:#abc", className: null },
+      { text: "pri", syntaxClassName: "tok-x", wordClassName: null },
+      { text: "n", syntaxClassName: "tok-x", wordClassName: "tugx-diff-word-add" },
+      { text: "tln", syntaxClassName: "tok-x", wordClassName: null },
     ]);
-  });
-
-  test("multi-token word change spanning syntax boundaries (real-world example)", () => {
-    // Bash-ish: `echo $foo` → `printf $bar`. Token boundaries:
-    //   "echo"       (0..4)  keyword
-    //   " "          (4..5)  whitespace
-    //   "$foo"       (5..9)  variable
-    // Word change covers `echo` → `printf` AND `foo` → `bar`.
-    // For the "remove" side ("echo $foo"), word ranges:
-    //   [0..4] "echo"
-    //   [6..9] "foo"  (after the "$")
-    const text = "echo $foo";
-    const tokens: SyntaxToken[] = [
-      { start: 0, end: 4, style: "color:#kw" },
-      { start: 4, end: 5, style: "color:#ws" },
-      { start: 5, end: 9, style: "color:#var" },
-    ];
-    const ranges: WordRange[] = [
-      { start: 0, end: 4, className: "tugx-diff-word-remove" },
-      { start: 6, end: 9, className: "tugx-diff-word-remove" },
-    ];
-    const segments = renderLineSegments(text, tokens, ranges);
-    // Expected boundary positions: {0, 4, 5, 6, 9}.
-    expect(segments.map((s) => s.text)).toEqual([
-      "echo", // 0..4: token #1 + range #1
-      " ",    // 4..5: token #2, no range
-      "$",    // 5..6: token #3, no range
-      "foo",  // 6..9: token #3 + range #2
-    ]);
-    // Both decorations on the changed regions:
-    expect(segments[0].style).toBe("color:#kw");
-    expect(segments[0].className).toBe("tugx-diff-word-remove");
-    expect(segments[3].style).toBe("color:#var");
-    expect(segments[3].className).toBe("tugx-diff-word-remove");
-    // No overlay on the unchanged parts:
-    expect(segments[1].className).toBeNull();
-    expect(segments[2].className).toBeNull();
   });
 });
 
@@ -346,9 +212,9 @@ describe("renderLineSegments — invariants", () => {
   test("concatenating segment text reconstructs the original line, always", () => {
     const text = "function foo(): boolean { return true; }";
     const tokens: SyntaxToken[] = [
-      { start: 0, end: 8, style: "color:#kw" },
-      { start: 9, end: 12, style: "color:#fn" },
-      { start: 16, end: 23, style: "color:#ty" },
+      { start: 0, end: 8, className: "tok-kw" },
+      { start: 9, end: 12, className: "tok-fn" },
+      { start: 16, end: 23, className: "tok-ty" },
     ];
     const ranges: WordRange[] = [
       { start: 9, end: 12, className: "tugx-diff-word-add" },
@@ -360,7 +226,7 @@ describe("renderLineSegments — invariants", () => {
 
   test("no segment is empty", () => {
     const text = "abc";
-    const tokens: SyntaxToken[] = [{ start: 1, end: 1, style: "color:#x" }];
+    const tokens: SyntaxToken[] = [{ start: 1, end: 1, className: "tok-x" }];
     const ranges: WordRange[] = [
       { start: 0, end: 0, className: "tugx-diff-word-add" },
     ];
@@ -368,5 +234,34 @@ describe("renderLineSegments — invariants", () => {
     for (const s of segments) {
       expect(s.text.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tokenizeHunkSide — real Lezer grammar
+// ---------------------------------------------------------------------------
+
+describe("tokenizeHunkSide", () => {
+  test("tokenizes a side's lines aligned 1:1 (keyword lines get runs)", async () => {
+    const perLine = await tokenizeHunkSide(["const x = 1", "return x"], "ts");
+    expect(perLine.length).toBe(2);
+    // Line 0's `const` keyword carries a run.
+    expect(perLine[0].some((t) => t.start === 0 && t.end === 5)).toBe(true);
+    // Line 1's `return` keyword carries a run.
+    expect(perLine[1].some((t) => t.start === 0 && t.end === 6)).toBe(true);
+  });
+
+  test("a side closing a block comment it never opened stays comment-scoped (grammar seed)", async () => {
+    // Without a seed, ` done */` would mis-parse as code; the seed
+    // restores the open-comment state so the first line reads as comment.
+    const perLine = await tokenizeHunkSide([" still comment", " done */", "code()"], "ts");
+    expect(perLine.length).toBe(3);
+    expect(perLine[0].length).toBeGreaterThan(0);
+  });
+
+  test("empty side and unknown extension degrade gracefully", async () => {
+    expect(await tokenizeHunkSide([], "ts")).toEqual([]);
+    const plain = await tokenizeHunkSide(["a", "b"], "nope");
+    expect(plain).toEqual([[], []]);
   });
 });

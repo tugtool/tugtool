@@ -64,9 +64,18 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
 /** Consecutive write failures before the card surfaces a banner. */
 export const WRITE_FAILURE_BANNER_THRESHOLD = 3;
 
-/** Cursor + scroll positions — the only state the card bag persists. */
+/**
+ * Selection + scroll positions — the only state the card bag persists.
+ *
+ * `anchor` is the selection's fixed end and `head` its moving end (where
+ * the caret sits); when they differ the user has a real selection, which
+ * [L23] requires we preserve across teardown, not flatten to a caret.
+ * `head` is optional for backward compatibility: an older bag with only
+ * `anchor` restores a collapsed caret there.
+ */
 export interface FilePositions {
   anchor: { line: number; ch: number };
+  head?: { line: number; ch: number };
   scrollTop: number;
 }
 

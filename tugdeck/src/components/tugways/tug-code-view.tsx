@@ -52,10 +52,10 @@
  *    (long lines wrap rather than horizontally scrolling).
  *  - `lineNumbers`: gutter toggle. Defaults to `true` — file viewers
  *    show line numbers by convention.
- *  - `language`: informational only. Reserved for a syntax-highlighting
- *    bridge (Shiki via CM6 decorations, or a `@codemirror/language`-
- *    based grammar integration). The prop exists today so consumers
- *    can pre-wire it.
+ *  - `language`: resolved through `languageForLangId` to a Lezer
+ *    grammar + `tugHighlightStyle` (the same highlighting the Text card
+ *    editor uses), swapped into a live compartment when the grammar
+ *    chunk settles. Unknown/omitted ids stay plain text.
  *  - `className`: composed onto the host `<div class="tug-code-view">`.
  *
  *  Imperative handle (via `ref`):
@@ -117,6 +117,7 @@ import {
   selectMatches as cmSelectMatches,
 } from "@codemirror/search";
 import { cn } from "@/lib/utils";
+import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler } from "./responder-chain";
@@ -137,6 +138,15 @@ const lineWrapCompartment = new Compartment();
 
 /** Reconfigurable line-number gutter (`lineNumbers()` or empty). */
 const lineNumbersCompartment = new Compartment();
+
+/**
+ * Reconfigurable syntax highlighting. Starts empty (plain text) and is
+ * filled by the language effect once the grammar chunk resolves — the
+ * same Lezer grammar + `tugHighlightStyle` the Text card editor uses, so
+ * a Read/Write file snippet colors identically to the file open in a
+ * Text card.
+ */
+const languageCompartment = new Compartment();
 
 /**
  * Build the line-number gutter extension for a given starting offset.
@@ -321,10 +331,11 @@ export interface TugCodeViewProps {
    */
   value: string;
   /**
-   * Language identifier (e.g. `"typescript"`, `"python"`). Informational
-   * in v1 — reserved for the syntax-highlighting bridge that lands in
-   * a follow-up. The prop is wired today so consumers can pre-pass it
-   * and migrate without an API change.
+   * Language identifier (e.g. `"typescript"`, `"python"`). Resolved
+   * through `languageForLangId` to the same Lezer grammar +
+   * `tugHighlightStyle` the Text card editor uses, so a snippet colors
+   * identically to the file open in a Text card. Unknown/omitted ids
+   * render as plain text.
    */
   language?: string;
   /**
@@ -386,7 +397,7 @@ export const TugCodeView = React.forwardRef<
 >(function TugCodeView(
   {
     value,
-    language: _language,
+    language,
     wrap = true,
     lineNumbers = true,
     startLine = 1,
@@ -615,6 +626,8 @@ export const TugCodeView = React.forwardRef<
         lineNumbersCompartment.of(
           buildLineNumbers(initialLineNumbers, initialStartLine),
         ),
+        // Empty until the language effect resolves the grammar chunk.
+        languageCompartment.of([]),
         // The search extension is always present so `setSearchQuery`
         // effects work; the bundled panel is NOT used (we don't bind
         // its keymap). The composing component owns the Find UI via
@@ -696,6 +709,36 @@ export const TugCodeView = React.forwardRef<
       ),
     });
   }, [lineNumbers, startLine]);
+
+  // ---- Language / syntax highlighting ----
+  //
+  // Resolved asynchronously (the grammar chunk lazy-loads); the
+  // compartment swap lands whenever the import settles. The `alive`
+  // guard drops a late-resolving grammar after the language prop changed.
+  // Same grammar + `tugHighlightStyle` the Text card editor uses.
+  useLayoutEffect(() => {
+    const lang = language ?? null;
+    if (lang === null) {
+      viewRef.current?.dispatch({
+        effects: languageCompartment.reconfigure([]),
+      });
+      return;
+    }
+    let alive = true;
+    void languageForLangId(lang).then((resolved) => {
+      if (!alive) return;
+      const view = viewRef.current;
+      if (view === null) return;
+      view.dispatch({
+        effects: languageCompartment.reconfigure(
+          resolved !== null ? [resolved, tugHighlightStyle] : [],
+        ),
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [language]);
 
   return (
     <ResponderScope>
