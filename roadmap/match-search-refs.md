@@ -46,6 +46,21 @@ those three existing mechanisms — slash commands (front door), a streaming tug
 (the Rust port), and non-context transcript ink with clickable refs (output) — into the
 match/search/ref experience.
 
+**Reference implementation (READ THESE).** The original C++ tools are committed alongside
+this plan and are the **ground truth** for the port's algorithmic details — read them for
+the exact behavior this plan describes at the behavioral level:
+- `roadmap/match-tool.cpp` — filename matching: multi-needle accumulation across
+  directories, the filename-match flags, the `-a`/`-e`/`-d`/`-s`/`-1` semantics.
+- `roadmap/search-tool.cpp` — content grep: the per-line "all needles matched" filter
+  (`matched_needle_indexes.size() == needle_count`), the spread-merge pass, and the exact
+  line/column math (column = `match_start_index - line_start_index + 1`, the `+1` bias) and
+  line-end-offset computation. Lists L01/L02 and Spec S03 summarize the behavior; the source
+  is authoritative for the edge cases.
+- `roadmap/ref-tool.cpp` — number-spec parsing and open behavior (Spec S04).
+
+Port the *behavior*, not the C++ structure (single-threaded mmap, `getopt`, `REFS_PATH`);
+this plan's mechanisms (streaming feed, ledger, slash commands) replace the scaffolding.
+
 #### Strategy {#strategy}
 
 - **Front door = local slash commands, not routes.** `/match`, `/search`, `/ref` are
