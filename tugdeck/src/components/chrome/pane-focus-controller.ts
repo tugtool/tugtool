@@ -239,10 +239,21 @@ export function usePaneFocusController(
       // Preserve #2: data-no-activate opt-out (close button).
       if (startEl.closest("[data-no-activate]")) return;
 
-      const paneId = paneEl.getAttribute("data-pane-id");
-      if (paneId === null) return;
-
-      const pane = store.getSnapshot().panes.find((p) => p.id === paneId);
+      // Climb from the nearest [data-pane-id] ancestor to the first one
+      // that resolves to a real pane in the store. Internal tab bars
+      // (Settings, Component Gallery, help sheet) stamp a *synthetic*
+      // data-pane-id on their own bar div; without the climb, closest()
+      // resolves to that synthetic id, the store lookup misses, and the
+      // enclosing card is never activated by a tab click.
+      const panes = store.getSnapshot().panes;
+      let candidateEl: Element | null = paneEl;
+      let pane: (typeof panes)[number] | undefined;
+      while (candidateEl) {
+        const candidateId = candidateEl.getAttribute("data-pane-id");
+        pane = candidateId ? panes.find((p) => p.id === candidateId) : undefined;
+        if (pane) break;
+        candidateEl = candidateEl.parentElement?.closest("[data-pane-id]") ?? null;
+      }
       if (!pane) return;
 
       // Pane-modal scrim short-circuit. The pane's built-in scrim only

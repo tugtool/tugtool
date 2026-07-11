@@ -54,16 +54,22 @@ body {
 }
 
 /* When the owning pane is unfocused, the active tab follows the title bar: it
-   sheds the bright Key fill + underline and retreats to the inactive title-bar
-   surface, so the "this card is live" cue leaves with the title bar's dim. The
-   `data-focused` attribute is written on `.tug-pane` by deck-canvas via a store
-   subscription (DOM, not React state — [L06]); redefining the active-tab aliases
-   here lets the existing `[data-active="true"]` rule dim with no new selector
-   ([L17] one-hop to base). */
+   sheds the bright Key fill and retreats to the inactive title-bar surface, so
+   the "this card is live" cue leaves with the title bar's dim. The underline is
+   NOT dropped — it dims to a muted accent so the selected tab stays legible on a
+   backgrounded card (which tab is chosen must always read). The `data-focused`
+   attribute is written on `.tug-pane` by deck-canvas via a store subscription
+   (DOM, not React state — [L06]); redefining the active-tab aliases here lets
+   the existing `[data-active="true"]` rule dim with no new selector ([L17] one-hop
+   to base). */
 .tug-pane:not([data-focused="true"]) .tug-tab-bar {
   --tugx-tab-bg-active: var(--tug7-surface-card-primary-normal-titlebar-inactive);
   --tugx-tab-fg-active: var(--tugx-tab-fg-rest);
-  --tugx-tab-underline-active: transparent;
+  --tugx-tab-underline-active: color-mix(
+    in srgb,
+    var(--tug7-element-global-fill-normal-accent-rest) 40%,
+    transparent
+  );
 }
 
 /* ============================================================================
