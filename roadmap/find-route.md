@@ -5,7 +5,7 @@
 **Purpose:** Add a **Find** route to the Dev card's prompt entry — a live, incremental
 text search over the transcript with Case-sensitive / Entire-word / Grep toggles,
 Next/Previous navigation, a match-count readout, wrap-around, and a landing flash on
-each match — reachable by ⌘F or the route popup.
+each match — reachable by ⇧⌘F or the route popup.
 
 ---
 
@@ -69,9 +69,9 @@ planned new routes; it lands the route-as-search pattern the others will follow.
 
 > Make these falsifiable.
 
-- Pressing ⌘F with the Dev card focused (and no CM6 editor holding find) flips the
-  prompt entry to the Find route and focuses the query editor (verify: type after ⌘F,
-  characters land in the query, transcript search runs). (#s01-find-model)
+- Pressing ⇧⌘F with the Dev card focused flips the prompt entry to the Find route and
+  focuses the query editor (verify: type after ⇧⌘F, characters land in the query,
+  transcript search runs). (#s01-find-model)
 - Typing a query that occurs N times across expanded transcript content shows the
   count chip reading `1 of N` and paints N tinted matches, the first stronger/active.
   (#s02-match-count, #s04-highlighting)
@@ -196,12 +196,12 @@ Previous button and ⇧⌘G.
   newline anyway).
 - Leave Shift-Return unbound in Find; rely on the Previous button + ⇧⌘G.
 
-**Plan to resolve:** During `#step-4`, read the substrate's return handling in
+**Plan to resolve:** During `#step-5`, read the substrate's return handling in
 `tug-text-editor` (the `returnAction` consumer inside `TugPromptEntry`); if the newline
 branch is interceptable at the prompt-entry level, wire Previous; else defer.
 
 **Resolution:** DECIDED default — Return→Find Next is required; Shift-Return→Find Previous
-is best-effort in `#step-4`. If not cleanly interceptable, DEFERRED to the button + ⇧⌘G
+is best-effort in `#step-5`. If not cleanly interceptable, DEFERRED to the button + ⇧⌘G
 (no follow-up plan needed — full Previous coverage still ships).
 
 #### [Q02] Plain-text projection fidelity for markdown rows (OPEN) {#q02-projection-fidelity}
@@ -218,7 +218,7 @@ can't see) would show a phantom in the count with nothing painted.
   (`TugMarkdownBlock`'s pipeline), extracting text nodes only.
 - Search raw markdown source (simpler, but drifts from rendered text).
 
-**Plan to resolve:** In `#step-5`, locate the markdown-to-DOM pipeline behind
+**Plan to resolve:** In `#step-3`, locate the markdown-to-DOM pipeline behind
 `TugMarkdownBlock` and derive a text-only projection from the same AST; unit-test that
 the projection of representative markdown equals the mounted node's `textContent`.
 
@@ -244,9 +244,11 @@ silently dropped).
   (during a scroll or a scroll-to-match) won't be painted if we paint once.
 - **Mitigation:**
   - Repaint the Custom Highlight ranges whenever the rendered window changes. `TugListView`
-    exposes no window-change callback today; add a minimal `onRenderedRangeChange`
-    notifier (or a `ResizeObserver` + scroll listener on the scrollport) and re-resolve
-    ranges for currently-mounted content on each tick.
+    already runs an internal `onScroll` re-window callback and a per-cell `ResizeObserver`
+    (coalesced via `requestAnimationFrame`) but exposes no *public* window-change signal.
+    Prefer hooking that existing internal re-window tick (lightest) over adding a new
+    public `onRenderedRangeChange` prop; either way, re-resolve ranges for currently-mounted
+    content on each tick.
   - Keep the authoritative match set in the data-model projection so the count never
     depends on what's mounted; only the *paint* is best-effort per-window.
 - **Residual risk:** A match in a row that never mounts is counted but not painted until
@@ -345,23 +347,37 @@ highlights, `transcript-find-match` (all matches) and `transcript-find-active` (
   plus `::highlight(transcript-find-match)` / `::highlight(transcript-find-active)` CSS.
 - All painting is [L06] appearance work — no React state drives it.
 
-#### [P05] Z5 becomes Next; a secondary Previous button joins it (DECIDED) {#p05-z5-next-prev}
+#### [P05] Z5 becomes Next; a secondary Previous button joins it; Return is intercepted in `performSubmit` (DECIDED) {#p05-z5-next-prev}
 
-**Decision:** In the Find route the single Z5 button ([L26]) becomes **Next** (dispatches
-`FIND_NEXT`); a **Previous** secondary button (dispatching `FIND_PREVIOUS`) mounts to its
-left, reusing the same conditional-secondary-button slot the queue `+` button uses during
-an in-flight turn.
+**Decision:** In the Find route the single Z5 button ([L26]) becomes **Next**; a
+**Previous** secondary button (dispatching `FIND_PREVIOUS`) mounts to its left, reusing
+the same conditional-secondary-button slot the queue `+` button uses during an in-flight
+turn. Both the Z5 Next button *and* the Return key are unified by branching
+**`performSubmit`** early in the Find route to dispatch `FIND_NEXT`.
 
 **Rationale:**
 - Matches the user's chosen layout: primary Z5 = Next, secondary-left = Previous.
 - Keeps Z5 one node across routes ([L26]); only the icon / action / `data-mode` change,
   exactly as the existing submit-vs-stop projection does.
+- **Return does NOT route through the `SUBMIT` responder handler.** `tug-prompt-entry.tsx`
+  wires `onSubmit={performSubmit}` and its own comment states *"Editor Return reaches
+  `performSubmit` directly (never via this action)."* Branching the `SUBMIT` handler would
+  catch only the button, leaving Return to submit the query as a turn. Both the button
+  (via the `SUBMIT` handler → `performSubmit`) and Return funnel through `performSubmit`,
+  so one interception there covers both uniformly. `performSubmit` already reads the route
+  (it stamps `route:` onto the submitted payload), so the branch is clean.
 
 **Implications:**
-- `routeAwareSubmitButtonMode` (or an equivalent projection) gains a Find branch that
-  poses Z5 as Next; the `SUBMIT` handler branches to `FIND_NEXT` in the Find route.
+- `performSubmit` gains an early Find branch: `if (route === "⌕") { dispatch FIND_NEXT; return; }`
+  — placed before the blocked-submit / send logic so no Claude/shell turn is ever sent in
+  Find. The auto-resubmit effect and queue button are inert in Find (Z5 is never in the
+  `stop` pose there), so the branch is safe.
+- `routeAwareSubmitButtonMode` (or an equivalent projection) gains a Find branch posing
+  Z5 as Next (icon + aria-label), never a Claude/shell mode.
 - The secondary Previous button is CSS/route-gated like the queue button; it dispatches
-  `FIND_PREVIOUS` via a direct handler, not the `SUBMIT` action.
+  `FIND_PREVIOUS` via a direct handler.
+- Shift-Return maps to the substrate's "newline" branch; turning that into `FIND_PREVIOUS`
+  is best-effort per [Q01] (Previous is fully covered by the button + ⇧⌘G regardless).
 
 #### [P06] Option toggles are multi-select and persisted via tugbank (DECIDED) {#p06-options-persist}
 
@@ -379,21 +395,36 @@ tugbank default (`/api/defaults/find/options`), never `localStorage`.
 - Grep = regex; Entire word wraps `\b…\b`; Case sensitive toggles the flag — all compose
   (Spec S01).
 
-#### [P07] ⌘F enters the Find route only when no CM6 editor owns find (DECIDED) {#p07-cmd-f-scope}
+#### [P07] ⇧⌘F is the Find-route entry gesture (DECIDED) {#p07-cmd-f-scope}
 
-**Decision:** ⌘F resolves leaf-first through the responder chain: a focused CM6 editor
-(Text card / code view) keeps its own `FIND`; otherwise a card-level `FIND` handler on the
-Dev card's `card-content` responder enters the Find route and focuses the query editor.
+**Decision:** The Find route is entered by **⇧⌘F**, wired as a `SELECT_ROUTE "⌕"` chord in
+the existing ⇧⌘C / ⇧⌘S / ⇧⌘B route-shortcut family (dispatched to the prompt-entry
+responder). The plain **⌘F is left untouched** — it stays owned leaf-first by whichever
+CM6 editor (`tug-code-view.tsx` / `tug-text-card-editor.tsx`) holds find focus.
 
 **Rationale:**
-- Preserves existing per-editor find (non-goal to change it) while giving the transcript a
-  find when no editor claims it. The chain's first-responder-up walk gives this priority
-  for free.
+- ⇧⌘F reuses the proven route-chord path (`SELECT_ROUTE` → `routeLifecycle.setRoute`), so
+  it is a one-line keymap addition with no new responder handler.
+- It **sidesteps the ⌘F leaf-first contention entirely**: because we don't touch ⌘F, a
+  transcript-embedded `tug-code-view` (which registers its own `FIND`) can never be in
+  conflict over the Find-route entry gesture. No card-content `FIND` handler, no
+  first-responder-walk reasoning, no investigation of whether read-only embedded editors
+  claim first responder.
+- Accepts the trade-off for now: ⌘F is the universal "find" reflex and ⇧⌘F is less
+  conventional. Deferring the smart-⌘F behavior is deliberate ("for the moment"); the
+  route is still reachable via ⇧⌘F and the route popup.
 
 **Implications:**
-- Add a `FIND` handler to the Dev card `card-content` responder that calls
-  `setRoute("⌕")` + focus prompt. `FIND_NEXT` / `FIND_PREVIOUS` route to the find-session
-  owner (the prompt entry / dev card) when the Find route is active.
+- `keybinding-map.ts`: add `{ key: "KeyF", meta: true, shift: true, action:
+  TUG_ACTIONS.SELECT_ROUTE, value: "⌕", preventDefaultOnMatch: true }` alongside the
+  ⇧⌘C/S/B entries (carry `preventDefaultOnMatch` for symmetry; ⇧⌘F has no WebKit default
+  we depend on). No `FIND` handler is added to the Dev card.
+- The prompt-entry `SELECT_ROUTE` handler already gates on `RETURN_ACTION_BY_ROUTE`
+  membership, so Find being a key there (`"⌕": "submit"`) is what makes the chord land.
+- `FIND_NEXT` / `FIND_PREVIOUS` (⌘G / ⇧⌘G) route to the find-session owner while the Find
+  route is active — unchanged.
+- Follow-on (not in this phase): make plain ⌘F smart-enter the Find route when no CM6
+  editor owns find.
 
 ---
 
@@ -412,21 +443,28 @@ explanatory docstring in the file):
 - `ROUTE_PREFIX_ALIAS` — typed-prefix → route char; add a Find prefix if desired
   (`route-prefix-extension.ts` flips the route when the prefix is typed at offset 0).
 - `RETURN_ACTION_BY_ROUTE` — `"submit" | "newline"` per route; the `SELECT_ROUTE`
-  keyboard handler gates on membership here, so Find MUST appear. Set Find to `"submit"`
-  and branch the `SUBMIT` handler to `FIND_NEXT` (see `#p05-z5-next-prev`). Consumed at
-  the `returnAction` prop: `returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"`.
+  keyboard handler gates on membership here, so Find MUST appear. Set Find to `"submit"`.
+  Return is intercepted in `performSubmit` (NOT the `SUBMIT` handler — see
+  `#p05-z5-next-prev`; Return reaches `performSubmit` directly). Consumed at the
+  `returnAction` prop: `returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"`.
+- `performSubmit` (`useCallback` in `tug-prompt-entry.tsx`) — the shared submit path for
+  Return and the Z5 button; add the Find early-return branch here ([P05]).
 - `routeAwareSubmitButtonMode` — route-conditional Z5 mode; add a Find branch posing Next.
 - Responder handlers: `SELECT_VALUE` (popup pick) and `SELECT_ROUTE` (⇧⌘-shortcut) both
-  funnel to `routeLifecycle.setRoute`; `SUBMIT` branches on route.
+  funnel to `routeLifecycle.setRoute`. The `SUBMIT` handler (Z5 button, non-stop mode)
+  calls `performSubmit`, so the Find branch lives in `performSubmit` — one interception
+  covers the button and Return alike ([P05]).
 - `DevRouteChromeManifest` (`chrome/dev-route-chrome-manifest.tsx`): `routeChipKeys(route)`
   returns the ordered chip keys; add a Find branch returning `["identity", "find"]` (or
   just `["find"]` if the identity badge is not wanted in Find) and a `find` slot + prop.
 - `dev-card.tsx`: `DEV_PROMPT_PLACEHOLDER_BY_ROUTE` (add `"⌕": "Find in transcript"`),
   and the `DevRouteChromeManifest` wiring (`indicatorsContent`) gains a `find={<DevFindCluster …/>}`
   slot.
-- `keybinding-map.ts`: `{ key: "KeyF", meta: true, action: TUG_ACTIONS.FIND }` already
-  exists (a card stub); `FIND_NEXT` (⌘G) / `FIND_PREVIOUS` (⇧⌘G) already exist. Optionally
-  add a `SELECT_ROUTE "⌕"` chord for symmetry with ⇧⌘C/S/B.
+- `keybinding-map.ts`: add the Find-route entry chord **⇧⌘F** in the ⇧⌘C/S/B family —
+  `{ key: "KeyF", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "⌕",
+  preventDefaultOnMatch: true }` ([P07]). Leave the existing plain `{ key: "KeyF", meta:
+  true, action: TUG_ACTIONS.FIND }` (editor-owned) untouched; `FIND_NEXT` (⌘G) /
+  `FIND_PREVIOUS` (⇧⌘G) already exist and route to the find-session owner once in the route.
 
 #### Transcript search + navigation flow {#search-flow}
 
@@ -564,15 +602,15 @@ explanatory docstring in the file):
 | `ROUTE_PREFIX_ALIAS` | const | `tug-prompt-entry.tsx` | optional Find prefix |
 | `RETURN_ACTION_BY_ROUTE` | const | `tug-prompt-entry.tsx` | add `"⌕": "submit"` (gates `SELECT_ROUTE`) |
 | `routeAwareSubmitButtonMode` | fn | `tug-prompt-entry.tsx` | Find branch → Next pose ([P05]) |
-| `SUBMIT` handler | responder | `tug-prompt-entry.tsx` | Find branch → dispatch `FIND_NEXT` ([P05]) |
+| `performSubmit` | fn (useCallback) | `tug-prompt-entry.tsx` | Find early-return branch → dispatch `FIND_NEXT` (covers Return + Z5 button) ([P05]) |
 | Previous secondary button | JSX | `tug-prompt-entry.tsx` | route-gated, dispatches `FIND_PREVIOUS` ([P05]) |
 | `routeChipKeys` / `RouteChipKey` / props | fn/type | `chrome/dev-route-chrome-manifest.tsx` | add `find` key + slot ([P01]) |
 | `DEV_PROMPT_PLACEHOLDER_BY_ROUTE` | const | `cards/dev-card.tsx` | add Find placeholder |
 | `indicatorsContent` wiring | JSX | `cards/dev-card.tsx` | supply `find={<DevFindCluster/>}` + own the session |
-| `FIND` handler | responder | `cards/dev-card.tsx` (card-content) | enter Find route + focus prompt ([P07]) |
+| ⇧⌘F chord | keybinding | `keybinding-map.ts` | `SELECT_ROUTE "⌕"` in the ⇧⌘C/S/B family; enters Find ([P07]) |
 | `rowSearchText` | fn | `lib/transcript-search-text.ts` | projection (Spec S07) |
 | `DevTranscriptHost` | component | `cards/dev-card-transcript.tsx` | expose expansion + projection access + rendered-range notifier ([R01]) |
-| `onRenderedRangeChange` (or equiv) | prop/handle | `tug-list-view.tsx` | window-change notifier for repaint ([R01]) |
+| repaint-on-window-change hook | internal wiring | `tug-list-view.tsx` | prefer hooking the existing internal `onScroll` re-window + `ResizeObserver` tick; add a public `onRenderedRangeChange` prop only if that's not reachable ([R01]) |
 
 ---
 
@@ -584,7 +622,7 @@ explanatory docstring in the file):
 |----------|---------|-------------|
 | **Unit** | `transcript-search` semantics (plain/case/word/grep, ordering, invalid regex) and `DevFindSession` navigation/wrap on real projected strings | Core match + nav logic |
 | **Unit** | `rowSearchText` projection equals rendered `textContent` for representative rows ([Q02]) | Projection fidelity |
-| **App-test** | Drive the real Dev card: ⌘F enters Find, type → count + paint, Next/Prev + wrap + flash, expansion gating | End-to-end behavior |
+| **App-test** | Drive the real Dev card: ⇧⌘F enters Find, type → count + paint, Next/Prev + wrap + flash, expansion gating | End-to-end behavior |
 | **Build** | `bunx vite build` (rollup bundle the debug app loads) | Before "done" |
 
 #### What stays out of tests {#test-non-goals}
@@ -608,9 +646,9 @@ explanatory docstring in the file):
 |---|---|---|---|
 | #step-1 | Search engine + session store (pure) | pending | — |
 | #step-2 | Add the Find route (wiring only) | pending | — |
-| #step-3 | Z4B Find cluster (options + count) | pending | — |
-| #step-4 | Z5 Next / Previous + navigation | pending | — |
-| #step-5 | Expansion-gated text projection + live match set | pending | — |
+| #step-3 | Expansion-gated text projection + live match set | pending | — |
+| #step-4 | Z4B Find cluster (options + count) | pending | — |
+| #step-5 | Z5 Next / Previous + navigation | pending | — |
 | #step-6 | Custom-Highlight painting + virtualized repaint | pending | — |
 | #step-7 | Landing flash + sticky-clear reveal | pending | — |
 | #step-8 | Extend scope into expanded tool/editor content | pending | — |
@@ -648,34 +686,69 @@ explanatory docstring in the file):
 
 **Commit:** `dev-find(route): add the ⌕ Find route to the prompt-entry route system`
 
-**References:** [P01] Find-is-a-route, [P07] Cmd-F-scope, (#route-wiring), [D97], [L26]
+**References:** [P01] Find-is-a-route, [P07] Find-route shortcut, (#route-wiring), [D97], [L26]
 
 **Artifacts:**
 - `tug-prompt-entry.tsx`: `ROUTE_ITEMS` (+ `⌕` Find, `Search` icon), `RETURN_ACTION_BY_ROUTE` (`"⌕": "submit"`), optional `ROUTE_PREFIX_ALIAS` entry.
-- `cards/dev-card.tsx`: `DEV_PROMPT_PLACEHOLDER_BY_ROUTE` (+ Find); construct one `DevFindSession` per card; a `FIND` handler on the `card-content` responder that `setRoute("⌕")` + focuses the prompt ([P07]).
+- `keybinding-map.ts`: the **⇧⌘F** `SELECT_ROUTE "⌕"` chord in the ⇧⌘C/S/B family ([P07]); plain ⌘F left untouched.
+- `cards/dev-card.tsx`: `DEV_PROMPT_PLACEHOLDER_BY_ROUTE` (+ Find); construct one `DevFindSession` per card.
 - Arm/clear the session via `useRouteDelegate` (will → clear on leave, did → arm on enter) ([L03]).
 
 **Tasks:**
 - [ ] Add the route entry + placeholder + prefix alias; confirm the popup shows Find and the trigger width-stabilizes.
-- [ ] Wire ⌘F (card-content `FIND`) to enter the route; confirm a focused CM6 editor still keeps its own find (leaf-first).
+- [ ] Add the ⇧⌘F chord ([P07]); confirm it flips to the Find route and focuses the query. Plain ⌘F is unchanged (still editor-owned) — no card-content `FIND` handler, no leaf-first work.
 - [ ] Arm/teardown the `DevFindSession` on route enter/leave; mirror the editor doc into `session.query` on edit while in Find.
 
 **Tests:**
-- [ ] App-test: ⌘F on the Dev card (nothing else focused) flips to Find and focuses the query; typing updates `session.query` (assert via `tugDevLogStore` or a store read).
+- [ ] App-test: ⇧⌘F on the Dev card flips to Find and focuses the query; typing updates `session.query` (assert via `tugDevLogStore` or a store read).
 
 **Checkpoint:**
 - [ ] `bunx vite build` succeeds.
-- [ ] In the live app: ⌘F → route reads Find, placeholder shows, typing lands in the query editor.
+- [ ] In the live app: ⇧⌘F → route reads Find, placeholder shows, typing lands in the query editor.
 
 ---
 
-#### Step 3: Z4B Find cluster (options + count) {#step-3}
+#### Step 3: Expansion-gated text projection + live match set {#step-3}
 
 **Depends on:** #step-2
 
+**Commit:** `dev-find(scope): expansion-gated row text projection feeding the live match set`
+
+**References:** [P03] Count-vs-paint, [Q02] Projection-fidelity, Spec S01, Spec S07, Risk R02, (#search-flow, #q02-projection-fidelity)
+
+> Ordered **before** the cluster/count and navigation steps: both need a real match set,
+> which only this projection produces. Without it their checkpoints can't be met with
+> real data.
+
+**Artifacts:**
+- `lib/transcript-search-text.ts`: `rowSearchText(index)` over the `DevTranscriptDataSource` snapshot — `user` text, `assistant` text (markdown→text per [Q02]) + thinking, tool I/O **only when expanded** (via `ToolBlockExpansionState.resolve` + `collapseDefaultFor`).
+- `dev-find-session.ts`: recompute matches when query, options, transcript snapshot, or expansion change; `DevTranscriptHost` exposes the projection + expansion access to the session.
+
+**Tasks:**
+- [ ] Locate the markdown-to-DOM pipeline behind `TugMarkdownBlock` and derive the text-only projection from the same AST ([Q02]); verify a representative projection equals the mounted node's `textContent`. **Fallback if faithful reduction proves impractical:** project a coarser text and reconcile against mounted DOM `textContent` where available, logging any count-deferred row via `tugDevLogStore` (never a silent drop) — do not block the step on perfect fidelity.
+- [ ] Build the projection from the data source; exclude collapsed tool bodies and `ghost` rows (Spec S07).
+- [ ] Recompute on snapshot/expansion/query/options change; count now authoritative (Spec S02). Debounce/throttle the query-driven recompute (search-on-type over a large transcript can cost frames — store writes are [L02], not React state, so [L22] is respected either way).
+- [ ] Guard `RegExp` construction in a try/catch; invalid grep → zero matches, no throw (Risk R02).
+
+**Tests:**
+- [ ] Unit: `rowSearchText` of representative markdown equals the rendered `textContent`.
+- [ ] Unit: invalid grep source yields zero matches (no throw).
+- [ ] App-test: match in an expanded block counts; collapsing it drops the match (Spec S07).
+
+**Checkpoint:**
+- [ ] `bunx vite build` succeeds.
+- [ ] `bunx tsc --noEmit` clean.
+- [ ] Live: `session.matches.length` equals hand-verified occurrences across expanded prose + tool I/O.
+
+---
+
+#### Step 4: Z4B Find cluster (options + count) {#step-4}
+
+**Depends on:** #step-3
+
 **Commit:** `dev-find(chrome): Z4B Find cluster — Case/Word/Grep toggles + match-count chip`
 
-**References:** [P06] Options+persist, Spec S02, Spec S06, (#route-wiring), [L02], [L06]
+**References:** [P06] Options+persist, Spec S02, Spec S06, (#route-wiring), [L02], [L06], [L11]
 
 **Artifacts:**
 - `chrome/dev-find-cluster.tsx` + `dev-find-cluster.css`: `TugOptionGroup` (case/word/grep) + count chip (`TugStableOverlay`).
@@ -684,8 +757,9 @@ explanatory docstring in the file):
 
 **Tasks:**
 - [ ] Render the cluster in Z4B on the Find route; other routes unchanged (manifest branch).
-- [ ] Wire `setValue` → cluster state → `session.options`; read/write the tugbank default.
-- [ ] Count chip renders from `session` (`Spec S02` copy: `N of M` / `No results` / empty).
+- [ ] Wire `setValue` → cluster state → `session.options`; read/write the tugbank default. **Template:** follow an existing tugbank-defaults store — `lib/default-model-store.ts` / `lib/response-settings-store.ts` / `lib/editor-settings-store.ts` — do not re-derive the pattern.
+- [ ] Count chip renders from `session` (`Spec S02` copy: `N of M` / `No results` / empty), now backed by the real match set from #step-3.
+- [ ] The cluster and its buttons must refuse focus-steal ([L11]) like the sibling chips — the toolbar is `data-tug-focus="refuse"`; confirm the option group / buttons don't claim first responder from the query editor.
 
 **Tests:**
 - [ ] App-test: toggling Grep/Case/Word changes the match count on a known transcript; reload the card → toggles restore from tugbank.
@@ -696,56 +770,31 @@ explanatory docstring in the file):
 
 ---
 
-#### Step 4: Z5 Next / Previous + navigation {#step-4}
+#### Step 5: Z5 Next / Previous + navigation {#step-5}
 
-**Depends on:** #step-3
+**Depends on:** #step-4
 
 **Commit:** `dev-find(nav): Z5 Next + Previous secondary button, ⌘G/⇧⌘G, Return navigation`
 
-**References:** [P05] Z5-next-prev, [Q01] Shift-Return-Previous, Spec S03, [L26], (#route-wiring)
+**References:** [P05] Z5-next-prev + performSubmit interception, [Q01] Shift-Return-Previous, Spec S03, [L26], (#route-wiring, #p05-z5-next-prev)
 
 **Artifacts:**
-- `tug-prompt-entry.tsx`: `routeAwareSubmitButtonMode` Find branch (Next pose); `SUBMIT` handler Find branch → `FIND_NEXT`; a route-gated Previous secondary button (dispatches `FIND_PREVIOUS`).
+- `tug-prompt-entry.tsx`: `routeAwareSubmitButtonMode` Find branch (Next pose); **`performSubmit` early-return branch → dispatch `FIND_NEXT`** (covers Return AND the Z5 button — Return reaches `performSubmit` directly, NOT the `SUBMIT` handler); a route-gated Previous secondary button (dispatches `FIND_PREVIOUS`).
 - `FIND_NEXT` / `FIND_PREVIOUS` handlers on the find-session owner; ⌘G / ⇧⌘G already mapped.
 - Navigation calls `DevTranscriptHost.scrollToIndex(rowIndex)` (scroll only; paint/flash arrive in #step-6/#step-7).
 
 **Tasks:**
+- [ ] Add the Find early-return branch in `performSubmit` (before the send logic) so Return + Z5 both dispatch `FIND_NEXT` and no turn is ever sent ([P05]).
 - [ ] Repurpose Z5 as Next in Find (one node, [L26]); mount Previous to its left.
-- [ ] Wire Return → `FIND_NEXT`; attempt Shift-Return → `FIND_PREVIOUS`, else defer per [Q01].
+- [ ] Attempt Shift-Return → `FIND_PREVIOUS` by intercepting the Find "newline" branch; if not cleanly interceptable at the prompt-entry level, defer per [Q01] (Previous still covered by the button + ⇧⌘G).
 - [ ] `next`/`previous` update `activeIndex` and scroll the active match's row into view.
 
 **Tests:**
-- [ ] App-test: Next/Prev (buttons + ⌘G/⇧⌘G) cycle `activeIndex` with wrap; the transcript scrolls to the active row.
+- [ ] App-test: Return + Next/Prev (buttons + ⌘G/⇧⌘G) cycle `activeIndex` with wrap; a Find-route Return dispatches `FIND_NEXT` and sends **no** Claude/shell turn; the transcript scrolls to the active row.
 
 **Checkpoint:**
 - [ ] `bunx vite build` succeeds.
-- [ ] Live: Next/Prev advance and scroll; count reads `k of M` tracking the active index.
-
----
-
-#### Step 5: Expansion-gated text projection + live match set {#step-5}
-
-**Depends on:** #step-4
-
-**Commit:** `dev-find(scope): expansion-gated row text projection feeding the live match set`
-
-**References:** [P03] Count-vs-paint, [Q02] Projection-fidelity, Spec S01, Spec S07, (#search-flow)
-
-**Artifacts:**
-- `lib/transcript-search-text.ts`: `rowSearchText(index)` over the `DevTranscriptDataSource` snapshot — `user` text, `assistant` text (markdown→text per [Q02]) + thinking, tool I/O **only when expanded** (via `ToolBlockExpansionState.resolve` + `collapseDefaultFor`).
-- `dev-find-session.ts`: recompute matches when query, options, transcript snapshot, or expansion change; `DevTranscriptHost` exposes the projection + expansion access to the session.
-
-**Tasks:**
-- [ ] Build the projection from the data source; reduce markdown to rendered text ([Q02]); exclude collapsed tool bodies and `ghost` rows (Spec S07).
-- [ ] Recompute on snapshot/expansion/query/options change; count now authoritative (Spec S02).
-
-**Tests:**
-- [ ] Unit: `rowSearchText` of representative markdown equals the rendered `textContent`.
-- [ ] App-test: match in an expanded block counts; collapsing it drops the match (Spec S07).
-
-**Checkpoint:**
-- [ ] `bunx vite build` succeeds.
-- [ ] Live: count matches hand-verified occurrences across expanded prose + tool I/O.
+- [ ] Live: Return + Next/Prev advance and scroll (no turn submitted); count reads `k of M` tracking the active index.
 
 ---
 
@@ -859,7 +908,7 @@ explanatory docstring in the file):
 **References:** (#success-criteria, #exit-criteria), Spec S01–S08
 
 **Tasks:**
-- [ ] Verify the full flow end-to-end: ⌘F → type → count + paint → Next/Prev/⌘G/⇧⌘G + Return → wrap graphic → toggle options (persisted) → expanded-block match → Esc/route-switch exits and clears paint.
+- [ ] Verify the full flow end-to-end: ⇧⌘F → type → count + paint → Next/Prev/⌘G/⇧⌘G + Return → wrap graphic → toggle options (persisted) → expanded-block match → Esc/route-switch exits and clears paint.
 
 **Tests:**
 - [ ] App-test: the aggregate Find scenario passes on a real resumed transcript.
@@ -872,13 +921,13 @@ explanatory docstring in the file):
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** A ⌘F-reachable Find route that searches expanded transcript content live,
+**Deliverable:** A ⇧⌘F-reachable Find route that searches expanded transcript content live,
 paints all matches with an active-match flash, navigates with wrap, and persists its
 Case/Word/Grep toggles.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] ⌘F (no CM6 editor focused) enters Find and focuses the query; CM6-editor find still wins when focused ([P07]).
+- [ ] ⇧⌘F enters Find and focuses the query; plain ⌘F remains editor-owned, untouched ([P07]).
 - [ ] Query shows `N of M`, paints all matches, flashes the active one on each step (Spec S02/S04/S05).
 - [ ] Next/Prev via buttons + ⌘G/⇧⌘G + Return wrap around with the wrap graphic (Spec S03/S08).
 - [ ] Case/Word/Grep change the match set live and persist across reload (Spec S06).
@@ -891,13 +940,14 @@ Case/Word/Grep toggles.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
+- [ ] Smart ⌘F: make plain ⌘F enter the Find route when no CM6 editor owns find (this phase ships ⇧⌘F only, leaving ⌘F editor-owned — see [P07]).
 - [ ] The two further planned routes (this plan lands the route-as-search pattern they follow).
 - [ ] Optional: a match inside a **collapsed** block auto-expands on navigate (currently excluded).
 - [ ] Optional: find-and-replace.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Route reachable | ⌘F / popup shows Find; placeholder + trigger correct |
+| Route reachable | ⇧⌘F / popup shows Find; placeholder + trigger correct |
 | Search correct | count = hand-verified occurrences on a real transcript |
 | Navigation | Next/Prev/⌘G/⇧⌘G/Return wrap + flash |
 | Options persist | tugbank `/api/defaults/find/options` round-trip across reload |
