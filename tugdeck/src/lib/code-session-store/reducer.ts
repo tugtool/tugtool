@@ -130,9 +130,14 @@ import {
   flipEarliestElapsedScheduled,
   narrowCronCreateInput,
   narrowCronDeleteInput,
+  narrowRemoteTriggerToolInput,
   narrowScheduleWakeupInput,
+  parseRemoteTriggerCreateId,
   reapElapsedScheduled,
+  relabelScheduledRow,
+  remoteTriggerLabels,
   scheduledRowFromCron,
+  scheduledRowFromRemoteTrigger,
   scheduledRowFromWakeup,
   stopScheduledRow,
 } from "./select-scheduled-work";
@@ -2265,6 +2270,36 @@ function handleToolResult(
         const delInput = narrowCronDeleteInput(input);
         if (delInput !== undefined) {
           jobs = stopScheduledRow(jobs, delInput.cronId, now);
+        }
+      } else if (toolName === "remotetrigger") {
+        // claude.ai routines: `create` registers a scheduled remote row;
+        // `update` re-labels the matching row; `run` / `list` / `get`
+        // track no local state (fire-and-forget or read-only).
+        const rtInput = narrowRemoteTriggerToolInput(input);
+        if (rtInput !== undefined) {
+          if (rtInput.action === "create") {
+            jobs = insertJob(
+              jobs,
+              scheduledRowFromRemoteTrigger(
+                mutated.toolUseId,
+                rtInput,
+                mutated.result,
+                now,
+              ),
+            );
+          } else if (rtInput.action === "update") {
+            const rowId =
+              parseRemoteTriggerCreateId(mutated.result) ?? rtInput.triggerId;
+            if (rowId !== undefined) {
+              const labels = remoteTriggerLabels(rtInput);
+              jobs = relabelScheduledRow(
+                jobs,
+                rowId,
+                labels.description,
+                labels.scheduleLabel,
+              );
+            }
+          }
         }
       }
     }

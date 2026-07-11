@@ -49,11 +49,18 @@ export type TugPopupListKind = "log" | "state" | "item" | "wide";
 export interface TugPopupListFrameProps
   extends React.ComponentPropsWithoutRef<"div"> {
   /**
-   * Panel title — rendered centered, uppercase, letterspaced. Use the
-   * anchor's own label (e.g. the status cell's legend) so the popup
-   * and its trigger read as one instrument.
+   * Panel title — rendered in the titlebar header (left-aligned, medium
+   * weight), modeled on the pane title bar. Use the anchor's own label
+   * (e.g. the status cell's legend) so the popup and its trigger read as
+   * one instrument.
    */
   title: string;
+  /**
+   * Optional leading glyph for the titlebar header (a lucide icon
+   * element), mirroring the pane title bar's icon. Omitted, the title
+   * sits alone.
+   */
+  icon?: React.ReactNode;
   /**
    * Width / rhythm variant. `log` is the narrow tabular default;
    * `state` is the denser state-log; `item` fits leading-dot item
@@ -79,7 +86,7 @@ export const TugPopupListFrame = React.forwardRef<
   HTMLDivElement,
   TugPopupListFrameProps
 >(function TugPopupListFrame(
-  { title, kind = "log", footer, className, children, ...rest },
+  { title, icon, kind = "log", footer, className, children, ...rest },
   ref,
 ) {
   return (
@@ -90,8 +97,14 @@ export const TugPopupListFrame = React.forwardRef<
       className={cn("tug-popup-list", className)}
       {...rest}
     >
-      <div className="tug-popup-list-title">{title}</div>
-      <div className="tug-popup-list-rule" aria-hidden />
+      <div className="tug-popup-list-title">
+        {icon !== undefined ? (
+          <span className="tug-popup-list-title-icon" aria-hidden>
+            {icon}
+          </span>
+        ) : null}
+        <span className="tug-popup-list-title-text">{title}</span>
+      </div>
       {children}
       {footer !== undefined ? footer : null}
     </div>

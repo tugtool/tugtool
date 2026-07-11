@@ -108,7 +108,7 @@ import {
   useLiveTick,
 } from "./dev-card-telemetry-renderers";
 import { turnHasTiming } from "@/lib/code-session-store/telemetry";
-import { Square, X } from "lucide-react";
+import { Activity, Clock, Coins, Gauge, ListChecks, Square, X } from "lucide-react";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   composeJobsSummary,
@@ -472,7 +472,7 @@ export function TimePopoverContent({
       </TugPopupListFooter>
     ) : undefined;
   return (
-    <TugPopupListFrame title="Time" kind="log" footer={footer}>
+    <TugPopupListFrame title="Time" icon={<Clock />} kind="log" footer={footer}>
       <TugPopupListGrid
         rows={rows}
         summary={summaryRows}
@@ -565,7 +565,7 @@ export function TokensPopoverContent({
       </TugPopupListFooter>
     ) : undefined;
   return (
-    <TugPopupListFrame title="Tokens" kind="log" footer={footer}>
+    <TugPopupListFrame title="Tokens" icon={<Coins />} kind="log" footer={footer}>
       <TugPopupListGrid
         rows={rows}
         summary={summaryRows}
@@ -618,7 +618,7 @@ export function ContextPopoverContent({
 }): React.ReactElement {
   if (breakdown === null) {
     return (
-      <TugPopupListFrame title="Context" kind="wide">
+      <TugPopupListFrame title="Context" icon={<Gauge />} kind="wide">
         <TugPopupListEmpty>
           Session-init breakdown not yet recorded.
         </TugPopupListEmpty>
@@ -626,7 +626,7 @@ export function ContextPopoverContent({
     );
   }
   return (
-    <TugPopupListFrame title="Context" kind="wide">
+    <TugPopupListFrame title="Context" icon={<Gauge />} kind="wide">
       <ContextBreakdownBody
         segments={breakdown.segments}
         contextMax={breakdown.contextMax}
@@ -737,7 +737,7 @@ export function StateChangeLogPopoverContent({
 }): React.ReactElement {
   if (rows.length === 0) {
     return (
-      <TugPopupListFrame title="State" kind="state">
+      <TugPopupListFrame title="State" icon={<Activity />} kind="state">
         <TugPopupListEmpty data-slot="dev-popover-empty-state-changes">
           No state changes recorded yet.
         </TugPopupListEmpty>
@@ -750,6 +750,7 @@ export function StateChangeLogPopoverContent({
   return (
     <TugPopupListFrame
       title="State"
+      icon={<Activity />}
       kind="state"
       footer={
         <TugPopupListFooter>
@@ -1348,7 +1349,7 @@ export function WorkPopoverContent({
   const hasJobs = jobs.length > 0;
   if (!hasGoal && !hasTasks && !hasJobs) {
     return (
-      <TugPopupListFrame title="Work" kind="item">
+      <TugPopupListFrame title="Work" icon={<ListChecks />} kind="item">
         <TugPopupListEmpty>No work for this session.</TugPopupListEmpty>
       </TugPopupListFrame>
     );
@@ -1456,6 +1457,7 @@ export function WorkPopoverContent({
   return (
     <TugPopupListFrame
       title="Work"
+      icon={<ListChecks />}
       kind="item"
       footer={
         <TugPopupListFooter summary={summary}>
@@ -1496,7 +1498,7 @@ export function WorkPopoverContent({
           jobs.filter((j) => j.status === "scheduled").map(renderJobRow),
           jobCounts.scheduled === 0,
         )}
-        {group("Checklist", taskRows, !hasTasks)}
+        {group("Tasks", taskRows, !hasTasks)}
         {group(
           "Finished",
           jobs.filter((j) => isTerminalJobStatus(j.status)).map(renderJobRow),

@@ -203,6 +203,32 @@ describe("reduceTaskListState", () => {
     expect(out.tasks.map((t) => t.status)).toEqual(["completed", "pending"]);
   });
 
+  test("stamps completedAtMs from the completing update's createdAt + toolWallMs", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      updateCall(
+        "u1",
+        { taskId: "1", status: "completed" },
+        { createdAt: 5_000, toolWallMs: 200 },
+      ),
+    ]);
+    expect(out.tasks[0].completedAtMs).toBe(5_200);
+  });
+
+  test("clears completedAtMs when a completed task is reopened", () => {
+    const out = reduceTaskListState([
+      createCall("t1", { subject: "one" }, 1),
+      updateCall(
+        "u1",
+        { taskId: "1", status: "completed" },
+        { createdAt: 5_000 },
+      ),
+      updateCall("u2", { taskId: "1", status: "in_progress" }),
+    ]);
+    expect(out.tasks[0].status).toBe("in_progress");
+    expect(out.tasks[0].completedAtMs).toBeUndefined();
+  });
+
   test("creates over an UNFINISHED list append to the working set", () => {
     const out = reduceTaskListState([
       createCall("t1", { subject: "one" }, 1),
@@ -333,6 +359,7 @@ describe("reduceTaskListState", () => {
         description: undefined,
         activeForm: undefined,
         status: "completed",
+        completedAtMs: 0,
       },
       {
         taskId: "2",
@@ -340,6 +367,7 @@ describe("reduceTaskListState", () => {
         description: undefined,
         activeForm: undefined,
         status: "in_progress",
+        completedAtMs: undefined,
       },
     ]);
   });
@@ -409,6 +437,7 @@ describe("reduceTaskListState", () => {
         description: undefined,
         activeForm: undefined,
         status: "completed",
+        completedAtMs: 0,
       },
     ]);
   });

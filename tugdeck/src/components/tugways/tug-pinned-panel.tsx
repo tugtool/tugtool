@@ -50,11 +50,32 @@ import {
 
 import "./tug-pinned-panel.css";
 
-/** Inset (px) kept between the panel and either edge of its drag container. */
+/** Inset (px) kept between the panel and the LEFT edge of its drag container. */
 const DRAG_INSET = 8;
+
+/**
+ * Extra inset reserved on the RIGHT edge so the panel never overlaps the
+ * card's scrollbar — the drag container spans the full card width
+ * (scrollbar included), and the scroller reserves a stable 12px gutter
+ * (`::-webkit-scrollbar { width: 12px }` + `scrollbar-gutter: stable`).
+ * We keep that 12px plus the ordinary 8px gap, so the panel clears the
+ * gutter whether or not a thumb is currently painted. This bounds both
+ * the default placement and the rightmost draggable position.
+ */
+const RIGHT_INSET = DRAG_INSET + 12;
 
 /** Default horizontal fraction when no position has been saved: right-aligned. */
 const DEFAULT_FRACTION = 1;
+
+/**
+ * Horizontal travel available to the panel: the container's inner width
+ * minus the panel width, the left inset, and the reserved right inset
+ * (which keeps it off the scrollbar). Clamped at 0 for a container
+ * narrower than the panel.
+ */
+function computeTravel(containerWidth: number, panelWidth: number): number {
+  return Math.max(0, containerWidth - panelWidth - DRAG_INSET - RIGHT_INSET);
+}
 
 export interface TugPinnedPanelProps {
   /** Whether the panel is shown. When false, nothing renders. */
@@ -87,7 +108,7 @@ export interface TugPinnedPanelProps {
 function applyOffsetFraction(panel: HTMLDivElement, fraction: number): void {
   const container = panel.offsetParent as HTMLElement | null;
   const containerWidth = container?.clientWidth ?? panel.parentElement?.clientWidth ?? 0;
-  const travel = Math.max(0, containerWidth - panel.offsetWidth - DRAG_INSET * 2);
+  const travel = computeTravel(containerWidth, panel.offsetWidth);
   const left = DRAG_INSET + clampOffsetFraction(fraction) * travel;
   panel.style.left = `${left}px`;
   panel.style.right = "auto";
@@ -148,7 +169,7 @@ export function TugPinnedPanel({
     event.preventDefault();
     const container = panel.offsetParent as HTMLElement | null;
     const containerWidth = container?.clientWidth ?? 0;
-    travelRef.current = Math.max(0, containerWidth - panel.offsetWidth - DRAG_INSET * 2);
+    travelRef.current = computeTravel(containerWidth, panel.offsetWidth);
     dragStartXRef.current = event.clientX;
     const currentLeft = Number.parseFloat(panel.style.left);
     dragStartLeftRef.current = Number.isFinite(currentLeft) ? currentLeft : DRAG_INSET;

@@ -157,6 +157,78 @@ describe("scheduled-work registration in the reducer", () => {
   });
 });
 
+const RT_CREATE_INPUT = {
+  action: "create",
+  body: { schedule: "0 9 * * *", prompt: "Daily digest" },
+};
+const RT_CREATE_RESULT = '{"id":"rtn-42","enabled":true}\nNext run tomorrow at 9am';
+
+describe("RemoteTrigger routines register as remote scheduled rows", () => {
+  test("create inserts one remote scheduled row keyed by the parsed id", () => {
+    const state = applyAll(fresh(), [
+      send("go", "t1"),
+      ...toolCall("RemoteTrigger", RT_CREATE_INPUT, RT_CREATE_RESULT, "tu_rt"),
+    ]);
+    expect(state.jobs.length).toBe(1);
+    expect(state.jobs[0]).toMatchObject({
+      jobId: "rtn-42",
+      kind: "remote",
+      status: "scheduled",
+      description: "Daily digest",
+      scheduleLabel: "0 9 * * *",
+      firesAtMs: null,
+    });
+  });
+
+  test("run / list / get register no row", () => {
+    for (const action of ["run", "list", "get"]) {
+      const state = applyAll(fresh(), [
+        send("go", "t1"),
+        ...toolCall(
+          "RemoteTrigger",
+          { action, trigger_id: "rtn-42" },
+          "{}",
+          `tu_${action}`,
+        ),
+      ]);
+      expect(state.jobs.length).toBe(0);
+    }
+  });
+
+  test("a second identical create does not duplicate the row", () => {
+    let state = applyAll(fresh(), [
+      send("go", "t1"),
+      ...toolCall("RemoteTrigger", RT_CREATE_INPUT, RT_CREATE_RESULT, "tu_rt1"),
+    ]);
+    state = applyAll(state, [
+      { type: "turn_complete", msg_id: "m1", result: "success" },
+      send("again", "t2"),
+      ...toolCall("RemoteTrigger", RT_CREATE_INPUT, RT_CREATE_RESULT, "tu_rt2"),
+    ]);
+    expect(state.jobs.length).toBe(1);
+    expect(state.jobs[0].jobId).toBe("rtn-42");
+  });
+
+  test("update re-labels the matching row's schedule", () => {
+    let state = applyAll(fresh(), [
+      send("go", "t1"),
+      ...toolCall("RemoteTrigger", RT_CREATE_INPUT, RT_CREATE_RESULT, "tu_rt"),
+    ]);
+    state = applyAll(state, [
+      { type: "turn_complete", msg_id: "m1", result: "success" },
+      send("retime", "t2"),
+      ...toolCall(
+        "RemoteTrigger",
+        { action: "update", trigger_id: "rtn-42", body: { schedule: "0 10 * * *" } },
+        '{"id":"rtn-42"}',
+        "tu_up",
+      ),
+    ]);
+    expect(state.jobs.length).toBe(1);
+    expect(state.jobs[0].scheduleLabel).toBe("0 10 * * *");
+  });
+});
+
 describe("scheduled-work wake reconciliation + respawn sweep", () => {
   test("an id-less wake flips the earliest elapsed scheduled row to completed", () => {
     let state = applyAll(fresh(), registerElapsedWakeup("t1", "tu_w"));

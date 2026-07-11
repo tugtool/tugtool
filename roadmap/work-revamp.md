@@ -339,13 +339,13 @@ Each bold label below is an anchor cited by the execution steps.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Aggregate active-work count (pure) | pending | — |
-| #step-2 | 5-minute completion linger + coherent pose | pending | — |
-| #step-3 | Drop the turn-scoped gate (flicker fix) | pending | — |
-| #step-4 | Rename popover group Checklist → Tasks | pending | — |
-| #step-5 | RemoteTrigger data model + narrowing (pure) | pending | — |
-| #step-6 | RemoteTrigger reducer fold + wake guard | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Aggregate active-work count (pure) | done | dd756a14f |
+| #step-2 | 5-minute completion linger + coherent pose | done | c478bf271 |
+| #step-3 | Drop the turn-scoped gate (flicker fix) | done | f5a0c37f8 |
+| #step-4 | Rename popover group Checklist → Tasks | done | a17e8bac8 |
+| #step-5 | RemoteTrigger data model + narrowing (pure) | done | 9486d34f7 |
+| #step-6 | RemoteTrigger reducer fold + wake guard | done | c27148ca4 |
+| #step-7 | Integration checkpoint | done | 3f89cda03 |
 
 ---
 

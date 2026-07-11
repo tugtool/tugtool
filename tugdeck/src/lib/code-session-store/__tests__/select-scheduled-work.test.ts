@@ -16,10 +16,14 @@ import {
   isWakeLate,
   narrowCronCreateInput,
   narrowCronDeleteInput,
+  narrowRemoteTriggerToolInput,
   narrowScheduleWakeupInput,
   parseCronCreateResultId,
+  parseRemoteTriggerCreateId,
   reapElapsedScheduled,
+  relabelScheduledRow,
   scheduledRowFromCron,
+  scheduledRowFromRemoteTrigger,
   scheduledRowFromWakeup,
   stopScheduledRow,
 } from "../select-scheduled-work";
@@ -90,6 +94,39 @@ describe("narrowing", () => {
     expect(parseCronCreateResultId("no id here")).toBeUndefined();
     expect(parseCronCreateResultId(42)).toBeUndefined();
   });
+
+  test("narrowRemoteTriggerToolInput mirrors { action, trigger_id, body }", () => {
+    expect(
+      narrowRemoteTriggerToolInput({
+        action: "create",
+        trigger_id: "trg-1",
+        body: { schedule: "0 9 * * *" },
+      }),
+    ).toEqual({
+      action: "create",
+      triggerId: "trg-1",
+      body: { schedule: "0 9 * * *" },
+    });
+    // Missing/mistyped fields drop to undefined; array body rejected.
+    expect(narrowRemoteTriggerToolInput({ body: [1, 2] })).toEqual({
+      action: undefined,
+      triggerId: undefined,
+      body: undefined,
+    });
+    expect(narrowRemoteTriggerToolInput(null)).toBeUndefined();
+    expect(narrowRemoteTriggerToolInput(42)).toBeUndefined();
+  });
+
+  test("parseRemoteTriggerCreateId reads id from clean JSON and past a trailing summary", () => {
+    expect(parseRemoteTriggerCreateId('{"id":"rtn-9","name":"x"}')).toBe("rtn-9");
+    expect(parseRemoteTriggerCreateId('{"trigger_id":"rtn-7"}')).toBe("rtn-7");
+    // API JSON followed by an appended summary line (not clean JSON).
+    expect(
+      parseRemoteTriggerCreateId('{"id":"rtn-3","enabled":true}\nNext run 9am'),
+    ).toBe("rtn-3");
+    expect(parseRemoteTriggerCreateId("no id at all")).toBeUndefined();
+    expect(parseRemoteTriggerCreateId(42)).toBeUndefined();
+  });
 });
 
 describe("row construction", () => {
@@ -146,6 +183,48 @@ describe("row construction", () => {
     );
     expect(row.jobId).toBe("toolu_x");
   });
+
+  test("scheduledRowFromRemoteTrigger keys by parsed id, null firesAtMs, body-derived labels", () => {
+    const input = narrowRemoteTriggerToolInput({
+      action: "create",
+      body: { schedule: "0 9 * * *", prompt: "Daily digest" },
+    })!;
+    const row = scheduledRowFromRemoteTrigger(
+      "toolu_r",
+      input,
+      '{"id":"rtn-42"}',
+      5_000,
+    );
+    expect(row).toMatchObject({
+      jobId: "rtn-42",
+      toolUseId: "toolu_r",
+      kind: "remote",
+      status: "scheduled",
+      description: "Daily digest",
+      scheduleLabel: "0 9 * * *",
+      firesAtMs: null,
+    });
+  });
+
+  test("scheduledRowFromRemoteTrigger falls back id→trigger_id→tool_use_id and labels a bare routine", () => {
+    const byTrigger = scheduledRowFromRemoteTrigger(
+      "toolu_r",
+      narrowRemoteTriggerToolInput({ action: "create", trigger_id: "trg-x" })!,
+      "no id",
+      0,
+    );
+    expect(byTrigger.jobId).toBe("trg-x");
+    expect(byTrigger.scheduleLabel).toBe("trg-x");
+
+    const bare = scheduledRowFromRemoteTrigger(
+      "toolu_r",
+      narrowRemoteTriggerToolInput({ action: "create" })!,
+      "no id",
+      0,
+    );
+    expect(bare.jobId).toBe("toolu_r");
+    expect(bare.scheduleLabel).toBe("claude.ai routine");
+  });
 });
 
 describe("flipEarliestElapsedScheduled", () => {
@@ -177,6 +256,32 @@ describe("flipEarliestElapsedScheduled", () => {
     const jobs = [scheduled({ jobId: "future", firesAtMs: 10_000 })];
     expect(flipEarliestElapsedScheduled(jobs, 1_000, 1_000)).toBe(jobs);
     expect(flipEarliestElapsedScheduled([], 1_000, 1_000)).toEqual([]);
+  });
+
+  test("never flips a remote row, even as the only/earliest scheduled row", () => {
+    const jobs = [scheduled({ jobId: "rtn", kind: "remote", firesAtMs: null })];
+    // A local id-less wake must not complete a claude.ai routine.
+    expect(flipEarliestElapsedScheduled(jobs, 1_000, 1_000)).toBe(jobs);
+  });
+});
+
+describe("relabelScheduledRow", () => {
+  test("updates description/scheduleLabel of a matching scheduled row", () => {
+    const jobs = [
+      scheduled({ jobId: "rtn", kind: "remote", firesAtMs: null, description: "old", scheduleLabel: "old cron" }),
+    ];
+    const next = relabelScheduledRow(jobs, "rtn", "new", "new cron");
+    expect(next[0]).toMatchObject({ description: "new", scheduleLabel: "new cron" });
+  });
+
+  test("no-ops (same reference) on unknown id, terminal row, or no change", () => {
+    const jobs = [
+      scheduled({ jobId: "rtn", kind: "remote", firesAtMs: null, description: "d", scheduleLabel: "s" }),
+      scheduled({ jobId: "done", status: "completed", endedAtMs: 5 }),
+    ];
+    expect(relabelScheduledRow(jobs, "nope", "x")).toBe(jobs);
+    expect(relabelScheduledRow(jobs, "done", "x")).toBe(jobs);
+    expect(relabelScheduledRow(jobs, "rtn", undefined, undefined)).toBe(jobs);
   });
 });
 

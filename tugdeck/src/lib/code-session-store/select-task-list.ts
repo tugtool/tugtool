@@ -46,6 +46,14 @@ export interface TaskItem {
   description?: string;
   activeForm?: string;
   status: TaskStatus;
+  /**
+   * Wall-clock ms the task last became `completed`, taken from the
+   * completing `TaskUpdate` message's `createdAt` (+ its `toolWallMs`).
+   * `undefined` while pending / in_progress, and cleared if the task is
+   * reopened. Feeds the WORK cell's completion linger; `undefined` reads
+   * as "not recently completed" (e.g. a resumed fold with no timing).
+   */
+  completedAtMs?: number;
 }
 
 /** Assembled task list — the reducer's output. */
@@ -214,7 +222,11 @@ export function reduceTaskListState(
       if (tasks === null) continue;
       const index = tasks.findIndex((t) => t.taskId === input.taskId);
       if (index === -1) continue;
-      tasks[index] = { ...tasks[index], status: input.status };
+      const completedAtMs =
+        input.status === "completed"
+          ? call.createdAt + (call.toolWallMs ?? 0)
+          : undefined;
+      tasks[index] = { ...tasks[index], status: input.status, completedAtMs };
     }
   }
   if (tasks === null) return EMPTY_STATE;

@@ -45,7 +45,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-family: var(--tug-font-mono, monospace);
   font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   /* Viewport guard — the frame never exceeds the space Radix gave the
@@ -60,10 +59,16 @@
   min-height: 0;
 }
 
+/* The title bar is UI chrome — it inherits the ambient sans font, just
+   like a pane title bar. Everything else in the popup is tabular data,
+   so mono lives on the non-title content, not the frame root. */
+.tug-popup-list > :not(.tug-popup-list-title) {
+  font-family: var(--tug-font-mono, monospace);
+}
+
 /* Frame chrome never shrinks under the viewport guard — only the
    scroller gives. */
 .tug-popup-list-title,
-.tug-popup-list-rule,
 .tug-popup-list-footer {
   flex: 0 0 auto;
 }
@@ -95,20 +100,51 @@
   max-width: 500px;
 }
 
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-titlebar-active) */
 .tug-popup-list-title {
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.625rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  /* Titlebar header, modeled on the pane title bar: a leading icon +
+     left-aligned, medium-weight, mixed-case title on a tinted titlebar
+     with a bottom border. It is the popup's dominant header, so the
+     group sub-labels read as subordinate. Full-bleeds over the frame's
+     `md` padding to the popover surface's inner edge (the surface owns
+     the background and does not clip), top corners rounded to that
+     surface's inner radius (0.5rem − 1px border). No close `×`: a Z2
+     popover is transient (dismiss-on-toggle), not pinned like `/btw`. */
+  display: flex;
+  align-items: center;
+  margin: calc(-1 * var(--tug-space-md)) calc(-1 * var(--tug-space-md)) 0;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-titlebar-active);
+  border-bottom: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  border-top-left-radius: calc(0.5rem - 1px);
+  border-top-right-radius: calc(0.5rem - 1px);
 }
 
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.tug-popup-list-rule {
-  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  margin-top: 4px;
-  margin-bottom: 2px;
+/* Leading glyph — matches the pane title-bar icon sizing / gap. */
+.tug-popup-list-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tug-icon-size-md);
+  height: var(--tug-icon-size-md);
+  flex-shrink: 0;
+  margin-right: var(--tug-space-sm);
+  color: var(--tug7-element-card-icon-normal-title-active);
+}
+.tug-popup-list-title-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.tug-popup-list-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--tug7-element-card-text-normal-title-active);
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
@@ -288,11 +324,14 @@
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
 .tug-popup-list-group-label {
+  /* Subordinate section marker under the titlebar header: muted so the
+     title dominates, but 11px semibold (not the former 9px footnote). */
   color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
+  font-weight: var(--tug-font-weight-semibold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+  letter-spacing: 0.08em;
+  padding: var(--tug-space-sm) var(--tug-space-sm) var(--tug-space-2xs);
 }
 
 /* ============================================================================

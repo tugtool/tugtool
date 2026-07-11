@@ -155,6 +155,63 @@ export function parseCronCreateResultId(result: unknown): string | undefined {
   return match === null ? undefined : match[1];
 }
 
+/**
+ * Narrowed `tool_use.input` for a `RemoteTrigger` call — the claude.ai
+ * remote-routine API. Mirrors the block wrapper's `{ action, trigger_id,
+ * body }` shape locally so the store layer never imports a component.
+ */
+export interface RemoteTriggerToolInput {
+  action?: string;
+  triggerId?: string;
+  body?: Record<string, unknown>;
+}
+
+/**
+ * Narrow a `RemoteTrigger` call's `tool_use.input`. Defensive: returns
+ * `undefined` only for a non-object; a missing/mistyped `action` is left
+ * `undefined` (the reducer then treats it as a no-op action).
+ */
+export function narrowRemoteTriggerToolInput(
+  value: unknown,
+): RemoteTriggerToolInput | undefined {
+  const v = asRecord(value);
+  if (v === undefined) return undefined;
+  const bodyRaw = v.body;
+  const body =
+    bodyRaw !== null && typeof bodyRaw === "object" && !Array.isArray(bodyRaw)
+      ? (bodyRaw as Record<string, unknown>)
+      : undefined;
+  return {
+    action: optString(v.action),
+    triggerId: optString(v.trigger_id),
+    body,
+  };
+}
+
+/**
+ * Extract the routine id from a `RemoteTrigger` `create`/`update`
+ * result. The result is API JSON, optionally followed by an appended
+ * summary line — so try whole-string JSON first, then fall back to a
+ * field scan that tolerates the trailing summary. `undefined` when no
+ * id surfaces (the caller falls back to the call's `trigger_id` /
+ * `tool_use_id`). See [Q01] — field names are unpinned.
+ */
+export function parseRemoteTriggerCreateId(result: unknown): string | undefined {
+  if (typeof result !== "string") return undefined;
+  try {
+    const rec = asRecord(JSON.parse(result));
+    const id =
+      rec === undefined
+        ? undefined
+        : optString(rec.id) ?? optString(rec.trigger_id);
+    if (id !== undefined && id.length > 0) return id;
+  } catch {
+    // Not clean JSON (a trailing summary line) — fall through to the scan.
+  }
+  const match = /"(?:id|trigger_id)"\s*:\s*"([^"]+)"/.exec(result);
+  return match === null ? undefined : match[1];
+}
+
 // ---------------------------------------------------------------------------
 // Row construction (pure)
 // ---------------------------------------------------------------------------
@@ -219,6 +276,71 @@ export function scheduledRowFromCron(
   };
 }
 
+function remoteBodyString(
+  input: RemoteTriggerToolInput,
+  key: string,
+): string | undefined {
+  return input.body === undefined ? undefined : optString(input.body[key]);
+}
+
+/**
+ * Derive a routine's display labels from its `body` — the schedule
+ * string (`schedule`/`cron`/`when`) and the human description
+ * (`prompt`/`name`). Each is omitted when the body carries nothing for
+ * it, so an `update` fold re-labels only what actually changed rather
+ * than clobbering with a default.
+ */
+export function remoteTriggerLabels(input: RemoteTriggerToolInput): {
+  description?: string;
+  scheduleLabel?: string;
+} {
+  const scheduleLabel = firstNonEmpty(
+    remoteBodyString(input, "schedule"),
+    remoteBodyString(input, "cron"),
+    remoteBodyString(input, "when"),
+  );
+  const description = firstNonEmpty(
+    remoteBodyString(input, "prompt"),
+    remoteBodyString(input, "name"),
+  );
+  return {
+    ...(scheduleLabel.length > 0 ? { scheduleLabel } : {}),
+    ...(description.length > 0 ? { description } : {}),
+  };
+}
+
+/**
+ * Build a `"remote"` scheduled row from a `RemoteTrigger` `create`
+ * call. Keyed by the routine id (parsed from the result echo, else the
+ * call's `trigger_id`, else its `tool_use_id`). `firesAtMs` is `null`
+ * — a claude.ai routine fires externally and is unobservable locally,
+ * so it reads by its `scheduleLabel` (the routine's schedule) and is
+ * never time-reaped or flipped by a local wake ([P06]).
+ */
+export function scheduledRowFromRemoteTrigger(
+  toolUseId: string,
+  input: RemoteTriggerToolInput,
+  result: unknown,
+  nowMs: number,
+): JobItem {
+  const labels = remoteTriggerLabels(input);
+  const scheduleLabel =
+    firstNonEmpty(labels.scheduleLabel, input.triggerId) || "claude.ai routine";
+  return {
+    jobId:
+      parseRemoteTriggerCreateId(result) ?? input.triggerId ?? toolUseId,
+    source: "claude",
+    kind: "remote",
+    toolUseId,
+    description: firstNonEmpty(labels.description, scheduleLabel),
+    status: "scheduled",
+    startedAtMs: nowMs,
+    endedAtMs: null,
+    firesAtMs: null,
+    scheduleLabel,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Time-driven reconciliation (pure)
 // ---------------------------------------------------------------------------
@@ -243,6 +365,9 @@ export function flipEarliestElapsedScheduled(
   for (let i = 0; i < jobs.length; i += 1) {
     const j = jobs[i];
     if (j.status !== "scheduled") continue;
+    // A remote (claude.ai) routine fires externally; a local id-less
+    // wake must never complete it ([P06]).
+    if (j.kind === "remote") continue;
     if (typeof j.firesAtMs === "number") {
       if (j.firesAtMs <= nowMs && j.firesAtMs < targetFiresAt) {
         target = i;
@@ -298,6 +423,42 @@ export function stopScheduledRow(
   const next = jobs.slice();
   next[idx] = { ...jobs[idx], status: "stopped", endedAtMs };
   return next;
+}
+
+/**
+ * Re-label an existing scheduled row by id — the `RemoteTrigger`
+ * `update` fold. Updates `description` / `scheduleLabel` in place when
+ * either is provided and non-empty; no-op for an unknown id, a
+ * non-scheduled row, or when nothing changes. Reference-stable when
+ * nothing changes.
+ */
+export function relabelScheduledRow(
+  jobs: readonly JobItem[],
+  jobId: string,
+  description?: string,
+  scheduleLabel?: string,
+): readonly JobItem[] {
+  const idx = jobs.findIndex((j) => j.jobId === jobId);
+  if (idx === -1 || jobs[idx].status !== "scheduled") return jobs;
+  const existing = jobs[idx];
+  const next: JobItem = {
+    ...existing,
+    ...(description !== undefined && description.length > 0
+      ? { description }
+      : {}),
+    ...(scheduleLabel !== undefined && scheduleLabel.length > 0
+      ? { scheduleLabel }
+      : {}),
+  };
+  if (
+    next.description === existing.description &&
+    next.scheduleLabel === existing.scheduleLabel
+  ) {
+    return jobs;
+  }
+  const out = jobs.slice();
+  out[idx] = next;
+  return out;
 }
 
 /**

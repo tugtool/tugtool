@@ -9,28 +9,23 @@
  * concatenation is safe and order-preserving for the reducer's
  * `TaskCreate` → `TaskUpdate` pairing.
  *
- * **Turn-scoped visibility.** The wire never emits a "clear" frame for
- * the task list (verified against the v2.1.150 fixtures and live
- * session 45208c42 — each user prompt's `promptId` owns its own Task*
- * events, with no reset signal between prompts). The clearing the
- * user observes in Claude Code's TUI is a view convention: the visible
- * task list belongs to the current/latest turn. This hook implements
- * the same convention by gating on the **latest turn**'s Task* event
- * presence:
+ * **Persistence, not turn-scoping.** The wire never emits a "clear"
+ * frame for the task list (verified against the v2.1.150 fixtures and
+ * live session 45208c42 — each user prompt's `promptId` owns its own
+ * Task* events, with no reset signal between prompts). The fold is
+ * therefore unconditional: every Task* event across the whole
+ * transcript folds into the current batch, and the list persists across
+ * turn boundaries. It clears only when the reducer's batch-boundary
+ * supersede fires — a fresh `TaskCreate` arriving over a
+ * fully-completed list starts a new batch — so accumulated history
+ * never piles up.
  *
- *   - If the latest turn (in-flight if `activeTurn !== null`, else the
- *     most-recent committed `TurnEntry`) has no Task* tool_use
- *     messages, the hook returns the empty state.
- *   - Otherwise it folds every Task* event across the whole transcript
- *     so `TaskUpdate`s pair correctly with `TaskCreate`s that may live
- *     in earlier turns.
- *
- * This mirrors the reducer's established lingering-then-resetting
- * pattern for per-turn state (e.g. the pause-interval arrays at
- * `reducer.ts:535`): state lingers through the brief idle gap after a
- * turn completes (so the finished batch is still visible until the
- * user moves on), then clears the moment the next `handleSend` opens
- * a fresh activeTurn that has no Task* activity.
+ * An earlier revision gated visibility on whether the *latest turn* had
+ * a Task* event, returning the empty state otherwise. That collapsed
+ * the whole checklist to zero the instant a new turn opened (before it
+ * streamed its first Task* frame), then restored it — the observed
+ * "6/7 → None → restored" flicker. The gate is gone; the WORK cell's
+ * completion linger governs the graceful settle to "None" instead.
  *
  * Under [D07] the in-flight tool calls live on the snapshot directly
  * (`activeTurn.messages`) — the previous implementation subscribed to
@@ -50,7 +45,6 @@ import { useMemo, useSyncExternalStore } from "react";
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import {
-  EMPTY_TASK_LIST_STATE,
   reduceTaskListState,
   type TaskListState,
 } from "@/lib/code-session-store/select-task-list";
@@ -63,8 +57,11 @@ import type { Message, ToolUseMessage, TurnEntry } from "@/lib/code-session-stor
  * event stream — required for {@link reduceTaskListState}'s
  * order-sensitive fold (`TaskCreate` must land before any `TaskUpdate`
  * it pairs with).
+ *
+ * Exported so the persistence behavior (fold spans the whole transcript
+ * regardless of turn boundaries) is pin-able without a React store.
  */
-function* iterateAllTaskCalls(
+export function* iterateAllTaskCalls(
   transcript: ReadonlyArray<TurnEntry>,
   inflight: ReadonlyArray<Message>,
 ): IterableIterator<ToolUseMessage> {
@@ -79,47 +76,14 @@ function* iterateAllTaskCalls(
 }
 
 /**
- * True if any message in `messages` is a terminal Task* `tool_use`
- * (TaskCreate or TaskUpdate, case-insensitive — matching the
- * reducer's dispatch convention). In-flight (non-`done`) Task* calls
- * still count: the popover should reveal a new batch as soon as
- * Claude streams its first `TaskCreate` in the new turn, even before
- * the matching `tool_result` lands.
- *
- * Exported for unit tests so the turn-boundary rule is pin-able.
- */
-export function hasTaskEvent(messages: ReadonlyArray<Message>): boolean {
-  for (const m of messages) {
-    if (m.kind !== "tool_use") continue;
-    const lower = m.toolName.toLowerCase();
-    if (lower === "taskcreate" || lower === "taskupdate") return true;
-  }
-  return false;
-}
-
-/**
- * The "latest turn" — the in-flight turn's messages if a turn is
- * active, otherwise the most-recent committed turn's messages, or
- * `null` if the session has no turns yet. This is the turn whose
- * Task* presence gates the visible task list (see module docstring).
- *
- * Exported for unit tests.
- */
-export function selectLatestTurnMessages(
-  transcript: ReadonlyArray<TurnEntry>,
-  inflightMessages: ReadonlyArray<Message> | null,
-): ReadonlyArray<Message> | null {
-  if (inflightMessages !== null) return inflightMessages;
-  if (transcript.length === 0) return null;
-  return transcript[transcript.length - 1].messages;
-}
-
-/**
  * Subscribe to the session and return the current {@link TaskListState}
  * assembled from every committed Task* call plus the in-flight turn's
- * live ones. Returns the empty state when the latest turn has no
- * Task* activity (see module docstring). Re-derives only when one of
- * the inputs changes identity.
+ * live ones. The fold is unconditional: the list is the current batch
+ * (per the reducer's batch-boundary supersede) and persists across the
+ * gap when a new turn opens before it has streamed a Task* frame — it
+ * does not collapse to empty in that gap (see module docstring). The
+ * WORK cell's completion linger governs the graceful settle instead.
+ * Re-derives only when one of the inputs changes identity.
  */
 export function useTaskListState(
   codeSessionStore: CodeSessionStore,
@@ -130,11 +94,11 @@ export function useTaskListState(
   );
   const inflightMessages = snapshot.activeTurn?.messages ?? null;
 
-  return useMemo<TaskListState>(() => {
-    const latest = selectLatestTurnMessages(snapshot.transcript, inflightMessages);
-    if (latest === null || !hasTaskEvent(latest)) return EMPTY_TASK_LIST_STATE;
-    return reduceTaskListState(
-      iterateAllTaskCalls(snapshot.transcript, inflightMessages ?? []),
-    );
-  }, [snapshot.transcript, inflightMessages]);
+  return useMemo<TaskListState>(
+    () =>
+      reduceTaskListState(
+        iterateAllTaskCalls(snapshot.transcript, inflightMessages ?? []),
+      ),
+    [snapshot.transcript, inflightMessages],
+  );
 }

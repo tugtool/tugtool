@@ -31,8 +31,10 @@ import "./dev-card-telemetry-renderers.css";
 
 import React, {
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 
@@ -91,8 +93,13 @@ import {
 import { goalIsActive } from "@/lib/code-session-store/select-goal";
 import {
   composeWorkSummary,
-  workCellLabel,
+  countRecentlyDone,
+  formatWorkCount,
+  nextLingerExpiryMs,
+  workActiveCount,
   workCellPose,
+  WORK_LINGER_MS,
+  workDisplayCount,
 } from "@/lib/code-session-store/select-work";
 import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
 
@@ -728,13 +735,49 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const jobCounts = countJobs(jobsLedger);
   const hasWork =
     hasTasks || jobsLedger.length > 0 || goal !== null;
-  const workLabelText = workCellLabel(taskCounts, jobCounts, goal);
+  // Completion linger: hold the recently-finished count for
+  // WORK_LINGER_MS rather than snapping to "None" the instant the last
+  // item completes. `nowMs` is read at render; while idle-and-lingering
+  // a single bounded timeout (below) recomputes once at the window's
+  // edge — no ticker, matching the tick-free scheduled badge.
+  const nowMs = Date.now();
+  const activeCount = workActiveCount(taskCounts, jobCounts, goal);
+  const recentlyDone = countRecentlyDone(
+    taskListState.tasks,
+    jobsLedger,
+    nowMs,
+    WORK_LINGER_MS,
+  );
+  const displayCount = workDisplayCount(activeCount, recentlyDone);
+  const recentlyCompleted = recentlyDone > 0;
+  const workLabelText = formatWorkCount(displayCount);
   const workIndicatorState: TugProgressIndicatorState = workCellPose(
     jobsLedger,
     goal,
     { hasTasks, allTasksComplete, isIdle },
+    recentlyCompleted,
   );
   const workSummary = composeWorkSummary(taskCounts, jobCounts, goal);
+  const [, setLingerTick] = useState(0);
+  useEffect(() => {
+    // Only the idle→"None" transition needs a nudge: active work keeps
+    // the row re-rendering on its own (the live TIME clock). Schedule
+    // one timeout at the earliest lingering item's expiry; when it
+    // fires, a recompute drops that item and reschedules for the next.
+    if (activeCount !== 0 || recentlyDone === 0) return;
+    const expiry = nextLingerExpiryMs(
+      taskListState.tasks,
+      jobsLedger,
+      Date.now(),
+      WORK_LINGER_MS,
+    );
+    if (expiry === null) return;
+    const id = setTimeout(
+      () => setLingerTick((n) => n + 1),
+      Math.max(0, expiry - Date.now()),
+    );
+    return () => clearTimeout(id);
+  }, [activeCount, recentlyDone, taskListState.tasks, jobsLedger]);
   // Popover actions — fire-and-forget control-style callbacks onto the
   // store's named methods (stop/cancel/stop-loop/clear-goal ride the
   // wire; clear is deck-local).
@@ -926,7 +969,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
             labelAlign="center"
             phaseLabels={{
               none: "None",
-              max: "00/00",
+              max: "00",
             }}
             aria-label={workSummary}
           />

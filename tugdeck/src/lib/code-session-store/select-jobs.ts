@@ -89,7 +89,7 @@ export function isScheduledJobStatus(status: JobStatus): boolean {
 export interface JobItem {
   jobId: string;
   source: "claude";
-  kind: "bash" | "agent" | "monitor" | "unknown" | "wakeup" | "cron";
+  kind: "bash" | "agent" | "monitor" | "unknown" | "wakeup" | "cron" | "remote";
   toolUseId: string;
   description: string;
   outputFile?: string;

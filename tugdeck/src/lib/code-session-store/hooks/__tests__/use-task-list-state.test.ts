@@ -1,18 +1,17 @@
 /**
- * Pure-logic tests for `useTaskListState`'s turn-scoping helpers. The
- * hook itself wraps `useSyncExternalStore` + `useMemo` which are
- * React's responsibility; we pin the two pure helpers that decide
- * whether the popover is empty: `selectLatestTurnMessages` and
- * `hasTaskEvent`. Higher-level coverage exercises the end-to-end
- * scoping behavior.
+ * Pure-logic tests for `useTaskListState`'s transcript walk. The hook
+ * itself wraps `useSyncExternalStore` + `useMemo` (React's job); we pin
+ * `iterateAllTaskCalls` (the fold input) composed with
+ * `reduceTaskListState`, which together establish the persistence
+ * contract: the fold spans the whole transcript regardless of turn
+ * boundaries, so a checklist does NOT collapse to empty the instant a
+ * new turn opens with no Task* frame yet (the former turn-gate flicker).
  */
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  hasTaskEvent,
-  selectLatestTurnMessages,
-} from "@/lib/code-session-store/hooks/use-task-list-state";
+import { iterateAllTaskCalls } from "@/lib/code-session-store/hooks/use-task-list-state";
+import { reduceTaskListState } from "@/lib/code-session-store/select-task-list";
 import type {
   Message,
   ToolUseMessage,
@@ -23,19 +22,31 @@ import type {
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
-function taskUse(
-  toolName: string,
-  status: "pending" | "done" | "error" = "done",
-): ToolUseMessage {
+function taskCreate(subject: string, resultId: number): ToolUseMessage {
   return {
     kind: "tool_use",
-    messageKey: `mk-${toolName}-${status}`,
+    messageKey: `mk-create-${resultId}`,
     createdAt: 0,
-    toolUseId: `tu-${toolName}-${status}`,
-    toolName,
-    input: { subject: "x" },
-    status,
-    result: null,
+    toolUseId: `tu-create-${resultId}`,
+    toolName: "TaskCreate",
+    input: { subject },
+    status: "done",
+    result: `Task #${resultId} created successfully: ${subject}`,
+    structuredResult: null,
+    toolWallMs: null,
+  };
+}
+
+function taskUpdate(taskId: string, status: string): ToolUseMessage {
+  return {
+    kind: "tool_use",
+    messageKey: `mk-update-${taskId}-${status}`,
+    createdAt: 0,
+    toolUseId: `tu-update-${taskId}-${status}`,
+    toolName: "TaskUpdate",
+    input: { taskId, status },
+    status: "done",
+    result: `Updated task #${taskId} status`,
     structuredResult: null,
     toolWallMs: null,
   };
@@ -56,116 +67,56 @@ function turn(turnKey: string, messages: ReadonlyArray<Message>): TurnEntry {
   return { turnKey, msgId: turnKey, messages } as unknown as TurnEntry;
 }
 
+function fold(transcript: TurnEntry[], inflight: Message[]) {
+  return reduceTaskListState(iterateAllTaskCalls(transcript, inflight));
+}
+
 // ---------------------------------------------------------------------------
-// hasTaskEvent
+// iterateAllTaskCalls — order-preserving tool_use walk
 // ---------------------------------------------------------------------------
 
-describe("hasTaskEvent", () => {
-  test("returns false for an empty array", () => {
-    expect(hasTaskEvent([])).toBe(false);
-  });
-
-  test("returns false when no tool_use is a Task* call", () => {
-    expect(
-      hasTaskEvent([userMsg(), taskUse("Bash"), taskUse("Write")]),
-    ).toBe(false);
-  });
-
-  test("returns true for any TaskCreate (case-insensitive)", () => {
-    expect(hasTaskEvent([taskUse("TaskCreate")])).toBe(true);
-    expect(hasTaskEvent([taskUse("taskcreate")])).toBe(true);
-    expect(hasTaskEvent([taskUse("TASKCREATE")])).toBe(true);
-  });
-
-  test("returns true for any TaskUpdate (case-insensitive)", () => {
-    expect(hasTaskEvent([taskUse("TaskUpdate")])).toBe(true);
-    expect(hasTaskEvent([taskUse("taskupdate")])).toBe(true);
-  });
-
-  test("non-terminal Task* still counts — we want to show the batch as soon as it streams", () => {
-    expect(hasTaskEvent([taskUse("TaskCreate", "pending")])).toBe(true);
-  });
-
-  test("mixed: any Task* in the array suffices", () => {
-    expect(
-      hasTaskEvent([userMsg(), taskUse("Bash"), taskUse("TaskCreate")]),
-    ).toBe(true);
+describe("iterateAllTaskCalls", () => {
+  test("yields committed then in-flight tool_use in order, skipping non-tool_use", () => {
+    const t1 = turn("t1", [userMsg(), taskCreate("A", 1)]);
+    const inflight: Message[] = [userMsg(), taskUpdate("1", "completed")];
+    const ids = [...iterateAllTaskCalls([t1], inflight)].map((m) => m.toolName);
+    expect(ids).toEqual(["TaskCreate", "TaskUpdate"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// selectLatestTurnMessages
+// Persistence — the flicker fix
 // ---------------------------------------------------------------------------
 
-describe("selectLatestTurnMessages", () => {
-  test("returns null for an empty transcript with no in-flight", () => {
-    expect(selectLatestTurnMessages([], null)).toBe(null);
-  });
-
-  test("returns in-flight messages when active, even if transcript has turns", () => {
-    const inflight: Message[] = [userMsg()];
-    const t1 = turn("t1", [taskUse("TaskCreate")]);
-    expect(selectLatestTurnMessages([t1], inflight)).toBe(inflight);
-  });
-
-  test("returns the most-recent committed turn's messages when no in-flight", () => {
-    const t1 = turn("t1", [taskUse("TaskCreate")]);
-    const t2 = turn("t2", [userMsg()]);
-    expect(selectLatestTurnMessages([t1, t2], null)).toBe(t2.messages);
-  });
-
-  test("returns in-flight even if it's an empty array (just-submitted, no messages yet)", () => {
-    const empty: Message[] = [];
-    const t1 = turn("t1", [taskUse("TaskCreate")]);
-    // Just-submitted turn → in-flight messages is empty array (not null).
-    // We want to scope to the new turn so the popover clears as soon as
-    // the user submits.
-    expect(selectLatestTurnMessages([t1], empty)).toBe(empty);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Composed behavior — the user's scenario
-// ---------------------------------------------------------------------------
-
-describe("turn-scoped visibility — the multi-prompt scenario", () => {
-  test("calculator turn alone → latest has Task* → popover shows", () => {
+describe("task list persists across the turn-open gap", () => {
+  test("an incomplete checklist + an empty new in-flight turn stays visible", () => {
     const calcTurn = turn("calc", [
-      taskUse("TaskCreate"),
-      taskUse("TaskUpdate"),
+      taskCreate("A", 1),
+      taskCreate("B", 2),
+      taskUpdate("1", "in_progress"),
     ]);
-    const latest = selectLatestTurnMessages([calcTurn], null);
-    expect(latest).not.toBe(null);
-    expect(hasTaskEvent(latest!)).toBe(true);
+    // A new turn just opened — no Task* frame yet, only the user opener.
+    const emptyInflight: Message[] = [userMsg()];
+    const state = fold([calcTurn], emptyInflight);
+    // Former turn-gate would return empty here; now it persists.
+    expect(state.tasks.map((t) => t.subject)).toEqual(["A", "B"]);
+    expect(state.tasks[0].status).toBe("in_progress");
   });
 
-  test("calculator turn + 'hello' turn → latest is 'hello' → popover empty", () => {
-    const calcTurn = turn("calc", [
-      taskUse("TaskCreate"),
-      taskUse("TaskUpdate"),
-    ]);
+  test("an incomplete checklist + a committed non-Task* turn stays visible", () => {
+    const calcTurn = turn("calc", [taskCreate("A", 1)]);
     const helloTurn = turn("hello", [userMsg()]);
-    const latest = selectLatestTurnMessages([calcTurn, helloTurn], null);
-    expect(latest).toBe(helloTurn.messages);
-    expect(hasTaskEvent(latest!)).toBe(false);
+    const state = fold([calcTurn, helloTurn], []);
+    expect(state.tasks.map((t) => t.subject)).toEqual(["A"]);
   });
 
-  test("calculator turn + new 'hello' submit in flight → latest is in-flight → popover empty", () => {
-    const calcTurn = turn("calc", [
-      taskUse("TaskCreate"),
-      taskUse("TaskUpdate"),
+  test("a fresh TaskCreate over a fully-completed batch still supersedes", () => {
+    const doneTurn = turn("done", [
+      taskCreate("old", 1),
+      taskUpdate("1", "completed"),
     ]);
-    // The new "hello" turn just opened, no Task* events yet.
-    const inflight: Message[] = [userMsg()];
-    const latest = selectLatestTurnMessages([calcTurn], inflight);
-    expect(latest).toBe(inflight);
-    expect(hasTaskEvent(latest!)).toBe(false);
-  });
-
-  test("just-submitted turn whose first frame is a new TaskCreate → popover shows", () => {
-    const inflight: Message[] = [userMsg(), taskUse("TaskCreate", "pending")];
-    const latest = selectLatestTurnMessages([], inflight);
-    expect(latest).toBe(inflight);
-    expect(hasTaskEvent(latest!)).toBe(true);
+    const newTurn = turn("new", [taskCreate("fresh", 2)]);
+    const state = fold([doneTurn, newTurn], []);
+    expect(state.tasks.map((t) => t.subject)).toEqual(["fresh"]);
   });
 });
