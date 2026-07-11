@@ -219,61 +219,54 @@ body {
 }
 
 /* ---- Rich chooser rows (choose() with per-choice icon + description) ----
-   Each row is a real TugPushButton (so it joins the alert's arrow ring and the
-   Return/click model) modeled as a filled list item: the button host paints the
-   raised block surface (no border — same look as the modal-header picker rows),
-   and a `flush` TugListRow supplies the leading icon + title + description. The
-   keyboard focus ring is the only outline and rides the accent (orange) domain,
-   independent of the row's neutral body. */
+   The chooser is a selectable LIST, not a stack of buttons: one bordered, rounded
+   frame hosts `flush` `TugListRow`s that carry the list idiom (neutral rest, the
+   quiet selection blue on the highlighted row, a neutral mouse-hover graze). A
+   click only highlights — OK commits — so the rows are inert `div`s, never
+   buttons. The whole list is a single item-container Tab stop: it wears the
+   perimeter key-view ring, and the keyboard movement cursor paints a leading
+   accent edge bar on its row (mirroring TugListView). */
 
 .tug-alert-choices {
   display: flex;
   flex-direction: column;
-  gap: var(--tugx-alert-space-a);
   margin-bottom: var(--tugx-alert-space-b);
-}
-
-/* Ancestor-scoped so these win over the button's own emphasis rest/hover rules
-   (which reach two-class specificity via `:hover`). */
-.tug-alert-choices .tug-alert-choice.tug-button {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  height: auto;
-  padding: 0;
-  text-align: start;
-  white-space: normal;
-  /* Filled, border-free list-item surface; clip the row's hover fill to the
-     rounded corners. */
-  background: var(--tugx-block-surface);
-  border: none;
-  border-radius: var(--tugx-block-chrome-radius);
+  /* Bordered, rounded frame around the rows — the picker-list treatment. The
+     frame clips the rows' selection fill + hairline dividers to the radius. */
+  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  border-radius: var(--tug-radius-sm);
   overflow: hidden;
-  /* Recolor the keyboard focus ring to the accent (orange) domain without
-     touching the row's action-neutral body. */
-  --tugx-focus-ring: var(--tug7-element-control-border-filled-accent-rest);
+  /* The list is the item-container key-view; recolor its ring + the cursor bar
+     to the accent (orange) domain, the app's list-cursor idiom. */
+  --tugx-focus-ring: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-alert-choice-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
+  --tugx-alert-choice-cursor-bar-width: var(--tugx-focus-ring-width);
 }
 
-/* The button's own emphasis paints a solid role fill (and role text/border) on
-   hover and on press/active — nuclear for a list-item row. Neutralize those
-   states so the surface stays the constant block fill; the flush TugListRow
-   supplies the subtle hover highlight on top. The `:not(:disabled)` /
-   `:not([aria-disabled])` qualifiers match the base button rule's specificity so
-   these win regardless of stylesheet order. */
-.tug-alert-choices .tug-alert-choice.tug-button:hover:not(:disabled):not([aria-disabled="true"]),
-.tug-alert-choices
-  .tug-alert-choice.tug-button:is(:active, [data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
-  background: var(--tugx-block-surface);
-  border: none;
-  color: var(--tug7-element-control-text-outlined-action-rest);
+/* Keyboard key-view ring OVERLAYS the list's own edge — no gap between the ring
+   and the frame (the library idiom, mirroring TugListView): the 1px frame border
+   recolors to the ring hue and the flush `outline-offset: 0` outline makes up the
+   remaining width, so the frame + outline read as one continuous ring hugging the
+   radius. Outranks the global `[data-key-view-kbd]` (which offsets the ring). */
+.tug-alert-choices[data-key-view-kbd] {
+  outline: calc(var(--tugx-focus-ring-width) - 1px) solid var(--tugx-focus-ring);
+  outline-offset: 0;
+  border-color: var(--tugx-focus-ring);
 }
 
-/* Let the row fill the button and drop the selection-glyph gutter (no glyph
-   column here) so the leading icon aligns to the row's inset. */
-.tug-alert-choice .tug-button-rest-content {
-  display: block;
-  width: 100%;
+/* Each row is a plain list item (not focusable itself — the list owns the Tab
+   stop). Anchor for the keyboard-cursor edge bar. */
+.tug-alert-choice {
+  position: relative;
+  cursor: pointer;
 }
+
+/* Hairline divider between rows (the frame draws the outer edges; rows draw the
+   inner rules). */
+.tug-alert-choice + .tug-alert-choice {
+  border-top: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
 .tug-alert-choice .tug-list-row {
   --tugx-list-row-indicator-gutter: 0px;
   /* Roomier row padding + a wider icon↔text gutter for the larger icon. */
@@ -282,11 +275,6 @@ body {
   /* Top-align the leading icon with the title line rather than centering it
      across the two-line block. */
   align-items: flex-start;
-  /* The host is a TugPushButton, whose uppercase + letter-spacing must NOT
-     bleed into the row's title/description — the list row owns its own
-     sentence-case typography. */
-  text-transform: none;
-  letter-spacing: normal;
 }
 
 /* Nudge the icon down by the title's half-leading so its cap aligns with the
@@ -295,11 +283,28 @@ body {
   margin-top: 2px;
 }
 
-/* The base `.tug-button svg` rule clamps icons to 1rem; the row's leading icon
-   wants to be larger. Override with enough specificity to win. */
 .tug-alert-choice .tug-list-row-leading svg {
   width: 30px;
   height: 30px;
+}
+
+/* ---- Keyboard movement cursor — a leading-edge accent bar ----
+   The list is the key view (its perimeter ring shows keyboard focus is in the
+   list); the cursor row within carries a crisp leading bar — a MARK, not a fill,
+   so it sits over the selection blue without competing with it. Mirrors
+   TugListView's cursor bar. The global `[data-key-cursor]` outline ring is
+   suppressed for these rows — the bar is the row mark. [L06]/[L22] */
+.tug-alert-choice[data-key-cursor] {
+  outline: none;
+}
+.tug-alert-choice[data-key-cursor]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--tugx-alert-choice-cursor-bar-width);
+  background: var(--tugx-alert-choice-cursor-bar-color);
+  z-index: 1;
 }
 
 /* ---- Actions row ---- */

@@ -72,12 +72,13 @@ import type { TugButtonEmphasis, TugButtonRole } from "./internal/tug-button";
 import { suppressButtonFocusShift } from "./internal/safari-focus-shift";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
+import { useItemGroupKeyboard } from "./use-item-group-keyboard";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { useFocusTrap } from "./use-focus-trap";
 import { useFocusManager } from "./use-focusable";
 import { useSpatialOrder } from "./use-spatial-order";
-import type { SpatialOrder } from "./spatial-order";
+import type { SpatialOrder, SpatialSeam } from "./spatial-order";
 
 /* ---------------------------------------------------------------------------
  * Helpers
@@ -97,12 +98,16 @@ function defaultIconForRole(role: TugButtonRole): string {
 
 /**
  * One selectable action in the multi-action {@link TugAlertHandle.choose} form.
- * Each choice renders as its own button in the action row and resolves the
- * `choose()` promise with its {@link id} when picked. The default choice
- * (exactly one — flagged via {@link isDefault}, or the last when none is
- * flagged) wears the recommended-default look and is the Return target; the
- * rest render `outlined`, at Cancel's weight, following the classic Mac HIG
- * three-button layout (Don't Save / Cancel / Save).
+ *
+ * A choice carrying a {@link description} or {@link icon} renders as a **rich
+ * list row**: the chooser becomes a selectable list (list coloration — the
+ * selection blue on the highlighted row) plus an OK / Cancel action bar. A click
+ * (or arrow) only *highlights* the row; OK commits the highlighted choice, a
+ * double-click commits it directly, and the `choose()` promise resolves with that
+ * choice's {@link id}. The default choice (exactly one — flagged via
+ * {@link isDefault}, or the last when none is flagged) is the row highlighted at
+ * open. A plain choice (no description/icon) keeps the compact button-row form,
+ * where each choice is its own button that resolves immediately when clicked.
  */
 export interface TugAlertChoice {
   /** Opaque value the `choose()` promise resolves to when this row is picked. */
@@ -155,11 +160,12 @@ export interface TugAlertHandle {
     icon?: string;
   }): Promise<boolean>;
   /**
-   * Opens the alert as a multi-action chooser: the icon/title/message with an
-   * ordered row of {@link choices} buttons plus an optional Cancel. Resolves
-   * with the chosen choice's `id`, or `null` on Cancel / Escape / Cmd-. /
-   * {@link dismiss}. The generalization of `alert()` past a single confirm
-   * button — a closed arrow ring spans Cancel + every choice.
+   * Opens the alert as a multi-action chooser. Rich {@link choices} (any carrying
+   * a description or icon) render as a selectable list — click / arrow highlights
+   * a row, the ringed default OK commits it (a double-click commits directly),
+   * Cancel sits at the action bar's left. Plain choices keep the compact form: an
+   * ordered row of buttons that resolve on click. Resolves with the committed
+   * choice's `id`, or `null` on Cancel / Escape / Cmd-. / {@link dismiss}.
    */
   choose(options: {
     title?: string;
@@ -248,6 +254,18 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     const overlayRoot = useCanvasOverlay();
     const [open, setOpen] = React.useState(false);
 
+    // The committed selection in the rich chooser (`choose()` with icon/description
+    // rows). The list only *selects* on click / arrow — the pick is committed by the
+    // OK button — so the currently-highlighted row lives here, seeded to the default
+    // choice at open. Mirrored into a ref so the confirm handler (which fires from a
+    // stable chain closure) reads the live value. Inert in `alert()` / compact-choose
+    // mode.
+    const [selectedChoiceId, setSelectedChoiceId] = React.useState<string | null>(
+      null,
+    );
+    const selectedChoiceIdRef = React.useRef<string | null>(null);
+    selectedChoiceIdRef.current = selectedChoiceId;
+
     // Override options set by the imperative alert() / choose() call. `mode`
     // discriminates the single-confirm form (default) from the multi-action
     // chooser; `choices` is populated only in "choose" mode.
@@ -298,9 +316,31 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       setOpen(false);
     }, []);
 
+    // Confirm resolves the mode-appropriate positive value: the highlighted row's
+    // id in the rich chooser (OK commits the selection), else `true` for a plain
+    // `alert()`. A rich chooser with no selectable row resolves `null` (a dismissal)
+    // rather than a bogus `true`.
     const handleConfirmAction = React.useCallback(() => {
+      if (overrideRef.current?.mode === "choose") {
+        resolveAndClose(selectedChoiceIdRef.current);
+        return;
+      }
       resolveAndClose(true);
     }, [resolveAndClose]);
+
+    // Select a rich-chooser row (click or arrow) without committing — OK commits.
+    const handleSelectChoice = React.useCallback((id: string) => {
+      selectedChoiceIdRef.current = id;
+      setSelectedChoiceId(id);
+    }, []);
+
+    // Commit a rich-chooser row directly (double-click) — the OK shortcut.
+    const handleActivateChoice = React.useCallback(
+      (id: string) => {
+        resolveAndClose(id);
+      },
+      [resolveAndClose],
+    );
 
     // Dismissal resolves the mode-appropriate negative value (`false` for
     // alert(), `null` for choose()).
@@ -347,6 +387,15 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
         return new Promise<string | null>((resolve) => {
           overrideRef.current = { mode: "choose", ...options };
           dismissValueRef.current = null;
+          // Seed the highlighted row to the default choice (flagged `isDefault`,
+          // else the last) so the list opens with a selection and OK commits it.
+          const choices = options.choices;
+          const flagged = choices.findIndex((c) => c.isDefault);
+          const seed =
+            (flagged >= 0 ? choices[flagged] : choices[choices.length - 1])?.id ??
+            null;
+          selectedChoiceIdRef.current = seed;
+          setSelectedChoiceId(seed);
           resolverRef.current = resolve as (v: boolean | string | null) => void;
           setOpen(true);
         });
@@ -450,25 +499,52 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       mode === "choose" && actionButtons.some((b) => b.description || b.icon);
 
     // ---- Focus language ([P14]/[P22]/[P23]) ----
-    // Author Cancel + every action button into a focus group so Tab walks them,
-    // declare a closed arrow ring over the whole row (registered inside the
-    // trap's FocusModeScope by AlertSpatialOrder), and seed the engine key view
-    // on the default button at open — the ring rests there and the default
-    // button promotes to its live/filled style ([P14]). Danger keeps Return
-    // safe by defaulting to Cancel when present.
+    // Author the controls into a focus group so Tab walks them, declare the arrow
+    // plane (registered inside the trap's FocusModeScope by AlertSpatialOrder), and
+    // seed the engine key view on the default control at open — the ring rests
+    // there and the default button promotes to its live/filled style ([P14]).
+    // Danger keeps Return safe by defaulting to Cancel when present.
     const focusManager = useFocusManager();
     const buttonFocusGroup = React.useId();
     const actionCount = actionButtons.length;
-    // In rich-row mode Cancel sits below the rows (last in the ring); otherwise
-    // it leads the button row (order 0). The ring nodes are listed in visual
-    // order so an arrow roves them in reading order.
-    const richCancelOrder = actionCount + 1;
-    const effectiveCancelOrder = richRows ? richCancelOrder : CANCEL_ORDER;
+
+    // Rich chooser Tab/arrow orders: the row list is one item-container stop (0),
+    // then the action bar — Cancel (1), OK (2). The list carries the selection; OK
+    // is the ringed default that commits it.
+    const RICH_ROWS_ORDER = 0;
+    const RICH_CANCEL_ORDER = 1;
+    const RICH_OK_ORDER = 2;
+
     const buttonSpatialOrder = React.useMemo<SpatialOrder>(() => {
+      if (richRows) {
+        const rowsKey = `${buttonFocusGroup}:${RICH_ROWS_ORDER}`;
+        const cancelKey = `${buttonFocusGroup}:${RICH_CANCEL_ORDER}`;
+        const okKey = `${buttonFocusGroup}:${RICH_OK_ORDER}`;
+        // Horizontal ring across the action bar; seams join the row list (a 1D
+        // cursor node, its length supplied by the registered cursor handle) to the
+        // buttons — an arrow off the list edge crosses to OK, an arrow off a button
+        // drops back into the list. The same shape the permission dialog uses for
+        // its scope group + button row.
+        const buttonNodes = hasCancel ? [cancelKey, okKey] : [okKey];
+        const seams: SpatialSeam[] = [
+          { from: okKey, direction: "up", to: rowsKey },
+          { from: okKey, direction: "down", to: rowsKey },
+          { from: rowsKey, direction: "down", to: okKey },
+          { from: rowsKey, direction: "up", to: okKey },
+        ];
+        if (hasCancel) {
+          seams.push(
+            { from: cancelKey, direction: "up", to: rowsKey },
+            { from: cancelKey, direction: "down", to: rowsKey },
+          );
+        }
+        return {
+          rings: [{ axis: "horizontal", nodes: buttonNodes, closed: true }],
+          seams,
+        };
+      }
       const actionOrders = Array.from({ length: actionCount }, (_, i) => i + 1);
-      const orders = richRows
-        ? [...actionOrders, ...(hasCancel ? [richCancelOrder] : [])]
-        : [...(hasCancel ? [CANCEL_ORDER] : []), ...actionOrders];
+      const orders = [...(hasCancel ? [CANCEL_ORDER] : []), ...actionOrders];
       const nodes = orders.map((o) => `${buttonFocusGroup}:${o}`);
       return {
         rings: [
@@ -476,13 +552,16 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
           { axis: "vertical", nodes, closed: true },
         ],
       };
-    }, [buttonFocusGroup, hasCancel, actionCount, richRows, richCancelOrder]);
-    // The order the key view rests on at open: Cancel for a danger confirm (so
-    // Return can't destroy), otherwise the default action button / row.
-    const defaultButtonOrder =
-      mode === "confirm" && confirmRole === "danger" && hasCancel
+    }, [buttonFocusGroup, hasCancel, actionCount, richRows]);
+    // The order the key view rests on at open: the row list for the rich chooser
+    // (it wears the ring immediately, its cursor on the default row — Return still
+    // commits via OK's persistent default ring), Cancel for a danger confirm (so
+    // Return can't destroy), otherwise the default action button.
+    const defaultButtonOrder = richRows
+      ? RICH_ROWS_ORDER
+      : mode === "confirm" && confirmRole === "danger" && hasCancel
         ? CANCEL_ORDER
-        : (actionButtons.find((b) => b.isDefault)?.order ?? effectiveCancelOrder);
+        : (actionButtons.find((b) => b.isDefault)?.order ?? CANCEL_ORDER);
     const handleOpenAutoFocus = React.useCallback(
       (event: Event) => {
         // Stop Radix's own first-focusable walk; the engine drives focus.
@@ -593,63 +672,48 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
               </div>
             </div>
             {richRows ? (
-              // Rich chooser: a vertical stack of list rows (leading icon +
-              // title + description), each a real button in the arrow ring,
-              // with Cancel below.
+              // Rich chooser: a selectable list of rows (leading icon + title +
+              // description) that only *highlights* on click / arrow, with an
+              // action bar below — Cancel on the left, the ringed default OK on the
+              // right. OK commits the highlighted row; a double-click commits
+              // directly.
               <>
-                <div className="tug-alert-choices">
-                  {actionButtons.map((b) => {
-                    const RowIcon = b.icon
-                      ? (icons[b.icon as keyof typeof icons] ?? null)
-                      : null;
-                    const row = (
-                      <TugPushButton
-                        className="tug-alert-choice"
-                        size="sm"
-                        emphasis={b.emphasis}
-                        role={b.role}
-                        onClick={b.onClick}
-                        focusGroup={buttonFocusGroup}
-                        focusOrder={b.order}
-                      >
-                        <TugListRow
-                          variant="flush"
-                          leading={
-                            // The rendered size is set in CSS (the base
-                            // `.tug-button svg` rule clamps this attribute).
-                            RowIcon
-                              ? React.createElement(RowIcon, { size: 30 })
-                              : undefined
-                          }
-                          title={typeof b.label === "string" ? b.label : undefined}
-                          subtitle={b.description}
-                        />
-                      </TugPushButton>
-                    );
-                    return b.isDefault ? (
-                      <AlertDialog.Action asChild key={b.key}>
-                        {row}
-                      </AlertDialog.Action>
-                    ) : (
-                      <React.Fragment key={b.key}>{row}</React.Fragment>
-                    );
-                  })}
-                </div>
-                {hasCancel && (
-                  <div className="tug-alert-actions">
+                <AlertChoiceList
+                  choices={override?.choices ?? []}
+                  focusGroup={buttonFocusGroup}
+                  order={RICH_ROWS_ORDER}
+                  selectedId={selectedChoiceId}
+                  onSelect={handleSelectChoice}
+                  onActivate={handleActivateChoice}
+                />
+                <div className="tug-alert-actions">
+                  {hasCancel && (
                     <AlertDialog.Cancel asChild>
                       <TugPushButton
                         size="sm"
                         emphasis="outlined"
                         onClick={onCancelClick}
                         focusGroup={buttonFocusGroup}
-                        focusOrder={effectiveCancelOrder}
+                        focusOrder={RICH_CANCEL_ORDER}
                       >
                         {cancelLabel}
                       </TugPushButton>
                     </AlertDialog.Cancel>
-                  </div>
-                )}
+                  )}
+                  <AlertDialog.Action asChild>
+                    <TugPushButton
+                      size="sm"
+                      emphasis="primary"
+                      role="action"
+                      persistentDefaultRing
+                      onClick={onConfirmClick}
+                      focusGroup={buttonFocusGroup}
+                      focusOrder={RICH_OK_ORDER}
+                    >
+                      {confirmLabel}
+                    </TugPushButton>
+                  </AlertDialog.Action>
+                </div>
               </>
             ) : (
               <div className="tug-alert-actions">
@@ -698,6 +762,147 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     );
   },
 );
+
+/* ---------------------------------------------------------------------------
+ * AlertChoiceList
+ * ---------------------------------------------------------------------------*/
+
+interface AlertChoiceListProps {
+  choices: readonly TugAlertChoice[];
+  /** Focus group the alert authors this stop into. */
+  focusGroup: string;
+  /** Order of the list within {@link focusGroup} (the item-container stop). */
+  order: number;
+  /** The highlighted row's id (owned by TugAlert), or null. */
+  selectedId: string | null;
+  /** Highlight a row without committing (click / arrow). */
+  onSelect: (id: string) => void;
+  /** Commit a row directly (double-click). */
+  onActivate: (id: string) => void;
+}
+
+/**
+ * The rich chooser's selectable row list. One item-container stop in the alert's
+ * Tab walk ([P01]/[P03]): Tab lands the ring on the whole list, arrows move a
+ * movement cursor that live-commits the highlight, Space selects the cursor row,
+ * and Enter bubbles to the ringed OK ([P24] — `commitOnEnter` off). Rows paint
+ * the list idiom (`flush` `TugListRow`, the selection blue on the highlighted
+ * row) rather than buttons — a click only highlights; OK commits. Mounts INSIDE
+ * the alert's `FocusModeScope` (like `AlertSpatialOrder`) so its
+ * `useItemGroupKeyboard` registration binds to the trapped focus mode, not the
+ * mode above it. [L03]
+ */
+function AlertChoiceList({
+  choices,
+  focusGroup,
+  order,
+  selectedId,
+  onSelect,
+  onActivate,
+}: AlertChoiceListProps): React.ReactElement {
+  const rowsId = React.useId();
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const selectedIdRef = React.useRef<string | null>(selectedId);
+  selectedIdRef.current = selectedId;
+
+  const idOf = (el: Element | null): string =>
+    el?.getAttribute("data-choice-id") ?? "";
+  const collectItems = React.useCallback((): HTMLElement[] => {
+    const root = rootRef.current;
+    if (!root) return [];
+    return Array.from(
+      root.querySelectorAll<HTMLElement>('[data-slot="tug-alert-choice-item"]'),
+    );
+  }, []);
+
+  const { attachRoot, onKeyDown, syncItems, setCursor } = useItemGroupKeyboard({
+    id: rowsId,
+    group: focusGroup,
+    order,
+    register: true,
+    // Live commit: the highlight follows the cursor as the arrows move it, so the
+    // selection blue tracks the keyboard the way it tracks a click.
+    commit: "live",
+    collectItems,
+    // Land the cursor on the highlighted row when the list gains the key view.
+    initialIndex: () => {
+      const items = collectItems();
+      const idx = items.findIndex((el) => idOf(el) === selectedIdRef.current);
+      return idx >= 0 ? idx : 0;
+    },
+    onSelect: (el) => {
+      const id = idOf(el);
+      if (id !== "") onSelect(id);
+    },
+    onMove: (el) => {
+      const id = idOf(el);
+      if (id !== "") onSelect(id);
+    },
+  });
+
+  // Re-sync the cursor's item range whenever the rendered rows change.
+  React.useLayoutEffect(() => {
+    syncItems();
+  }, [choices.length, syncItems]);
+
+  const setRoot = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      rootRef.current = el;
+      attachRoot(el);
+    },
+    [attachRoot],
+  );
+
+  return (
+    <div
+      ref={setRoot}
+      className="tug-alert-choices"
+      role="listbox"
+      aria-orientation="vertical"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+    >
+      {choices.map((choice) => {
+        const RowIcon = choice.icon
+          ? (icons[choice.icon as keyof typeof icons] ?? null)
+          : null;
+        const selected = choice.id === selectedId;
+        return (
+          <div
+            key={choice.id}
+            className="tug-alert-choice"
+            data-slot="tug-alert-choice-item"
+            data-choice-id={choice.id}
+            role="option"
+            aria-selected={selected}
+            onClick={() => {
+              // Highlight + park the cursor so a following arrow continues from
+              // the clicked row.
+              const idx = collectItems().findIndex(
+                (el) => idOf(el) === choice.id,
+              );
+              if (idx >= 0) setCursor(idx);
+              onSelect(choice.id);
+            }}
+            onDoubleClick={() => onActivate(choice.id)}
+          >
+            <TugListRow
+              variant="flush"
+              selected={selected}
+              leading={
+                // The rendered size is set in CSS (the base `.tug-list-row`
+                // leading rule clamps the svg).
+                RowIcon ? React.createElement(RowIcon, { size: 30 }) : undefined
+              }
+              title={choice.label}
+              subtitle={choice.description}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------------------
  * AlertSpatialOrder
