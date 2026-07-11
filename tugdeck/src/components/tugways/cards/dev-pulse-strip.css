@@ -2,11 +2,12 @@
  * dev-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
  * One fixed-height line: a letterspaced mono PULSE legend, then the
- * machine's latest thought in a small italic, ellipsized. Replacement
- * lines CROSS-FADE: the stage holds the incoming text in flow with
- * the outgoing text absolutely layered over it; TugAnimator drives
- * both opacities ([L06] — appearance through WAAPI on DOM, no CSS
- * keyframes and no React state).
+ * machine's latest thought in a small italic, ellipsized. A changed
+ * line CROSS-FADES TO the incoming: the incoming text sits in flow ON
+ * TOP and rises to full opacity while the outgoing text holds still
+ * absolutely beneath it — TugAnimator drives only the incoming opacity,
+ * so there is no fade-out ([L06] — appearance through WAAPI on DOM, no
+ * CSS keyframes and no React state).
  *
  * Tuglaw cross-check:
  *  - [L19] component file pair with `data-slot="dev-pulse-strip"`.
@@ -144,6 +145,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  /* The current line stacks ABOVE the outgoing so it fades in ON TOP during a
+   * change (the cross-fade-TO — no fade-out). Positioned (relative) but still
+   * in flow, so layout is unchanged; the outgoing rule below drops to z 0. */
+  position: relative;
+  z-index: 1;
 }
 
 /* The activity sparkline; flex-centered in the bar, then nudged by the
@@ -179,13 +185,15 @@
   background-color: var(--tug7-surface-control-primary-ghost-accent-active);
 }
 
-/* The outgoing layer rides absolutely atop the incoming during the fade
- * (same geometry; only opacity differs while TugAnimator runs). */
+/* The outgoing layer sits absolutely BENEATH the incoming, holding still at
+ * full opacity while the incoming fades in over it (the cross-fade-TO — no
+ * fade-out). Same geometry; the incoming (z 1) paints on top and the outgoing
+ * settles out once the fade completes. */
 .dev-pulse-strip-outgoing {
   position: absolute;
   inset-inline: 0;
   top: 0;
-  z-index: 1;
+  z-index: 0;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
@@ -193,20 +201,65 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* ── Two-level line: "intent • action" ─────────────────────────────────
-   The retained high-level thought (the assistant's last substantive
-   monologue line) reads muted ahead of the live beat; the bullet is the
-   level divider. Shared by the strip and the history popover — the
-   surrounding text rule owns size/overflow, these only re-tint. */
+/* ── Two-level line: "intent › action" ─────────────────────────────────
+   The retained goal (muted context) leads into the live beat (primary).
+   The line is a flex row so the BEAT is layout-pinned and the INTENT
+   ellipsizes first — the thing happening now is never the part that gets
+   cut, the inversion the old single-run ellipsis produced. `›` is a
+   directional divider (reads "into detail"), not the symmetric bullet. */
+.dev-pulse-line--twolevel {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* The goal: muted, shrinks first, ellipsized. Its markdown emphasis is
+   flattened (see below) so it stays a calm context line and never
+   flickers to bold/mono as tool beats start and stop. */
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-intent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Emphasis flattening: a `**bold**` or `/slash` code span in the goal
+   must not out-shout the muted context tone. Scoped to the intent only —
+   a standalone monologue line (rendered as the bright beat) keeps full
+   markdown. */
+.dev-pulse-intent :is(strong, b, em, i) {
+  font-weight: inherit;
+  font-style: inherit;
+}
+.dev-pulse-intent code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-intent-sep {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  margin-inline: 0.55em;
+  flex: 0 0 auto;
+  margin-inline: 0.45em;
+  color: var(--tug7-element-global-text-normal-muted-disabled-rest);
+}
+
+/* The live beat: primary reading. Pinned (does not shrink to make room
+   for the goal), brighter, a touch heavier so it reads as the action. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.dev-pulse-beat {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: var(--tug-font-weight-medium);
 }
 
 /* Rendered markdown flattens to one inline run: the strip is a single
@@ -258,85 +311,58 @@
   font-size: 1.05em;
 }
 
-/* ── PULSE legend popover: the recent-pulses history ──────────────────────
-   Modeled on the Z2 status-row popover frame (`.dev-popover-frame`): a padded
-   column with a centered, letterspaced title above the rows. The popover
-   chrome (background/border/shadow) is owned by TugPopoverContent. */
-.dev-pulse-history {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-sm);
-  padding: var(--tug-space-md);
-  min-width: 240px;
-  max-width: 420px;
+/* ── PULSE legend popover: recent pulses, grouped by intent ────────────────
+   Composed on TugPopupListFrame (kind="item") — the titled surface the Z2
+   status popups share, so the recent-pulses list reads as one of that
+   family. The frame owns width, padding, titlebar chrome, and the scroll
+   cap; these rules add only the intent-group vocabulary. */
+
+/* Space between two intent groups so a new goal reads as a fresh section. */
+.dev-pulse-history-group + .dev-pulse-history-group {
+  margin-block-start: var(--tug-space-sm);
 }
 
+/* The goal heading over a run of beats. Shown ONCE per group (not on
+   every row, the old repetition). Prose, so it drops the frame's mono
+   body face for the ambient sans and wraps rather than ellipsizing; muted
+   so the beats beneath read as the primary data. */
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-pulse-history-title {
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.625rem;
+.dev-pulse-history-intent {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.6875rem;
+  line-height: 1.35;
   color: var(--tug7-element-global-text-normal-muted-rest);
-  margin-block-end: var(--tug-space-xs);
+  padding: var(--tug-space-xs) var(--tug-space-sm) var(--tug-space-2xs);
 }
 
-.dev-pulse-history-row {
-  display: flex;
-  gap: var(--tug-space-xs);
-  align-items: baseline;
-  /* Pad the row so the hover band has breathing room, and pull the column
-     back by the same inset so the text still aligns to the title above. */
-  padding: 2px var(--tug-space-xs);
-  margin-inline: calc(-1 * var(--tug-space-xs));
-  border-radius: var(--tug-radius-sm, 4px);
-  transition: background-color 0.1s ease;
+/* Flatten the goal's markdown so the heading stays calm (no bold/mono
+   shouting over the muted context tone), and collapse block wrappers to
+   one inline run so it wraps as plain prose. */
+.dev-pulse-history-intent :is(p, ul, ol, li, blockquote) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+.dev-pulse-history-intent :is(strong, b, em, i) {
+  font-weight: inherit;
+  font-style: inherit;
+}
+.dev-pulse-history-intent code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
 }
 
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-pulse-history-row:hover {
-  /* Rollover affordance for the copyable row, matching the strip legend's
-     interactive-control hover tint on this surface. */
-  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
-}
-
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-pulse-history-bullet {
-  flex: 0 0 auto;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: 0.8125rem;
-  line-height: 1.4;
-}
-
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-pulse-history-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--tug7-element-global-text-normal-default-rest);
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.dev-pulse-history-empty {
-  font-size: 0.8125rem;
-  font-style: italic;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Rendered markdown in a history row flattens to one inline run per row,
-   matching the strip. */
-.dev-pulse-history-row :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+/* Beat rows flatten their rendered markdown to one inline run so the
+   item-primary's single-line ellipsis holds. */
+.dev-pulse-history-beat :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
   display: inline;
   margin: 0;
   padding: 0;
   font-size: inherit;
   font-weight: inherit;
 }
-
-.dev-pulse-history-row code {
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.95em;
+.dev-pulse-history-beat li {
+  list-style: none;
 }

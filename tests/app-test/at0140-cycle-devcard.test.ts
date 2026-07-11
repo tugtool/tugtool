@@ -88,6 +88,7 @@ const Z2_TIME = `${CARD} [data-priority="time"]`;
 const Z2_TOKENS = `${CARD} [data-priority="tokens"]`;
 const Z2_CONTEXT = `${CARD} [data-priority="context"]`;
 const Z2_WORK = `${CARD} [data-priority="work"]`;
+const Z2_BTW = `${CARD} [data-priority="btw"]`;
 // A settings sheet opened from a cycle-stop chip (here the permission-mode chip,
 // which populates reliably headless) and one of its option rows.
 const SHEET = '[data-slot="tug-sheet"]';
@@ -147,8 +148,11 @@ const EDITOR_FOCUSED = `(function(){
   return el !== null && document.activeElement === el;
 })()`;
 
-// Whether a popover (portaled status-cell detail) is currently open.
-const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
+// Whether a status-cell detail surface is currently open. The Z2 status
+// cells open the shared TugPlacard (`data-slot="tug-placard"`); the PULSE
+// label still opens a plain TugPopover (`data-slot="tug-popover"`). Either
+// counts as open.
+const POPOVER_OPEN = `(document.querySelector('[data-slot="tug-popover"]') !== null || document.querySelector('[data-slot="tug-placard"]') !== null)`;
 
 // Capability payload whose default model supports reasoning effort. The
 // EFFORT chip disables itself when the bound model lacks effort support
@@ -181,7 +185,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Claude Code → Session → Project → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
+    "⌥⇥ seeds the route, Tab tours route → Claude Code → Session → Project → Mode → Model → Effort → submit → STATE → TIME → TOKENS → CONTEXT → WORK → BTW → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, Return on the editor stop resumes typing",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-devcard" });
       try {
@@ -221,8 +225,8 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
         // (route → Claude Code → Session → Project → Mode → Model → Effort →
-        // STATE → … → WORK → PULSE → editor → wrap) skips it: Tab steps from
-        // Effort straight to STATE, never the submit.
+        // STATE → … → WORK → BTW → PULSE → editor → wrap) skips it: Tab steps
+        // from Effort straight to STATE, never the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
@@ -252,7 +256,10 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_WORK), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // WORK → PULSE (its own one-node row beneath the status cells).
+        // WORK → BTW (the side-questions cell, base+5 in the row).
+        await app.waitForCondition<boolean>(hasKeyView(Z2_BTW), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        // BTW → PULSE (its own one-node row beneath the status cells).
         await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         // PULSE → editor.
@@ -284,7 +291,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
 
         // (4) Tab tours the stops left→right, up to the editor, then wraps back
         // to the route (trapped): route → Claude Code → Session → Project →
-        // Mode → Model → Effort → submit → STATE … WORK → PULSE → editor →
+        // Mode → Model → Effort → submit → STATE … WORK → BTW → PULSE → editor →
         // route. The editor is the last stop — a text stop: the input area
         // takes the ring while the editor stays blurred.
         await app.nativeKey("Tab");
@@ -318,7 +325,10 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_WORK), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // WORK → PULSE (the last leaf before the editor).
+        // WORK → BTW (the side-questions cell, base+5 in the row).
+        await app.waitForCondition<boolean>(hasKeyView(Z2_BTW), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        // BTW → PULSE (the last leaf before the editor).
         await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
@@ -338,9 +348,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the dev card joins the focus cycle", () =>
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         // route→Claude→Session→Project→Mode→Model→Effort→submit→STATE→TIME→
-        // TOKENS→CONTEXT→WORK→PULSE→editor (14 Tabs from the seeded route
+        // TOKENS→CONTEXT→WORK→BTW→PULSE→editor (15 Tabs from the seeded route
         // to the editor text-stop).
-        for (let i = 0; i < 14; i++) await app.nativeKey("Tab");
+        for (let i = 0; i < 15; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(INPUT_AREA), { timeoutMs: 6000 });
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });

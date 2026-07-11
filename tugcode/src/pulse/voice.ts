@@ -392,6 +392,29 @@ function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+/** Display names for the agent-type slugs that don't read as a clean
+ *  word on their own. */
+const AGENT_LABEL_OVERRIDES: Record<string, string> = {
+  "general-purpose": "General",
+  "statusline-setup": "Statusline",
+  "output-style-setup": "Output style",
+};
+
+/**
+ * A subagent-type slug as a display label: a known override, else the
+ * slug with separators turned to spaces and the first letter
+ * capitalized ("code-reviewer" → "Code reviewer"). Keeps a raw slug
+ * ("general-purpose", which clips to "general-p…" on the strip) from
+ * ever reaching the pulse.
+ */
+export function agentDisplayLabel(slug: string): string {
+  const override = AGENT_LABEL_OVERRIDES[slug];
+  if (override !== undefined) return override;
+  const spaced = slug.replace(/[-_]+/g, " ").trim();
+  if (spaced.length === 0) return slug;
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 /**
  * A beat for an `AskUserQuestion` tool call — the turn is pausing for the
  * user. Borrows the first question's short `header` when present ("Asking:
@@ -586,9 +609,12 @@ export class PulseVoice {
         if (frame.tool_name === "Agent" || frame.tool_name === "Task") {
           const input = frame.input as Record<string, unknown>;
           const label =
-            (typeof input.subagent_type === "string" && input.subagent_type) ||
-            (typeof input.description === "string" && input.description) ||
-            null;
+            (typeof input.subagent_type === "string" && input.subagent_type.length > 0
+              ? agentDisplayLabel(input.subagent_type)
+              : null) ??
+            (typeof input.description === "string" && input.description.length > 0
+              ? input.description
+              : null);
           if (label !== null) {
             state.agentLabels.set(frame.tool_use_id, label);
             state.directLine = `Launching ${label}…`;
@@ -677,7 +703,7 @@ export class PulseVoice {
         const label =
           state.agentLabels.get(frame.tool_use_id) ??
           (typeof frame.subagent_type === "string" && frame.subagent_type.length > 0
-            ? frame.subagent_type
+            ? agentDisplayLabel(frame.subagent_type)
             : "Agent");
         state.directLine =
           typeof frame.last_tool_name === "string" && frame.last_tool_name

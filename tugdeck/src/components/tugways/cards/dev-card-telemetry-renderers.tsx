@@ -31,15 +31,22 @@ import "./dev-card-telemetry-renderers.css";
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
+  useId,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
-import type { FocusPolicy } from "@/components/tugways/focus-manager";
+import {
+  FocusManagerContext,
+  type FocusPolicy,
+} from "@/components/tugways/focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
 import { TugPlacard } from "@/components/tugways/tug-placard";
 import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import { SideQuestionBody } from "@/components/tugways/cards/side-question-overlay";
@@ -606,6 +613,34 @@ export const DevTelemetryStatusRow = React.forwardRef<
     [showPlacard],
   );
   const closePlacard = useCallback(() => setPlacard(null), []);
+
+  // [P10] Escape ownership while a Z2 placard is open. The placard is
+  // non-modal, focus-refusing chrome (it never pushes a focus mode of its
+  // own), so a placard opened FROM A CYCLE STOP would otherwise leave the
+  // cycle mode on top — and the cycle's `escapeExits` would eat Escape,
+  // exiting the whole cycle instead of just closing the placard. Pushing an
+  // Escape-owning mode while the placard is open makes the placard the top
+  // mode: Escape (and Space) run `onEscapeDismiss`/`spaceDismisses` → close
+  // the placard, and popping restores the ring to the triggering cell. The
+  // cycle scope stays on the stack throughout, so the card reads as still
+  // cycling ([P10]: a cell popover is not a cycle exit). No focus is moved on
+  // push (the cell keeps the ring), matching the placard's chrome nature.
+  const focusManager = useContext(FocusManagerContext);
+  const cardId = useContext(CardIdContext);
+  const focusCtx = useMemo(
+    () => (focusManager === null ? null : focusManager.contextFor(cardId)),
+    [focusManager, cardId],
+  );
+  const placardFocusScopeId = useId();
+  useEffect(() => {
+    if (focusCtx === null || placard === null) return;
+    focusCtx.pushFocusMode(placardFocusScopeId, {
+      trapped: true,
+      onEscapeDismiss: closePlacard,
+      spaceDismisses: true,
+    });
+    return () => focusCtx.popFocusMode(placardFocusScopeId);
+  }, [focusCtx, placard, placardFocusScopeId, closePlacard]);
 
   useImperativeHandle(
     ref,

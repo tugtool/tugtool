@@ -13,8 +13,10 @@
  *    replaces it (rapid thoughts coalesce — the newest pending line
  *    wins when the dwell expires), except the user's own clear
  *    (submit), which swaps immediately;
- *  - replacements CROSS-FADE via TugAnimator (the outgoing line fades
- *    out over the incoming line fading in);
+ *  - a changed line CROSS-FADES TO the incoming via TugAnimator (the new
+ *    line rises to full opacity over the still, outgoing line — no
+ *    fade-out); a beat that re-states the identical line never restages,
+ *    so unchanged text shows no motion at all;
  *  - a dimmed `None` placeholder before the session's first line.
  *
  * Laws: [L02] both stores via `useSyncExternalStore` (`usePulse` and
@@ -50,10 +52,19 @@ import {
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
+import {
+  TugPopupListEmpty,
+  TugPopupListFrame,
+  TugPopupListItem,
+  TugPopupListItemText,
+  TugPopupListScroller,
+  TugPopupListToneDot,
+} from "@/components/tugways/tug-popup-list";
 import { useFocusable } from "@/components/tugways/use-focusable";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
+  groupPulseHistory,
   latestLineForScope,
   linesForScope,
   usePulse,
@@ -98,8 +109,9 @@ const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 interface DisplayEntry {
   key: string;
   text: string;
-  /** Retained high-level thought behind a low-level `text` beat — the
-   *  strip renders "intent • text" (intent muted) when present. */
+  /** Retained high-level goal behind a low-level `text` beat — the strip
+   *  renders "intent › beat" (goal muted and ellipsized first, beat
+   *  pinned) when present. */
   intent?: string;
   placeholder: boolean;
 }
@@ -111,12 +123,28 @@ const NONE_ENTRY: DisplayEntry = Object.freeze({
 });
 
 /**
+ * Whether two entries RENDER the same line — same placeholder state, same
+ * beat text, same retained intent. A new pulse line always carries a fresh
+ * `key` (a new beat), but a beat that re-states the identical text (or rides
+ * an unchanged intent) must NOT restage the line: there is nothing to
+ * cross-fade to, so the strip stays perfectly still.
+ */
+function sameDisplay(a: DisplayEntry, b: DisplayEntry): boolean {
+  return (
+    a.placeholder === b.placeholder &&
+    a.text === b.text &&
+    a.intent === b.intent
+  );
+}
+
+/**
  * The dwell queue: `target` is what the store wants shown; `current`
  * is what the strip shows. A swap happens immediately when the
  * current line has dwelt long enough (or the target is the user-clear
  * placeholder); otherwise the newest target waits out the remainder.
- * Each swap parks the previous entry in `outgoing` for the
- * cross-fade; the animation effect settles it back to null.
+ * A swap that changes the VISIBLE line parks the previous entry in
+ * `outgoing` for the cross-fade; a swap to identical text updates the key
+ * silently (no fade); the animation effect settles the outgoing back to null.
  */
 function useDwellDisplay(target: DisplayEntry): {
   current: DisplayEntry;
@@ -137,7 +165,10 @@ function useDwellDisplay(target: DisplayEntry): {
   const swap = useCallback((next: DisplayEntry): void => {
     setCurrent((prev) => {
       if (prev.key === next.key) return prev;
-      setOutgoing(prev);
+      // Only stage a cross-fade when the VISIBLE line differs. A new beat
+      // that renders the same text (or an unchanged retained intent) updates
+      // the key in place — no outgoing layer, no animation, nothing to see.
+      if (!sameDisplay(prev, next)) setOutgoing(prev);
       return next;
     });
     lastSwapAtRef.current = Date.now();
@@ -271,29 +302,24 @@ export function DevPulseStrip({
   const currentElRef = useRef<HTMLSpanElement | null>(null);
   const outgoingElRef = useRef<HTMLSpanElement | null>(null);
 
-  // The cross-fade: incoming rises to full opacity while the parked
-  // outgoing layer fades away, both through TugAnimator ([L06] —
-  // WAAPI on DOM, never React state). Named slots cancel cleanly when
-  // swaps outpace the fade.
+  // The cross-fade TO the incoming: the new line rises to full opacity ON TOP
+  // of the parked outgoing, which holds still underneath — there is NO
+  // fade-out ([L06] — WAAPI on DOM, never React state). Because the outgoing
+  // stays put, an unchanged line (were one ever staged) would show no motion;
+  // in practice `swap` already suppresses identical lines, so a staged
+  // outgoing always differs and the new line develops in over the old. The
+  // outgoing settles out once the incoming is fully opaque.
   useLayoutEffect(() => {
     if (outgoing === null) return;
     const currentEl = currentElRef.current;
-    const outgoingEl = outgoingElRef.current;
-    if (currentEl !== null) {
-      animate(currentEl, [{ opacity: 0 }, { opacity: 1 }], {
-        duration: XFADE_MS,
-        easing: "ease",
-        key: "dev-pulse-xfade-in",
-      });
-    }
-    if (outgoingEl === null) {
+    if (currentEl === null) {
       settleOutgoing(outgoing);
       return;
     }
-    const fade = animate(outgoingEl, [{ opacity: 1 }, { opacity: 0 }], {
+    const fade = animate(currentEl, [{ opacity: 0 }, { opacity: 1 }], {
       duration: XFADE_MS,
       easing: "ease",
-      key: "dev-pulse-xfade-out",
+      key: "dev-pulse-xfade-in",
     });
     fade.finished
       .then(() => settleOutgoing(outgoing))
@@ -407,34 +433,72 @@ export function DevPulseStrip({
 }
 
 /**
- * The PULSE-label popover body: the last few pulses for this session, newest
- * first, each rendered through the same markdown/LaTeX pipeline as the strip.
- * An empty history reads as a quiet placeholder.
+ * The PULSE-label popover body: the recent pulses for this session,
+ * newest first, GROUPED by intent so a retained goal heads its run of
+ * beats instead of repeating on each row. Built on the shared
+ * {@link TugPopupListFrame} vocabulary — the same titled surface the
+ * Z2 status popups use — with each beat a leading-dot item row. An
+ * empty history reads as a quiet placeholder.
  */
 function DevPulseHistory({
   lines,
 }: {
   lines: readonly PulseLineEntry[];
 }): React.ReactElement {
+  const groups = React.useMemo(() => groupPulseHistory(lines), [lines]);
   return (
-    <div className="dev-pulse-history" data-slot="dev-pulse-history">
-      <div className="dev-pulse-history-title">Recent pulses</div>
-      {lines.length === 0 ? (
-        <div className="dev-pulse-history-empty">None yet</div>
+    <TugPopupListFrame
+      title="Recent pulses"
+      kind="item"
+      className="dev-pulse-history"
+      data-slot="dev-pulse-history"
+    >
+      {groups.length === 0 ? (
+        <TugPopupListEmpty>No pulses yet.</TugPopupListEmpty>
       ) : (
-        lines.map((line) => (
-          <DevPulseHistoryRow
-            key={line.key}
-            text={line.text}
-            intent={line.intent}
-          />
-        ))
+        <TugPopupListScroller data-slot="dev-pulse-history-body">
+          {groups.map((group) => (
+            <div className="dev-pulse-history-group" key={group.beats[0].key}>
+              {group.intent !== undefined ? (
+                <DevPulseHistoryIntent intent={group.intent} />
+              ) : null}
+              {group.beats.map((beat) => (
+                <DevPulseHistoryBeat
+                  key={beat.key}
+                  text={beat.text}
+                  intent={group.intent}
+                />
+              ))}
+            </div>
+          ))}
+        </TugPopupListScroller>
+      )}
+    </TugPopupListFrame>
+  );
+}
+
+/** A group's intent heading — the goal in calm muted prose (emphasis
+ *  flattened in CSS), shown once above its beats. */
+function DevPulseHistoryIntent({
+  intent,
+}: {
+  intent: string;
+}): React.ReactElement {
+  const render = React.useMemo(() => renderPulseLine(intent), [intent]);
+  return (
+    <div className="dev-pulse-history-intent">
+      {render.html.length === 0 ? (
+        <>{intent}</>
+      ) : (
+        <span dangerouslySetInnerHTML={{ __html: render.html }} />
       )}
     </div>
   );
 }
 
-function DevPulseHistoryRow({
+/** One beat row: a leading tone dot + the live action, the primary
+ *  reading of the row. Right-click copies the raw `intent › beat`. */
+function DevPulseHistoryBeat({
   text,
   intent,
 }: {
@@ -442,54 +506,29 @@ function DevPulseHistoryRow({
   intent?: string;
 }): React.ReactElement {
   const render = React.useMemo(() => renderPulseLine(text), [text]);
-  const intentRender = React.useMemo(
-    () => (intent !== undefined ? renderPulseLine(intent) : null),
-    [intent],
-  );
-  // Right-click → Copy this row's raw pulse text, intent included.
   const copy = useCopyableButton(composeLineCopy(intent, text));
-  const textNode =
-    render === null || render.html.length === 0 ? (
+  const primary =
+    render.html.length === 0 ? (
       <>{text}</>
     ) : (
       <span dangerouslySetInnerHTML={{ __html: render.html }} />
     );
-  const body =
-    intent === undefined ? (
-      <span className="dev-pulse-history-text">{textNode}</span>
-    ) : (
-      <span className="dev-pulse-history-text">
-        <span className="dev-pulse-intent">
-          {intentRender === null || intentRender.html.length === 0 ? (
-            <>{intent}</>
-          ) : (
-            <span dangerouslySetInnerHTML={{ __html: intentRender.html }} />
-          )}
-        </span>
-        <span className="dev-pulse-intent-sep" aria-hidden="true">
-          •
-        </span>
-        {textNode}
-      </span>
-    );
   return (
-    <div
+    <TugPopupListItem
       ref={copy.ref as React.Ref<HTMLDivElement>}
       onContextMenu={copy.onContextMenu}
-      className="dev-pulse-history-row"
+      className="dev-pulse-history-beat"
+      indicator={<TugPopupListToneDot tone="default" />}
     >
-      <span className="dev-pulse-history-bullet" aria-hidden="true">
-        •
-      </span>
-      {body}
+      <TugPopupListItemText primary={primary} />
       {copy.contextMenu}
-    </div>
+    </TugPopupListItem>
   );
 }
 
-/** Raw-text form of a line for the clipboard: "intent • text". */
+/** Raw-text form of a line for the clipboard: "intent › text". */
 function composeLineCopy(intent: string | undefined, text: string): string {
-  return intent !== undefined ? `${intent} • ${text}` : text;
+  return intent !== undefined ? `${intent} › ${text}` : text;
 }
 
 /**
@@ -569,13 +608,19 @@ function PulseLineText({
     ) : (
       <span dangerouslySetInnerHTML={{ __html: render.intent.html }} />
     );
+  // Two levels on one line: the retained goal (muted context) leads
+  // into the live beat (bright, primary). The beat is layout-pinned and
+  // the intent ellipsizes first, so the thing happening NOW is never the
+  // part that gets cut. `›` reads as "drilling into detail".
   return (
     <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
-      <span className="dev-pulse-intent">{intentNode}</span>
-      <span className="dev-pulse-intent-sep" aria-hidden="true">
-        •
+      <span className="dev-pulse-line dev-pulse-line--twolevel">
+        <span className="dev-pulse-intent">{intentNode}</span>
+        <span className="dev-pulse-intent-sep" aria-hidden="true">
+          ›
+        </span>
+        <span className="dev-pulse-beat">{textNode}</span>
       </span>
-      {textNode}
     </span>
   );
 }

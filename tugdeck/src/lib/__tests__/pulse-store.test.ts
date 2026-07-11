@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   PULSE_LINES_CAP,
   PulseStore,
+  groupPulseHistory,
   latestLineForScope,
   publishListPulseLinesOk,
   type PulseLineEntry,
@@ -198,6 +199,64 @@ describe("PulseStore", () => {
     // Malformed / foreign frames change nothing.
     conn.pushPulseFrame({ type: "not_pulse" });
     expect(store.getSnapshot()).toBe(c);
+  });
+});
+
+describe("groupPulseHistory", () => {
+  const beat = (key: string, text: string, intent?: string): PulseLineEntry => ({
+    key,
+    text,
+    ...(intent !== undefined ? { intent } : {}),
+    scopes: ["s1"],
+    beat: 0,
+    atMs: 0,
+  });
+
+  it("collapses a run of one intent into a single group", () => {
+    const groups = groupPulseHistory([
+      beat("1", "Explore · Reading a.ts", "Map the reducer seam."),
+      beat("2", "Explore · Reading b.ts", "Map the reducer seam."),
+      beat("3", "Explore · Running grep", "Map the reducer seam."),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].intent).toBe("Map the reducer seam.");
+    expect(groups[0].beats.map((b) => b.text)).toEqual([
+      "Explore · Reading a.ts",
+      "Explore · Reading b.ts",
+      "Explore · Running grep",
+    ]);
+  });
+
+  it("starts a new group when the intent changes, and again if it returns", () => {
+    const groups = groupPulseHistory([
+      beat("1", "Reading a.ts", "Goal one."),
+      beat("2", "Reading b.ts", "Goal two."),
+      beat("3", "Reading c.ts", "Goal one."),
+    ]);
+    // A returning intent is a fresh group (grouping is by CONSECUTIVE run,
+    // matching the timeline — not a global bucket by intent value).
+    expect(groups.map((g) => g.intent)).toEqual([
+      "Goal one.",
+      "Goal two.",
+      "Goal one.",
+    ]);
+    expect(groups.every((g) => g.beats.length === 1)).toBe(true);
+  });
+
+  it("groups intent-less lines together and apart from goal runs", () => {
+    const groups = groupPulseHistory([
+      beat("1", "First thought, standalone"),
+      beat("2", "Second thought, standalone"),
+      beat("3", "Reading a.ts", "A goal."),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].intent).toBeUndefined();
+    expect(groups[0].beats).toHaveLength(2);
+    expect(groups[1].intent).toBe("A goal.");
+  });
+
+  it("returns no groups for an empty list", () => {
+    expect(groupPulseHistory([])).toEqual([]);
   });
 });
 

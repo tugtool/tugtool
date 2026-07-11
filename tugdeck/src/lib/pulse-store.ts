@@ -119,6 +119,36 @@ export function linesForScope(
   return out;
 }
 
+/** One intent-group of the history: the retained goal (absent for a
+ *  standalone-monologue run) over the beats that ran beneath it. */
+export interface PulseHistoryGroup {
+  intent?: string;
+  beats: PulseLineEntry[];
+}
+
+/**
+ * Fold a line list into intent groups: a run of consecutive lines
+ * sharing one `intent` collapses under that goal, so a retained goal
+ * shows ONCE as a group heading in the history popover instead of
+ * repeating on every beat row. Lines carry a contiguous intent while a
+ * tool chain runs, so consecutive grouping tracks the timeline exactly.
+ * Input order is preserved (the caller passes newest-first).
+ */
+export function groupPulseHistory(
+  lines: readonly PulseLineEntry[],
+): PulseHistoryGroup[] {
+  const groups: PulseHistoryGroup[] = [];
+  for (const line of lines) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.intent === line.intent) {
+      last.beats.push(line);
+    } else {
+      groups.push({ intent: line.intent, beats: [line] });
+    }
+  }
+  return groups;
+}
+
 const EMPTY_LINES: readonly PulseLineEntry[] = Object.freeze([]);
 const EMPTY_CLEARED: ReadonlyMap<string, ReadonlySet<string>> = new Map();
 const IDLE_SNAPSHOT: PulseSnapshot = Object.freeze({

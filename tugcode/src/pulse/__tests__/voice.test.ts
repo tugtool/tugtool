@@ -396,6 +396,32 @@ describe("PulseVoice — the monologue", () => {
     ]);
   });
 
+  test("a slug agent type shows a clean display label, never a raw slug", () => {
+    const voice = new PulseVoice();
+    voice.onFrame(
+      "s1",
+      toolUse(
+        "Agent",
+        { subagent_type: "general-purpose", description: "dig" },
+        { id: "toolu_gp" },
+      ),
+      0,
+    );
+    // "general-purpose" → "General" (it would otherwise clip to
+    // "general-p…" on the strip).
+    expect(voice.flush(1_100)).toEqual([
+      { scope: "s1", text: "Launching General…" },
+    ]);
+    voice.onFrame(
+      "s1",
+      toolUse("Read", { file_path: "/a/b/x.ts" }, { id: "toolu_r", parent: "toolu_gp" }),
+      1_200,
+    );
+    expect(voice.flush(2_300)).toEqual([
+      { scope: "s1", text: "General · Reading x.ts" },
+    ]);
+  });
+
   test("a non-task tool call produces no beat", () => {
     const voice = new PulseVoice();
     voice.onFrame("s1", assistantText("Running the build now."), 0);
