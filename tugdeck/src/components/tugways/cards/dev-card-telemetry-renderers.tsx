@@ -40,8 +40,9 @@ import React, {
 
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
 import type { FocusPolicy } from "@/components/tugways/focus-manager";
-import { type TugPopoverHandle } from "@/components/tugways/tug-popover";
+import { TugPlacard } from "@/components/tugways/tug-placard";
 import { TugStatusCell } from "@/components/tugways/tug-status-cell";
+import { SideQuestionBody } from "@/components/tugways/cards/side-question-overlay";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorState,
@@ -296,33 +297,54 @@ export interface DevTelemetryStatusRowProps extends DevTelemetryProps {
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
   focusPolicy?: FocusPolicy;
   /**
-   * Side-question store for the BTW cell's count. When set, the row
-   * renders a BTW cell showing the number of `/btw` exchanges (or an
-   * em-dash when none); omitted in the gallery / fixtures.
+   * Side-question store for the BTW cell. When set, the row renders a BTW
+   * cell showing the number of `/btw` exchanges (or an em-dash when none) and
+   * the BTW cell toggles the shared placard open on the `/btw` body; omitted
+   * in the gallery / fixtures (the BTW cell is then inert).
    */
   sideQuestionStore?: SideQuestionStore;
-  /**
-   * Opens the pinned `/btw` panel — the BTW cell's activation. The dev
-   * card supplies it (it owns the panel's imperative handle).
-   */
-  onOpenSideQuestions?: () => void;
 }
 
 /**
- * Imperative handle for {@link DevTelemetryStatusRow}. Lets the dev card
- * open the status-row's CONTEXT popover programmatically — the surface
- * the `/context` slash command maps to (it pops the same breakdown a
- * click on the CONTEXT cell shows, no separate sheet). Threaded down
- * through `useDevPlacementSlots` to the row's Z2 instance; a null ref
- * (the row isn't the current Z2 datum) makes `openContextPopover` a
- * no-op.
+ * Which Z2 detail surface the shared {@link TugPlacard} shows. Each key
+ * matches a status cell's `data-priority`, so the host can find the cell to
+ * anchor the placard under it.
+ */
+export type PlacardKind =
+  | "state"
+  | "time"
+  | "tokens"
+  | "context"
+  | "work"
+  | "btw";
+
+/** Placard header title per surface — the placard header carries these now
+ *  that the composed `TugPopupList` frames render headerless. */
+const PLACARD_TITLES: Record<PlacardKind, string> = {
+  state: "State",
+  time: "Time",
+  tokens: "Tokens",
+  context: "Context",
+  work: "Work",
+  btw: "/btw",
+};
+
+/**
+ * Imperative handle for {@link DevTelemetryStatusRow}. Lets the dev card open a
+ * status-row placard programmatically — the surfaces the `/context` and
+ * `/tasks` slash commands map to (they show the same breakdown a click on the
+ * cell shows, no separate sheet). Threaded down through `useDevPlacementSlots`
+ * to the row's Z2 instance; a null ref (the row isn't the current Z2 datum)
+ * makes these no-ops.
  */
 export interface DevTelemetryStatusRowHandle {
-  /** Open the CONTEXT popover (the `/context`-style breakdown). */
-  openContextPopover(): void;
-  /** Open the WORK popover (goal / jobs / scheduled / checklist) — the
+  /** Open the CONTEXT placard (the `/context`-style breakdown). */
+  openContext(): void;
+  /** Open the WORK placard (goal / jobs / scheduled / checklist) — the
    *  `/tasks` surface. */
-  openWorkPopover(): void;
+  openWork(): void;
+  /** Open the `/btw` placard (the side-question body). */
+  openSideQuestions(): void;
 }
 
 /**
@@ -531,21 +553,68 @@ export const DevTelemetryStatusRow = React.forwardRef<
   DevTelemetryStatusRowHandle,
   DevTelemetryStatusRowProps
 >(function DevTelemetryStatusRow(
-  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore, onOpenSideQuestions },
+  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore },
   ref,
 ) {
-  // Handles on the CONTEXT / WORK cells' popovers so `/context` and
-  // `/tasks` can pop them programmatically — same imperative-open
-  // pattern as TugConfirmPopover.
-  const contextPopoverRef = useRef<TugPopoverHandle>(null);
-  const workPopoverRef = useRef<TugPopoverHandle>(null);
+  // The Z2 detail surfaces render as ONE card-scoped TugPlacard, toggled open
+  // on the activating cell — so only one is ever open ([P05]). `placard` names
+  // the open surface plus the horizontal offset it opens at (measured under the
+  // triggering cell, [P06]). `rowRef` locates the cells + the placard's
+  // positioned container.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [placard, setPlacard] = useState<{
+    key: PlacardKind;
+    anchorCenter: number;
+  } | null>(null);
+  // Mirror the open key so the toggle can read it without a stale closure.
+  const placardKeyRef = useRef<PlacardKind | null>(null);
+  placardKeyRef.current = placard?.key ?? null;
+
+  // On-trigger anchoring: the cell's CENTER within the placard's positioned
+  // container — the `.dev-card-status-bar` padding box (the placard's
+  // offsetParent; the row itself is unpositioned, [P06]). The placard centers
+  // itself on this x (clamped in-card). `clientLeft` is the container's left
+  // border width, so `barRect.left + clientLeft` is the padding-box edge the
+  // placard's `left` is measured from.
+  const measureAnchorCenter = useCallback((key: PlacardKind): number => {
+    const row = rowRef.current;
+    if (row === null) return 0;
+    const cell = row.querySelector<HTMLElement>(
+      `[data-slot="tug-status-cell"][data-priority="${key}"]`,
+    );
+    const statusBar = row.closest<HTMLElement>(
+      '[data-slot="dev-card-status-bar"]',
+    );
+    if (cell === null || statusBar === null) return 0;
+    const cellRect = cell.getBoundingClientRect();
+    const barRect = statusBar.getBoundingClientRect();
+    return cellRect.left + cellRect.width / 2 - (barRect.left + statusBar.clientLeft);
+  }, []);
+
+  const showPlacard = useCallback(
+    (key: PlacardKind): void => {
+      setPlacard({ key, anchorCenter: measureAnchorCenter(key) });
+    },
+    [measureAnchorCenter],
+  );
+  // Cell activation toggles: re-clicking the open cell closes it ([P05]).
+  const togglePlacard = useCallback(
+    (key: PlacardKind): void => {
+      if (placardKeyRef.current === key) setPlacard(null);
+      else showPlacard(key);
+    },
+    [showPlacard],
+  );
+  const closePlacard = useCallback(() => setPlacard(null), []);
+
   useImperativeHandle(
     ref,
     () => ({
-      openContextPopover: () => contextPopoverRef.current?.open(),
-      openWorkPopover: () => workPopoverRef.current?.open(),
+      openContext: () => showPlacard("context"),
+      openWork: () => showPlacard("work"),
+      openSideQuestions: () => showPlacard("btw"),
     }),
-    [],
+    [showPlacard],
   );
 
   // Cycle stops ([P10] revised): each cell is its own leaf stop (Tab
@@ -862,6 +931,27 @@ export const DevTelemetryStatusRow = React.forwardRef<
     />
   );
 
+  // The one open placard's body — the same content element the cell used to
+  // pass as its popover, now shown headerless inside the shared placard. BTW
+  // shows the side-question body (its own store, unrelated to the code
+  // session) and is only reachable when a store is present.
+  const placardBody =
+    placard === null
+      ? null
+      : placard.key === "state"
+        ? statePopover
+        : placard.key === "time"
+          ? timePopover
+          : placard.key === "tokens"
+            ? tokensPopover
+            : placard.key === "context"
+              ? contextPopover
+              : placard.key === "work"
+                ? workPopover
+                : sideQuestionStore !== undefined
+                  ? <SideQuestionBody store={sideQuestionStore} />
+                  : null;
+
   // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + WORK as
   // direct siblings. The row's `justify-content: center` (declared in
   // CSS) packs the cells as one group with a fixed inter-item `gap`;
@@ -870,14 +960,33 @@ export const DevTelemetryStatusRow = React.forwardRef<
   // width is constant and the cells never shift.
   return (
     <div
+      ref={rowRef}
       className="dev-telemetry-status-row"
       data-slot="dev-telemetry-status-row"
       data-replay-inert={replayInert ? "true" : undefined}
     >
+      {/* One card-scoped placard over whichever Z2 surface is open — auto-
+          dismiss, fixed under its trigger cell, one at a time ([P05]/[P06]).
+          Its offsetParent is the (position:relative) `.dev-card-status-bar`,
+          so it floats just above Z2 over the transcript's tail. */}
+      {placard !== null && (
+        <TugPlacard
+          open
+          onClose={closePlacard}
+          dismiss="auto"
+          triggerSelector="[data-placard-trigger]"
+          anchorCenter={placard.anchorCenter}
+          className="dev-telemetry-status-placard"
+          title={PLACARD_TITLES[placard.key]}
+          aria-label={PLACARD_TITLES[placard.key]}
+        >
+          {placardBody}
+        </TugPlacard>
+      )}
       <TugStatusCell
         priority="state"
         label="STATE"
-        popover={statePopover}
+        onActivate={() => togglePlacard("state")}
         focusGroup={focusGroup}
         focusOrder={cellOrder(0)}
         focusPolicy={focusPolicy}
@@ -901,7 +1010,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
       <TugStatusCell
         priority="time"
         label="TIME"
-        popover={timePopover}
+        onActivate={() => togglePlacard("time")}
         focusGroup={focusGroup}
         focusOrder={cellOrder(1)}
         focusPolicy={focusPolicy}
@@ -917,7 +1026,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
       <TugStatusCell
         priority="tokens"
         label="TOKENS"
-        popover={tokensPopover}
+        onActivate={() => togglePlacard("tokens")}
         focusGroup={focusGroup}
         focusOrder={cellOrder(2)}
         focusPolicy={focusPolicy}
@@ -929,8 +1038,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
       <TugStatusCell
         priority="context"
         label="CONTEXT"
-        popover={contextPopover}
-        popoverRef={contextPopoverRef}
+        onActivate={() => togglePlacard("context")}
         focusGroup={focusGroup}
         focusOrder={cellOrder(3)}
         focusPolicy={focusPolicy}
@@ -950,8 +1058,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
       <TugStatusCell
         priority="work"
         label="WORK"
-        popover={workPopover}
-        popoverRef={workPopoverRef}
+        onActivate={() => togglePlacard("work")}
         valueEmpty={!hasWork}
         focusGroup={focusGroup}
         focusOrder={cellOrder(4)}
@@ -978,7 +1085,11 @@ export const DevTelemetryStatusRow = React.forwardRef<
       <TugStatusCell
         priority="btw"
         label="BTW"
-        onActivate={onOpenSideQuestions}
+        onActivate={
+          sideQuestionStore !== undefined
+            ? () => togglePlacard("btw")
+            : undefined
+        }
         valueEmpty={btwCount === 0}
         focusGroup={focusGroup}
         focusOrder={cellOrder(5)}

@@ -1,23 +1,26 @@
 /**
- * at0211-btw-side-question-overlay.test.ts — `/btw` opens the pinned
- * side-question panel and the exchange leaves the transcript untouched
- * ([P02]/[P05], roadmap/add-btw.md).
+ * at0211-btw-side-question-overlay.test.ts — `/btw` opens the side-question
+ * placard and the exchange leaves the transcript untouched ([P02]/[P05],
+ * roadmap/add-btw.md).
  *
  * A side question is answered from the live conversation with no tools and
- * MUST NOT enter the transcript. Tug renders it in a pinned `TugPinnedPanel`
- * (rendered in-DOM just above the Z2 status row), fed by a dedicated
- * `SideQuestionStore` whose `side_question_answer` frame is deliberately absent
- * from `KNOWN_CODE_OUTPUT_TYPES` — so the code-session (transcript) store drops
- * it.
+ * MUST NOT enter the transcript. Tug renders it as the `/btw` body inside the
+ * shared Z2 `TugPlacard` (in-DOM, just above the status row), fed by a
+ * dedicated `SideQuestionStore` whose `side_question_answer` frame is
+ * deliberately absent from `KNOWN_CODE_OUTPUT_TYPES` — so the code-session
+ * (transcript) store drops it.
  *
  * This standard-tier test drives one committed turn (so the transcript has
  * entries to count), types `/btw <question>` and submits, and asserts:
- *   1. the panel opens (a side-question row appears), and
+ *   1. the placard opens (a side-question row appears), above Z2 and within the
+ *      card;
  *   2. the transcript entry count is UNCHANGED across the whole `/btw`
  *      exchange — the ask, and the settled answer (injected as a
- *      `side_question_answer` frame, the shape the #step-1 probe pinned), and
- *   3. the panel is PINNED — a click away does not dismiss it; only the
- *      panel's `×` closes it.
+ *      `side_question_answer` frame);
+ *   3. the placard AUTO-DISMISSES — a click away closes it (there is no `×`);
+ *      it reopens on a BTW-cell click; and
+ *   4. it is ONE-AT-A-TIME — opening a log cell (TIME) while `/btw` is open
+ *      swaps the placard rather than stacking a second one.
  *
  * The mid-turn + reload-clean behaviors are covered against real claude in
  * the Step 6/7 tiers; here the answer is injected so the surface + the
@@ -40,6 +43,12 @@ const PROMPT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const TRANSCRIPT_ENTRIES = '[data-card-id="A"] [data-slot="tug-transcript-entry"]';
 const SIDE_Q_ASK = '.side-question-question';
 const SIDE_Q_ANSWER = '.side-question-answer';
+// The `/btw` body inside the shared Z2 placard — its presence means the btw
+// placard is open.
+const SIDE_Q_BODY = '[data-card-id="A"] [data-slot="side-question-body"]';
+const BTW_CELL = '[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"]';
+const TIME_CELL = '[data-card-id="A"] .dev-telemetry-status-cell[data-priority="time"]';
+const POPUP_LIST = '[data-card-id="A"] [data-slot="tug-popup-list"]';
 
 let dir = "";
 
@@ -152,37 +161,39 @@ describe.skipIf(!SHOULD_RUN)(
           const afterAsk = await countEntries();
           expect(afterAsk).toBe(baseline);
 
-          // Positioning contract ([P02]): the pane floats ABOVE the Z2 status
-          // row (never overlapping it), right-aligned to the card. Measured
-          // against the live layout so a regression (e.g. an in-flow anchor
-          // that displaces the status cells, or a left-aligned pane) fails
-          // here rather than only in the eye.
-          // The Z2 status bar spans the card's content width, so it is the
-          // reliable reference for both "above Z2" and "right-aligned".
+          // Positioning ([P02]/[P06]): the placard floats ABOVE the Z2 status
+          // row (never overlapping it) and stays WITHIN the card's horizontal
+          // bounds (anchored under the BTW cell, clamped inside the card).
+          // Measured against the live layout so a regression (an in-flow anchor
+          // that displaces the status cells, or a placard escaping the card)
+          // fails here rather than only in the eye. The Z2 status bar spans the
+          // card's content width, so it is the reliable reference.
           const geom = await app.evalJS<{
-            paneBottom: number;
+            paneLeft: number;
             paneRight: number;
+            paneBottom: number;
             z2Top: number;
+            z2Left: number;
             z2Right: number;
             z2Width: number;
           } | null>(
             `(() => {
-               const pane = document.querySelector('.side-question-pane');
+               const pane = document.querySelector('.tug-placard');
                const z2 = document.querySelector('[data-card-id="A"] [data-slot="dev-card-status-bar"]');
                if (!pane || !z2) return null;
                const p = pane.getBoundingClientRect();
                const s = z2.getBoundingClientRect();
-               return { paneBottom: p.bottom, paneRight: p.right, z2Top: s.top, z2Right: s.right, z2Width: s.width };
+               return { paneLeft: p.left, paneRight: p.right, paneBottom: p.bottom, z2Top: s.top, z2Left: s.left, z2Right: s.right, z2Width: s.width };
              })()`,
           );
           expect(geom).not.toBeNull();
           // Bottom sits above Z2 (no overlap; a small fudge for sub-pixel).
           expect(geom!.paneBottom).toBeLessThanOrEqual(geom!.z2Top + 1);
-          // Right-aligned: the pane's right edge tracks Z2's right edge (within
-          // a small gutter), and never overhangs it.
-          expect(Math.abs(geom!.z2Right - geom!.paneRight)).toBeLessThan(24);
+          // Within the card horizontally (never escaping left or right).
+          expect(geom!.paneLeft).toBeGreaterThanOrEqual(geom!.z2Left - 1);
+          expect(geom!.paneRight).toBeLessThanOrEqual(geom!.z2Right + 1);
           // Z2 is intact — the status row spans a real card width, proving the
-          // anchor did not collapse or displace the status cells.
+          // placard did not collapse or displace the status cells.
           expect(geom!.z2Width).toBeGreaterThan(600);
 
           // Settle the answer (the shape the probe pinned) through the real
@@ -207,87 +218,42 @@ describe.skipIf(!SHOULD_RUN)(
           const afterAnswer = await countEntries();
           expect(afterAnswer).toBe(baseline);
 
-          // Horizontal drag + persistence across a remount ([L02]). The panel
-          // is draggable horizontally only; the committed offset persists
-          // through tugbank, so closing and reopening it restores the dragged
-          // position rather than resetting to the right-aligned default.
-          const paneLeft = () =>
-            app.evalJS<number>(
-              `(() => { const el = document.querySelector('.side-question-pane'); return el ? el.getBoundingClientRect().left : NaN; })()`,
-            );
-          const headerCenter = await app.evalJS<{ x: number; y: number } | null>(
-            `(() => {
-               const el = document.querySelector('.side-question-pane .tug-pinned-panel-header');
-               if (!el) return null;
-               const r = el.getBoundingClientRect();
-               return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-             })()`,
-          );
-          expect(headerCenter).not.toBeNull();
-
-          const leftBeforeDrag = await paneLeft();
-          // Drag the header ~200px left; y held constant (horizontal-only).
-          await app.nativeDrag(
-            { x: headerCenter!.x, y: headerCenter!.y },
-            { x: headerCenter!.x - 200, y: headerCenter!.y },
-          );
-          await new Promise((r) => setTimeout(r, 300));
-          const leftAfterDrag = await paneLeft();
-          // Moved meaningfully left (allow slack for the interpolated trail).
-          expect(leftAfterDrag).toBeLessThan(leftBeforeDrag - 100);
-
-          // Close (unmount) and reopen via the `/btw` route → fresh mount.
-          await app.nativeClickAtElement(".side-question-pane [data-pinned-panel-close]");
-          await app.waitForCondition<boolean>(
-            `document.querySelector('.side-question-pane') === null`,
-            { timeoutMs: 4000 },
-          );
+          // Auto-dismiss ([P05]/[Q01]): clicking away (into the editor) closes
+          // the placard — there is no `×` on an auto-dismiss placard, and it no
+          // longer survives losing focus the way the retired pinned pane did.
           await app.nativeClickAtElement(PROMPT);
-          await app.nativeType("/btw check persist");
-          await new Promise((r) => setTimeout(r, 200));
-          await app.nativeKey("Escape");
-          await new Promise((r) => setTimeout(r, 200));
-          await app.nativeKey("Enter", ["cmd"]);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.side-question-pane') !== null`,
-            { timeoutMs: 6000 },
-          );
-          await new Promise((r) => setTimeout(r, 300));
-          const leftAfterReopen = await paneLeft();
-          // The reopened panel restored the dragged position (read back through
-          // tugbank), NOT the right-aligned default.
-          expect(Math.abs(leftAfterReopen - leftAfterDrag)).toBeLessThan(24);
-          expect(leftAfterReopen).toBeLessThan(leftBeforeDrag - 100);
-
-          // Pinned semantics ([P02]): a click away must NOT dismiss the panel
-          // (this is the whole point of the pinned surface — it survives losing
-          // focus, unlike the popover it replaced). Click into the prompt and
-          // confirm the panel is still mounted.
-          await app.nativeClickAtElement(PROMPT);
-          await new Promise((r) => setTimeout(r, 250));
-          const stillOpenAfterClickAway = await app.evalJS<boolean>(
-            `document.querySelector('.side-question-pane') !== null`,
-          );
-          expect(stillOpenAfterClickAway).toBe(true);
-
-          // Only the panel's `×` closes it.
-          await app.nativeClickAtElement(".side-question-pane [data-pinned-panel-close]");
-          await app.waitForCondition<boolean>(
-            `document.querySelector('.side-question-pane') === null`,
+            `document.querySelector(${JSON.stringify(SIDE_Q_BODY)}) === null`,
             { timeoutMs: 4000 },
           );
 
-          // The BTW cell now shows the exchange count (the first ask + the
-          // `check persist` ask = 2) and, like the other Z2 cells, reopens its
-          // surface — here the pinned panel — on click.
-          expect(await btwCellValue()).toBe("2");
-          await app.nativeClickAtElement(
-            `[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"]`,
-          );
+          // The exchange survives the dismiss (the store is untouched), so the
+          // BTW cell still shows the count, and a click on the cell reopens the
+          // placard onto that same history — exactly like the other Z2 cells.
+          expect(await btwCellValue()).toBe("1");
+          await app.nativeClickAtElement(BTW_CELL);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.side-question-pane') !== null`,
+            `document.querySelector(${JSON.stringify(SIDE_Q_BODY)}) !== null`,
             { timeoutMs: 4000 },
           );
+
+          // One-at-a-time ([P05]): opening the TIME cell while `/btw` is open
+          // SWAPS the placard — the `/btw` body is gone, the TIME log popup is
+          // shown, and exactly one placard is mounted (never stacked).
+          await app.nativeClickAtElement(TIME_CELL);
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(POPUP_LIST)}) !== null`,
+            { timeoutMs: 4000 },
+          );
+          const swap = await app.evalJS<string>(
+            `JSON.stringify({
+               btwGone: document.querySelector(${JSON.stringify(SIDE_Q_BODY)}) === null,
+               placards: document.querySelectorAll('[data-card-id="A"] .tug-placard').length,
+             })`,
+          );
+          const swapped = JSON.parse(swap);
+          expect(swapped.btwGone).toBe(true);
+          expect(swapped.placards).toBe(1);
         } finally {
           await app.close();
         }

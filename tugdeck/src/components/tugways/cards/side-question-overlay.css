@@ -1,40 +1,20 @@
 /**
- * side-question-overlay.css — the `/btw` mini-pane appearance ([L06]).
+ * side-question-overlay.css — the `/btw` placard body appearance ([L06]).
  *
- * The pane is a {@link TugPinnedPanel}: the panel owns the surface (titlebar
- * header, `×`, bottom pointer, horizontal drag); this file only supplies the
- * `/btw` header glyph/title, the mini-transcript body/footer, and the pane's
- * placement — pinned just above the Z2 status row, right-aligned by default,
- * its width fixed. The panel renders in-DOM inside the (position:relative) Z2
- * status row, so `bottom: 100%` sits it right on top of the strip.
+ * The `/btw` surface is a body inside the shared Z2 {@link TugPlacard}: the
+ * placard owns the header, open/close, placement, and under-cell anchoring;
+ * this file only supplies the mini-transcript body/footer. The body sets the
+ * placard's width (unlike the log placards, which the composed `TugPopupList`
+ * sizes) since the side-question content has no intrinsic minimum.
  */
 
-/* Placement + width. The panel's containing block is the Z2 status row, so
-   `bottom: calc(100% + gap)` floats it just above the strip; width is fixed
-   but caps to the strip's width in a narrow pane. */
-.tug-pinned-panel.side-question-pane {
-  bottom: calc(100% + var(--tug-space-sm));
-  width: 420px;
-  max-width: min(420px, calc(100% - 16px));
-}
-
-.side-question-header-icon {
-  color: var(--tug7-element-tone-icon-normal-active-rest);
-  flex: 0 0 auto;
-}
-
-.side-question-header-title {
-  font-family: var(--tug-font-family-mono);
-  font-size: 0.78rem;
-  font-weight: var(--tug-font-weight-semibold);
-  letter-spacing: 0.02em;
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* Body — the stacked mini-transcript. Caps its height and scrolls the rest. */
+/* Body — the stacked mini-transcript. Sets the placard's width, caps its
+   height, and scrolls the rest. */
 .side-question-body {
   display: flex;
   flex-direction: column;
+  width: 400px;
+  max-width: 70vw;
   max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;

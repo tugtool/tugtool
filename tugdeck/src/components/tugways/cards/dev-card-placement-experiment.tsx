@@ -224,10 +224,10 @@ export interface UseDevPlacementSlotsInput {
   statusRowFocusOrderBase?: number;
   /**
    * Forwarded to {@link DevTelemetryStatusRow} when it occupies Z2 — feeds
-   * the BTW cell's `/btw` count and its activation (opening the pinned panel).
+   * the BTW cell's `/btw` count and its activation (toggling the shared
+   * placard open on the `/btw` body).
    */
   sideQuestionStore?: SideQuestionStore;
-  onOpenSideQuestions?: () => void;
 }
 
 /**
@@ -260,7 +260,6 @@ export function useDevPlacementSlots(
     statusRowFocusGroup,
     statusRowFocusOrderBase,
     sideQuestionStore,
-    onOpenSideQuestions,
   } = input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
@@ -305,7 +304,6 @@ export function useDevPlacementSlots(
               focusGroup={statusRowFocusGroup}
               focusOrderBase={statusRowFocusOrderBase}
               sideQuestionStore={sideQuestionStore}
-              onOpenSideQuestions={onOpenSideQuestions}
             />
           );
       }
@@ -318,7 +316,6 @@ export function useDevPlacementSlots(
       statusRowFocusGroup,
       statusRowFocusOrderBase,
       sideQuestionStore,
-      onOpenSideQuestions,
     ],
   );
 

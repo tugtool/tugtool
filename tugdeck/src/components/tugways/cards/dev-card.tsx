@@ -55,10 +55,6 @@ import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
-import {
-  SideQuestionOverlay,
-  type SideQuestionOverlayHandle,
-} from "./side-question-overlay";
 import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
@@ -2817,9 +2813,6 @@ export function DevCardBody({
   // command just opens the same surface (no separate sheet). Null while
   // the row isn't the current Z2 datum, in which case the call no-ops.
   const statusRowRef = useRef<DevTelemetryStatusRowHandle>(null);
-  // Handle on the `/btw` side-question overlay so the slash command can open
-  // it non-modally, mid-turn ([P02]).
-  const sideQuestionOverlayRef = useRef<SideQuestionOverlayHandle>(null);
   // Pane-scoped bulletin API, captured from inside the provider by
   // `PaneBulletinAnchor` (rendered below) so `/copy` can raise its
   // confirmation toast in this card.
@@ -2898,12 +2891,12 @@ export function DevCardBody({
     rewind: () => rewindSheet.openRewindSheet(),
     resume: () => resumeSheet.openResumeSheet(),
     diff: () => diffSheet.openDiffSheet(),
-    context: () => statusRowRef.current?.openContextPopover(),
+    context: () => statusRowRef.current?.openContext(),
     // `/tasks` (upstream: running shells + subagents) opens the WORK
-    // popover — the unified surface those rows live in here. `/bashes`
+    // placard — the unified surface those rows live in here. `/bashes`
     // is upstream's alias; both were hidden before the WORK cell landed.
-    tasks: () => statusRowRef.current?.openWorkPopover(),
-    bashes: () => statusRowRef.current?.openWorkPopover(),
+    tasks: () => statusRowRef.current?.openWork(),
+    bashes: () => statusRowRef.current?.openWork(),
     skills: () => skillsSheet.openSkillsSheet(),
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),
@@ -2911,11 +2904,11 @@ export function DevCardBody({
     // `/btw` (arg) — ask a side question and open the non-modal overlay. The
     // trailing text is the question (`takesArgs`). Un-gated and pre-`canSubmit`
     // like every local command, so it works idle AND mid-turn with no
-    // `performSubmit` change ([P04]). A bare `/btw` just opens the overlay
+    // `performSubmit` change ([P04]). A bare `/btw` just opens the placard
     // (history / earlier asks) without asking.
     btw: (arg) => {
       if (arg.trim().length > 0) sideQuestionStore.ask(arg);
-      sideQuestionOverlayRef.current?.open();
+      statusRowRef.current?.openSideQuestions();
     },
     // Copy the most recent assistant message (committed transcript only, read
     // live at click time per [L07]) to the clipboard, with a pane-scoped
@@ -3383,9 +3376,8 @@ export function DevCardBody({
     // card's mode id.
     statusRowFocusGroup: DEV_CYCLE_GROUP,
     statusRowFocusOrderBase: DEV_CYCLE_ORDER_STATUS_BASE,
-    // BTW cell: its count + activation (opening the pinned `/btw` panel).
+    // BTW cell: its count + activation (toggling the shared `/btw` placard).
     sideQuestionStore,
-    onOpenSideQuestions: () => sideQuestionOverlayRef.current?.open(),
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =
@@ -3516,27 +3508,10 @@ export function DevCardBody({
                 empty slot leaves the wrapper `:empty`, which collapses the
                 whole strip (CSS).
 
-                Per [D100] the row's TASKS cell carries the assembled
-                task-list state plus a popover with the full list, so
-                no separate pinned strip is needed.
+                The `/btw` surface is one of the Z2 status row's placards now
+                (BTW cell), so there is no separate pinned strip — the row owns
+                the placard, its open/close, and its under-cell anchoring.
               */}
-              {/* Pinned `/btw` mini-pane ([P02]). A TugPinnedPanel rendered
-                  in-DOM inside this (position:relative) Z2 status row, so it is
-                  card-scoped and floats just above Z2, over the transcript's
-                  tail — without inerting it (a streaming turn stays visible) and
-                  without displacing the Z2 status cells (it is absolutely
-                  positioned). It stays open until the user closes it with the
-                  panel's `×`, and the user can drag it horizontally (persisted
-                  per card). Gated on Z2 having content (a `/btw` only exists on
-                  a bound session) so an empty status bar still collapses via
-                  `:empty`. */}
-              {effectiveStatusBarContent != null && (
-                <SideQuestionOverlay
-                  ref={sideQuestionOverlayRef}
-                  store={sideQuestionStore}
-                  persistKey={`btw:${cardId}`}
-                />
-              )}
               {effectiveStatusBarContent != null && (
                 <div
                   className="dev-card-status-bar-main"

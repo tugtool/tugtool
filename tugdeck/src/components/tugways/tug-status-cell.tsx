@@ -2,13 +2,14 @@
  * TugStatusCell — one cell of the dev card's Z2 telemetry status row.
  *
  * An instrument-readout cell: an IBM-1620-style endcap-rule legend
- * (`label`) above a centered value (`children`). Activation opens the
- * cell's detail surface: usually an internal {@link TugPopover} body
- * (`popover`), or — when `popover` is omitted — an external surface via
- * `onActivate` (the BTW cell pops the pinned `/btw` panel this way). The
- * cell is **button-rooted** — the activatable element is a real
- * `<button>`, not a `<span>` — so keyboard activation and the focus
- * ring come for free when the row is later authored into a focus cycle.
+ * (`label`) above a centered value (`children`). Activation fires
+ * `onActivate`, which the Z2 status row uses to toggle the shared
+ * `TugPlacard` open on this cell's detail surface. The cell is
+ * **button-rooted** — the activatable element is a real `<button>`, not a
+ * `<span>` — so keyboard activation and the focus ring come for free when
+ * the row is later authored into a focus cycle. It carries
+ * `data-placard-trigger` so the placard's auto-dismiss watcher treats a
+ * click on it as a toggle, not an outside dismissal.
  *
  * The button is `tabIndex={-1}` and focus-refusing
  * (`data-tug-focus="refuse"`): the cell is not a *native* Tab stop and
@@ -17,8 +18,9 @@
  * a **leaf** cycle stop ([P10] revised): the engine drives DOM focus to
  * the cell button during the cycle walk (a `<button>` is programmatically
  * focusable even at `tabIndex={-1}`) and the cell wears the leaf focus
- * ring; Space/Enter open its popover natively. Absent a group, the cell
- * is reached only by pointer, exactly as the old `<span>` trigger was.
+ * ring; Space/Enter fire `onActivate` on the native `<button>`. Absent a
+ * group, the cell is reached only by pointer, exactly as the old `<span>`
+ * trigger was.
  *
  * Faithful to the bespoke markup it replaces — the root keeps the
  * `dev-telemetry-status-cell` / `dev-telemetry-status-anchor` classes
@@ -40,12 +42,6 @@ import "./tug-status-cell.css";
 
 import React from "react";
 
-import {
-  TugPopover,
-  TugPopoverContent,
-  TugPopoverTrigger,
-  type TugPopoverHandle,
-} from "./tug-popover";
 import { useFocusable } from "./use-focusable";
 import type { FocusPolicy } from "./focus-manager";
 
@@ -99,24 +95,11 @@ export interface TugStatusCellProps {
    */
   ticksDirection?: "down" | "up";
   /**
-   * Detail surface shown in a {@link TugPopover} when the cell is activated
-   * (the popover body). Omit it and supply {@link onActivate} instead for a
-   * cell whose activation opens some *other* surface — the BTW cell pops the
-   * pinned `/btw` panel rather than an internal popover.
-   */
-  popover?: React.ReactNode;
-  /**
-   * Activation handler for a cell with no internal popover. Mutually
-   * exclusive with {@link popover}: when `popover` is omitted, the cell is a
-   * plain button that fires this on click / Space / Enter.
+   * Activation handler — fired on click / Space / Enter. The Z2 status row
+   * uses it to toggle the shared {@link TugPlacard} open on this cell's
+   * detail surface.
    */
   onActivate?: () => void;
-  /**
-   * Imperative handle on the cell's popover, forwarded to the underlying
-   * {@link TugPopover}. Lets a parent open the cell programmatically — the
-   * CONTEXT cell threads the `/context` slash command through this.
-   */
-  popoverRef?: React.Ref<TugPopoverHandle>;
   /**
    * Marks the value as empty (`data-empty="true"` on the value wrap) so
    * the cell can read as a quiet placeholder. The TASKS cell uses this
@@ -143,16 +126,15 @@ export interface TugStatusCellProps {
 }
 
 /**
- * One Z2 status-row cell — a popover-triggering instrument readout. See
- * the module docstring for the focus / faithfulness contract.
+ * One Z2 status-row cell — an instrument readout that toggles the shared
+ * placard on activation. See the module docstring for the focus /
+ * faithfulness contract.
  */
 export function TugStatusCell({
   priority,
   label,
   ticksDirection = "down",
-  popover,
   onActivate,
-  popoverRef,
   valueEmpty,
   "aria-label": ariaLabel,
   title,
@@ -163,11 +145,10 @@ export function TugStatusCell({
 }: TugStatusCellProps): React.ReactElement {
   // Leaf cycle-stop registration ([P10] revised). The registration is
   // keyed by `id` independent of the DOM ref, so we stamp
-  // `data-tug-focusable` straight onto the button below rather than
-  // routing a ref through `TugPopoverTrigger` (whose `asChild` clone
-  // would replace it). The engine resolves the cell by that attribute,
-  // moves DOM focus to the `<button>` during the cycle walk, and paints
-  // the leaf ring via the global `[data-key-view-kbd]` rule.
+  // `data-tug-focusable` straight onto the button below. The engine
+  // resolves the cell by that attribute, moves DOM focus to the
+  // `<button>` during the cycle walk, and paints the leaf ring via the
+  // global `[data-key-view-kbd]` rule.
   const cellFocusableId = React.useId();
   const registered = focusGroup !== undefined;
   useFocusable({
@@ -177,12 +158,16 @@ export function TugStatusCell({
     policy: focusPolicy,
     register: registered,
   });
-  const cellButton = (
+  return (
     <button
       type="button"
       data-slot="tug-status-cell"
       className="dev-telemetry-status-cell dev-telemetry-status-anchor"
       data-priority={priority}
+      // Marks the cell as placard trigger chrome: the shared placard's
+      // auto-dismiss watcher excludes `[data-placard-trigger]`, so a click
+      // here toggles the placard instead of being read as an outside dismiss.
+      data-placard-trigger=""
       // Not a *native* Tab stop and never steals the responder chain
       // on click; the engine drives DOM focus here during the cycle
       // walk (a `<button>` is programmatically focusable at -1). [L06]
@@ -195,9 +180,7 @@ export function TugStatusCell({
       // surface opens. The opened surface itself owns focus while open.
       data-no-activate=""
       data-tug-focusable={registered ? cellFocusableId : undefined}
-      // Popover-mode cells get their onClick from TugPopoverTrigger's `asChild`
-      // clone; onActivate-mode cells own it directly.
-      onClick={popover === undefined ? onActivate : undefined}
+      onClick={onActivate}
       aria-label={ariaLabel}
       title={title}
     >
@@ -209,17 +192,5 @@ export function TugStatusCell({
         {children}
       </span>
     </button>
-  );
-
-  // No internal popover — the cell activates some other surface via onActivate.
-  if (popover === undefined) return cellButton;
-
-  return (
-    <TugPopover ref={popoverRef}>
-      <TugPopoverTrigger>{cellButton}</TugPopoverTrigger>
-      <TugPopoverContent side="top" align="center" sideOffset={8} arrow spaceDismisses>
-        {popover}
-      </TugPopoverContent>
-    </TugPopover>
   );
 }

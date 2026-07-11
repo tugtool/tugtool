@@ -118,6 +118,16 @@
   pointer-events: none;
 }
 
+/* The Z2 detail placard floats just above the status row, over the
+   transcript's tail. Its offsetParent is the (position:relative)
+   `.dev-card-status-bar`, so `bottom: 100%` sits it right on top of the
+   strip; `left` is written imperatively by TugPlacard from the trigger
+   cell's offset. Width follows the composed TugPopupList's own per-kind
+   caps (the placard is a shrink-to-fit absolute box). */
+.tug-placard.dev-telemetry-status-placard {
+  bottom: calc(100% + var(--tug-space-sm));
+}
+
 .dev-telemetry-status-row {
   /* Flat 5-cell flex row: STATE + TIME + TOKENS + CONTEXT + TASKS as
      direct siblings. `justify-content: center` packs the five cells as

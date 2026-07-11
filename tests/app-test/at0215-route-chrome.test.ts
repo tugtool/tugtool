@@ -248,10 +248,11 @@ describe.skipIf(!SHOULD_RUN)(
 
           // --- Flip to btw (⇧⌘B keybinding). ---
           await keybindToBtw(app);
-          // The `/btw` panel opens the MOMENT the route flips to `?` ([P02]) —
-          // before any submission.
+          // The `/btw` placard opens the MOMENT the route flips to `?` ([P02])
+          // — before any submission (the route flip dispatches a bare `/btw`,
+          // which toggles the shared Z2 placard open on the side-question body).
           await app.waitForCondition<boolean>(
-            `document.querySelector('.side-question-pane') !== null`,
+            `document.querySelector('[data-slot="side-question-body"]') !== null`,
             { timeoutMs: 4000 },
           );
           expect(

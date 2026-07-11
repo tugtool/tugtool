@@ -1,19 +1,15 @@
 /**
- * side-question-overlay.tsx — the non-modal `/btw` side-question surface
- * ([P02]).
+ * side-question-overlay.tsx — the `/btw` side-question surface body ([P02]).
  *
  * `/btw <question>` asks Claude a quick side question, answered from the live
  * conversation with no tools and never entering the transcript. The answer
- * renders here in a **pinned** {@link TugPinnedPanel} — a small "/btw" mini-pane
- * that floats over the bottom of the transcript, right-aligned to the card and
- * sitting just above the Z2 status row (the least obtrusive spot, so a
- * streaming turn stays visible while a side answer loads — mid-turn is the
- * point, [Q01]b). Unlike the popover it replaced, it stays put until the user
- * closes it with the panel's `×` — clicking away or switching panes no longer
- * dismisses it. The user can drag it horizontally to a comfortable reading
- * spot; that position persists across reloads per card ([L02]).
+ * renders in the shared Z2 {@link TugPlacard} (opened on the BTW cell) — this
+ * module contributes only the placard's **body**: the exchange list + footer.
+ * The placard chrome (header, open/close, under-cell anchoring, auto-dismiss)
+ * is owned by the Z2 status row like every other Z2 surface, so `/btw` is no
+ * longer special — one open at a time, dismissed by clicking away.
  *
- * The pane reads the ephemeral {@link SideQuestionStore} via
+ * The body reads the ephemeral {@link SideQuestionStore} via
  * `useSyncExternalStore` ([L02]) and renders each exchange as a mini
  * transcript pair — a `You` row (the question) over a `Bot` row (the answer,
  * as markdown via {@link TugMarkdownBlock}, or the three-bar thinking
@@ -23,22 +19,14 @@
  * never React state ([L06]).
  *
  * Nothing is dispatched to the code-session store, so the exchange never
- * becomes a transcript row and survives a reload with no trace ([P05]). The
- * dev card opens it imperatively (`ref.open()`) from `slashCommandSurfaces` —
- * the [D107] pattern `/tasks` uses for the WORK popover.
+ * becomes a transcript row and survives a reload with no trace ([P05]).
  *
  * @module components/tugways/cards/side-question-overlay
  */
 
-import React, {
-  forwardRef,
-  useImperativeHandle,
-  useState,
-  useSyncExternalStore,
-} from "react";
-import { Bot, MessageSquareDashed, User, X } from "lucide-react";
+import React, { useSyncExternalStore } from "react";
+import { Bot, User, X } from "lucide-react";
 
-import { TugPinnedPanel } from "@/components/tugways/tug-pinned-panel";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -47,19 +35,8 @@ import type { SideQuestionStore, SideQuestionExchange } from "@/lib/side-questio
 
 import "./side-question-overlay.css";
 
-/** Imperative handle: the dev card opens the pane from the `/btw` surface. */
-export interface SideQuestionOverlayHandle {
-  open(): void;
-}
-
-export interface SideQuestionOverlayProps {
+export interface SideQuestionBodyProps {
   store: SideQuestionStore;
-  /**
-   * Tugbank key under which the pane's horizontal drag position persists
-   * across reloads (per card, e.g. `btw:<cardId>`). Omit for an ephemeral
-   * position that resets each time the pane opens.
-   */
-  persistKey?: string;
 }
 
 /** Plain-text answer for a settled/loading/errored exchange (footer copy). */
@@ -163,43 +140,18 @@ function SideQuestionExchangeRow({
 }
 
 /**
- * The `/btw` mini-pane. A {@link TugPinnedPanel} shown on demand: the dev card
- * opens it via the imperative handle the instant the `/btw` route is chosen,
- * and it stays put until the user closes it with the panel's `×`. Rendered
- * in-DOM inside the (position:relative) Z2 status row, so it is card-scoped and
- * grows upward over the transcript's tail; the caller CSS pins it just above Z2
- * and fixes its width, while the panel owns the horizontal drag.
+ * The `/btw` placard body — the exchange list + footer, rendered inside the
+ * shared Z2 {@link TugPlacard} by the status row when the BTW cell is open.
+ * Reads the ephemeral {@link SideQuestionStore} via `useSyncExternalStore`
+ * ([L02]); the placard chrome (open/close, anchoring, dismiss) lives in the
+ * host, not here.
  */
-export const SideQuestionOverlay = forwardRef<
-  SideQuestionOverlayHandle,
-  SideQuestionOverlayProps
->(function SideQuestionOverlay({ store, persistKey }, ref) {
-  const [open, setOpen] = useState(false);
-  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
-
+export function SideQuestionBody({ store }: SideQuestionBodyProps): React.ReactElement {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const { exchanges } = snapshot;
 
   return (
-    <TugPinnedPanel
-      open={open}
-      onClose={() => setOpen(false)}
-      persistKey={persistKey}
-      className="side-question-pane"
-      aria-label="Side questions"
-      closeLabel="Close side questions"
-      header={
-        <>
-          <MessageSquareDashed
-            className="side-question-header-icon"
-            size={14}
-            strokeWidth={2}
-            aria-hidden
-          />
-          <span className="side-question-header-title">/btw</span>
-        </>
-      }
-    >
+    <>
       <div className="side-question-body" data-slot="side-question-body">
         {exchanges.length === 0 ? (
           <div className="side-question-empty">No side questions</div>
@@ -235,6 +187,6 @@ export const SideQuestionOverlay = forwardRef<
           </TugPushButton>
         </div>
       ) : null}
-    </TugPinnedPanel>
+    </>
   );
-});
+}

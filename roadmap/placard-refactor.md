@@ -408,12 +408,12 @@ Behavior: no-op unless `open && dismiss === "auto"`. Registers a capture-phase `
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rename TugPinnedPanel → TugPlacard (behavior-identical) | pending | — |
-| #step-2 | Header redesign + dismiss/reposition axes + auto-dismiss hook | pending | — |
-| #step-3 | Make TugPopupListFrame title optional | pending | — |
-| #step-4 | Migrate the five log cells to the single placard host | pending | — |
-| #step-5 | Fold BTW into the host; refold SideQuestionOverlay | pending | — |
-| #step-6 | Rewrite at0211; integration verify | pending | — |
+| #step-1 | Rename TugPinnedPanel → TugPlacard (behavior-identical) | done | tugdeck(placard): rename TugPinnedPanel → TugPlacard |
+| #step-2 | Header redesign + dismiss/reposition axes + auto-dismiss hook | done | tugdeck(placard): redesigned header + dismiss/reposition axes + auto-dismiss |
+| #step-3 | Make TugPopupListFrame title optional | done | tugdeck(popup-list): make frame title/icon optional |
+| #step-4 | Migrate the five log cells to the single placard host | done | tugdeck(dev-card): STATE/TIME/TOKENS/CONTEXT/WORK as one placard host |
+| #step-5 | Fold BTW into the host; refold SideQuestionOverlay | done | tugdeck(dev-card): BTW as an auto-dismiss placard in the shared host |
+| #step-6 | Rewrite at0211; integration verify | done | test(at0211): BTW placard is auto-dismiss, one-at-a-time, under-cell |
 
 #### Step 1: Rename TugPinnedPanel → TugPlacard (behavior-identical) {#step-1}
 

@@ -84,7 +84,7 @@
  *   Promise API adapters (`alert()`, `useTugSheet()`) can resolve
  *   from a single chain handler.
  *
- * - **Pinned** (`tug-pinned-panel`): non-blocking like a popover, but
+ * - **Pinned** (`tug-placard`): non-blocking like a popover, but
  *   stays open until the user explicitly closes it with the panel's
  *   `×` — no click-outside, no Escape, no card-deactivation dismissal.
  *   Because it does NOT block interaction, it does NOT participate in

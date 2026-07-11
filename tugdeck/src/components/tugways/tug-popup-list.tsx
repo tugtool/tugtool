@@ -49,16 +49,16 @@ export type TugPopupListKind = "log" | "state" | "item" | "wide";
 export interface TugPopupListFrameProps
   extends React.ComponentPropsWithoutRef<"div"> {
   /**
-   * Panel title — rendered in the titlebar header (left-aligned, medium
-   * weight), modeled on the pane title bar. Use the anchor's own label
-   * (e.g. the status cell's legend) so the popup and its trigger read as
-   * one instrument.
+   * Optional panel title — rendered in the titlebar header (left-aligned,
+   * medium weight), modeled on the pane title bar. Omit it entirely for a
+   * headerless frame: composed inside a {@link TugPlacard}, the placard's own
+   * centered header carries the title, so the frame contributes no title chrome.
    */
-  title: string;
+  title?: string;
   /**
    * Optional leading glyph for the titlebar header (a lucide icon
-   * element), mirroring the pane title bar's icon. Omitted, the title
-   * sits alone.
+   * element), mirroring the pane title bar's icon. Ignored when {@link title}
+   * is omitted (no header renders at all).
    */
   icon?: React.ReactNode;
   /**
@@ -77,10 +77,11 @@ export interface TugPopupListFrameProps
 }
 
 /**
- * Titled popup-list panel: title, rule, body, optional footer. The
+ * Popup-list panel: optional title header, body, optional footer. The
  * frame owns the popup's typography (mono, tabular numerals) and its
  * per-kind width caps; it renders no background — the popover surface
- * underneath owns that.
+ * underneath owns that. Omit `title` for a headerless frame (the
+ * composing {@link TugPlacard} supplies the header instead).
  */
 export const TugPopupListFrame = React.forwardRef<
   HTMLDivElement,
@@ -97,14 +98,16 @@ export const TugPopupListFrame = React.forwardRef<
       className={cn("tug-popup-list", className)}
       {...rest}
     >
-      <div className="tug-popup-list-title">
-        {icon !== undefined ? (
-          <span className="tug-popup-list-title-icon" aria-hidden>
-            {icon}
-          </span>
-        ) : null}
-        <span className="tug-popup-list-title-text">{title}</span>
-      </div>
+      {title !== undefined ? (
+        <div className="tug-popup-list-title">
+          {icon !== undefined ? (
+            <span className="tug-popup-list-title-icon" aria-hidden>
+              {icon}
+            </span>
+          ) : null}
+          <span className="tug-popup-list-title-text">{title}</span>
+        </div>
+      ) : null}
       {children}
       {footer !== undefined ? footer : null}
     </div>

@@ -9,7 +9,10 @@
  * structural claims:
  *
  *  - every popup mounts a `tug-popup-list` frame with its kind
- *    (`item` / `log` / `state`);
+ *    (`item` / `log` / `state`), inside the shared card-scoped
+ *    `TugPlacard` whose header carries the surface title;
+ *  - the placards are one-at-a-time — opening a second cell swaps the
+ *    open surface rather than stacking a second popup;
  *  - the WORK popup's stop button sits in the item row's structural action
  *    column — top-aligned to the row's first text line (≤ 2px), never
  *    centered across a two-line row — and carries the proportional
@@ -27,9 +30,9 @@
  * IN-FLIGHT turn's scratch; the task list only shows when the LATEST
  * turn carries Task* activity.
  *
- * Screenshots: `WKWebView.takeSnapshot` does not capture the
- * canvas-overlay layer the popovers portal into, so this test asserts
- * DOM geometry instead of pixels.
+ * The placards render in-DOM inside the card (not portaled), so they are
+ * addressed directly by `.tug-placard` / `[data-slot="tug-popup-list"]`
+ * and this test asserts DOM geometry.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -163,18 +166,22 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           `[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="${p}"]`;
         const POPUP = `[data-slot="tug-popup-list"]`;
 
+        // The placard renders in-DOM (no Radix portal); it settles its
+        // enter animation to opacity 1. Wait on the enclosing `.tug-placard`.
         const openPopup = async (priority: string): Promise<void> => {
           await app.click(cell(priority));
           await app.waitForCondition<boolean>(
             `(() => {
               const el = document.querySelector('${POPUP}');
               if (el === null) return false;
-              const s = window.getComputedStyle(el.closest('[data-radix-popper-content-wrapper]') || el);
+              const placard = el.closest('.tug-placard');
+              const s = window.getComputedStyle(placard || el);
               return Number(s.opacity) === 1;
             })()`,
             { timeoutMs: 5000 },
           );
         };
+        // Re-clicking the open cell toggles the placard closed ([P05]).
         const closePopup = async (priority: string): Promise<void> => {
           await app.click(cell(priority));
           await app.waitForCondition<boolean>(
@@ -193,9 +200,15 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           const stopRect = stop ? stop.getBoundingClientRect() : null;
           const lineRect = primary ? primary.getBoundingClientRect() : null;
           const footer = popup.querySelector('[data-slot="tug-popup-list-footer"]');
+          const placardTitle = (() => {
+            const pl = popup.closest('.tug-placard');
+            const t = pl ? pl.querySelector('.tug-placard-title') : null;
+            return t ? t.textContent : null;
+          })();
           return {
             kind: popup.getAttribute('data-kind'),
-            title: (popup.querySelector('.tug-popup-list-title')||{}).textContent,
+            title: placardTitle,
+            hasFrameTitle: popup.querySelector('.tug-popup-list-title') !== null,
             rows: popup.querySelectorAll('.tug-popup-list-item').length,
             stopRounded: stop ? stop.getAttribute('data-rounded') : null,
             stopTopDelta: stopRect && lineRect ? (stopRect.top - lineRect.top) : null,
@@ -219,6 +232,10 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         })())`);
         const jobs = JSON.parse(jobsProbe);
         expect(jobs.kind).toBe("item");
+        // The title now lives in the placard header; the composed frame is
+        // headerless ([P07]).
+        expect(jobs.title).toBe("Work");
+        expect(jobs.hasFrameTitle).toBe(false);
         expect(jobs.rows).toBe(JOB_COUNT + 2); // 28 job rows + 2 checklist tasks
         // Scroll strategy: a long ledger scrolls inside its capped
         // scroller instead of growing the popup — and the popup stays
@@ -290,6 +307,21 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         );
         expect(tokensKind).toBe("log");
         await closePopup("tokens");
+
+        // ---- One at a time: opening a second cell swaps, never stacks ----
+        await openPopup("time");
+        await openPopup("state"); // no close between — should swap in place
+        const swap = await app.evalJS<string>(`JSON.stringify((() => {
+          const popups = document.querySelectorAll('${POPUP}');
+          return {
+            count: popups.length,
+            kind: popups.length === 1 ? popups[0].getAttribute('data-kind') : null,
+          };
+        })())`);
+        const swapped = JSON.parse(swap);
+        expect(swapped.count).toBe(1);
+        expect(swapped.kind).toBe("state");
+        await closePopup("state");
 
         process.stdout.write("VERDICT: PASS\n");
       } catch (err) {
