@@ -85,7 +85,7 @@ function deckShape() {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
       {
         id: "p2",
@@ -94,7 +94,7 @@ function deckShape() {
         cardIds: ["B"],
         activeCardId: "B",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

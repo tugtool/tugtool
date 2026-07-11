@@ -53,7 +53,7 @@ async function runDetach(app: App, componentId: string): Promise<void> {
           cardIds: ["A", "B"],
           activeCardId: "A",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
       ],
       activePaneId: "p1",

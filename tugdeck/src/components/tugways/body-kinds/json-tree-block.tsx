@@ -136,7 +136,7 @@ export interface JsonTreeBlockProps {
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, JsonTreeBlock persists its expand state (`expandMode` +
-   * per-node `overrides`) into `bag.components` so a Developer >
+   * per-node `overrides`) into `bag.components` so a Maker >
    * Reload restores the user's expand shape. Undefined opts out
    * (gallery, standalone).
    */
@@ -500,7 +500,7 @@ export const JsonTreeBlock: React.FC<JsonTreeBlockProps> = ({
         : new Map(),
   );
 
-  // Persist the expand state through the [A9] axis so Developer >
+  // Persist the expand state through the [A9] axis so Maker >
   // Reload restores it. `overrides` flattens to a plain record for
   // the bag's JSON round-trip.
   useComponentStatePreservation<JsonTreePersistedState>({

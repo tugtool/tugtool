@@ -42,7 +42,7 @@ describe.skipIf(!SHOULD_RUN)("at0156: title bar is shade + close only", () => {
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

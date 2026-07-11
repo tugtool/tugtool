@@ -87,7 +87,7 @@ describe.skipIf(!SHOULD_RUN)("m22: caret visible after every refocus path", () =
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

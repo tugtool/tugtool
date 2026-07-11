@@ -4,7 +4,7 @@
  *
  * ## Why this exists
  *
- * Every tugcode respawn path (model/effort change, Developer ▸ Reload,
+ * Every tugcode respawn path (model/effort change, Maker ▸ Reload,
  * app restart) resumes with `--resume`, and on claude ≥ 2.1.204 the
  * harness scheduler re-fires a pending wakeup/cron in the resumed
  * process (probe-verified: `tugcode/probes/goal-loop/FINDINGS.md#q02-loop`).
@@ -55,7 +55,7 @@ function deckShape() {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

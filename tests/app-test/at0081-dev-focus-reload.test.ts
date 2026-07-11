@@ -1,12 +1,12 @@
 /**
  * at0081-dev-focus-reload.test.ts — a dev card's activation focus
- * lands on the prompt entry after Developer > Reload [AT0081].
+ * lands on the prompt entry after Maker > Reload [AT0081].
  *
  * ## Why this exists
  *
  * Phase E.12's rule: a dev card has exactly one text-entry surface
  * (`tug-prompt-entry`), so its activation focus has exactly one
- * destination. AT0081 gates the cold-boot source: a Developer >
+ * destination. AT0081 gates the cold-boot source: a Maker >
  * Reload tears the DOM down and rebuilds it from the saved bag, and
  * focus must still land on the prompt-entry contenteditable.
  *
@@ -69,7 +69,7 @@ const SEED_STATE = {
       cardIds: ["A"],
       activeCardId: "A",
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     },
   ],
   activePaneId: "p1",
@@ -77,7 +77,7 @@ const SEED_STATE = {
 } as const;
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0081: dev-card focus lands on the prompt entry after Developer > Reload",
+  "AT0081: dev-card focus lands on the prompt entry after Maker > Reload",
   () => {
     test(
       "after appReload, focus restores to the prompt-entry contenteditable",

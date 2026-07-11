@@ -105,7 +105,7 @@ async function runSavedStateInactiveMount(app: App, componentId: string): Promis
           cardIds: ["A", "B"],
           activeCardId: "A",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
       ],
       activePaneId: "p1",

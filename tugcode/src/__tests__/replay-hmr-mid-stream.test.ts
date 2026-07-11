@@ -467,7 +467,7 @@ describe("runReplay — in-flight turn snapshot (never-drop chain link 8)", () =
     // tool call; the SDK has forwarded a `can_use_tool` control_request
     // to tugcode, which stored it in `pendingControlRequests` and
     // forwarded a `control_request_forward` to tugdeck. The dialog is
-    // open; the user hasn't answered. tugdeck reloads (Developer >
+    // open; the user hasn't answered. tugdeck reloads (Maker >
     // Reload). The control channel is out-of-band — there's no JSONL
     // record of the gating event. Without re-emit, the dialog has
     // nothing to render against and the pending state is lost.

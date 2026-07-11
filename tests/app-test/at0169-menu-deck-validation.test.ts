@@ -43,7 +43,7 @@ function pane(id: string, cardIds: string[], index = 0) {
     cardIds,
     activeCardId: cardIds[0],
     title: "",
-    acceptsFamilies: ["developer"],
+    acceptsFamilies: ["maker"],
   };
 }
 

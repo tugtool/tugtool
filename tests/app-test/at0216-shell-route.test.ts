@@ -16,7 +16,7 @@
  *      `[data-slot="dev-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
  *      visual-distinctness anchor).
- *   3. **Restore interleave ([P07])** — after Developer ▸ Reload, a real
+ *   3. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
  *      `spawn_session(resume)` replays a fixture JSONL Claude turn while
  *      the ledgered shell exchanges restore through `list_shell_exchanges`;
  *      the fixture's timestamps predate the live execs, so the reloaded
@@ -150,7 +150,7 @@ function deckShape() {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",
@@ -324,7 +324,7 @@ describe.skipIf(!SHOULD_RUN)(
           const liveOrder = await participantOrder(app);
           expect(liveOrder).toEqual(["user", "assistant", "shell", "shell", "shell"]);
 
-          // --- Developer ▸ Reload → real resume replay + ledger restore. ---
+          // --- Maker ▸ Reload → real resume replay + ledger restore. ---
           await app.appReload();
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(

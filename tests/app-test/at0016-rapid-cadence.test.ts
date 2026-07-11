@@ -73,7 +73,7 @@ describe.skipIf(!SHOULD_RUN)(
                 cardIds: ["c1", "c2", "c3", "c4", "c5"],
                 activeCardId: "c3",
                 title: "",
-                acceptsFamilies: ["developer"],
+                acceptsFamilies: ["maker"],
               },
             ],
             activePaneId: "p1",

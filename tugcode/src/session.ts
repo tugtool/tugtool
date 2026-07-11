@@ -3622,7 +3622,7 @@ export class SessionManager {
    * [Step R1d](roadmap/tugplan-dev-transcript-resume.md#step-r1d):
    * the proxy it used (`claudeReceivedInput`) only flips on user
    * input, so its actual semantic was "user idle for 30s," not
-   * "claude is hung." Smoke B exposed this — Developer>Reload doesn't
+   * "claude is hung." Smoke B exposed this — Maker>Reload doesn't
    * trigger a `user_message`, the timer fired regardless of claude's
    * health, and a healthy claude got killed at the 30-second mark.
    *
@@ -3913,7 +3913,7 @@ export class SessionManager {
    * **Trigger** (post-Step R4 / Phase A-R4): `request_replay` inbound
    * verb only. The verb is dispatched by tugdeck's
    * `cardServicesStore` whenever fresh services are constructed for
-   * a resume binding (cold boot, HMR, Developer > Reload), forwarded
+   * a resume binding (cold boot, HMR, Maker > Reload), forwarded
    * by tugcast's supervisor through tugcode's stdin via the existing
    * CODE_INPUT path, and dispatched to this method by tugcode's IPC
    * loop (`main.ts` `isRequestReplay` branch). The supervisor queues
@@ -3976,11 +3976,11 @@ export class SessionManager {
     // ⇒ no JSONL to replay) holds at the moment of spawn but rots once the
     // session has had wire activity. After the first turn lands, any
     // request_replay against the same session — sent from tugdeck on
-    // `Developer > Reload` / HMR / card remount — needs the JSONL pass to
+    // `Maker > Reload` / HMR / card remount — needs the JSONL pass to
     // rehydrate the freshly-mounted CodeSessionStore. The mid-turn-replay
     // [Step 5](roadmap/tugplan-dev-mid-turn-replay.md#step-5) close-out
     // smoke surfaced this: open new card, type "hello", get response,
-    // Developer > Reload → empty window because both tugdeck's
+    // Maker > Reload → empty window because both tugdeck's
     // `binding.sessionMode === "resume"` gate (also dropped) and this
     // early-return swallowed the rebind's request_replay. Dropping both
     // gates makes runReplay always-on; for a truly fresh new session whose

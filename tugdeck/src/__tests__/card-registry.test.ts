@@ -125,21 +125,21 @@ describe("CardRegistration – family, acceptsFamilies, defaultCards, defaultTit
   it("registers a card with family and getRegistration returns it", () => {
     registerCard({
       ...makeRegistration("gallery-buttons"),
-      family: "developer",
+      family: "maker",
     });
     const reg = getRegistration("gallery-buttons");
     expect(reg).toBeDefined();
-    expect(reg!.family).toBe("developer");
+    expect(reg!.family).toBe("maker");
   });
 
   it("registers a card with acceptsFamilies and getRegistration returns it", () => {
     registerCard({
       ...makeRegistration("gallery-host"),
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     });
     const reg = getRegistration("gallery-host");
     expect(reg).toBeDefined();
-    expect(reg!.acceptsFamilies).toEqual(["developer"]);
+    expect(reg!.acceptsFamilies).toEqual(["maker"]);
   });
 
   it("registers a card with defaultTitle and getRegistration returns it", () => {

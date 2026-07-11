@@ -212,7 +212,7 @@ describe("translateJsonlSession — interrupted-orphan submissions", () => {
     // interrupt fires while a permission/question is pending. The
     // original matcher only knew about the base form, so the marker
     // leaked into the transcript as a phantom user turn after
-    // Developer Reload.
+    // Maker Reload.
     const jsonl = [
       userTextEntry("plan an investigation"),
       userTextEntry("[Request interrupted by user for tool use]"),

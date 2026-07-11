@@ -2556,7 +2556,7 @@ export function DevCardBody({
   useLayoutEffect(() => {
     const el = devCardRootRef.current;
     if (el === null) return;
-    // No materialize fade on a restore-mount (Developer ▸ Reload /
+    // No materialize fade on a restore-mount (Maker ▸ Reload /
     // cold-boot rehydration). The fade exists only to coordinate the
     // picker → body handoff (share a beat with the picker sheet's
     // exit); a restore has no picker to coordinate with, so the fade

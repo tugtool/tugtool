@@ -74,7 +74,7 @@ describe.skipIf(!SHOULD_RUN)("AT0078: dev-card engine focus survives app-switch"
                 cardIds: ["A"],
                 activeCardId: "A",
                 title: "",
-                acceptsFamilies: ["developer"],
+                acceptsFamilies: ["maker"],
               },
             ],
             activePaneId: "p1",

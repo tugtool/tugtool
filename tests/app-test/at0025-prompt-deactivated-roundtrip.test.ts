@@ -187,7 +187,7 @@ function deckShape(componentId: PromptComponentId, activeCardId: "A" | "B" = "A"
         cardIds: ["A", "B"],
         activeCardId,
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

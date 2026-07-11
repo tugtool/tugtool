@@ -42,6 +42,18 @@ const MIN_PANE_SIZE = 100;
  */
 const FIT_MARGIN = 8;
 
+// ---- Card-family back-compat ----
+
+/**
+ * Parse a persisted `acceptsFamilies` array, mapping the legacy `"developer"`
+ * family value onto `"maker"` so decks saved before the family rename still
+ * surface maker cards. Absent or non-array input falls back to `["standard"]`.
+ */
+function parseAcceptsFamilies(raw: unknown): readonly string[] {
+  if (!Array.isArray(raw)) return ["standard"];
+  return (raw as string[]).map((f) => (f === "developer" ? "maker" : f));
+}
+
 // ---- Geometry fitting ----
 
 /**
@@ -258,10 +270,7 @@ function parseV4(
     const rawTitle = win["title"];
     const title = typeof rawTitle === "string" ? rawTitle : "";
 
-    const rawAcceptsFamilies = win["acceptsFamilies"];
-    const acceptsFamilies: readonly string[] = Array.isArray(rawAcceptsFamilies)
-      ? (rawAcceptsFamilies as string[])
-      : ["standard"];
+    const acceptsFamilies = parseAcceptsFamilies(win["acceptsFamilies"]);
 
     const rawCollapsed = win["collapsed"];
     const collapsed =
@@ -406,10 +415,7 @@ function migrateV1ToDeckState(
     const rawTitle = legacy["title"];
     const title = typeof rawTitle === "string" ? rawTitle : "";
 
-    const rawAcceptsFamilies = legacy["acceptsFamilies"];
-    const acceptsFamilies: readonly string[] = Array.isArray(rawAcceptsFamilies)
-      ? (rawAcceptsFamilies as string[])
-      : ["standard"];
+    const acceptsFamilies = parseAcceptsFamilies(legacy["acceptsFamilies"]);
 
     const rawCollapsed = legacy["collapsed"];
     const collapsed =

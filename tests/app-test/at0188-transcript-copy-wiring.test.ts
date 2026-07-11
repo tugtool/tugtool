@@ -195,7 +195,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.seedDeckState({
             state: {
               cards: [{ id: "A", componentId: "gallery-transcript-copy", title: "Transcript Copy", closable: true }],
-              panes: [{ id: "p1", position: { x: 40, y: 40 }, size: { width: 760, height: 560 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["developer"] }],
+              panes: [{ id: "p1", position: { x: 40, y: 40 }, size: { width: 760, height: 560 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] }],
               activePaneId: "p1",
               hasFocus: true,
             },

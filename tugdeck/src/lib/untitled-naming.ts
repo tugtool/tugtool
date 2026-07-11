@@ -6,7 +6,7 @@
  * a run that starts fresh at each app launch: `Untitled`, `Untitled-2`,
  * `Untitled-3`, … The number is allocated once, at creation, and rides
  * the card's bag ({@link FileCardBagContent.untitledNumber}) so it stays
- * stable across re-renders and a Developer ▸ Reload restore.
+ * stable across re-renders and a Maker ▸ Reload restore.
  *
  * The counter lives in module scope, so a true page load (app launch,
  * hard reload) resets the run to 1 — the "starting from the launch of the

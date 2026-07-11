@@ -5,7 +5,7 @@
  * ## Why this exists
  *
  * The user-reported regression: load the gallery TugTextEditor card, type
- * some text, hit `Developer > Reload`, and the typed text is gone.
+ * some text, hit `Maker > Reload`, and the typed text is gone.
  * The Step 7 implementation in `text-editing-base.md` wired
  * `useTextEditorStatePreservation` into `TugTextEditor` and registered the hook
  * with the enclosing `CardHost`, but evidently the live save →
@@ -127,7 +127,7 @@ function deckShape() {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

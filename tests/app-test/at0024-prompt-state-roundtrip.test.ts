@@ -6,7 +6,7 @@
  *
  * The user-reported regression: a Dev card with multi-line text,
  * a non-collapsed selection, and an editor scroll position loses
- * those axes on `Developer > Reload` AND on quit + relaunch. The
+ * those axes on `Maker > Reload` AND on quit + relaunch. The
  * gallery card `gallery-prompt-entry` exhibits the same shape
  * because it rides the same persistence pipeline as Dev.
  *
@@ -253,7 +253,7 @@ function deckShape(componentId: PromptComponentId) {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

@@ -65,7 +65,7 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Dev Card edits reach open Dev car
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

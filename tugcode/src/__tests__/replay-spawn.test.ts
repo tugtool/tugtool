@@ -543,7 +543,7 @@ describe("runReplay — non-resume mode (post-Step-5 close-out fix)", () => {
   // Pre-Step-5 close-out, runReplay early-returned `if (this.sessionMode !== "resume")`.
   // The fix dropped the gate so a request_replay against a session
   // originally spawned as `new` but now containing wire activity (open
-  // new card, type "hello", get response, Developer > Reload) still
+  // new card, type "hello", get response, Maker > Reload) still
   // rehydrates the freshly-mounted CodeSessionStore. For a truly fresh
   // new session whose JSONL doesn't exist yet, the translator emits
   // `replay_started → replay_complete{kind: "jsonl_missing"}` —

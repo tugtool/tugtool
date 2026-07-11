@@ -48,7 +48,7 @@ function paneOf(n: number, activeClosable = true) {
         cardIds: cards.map((c) => c.id),
         activeCardId: "C0",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

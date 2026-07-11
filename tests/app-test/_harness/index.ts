@@ -921,7 +921,7 @@ export class App {
   }
 
   /**
-   * Soft-reload Tug.app — same code path as the `Developer > Reload`
+   * Soft-reload Tug.app — same code path as the `Maker > Reload`
    * menu, exercising the in-process save-flush + WKWebView reload
    * (Tug.app and tugcast both survive). Distinct from
    * {@link App.quitGracefully} which terminates the entire process.

@@ -126,7 +126,7 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
               cardIds: ["A1"],
               activeCardId: "A1",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
             {
               id: "p2",
@@ -135,7 +135,7 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
               cardIds: ["A2"],
               activeCardId: "A2",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

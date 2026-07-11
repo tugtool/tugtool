@@ -65,7 +65,7 @@ const twoDevPanes = {
       cardIds: ["A"],
       activeCardId: "A",
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     },
     {
       id: "p2",
@@ -74,7 +74,7 @@ const twoDevPanes = {
       cardIds: ["B"],
       activeCardId: "B",
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     },
   ],
   activePaneId: "p1",

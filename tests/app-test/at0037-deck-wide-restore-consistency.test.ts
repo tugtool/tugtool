@@ -178,7 +178,7 @@ function buildDeckShape(layout: Layout) {
       cardIds: p.cardIds,
       activeCardId: p.activeCardId,
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     })),
     activePaneId: layout.activePaneId,
     hasFocus: true,

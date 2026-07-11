@@ -68,8 +68,8 @@ describe("#step-14-5 gallery cards — registry wiring", () => {
       // a registration without one is unreachable.
       expect(typeof registration?.contentFactory).toBe("function");
       expect(registration?.defaultMeta.title).toBe(title);
-      // Gallery cards are developer-family and closable.
-      expect(registration?.family).toBe("developer");
+      // Gallery cards are maker-family and closable.
+      expect(registration?.family).toBe("maker");
       expect(registration?.defaultMeta.closable).toBe(true);
     });
   }

@@ -168,7 +168,7 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 #### [AT0024] Prompt-state round-trip across reload + relaunch
 - **Status:** ✅ closed.
 - **Tests:** `at0024-prompt-state-roundtrip.test.ts`.
-- **Summary:** Comprehensive prompt-state round-trip matrix — a dev / `gallery-prompt-entry` card's multi-line text, non-collapsed selection, and editor scroll position survive `Developer > Reload` AND quit + relaunch.
+- **Summary:** Comprehensive prompt-state round-trip matrix — a dev / `gallery-prompt-entry` card's multi-line text, non-collapsed selection, and editor scroll position survive `Maker > Reload` AND quit + relaunch.
 
 #### [AT0025] Selection survives the deactivation → reload/relaunch path
 - **Status:** ✅ closed.
@@ -270,7 +270,7 @@ Surfaced during the close-confirm work and the `tug-text-editor` substrate migra
 #### [AT0042] tug-text-editor state round-trip across reload
 - **Status:** ✅ closed.
 - **Tests:** `at0042-tug-text-editor-state-roundtrip.test.ts`.
-- **Summary:** `gallery-text-editor` typed text survives `Developer > Reload` through `useTextEditorStatePreservation` registered with the enclosing `CardHost`.
+- **Summary:** `gallery-text-editor` typed text survives `Maker > Reload` through `useTextEditorStatePreservation` registered with the enclosing `CardHost`.
 
 #### [AT0043] tug-text-editor copy across selection classes
 - **Status:** ✅ closed.
@@ -376,21 +376,21 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0061] Region-scroll anchor metadata — apply side (full round-trip)
 - **Status:** ✅ closed at Phase E.6 step 3 (`just app-test` PASS).
 - **Tests:** `at0061-region-scroll-anchor-apply.test.ts`.
-- **Summary:** Full save-then-reload-then-apply round-trip on `gallery-list-view-scroll-keyed`. Mount → wait for content settled (AT0060 signals) → scroll to a known position → assert `data-tug-scroll-state` reflects the new anchor → `saveState()` → record scrollTop + anchor → `appReload()` (same code path as Developer > Reload menu — `prepareForReload` flushes + `location.reload`) → on the new page, wait for content settled again → assert the inner scrollport's scrollTop has been restored to within tolerance of the saved scrollTop AND the live anchor on `data-tug-scroll-state` matches the saved anchor (proving the anchor cell is at the same content-relative viewport position). Closes Phase E.6's "prove we can then apply all the scroll states" sub-task.
+- **Summary:** Full save-then-reload-then-apply round-trip on `gallery-list-view-scroll-keyed`. Mount → wait for content settled (AT0060 signals) → scroll to a known position → assert `data-tug-scroll-state` reflects the new anchor → `saveState()` → record scrollTop + anchor → `appReload()` (same code path as Maker > Reload menu — `prepareForReload` flushes + `location.reload`) → on the new page, wait for content settled again → assert the inner scrollport's scrollTop has been restored to within tolerance of the saved scrollTop AND the live anchor on `data-tug-scroll-state` matches the saved anchor (proving the anchor cell is at the same content-relative viewport position). Closes Phase E.6's "prove we can then apply all the scroll states" sub-task.
 
 #### [AT0062] Late-mounting component-state restore (registry observer channel)
 - **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0067] / [AT0068]. The Phase E.7 observer-channel restore path the test pinned was removed — components now mount in their saved state via `useSavedComponentState` inside `useState` initializers, so there is no post-mount apply path to gate.
 - **Tests:** *(removed)*.
 
-#### [AT0063] BashToolBlock fold state survives Developer > Reload
+#### [AT0063] BashToolBlock fold state survives Maker > Reload
 - **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0067]. Same goal — fold state survives reload — but the failure mode AT0063 pinned (post-mount observer-channel apply) no longer exists; AT0067 pins the stronger contract that the saved fold reflects on the FIRST DOM observation, no intermediate frame.
 - **Tests:** *(removed)*.
 
-#### [AT0064] BashToolBlock inner scroll survives Developer > Reload
+#### [AT0064] BashToolBlock inner scroll survives Maker > Reload
 - **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0068]. Same goal — inner scroll survives reload — but AT0068 pins the stronger contract that the scroller is CREATED at the saved `scrollTop` (no jump from 0 to saved).
 - **Tests:** *(removed)*.
 
-#### [AT0065] Dev-card-like inner scroll survives Developer > Reload + scroller-rebuild
+#### [AT0065] Dev-card-like inner scroll survives Maker > Reload + scroller-rebuild
 - **Status:** 🗑️ superseded at Phase E.8. The element-identity-gated `MutationObserver` re-apply for inner-scroller rebuilds stays in `card-host.tsx` (it's the fallback for scrollers recreated mid-card-lifetime), but the production failure AT0065 pinned was scoped to the now-removed late-mount path; the manual checkpoints in `tide-assistant-rendering.md` Phase E.8 cover the rebuild-after-restore case end-to-end.
 - **Tests:** *(removed)*.
 
@@ -419,7 +419,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0071 (find fixture removed). The card-switch source is now gated for the engine path by AT0080.
 - **Tests:** `at0072-content-owning-focus-survives-card-switch.test.ts` (deleted).
 
-#### [AT0073] Content-owning focus survives Developer > Reload
+#### [AT0073] Content-owning focus survives Maker > Reload
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0071 (find fixture removed). The reload source is now gated for the engine path by AT0081.
 - **Tests:** `at0073-content-owning-focus-survives-reload.test.ts` (deleted).
 
@@ -435,7 +435,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
 - **Tests:** `at0076-dev-find-card-switch.test.ts` (deleted).
 
-#### [AT0077] Dev-card find row focus survives Developer > Reload
+#### [AT0077] Dev-card find row focus survives Maker > Reload
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
 - **Tests:** `at0077-dev-find-reload.test.ts` (deleted).
 
@@ -453,7 +453,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Tests:** `at0080-dev-focus-card-switch.test.ts`.
 - **Summary:** Two dev cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
 
-#### [AT0081] Dev-card focus lands on the prompt entry after Developer > Reload
+#### [AT0081] Dev-card focus lands on the prompt entry after Maker > Reload
 - **Status:** ✅ shipped at Phase E.12 — the cold-boot / reload gate for the single-text-entry rule (#phase-e-12). Exercises the `deferred-engine` settle (the one late-mount focus path that survives Phase E.12's retirement of the `deferred-dom` focus-retry branch).
 - **Tests:** `at0081-dev-focus-reload.test.ts`.
 - **Summary:** Seed a dev card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the dev-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
@@ -958,7 +958,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 #### [AT0216] Shell route — exchange e2e, live cwd, restore interleave
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0216-shell-route.test.ts`.
-- **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="dev-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Developer ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
+- **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="dev-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Maker ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
 
 ## Maintenance
 

@@ -58,7 +58,7 @@ describe.skipIf(!SHOULD_RUN)("at0194: window-shade collapse", () => {
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

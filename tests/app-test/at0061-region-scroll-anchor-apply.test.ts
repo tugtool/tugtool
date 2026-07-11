@@ -19,7 +19,7 @@
  *   1. Mount → wait for settled.
  *   2. Scroll to a known position; record `scrollTop` + the live
  *      anchor on `data-tug-scroll-state`.
- *   3. `app.appReload()` — same code path as Developer > Reload.
+ *   3. `app.appReload()` — same code path as Maker > Reload.
  *      `prepareForReload` flushes the bag to tugbank; the page
  *      reloads; the fresh CardHost reads the bag and dispatches
  *      `tug-region-scroll-set` with `meta.anchor` to TugListView's
@@ -188,7 +188,7 @@ describe.skipIf(!SHOULD_RUN)(
                   cardIds: ["A"],
                   activeCardId: "A",
                   title: "",
-                  acceptsFamilies: ["developer"],
+                  acceptsFamilies: ["maker"],
                 },
               ],
               activePaneId: "p1",
@@ -260,7 +260,7 @@ describe.skipIf(!SHOULD_RUN)(
             preReload.anchor.index > 0 || preReload.anchor.offset > 0;
           expect(anchorNonTrivial).toBe(true);
 
-          // -------- Phase 2: reload. Same code path as Developer >
+          // -------- Phase 2: reload. Same code path as Maker >
           // Reload — `prepareForReload` flushes the bag to tugbank
           // synchronously, then `location.reload()` fires.
           //
@@ -329,7 +329,7 @@ describe.skipIf(!SHOULD_RUN)(
                   cardIds: ["A"],
                   activeCardId: "A",
                   title: "",
-                  acceptsFamilies: ["developer"],
+                  acceptsFamilies: ["maker"],
                 },
               ],
               activePaneId: "p1",

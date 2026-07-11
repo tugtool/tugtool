@@ -2,7 +2,7 @@
 //!
 //! Each settled `$`-route command/output exchange is recorded here, keyed by
 //! `tug_session_id`. The deck fetches a session's tail on restore via the
-//! `list_shell_exchanges` CONTROL read so a Developer ▸ Reload (or app
+//! `list_shell_exchanges` CONTROL read so a Maker ▸ Reload (or app
 //! relaunch) can reconstruct the transcript's shell rows — the *record* is
 //! durable even though the live shell child is not ([Q04], [P07]).
 //!

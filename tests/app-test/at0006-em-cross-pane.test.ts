@@ -56,7 +56,7 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
           cardIds: ["A", "B"],
           activeCardId: "A",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
         {
           id: "p2",
@@ -65,7 +65,7 @@ async function runCrossPaneDrag(app: App, componentId: string): Promise<void> {
           cardIds: ["C", "D"],
           activeCardId: "C",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
       ],
       activePaneId: "p1",

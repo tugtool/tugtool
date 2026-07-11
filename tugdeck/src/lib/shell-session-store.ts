@@ -85,7 +85,7 @@ export class ShellSessionStore {
     this._unsubscribeFeed = feedStore.subscribe(() => this._onFeedUpdate());
     // Restore ([P07]): fetch this session's ledgered exchanges and interleave
     // them into the transcript. Sent once at construction — HMR preserves the
-    // store, so it never re-fires; a Developer ▸ Reload / relaunch builds a
+    // store, so it never re-fires; a Maker ▸ Reload / relaunch builds a
     // fresh store and re-fetches, which is idempotent (upsert by turnKey). The
     // `list_shell_exchanges_ok` response routes back through action-dispatch to
     // `applyRestoredShellExchanges`.

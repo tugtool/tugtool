@@ -73,7 +73,7 @@ async function runAppSwitchSelection(app: App, componentId: string): Promise<voi
           cardIds: ["A"],
           activeCardId: "A",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
       ],
       activePaneId: "p1",

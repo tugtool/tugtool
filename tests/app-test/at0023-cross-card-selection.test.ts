@@ -66,7 +66,7 @@ describe.skipIf(!SHOULD_RUN)("m23: cross-card drag-select doesn't crash the pain
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
             {
               id: "p2",
@@ -75,7 +75,7 @@ describe.skipIf(!SHOULD_RUN)("m23: cross-card drag-select doesn't crash the pain
               cardIds: ["B"],
               activeCardId: "B",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

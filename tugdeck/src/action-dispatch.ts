@@ -397,7 +397,7 @@ export function initActionDispatch(
   });
 
   // show-dev-panel-toggle: Toggle the TugDevPanel's visibility. Fired
-  // by the Swift Developer menu's "Show Dev Panel" item (Opt-Cmd-/).
+  // by the Swift Maker menu's "Show Dev Panel" item (Opt-Cmd-/).
   // Read-only inspector surface — no mutations propagate elsewhere.
   registerAction("show-dev-panel-toggle", () => {
     tugDevPanelStore.toggle();

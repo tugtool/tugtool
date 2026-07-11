@@ -73,7 +73,7 @@ describe.skipIf(!SHOULD_RUN)("m18: async-content-race audit", () => {
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

@@ -613,7 +613,7 @@ export class DeckManager implements IDeckManagerStore {
           // Tug Dev Panel — persistent dev inspector. Mounts once at
           // app root, hidden by default. Visibility toggled via DOM
           // (per [L06]) by `tugDevPanelStore`. Triggered from the
-          // Swift Developer menu (Opt-Cmd-/).
+          // Swift Maker menu (Opt-Cmd-/).
           React.createElement(TugDevPanel, {}),
         ),
       ),

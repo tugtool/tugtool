@@ -241,7 +241,7 @@ The table below is the one-shot rename mapping applied during the A3 → action-
 | Name (unchanged) | Purpose |
 |------------------|---------|
 | `reload`         | Page reload with dedup guard. |
-| `set-dev-mode`   | Toggle developer menu visibility via WKScriptMessageHandler. |
+| `set-dev-mode`   | Toggle maker menu visibility via WKScriptMessageHandler. |
 | `set-theme`      | Switch the active CSS theme. |
 | `next-theme`     | Advance to the next shipped theme. |
 | `show-card`      | Add a card by component id. |

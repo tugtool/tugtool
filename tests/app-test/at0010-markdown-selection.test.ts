@@ -83,7 +83,7 @@ describe.skipIf(!SHOULD_RUN)("m10: markdown-view DOM selection round-trips throu
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

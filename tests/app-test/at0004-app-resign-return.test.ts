@@ -75,7 +75,7 @@ describe.skipIf(!SHOULD_RUN)("m04: app resign → return-to-active preserves foc
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

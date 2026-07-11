@@ -58,8 +58,8 @@ function deckShape() {
       { id: "B", componentId: "dev", title: "Dev B", closable: true },
     ],
     panes: [
-      { id: "p1", position: { x: 40, y: 40 }, size: { width: 760, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["developer"] },
-      { id: "p2", position: { x: 840, y: 40 }, size: { width: 760, height: 620 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["developer"] },
+      { id: "p1", position: { x: 40, y: 40 }, size: { width: 760, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
+      { id: "p2", position: { x: 840, y: 40 }, size: { width: 760, height: 620 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
     ],
     activePaneId: "p1",
     hasFocus: true,

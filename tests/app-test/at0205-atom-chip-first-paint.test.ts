@@ -74,7 +74,7 @@ const DEV_DECK_STATE = {
       cardIds: ["A"],
       activeCardId: "A",
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     },
   ],
   activePaneId: "p1",

@@ -133,7 +133,7 @@ describe.skipIf(!SHOULD_RUN)("m16: closing active tab hands focus to successor w
               cardIds: ["c1", "c2", "c3"],
               activeCardId: "c2",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

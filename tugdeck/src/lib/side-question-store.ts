@@ -12,7 +12,7 @@
  *
  * The exchange is ephemeral and session-scoped ([P03]): in-memory only, no
  * tugbank / JSONL / web storage. It is NOT dispatched into the code-session
- * store, so it never becomes a transcript row and survives a Developer ▸
+ * store, so it never becomes a transcript row and survives a Maker ▸
  * Reload with no trace ([P05]). The answer is a single settled one-shot
  * ([Q02] resolved: one terminal `control_response`, no token streaming).
  *

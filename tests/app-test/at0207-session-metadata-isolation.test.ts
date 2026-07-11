@@ -161,7 +161,7 @@ function deckShape() {
       cardIds: [id],
       activeCardId: id,
       title: "",
-      acceptsFamilies: ["developer"],
+      acceptsFamilies: ["maker"],
     })),
     activePaneId: "p1",
     hasFocus: true,

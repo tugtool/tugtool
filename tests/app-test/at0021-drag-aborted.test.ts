@@ -72,7 +72,7 @@ describe.skipIf(!SHOULD_RUN)("m21: drag aborted by Escape preserves focus", () =
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

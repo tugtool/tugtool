@@ -1,6 +1,6 @@
 /**
  * Public types for `TugDevPanelStore` — the persistent dev inspector
- * surface triggered from Tug.app's Developer menu (Opt-Cmd-/).
+ * surface triggered from Tug.app's Maker menu (Opt-Cmd-/).
  *
  * The panel is a framework: it owns visibility, the active inspector
  * tab, and the currently-selected card. Each inspector tab renders

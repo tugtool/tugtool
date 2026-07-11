@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)("m20: overlay dismiss returns focus to previously-f
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

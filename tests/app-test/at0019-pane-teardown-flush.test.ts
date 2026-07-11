@@ -61,7 +61,7 @@ describe.skipIf(!SHOULD_RUN)("m19: _closePane flushes every card before destruct
               cardIds: ["A", "B", "C"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

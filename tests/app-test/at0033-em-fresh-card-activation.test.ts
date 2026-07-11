@@ -71,7 +71,7 @@ async function runFreshCardActivation(app: App, componentId: string): Promise<vo
           cardIds: ["A", "B"],
           activeCardId: "A",
           title: "",
-          acceptsFamilies: ["developer"],
+          acceptsFamilies: ["maker"],
         },
       ],
       activePaneId: "p1",

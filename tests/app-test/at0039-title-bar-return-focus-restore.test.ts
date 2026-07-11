@@ -116,7 +116,7 @@ function deckShape() {
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"] as const,
+        acceptsFamilies: ["maker"] as const,
       },
       {
         id: "p2",
@@ -125,7 +125,7 @@ function deckShape() {
         cardIds: ["B"],
         activeCardId: "B",
         title: "",
-        acceptsFamilies: ["developer"] as const,
+        acceptsFamilies: ["maker"] as const,
       },
     ],
     activePaneId: "p1",
@@ -235,7 +235,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Step 4b — Trigger an "inactive-card save" for A.
           //
-          // The user's manual repro uses `Developer > Reload`,
+          // The user's manual repro uses `Maker > Reload`,
           // which fires `beforeunload`'s save-all-cards fan-out.
           // The production save-all-cards path is the same one
           // `window.tugdeck.saveState()` exposes for the saveState

@@ -161,7 +161,7 @@ class TugDevPanelStore {
     return toSnapshot(this._state);
   };
 
-  /** Toggle the panel's visibility. Fired by the Swift Developer menu. */
+  /** Toggle the panel's visibility. Fired by the Swift Maker menu. */
   toggle = (): void => {
     this._ensureInitialized();
     this._dispatch({ type: "toggle" });

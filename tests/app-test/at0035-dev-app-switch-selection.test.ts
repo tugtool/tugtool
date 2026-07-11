@@ -70,7 +70,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-dev: dev-card selection survives app resign
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

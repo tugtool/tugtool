@@ -4,7 +4,7 @@
  *
  * Same wiring contract as the batch-1 test: each card must be
  * registered with a `contentFactory`, sane `defaultMeta`, and the
- * developer family. The render-half of the verification lives in the
+ * maker family. The render-half of the verification lives in the
  * gallery cards themselves (visual check under both themes).
  *
  * Batch 2 covers the components shipped in Steps 25–29:
@@ -55,7 +55,7 @@ describe("#step-29-5 gallery cards — registry wiring", () => {
       ).toBeDefined();
       expect(typeof registration?.contentFactory).toBe("function");
       expect(registration?.defaultMeta.title).toBe(title);
-      expect(registration?.family).toBe("developer");
+      expect(registration?.family).toBe("maker");
       expect(registration?.defaultMeta.closable).toBe(true);
     });
   }

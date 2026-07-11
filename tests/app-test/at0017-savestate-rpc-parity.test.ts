@@ -55,7 +55,7 @@ describe.skipIf(!SHOULD_RUN)("m17: saveState RPC captures same axes as will-phas
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

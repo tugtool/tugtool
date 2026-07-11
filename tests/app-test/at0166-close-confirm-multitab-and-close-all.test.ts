@@ -48,7 +48,7 @@ function twoCardPane(aComponent: string) {
         cardIds: ["A", "B"],
         activeCardId: "A",
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

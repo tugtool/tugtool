@@ -107,7 +107,7 @@ export interface CardRegistration {
   defaultMeta: CardMeta;
   /** Default feed IDs. Defaults to `[]` when omitted. */
   defaultFeedIds?: readonly FeedIdValue[];
-  /** Card type family (e.g. "standard", "developer"). Defaults to "standard". */
+  /** Card type family (e.g. "standard", "maker"). Defaults to "standard". */
   family?: string;
   /** Families this card can host in its type picker. Defaults to `["standard"]`. */
   acceptsFamilies?: readonly string[];

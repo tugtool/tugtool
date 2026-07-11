@@ -51,7 +51,7 @@ describe.skipIf(!SHOULD_RUN)("at0136-stale-reapply-clobber", () => {
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
             {
               id: "p2",
@@ -60,7 +60,7 @@ describe.skipIf(!SHOULD_RUN)("at0136-stale-reapply-clobber", () => {
               cardIds: ["B"],
               activeCardId: "B",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

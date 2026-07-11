@@ -98,7 +98,7 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
 
       // -----------------------------------------------------------------
       // Seed: one pane with two FC cards. `gallery-input` is the
-      // developer-gallery componentId that renders persisted TugInputs.
+      // maker-family gallery componentId that renders persisted TugInputs.
       // -----------------------------------------------------------------
       await app.seedDeckState({
         state: {
@@ -114,7 +114,7 @@ describe.skipIf(!SHOULD_RUN)("m01: intra-pane tab switch preserves FC caret", ()
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

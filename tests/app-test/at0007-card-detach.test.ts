@@ -81,7 +81,7 @@ describe.skipIf(!SHOULD_RUN)("m07: card detach preserves focus + value", () => {
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

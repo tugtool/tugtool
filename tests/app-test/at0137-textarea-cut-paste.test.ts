@@ -86,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)("at0137-textarea-cut-paste", () => {
               cardIds: ["A"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",

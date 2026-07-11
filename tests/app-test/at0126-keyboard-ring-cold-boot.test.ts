@@ -61,7 +61,7 @@ function deckShape(componentId: string) {
         cardIds: [CARD_ID],
         activeCardId: CARD_ID,
         title: "",
-        acceptsFamilies: ["developer"],
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",

@@ -1991,7 +1991,7 @@ export class CodeSessionStore {
             this._prependStaging.push(effect.entry);
           } else {
             // Append, but keep the turn interleaved with any shell rows the
-            // ledger restore ([P07]) seated ahead of it — on a Developer ▸
+            // ledger restore ([P07]) seated ahead of it — on a Maker ▸
             // Reload the `list_shell_exchanges` restore can land before the
             // JSONL replay, so a bare append would strand the replayed Claude
             // turn behind shell rows it chronologically precedes. The helper

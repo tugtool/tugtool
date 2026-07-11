@@ -12,7 +12,7 @@
  *
  * AT0080 gates the card-switch source. AT0078 gates app-switch;
  * at0034-em gates cross-pane drag (on the same `tug-prompt-entry`
- * surface); at0081 gates Developer > Reload.
+ * surface); at0081 gates Maker > Reload.
  *
  * ## Shape
  *
@@ -71,7 +71,7 @@ describe.skipIf(!SHOULD_RUN)(
                   cardIds: ["A", "B"],
                   activeCardId: "A",
                   title: "",
-                  acceptsFamilies: ["developer"],
+                  acceptsFamilies: ["maker"],
                 },
               ],
               activePaneId: "p1",

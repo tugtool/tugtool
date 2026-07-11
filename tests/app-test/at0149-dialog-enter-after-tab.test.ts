@@ -57,7 +57,7 @@ function deckShape() {
   return {
     cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
     panes: [
-      { id: "p1", position: { x: 40, y: 40 }, size: { width: 820, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["developer"] },
+      { id: "p1", position: { x: 40, y: 40 }, size: { width: 820, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
     ],
     activePaneId: "p1",
     hasFocus: true,

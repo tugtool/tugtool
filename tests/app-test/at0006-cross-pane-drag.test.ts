@@ -92,7 +92,7 @@ describe.skipIf(!SHOULD_RUN)("m06: cross-pane drag preserves focus + value", () 
               cardIds: ["A", "B"],
               activeCardId: "A",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
             {
               id: "p2",
@@ -101,7 +101,7 @@ describe.skipIf(!SHOULD_RUN)("m06: cross-pane drag preserves focus + value", () 
               cardIds: ["C", "D"],
               activeCardId: "C",
               title: "",
-              acceptsFamilies: ["developer"],
+              acceptsFamilies: ["maker"],
             },
           ],
           activePaneId: "p1",
