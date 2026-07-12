@@ -53,8 +53,10 @@ import {
   ArrowUp,
   Bot,
   ChevronDown,
+  ChevronUp,
   MessageSquareDashed,
   Plus,
+  Search,
   Shell,
   Square,
 } from "lucide-react";
@@ -138,6 +140,7 @@ import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
+import type { DevFindSession } from "@/lib/dev-find-session";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -170,6 +173,7 @@ const ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
   { value: "❯", label: "Code",  icon: <Bot size={14} /> },
   { value: "$", label: "Shell", icon: <Shell size={14} /> },
   { value: "?", label: "btw",   icon: <MessageSquareDashed size={14} /> },
+  { value: "⌕", label: "Find",  icon: <Search size={14} /> },
 ];
 
 /**
@@ -218,6 +222,9 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
   "❯": "newline",
   "$": "submit",
   "?": "submit",
+  // Find mirrors `❯`: the submit gesture advances the match, newline stays
+  // available for multi-line queries. Membership also admits ⇧⌘F SELECT_ROUTE.
+  "⌕": "newline",
 };
 
 /**
@@ -230,6 +237,7 @@ const DEFAULT_ROUTE = "❯";
 /** Canonical route values — shared by the dispatch and the route popup. */
 const ROUTE_SHELL = "$";
 const ROUTE_BTW = "?";
+const ROUTE_FIND = "⌕";
 
 /** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
@@ -248,6 +256,11 @@ export function routeAwareSubmitButtonMode(
   claudeMode: DevSubmitButtonMode,
   shellInflight: boolean,
 ): DevSubmitButtonMode {
+  // Find: Z5 is the always-live "next match" button — never stop, never inert
+  // (an empty query just makes `next()` a no-op). The render swaps its glyph to
+  // a down chevron; the click rides the SUBMIT action into `performSubmit`,
+  // whose Find branch advances the match.
+  if (route === ROUTE_FIND) return { kind: "submit", disabled: false };
   if (route !== ROUTE_SHELL) return claudeMode;
   return shellInflight ? { kind: "stop" } : { kind: "submit", disabled: false };
 }
@@ -716,6 +729,14 @@ export interface TugPromptEntryProps {
    */
   shellSessionStore?: ShellSessionStore;
   /**
+   * `⌕`-route Find session store. Holds the live query, options, match set,
+   * and active index for transcript search. While the Find route is active the
+   * editor doc is mirrored into `findSession.setQuery`; Return advances the
+   * active match; leaving the route clears it. Optional so hosts without a
+   * transcript (the gallery) can omit it.
+   */
+  findSession?: DevFindSession;
+  /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
    * attempted while an attachment is still processing). The message is
@@ -1006,6 +1027,7 @@ export const TugPromptEntry = React.forwardRef<
     localCommandTargetId,
     codeSessionStore,
     shellSessionStore,
+    findSession,
     onAttachmentError,
     sessionMetadataStore,
     historyStore,
@@ -1548,6 +1570,12 @@ export const TugPromptEntry = React.forwardRef<
   const deckStoreRef = useRef(deckStore);
   deckStoreRef.current = deckStore;
 
+  // Find session, held in a ref so the mount-time editor extension (which
+  // mirrors the query on every doc change while in the Find route) reads the
+  // live value at fire time [L07]. Absent in hosts without a transcript.
+  const findSessionRef = useRef(findSession);
+  findSessionRef.current = findSession;
+
   // Helper: route the embedded substrate's selection through
   // selectionGuard for the inactive-paint channel.
   const publishToSelectionGuard = useCallback((range: Range | null): void => {
@@ -1614,6 +1642,18 @@ export const TugPromptEntry = React.forwardRef<
           const view = update.view;
           queueMicrotask(() => renumberImageChips(view));
         }
+      }),
+      // Find-query mirror: while the Find route is active, every doc edit feeds
+      // the editor text into the Find session as the live query. A direct store
+      // write, not React state — search-on-type never re-renders the entry per
+      // keystroke ([L02] store surface / [L22]). Gated on the route so the other
+      // routes' drafts are never treated as queries.
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged) return;
+        const session = findSessionRef.current;
+        if (session === undefined) return;
+        if (routeLifecycle.getRoute() !== ROUTE_FIND) return;
+        session.setQuery(update.state.doc.toString());
       }),
       // Empty-Escape gesture. On an empty editor, Escape surfaces
       // `onEscapeWhenEmpty` so the host can collapse the entry pane.
@@ -1744,6 +1784,33 @@ export const TugPromptEntry = React.forwardRef<
     });
   }, [routeLifecycle, manager]);
 
+  // Tear down the Find session the moment the route leaves `⌕` ([L03]): clear
+  // the query + match set so no stale search state (or highlight) survives into
+  // another route.
+  useLayoutEffect(() => {
+    return routeLifecycle.observeRouteWillChange((prev, next) => {
+      if (prev === ROUTE_FIND && next !== ROUTE_FIND) {
+        findSessionRef.current?.clear();
+      }
+    });
+  }, [routeLifecycle]);
+
+  // Re-seed the query from the editor draft on ENTERING Find ([L03]). Routes
+  // share a single draft ([Q07]=a), so switching away and back does not fire a
+  // doc change — the query-mirror `updateListener` only runs on edits, so the
+  // text is still in the editor but the search never re-runs. Reading the doc
+  // on the route's did-change re-runs the search against whatever is already
+  // typed, instead of stranding a stale empty result until the user twiddles
+  // the string. Leaving Find cleared the query above, so this is a real change
+  // and the search effect fires; a genuinely empty draft is a no-op.
+  useLayoutEffect(() => {
+    return routeLifecycle.observeRouteDidChange((_prev, next) => {
+      if (next !== ROUTE_FIND) return;
+      const doc = textEditorRef.current?.view()?.state.doc.toString() ?? "";
+      findSessionRef.current?.setQuery(doc);
+    });
+  }, [routeLifecycle]);
+
   // Force the just-cleared draft durable immediately after a submit.
   // `editor.clear()` empties the doc, but the debounced save that would
   // persist the cleared state is up to SAVE_DEBOUNCE_MS out, and WKWebView
@@ -1785,6 +1852,15 @@ export const TugPromptEntry = React.forwardRef<
     // The accept dispatches synchronously, so the draft reads below see the
     // inserted atom. Applies uniformly to `/` commands and `@` mentions.
     editor.acceptActiveCompletion();
+
+    // Find-route dispatch. On the `⌕` route the submit gesture is "find next",
+    // never a turn: advance the active match and let the transcript host react
+    // to the active-index change (scroll + flash). Intercept before every send
+    // gate.
+    if ((routeLifecycle.getRoute() || null) === ROUTE_FIND) {
+      findSessionRef.current?.next();
+      return;
+    }
 
     // btw-route dispatch ([P02]). On the `?` route the whole submission is a
     // side question — Claude off the record ([P01]) — regardless of content,
@@ -2239,6 +2315,19 @@ export const TugPromptEntry = React.forwardRef<
         if (!Object.prototype.hasOwnProperty.call(RETURN_ACTION_BY_ROUTE, nextRoute)) return;
         // `setRoute` is a no-op when `nextRoute` equals the current route.
         routeLifecycle.setRoute(nextRoute);
+      },
+      // ⌘G / ⇧⌘G within the Find route — advance / retreat the active match.
+      // The transcript host reacts to the active-index change (scroll + flash).
+      // No-ops outside Find (the session holds no matches there).
+      [TUG_ACTIONS.FIND_NEXT]: () => {
+        if (routeLifecycle.getRoute() === ROUTE_FIND) {
+          findSessionRef.current?.next();
+        }
+      },
+      [TUG_ACTIONS.FIND_PREVIOUS]: () => {
+        if (routeLifecycle.getRoute() === ROUTE_FIND) {
+          findSessionRef.current?.previous();
+        }
       },
       [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event: ActionEvent) => {
         // The preview's ✕ / Delete controls dispatch the atom id of the
@@ -2801,6 +2890,29 @@ export const TugPromptEntry = React.forwardRef<
               />
             )}
             {/*
+              Find route: the "previous match" secondary button, mounted to the
+              left of the Z5 "next" button (reusing the queue slot's placement).
+              Direct `onClick` → `findSession.previous()`, never the SUBMIT
+              action — the transcript host reacts to the active-index change
+              (scroll + flash). ⇧⌘G is the keyboard twin.
+            */}
+            {route === ROUTE_FIND && (
+              <TugPushButton
+                className="tug-prompt-entry-queue-button"
+                subtype="icon"
+                size="lg"
+                // Outlined, not filled: Previous is the secondary of the
+                // Next/Previous pair, so the two buttons don't read as identical
+                // twins — the filled Z5 button below is "next" (the Return
+                // gesture's twin), this outlined one is "previous".
+                emphasis="outlined"
+                role="action"
+                onClick={() => findSessionRef.current?.previous()}
+                aria-label="Find previous"
+                icon={<ChevronUp size={18} strokeWidth={2.5} />}
+              />
+            )}
+            {/*
               ONE button node across every mode ([L26]) — only
               `data-mode` / `disabled` / `aria-label` / the icon glyph
               change. `data-mode` drives the per-mode visual via CSS
@@ -2818,11 +2930,15 @@ export const TugPromptEntry = React.forwardRef<
               focusOrder={submitFocusOrder}
               role={submitView.danger ? "danger" : "action"}
               disabled={submitView.disabled}
-              aria-label={submitView.ariaLabel}
+              aria-label={route === ROUTE_FIND ? "Find next" : submitView.ariaLabel}
               icon={
-                submitView.icon === "stop"
-                  ? <Square size={14} strokeWidth={3} />
-                  : <ArrowUp size={16} strokeWidth={2.5} />
+                route === ROUTE_FIND ? (
+                  <ChevronDown size={18} strokeWidth={2.5} />
+                ) : submitView.icon === "stop" ? (
+                  <Square size={14} strokeWidth={3} />
+                ) : (
+                  <ArrowUp size={16} strokeWidth={2.5} />
+                )
               }
             />
           </div>

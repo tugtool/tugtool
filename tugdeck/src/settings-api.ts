@@ -20,6 +20,7 @@ import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
 import { MODEL_DOMAIN } from "./lib/model";
+import type { FindOptions } from "./lib/transcript-search";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
 
@@ -623,6 +624,45 @@ export function putDefaultModel(selector: string): void {
     body: JSON.stringify({ kind: "string", value: selector }),
   }).catch((err) => {
     console.warn("[settings] PUT defaultModel failed:", err);
+  });
+}
+
+// ── Find options ────────────────────────────────────────────────────────────
+
+/**
+ * Read the deck-wide Find option toggles (Case sensitive / Entire word / Grep)
+ * from the TugbankClient cache. Stored under `dev.tugtool.find` / `options`
+ * (Value::Json). Returns null when unset or malformed, so a fresh session falls
+ * back to `DEFAULT_FIND_OPTIONS`. The three fields are validated individually —
+ * a partial or corrupted blob (e.g. a future renamed key) contributes only the
+ * booleans it actually carries, defaulting the rest to `false`.
+ */
+export function readFindOptions(client: TugbankClient): FindOptions | null {
+  const entry = client.get("dev.tugtool.find", "options");
+  if (!entry || entry.kind !== "json" || entry.value === undefined) {
+    return null;
+  }
+  const raw = entry.value as Partial<Record<keyof FindOptions, unknown>> | null;
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    caseSensitive: raw.caseSensitive === true,
+    wholeWord: raw.wholeWord === true,
+    grep: raw.grep === true,
+  };
+}
+
+/**
+ * PUT the deck-wide Find option toggles to tugbank (fire-and-forget). New Find
+ * sessions adopt these on construction (see `dev-card`'s `findSession` seed) so
+ * a toggle survives a card reload.
+ */
+export function putFindOptions(options: FindOptions): void {
+  fetch("/api/defaults/dev.tugtool.find/options", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: options }),
+  }).catch((err) => {
+    console.warn("[settings] PUT findOptions failed:", err);
   });
 }
 

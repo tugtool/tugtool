@@ -106,6 +106,9 @@ import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
+import { DevFindSession } from "@/lib/dev-find-session";
+import { DevFindCluster } from "../chrome/dev-find-cluster";
+import { FindWrapOverlay } from "@/components/tugways/chrome/find-wrap-overlay";
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
@@ -162,7 +165,7 @@ import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { requestLogout } from "@/lib/logout-store";
-import { putDevRecentProjects } from "@/settings-api";
+import { putDevRecentProjects, readFindOptions } from "@/settings-api";
 import {
   useSessionLedger,
   getDevSessionLedgerStore,
@@ -228,6 +231,7 @@ const DEV_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "❯": "Ask Claude to build, fix, or explain",
   "$": "Run a shell command",
   "?": "Ask a question or say something to Claude as an aside",
+  "⌕": "Find in transcript",
 };
 
 /**
@@ -265,6 +269,10 @@ const DEV_CYCLE_ORDER_EFFORT = 6;
 // The shell route's Cwd chip shares slot 4 with Mode — the two are never in
 // the same route's Z4B cluster (Table T01), so the Tab walk never sees both.
 const DEV_CYCLE_ORDER_CWD = 4;
+// The find route's option cluster shares slot 4 too — it is the only Z4B
+// occupant on the ⌕ route besides the identity badge (Table T01), so it never
+// collides with Mode / Cwd in the walk.
+const DEV_CYCLE_ORDER_FIND = 4;
 const DEV_CYCLE_ORDER_SUBMIT = 7;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK / BTW take
@@ -2095,6 +2103,19 @@ export function DevCardBody({
 }: DevCardBodyProps) {
   const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, entryDelegateRef } = services;
 
+  // One Find session per card body — the transcript-search state for the `⌕`
+  // route. Owned here so it is in scope for both the prompt entry (query +
+  // Return-navigate) and the transcript host (index, paint, scroll+flash), all
+  // of which render inside this body. CardHost never remounts the body across
+  // pane moves ([L23]), so a single instance survives the session. The option
+  // toggles are seeded from the deck-wide persisted set (tugbank) so Case /
+  // Word / Grep survive a card reload; a fresh deck falls back to all-off.
+  const [findSession] = useState(() => {
+    const client = getTugbankClient();
+    const seeded = client ? readFindOptions(client) : null;
+    return new DevFindSession(seeded ?? undefined);
+  });
+
   useDevCardObserver(cardId, codeSessionStore);
   useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
 
@@ -3494,8 +3515,10 @@ export function DevCardBody({
               shellSessionStore={shellSessionStore}
               sessionMetadataStore={sessionMetadataStore}
               responseStore={responseStore}
+              findSession={findSession}
               renderTurnTrailing={effectiveRenderTurnTrailing}
             />
+            <FindWrapOverlay findSession={findSession} cardRef={devCardRootRef} />
             <PaneBulletinAnchor ref={paneBulletinRef} />
             </TugPaneBulletinProvider>
             </TugPaneBulletinProvider>
@@ -3615,6 +3638,7 @@ export function DevCardBody({
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}
               shellSessionStore={shellSessionStore}
+              findSession={findSession}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
               // session fault. Surface it as a calm, dismissible bulletin
@@ -3689,6 +3713,13 @@ export function DevCardBody({
                         disabled={!codeSnap.canSubmit}
                         focusGroup={DEV_CYCLE_GROUP}
                         focusOrder={DEV_CYCLE_ORDER_EFFORT}
+                      />
+                    }
+                    find={
+                      <DevFindCluster
+                        findSession={findSession}
+                        focusGroup={DEV_CYCLE_GROUP}
+                        focusOrder={DEV_CYCLE_ORDER_FIND}
                       />
                     }
                   />

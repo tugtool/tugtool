@@ -240,6 +240,11 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
   { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
   { key: "KeyB", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "?", preventDefaultOnMatch: true },
+  // ⇧⌘F flips to the Find route (transcript search), same SELECT_ROUTE path as
+  // its siblings; the entry's handler gates on membership in
+  // RETURN_ACTION_BY_ROUTE, where `⌕` is present. Plain ⌘F is left to whichever
+  // CM6 editor owns find. `preventDefaultOnMatch` suppresses WebKit's ⇧⌘F.
+  { key: "KeyF", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "⌕", preventDefaultOnMatch: true },
   // ⇧⌘P cycles the dev card's permission mode. Tug deliberately departs from
   // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
   // but in a GUI Shift+Tab must move focus to the previous control. So the

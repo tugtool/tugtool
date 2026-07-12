@@ -438,10 +438,10 @@ state — WebKit paints a spurious wash for a collapsed-Range highlight).
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Working find on the ⌕ route: index → search → count → paint → Return-navigate | pending | — |
-| #step-2 | Virtualized repaint + landing flash + sticky-clear reveal | pending | — |
-| #step-3 | Z5 Next/Prev + ⌘G + wrap + wrap graphic | pending | — |
-| #step-4 | Z4B cluster: options + count chip + persistence | pending | — |
+| #step-1 | Working find on the ⌕ route: index → search → count → paint → Return-navigate | done | 0bbc3056f |
+| #step-2 | Virtualized repaint + landing flash + sticky-clear reveal | done | 5c0a9acf1 |
+| #step-3 | Z5 Next/Prev + ⌘G + wrap + wrap graphic | done | 436bb2241 |
+| #step-4 | Z4B cluster: options + count chip + persistence | done | f1bcd8427 |
 | #step-5 | Expanded tool/editor scope + expansion notify | pending | — |
 | #step-6 | Integration + app-test | pending | — |
 

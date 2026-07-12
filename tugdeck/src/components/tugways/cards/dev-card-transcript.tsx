@@ -73,6 +73,7 @@
 import React, {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -134,6 +135,11 @@ import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
 } from "@/components/tugways/cards/blocks/expansion-state";
+import type { DevFindSession } from "@/lib/dev-find-session";
+import { search } from "@/lib/transcript-search";
+import { buildTranscriptSearchRows } from "@/lib/transcript-search-index";
+import { TranscriptFindHighlighter } from "@/components/tugways/transcript-find-highlighter";
+import "@/components/tugways/transcript-find.css";
 import {
   useComponentStatePreservation,
   useSavedComponentState,
@@ -1341,6 +1347,12 @@ export interface DevTranscriptHostProps {
    */
   responseStore: ResponseSettingsStore;
   /**
+   * `⌕`-route Find session (shared with the prompt entry). The host owns the
+   * whole-transcript index, runs the search over it, paints matches via the
+   * Custom-Highlight painter, and scrolls + flashes the active match.
+   */
+  findSession: DevFindSession;
+  /**
    * Z1 — per-turn trailing slot renderer. Invoked once per row half:
    *   - on the user row at the trailing edge (next to the copy button)
    *   - on the assistant row at the trailing edge (next to the copy button)
@@ -1430,6 +1442,7 @@ export const DevTranscriptHost = forwardRef<
     shellSessionStore,
     sessionMetadataStore,
     responseStore,
+    findSession,
     renderTurnTrailing,
   },
   ref,
@@ -1846,6 +1859,126 @@ export const DevTranscriptHost = forwardRef<
     [],
   );
 
+  // ── Find route: whole-transcript index → search → paint ([P02]/[P03]) ────
+  // The row→text index is query-independent: it rebuilds only when the
+  // transcript changes (a new `codeSessionStore` snapshot), reading through the
+  // shared parse cache so it costs cache hits, not re-parses. The search runs
+  // over that finished index on query/options change. Painting resolves DOM
+  // Ranges for the mounted matches via the Custom-Highlight painter — all
+  // imperative appearance ([L06]), never React state ([L02] only for the
+  // session snapshot that drives it).
+  const findSnap = useSyncExternalStore(
+    findSession.subscribe,
+    findSession.getSnapshot,
+  );
+  const codeSnapshot = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  const searchIndex = useMemo(
+    () => buildTranscriptSearchRows(dataSource, streamingStore),
+    // `codeSnapshot` changes identity on every transcript mutation.
+    [dataSource, streamingStore, codeSnapshot],
+  );
+  const findQuery = findSnap.query;
+  const findOptions = findSnap.options;
+  useEffect(() => {
+    if (findQuery === "") {
+      findSession.setMatches([]);
+      return;
+    }
+    // Debounced so search-on-type over a large transcript can't cost a frame
+    // per keystroke. The index is NOT rebuilt here — only the search re-runs.
+    const timer = setTimeout(() => {
+      findSession.setMatches(search(searchIndex, findQuery, findOptions));
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [findSession, searchIndex, findQuery, findOptions]);
+
+  const findHighlighterRef = useRef<TranscriptFindHighlighter | null>(null);
+  if (findHighlighterRef.current === null) {
+    findHighlighterRef.current = new TranscriptFindHighlighter();
+  }
+  useEffect(() => {
+    const highlighter = findHighlighterRef.current;
+    return () => highlighter?.dispose();
+  }, []);
+
+  const findPrevActiveRef = useRef<number>(-1);
+  useEffect(() => {
+    const highlighter = findHighlighterRef.current;
+    if (highlighter === null) return;
+    const { matches, activeIndex, query, options } = findSnap;
+    if (matches.length === 0 || query === "") {
+      findPrevActiveRef.current = -1;
+      highlighter.clear();
+      return;
+    }
+    const getElementForIndex = (index: number): HTMLElement | null =>
+      listViewRef.current?.getElementForIndex(index) ?? null;
+    const activeChanged = activeIndex !== findPrevActiveRef.current;
+    findPrevActiveRef.current = activeIndex;
+    const activeRow =
+      activeIndex >= 0 ? matches[activeIndex]?.row : undefined;
+    const input = { matches, activeIndex, query, options, getElementForIndex };
+    if (activeChanged && activeRow !== undefined) {
+      // Bring the active match on-screen (mounting it), then paint + flash on
+      // the next frame once the row is in the DOM.
+      listViewRef.current?.scrollToIndex(activeRow, { block: "nearest" });
+      requestAnimationFrame(() => {
+        highlighter.paint(input);
+        // Sticky-clear reveal: `scrollToIndex` can leave the match tucked under
+        // the pinned entry / tool-block header (`--tugx-pin-stack-top`). If the
+        // freshly-painted active range sits above that stacked chrome, nudge the
+        // scroll region down so the match is fully visible (mirrors the
+        // file-block match-reveal math). Then flash the ring at the settled
+        // position — live Ranges track the scroll, so the rect is current.
+        const root = rootRef.current;
+        const rect = highlighter.activeRangeRect();
+        const scroller = root?.querySelector<HTMLElement>(
+          '[data-tug-scroll-key="dev-card-transcript"]',
+        );
+        if (root !== null && rect !== null && scroller != null) {
+          const stickyTop =
+            parseFloat(
+              getComputedStyle(root).getPropertyValue("--tugx-pin-stack-top"),
+            ) || 0;
+          const visibleTop =
+            scroller.getBoundingClientRect().top + stickyTop + 8;
+          if (rect.top < visibleTop) {
+            scroller.scrollTop -= visibleTop - rect.top;
+          }
+        }
+        highlighter.flashActive();
+      });
+    } else {
+      highlighter.paint(input);
+    }
+  }, [findSnap]);
+
+  // Repaint when the list's mounted window turns over (hand-scroll, resize):
+  // rows that mount as they enter the viewport get their matches painted, and
+  // rows that leave drop cleanly. The count is authoritative from the index and
+  // never changes here — only the paint follows the mounted set (Risk R01). No
+  // flash: this is not a navigation, just keeping the live cells decorated.
+  const handleFindRenderedRangeChange = useCallback((): void => {
+    const highlighter = findHighlighterRef.current;
+    if (highlighter === null) return;
+    const { matches, activeIndex, query, options } = findSession.getSnapshot();
+    if (matches.length === 0 || query === "") {
+      highlighter.clear();
+      return;
+    }
+    highlighter.paint({
+      matches,
+      activeIndex,
+      query,
+      options,
+      getElementForIndex: (index) =>
+        listViewRef.current?.getElementForIndex(index) ?? null,
+    });
+  }, [findSession]);
+
   // Floating "scroll to latest" button. It is always mounted ([L26]);
   // its visibility is appearance state ([L06]) — `handleFollowBottom
   // Change` writes a `data-visible` attribute straight onto the button
@@ -1892,6 +2025,7 @@ export const DevTranscriptHost = forwardRef<
               cellRenderers={cellRenderers}
               scrollKey="dev-card-transcript"
               followBottom
+              onRenderedRangeChange={handleFindRenderedRangeChange}
               // Z0 ([D97]) is the list's permanent leading row — it scrolls
               // with the content (off-screen when scrolled down, first at the
               // top) and stays topmost as older turns prepend below it.

@@ -1,0 +1,55 @@
+/* transcript-find — Custom-Highlight paint + landing flash for the Find route.
+ *
+ * The painter (`transcript-find-highlighter.ts`) registers two document-global
+ * highlights and adds DOM Ranges for the mounted matches; these rules colour
+ * them, reusing the same find-match surface tokens the code-view search uses so
+ * transcript find reads identically. `::highlight()` supports background-color /
+ * color only — the active match's emphasis is a stronger fill, and the landing
+ * flash is a separate overlay element (below) since a ring can't ride a
+ * highlight pseudo. [L06] appearance-only. */
+
+/* Other matches — a faint accent wash, well below the muddy mid-opacity zone
+ * so it reads as a light highlight, not brown. */
+::highlight(transcript-find-match) {
+  background-color: color-mix(
+    in oklab,
+    var(--tug7-element-global-border-normal-accent-rest) 20%,
+    transparent
+  );
+}
+
+/* The current match — full-strength SOLID accent (the filled-accent control
+ * surface + its on-accent text), so it is unmistakable and never muddy. The
+ * landing flash shares this colour and differs only by an animated-size ring. */
+::highlight(transcript-find-active) {
+  background-color: var(--tug7-surface-control-primary-filled-accent-rest);
+  color: var(--tug7-element-control-text-filled-accent-rest);
+}
+
+/* Landing flash — a one-shot full-strength accent ring drawn over the ACTIVE
+ * MATCH's rect only (a fixed-position overlay the painter appends to <body>),
+ * never the whole row. Mirrors the code-view find-flash: a 3px accent ring that
+ * fades out. [L14] honours reduced-motion. */
+.tugx-find-flash-overlay {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: 2px;
+  animation: tugx-find-flash var(--tug-motion-duration-slow)
+    var(--tug-motion-easing-exit);
+}
+
+@keyframes tugx-find-flash {
+  0% {
+    box-shadow: 0 0 0 0 var(--tug7-element-global-border-normal-accent-rest);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tugx-find-flash-overlay {
+    animation: none;
+  }
+}

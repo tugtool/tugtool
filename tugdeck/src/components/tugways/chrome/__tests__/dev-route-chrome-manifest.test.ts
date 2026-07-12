@@ -30,6 +30,10 @@ describe("routeChipKeys — Table T01", () => {
     expect(routeChipKeys("?")).toEqual(["identity", "session", "project"]);
   });
 
+  it("find (`⌕`) shows project · find (drops identity; the search cluster replaces the session chips)", () => {
+    expect(routeChipKeys("⌕")).toEqual(["project", "find"]);
+  });
+
   it("identity always leads (never unmounts across a flip)", () => {
     for (const route of ["❯", "$", "?", null, "weird"]) {
       expect(routeChipKeys(route)[0]).toBe("identity");
@@ -46,6 +50,12 @@ describe("routeChipKeys — Table T01", () => {
     expect(routeChipKeys("?")).not.toContain("mode");
     expect(routeChipKeys("❯")).not.toContain("cwd");
     expect(routeChipKeys("?")).not.toContain("cwd");
+  });
+
+  it("the find cluster appears ONLY on the find route", () => {
+    for (const route of ["❯", "$", "?", null, "weird"]) {
+      expect(routeChipKeys(route)).not.toContain("find");
+    }
   });
 });
 

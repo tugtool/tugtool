@@ -504,6 +504,21 @@ export interface TugListViewHandle {
  * type so consumers with typed adapters get matched cell-renderer
  * props without manual casts.
  */
+/**
+ * The contiguous slice of rows currently mounted in the DOM — the windowed
+ * range plus overscan — reported by {@link TugListViewProps.onRenderedRangeChange}.
+ *
+ * `firstIndex`/`lastIndex` are **inclusive** data-source indices; both are `-1`
+ * when nothing is rendered (empty list). `itemCount` is the data source's size
+ * at the moment of notification, so `firstIndex === 0 && lastIndex ===
+ * itemCount - 1` means the whole list is mounted.
+ */
+export interface TugListRenderedRange {
+  firstIndex: number;
+  lastIndex: number;
+  itemCount: number;
+}
+
 export interface TugListViewProps<
   DS extends TugListViewDataSource = TugListViewDataSource,
 > {
@@ -643,6 +658,32 @@ export interface TugListViewProps<
    * `onFollowBottomChange`.
    */
   onAtTopChange?: (atTop: boolean) => void;
+
+  /**
+   * Fires whenever the set of mounted rows changes — on scroll re-window, on
+   * measured-height shifts that move the window, and on data-source updates
+   * that change membership. This is the general seam for work that decorates
+   * the LIVE DOM of the currently-mounted cells and therefore must re-run every
+   * time the window turns over: find/search highlighting, media autoplay,
+   * viewport telemetry, lazy media. None of that can act on windowed-out rows,
+   * so a one-shot pass is never enough — this callback is the "re-run now"
+   * signal.
+   *
+   * Contract:
+   * - Reports the contiguous mounted range as {@link TugListRenderedRange}
+   *   (inclusive `firstIndex`/`lastIndex`, `-1`/`-1` when empty) plus the live
+   *   `itemCount`, so a consumer can tell a partial window from "the whole list
+   *   fits" without a second read.
+   * - Fires in a **layout effect after the new window has committed**, so
+   *   `getElementForIndex(i)` resolves for every `i` in `[firstIndex,
+   *   lastIndex]` by the time it runs — decorate synchronously, no flash of
+   *   undecorated content ([L03]).
+   * - **Deduped**: does not fire when the rendered range is unchanged between
+   *   renders. Fires once on mount with the initial window.
+   * - [L06] consumers drive appearance from this callback through the DOM /
+   *   Custom Highlight registry, never React state.
+   */
+  onRenderedRangeChange?: (range: TugListRenderedRange) => void;
 
   /**
    * Skip windowing — render every cell in document order with no
@@ -1133,6 +1174,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       onSelectionChange,
       onFollowBottomChange,
       onAtTopChange,
+      onRenderedRangeChange,
       focusGroup,
       focusOrder = 0,
       focusPolicy,
@@ -2672,6 +2714,40 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         enabled: dataSource.enabledForIndex?.(i) ?? true,
       });
     }
+
+    // Rendered-window notification ([L03] / `onRenderedRangeChange`). The
+    // mounted rows are the contiguous `renderedRange`; report its inclusive
+    // bounds. The layout effect fires post-commit — after the cell ref
+    // callbacks have populated `cellElementMapRef` — so a consumer's
+    // `getElementForIndex` resolves for the whole reported range and it can
+    // decorate synchronously before the browser paints. Deduped against the
+    // last reported range so a re-render with an unchanged window is silent.
+    const renderedFirstIndex =
+      renderedRange.length > 0 ? renderedRange[0].index : -1;
+    const renderedLastIndex =
+      renderedRange.length > 0
+        ? renderedRange[renderedRange.length - 1].index
+        : -1;
+    const lastReportedRangeRef = React.useRef<TugListRenderedRange | null>(null);
+    React.useLayoutEffect(() => {
+      if (onRenderedRangeChange === undefined) return;
+      const prev = lastReportedRangeRef.current;
+      if (
+        prev !== null &&
+        prev.firstIndex === renderedFirstIndex &&
+        prev.lastIndex === renderedLastIndex &&
+        prev.itemCount === itemCount
+      ) {
+        return;
+      }
+      const next: TugListRenderedRange = {
+        firstIndex: renderedFirstIndex,
+        lastIndex: renderedLastIndex,
+        itemCount,
+      };
+      lastReportedRangeRef.current = next;
+      onRenderedRangeChange(next);
+    }, [onRenderedRangeChange, renderedFirstIndex, renderedLastIndex, itemCount]);
 
     // Per-index ref + click callback registry. React's ref protocol
     // fires the OLD callback with `null` and the NEW callback with

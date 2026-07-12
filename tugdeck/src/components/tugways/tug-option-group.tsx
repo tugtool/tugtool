@@ -102,6 +102,9 @@ export interface TugOptionItem {
   iconPosition?: "left" | "right" | "both";
   /** Accessible label — required when label is omitted (icon-only). */
   "aria-label"?: string;
+  /** Native hover tooltip. Useful for icon-only items whose glyph needs a
+   *  plain-language gloss (e.g. the Find route's Case/Word/Grep toggles). */
+  title?: string;
   /** Disables this item individually. */
   disabled?: boolean;
 }
@@ -346,6 +349,7 @@ export const TugOptionGroup = React.forwardRef<HTMLDivElement, TugOptionGroupPro
               type="button"
               aria-pressed={isOn}
               aria-label={item["aria-label"]}
+              title={item.title}
               disabled={isDisabled}
               data-option-value={item.value}
               data-state={isOn ? "on" : "off"}

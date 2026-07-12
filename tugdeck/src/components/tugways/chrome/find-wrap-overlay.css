@@ -1,0 +1,27 @@
+/* find-wrap-overlay — the transient "search wrapped" panel.
+ *
+ * A centred, dark, rounded panel with a circular-arrow glyph, appended into
+ * CanvasOverlayRoot by `find-wrap-overlay.tsx` and animated via Web Animations.
+ * A neutral scrim panel (not a themed surface) — deliberately hue-agnostic so
+ * the wrap signal reads the same in every theme. [L06] appearance-only. */
+
+/* @tug-pairings: foreground=neutral-100 background=neutral-scrim */
+.tugx-find-wrap {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 132px;
+  height: 132px;
+  border-radius: 22px;
+  background-color: color-mix(in oklab, #000 62%, transparent);
+  color: #fff;
+  pointer-events: none;
+}
+
+.tugx-find-wrap svg {
+  width: 64px;
+  height: 64px;
+}

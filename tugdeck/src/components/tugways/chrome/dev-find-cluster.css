@@ -1,0 +1,34 @@
+/**
+ * DevFindCluster — the Find route's Z4B cluster layout.
+ *
+ * Owns only its own box ([L20]): the row that lays the Case/Word/Grep option
+ * group beside the match-count chip. The composed `TugOptionGroup` and
+ * `TugStableOverlay` keep their own tokens.
+ */
+
+.tugx-find-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/* The option group's size variant pins its icon svgs (sm → 14px). The
+   Case/Word/Grep marks (esp. the regex glyph) read too small there, so the
+   Find cluster bumps them up — the buttons keep their sm metrics, only the
+   glyphs grow. */
+.tugx-find-cluster .tug-option-group .tug-group-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Read-only match count. Muted, tabular figures so "1 of 9" → "10 of 90"
+   holds a steady width (the stable overlay reserves the widest face). */
+.tugx-find-count {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+}
