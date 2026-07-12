@@ -25,9 +25,9 @@ toggles, and a landing flash on each match — reachable by ⇧⌘F or the route
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | superseded by [find-foundations.md](find-foundations.md) — Steps 1–4 landed in `3bf91cbd`; Steps 5–6 replaced |
 | Target branch | main |
-| Last updated | 2026-07-11 |
+| Last updated | 2026-07-12 |
 
 ---
 
