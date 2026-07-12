@@ -853,7 +853,7 @@ function stripToolUseErrorTags(text: string): string {
   return text.replace(/<\/?tool_use_error>/g, "").trim();
 }
 
-function extractTextOutput(result: unknown): string | undefined {
+export function extractTextOutput(result: unknown): string | undefined {
   const raw =
     typeof result === "string"
       ? result

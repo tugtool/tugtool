@@ -1,9 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
 import { DEFAULT_FIND_OPTIONS, DevFindSession } from "../dev-find-session";
-import type { FindMatch } from "../transcript-search";
+import type { SegmentedFindMatch } from "../transcript-search";
 
-const m = (row: number, start: number): FindMatch => ({ row, start, end: start + 1 });
+const m = (row: number, start: number): SegmentedFindMatch => ({
+  row,
+  start,
+  end: start + 1,
+  segment: 0,
+  segmentKind: "dom",
+});
 
 describe("DevFindSession", () => {
   it("starts empty with no active match", () => {

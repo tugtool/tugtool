@@ -31,25 +31,6 @@
 
 /* ---- Editor state ---- */
 
-/* Find bar — a compact strip above the editor. Composes TugInput /
- * TugIconButton / TugLabel; layout-only rules here [L20]. */
-.text-card-find-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-2xs);
-  padding: var(--tug-space-2xs) var(--tug-space-sm);
-  flex: 0 0 auto;
-}
-
-.text-card-find-bar > :first-child {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.text-card-find-count {
-  white-space: nowrap;
-}
-
 .text-card--editor {
   overflow: hidden;
 }

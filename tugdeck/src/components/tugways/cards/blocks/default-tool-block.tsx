@@ -162,9 +162,14 @@ export const DefaultToolBlock: React.FC<ToolBlockProps> = ({
                 componentStatePreservationKey={`${toolUseId}-result`}
               />
             ) : (
+              // `findable` opts the markdown result into transcript Find;
+              // the search index projects the same text for expanded
+              // default-routed tools. The JSON input tree above stays
+              // unmarked — its visible text is fold-dependent.
               <TugMarkdownBlock
                 initialText={outputBody.text}
                 className="default-tool-block-result-md"
+                findable
               />
             )}
           </>

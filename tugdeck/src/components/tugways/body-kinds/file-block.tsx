@@ -108,6 +108,13 @@ import type { SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 import {
+  useFindTargetRegistration,
+} from "@/components/tugways/cards/blocks/find-target-registry";
+import {
+  ToolBlockCollapseContext,
+  ToolUseIdContext,
+} from "@/components/tugways/cards/blocks/collapse-context";
+import {
   TugCodeView,
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
@@ -522,6 +529,18 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   // `EditorView` for Cmd/Ctrl-wheel routing and the region-scroll
   // restore loop.
   const codeViewRef = React.useRef<TugCodeViewDelegate | null>(null);
+
+  // Find-target registration ([L03]): transcript Find counts this file's
+  // matches from the store text (an `editor` segment keyed by the owning
+  // tool call); navigation resolves this target to open the internal fold
+  // (a folded FileBlock unmounts CM6 entirely) and to drive the embedded
+  // editor's own search. No-op outside a transcript host.
+  const collapseHandle = React.useContext(ToolBlockCollapseContext);
+  const contextToolUseId = React.useContext(ToolUseIdContext);
+  useFindTargetRegistration(collapseHandle?.toolUseId ?? contextToolUseId, {
+    unfold: () => setCollapsed(false),
+    codeView: () => codeViewRef.current,
+  });
 
   // The fold flag is persisted on the [A9] component-state axis by
   // `useBlockFoldState` above. CM6 inner scroll position is preserved

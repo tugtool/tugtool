@@ -136,9 +136,13 @@ import {
   type PersistedExpansionState,
 } from "@/components/tugways/cards/blocks/expansion-state";
 import type { DevFindSession } from "@/lib/dev-find-session";
-import { search } from "@/lib/transcript-search";
-import { buildTranscriptSearchRows } from "@/lib/transcript-search-index";
+import { searchSegments } from "@/lib/transcript-search";
+import { buildTranscriptSearchSegments } from "@/lib/transcript-search-index";
 import { TranscriptFindHighlighter } from "@/components/tugways/transcript-find-highlighter";
+import {
+  FindTargetRegistry,
+  FindTargetRegistryContext,
+} from "@/components/tugways/cards/blocks/find-target-registry";
 import "@/components/tugways/transcript-find.css";
 import {
   useComponentStatePreservation,
@@ -815,7 +819,10 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
             role="separator"
             data-slot="compaction-divider"
           >
-            <span className="dev-card-transcript-compaction-label">
+            <span
+              className="dev-card-transcript-compaction-label"
+              data-tugx-findable=""
+            >
               {message.text}
             </span>
           </div>,
@@ -845,6 +852,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
                   key={`md-${message.text.length}`}
                   initialText={message.text}
                   className="dev-card-transcript-wake-trigger-md"
+                  findable
                 />
               }
               tone="quiet"
@@ -887,6 +895,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
             streamingStore={streamingStore}
             streamingPath={path}
             className="dev-card-transcript-code-body"
+            findable
           />
         </StreamedTextGate>,
       );
@@ -1875,10 +1884,18 @@ export const DevTranscriptHost = forwardRef<
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
+  // Expansion changes re-project tool/shell content in and out of the index
+  // ([L02]: the expansion state is a subscribable store; its `version` is the
+  // snapshot the memo keys on).
+  const expansionVersion = useSyncExternalStore(
+    toolBlockExpansion.subscribe,
+    () => toolBlockExpansion.version,
+  );
   const searchIndex = useMemo(
-    () => buildTranscriptSearchRows(dataSource, streamingStore),
-    // `codeSnapshot` changes identity on every transcript mutation.
-    [dataSource, streamingStore, codeSnapshot],
+    () => buildTranscriptSearchSegments(dataSource, streamingStore, toolBlockExpansion),
+    // `codeSnapshot` changes identity on every transcript mutation;
+    // `expansionVersion` bumps on every expand/collapse toggle.
+    [dataSource, streamingStore, toolBlockExpansion, codeSnapshot, expansionVersion],
   );
   const findQuery = findSnap.query;
   const findOptions = findSnap.options;
@@ -1890,7 +1907,7 @@ export const DevTranscriptHost = forwardRef<
     // Debounced so search-on-type over a large transcript can't cost a frame
     // per keystroke. The index is NOT rebuilt here — only the search re-runs.
     const timer = setTimeout(() => {
-      findSession.setMatches(search(searchIndex, findQuery, findOptions));
+      findSession.setMatches(searchSegments(searchIndex, findQuery, findOptions));
     }, 100);
     return () => clearTimeout(timer);
   }, [findSession, searchIndex, findQuery, findOptions]);
@@ -1899,6 +1916,15 @@ export const DevTranscriptHost = forwardRef<
   if (findHighlighterRef.current === null) {
     findHighlighterRef.current = new TranscriptFindHighlighter();
   }
+  // Card-scoped find-target registry: body kinds with internal folds /
+  // embedded editors register themselves so navigation can unfold a hidden
+  // match and the painter can drive an embedded editor's search ([L07]
+  // stable instance; registrations ride [L03] layout effects).
+  const findTargetsRef = useRef<FindTargetRegistry | null>(null);
+  if (findTargetsRef.current === null) {
+    findTargetsRef.current = new FindTargetRegistry();
+  }
+  const findTargets = findTargetsRef.current;
   useEffect(() => {
     const highlighter = findHighlighterRef.current;
     return () => highlighter?.dispose();
@@ -1918,15 +1944,47 @@ export const DevTranscriptHost = forwardRef<
       listViewRef.current?.getElementForIndex(index) ?? null;
     const activeChanged = activeIndex !== findPrevActiveRef.current;
     findPrevActiveRef.current = activeIndex;
-    const activeRow =
-      activeIndex >= 0 ? matches[activeIndex]?.row : undefined;
-    const input = { matches, activeIndex, query, options, getElementForIndex };
+    const activeMatch = activeIndex >= 0 ? matches[activeIndex] : undefined;
+    const activeRow = activeMatch?.row;
+    const input = {
+      matches,
+      activeIndex,
+      query,
+      options,
+      getElementForIndex,
+      findTargets,
+    };
     if (activeChanged && activeRow !== undefined) {
-      // Bring the active match on-screen (mounting it), then paint + flash on
-      // the next frame once the row is in the DOM.
+      // Bring the active match on-screen (mounting it), then paint + reveal
+      // on the next frame once the row is in the DOM. A match hidden by a
+      // body kind's INTERNAL fold (a terminal preview's tail, a folded file
+      // body whose editor is unmounted) unfolds through the find-target
+      // registry — the unfold commits over the following frames, so the
+      // paint retries a bounded handful of times until the match is
+      // paintable (or the budget runs out).
       listViewRef.current?.scrollToIndex(activeRow, { block: "nearest" });
-      requestAnimationFrame(() => {
+      const paintAndReveal = (attempt: number): void => {
         highlighter.paint(input);
+        const key = activeMatch?.segmentKey;
+        if (activeMatch !== undefined && key !== undefined) {
+          const hidden =
+            activeMatch.segmentKind === "editor"
+              ? (findTargets.resolve(key)?.codeView?.() ?? null) === null
+              : highlighter.activeRangeRect() === null;
+          if (hidden) {
+            findTargets.resolve(key)?.unfold();
+            if (attempt < 8) {
+              requestAnimationFrame(() => paintAndReveal(attempt + 1));
+              return;
+            }
+          }
+        }
+        if (activeMatch !== undefined && activeMatch.segmentKind === "editor") {
+          // The editor's own search selected + revealed the match
+          // (`.cm-searchMatch-selected`); the transcript-level ring and
+          // sticky-clear are DOM-walk affordances and don't apply inside CM6.
+          return;
+        }
         // Sticky-clear reveal: `scrollToIndex` can leave the match tucked under
         // the pinned entry / tool-block header (`--tugx-pin-stack-top`). If the
         // freshly-painted active range sits above that stacked chrome, nudge the
@@ -1950,11 +2008,12 @@ export const DevTranscriptHost = forwardRef<
           }
         }
         highlighter.flashActive();
-      });
+      };
+      requestAnimationFrame(() => paintAndReveal(0));
     } else {
       highlighter.paint(input);
     }
-  }, [findSnap]);
+  }, [findSnap, findTargets]);
 
   // Repaint when the list's mounted window turns over (hand-scroll, resize):
   // rows that mount as they enter the viewport get their matches painted, and
@@ -1976,6 +2035,7 @@ export const DevTranscriptHost = forwardRef<
       options,
       getElementForIndex: (index) =>
         listViewRef.current?.getElementForIndex(index) ?? null,
+      findTargets: findTargetsRef.current,
     });
   }, [findSession]);
 
@@ -2019,6 +2079,7 @@ export const DevTranscriptHost = forwardRef<
         // when modal. The overlay is an absolute sibling layered *over* it.
         <div className="tug-control-bar-region" ref={setRegionEl}>
           <ToolBlockExpansionContext.Provider value={toolBlockExpansion}>
+            <FindTargetRegistryContext.Provider value={findTargets}>
             <TugListView
               ref={listViewRef}
               dataSource={dataSource}
@@ -2059,6 +2120,7 @@ export const DevTranscriptHost = forwardRef<
               // click that brings a background dev card forward.
               interactive={false}
             />
+            </FindTargetRegistryContext.Provider>
           </ToolBlockExpansionContext.Provider>
           <DevJumpToBottomButton
             ref={jumpButtonRef}

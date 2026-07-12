@@ -50,6 +50,47 @@ describe("ToolBlockExpansionState", () => {
     expect(restored.resolve("t3", true)).toBe(true);
   });
 
+  test("notifies (and bumps version) only on a resolved-value change", () => {
+    const state = new ToolBlockExpansionState();
+    let calls = 0;
+    const unsubscribe = state.subscribe(() => {
+      calls += 1;
+    });
+
+    expect(state.version).toBe(0);
+    state.set("t1", false, true); // expand: resolved true -> false
+    expect(calls).toBe(1);
+    expect(state.version).toBe(1);
+
+    state.set("t1", false, true); // same resolved value - silent
+    expect(calls).toBe(1);
+    expect(state.version).toBe(1);
+
+    state.set("t1", true, true); // collapse back to default - a real change
+    expect(calls).toBe(2);
+    expect(state.version).toBe(2);
+
+    state.set("t2", true, true); // already the default - silent
+    expect(calls).toBe(2);
+
+    unsubscribe();
+    state.set("t1", false, true);
+    expect(calls).toBe(2); // unsubscribed - no further notifications
+    expect(state.version).toBe(3); // version still tracks the change
+  });
+
+  test("seed does not notify", () => {
+    const state = new ToolBlockExpansionState();
+    let calls = 0;
+    state.subscribe(() => {
+      calls += 1;
+    });
+    state.seed({ overrides: { t1: false } });
+    expect(calls).toBe(0);
+    expect(state.version).toBe(0);
+    expect(state.resolve("t1", true)).toBe(false);
+  });
+
   test("seed tolerates malformed saved values", () => {
     const state = new ToolBlockExpansionState();
     state.seed(undefined);

@@ -2931,6 +2931,40 @@ export function DevCardBody({
       if (arg.trim().length > 0) sideQuestionStore.ask(arg);
       statusRowRef.current?.openSideQuestions();
     },
+    shell: (arg) => {
+      // One-shot `$` accelerator from the Code route ([D110] recipients):
+      // run one exchange against the card's shell session — the row threads
+      // into the transcript via `ingestShellExchange` exactly like a
+      // `$`-route submit — while the route stays `❯`. `exec` silently drops
+      // a command while an exchange is in flight (the shell child is
+      // serial), so surface that as a bulletin instead of losing the input.
+      const notify = paneBulletinRef.current;
+      const command = arg.trim();
+      if (command.length === 0) {
+        notify?.caution("Usage: /shell <command>");
+        return;
+      }
+      if (shellSessionStore.getSnapshot().inflight !== null) {
+        notify?.caution("A shell command is already running");
+        return;
+      }
+      shellSessionStore.exec(command);
+    },
+    find: (arg) => {
+      // One-shot `⌕` accelerator from the Code route: run the transcript
+      // search and jump to the first match — highlights + ⌘G/⇧⌘G stay live
+      // while the route stays `❯`. The session dissolves on the next
+      // submit, on Escape (empty editor), or on entering/leaving the ⌕
+      // route (whose mirror/clear observers own the query there).
+      const notify = paneBulletinRef.current;
+      const query = arg.trim();
+      if (query.length === 0) {
+        notify?.caution("Usage: /find <query>");
+        return;
+      }
+      findSession.setQuery(query);
+      findSession.next();
+    },
     // Copy the most recent assistant message (committed transcript only, read
     // live at click time per [L07]) to the clipboard, with a pane-scoped
     // confirmation bulletin. No message yet → caution; clipboard failure →

@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildSlashCommandLine,
+  isCodeRouteOnlyCommand,
   matchLocalSlashCommand,
   slashCommandName,
   type CommandLineAtom,
@@ -228,6 +229,26 @@ describe("buildSlashCommandLine", () => {
     expect(matchLocalSlashCommand(line)).toEqual({
       name: "compact",
       args: "focus",
+    });
+  });
+});
+
+describe("isCodeRouteOnlyCommand — one-shot gating", () => {
+  test("the one-shot accelerators are Code-route-only", () => {
+    expect(isCodeRouteOnlyCommand("shell")).toBe(true);
+    expect(isCodeRouteOnlyCommand("btw")).toBe(true);
+  });
+
+  test("ordinary local commands are offered everywhere", () => {
+    expect(isCodeRouteOnlyCommand("permissions")).toBe(false);
+    expect(isCodeRouteOnlyCommand("model")).toBe(false);
+    expect(isCodeRouteOnlyCommand("not-a-command")).toBe(false);
+  });
+
+  test("/shell matches with its argument", () => {
+    expect(matchLocalSlashCommand("/shell echo hi")).toEqual({
+      name: "shell",
+      args: "echo hi",
     });
   });
 });

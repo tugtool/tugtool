@@ -1,5 +1,6 @@
 /**
- * DevFindCluster — the Find route's Z4B cluster layout.
+ * TugFindCluster — the shared find cluster layout (Dev Find route Z4B, the
+ * Text card's find bar).
  *
  * Owns only its own box ([L20]): the row that lays the Case/Word/Grep option
  * group beside the match-count chip. The composed `TugOptionGroup` and

@@ -205,10 +205,14 @@ export const TugAtomMarkdownBody = React.forwardRef<
       data-testid={dataTestid}
       style={hostStyle}
     >
+      {/* `findable` opts the rendered prompt text into transcript Find; the
+          chip SVGs grafted below live in `.tug-atom-chip-host` spans, which
+          the find painter excludes (the index projects atoms as no-text). */}
       <TugMarkdownBlock
         key={text}
         initialText={text}
         className="dev-card-transcript-code-body"
+        findable
       />
       {mounts.map(({ host, atom, key }) =>
         createPortal(

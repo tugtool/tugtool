@@ -33,6 +33,30 @@ export interface PersistedExpansionState {
 
 export class ToolBlockExpansionState {
   private overrides = new Map<string, boolean>();
+  private listeners = new Set<() => void>();
+  private _version = 0;
+
+  /**
+   * Monotonic change counter — bumps on every `set` that changes a
+   * block's RESOLVED value. Consumers key derived work (the transcript
+   * search index rebuilds on expansion changes) on this number rather
+   * than diffing the override map.
+   */
+  get version(): number {
+    return this._version;
+  }
+
+  /**
+   * Subscribe to resolved-value changes ([L02]-compatible: pair with
+   * `version` as the snapshot). `seed` does not notify — it runs once
+   * before first paint, so there is no earlier snapshot to invalidate.
+   */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
 
   /** Resolved collapsed value for a block: override wins, else default. */
   resolve(toolUseId: string, defaultCollapsed: boolean): boolean {
@@ -41,13 +65,20 @@ export class ToolBlockExpansionState {
 
   /**
    * Record a toggle. Values equal to the block's default are DELETED
-   * rather than stored — sparseness is the contract.
+   * rather than stored — sparseness is the contract. Notifies (and bumps
+   * `version`) only when the block's resolved value actually changes; a
+   * same-value write is silent.
    */
   set(toolUseId: string, collapsed: boolean, defaultCollapsed: boolean): void {
+    const before = this.resolve(toolUseId, defaultCollapsed);
     if (collapsed === defaultCollapsed) {
       this.overrides.delete(toolUseId);
     } else {
       this.overrides.set(toolUseId, collapsed);
+    }
+    if (before !== collapsed) {
+      this._version += 1;
+      for (const listener of this.listeners) listener();
     }
   }
 

@@ -134,7 +134,7 @@ function narrowInput(value: unknown): BashToolInput {
   };
 }
 
-function narrowStructured(value: unknown): BashStructuredResult {
+export function narrowStructured(value: unknown): BashStructuredResult {
   if (value === null || typeof value !== "object") return {};
   const v = value as Record<string, unknown>;
   return {
@@ -295,10 +295,15 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   // shared `tool-call-header-clamp` class (a long heredoc would otherwise
   // fill the whole collapsed header); expanding shows the full command above
   // the output, so nothing is ever lost.
+  // `data-tugx-findable` opts the command text into transcript Find; the
+  // painter's collapse guard skips it while the block is collapsed, matching
+  // the index's expansion gate. (The commit-receipt variant replaces the
+  // command row entirely, and the index projects nothing for it.)
   const command = bashInput.command !== undefined ? (
     <code
       data-slot="bash-tool-block-command"
       className="tool-call-header-clamp"
+      data-tugx-findable=""
     >
       {bashInput.command}
     </code>
@@ -398,6 +403,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
       <TerminalBlock
         data={bodyData}
         embedded
+        findable
         className="bash-tool-block-terminal"
         componentStatePreservationKey={`${toolUseId}-body`}
       />

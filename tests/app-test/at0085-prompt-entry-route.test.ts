@@ -1,6 +1,6 @@
 /**
  * at0085-prompt-entry-route.test.ts — TugPromptEntry's route survives a
- * reload and flips on each of its three triggers, now that the route is
+ * reload and flips on each of its triggers, now that the route is
  * owned by a per-prompt-entry `RouteLifecycle` ([AT0085]).
  *
  * ## Why this exists
@@ -17,10 +17,11 @@
  *      `routeLifecycle.setRoute(restored)`. A non-default route must
  *      survive close → reopen.
  *
- *   2. **The three triggers.** The route popup pick (SELECT_VALUE),
- *      the route-prefix editor extension, and the SELECT_ROUTE
- *      keybinding all now call `routeLifecycle.setRoute`. Each must
- *      still flip the route.
+ *   2. **The two triggers.** The route popup pick (SELECT_VALUE) and
+ *      the SELECT_ROUTE keybinding both call `routeLifecycle.setRoute`.
+ *      Each must still flip the route. Typing a route character (`$`,
+ *      `?`, `>`) is deliberately NOT a trigger — first-character route
+ *      switching was removed; those characters are ordinary text.
  *
  * ## Test matrix
  *
@@ -30,7 +31,7 @@
  *   1. A non-default route (`$` Shell) survives `appReload` — Risk R02.
  *   2. A route popup pick flips `❯` Code → `$` Shell.
  *   3. The ⇧⌘C SELECT_ROUTE keybinding flips `$` Shell → `❯` Code.
- *   4. Typing a route-prefix character flips `❯` Code → `$` Shell.
+ *   4. Typing `$` at offset 0 stays text — the route does NOT flip.
  *
  * The live route is read off the popup trigger's label text: the trigger
  * paints the current route (a direct projection of
@@ -290,25 +291,32 @@ async function runKeybindingTriggerScenario(): Promise<void> {
 }
 
 /**
- * Test 4 — the route-prefix extension trigger. Typing `$` at offset 0 of
- * the editor makes the route-prefix extension call `routeLifecycle.setRoute`.
+ * Test 4 — route characters are ordinary text. Typing `$` at offset 0 of
+ * the editor inserts the character and leaves the route alone
+ * (first-character route switching was removed).
  */
-async function runPrefixTriggerScenario(): Promise<void> {
-  const app = await launchTugApp({ testName: "m85-route-prefix" });
+async function runPrefixIsTextScenario(): Promise<void> {
+  const app = await launchTugApp({ testName: "m85-route-prefix-is-text" });
   try {
     await mountCard(app, {});
     await waitForRoute(app, ROUTE_CODE);
 
     await focusEditor(app);
-    // `$` at offset 0 of the empty doc — `ROUTE_PREFIX_ALIAS["$"]` is the
-    // Shell route.
-    await app.nativeType("$");
+    await app.nativeType("$HOME");
 
-    await waitForRoute(app, ROUTE_SHELL);
+    // The typed text landed in the doc — the positive signal that input
+    // settled before the negative route assertion below.
+    await app.waitForCondition<boolean>(
+      `(function(){
+        var el = document.querySelector(${JSON.stringify(EDITOR_SELECTOR)});
+        return el !== null && el.textContent.indexOf("$HOME") !== -1;
+      })()`,
+      { timeoutMs: 4000 },
+    );
     expect(
       await readActiveRouteLabel(app),
-      "typing a route-prefix character must flip the route to Shell",
-    ).toBe(LABEL_BY_ROUTE[ROUTE_SHELL]);
+      "typing `$` at offset 0 must NOT flip the route — it is ordinary text",
+    ).toBe(LABEL_BY_ROUTE[ROUTE_CODE]);
   } finally {
     await app.close();
   }
@@ -335,8 +343,8 @@ describe.skipIf(!SHOULD_RUN)(
       TEST_TIMEOUT_MS,
     );
     test(
-      "typing a route-prefix character flips the route",
-      runPrefixTriggerScenario,
+      "typing a route character stays text and does not flip the route",
+      runPrefixIsTextScenario,
       TEST_TIMEOUT_MS,
     );
   },

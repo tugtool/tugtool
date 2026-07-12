@@ -312,6 +312,15 @@ export interface TugCodeViewDelegate {
    * count for the new query.
    */
   getMatchCount(): number;
+  /**
+   * Select (and reveal) the `ordinal`-th match of the active query —
+   * 0-based, in document order. The selected match wears the
+   * `.cm-searchMatch-selected` styling; CM6 search works off the
+   * document, so an off-viewport ordinal reveals correctly. Returns
+   * `false` when there is no such match (no/invalid query, or ordinal
+   * out of range).
+   */
+  selectMatch(ordinal: number): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +534,29 @@ export const TugCodeView = React.forwardRef<
     return count;
   }, []);
 
+  const selectMatchFn = useCallback((ordinal: number): boolean => {
+    const view = viewRef.current;
+    if (view === null || ordinal < 0) return false;
+    const query = getSearchQuery(view.state);
+    if (!query.valid) return false;
+    const cursor = query.getCursor(view.state);
+    let i = 0;
+    let next = cursor.next();
+    while (!next.done) {
+      if (i === ordinal) {
+        const { from, to } = next.value;
+        view.dispatch({
+          selection: { anchor: from, head: to },
+          effects: EditorView.scrollIntoView(from, { y: "center" }),
+        });
+        return true;
+      }
+      i += 1;
+      next = cursor.next();
+    }
+    return false;
+  }, []);
+
   useImperativeHandle(
     ref,
     (): TugCodeViewDelegate => ({
@@ -535,6 +567,7 @@ export const TugCodeView = React.forwardRef<
       findPrevious: findPreviousFn,
       selectAllMatches: selectAllMatchesFn,
       getMatchCount: getMatchCountFn,
+      selectMatch: selectMatchFn,
     }),
     [
       setSearchQueryFn,
@@ -543,6 +576,7 @@ export const TugCodeView = React.forwardRef<
       findPreviousFn,
       selectAllMatchesFn,
       getMatchCountFn,
+      selectMatchFn,
     ],
   );
 

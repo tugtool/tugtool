@@ -47,6 +47,15 @@ export interface LocalSlashCommandSpec {
    * Defaults to `false`.
    */
   readonly takesArgs?: boolean;
+  /**
+   * Offered (and intercepted at submit) ONLY on the `❯` Code route.
+   * One-shot accelerators — `/shell`, `/find`, `/btw` — act *as if* the
+   * user were on another route while staying on Code; on the other
+   * routes they are not offered, and a typed `/shell ls` on the `$`
+   * route reaches the shell literally instead of being re-intercepted.
+   * Defaults to `false` (offered everywhere the popup opens).
+   */
+  readonly codeRouteOnly?: boolean;
 }
 
 /**
@@ -126,6 +135,19 @@ export const LOCAL_SLASH_COMMANDS = [
     name: "btw",
     description: "Ask a quick side question, answered from the conversation with no tools",
     takesArgs: true,
+    codeRouteOnly: true,
+  },
+  {
+    name: "shell",
+    description: "Run one shell command from here (the route stays Code)",
+    takesArgs: true,
+    codeRouteOnly: true,
+  },
+  {
+    name: "find",
+    description: "Find in the transcript from here (the route stays Code)",
+    takesArgs: true,
+    codeRouteOnly: true,
   },
   {
     name: "copy",
@@ -269,4 +291,21 @@ export function buildSlashCommandLine(
 export function slashCommandName(text: string): string | null {
   const m = COMMAND_LINE.exec(text.trim());
   return m === null ? null : m[1];
+}
+
+/** Names of the Code-route-only one-shot commands (see `codeRouteOnly`). */
+const CODE_ROUTE_ONLY_NAMES: ReadonlySet<string> = new Set(
+  (LOCAL_SLASH_COMMANDS as readonly LocalSlashCommandSpec[])
+    .filter((c) => c.codeRouteOnly === true)
+    .map((c) => c.name),
+);
+
+/**
+ * True when `name` is a Code-route-only one-shot command. The prompt entry
+ * uses this to (a) filter the `/` completion popup on non-Code routes and
+ * (b) skip the local-command submit intercept there, letting the draft fall
+ * through to the route's native handling.
+ */
+export function isCodeRouteOnlyCommand(name: string): boolean {
+  return CODE_ROUTE_ONLY_NAMES.has(name);
 }

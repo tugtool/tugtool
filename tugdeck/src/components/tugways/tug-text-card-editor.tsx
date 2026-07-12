@@ -279,6 +279,13 @@ export interface TugTextCardEditorSearchQuery {
 }
 
 /** Imperative handle exposed via `ref`. */
+/**
+ * Enumeration cap for `getMatchInfo` — mirrors the transcript engine's
+ * `DEFAULT_MATCH_LIMIT` so a degenerate query over a huge file cannot stall
+ * the chip's per-keystroke recount. A capped count renders as `N+`.
+ */
+const MATCH_INFO_CAP = 5000;
+
 export interface TugTextCardEditorDelegate {
   /** The live `EditorView`, or `null` if not mounted. */
   view(): EditorView | null;
@@ -310,6 +317,15 @@ export interface TugTextCardEditorDelegate {
   findPrevious(): void;
   /** Count matches for the active query (0 when none / invalid). */
   getMatchCount(): number;
+  /**
+   * Count + active ordinal for the shared find cluster. The walk is capped
+   * (a huge file's enumeration must not stall typing): `capped` is `true`
+   * when the cap was hit, and the chip renders `N+`. The active ordinal is
+   * the match whose range equals the current main selection (the
+   * `findNext`/`findPrevious` landing), or `null` when the selection sits
+   * elsewhere.
+   */
+  getMatchInfo(): { count: number; activeOrdinal: number | null; capped: boolean };
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +767,35 @@ export const TugTextCardEditor = React.forwardRef<
     return count;
   }, []);
 
+  const getMatchInfoFn = useCallback((): {
+    count: number;
+    activeOrdinal: number | null;
+    capped: boolean;
+  } => {
+    const live = viewRef.current;
+    if (live === null) return { count: 0, activeOrdinal: null, capped: false };
+    const query = getSearchQuery(live.state);
+    if (!query.valid) return { count: 0, activeOrdinal: null, capped: false };
+    const sel = live.state.selection.main;
+    const cursor = query.getCursor(live.state);
+    let count = 0;
+    let activeOrdinal: number | null = null;
+    let capped = false;
+    let next = cursor.next();
+    while (!next.done) {
+      if (next.value.from === sel.from && next.value.to === sel.to) {
+        activeOrdinal = count;
+      }
+      count += 1;
+      if (count >= MATCH_INFO_CAP) {
+        capped = !cursor.next().done;
+        break;
+      }
+      next = cursor.next();
+    }
+    return { count, activeOrdinal, capped };
+  }, []);
+
   const revealLineFn = useCallback(
     (startLine: number, endLine?: number): void => {
       const live = viewRef.current;
@@ -802,8 +847,9 @@ export const TugTextCardEditor = React.forwardRef<
         if (live !== null) cmFindPrevious(live);
       },
       getMatchCount: getMatchCountFn,
+      getMatchInfo: getMatchInfoFn,
     }),
-    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, responderId],
+    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, getMatchInfoFn, responderId],
   );
 
   // ---- Context menu ----

@@ -71,14 +71,12 @@ import { noteRecentDocument } from "@/lib/recent-documents";
 import { openPathInOS } from "@/lib/os-open";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { useFileSaveSheets } from "./text-card-save-sheets";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { TugTextCardEditor, type TugTextCardEditorDelegate } from "../tug-text-card-editor";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugPushButton } from "../tug-push-button";
-import { TugIconButton } from "../tug-icon-button";
-import { TugInput } from "../tug-input";
+import { TextCardFindBar } from "./text-card-find-bar";
 import { TugLabel } from "../tug-label";
 import { TextCardTopBar } from "./text-card-top-bar";
 import { TextCardStatusBar } from "./text-card-status-bar";
@@ -258,34 +256,20 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // data; the committed value is the store's `path` binding.
   const [chooserValue, setChooserValue] = useState("");
 
-  // Find bar: open/closed is structural (the bar mounts/unmounts);
-  // the query is controlled-input local data driving the editor's
-  // search machinery through the delegate.
+  // Find bar: open/closed is structural (the bar mounts/unmounts below the
+  // editor); the query, options, and count live inside `TextCardFindBar`,
+  // which drives the editor's CM6 search through the delegate.
   const [findOpen, setFindOpen] = useState(false);
-  const [findQuery, setFindQuery] = useState("");
-  const [findMatches, setFindMatches] = useState(0);
-  const findInputRef = useRef<HTMLInputElement | null>(null);
 
   const openFindBar = useCallback(() => {
+    // The bar focuses its own input on mount.
     setFindOpen(true);
-    // Focus after the bar mounts.
-    requestAnimationFrame(() => findInputRef.current?.focus());
   }, []);
 
   const closeFindBar = useCallback(() => {
     setFindOpen(false);
-    setFindQuery("");
-    setFindMatches(0);
     editorRef.current?.clearSearch();
     editorRef.current?.focus();
-  }, []);
-
-  const updateFindQuery = useCallback((value: string) => {
-    setFindQuery(value);
-    const editor = editorRef.current;
-    if (editor === null) return;
-    editor.setSearchQuery({ search: value });
-    setFindMatches(value === "" ? 0 : editor.getMatchCount());
   }, []);
 
   // Positions restored from the bag before the editor exists; applied
@@ -830,45 +814,6 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         settings={editorSettings}
         onChangeSetting={setSetting}
       />
-      {findOpen ? (
-        <div className="text-card-find-bar" data-slot="text-card-find-bar">
-          <TugInput
-            ref={findInputRef}
-            size="sm"
-            value={findQuery}
-            placeholder="Find in file"
-            aria-label="Find in file"
-            data-testid="text-card-find-input"
-            onChange={(e) => updateFindQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (e.shiftKey) editorRef.current?.findPrevious();
-                else editorRef.current?.findNext();
-              } else if (e.key === "Escape") {
-                closeFindBar();
-              }
-            }}
-          />
-          <TugLabel size="sm" className="text-card-find-count">
-            {findQuery === "" ? "" : `${findMatches} matches`}
-          </TugLabel>
-          <TugIconButton
-            icon={<ChevronUp />}
-            aria-label="Previous match"
-            onClick={() => editorRef.current?.findPrevious()}
-          />
-          <TugIconButton
-            icon={<ChevronDown />}
-            aria-label="Next match"
-            onClick={() => editorRef.current?.findNext()}
-          />
-          <TugIconButton
-            icon={<X />}
-            aria-label="Close find"
-            onClick={closeFindBar}
-          />
-        </div>
-      ) : null}
       <TugTextCardEditor
         ref={editorRef}
         store={store}
@@ -880,6 +825,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         onSaveCommand={onSaveCommand}
         onStats={statsStore.set}
       />
+      {findOpen ? (
+        <TextCardFindBar
+          getDelegate={() => editorRef.current}
+          onClose={closeFindBar}
+        />
+      ) : null}
       <TextCardStatusBar
         statsStore={statsStore}
         saveMode={snapshot.saveMode}

@@ -1,11 +1,11 @@
 /**
- * tug-prompt-entry — submit-strip + persistence migration unit tests.
+ * tug-prompt-entry — pure-helper + persistence migration unit tests.
  *
- * Two pure helpers exposed by `tug-prompt-entry.tsx`:
+ * Key helpers exposed by `tug-prompt-entry.tsx`:
  *
- *   - `computeSubmitText(text, route, aliasMap)` — strips a single
- *     leading prefix character iff it maps to the active route per
- *     [Q09]=a.
+ *   - `computeSideQuestionArg(text, atoms)` — expands atoms and trims
+ *     to build the `?`-route side-question argument. Submitted text is
+ *     otherwise sent verbatim (route characters are ordinary text).
  *   - `coerceRestorePayload(raw)` — accepts a restored bag, narrows
  *     it to the canonical `{ route, draft }` shape, and
  *     migrates legacy `{ currentRoute, perRoute }` payloads forward
@@ -21,7 +21,6 @@ import {
   classifyBlockedSubmit,
   coerceRestorePayload,
   computeSideQuestionArg,
-  computeSubmitText,
   routeAwareSubmitButtonMode,
 } from "@/components/tugways/tug-prompt-entry";
 import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
@@ -29,56 +28,6 @@ import type { CommandLineAtom } from "@/lib/slash-commands";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
-
-const ALIAS_MAP = {
-  "❯": "❯",
-  ">": "❯",
-  "$": "$",
-  "?": "?",
-} as const;
-
-// ---------------------------------------------------------------------------
-// computeSubmitText — strip-on-match per [Q09]=a
-// ---------------------------------------------------------------------------
-
-describe("computeSubmitText — strip-on-match", () => {
-  it("doc=`> hello`, route=`❯` → strips the `>` prefix", () => {
-    expect(computeSubmitText("> hello", "❯", ALIAS_MAP)).toBe(" hello");
-  });
-
-  it("doc=`> hello`, route=`$` → returns text verbatim", () => {
-    expect(computeSubmitText("> hello", "$", ALIAS_MAP)).toBe("> hello");
-  });
-
-  it("doc=`hello`, route=`❯` → returns text verbatim (no leading prefix)", () => {
-    expect(computeSubmitText("hello", "❯", ALIAS_MAP)).toBe("hello");
-  });
-
-  it("doc=``, route=`❯` → returns empty string verbatim", () => {
-    expect(computeSubmitText("", "❯", ALIAS_MAP)).toBe("");
-  });
-
-  it("doc=`$ ls`, route=`$` → strips the `$`", () => {
-    expect(computeSubmitText("$ ls", "$", ALIAS_MAP)).toBe(" ls");
-  });
-
-  it("doc=`? why`, route=`?` → strips the `?` (btw route)", () => {
-    expect(computeSubmitText("? why", "?", ALIAS_MAP)).toBe(" why");
-  });
-
-  it("doc=`? why`, route=`❯` → returns text verbatim (prefix doesn't match route)", () => {
-    expect(computeSubmitText("? why", "❯", ALIAS_MAP)).toBe("? why");
-  });
-
-  it("doc=`❯ hi`, route=`❯` → strips the `❯` (display character also matches)", () => {
-    expect(computeSubmitText("❯ hi", "❯", ALIAS_MAP)).toBe(" hi");
-  });
-
-  it("strip removes ONLY the first character (no recursion)", () => {
-    // `>>foo` strips one `>` → `>foo`. The remaining `>` stays put.
-    expect(computeSubmitText(">>foo", "❯", ALIAS_MAP)).toBe(">foo");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // routeAwareSubmitButtonMode — the `$`-route Z5 mode selector ([P13])
@@ -136,9 +85,9 @@ describe("computeSideQuestionArg — btw-route submission", () => {
     );
   });
 
-  it("strips a leading `?` the power-user typed", () => {
-    expect(computeSideQuestionArg("? explain the reducer", [], ALIAS_MAP)).toBe(
-      "explain the reducer",
+  it("keeps a leading `?` — route characters are ordinary text", () => {
+    expect(computeSideQuestionArg("? explain the reducer", [])).toBe(
+      "? explain the reducer",
     );
   });
 

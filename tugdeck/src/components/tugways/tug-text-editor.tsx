@@ -780,7 +780,7 @@ export interface TugTextEditorProps
    * Additional CM6 extensions installed at mount time alongside the
    * substrate's built-in extension set. Use this seam for compound
    * components that need a host-supplied extension (e.g.
-   * `tug-prompt-entry`'s route-prefix detector).
+   * `tug-prompt-entry`'s find-query mirror).
    *
    * Read once at mount: changes after the view is constructed do
    * NOT propagate. Host-supplied extensions are expected to be

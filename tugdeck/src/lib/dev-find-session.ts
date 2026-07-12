@@ -10,7 +10,7 @@
  * replaced on every mutation, so it is `Object.is`-stable between changes.
  *
  * The match set is computed elsewhere (the transcript index runs
- * `transcript-search.search` and hands the result to {@link setMatches}); the
+ * `transcript-search.searchSegments` and hands the result to {@link setMatches}); the
  * session owns the *state*, not the search. This keeps the store pure — no
  * React, no DOM, no transcript coupling — so navigation and wrap semantics are
  * unit-testable on their own.
@@ -18,7 +18,7 @@
  * @module lib/dev-find-session
  */
 
-import type { FindMatch, FindOptions } from "./transcript-search";
+import type { FindOptions, SegmentedFindMatch } from "./transcript-search";
 
 /** Immutable snapshot handed to `useSyncExternalStore` consumers. */
 export interface FindState {
@@ -26,8 +26,8 @@ export interface FindState {
   query: string;
   /** The active option toggles. */
   options: FindOptions;
-  /** The ordered, non-overlapping match set. */
-  matches: readonly FindMatch[];
+  /** The ordered, non-overlapping match set (segment-tagged). */
+  matches: readonly SegmentedFindMatch[];
   /** Index of the active match in `matches`, or `-1` when there are none. */
   activeIndex: number;
   /** Whether the most recent `next`/`previous` wrapped past an end. */
@@ -100,12 +100,12 @@ export class DevFindSession {
 
   /**
    * Replace the match set (recomputed externally from the transcript index).
-   * The active match is preserved by (row, start) identity when it still
-   * exists in the new set — so a windowing re-run or an unrelated edit doesn't
-   * jump the user off their match — otherwise the active index clamps to the
-   * first match (or `-1` when empty).
+   * The active match is preserved by (row, segment, start) identity when it
+   * still exists in the new set — so a windowing re-run or an unrelated edit
+   * doesn't jump the user off their match — otherwise the active index clamps
+   * to the first match (or `-1` when empty).
    */
-  setMatches(matches: readonly FindMatch[]): void {
+  setMatches(matches: readonly SegmentedFindMatch[]): void {
     let activeIndex: number;
     if (matches.length === 0) {
       activeIndex = -1;
@@ -113,7 +113,12 @@ export class DevFindSession {
       const prev = this.state.matches[this.state.activeIndex];
       const preserved =
         prev !== undefined
-          ? matches.findIndex((m) => m.row === prev.row && m.start === prev.start)
+          ? matches.findIndex(
+              (m) =>
+                m.row === prev.row &&
+                m.segment === prev.segment &&
+                m.start === prev.start,
+            )
           : -1;
       activeIndex = preserved >= 0 ? preserved : 0;
     }

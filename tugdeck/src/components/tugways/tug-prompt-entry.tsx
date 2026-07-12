@@ -106,7 +106,6 @@ import {
   type PositionedAtom,
 } from "./tug-text-editor/atom-decoration";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
-import { createRoutePrefixExtension } from "./tug-prompt-entry/route-prefix-extension";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
@@ -120,6 +119,7 @@ import { TUG_ACTIONS } from "./action-vocabulary";
 import { useResponderChain } from "./responder-chain-provider";
 import {
   buildSlashCommandLine,
+  isCodeRouteOnlyCommand,
   type CommandLineAtom,
   matchLocalSlashCommand,
   slashCommandName,
@@ -156,18 +156,16 @@ interface RouteItem {
 }
 
 /**
- * The three routes surfaced in the route popup — the recipients a
+ * The routes surfaced in the route popup — the recipients a
  * submission targets: `❯` Code (Claude on the record), `$` Shell (the
- * machine), `?` btw (Claude off the record — a native side question).
- * Each entry is `[icon][gap][name]` — a lucide gutter glyph (matching
- * the participant iconography in `TugTranscriptEntry`) plus the route's
- * display name. The route prefix character (`>` / `$` / `?`) is not
- * painted in the label; it lives on as a hidden power-user feature,
- * since `route-prefix-extension` still flips the route when the user
- * types one of those characters at offset 0 of the editor. The visible
- * affordances are the trigger icon + name and the keyboard shortcuts
- * wired in `keybinding-map.ts` (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘B → btw),
- * which dispatch `SELECT_ROUTE` to this entry's responder.
+ * machine), `?` btw (Claude off the record — a native side question),
+ * `⌕` Find (transcript search). Each entry is `[icon][gap][name]` — a
+ * lucide gutter glyph (matching the participant iconography in
+ * `TugTranscriptEntry`) plus the route's display name. The affordances
+ * are the trigger icon + name and the keyboard shortcuts wired in
+ * `keybinding-map.ts` (⇧⌘C → Code, ⇧⌘S → Shell, ⇧⌘B → btw, ⇧⌘F →
+ * Find), which dispatch `SELECT_ROUTE` to this entry's responder.
+ * Route characters typed into the editor are ordinary text.
  */
 const ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
   { value: "❯", label: "Code",  icon: <Bot size={14} /> },
@@ -187,22 +185,6 @@ const WIDEST_ROUTE_LABEL = ROUTE_ITEMS.reduce(
   (widest, item) => (item.label.length > widest.length ? item.label : widest),
   "",
 );
-
-/**
- * Map of prefix character → route value.
- *
- * `>` is an ASCII alias for the Prompt route's display character `❯`.
- * The segment control shows the chevron, but the typed greater-than is
- * keyboard-friendly and routes to the same Prompt value. `$` flips to
- * Shell, `?` flips to btw. All act as the strip-on-match lookup at
- * submit time per [Q09]=a.
- */
-const ROUTE_PREFIX_ALIAS: Readonly<Record<string, string>> = {
-  "❯": "❯",
-  ">": "❯",
-  "$": "$",
-  "?": "?",
-};
 
 /**
  * Return-key semantics per route.
@@ -513,54 +495,17 @@ function isEffectivelyEmpty(view: EditorView | null): boolean {
 }
 
 /**
- * Strip a single leading prefix character from `text` iff it matches
- * the active route per [Q09]=a.
- *
- * The aliasMap is the same map the route-prefix extension uses for
- * one-way detection. Stripping at submit reuses it so the inverse
- * (route → prefix-characters-that-map-to-it) doesn't have to be
- * computed separately.
- */
-function stripLeadingRoutePrefix(
-  text: string,
-  activeRoute: string,
-  aliasMap: Readonly<Record<string, string>>,
-): string {
-  if (text.length === 0) return text;
-  const first = text[0]!;
-  if (aliasMap[first] === activeRoute) return text.slice(1);
-  return text;
-}
-
-/**
- * Submit-text computation, exported for the submit-strip unit tests.
- * Combines the substrate's text capture with the active route's
- * prefix strip rule. Pure: takes only the captured shape and the
- * route + alias map; no DOM access.
- */
-export function computeSubmitText(
-  rawText: string,
-  activeRoute: string,
-  aliasMap: Readonly<Record<string, string>> = ROUTE_PREFIX_ALIAS,
-): string {
-  return stripLeadingRoutePrefix(rawText, activeRoute, aliasMap);
-}
-
-/**
  * Build the side-question argument for a `?`-route ([P02]) submission from
  * the raw editor draft: expand atoms to their values (so an `@plan.md`
- * mention survives as its path — `buildSlashCommandLine`), strip a leading
- * `?` the power-user may have typed, and trim. An empty result means a bare
- * submit — the caller opens the overlay without asking. Pure; exported for
- * the unit tests.
+ * mention survives as its path — `buildSlashCommandLine`) and trim. An
+ * empty result means a bare submit — the caller opens the overlay without
+ * asking. Pure; exported for the unit tests.
  */
 export function computeSideQuestionArg(
   draftText: string,
   draftAtoms: readonly CommandLineAtom[],
-  aliasMap: Readonly<Record<string, string>> = ROUTE_PREFIX_ALIAS,
 ): string {
-  const expanded = buildSlashCommandLine(draftText, draftAtoms);
-  return computeSubmitText(expanded, ROUTE_BTW, aliasMap).trim();
+  return buildSlashCommandLine(draftText, draftAtoms).trim();
 }
 
 /** Disposition of a submit that arrives while the store can't accept it. */
@@ -1372,8 +1317,8 @@ export const TugPromptEntry = React.forwardRef<
   // React state. The instance is constructed once and stays stable for
   // the component's lifetime ([D01]) — a `useRef` lazy-init is the
   // canonical stable-instance pattern. Every route trigger (the popup
-  // pick, the route-prefix extension, the SELECT_ROUTE keybinding,
-  // and restore) funnels through `routeLifecycle.setRoute`.
+  // pick, the SELECT_ROUTE keybinding, and restore) funnels through
+  // `routeLifecycle.setRoute`.
   const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
   if (routeLifecycleRef.current === null) {
     routeLifecycleRef.current = new RouteLifecycle(DEFAULT_ROUTE);
@@ -1585,22 +1530,13 @@ export const TugPromptEntry = React.forwardRef<
   }, []);
 
   // Substrate-level extensions installed at mount time. The
-  // route-prefix detector reads `routeLifecycle.getRoute()` at fire
-  // time per [L07], so the same extension instance stays correct as the
-  // route changes. The data-empty sync writes through a ref-tracked
-  // root element — also stable across renders. Extension array is
-  // captured by the substrate at mount; subsequent identity changes
-  // don't propagate (per the substrate's `extensions` prop contract),
-  // so we wrap in `useMemo` with empty deps to avoid churn.
+  // data-empty sync writes through a ref-tracked root element —
+  // stable across renders. Extension array is captured by the
+  // substrate at mount; subsequent identity changes don't propagate
+  // (per the substrate's `extensions` prop contract), so we wrap in
+  // `useMemo` with empty deps to avoid churn.
   const editorExtensions = useMemo(
     () => [
-      createRoutePrefixExtension({
-        aliasMap: ROUTE_PREFIX_ALIAS,
-        getCurrentRoute: () => routeLifecycle.getRoute(),
-        // `setRoute` is idempotent on a same-route value, and the
-        // extension already guards that case — no wrapper guard needed.
-        setRoute: (next: string) => routeLifecycle.setRoute(next),
-      }),
       // data-empty bridge: keep the entry root's `data-empty`
       // attribute in sync with `view.state.doc.length === 0`.
       // Direct DOM write per [L06] / [L22] — no React re-render on
@@ -1708,6 +1644,18 @@ export const TugPromptEntry = React.forwardRef<
             // handlers (autocomplete dismiss, etc.) — none of which can be
             // open on an empty doc, which is why the empty gate is enough.
             if (!isEmpty) return false;
+            // One-shot `/find` highlights on a non-⌕ route own the first
+            // empty-editor Escape: dissolve them BEFORE the pane-collapse
+            // gesture, so Escape reads as "dismiss find" while a search is
+            // live and only then as "collapse the entry". (On the ⌕ route
+            // the route's own leave/clear machinery owns the session.)
+            if (routeLifecycle.getRoute() !== ROUTE_FIND) {
+              const oneShot = findSessionRef.current;
+              if (oneShot !== undefined && oneShot.getSnapshot().query !== "") {
+                oneShot.clear();
+                return true;
+              }
+            }
             const onEscape = onEscapeWhenEmptyRef.current;
             if (onEscape === undefined) return false;
             onEscape();
@@ -1837,6 +1785,30 @@ export const TugPromptEntry = React.forwardRef<
   // Stable identity (`useCallback` with deps that are themselves
   // stable — `codeSessionStore` is a prop reference); policy is read
   // through refs so the closure never goes stale [L07].
+  // Route-gate the `/` completion popup: one-shot commands (`/shell`,
+  // `/find`, `/btw` — `codeRouteOnly` in the registry) are offered only on
+  // the Code route. The wrapper reads the live route at QUERY time through
+  // the stable `routeLifecycle` ([L07]), so no re-memo on route flips; the
+  // async `subscribe` seam (file providers) is preserved on the wrapped fn.
+  const routeGatedCompletionProviders = useMemo(():
+    | Record<string, CompletionProvider>
+    | undefined => {
+    if (completionProviders === undefined) return undefined;
+    const slash = completionProviders["/"];
+    if (slash === undefined) return completionProviders;
+    const gated: CompletionProvider = Object.assign(
+      (query: string) => {
+        const items = slash(query);
+        if ((routeLifecycle.getRoute() || DEFAULT_ROUTE) === DEFAULT_ROUTE) {
+          return items;
+        }
+        return items.filter((item) => !isCodeRouteOnlyCommand(item.label));
+      },
+      slash.subscribe !== undefined ? { subscribe: slash.subscribe } : {},
+    );
+    return { ...completionProviders, "/": gated };
+  }, [completionProviders, routeLifecycle]);
+
   const performSubmit = useCallback(() => {
     const editor = textEditorRef.current;
     const view = editor?.view() ?? null;
@@ -1860,6 +1832,17 @@ export const TugPromptEntry = React.forwardRef<
     if ((routeLifecycle.getRoute() || null) === ROUTE_FIND) {
       findSessionRef.current?.next();
       return;
+    }
+
+    // Off the ⌕ route, a submission dissolves any lingering one-shot `/find`
+    // highlights BEFORE dispatch — a fresh `/find` re-seeds the session in
+    // the same submit (clear, then the local-command surface sets the new
+    // query), so stale highlights never outlive a new submission.
+    {
+      const oneShot = findSessionRef.current;
+      if (oneShot !== undefined && oneShot.getSnapshot().query !== "") {
+        oneShot.clear();
+      }
     }
 
     // btw-route dispatch ([P02]). On the `?` route the whole submission is a
@@ -1933,8 +1916,16 @@ export const TugPromptEntry = React.forwardRef<
       const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
       const localCommand = matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
+      // One-shot accelerators (`/shell`, `/find`, `/btw`) intercept ONLY on
+      // the Code route — on `$` a literal `/shell ls` reaches the shell as
+      // typed instead of being re-intercepted.
+      const routeAllowsLocal =
+        localCommand === null ||
+        !isCodeRouteOnlyCommand(localCommand.name) ||
+        (routeLifecycle.getRoute() || DEFAULT_ROUTE) === DEFAULT_ROUTE;
       if (
         localCommand !== null &&
+        routeAllowsLocal &&
         manager !== null &&
         targetId !== undefined &&
         // Guard the `sendToTarget` throw-on-unregistered contract, and
@@ -2093,31 +2084,13 @@ export const TugPromptEntry = React.forwardRef<
     }
 
     const currentRoute = routeLifecycle.getRoute() || null;
-    // Strip the leading prefix character iff it maps to the active
-    // route per [Q09]=a. Atoms ride along verbatim — they sit in the
-    // doc as `￼` placeholders and the strip never touches one
-    // (no prefix character maps to a route via `￼`).
-    const strippedText = computeSubmitText(
-      captured.text,
-      currentRoute ?? "",
-      ROUTE_PREFIX_ALIAS,
-    );
-    const stripped = strippedText !== captured.text;
     // Trim whitespace from both ends of the submitted command. Atoms
     // ride as `￼` placeholder characters — never whitespace — so
     // trimming only removes surrounding spaces / newlines and never
     // touches an atom, keeping the placeholder count aligned with
     // `sendAtoms`.
-    const submitText = strippedText.trim();
-    // Atom positions shift left by 1 when the leading prefix is stripped.
-    // The prefix character is plain text — never an atom — so the
-    // filter on `position >= 1` only matters defensively.
-    const atomsAdjusted: PositionedAtom[] = stripped
-      ? positionedAtoms
-        .filter((a) => a.position >= 1)
-        .map((a) => ({ position: a.position - 1, segment: a.segment }))
-      : positionedAtoms;
-    const sendAtoms: AtomSegment[] = atomsAdjusted.map((a) => a.segment);
+    const submitText = captured.text.trim();
+    const sendAtoms: AtomSegment[] = positionedAtoms.map((a) => a.segment);
     // A whitespace-only draft (no atoms) trims to nothing — treat it like
     // the empty-input guard and don't send a blank turn.
     if (submitText.length === 0 && sendAtoms.length === 0) return;
@@ -2156,7 +2129,7 @@ export const TugPromptEntry = React.forwardRef<
         sessionId,
         projectPath: "",
         route: ROUTE_SHELL,
-        text: strippedText,
+        text: captured.text,
         atoms: [],
         timestamp: Date.now(),
       });
@@ -2180,8 +2153,8 @@ export const TugPromptEntry = React.forwardRef<
       sessionId,
       projectPath: "",
       route: currentRoute ?? "",
-      text: strippedText,
-      atoms: atomsAdjusted.map((a) => ({
+      text: captured.text,
+      atoms: positionedAtoms.map((a) => ({
         position: a.position,
         type: a.segment.type,
         label: a.segment.label,
@@ -2316,17 +2289,20 @@ export const TugPromptEntry = React.forwardRef<
         // `setRoute` is a no-op when `nextRoute` equals the current route.
         routeLifecycle.setRoute(nextRoute);
       },
-      // ⌘G / ⇧⌘G within the Find route — advance / retreat the active match.
-      // The transcript host reacts to the active-index change (scroll + flash).
-      // No-ops outside Find (the session holds no matches there).
+      // ⌘G / ⇧⌘G — advance / retreat the active match. Gated on the SESSION
+      // holding matches (not on the ⌕ route): a one-shot `/find` leaves live
+      // matches on the Code route and ⌘G keeps cycling them. The transcript
+      // host reacts to the active-index change (scroll + flash).
       [TUG_ACTIONS.FIND_NEXT]: () => {
-        if (routeLifecycle.getRoute() === ROUTE_FIND) {
-          findSessionRef.current?.next();
+        const session = findSessionRef.current;
+        if (session !== undefined && session.getSnapshot().matches.length > 0) {
+          session.next();
         }
       },
       [TUG_ACTIONS.FIND_PREVIOUS]: () => {
-        if (routeLifecycle.getRoute() === ROUTE_FIND) {
-          findSessionRef.current?.previous();
+        const session = findSessionRef.current;
+        if (session !== undefined && session.getSnapshot().matches.length > 0) {
+          session.previous();
         }
       },
       [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event: ActionEvent) => {
@@ -2729,7 +2705,7 @@ export const TugPromptEntry = React.forwardRef<
               maxRows={20}
               disabled={deactivated}
               placeholder={placeholderByRoute?.[route] ?? ""}
-              completionProviders={completionProviders}
+              completionProviders={routeGatedCompletionProviders}
               argumentHintResolver={argumentHintResolver}
               argumentHintRefresh={argumentHintRefresh}
               pastedCommandResolver={pastedCommandResolver}

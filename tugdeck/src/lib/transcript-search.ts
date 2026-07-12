@@ -102,3 +102,83 @@ export function search(
   }
   return matches;
 }
+
+/**
+ * One search unit of a transcript row, in DOM order.
+ *
+ *  - `dom` — the text of one `data-tugx-findable` container; matches paint
+ *    via the Custom-Highlight DOM walk (`transcript-find-highlighter.ts`).
+ *  - `editor` — the full document of one embedded CodeMirror editor (e.g. a
+ *    Read file body), keyed by its owning `toolUseId`; matches are counted
+ *    from this store text and painted/navigated by the editor's own search
+ *    (CM6 virtualizes its DOM, so a DOM walk cannot reach it).
+ */
+export type RowSegment =
+  | {
+      kind: "dom";
+      text: string;
+      /**
+       * Optional find-target key (`toolUseId` / `exchangeId`) for a container
+       * whose INTERNAL fold can hide part of this unit's text (a terminal's
+       * first-N-lines preview) — navigation unfolds it on demand through the
+       * card's `FindTargetRegistry`.
+       */
+      key?: string;
+    }
+  | { kind: "editor"; key: string; text: string };
+
+/** A {@link FindMatch} tagged with the segment that produced it. */
+export interface SegmentedFindMatch extends FindMatch {
+  /** Index into the row's segment list. */
+  segment: number;
+  segmentKind: RowSegment["kind"];
+  /** The segment's find-target key (always set for `editor` segments). */
+  segmentKey?: string;
+}
+
+/**
+ * Find every non-overlapping match across per-row **segments** — each row is
+ * an ordered list of independent search units (one per `data-tugx-findable`
+ * container or embedded editor, in DOM order). Each segment is searched
+ * independently, so a match can never span two segments — mirroring the
+ * painter, which re-searches each marked container separately. Match offsets
+ * are relative to the segment that produced them; consumers rely on the flat
+ * ORDER (row, then segment, then offset), not on cross-segment offsets.
+ * Stops once `limit` matches are found.
+ */
+export function searchSegments(
+  rows: readonly (readonly RowSegment[])[],
+  query: string,
+  options: FindOptions,
+  limit: number = DEFAULT_MATCH_LIMIT,
+): SegmentedFindMatch[] {
+  const re = compileQuery(query, options);
+  if (re === null) return [];
+  const matches: SegmentedFindMatch[] = [];
+  for (let row = 0; row < rows.length; row++) {
+    const segments = rows[row];
+    for (let segment = 0; segment < segments.length; segment++) {
+      const unit = segments[segment];
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(unit.text)) !== null) {
+        if (m[0].length === 0) {
+          // A zero-width hit is not a navigable match; step past it so the
+          // global exec cannot spin in place.
+          re.lastIndex = m.index + 1;
+          continue;
+        }
+        matches.push({
+          row,
+          start: m.index,
+          end: m.index + m[0].length,
+          segment,
+          segmentKind: unit.kind,
+          segmentKey: unit.key,
+        });
+        if (matches.length >= limit) return matches;
+      }
+    }
+  }
+  return matches;
+}

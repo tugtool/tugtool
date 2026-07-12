@@ -305,7 +305,7 @@ Surfaced during the close-confirm work and the `tug-text-editor` substrate migra
 #### [AT0050] tug-prompt-entry migration onto tug-text-editor
 - **Status:** ✅ closed.
 - **Tests:** `at0050-tug-prompt-entry-text-editor-migration.test.ts`.
-- **Summary:** End-to-end coverage for the Step 15 migration of `tug-prompt-entry` onto the `tug-text-editor` substrate (dropped per-route drafts + route-atom-in-doc model; one-shot insertion-only route-prefix detection).
+- **Summary:** End-to-end coverage for the Step 15 migration of `tug-prompt-entry` onto the `tug-text-editor` substrate (dropped per-route drafts + route-atom-in-doc model). Also gates that route characters typed into the editor are ordinary text (first-character route switching removed).
 
 ### Overlay-tier tags (AT0051)
 
@@ -959,6 +959,45 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0216-shell-route.test.ts`.
 - **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="dev-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Maker ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
+
+### Focus / alert / status polish (AT0217–AT0220)
+
+#### [AT0217] Pane-modal sheet default ring survives click-away / click-back
+- **Status:** ✅ open (regression gate).
+- **Tests:** `at0217-sheet-default-ring-click-back.test.ts`.
+- **Summary:** Clicking away from a pane with an open pane-modal sheet and clicking back re-establishes the sheet's default button as the key view with the keyboard ring ([P16]/[P20]) — the sheet-tier counterpart of AT0203's card-modal coverage.
+
+#### [AT0218] TugAlert `choose()` rows — selectable list + OK/Cancel commit model
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0218-alert-chooser-rows.test.ts`.
+- **Summary:** The multi-action `choose()` alert renders rich rows as a selectable list (arrow-roved highlight, click moves highlight only) while OK wears the persistent default ring and Return commits the highlighted row.
+
+#### [AT0219] WORK-cell revamp — aggregate count, no turn-boundary flicker
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0219-work-revamp.test.ts`.
+- **Summary:** The Z2 WORK cell aggregates one active count across incomplete tasks + running jobs + scheduled rows + active goal, and holds steady across a turn boundary whose first streamed block is not a Task frame.
+
+#### [AT0220] Z4B Mode / Model / Effort lock while a turn is in flight
+- **Status:** ✅ open (regression gate).
+- **Tests:** `at0220-settings-chips-turn-lock.test.ts`.
+- **Summary:** Mode / Model / Effort controls act only while `canSubmit` (idle/errored + online); mid-turn interaction is declined at the setter seam so a control change can never race or tear down a running turn ([R07]).
+
+### Transcript find (AT0221)
+
+#### [AT0221] Transcript find — index↔DOM fidelity gate
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0221-transcript-find-fidelity.test.ts`.
+- **Summary:** The Find engine's count↔paint invariant over a real replayed session: the count chip's whole-transcript total equals the painted `data-tugx-findable` ranges, whose document-order casing sequence equals the fixture's hand-computed source order (per-row ORDER alignment across a markdown user body, a thinking+text mixed row, and heading/em/bold/code/link/list/table constructs); chrome text (a collapsed Bash header command containing the query) never paints; ⌘G advances the active match; a query spanning two adjacent findable containers matches nothing while each side alone matches inside its own container; and on a long virtualized transcript the count is scroll-independent with ⌘G wrap across off-screen matches.
+
+#### [AT0222] One-shot /shell and /find from the Code route
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0222-one-shot-commands.test.ts`.
+- **Summary:** The Code route's one-shot accelerators: `/shell <cmd>` settles a real exchange row while the route stays `❯`; `/find <query>` paints the transcript matches with the first active, ⌘G cycles across rows, Escape (empty editor) dissolves the highlights, a fresh `/find` re-seeds, and a subsequent non-find submission dissolves again; on the `$` route the `/` completion popup withholds the `codeRouteOnly` set (`shell`/`find`/`btw`) while ordinary local commands stay offered.
+
+#### [AT0223] Text card bottom find bar
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0223-text-card-find-bar.test.ts`.
+- **Summary:** The Text card's find bar docks between the editor and the status bar (the undesigned top strip is gone): ⌘F summons it, typing counts via the shared cluster's "N of M" chip over CM6 search decorations, Enter/Enter advances the active ordinal, the Case toggle narrows the count live, Escape closes and clears decorations, and the Case toggle persists into a freshly opened bar through the global find-options preference (`dev.tugtool.find`/`options`).
 
 ## Maintenance
 

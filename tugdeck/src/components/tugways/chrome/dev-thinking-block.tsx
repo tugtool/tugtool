@@ -309,9 +309,10 @@ export const DevThinkingBlock: React.FC<DevThinkingBlockProps> = ({
               <TugMarkdownBlock
                 streamingStore={streamingStore}
                 streamingPath={streamingPath}
+                findable
               />
             ) : (
-              <TugMarkdownBlock initialText={initialText ?? ""} />
+              <TugMarkdownBlock initialText={initialText ?? ""} findable />
             )}
           </div>
         </div>

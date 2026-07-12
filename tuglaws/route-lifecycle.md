@@ -98,13 +98,14 @@ Every route trigger funnels through `routeLifecycle.setRoute` — there is exact
 | Trigger | Path |
 |---------|------|
 | Route choice-group click | `SELECT_VALUE` action handler → `setRoute` |
-| `SELECT_ROUTE` keybinding (⇧⌘C / ⇧⌘S) | `SELECT_ROUTE` action handler → `setRoute` |
-| Typing a route prefix (`>` `$`) at editor offset 0 | route-prefix editor extension → `setRoute` |
+| `SELECT_ROUTE` keybinding (⇧⌘C / ⇧⌘S / ⇧⌘B / ⇧⌘F) | `SELECT_ROUTE` action handler → `setRoute` |
 | State restore (close → reopen) | `onRestore` → `setRoute(restored.route)` |
+
+(Typing a route character — `$`, `?`, `>` — at editor offset 0 is deliberately NOT a trigger: first-character route switching was removed; those characters are ordinary text.)
 
 Persistence reads and writes through the pipe too: `onSave` snapshots `routeLifecycle.getRoute()`, and `onRestore` applies the persisted route via `setRoute` before first paint. The route has a single source of truth, so save and restore cannot desync from what the UI shows.
 
-Handlers registered once at mount — the action handlers, the editor extension — read the live route via `routeLifecycle.getRoute()` rather than closing over a render-time value; the stable instance makes that read safe ([L07]).
+Handlers registered once at mount — the action handlers — read the live route via `routeLifecycle.getRoute()` rather than closing over a render-time value; the stable instance makes that read safe ([L07]).
 
 ---
 

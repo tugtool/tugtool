@@ -7,23 +7,18 @@
  *
  * The Step 14 rename turned `tug-edit` into `tug-text-editor`. Step 15
  * swapped the legacy `tug-prompt-input` substrate for `tug-text-editor`
- * inside `tug-prompt-entry`, dropped per-route drafts, dropped the
- * route-atom-in-doc model, and reworked the route-prefix detection to
- * one-shot insertion-only ([Q06]=b). The unit tests cover the pure
- * helpers (`createRoutePrefixExtension`, `computeSubmitText`,
- * `coerceRestorePayload`); this app-test exercises the full
+ * inside `tug-prompt-entry` and dropped per-route drafts and the
+ * route-atom-in-doc model. (First-character route detection existed
+ * here for a while and was later removed entirely — route characters
+ * are ordinary text.) The unit tests cover the pure helpers
+ * (`coerceRestorePayload` et al.); this app-test exercises the full
  * user-visible flow inside Tug.app:
  *
  *   1. Mount a `gallery-prompt-entry` card.
- *   2. Type `> hello` — assert the route segment flips to Code (`❯`)
- *      and the doc retains the prefix character.
- *   3. Type `more` to extend the doc.
- *   4. Click the Shell (`$`) segment — assert the route flips to `$`
- *      while the doc text stays put.
- *   5. Click the Code (`❯`) segment back — route returns to `❯`.
- *   6. Delete the leading `>` — assert the route stays on `❯` per
- *      [Q06]=b (deletion is a no-op for prefix detection).
- *   7. Reload the app, re-seed from disk, assert the doc text and
+ *   2. Switch to Shell (`$`), type `> hello` — assert the route stays
+ *      `$` and the doc holds the text verbatim.
+ *   3. Delete the leading `>` — no route side effect.
+ *   4. Reload the app, re-seed from disk, assert the doc text and
  *      the active route survive.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)` matches the rest of the
@@ -108,57 +103,48 @@ async function readActiveRoute(app: App): Promise<string | null> {
   );
 }
 
+// The route control is the Z4A POPUP (a trigger button + a portaled
+// TugPopupMenu), not the retired segment control — the helpers below mirror
+// at0085's popup mechanics.
+
+const ROUTE_TRIGGER_SELECTOR =
+  '[data-card-id="A"] .tug-prompt-entry-toolbar button[aria-label="Route"]';
+const ROUTE_LABEL_SELECTOR = `${ROUTE_TRIGGER_SELECTOR} [data-tug-stable="active"]`;
+
+const LABEL_BY_ROUTE: Record<string, string> = {
+  "❯": "Code",
+  $: "Shell",
+};
+
+/** `"active"` when the live route (the trigger's label) is `routeValue`. */
 async function readSegmentState(
   app: App,
   routeValue: string,
 ): Promise<string | null> {
-  return app.evalJS<string | null>(
+  const label = LABEL_BY_ROUTE[routeValue];
+  if (label === undefined) return null;
+  const current = await app.evalJS<string | null>(
     `(function(){
-      var card = document.querySelector('[data-card-id="A"]');
-      if (!card) return null;
-      var labelMap = { "❯": "Code", "$": "Shell" };
-      var target = labelMap[${JSON.stringify(routeValue)}];
-      if (!target) return null;
-      var btns = card.querySelectorAll('button[role="radio"]');
-      for (var i = 0; i < btns.length; i++) {
-        if ((btns[i].textContent || "").includes(target)) {
-          return btns[i].getAttribute("data-state");
-        }
-      }
-      return null;
+      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
+      return lbl ? lbl.textContent.trim() : null;
     })()`,
   );
+  return current === label ? "active" : "inactive";
 }
 
+/** Open the route popup and pick `routeValue`, waiting until it takes. */
 async function clickSegment(app: App, routeValue: string): Promise<void> {
-  const labelMap: Record<string, string> = {
-    "❯": "Code",
-    $: "Shell",
-  };
-  const label = labelMap[routeValue];
+  const label = LABEL_BY_ROUTE[routeValue];
   expect(label, `unknown route value ${routeValue}`).toBeDefined();
-  const sel = `[data-card-id="A"] button[role="radio"]:has-text(${JSON.stringify(label!)})`;
-  // Fallback: the harness's nativeClickAtElement only takes a CSS
-  // selector and `:has-text` is non-standard, so we use querySelectorAll
-  // and click via x/y from getBoundingClientRect.
-  await app.evalJS<void>(
+  await app.click(ROUTE_TRIGGER_SELECTOR);
+  await app.click(`.tug-menu-item[data-item-id="${routeValue}"]`);
+  await app.waitForCondition<boolean>(
     `(function(){
-      var card = document.querySelector('[data-card-id="A"]');
-      if (!card) throw new Error("[m50] card not found");
-      var btns = card.querySelectorAll('button[role="radio"]');
-      for (var i = 0; i < btns.length; i++) {
-        if ((btns[i].textContent || "").includes(${JSON.stringify(label!)})) {
-          btns[i].click();
-          return;
-        }
-      }
-      throw new Error("[m50] segment ${label} not found");
+      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
+      return lbl !== null && lbl.textContent.trim() === ${JSON.stringify(label!)};
     })()`,
+    { timeoutMs: 4000 },
   );
-  // Surface the unused `sel` so lint stays happy without a
-  // separate-line eslint-disable. The selector is documented for
-  // when `nativeClickAtElement` learns `:has-text` someday.
-  void sel;
 }
 
 describe.skipIf(!SHOULD_RUN)(
@@ -190,19 +176,15 @@ describe.skipIf(!SHOULD_RUN)(
             await app.awaitEngineReady("A");
             await focusEditor(app);
 
-            // The default route is `❯` (Prompt). Switch to Shell
-            // first so a subsequent `>` keystroke produces an
-            // observable route flip back to Code.
+            // The default route is `❯` (Prompt). Switch to Shell so
+            // the `>` keystroke below has a flip to NOT perform —
+            // route characters are ordinary text (first-character
+            // route switching was removed).
             await clickSegment(app, "$");
-            await app.waitForCondition<boolean>(
-              `(function(){ return ${JSON.stringify(await readSegmentState(app, "$"))} === "active"; })()`,
-              { timeoutMs: 1000 },
-            );
+            expect(await readSegmentState(app, "$")).toBe("active");
 
-            // Type `> hello`. The route-prefix extension flips the
-            // route to `❯` on the first inserted character; the
-            // remaining keystrokes don't fire (they're past offset 0).
-            // The character itself stays in the doc.
+            // Type `> hello`. The characters land in the doc as plain
+            // text; the route stays on `$`.
             await typeChunked(app, "> hello");
 
             await app.waitForCondition<boolean>(
@@ -212,34 +194,17 @@ describe.skipIf(!SHOULD_RUN)(
               })()`,
               { timeoutMs: 4000 },
             );
-            const routeAfterPrefix = await readActiveRoute(app);
-            expect(routeAfterPrefix).toBe("❯");
+            const routeAfterTyping = await readActiveRoute(app);
+            expect(routeAfterTyping).toBe("$");
 
-            // Click Shell — manually flip away from `❯` even though
-            // the doc still leads with `>`. [Q08]=a: segment control
-            // is a fully orthogonal route source; the doc isn't
-            // touched by the click.
-            await clickSegment(app, "$");
-            await app.waitForCondition<boolean>(
-              `(function(){
-                var s = window.__tug.getEmCardState("A");
-                return s !== null && s.text === "> hello";
-              })()`,
-              { timeoutMs: 1000 },
-            );
-            expect(await readActiveRoute(app)).toBe("$");
-
-            // Delete the leading `>`. [Q06]=b: deletion of the
-            // prefix character is a no-op for route detection. The
-            // route stays on `$`.
+            // Delete the leading `>`. Deletion, like insertion, has no
+            // route side effect. The route stays on `$`.
             //
             // Drive this through real keystrokes rather than a
-            // synthetic CM6 transaction: refocus the editor (the Shell
-            // click moved focus to the segment button), Home to put the
-            // caret at the line start (offset 0, before the `>`), then a
-            // forward Delete to remove the `>`. This exercises the same
-            // CM6 input + route-prefix-extension path the user hits, so
-            // the no-op-on-deletion behavior is genuinely tested.
+            // synthetic CM6 transaction: refocus the editor, Home to
+            // put the caret at the line start (offset 0, before the
+            // `>`), then a forward Delete to remove the `>` — the same
+            // CM6 input path the user hits.
             await focusEditor(app);
             await app.nativeKey("Home");
             await new Promise((r) => setTimeout(r, 100));

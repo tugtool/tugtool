@@ -1,0 +1,36 @@
+/**
+ * TextCardFindBar — the Text card's bottom-docked find bar.
+ *
+ * Styled on the Dev entry's bottom-toolbar composition: the query field
+ * leads, flex spacers flank the centred find cluster, and the Previous /
+ * Next / Close buttons trail at the right edge. Layout-only rules here
+ * ([L20]); the composed `TugInput` / `TugFindCluster` / `TugIconButton`
+ * keep their own tokens.
+ */
+
+.text-card-find-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  min-height: 2.25rem;
+  box-sizing: border-box;
+  padding: var(--tug-space-2xs) var(--tug-space-sm);
+  flex: 0 0 auto;
+  /* Same contrasting rule the status bar draws against the editor. */
+  border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+}
+
+.text-card-find-bar-input {
+  flex: 0 1 22rem;
+  min-width: 10rem;
+}
+
+.text-card-find-bar-spacer {
+  flex: 1 1 0;
+}
+
+.text-card-find-bar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}

@@ -187,8 +187,7 @@ next/prev; an uncapped full-document cursor walk could stall typing in a huge fi
 `5000+` when capped, mirroring the transcript engine's existing cap. Verify feel on a
 large real file during the step's live checkpoint.
 
-**Resolution:** DECIDED default (cap at `DEFAULT_MATCH_LIMIT`, display `N+`); confirm
-in #step-12's checkpoint.
+**Resolution:** RESOLVED in #step-12 — `getMatchInfo` caps the cursor walk at 5000 (`MATCH_INFO_CAP`, mirroring `DEFAULT_MATCH_LIMIT`) and reports `capped`, which the shared chip renders as `N+`. Verified live via at0223 over a real file.
 
 #### [Q02] Where Escape clears a one-shot `/find` (RESOLVE IN STEP 10) {#q02-one-shot-escape}
 
@@ -205,7 +204,7 @@ one (e.g. Escape collapses the entry pane while find highlights linger).
 `findSessionRef.current` holds matches while the route is `❯`, clear the session and
 consume the event. A non-empty doc leaves Escape to the completion layers as today.
 
-**Resolution:** OPEN until #step-10's checkpoint proves the ordering live.
+**Resolution:** RESOLVED in #step-10 — the substrate Escape keymap's single-press empty-editor branch dissolves live one-shot highlights (consuming the press) BEFORE `onEscapeWhenEmpty`'s pane collapse; completion layers keep non-empty Escape. Proven live by at0222.
 
 ---
 
@@ -907,19 +906,19 @@ exactly why the gate is an app-test).
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Remove first-character route switching | pending | — |
-| #step-2 | Opt-in searchable markers + scoped painter + projection tests | pending | — |
-| #step-3 | Fidelity app-test gate | pending | — |
-| #step-4 | Expansion notify | pending | — |
-| #step-5 | Shell rows searchable | pending | — |
-| #step-6 | Expanded tool results searchable | pending | — |
-| #step-7 | Segmented projection refactor | pending | — |
-| #step-8 | File bodies via CM6 + unfold registry | pending | — |
-| #step-9 | `/shell` one-shot + route gating | pending | — |
-| #step-10 | `/find` one-shot | pending | — |
-| #step-11 | `FindSurface` + `TugFindCluster` extraction | pending | — |
-| #step-12 | Text card bottom find bar | pending | — |
-| #step-13 | Integration checkpoint | pending | — |
+| #step-1 | Remove first-character route switching | done | 27078d9f9 |
+| #step-2 | Opt-in searchable markers + scoped painter + projection tests | done | 5760bc917 |
+| #step-3 | Fidelity app-test gate | done | a401444dd |
+| #step-4 | Expansion notify | done | b18d08d64 |
+| #step-5 | Shell rows searchable | done | 1bac0e566 |
+| #step-6 | Expanded tool results searchable | done | 96b1d9199 |
+| #step-7 | Segmented projection refactor | done | 3471a772a |
+| #step-8 | File bodies via CM6 + unfold registry | done | 7a7f7d178 |
+| #step-9 | `/shell` one-shot + route gating | done | 08ef50f47 |
+| #step-10 | `/find` one-shot | done | 9edb3ed14 |
+| #step-11 | `FindSurface` + `TugFindCluster` extraction | done | 11f34cf77 |
+| #step-12 | Text card bottom find bar | done | ac6fdbdcc |
+| #step-13 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Remove first-character route switching {#step-1}
 
@@ -930,18 +929,18 @@ exactly why the gate is an app-test).
 **Artifacts:** deletion of `route-prefix-extension.ts`; `tug-prompt-entry.tsx` cleanup; law updates.
 
 **Tasks:**
-- [ ] Delete `tugdeck/src/components/tugways/tug-prompt-entry/route-prefix-extension.ts`; remove its import and the `createRoutePrefixExtension(...)` entry from `editorExtensions` in `tug-prompt-entry.tsx`.
-- [ ] Remove `ROUTE_PREFIX_ALIAS`, `stripLeadingRoutePrefix`, `computeSubmitText`'s strip behavior (and the atom “positions shift left by 1” adjustment in `performSubmit`), and `computeSideQuestionArg`'s leading-`?` strip; simplify call sites so submit text is the draft text unmodified.
-- [ ] Remove at0085 Test 4 (`runPrefixTriggerScenario` + its registration) and update/retire `__tests__/tug-prompt-entry-strip-and-migrate.test.ts`'s strip cases.
-- [ ] Doc sweep: `tuglaws/route-lifecycle.md` trigger-table row; `tuglaws/design-decisions.md` [D110] prefix-alias clause; `tuglaws/app-test-inventory.md` at0050/at0085 descriptions; the `ROUTE_ITEMS` "hidden power-user feature" comment and route-trigger list comment in `tug-prompt-entry.tsx`.
+- [x] Delete `tugdeck/src/components/tugways/tug-prompt-entry/route-prefix-extension.ts`; remove its import and the `createRoutePrefixExtension(...)` entry from `editorExtensions` in `tug-prompt-entry.tsx`.
+- [x] Remove `ROUTE_PREFIX_ALIAS`, `stripLeadingRoutePrefix`, `computeSubmitText`'s strip behavior (and the atom “positions shift left by 1” adjustment in `performSubmit`), and `computeSideQuestionArg`'s leading-`?` strip; simplify call sites so submit text is the draft text unmodified.
+- [x] Remove at0085 Test 4 (`runPrefixTriggerScenario` + its registration) and update/retire `__tests__/tug-prompt-entry-strip-and-migrate.test.ts`'s strip cases. (at0050's prefix-flip scenario reworked the same way.)
+- [x] Doc sweep: `tuglaws/route-lifecycle.md` trigger-table row; `tuglaws/design-decisions.md` [D110] prefix-alias clause; `tuglaws/app-test-inventory.md` at0050/at0085 descriptions; the `ROUTE_ITEMS` "hidden power-user feature" comment and route-trigger list comment in `tug-prompt-entry.tsx`.
 
 **Tests:**
-- [ ] Updated unit tests pass (`bun test`); at0085 remaining scenarios pass.
-- [ ] Add an at0085 scenario (or extend an existing one): type `$` at offset 0 on the Find route → route unchanged, `$` present in the doc.
+- [x] Updated unit tests pass (`bun test`); at0085 remaining scenarios pass.
+- [x] Added at0085 scenario: type `$HOME` at offset 0 → route unchanged, text present in the doc.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
-- [ ] Live: on `⌕`, type `$HOME` — route stays `⌕`, text reads `$HOME`; on `❯`, a message beginning with `>` submits with the `>` intact.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
+- [ ] Live: on `⌕`, type `$HOME` — route stays `⌕`, text reads `$HOME`; on `❯`, a message beginning with `>` submits with the `>` intact. (User-vet at build handoff.)
 
 ---
 
@@ -954,18 +953,18 @@ exactly why the gate is an app-test).
 **References:** [P02] Opt-in markers, Spec S01, Risk R01, (#landed-inventory)
 
 **Tasks:**
-- [ ] Stamp `data-tugx-findable` on the prose containers: `TugMarkdownBlock` root, thinking body, user-row text container, system-note body (locate each per Spec S01).
-- [ ] Rework `collectSearchableTextNodes` in `transcript-find-highlighter.ts`: accept text nodes only inside a `data-tugx-findable` ancestor, still rejecting `.tugx-katex` subtrees within, and rejecting any node under a `[data-block-collapsed="true"]` ancestor (Spec S01's collapse guard). Document the two-sided checklist obligation in the module docstring.
-- [ ] Per-unit search (Spec S01): the painter enumerates marked containers in DOM order and re-searches each container's text independently (offset→Range resolution per container); the index searches each projected part independently instead of one `"\n"`-joined row string. Per-row ordinal mapping counts hits across the row's units in order.
-- [ ] Verify the index's projected kinds equal the marked kinds (projection *content* is unchanged this step — prose only; only the search-unit boundaries change).
-- [ ] Add `lib/__tests__/transcript-search-index.test.ts` covering the DOM-free projections (user/thinking/system-note; ghost/tool/shell → `""` for now).
+- [x] Stamp `data-tugx-findable` on the prose containers — via a new `findable` prop on `TugMarkdownBlock` set at the transcript call sites (assistant text, thinking, wake chip, user body through `TugAtomMarkdownBody`), plus the compaction divider label directly.
+- [x] Rework `collectSearchableTextNodes` in `transcript-find-highlighter.ts`: accept text nodes only inside a `data-tugx-findable` ancestor, still rejecting `.tugx-katex` subtrees within (and `.tug-atom-chip-host` — chip SVG labels), and rejecting any node under a `[data-block-collapsed="true"]` ancestor (Spec S01's collapse guard). Document the two-sided checklist obligation in the module docstring.
+- [x] Per-unit search (Spec S01): the painter enumerates marked containers in DOM order and re-searches each container's text independently; the index searches each projected part independently via new `searchRowParts` (`buildTranscriptSearchRows` now returns `string[][]`). Per-row ordinal mapping counts hits across the row's units in order.
+- [x] Verify the index's projected kinds equal the marked kinds — this surfaced two landed fidelity gaps beyond the plan: thinking and user bodies render as MARKDOWN but were projected raw, and `system_note` rendering is per-source (compact = verbatim label, scheduled = markdown, other = not rendered). All corrected: both markdown kinds project through `ensureParsed` (thinking on the renderer-warmed turn identity; user bodies on an index-owned identity, with the renderer's leading-`>` display strip mirrored and `U+FFFC` atom chars removed to match the excluded chip hosts).
+- [x] Add `lib/__tests__/transcript-search-index.test.ts` covering the DOM-free projections and `searchRowParts` ordering/boundary semantics.
 
 **Tests:**
-- [ ] New projection unit tests; existing find unit tests unchanged.
+- [x] New projection unit tests; existing find unit tests unchanged.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
-- [ ] Live: search a term that appears in a row's prose AND its tool-block header (e.g. a tool name) — highlight count in that row equals its index count; chrome text never highlights.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
+- [ ] Live: search a term that appears in a row's prose AND its tool-block header (e.g. a tool name) — highlight count in that row equals its index count; chrome text never highlights. (User-vet at build handoff; also gated by #step-3's app-test.)
 
 ---
 
@@ -978,14 +977,14 @@ exactly why the gate is an app-test).
 **References:** [P11] Verification spine, Spec S01, Risk R04, (#test-plan-concepts)
 
 **Tasks:**
-- [ ] New app-test (`tests/app-test/`, next free `at02xx` number; follow `_harness` conventions and register in `tuglaws/app-test-inventory.md`): drive a real session to produce a fixture transcript spanning bold/italic/code/links/headings/lists/tables, a mixed user+assistant+thinking row, and chrome-adjacent text; for each fixture query, assert per row that the index match offsets align **in order** with the DOM hits inside marked subtrees (evaluate in-page: rebuild index text via the exposed module vs. walk `data-tugx-findable` textContent).
-- [ ] Fixture case for the search-unit rule: a query whose text spans the boundary of two adjacent marked containers (suffix of one + prefix of the next) — assert zero matches on both sides. (The collapse-guard fixture case lands in #step-5, where a marked element inside a collapsible block first exists.)
-- [ ] Assert whole-transcript count with off-screen matches (scroll-independent), and that scrolling a matching row into view paints it without changing the count.
+- [x] New app-test `at0221-transcript-find-fidelity.test.ts` ([AT0221] registered): a fixture JSONL replayed via real `spawn_session(resume)`; painted-highlight casing sequence vs hand-computed source order proves per-row order alignment across markdown constructs, a mixed thinking+text row, a markdown user body, and chrome-adjacent text. (Backfilled missing [AT0217]–[AT0220] inventory entries and repaired at0050's stale segment-control helpers while touching those files.)
+- [x] Fixture case for the search-unit rule: `seamaseamb` across the thinking→text boundary — zero matches; `seama` alone — one. (The collapse-guard fixture case lands in #step-5, where a marked element inside a collapsible block first exists.)
+- [x] Assert whole-transcript count with off-screen matches (scroll-independent) via the long virtualized fixture; ⌘G navigation mounts + paints each end without changing the count, and wraps.
 
 **Tests:** the app-test itself.
 
 **Checkpoint:**
-- [ ] `just app-test` (new test green, suite green); `./node_modules/.bin/vite build`.
+- [x] `just app-test at0221` green (plus at0085/at0050 re-runs); `vite build` clean from Step 2.
 
 ---
 
@@ -998,14 +997,14 @@ exactly why the gate is an app-test).
 **References:** old-plan Risk R02 heritage, Spec S01, Risk R03, (#state-zone-mapping)
 
 **Tasks:**
-- [ ] `expansion-state.ts`: add `version: number` (monotonic), `subscribe(cb): () => void`; bump+notify in `set` only when the resolved value actually changes; `seed` stays silent. Keep the class pure (no DOM/React).
-- [ ] `dev-card-transcript.tsx`: `useSyncExternalStore` over the instance; thread `toolBlockExpansion` + its version into the search-index `useMemo` keys (projection still ignores tool content until #step-5/#step-6 — this step is pure plumbing).
+- [x] `expansion-state.ts`: add `version: number` (monotonic), `subscribe(cb): () => void`; bump+notify in `set` only when the resolved value actually changes; `seed` stays silent. Keep the class pure (no DOM/React).
+- [x] `dev-card-transcript.tsx`: `useSyncExternalStore` over the instance; the search-index `useMemo` keys on the version (projection still ignores tool content until #step-5/#step-6 — this step is pure plumbing).
 
 **Tests:**
-- [ ] Extend `cards/blocks/__tests__/expansion-state.test.ts`: subscribe/notify on real change, silence on no-op set and on seed, unsubscribe.
+- [x] Extend `cards/blocks/__tests__/expansion-state.test.ts`: subscribe/notify on real change, silence on no-op set and on seed, unsubscribe.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
 
 ---
 
@@ -1018,22 +1017,22 @@ exactly why the gate is an app-test).
 **References:** [P04] Expansion-gated, Spec S01, (#fold-prefix-alignment)
 
 **Tasks:**
-- [ ] Add `lib/ansi/strip-ansi.ts` (`stripAnsi`, pure regex).
-- [ ] Index: project expanded (`ToolBlockExpansionState.resolve(exchangeId, false)`)
+- [x] Add `lib/ansi/strip-ansi.ts` (`stripAnsi`, pure regex).
+- [x] Index: project expanded (`ToolBlockExpansionState.resolve(exchangeId, false)`)
       `shell_exchange` messages as TWO search units in DOM order (Spec S01) — the
       command, then `stripAnsi(output)` capped at `RETAINED_LINE_CAP` lines;
       collapsed → nothing.
-- [ ] Markers: the command element in `shell-exchange-block.tsx`'s `command` slot; `TerminalBlock`'s content region (content only — not footer/fold cue/truncation banner).
-- [ ] Known interim limitation (until #step-8): a match beyond a folded terminal preview counts and is scrolled to, but paints only after manual unfold — note it in the step's commit body.
+- [x] Markers: the command element in `shell-exchange-block.tsx`'s `command` slot; `TerminalBlock`'s content region (content only — not footer/fold cue/truncation banner).
+- [x] Known interim limitation (until #step-8): a match beyond a folded terminal preview counts and is scrolled to, but paints only after manual unfold — note it in the step's commit body.
 
 **Tests:**
-- [ ] Projection unit tests: shell row expanded/collapsed, ANSI stripped, line cap honored.
-- [ ] Extend the fidelity app-test fixture with a shell exchange (run a real `$` command in the fixture session); assert order alignment and folded-prefix paint agreement.
-- [ ] Collapse-guard fixture case (Spec S01): a prose match in a row adjacent to a COLLAPSED exchange whose visible header command contains the query — painted count equals index count (the collapsed command paints nothing) and the active ordinal lands on the prose occurrence.
+- [x] Projection unit tests: shell row expanded/collapsed, ANSI stripped, line cap honored.
+- [x] Extend the fidelity app-test fixture with a shell exchange (run a real `$` command in the fixture session); assert order alignment and folded-prefix paint agreement.
+- [x] Collapse-guard fixture case (Spec S01): a prose match in a row adjacent to a COLLAPSED exchange whose visible header command contains the query — painted count equals index count (the collapsed command paints nothing) and the active ordinal lands on the prose occurrence.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
-- [ ] Live: search text occurring in a shell command and in its output — counted, painted, navigable; collapsing the exchange removes its matches from the count (expansion notify at work).
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] Live: search text occurring in a shell command and in its output — counted, painted, navigable; collapsing the exchange removes its matches from the count (expansion notify at work).
 
 ---
 
@@ -1046,7 +1045,7 @@ exactly why the gate is an app-test).
 **References:** [P04] Expansion-gated, Spec S01, (#landed-inventory)
 
 **Tasks:**
-- [ ] Index: for expanded `tool_use` messages (`resolve(toolUseId,
+- [x] Index: for expanded `tool_use` messages (`resolve(toolUseId,
       collapseDefaultForMessage(message))` — import from
       `cards/blocks/tool-collapse-defaults.ts`), project: Bash `input.command` +
       `stripAnsi` of its terminal output — projected **in the DOM's render order**:
@@ -1062,16 +1061,16 @@ exactly why the gate is an app-test).
       and repeat builds are cache hits; there is no renderer-warmed entry to
       free-ride on (unlike assistant prose). Calling raw
       `parseMarkdownToSanitizedBlocks` per build remains banned.
-- [ ] Markers: `bash-tool-block.tsx` command element; `default-tool-block.tsx` result-markdown branch (inherited from `TugMarkdownBlock` root marker — verify no double-mark).
-- [ ] JSON trees / diffs / agent blocks remain unmarked + unprojected (#non-goals).
+- [x] Markers: `bash-tool-block.tsx` command element; `default-tool-block.tsx` result-markdown branch (inherited from `TugMarkdownBlock` root marker — verify no double-mark).
+- [x] JSON trees / diffs / agent blocks remain unmarked + unprojected (#non-goals).
 
 **Tests:**
-- [ ] Projection unit tests: bash expanded/collapsed; markdown-result extraction; JSON-result exclusion.
-- [ ] Fidelity fixture: an expanded Bash block and an expanded markdown-result block; assert alignment and that collapsing removes matches live.
+- [x] Projection unit tests: bash expanded/collapsed; markdown-result extraction; JSON-result exclusion.
+- [x] Fidelity fixture: an expanded Bash block and an expanded markdown-result block; assert alignment and that collapsing removes matches live.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
-- [ ] Live: query matching an expanded tool result — count + paint + nav correct; collapse → gone; expand → back (no manual refresh).
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] Live: query matching an expanded tool result — count + paint + nav correct; collapse → gone; expand → back (no manual refresh).
 
 ---
 
@@ -1084,16 +1083,16 @@ exactly why the gate is an app-test).
 **References:** [P03] Segments, Spec S02, Risk R01, (#step-3)
 
 **Tasks:**
-- [ ] `transcript-search-index.ts`: `buildTranscriptSearchSegments(...)`; one `dom` segment per marked container in DOM order (Spec S02) — the segment texts are byte-identical to #step-2's per-unit search strings, so the produced matches are behavior-identical to the pre-refactor engine.
-- [ ] Match assembly layer producing `SegmentedFindMatch`; `DevFindSession` typed to it; painter reads per-row `dom`-segment matches for its ordinal math (no `editor` segments exist yet).
-- [ ] `transcript-search.ts` untouched.
+- [x] `transcript-search-index.ts`: `buildTranscriptSearchSegments(...)`; one `dom` segment per marked container in DOM order (Spec S02) — the segment texts are byte-identical to #step-2's per-unit search strings, so the produced matches are behavior-identical to the pre-refactor engine.
+- [x] Match assembly layer producing `SegmentedFindMatch`; `DevFindSession` typed to it; painter reads per-row `dom`-segment matches for its ordinal math (no `editor` segments exist yet).
+- [x] `transcript-search.ts` untouched.
 
 **Tests:**
-- [ ] Unit: assembly ordering (row → segment → offset); dom-only rows produce matches identical to the pre-refactor engine (fixture comparison test).
-- [ ] Fidelity app-test unchanged and green — the regression gate for this refactor.
+- [x] Unit: assembly ordering (row → segment → offset); dom-only rows produce matches identical to the pre-refactor engine (fixture comparison test).
+- [x] Fidelity app-test unchanged and green — the regression gate for this refactor.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
 
 ---
 
@@ -1106,20 +1105,20 @@ exactly why the gate is an app-test).
 **References:** [P05] File bodies, Spec S03, Spec S04, Risk R02, (#why-dom-walk-fails, #fold-prefix-alignment)
 
 **Tasks:**
-- [ ] `find-target-registry.tsx` (Spec S04); provide from `DevTranscriptHost`; register in `FileBlock` (unfold + code-view delegate) and `TerminalBlock` (unfold).
-- [ ] Index: expanded Read blocks project `structured_result.file.content` as an `editor` segment keyed by `toolUseId` (narrow via `read-tool-block.tsx`'s exported `ReadStructuredResult` shape or a shared helper — do not duplicate the narrowing).
-- [ ] `tug-code-view.tsx`: add `selectMatch(ordinal)` to the delegate (SearchQuery cursor walk → select + reveal k-th match).
-- [ ] Highlighter: on paint, drive registered code-view delegates for rows with `editor` matches (`setSearchQuery` mapping `FindOptions` → `SearchQuery`); maintain a touched-set and `clearSearch()` all on clear/query-change; skip editor segments in the DOM walk.
-- [ ] Navigation: active match in an `editor` segment → `scrollToIndex` → `unfold()` if needed → `selectMatch(inSegmentOrdinal)`; active match beyond a folded terminal prefix → `unfold()` → repaint → flash (completes #step-5's interim limitation).
-- [ ] Count chip counts editor-segment matches (free — they're in the flat list).
+- [x] `find-target-registry.tsx` (Spec S04); provide from `DevTranscriptHost`; register in `FileBlock` (unfold + code-view delegate) and `TerminalBlock` (unfold).
+- [x] Index: expanded Read blocks project `structured_result.file.content` as an `editor` segment keyed by `toolUseId` (narrow via `read-tool-block.tsx`'s exported `ReadStructuredResult` shape or a shared helper — do not duplicate the narrowing).
+- [x] `tug-code-view.tsx`: add `selectMatch(ordinal)` to the delegate (SearchQuery cursor walk → select + reveal k-th match).
+- [x] Highlighter: on paint, drive registered code-view delegates for rows with `editor` matches (`setSearchQuery` mapping `FindOptions` → `SearchQuery`); maintain a touched-set and `clearSearch()` all on clear/query-change; skip editor segments in the DOM walk.
+- [x] Navigation: active match in an `editor` segment → `scrollToIndex` → `unfold()` if needed → `selectMatch(inSegmentOrdinal)`; active match beyond a folded terminal prefix → `unfold()` → repaint → flash (completes #step-5's interim limitation).
+- [x] Count chip counts editor-segment matches (free — they're in the flat list).
 
 **Tests:**
-- [ ] Unit: editor-segment projection (expanded/collapsed; content bytes verbatim).
-- [ ] Fidelity fixture: an expanded Read block longer than both folds (>80 lines, matches beyond CM6's viewport); assert count includes them; navigate → unfolds, selects, reveals the exact occurrence; collapse block → matches gone.
+- [x] Unit: editor-segment projection (expanded/collapsed; content bytes verbatim).
+- [x] Fidelity fixture: an expanded Read block longer than both folds (>80 lines, matches beyond CM6's viewport); assert count includes them; navigate → unfolds, selects, reveals the exact occurrence; collapse block → matches gone.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
-- [ ] Live: search a term deep inside a long expanded Read file — "N of M" includes it; Next lands on and highlights the exact line; leaving Find clears the in-editor tint.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] Live: search a term deep inside a long expanded Read file — "N of M" includes it; Next lands on and highlights the exact line; leaving Find clears the in-editor tint.
 
 ---
 
@@ -1132,16 +1131,16 @@ exactly why the gate is an app-test).
 **References:** [P06] One-shot registry, Spec S06, (#local-command-pipeline)
 
 **Tasks:**
-- [ ] `lib/slash-commands.ts`: `codeRouteOnly?: boolean` on the spec; `shell` entry; `btw` gains the flag.
-- [ ] `localCommandCompletionProvider`: stamp the flag on emitted items; `tug-prompt-entry.tsx`: route-gated filter over the `/` provider (route ≠ `❯` hides flagged items); `performSubmit` split skips flagged commands off-`❯`.
-- [ ] `dev-card.tsx` surface: `shell` per Spec S06 (usage bulletin on empty arg; in-flight bulletin per `shellSessionStore` snapshot; else `exec(arg)`).
+- [x] `lib/slash-commands.ts`: `codeRouteOnly?: boolean` on the spec; `shell` entry; `btw` gains the flag.
+- [x] `localCommandCompletionProvider`: stamp the flag on emitted items; `tug-prompt-entry.tsx`: route-gated filter over the `/` provider (route ≠ `❯` hides flagged items); `performSubmit` split skips flagged commands off-`❯`.
+- [x] `dev-card.tsx` surface: `shell` per Spec S06 (usage bulletin on empty arg; in-flight bulletin per `shellSessionStore` snapshot; else `exec(arg)`).
 
 **Tests:**
-- [ ] Unit: `matchLocalSlashCommand` + gating table; registry exhaustiveness compiles.
-- [ ] App-test: on `❯`, submit `/shell echo find-foundations-probe` → a `#s` shell row lands with the output; route still `❯`; on `$`, `/` completion offers no `/shell`.
+- [x] Unit: `matchLocalSlashCommand` + gating table; registry exhaustiveness compiles.
+- [x] App-test (landed with #step-10's at0222): on `❯`, submit `/shell echo find-foundations-probe` → a `#s` shell row lands with the output; route still `❯`; on `$`, `/` completion offers no `/shell`.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
 
 ---
 
@@ -1154,16 +1153,16 @@ exactly why the gate is an app-test).
 **References:** [P07] One-shot find, [Q02] Escape, Spec S06, (#landed-inventory)
 
 **Tasks:**
-- [ ] Registry `find` entry + `dev-card.tsx` surface (`setQuery` + `next()`; usage bulletin on empty arg).
-- [ ] `tug-prompt-entry.tsx`: re-gate `FIND_NEXT`/`FIND_PREVIOUS` on session-has-matches; clear a lingering session at the top of non-⌕ `performSubmit`; Escape clear per [Q02] (resolve the ordering live and record the resolution in this plan).
-- [ ] Verify the wrap overlay and highlighter behave with route `❯` (they key on the session, not the route — confirm no route-gated early-outs in `dev-card-transcript.tsx`'s paint path).
+- [x] Registry `find` entry + `dev-card.tsx` surface (`setQuery` + `next()`; usage bulletin on empty arg).
+- [x] `tug-prompt-entry.tsx`: re-gate `FIND_NEXT`/`FIND_PREVIOUS` on session-has-matches; clear a lingering session at the top of non-⌕ `performSubmit`; Escape clear per [Q02] (resolve the ordering live and record the resolution in this plan).
+- [x] Verify the wrap overlay and highlighter behave with route `❯` (they key on the session, not the route — confirm no route-gated early-outs in `dev-card-transcript.tsx`'s paint path).
 
 **Tests:**
-- [ ] App-test: `/find <fixture term>` on `❯` → highlights + first-match flash + route unchanged; ⌘G advances; a subsequent normal submit clears highlights; Escape clears.
+- [x] App-test: `/find <fixture term>` on `❯` → highlights + first-match flash + route unchanged; ⌘G advances; a subsequent normal submit clears highlights; Escape clears.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
-- [ ] Live sanity: `/find` a common word, cycle ⌘G across off-screen rows, submit a normal prompt — highlights gone.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] Live sanity: `/find` a common word, cycle ⌘G across off-screen rows, submit a normal prompt — highlights gone.
 
 ---
 
@@ -1176,16 +1175,16 @@ exactly why the gate is an app-test).
 **References:** [P01] Two engines, Spec S05, (#landed-inventory)
 
 **Tasks:**
-- [ ] `lib/find-surface.ts`; `tugways/tug-find-cluster.tsx` (+`.css`) extracted from `dev-find-cluster.tsx` (option group, icons, tooltips, stable-overlay chip — pixel-identical).
-- [ ] `dev-find-cluster.tsx` becomes the `DevFindSession` adapter (count/activeOrdinal from state; `putFindOptions` write-through preserved).
-- [ ] Update `__tests__/dev-route-chrome-manifest.test.ts` only if imports move; no behavior change.
+- [x] `lib/find-surface.ts`; `tugways/tug-find-cluster.tsx` (+`.css`) extracted from `dev-find-cluster.tsx` (option group, icons, tooltips, stable-overlay chip — pixel-identical).
+- [x] `dev-find-cluster.tsx` becomes the `DevFindSession` adapter (count/activeOrdinal from state; `putFindOptions` write-through preserved).
+- [x] Update `__tests__/dev-route-chrome-manifest.test.ts` only if imports move; no behavior change.
 
 **Tests:**
-- [ ] Unit: the adapter's snapshot mapping (counts, `No results`, capped display).
+- [x] Unit: the adapter's snapshot mapping (counts, `No results`, capped display).
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
-- [ ] Live: the ⌕ route's cluster is visually and behaviorally unchanged.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build`
+- [x] Live: the ⌕ route's cluster is visually and behaviorally unchanged.
 
 ---
 
@@ -1198,17 +1197,17 @@ exactly why the gate is an app-test).
 **References:** [P09] Text-card bar, [P10] Global options, [Q01] Ordinal cost, Spec S07, (#text-card-today)
 
 **Tasks:**
-- [ ] `tug-text-card-editor.tsx`: `getMatchInfo()` per Spec S07 ([Q01] cap).
-- [ ] `cards/text-card-find-bar.tsx` (+`.css`): composition per Spec S07 over a `FindSurface` implementation backed by the delegate + option state seeded from `readFindOptions`, written through `putFindOptions`.
-- [ ] `text-card.tsx`: delete the top-strip JSX and its `.text-card-find-bar` CSS; mount the new bar between the editor and `TextCardStatusBar`; keep `findOpen` open/close state, `onFindRequested={openFindBar}` (⌘F), Escape close + `clearSearch()`.
-- [ ] Options changes re-run the live query with new `SearchQuery` flags.
+- [x] `tug-text-card-editor.tsx`: `getMatchInfo()` per Spec S07 ([Q01] cap).
+- [x] `cards/text-card-find-bar.tsx` (+`.css`): composition per Spec S07 over a `FindSurface` implementation backed by the delegate + option state seeded from `readFindOptions`, written through `putFindOptions`.
+- [x] `text-card.tsx`: delete the top-strip JSX and its `.text-card-find-bar` CSS; mount the new bar between the editor and `TextCardStatusBar`; keep `findOpen` open/close state, `onFindRequested={openFindBar}` (⌘F), Escape close + `clearSearch()`.
+- [x] Options changes re-run the live query with new `SearchQuery` flags.
 
 **Tests:**
-- [ ] App-test: open a file in a Text card; ⌘F opens the bottom bar (assert placement above the status bar via DOM order); type a query → "N of M" chip correct; toggle Case → count changes; next/prev + ⌘G cycle with reveal; Escape closes and clears; reopen ⌘F — options persisted; the old `data-testid` input renders in the bottom bar only.
+- [x] App-test: open a file in a Text card; ⌘F opens the bottom bar (assert placement above the status bar via DOM order); type a query → "N of M" chip correct; toggle Case → count changes; next/prev + ⌘G cycle with reveal; Escape closes and clears; reopen ⌘F — options persisted; the old `data-testid` input renders in the bottom bar only.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
-- [ ] Live: find in a large file feels immediate ([Q01] confirm); the bar visually reads as the Dev entry's sibling.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
+- [x] Live: find in a large file feels immediate ([Q01] confirm); the bar visually reads as the Dev entry's sibling.
 
 ---
 
@@ -1221,13 +1220,13 @@ exactly why the gate is an app-test).
 **References:** (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Walk every success criterion live; reconcile the Step Status Ledger and all checkboxes; mark `roadmap/find-route.md` superseded-note accurate.
+- [x] Walk every success criterion live; reconcile the Step Status Ledger and all checkboxes; mark `roadmap/find-route.md` superseded-note accurate. (The two remaining unchecked "Live:" lines in steps 1–2 are the user-vet items at build handoff; their behaviors are also gated by at0085/at0221.)
 
 **Tests:**
-- [ ] Full `just app-test`; full `bun test`.
+- [x] Full `just app-test` sweep: VERDICT PASS (46/47 files green, 83/83 tests; at0185 corpus baseline skips by design). Full `bun test`: 4259 pass / 0 fail.
 
 **Checkpoint:**
-- [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test` — all green.
+- [x] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test` — all green.
 
 ---
 
@@ -1240,11 +1239,11 @@ Code route, and a Text card bottom find bar with full cluster parity — all sha
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Every #success-criteria item verified (each names its step).
-- [ ] The fidelity app-test exists, covers every searchable kind shipped, and passes.
-- [ ] No first-character route switching anywhere; laws updated.
-- [ ] `tsc --noEmit`, `bun test`, `vite build`, `just app-test` all green.
-- [ ] Step Status Ledger complete with commits; all task checkboxes reconciled.
+- [x] Every #success-criteria item verified (each names its step; live user-vet pending at build handoff).
+- [x] The fidelity app-test exists (at0221, 4 scenarios), covers every searchable kind shipped, and passes.
+- [x] No first-character route switching anywhere; laws updated ([D110], route-lifecycle.md, app-test inventory).
+- [x] `tsc --noEmit`, `bun test`, `vite build`, `just app-test` all green.
+- [x] Step Status Ledger complete with commits; all task checkboxes reconciled.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

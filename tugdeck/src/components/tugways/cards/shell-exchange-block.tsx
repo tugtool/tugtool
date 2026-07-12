@@ -74,8 +74,14 @@ export function ShellExchangeBlock({
   // The command sits in the header (parity with `BashToolBlock`) — mono, no
   // `$` sigil (the `Shell` row identity already frames it as a shell command).
   // Clamps while the block is collapsed; a long command wraps when expanded.
+  // `data-tugx-findable` opts the command text into transcript Find; the
+  // painter's collapse guard skips it while the block is collapsed, matching
+  // the index's expansion gate.
   const command = (
-    <code className="shell-exchange-command tool-call-header-clamp">
+    <code
+      className="shell-exchange-command tool-call-header-clamp"
+      data-tugx-findable=""
+    >
       <span className="shell-exchange-command-text">{view.command}</span>
     </code>
   );
@@ -101,6 +107,7 @@ export function ShellExchangeBlock({
       key={`${message.exchangeId}-settled`}
       data={view.terminal}
       embedded
+      findable
       className="shell-exchange-terminal"
     />
   ) : null;

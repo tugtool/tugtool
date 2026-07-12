@@ -108,6 +108,11 @@ import {
   BlockFoldCue,
   useBlockFoldState,
 } from "./affordances";
+import { useFindTargetRegistration } from "@/components/tugways/cards/blocks/find-target-registry";
+import {
+  ToolBlockCollapseContext,
+  ToolUseIdContext,
+} from "@/components/tugways/cards/blocks/collapse-context";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -223,6 +228,18 @@ export interface TerminalBlockProps {
    * @default DEFAULT_COLLAPSE_THRESHOLD
    */
   collapseThreshold?: number;
+
+  /**
+   * Opt the terminal's OUTPUT LINES into transcript Find: stamps
+   * `data-tugx-findable` on `.tugx-term-content` so the find painter walks
+   * it. Set ONLY by transcript hosts whose output the search index projects
+   * (the shell exchange row; the Bash tool block once indexed) — marking
+   * without a matching projection breaks count↔paint alignment. The footer,
+   * fold cue, and truncation banner stay unmarked chrome. A folded terminal
+   * shows the FIRST `collapseThreshold` lines, so mounted hits are a prefix
+   * of the projected hits — ordinal alignment holds. Default `false`.
+   */
+  findable?: boolean;
 
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
@@ -543,6 +560,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
   embedded = false,
+  findable = false,
   headerLabel,
   collapsed: collapsedProp,
   onToggleCollapsed,
@@ -593,6 +611,17 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
     onToggleCollapsed,
     componentStatePreservationKey,
   });
+
+  // Find-target registration ([L03]): a folded terminal renders only its
+  // first-lines preview, so a counted match can sit beyond the fold;
+  // navigation resolves this target to open the fold on demand. No-op
+  // outside a transcript host.
+  const findCollapseHandle = React.useContext(ToolBlockCollapseContext);
+  const findContextToolUseId = React.useContext(ToolUseIdContext);
+  useFindTargetRegistration(
+    findCollapseHandle?.toolUseId ?? findContextToolUseId,
+    { unfold: () => setCollapsed(false) },
+  );
 
   // Chrome actions target — non-null when this TerminalBlock is
   // composed inside a `BlockChrome` that has rendered its actions
@@ -908,6 +937,7 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
           ref={bodyRef}
           className="tugx-term-content"
           data-slot="terminal-content"
+          data-tugx-findable={findable ? "" : undefined}
         />
       </div>
     </terminalBlockResponder.ResponderScope>

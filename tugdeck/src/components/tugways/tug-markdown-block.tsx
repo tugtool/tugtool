@@ -129,6 +129,17 @@ export interface TugMarkdownBlockProps {
    * ([L20]).
    */
   className?: string;
+
+  /**
+   * Opt this block's rendered text into transcript Find: stamps
+   * `data-tugx-findable` on the root so the find painter walks it
+   * (`transcript-find-highlighter.ts`). Set ONLY by transcript content
+   * surfaces whose text the search index projects — marking without a
+   * matching index projection breaks the count↔paint alignment. Default
+   * `false`: gallery, tool-result, and other non-indexed hosts stay
+   * unsearchable.
+   */
+  findable?: boolean;
 }
 
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
@@ -136,6 +147,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   streamingStore,
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
+  findable = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -256,6 +268,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     <div
       ref={containerRef}
       data-slot="tug-markdown-block"
+      data-tugx-findable={findable ? "" : undefined}
       className={
         className === undefined
           ? "tug-markdown-block"
