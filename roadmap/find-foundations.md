@@ -654,7 +654,24 @@ output must apply the same cap so count never exceeds what unfolding can reveal.
 
 - Marker: `data-tugx-findable` (present/absent; no value) on the *content container*
   of each searchable kind. The painter's tree walk accepts a text node iff it has a
-  `data-tugx-findable` ancestor within the row cell AND is not inside `.tugx-katex`.
+  `data-tugx-findable` ancestor within the row cell AND is not inside `.tugx-katex`
+  AND has no `[data-block-collapsed="true"]` ancestor. The collapse guard is
+  load-bearing: markers are static DOM attributes while index gating is
+  expansion-aware, and a collapsed block's always-mounted header still shows its
+  marked command element — without the guard, a row holding a prose match plus a
+  collapsed Bash/shell block whose visible command matches would over-paint and
+  desync the active ordinal (the exact bug this spec exists to fix). The
+  `data-block-collapsed` attribute already exists on the chrome root
+  (`block-chrome.tsx`).
+- Search units: each marked container is its own search unit. The painter searches
+  each marked subtree's concatenated text **independently** (never concatenating
+  across sibling marked containers), and the index searches each projected part
+  independently to match. This kills phantom cross-block matches — the landed
+  painter joins a whole cell's text nodes with no separator while the index joins
+  parts with `"\n"`, so a query could match across two adjacent blocks in the DOM
+  but never in the index. Consequence: a query never matches across container
+  boundaries on either side, by construction. (Step 7's segment model formalizes
+  the same rule.)
 - Searchable kinds and their containers (each stamped where the component renders):
   1. Assistant markdown — `TugMarkdownBlock` root (`components/tugways/tug-markdown-block.tsx`).
   2. Thinking — the thinking body container (`DevThinkingBlock`, locate its prose root
@@ -690,9 +707,10 @@ output must apply the same cap so count never exceeds what unfolding can reveal.
 - `RowSegment = { kind: "dom", text: string } | { kind: "editor", key: string,
   text: string }` — `key` is the owning `toolUseId`. The index becomes
   `buildTranscriptSearchSegments(dataSource, streamingStore, expansion):
-  RowSegment[][]` (row-indexed). All `dom` content of a row stays **one concatenated
-  segment in DOM order** (preserving today's painter contract); each embedded editor
-  is its own `editor` segment at its DOM position.
+  RowSegment[][]` (row-indexed). Each searchable unit of a row is its own segment in
+  DOM order — one `dom` segment per marked container (per Spec S01's search-unit
+  rule, which #step-2 already enforces on both sides), one `editor` segment per
+  embedded editor at its DOM position.
 - `transcript-search.ts` is unchanged (pure strings). A new thin layer (in
   `transcript-search-index.ts` or a sibling) runs `search` per segment and assembles
   `SegmentedFindMatch = FindMatch & { segment: number, segmentKind, segmentKey? }` in
@@ -937,8 +955,9 @@ exactly why the gate is an app-test).
 
 **Tasks:**
 - [ ] Stamp `data-tugx-findable` on the prose containers: `TugMarkdownBlock` root, thinking body, user-row text container, system-note body (locate each per Spec S01).
-- [ ] Rework `collectSearchableTextNodes` in `transcript-find-highlighter.ts`: accept text nodes only inside a `data-tugx-findable` ancestor (still rejecting `.tugx-katex` subtrees within). Document the two-sided checklist obligation in the module docstring.
-- [ ] Verify the index's projected kinds equal the marked kinds (no index change expected this step — prose only).
+- [ ] Rework `collectSearchableTextNodes` in `transcript-find-highlighter.ts`: accept text nodes only inside a `data-tugx-findable` ancestor, still rejecting `.tugx-katex` subtrees within, and rejecting any node under a `[data-block-collapsed="true"]` ancestor (Spec S01's collapse guard). Document the two-sided checklist obligation in the module docstring.
+- [ ] Per-unit search (Spec S01): the painter enumerates marked containers in DOM order and re-searches each container's text independently (offset→Range resolution per container); the index searches each projected part independently instead of one `"\n"`-joined row string. Per-row ordinal mapping counts hits across the row's units in order.
+- [ ] Verify the index's projected kinds equal the marked kinds (projection *content* is unchanged this step — prose only; only the search-unit boundaries change).
 - [ ] Add `lib/__tests__/transcript-search-index.test.ts` covering the DOM-free projections (user/thinking/system-note; ghost/tool/shell → `""` for now).
 
 **Tests:**
@@ -960,6 +979,7 @@ exactly why the gate is an app-test).
 
 **Tasks:**
 - [ ] New app-test (`tests/app-test/`, next free `at02xx` number; follow `_harness` conventions and register in `tuglaws/app-test-inventory.md`): drive a real session to produce a fixture transcript spanning bold/italic/code/links/headings/lists/tables, a mixed user+assistant+thinking row, and chrome-adjacent text; for each fixture query, assert per row that the index match offsets align **in order** with the DOM hits inside marked subtrees (evaluate in-page: rebuild index text via the exposed module vs. walk `data-tugx-findable` textContent).
+- [ ] Fixture case for the search-unit rule: a query whose text spans the boundary of two adjacent marked containers (suffix of one + prefix of the next) — assert zero matches on both sides. (The collapse-guard fixture case lands in #step-5, where a marked element inside a collapsible block first exists.)
 - [ ] Assert whole-transcript count with off-screen matches (scroll-independent), and that scrolling a matching row into view paints it without changing the count.
 
 **Tests:** the app-test itself.
@@ -1000,14 +1020,16 @@ exactly why the gate is an app-test).
 **Tasks:**
 - [ ] Add `lib/ansi/strip-ansi.ts` (`stripAnsi`, pure regex).
 - [ ] Index: project expanded (`ToolBlockExpansionState.resolve(exchangeId, false)`)
-      `shell_exchange` messages as command + `\n` + `stripAnsi(output)` capped at
-      `RETAINED_LINE_CAP` lines; collapsed → `""`.
+      `shell_exchange` messages as TWO search units in DOM order (Spec S01) — the
+      command, then `stripAnsi(output)` capped at `RETAINED_LINE_CAP` lines;
+      collapsed → nothing.
 - [ ] Markers: the command element in `shell-exchange-block.tsx`'s `command` slot; `TerminalBlock`'s content region (content only — not footer/fold cue/truncation banner).
 - [ ] Known interim limitation (until #step-8): a match beyond a folded terminal preview counts and is scrolled to, but paints only after manual unfold — note it in the step's commit body.
 
 **Tests:**
 - [ ] Projection unit tests: shell row expanded/collapsed, ANSI stripped, line cap honored.
 - [ ] Extend the fidelity app-test fixture with a shell exchange (run a real `$` command in the fixture session); assert order alignment and folded-prefix paint agreement.
+- [ ] Collapse-guard fixture case (Spec S01): a prose match in a row adjacent to a COLLAPSED exchange whose visible header command contains the query — painted count equals index count (the collapsed command paints nothing) and the active ordinal lands on the prose occurrence.
 
 **Checkpoint:**
 - [ ] `./node_modules/.bin/tsc --noEmit` && `bun test` && `./node_modules/.bin/vite build` && `just app-test`
@@ -1027,12 +1049,19 @@ exactly why the gate is an app-test).
 - [ ] Index: for expanded `tool_use` messages (`resolve(toolUseId,
       collapseDefaultForMessage(message))` — import from
       `cards/blocks/tool-collapse-defaults.ts`), project: Bash `input.command` +
-      `stripAnsi` of the text output rendered by its terminal; `default-tool-block`'s
-      markdown text result (`pickOutputBody(...).kind === "markdown"` branch — plain
-      text, projected via the same `ensureParsed`-independent path as raw text since
-      tool results are not in the turn parse cache; parse fresh through
-      `parseMarkdownToSanitizedBlocks` is banned — reuse `ensureParsed` with a
-      `tool.${toolUseId}.result` identity so repeat builds are cache hits).
+      `stripAnsi` of its terminal output — projected **in the DOM's render order**:
+      `renderTerminal` in `body-kinds/terminal-block.tsx` emits all stdout lines then
+      all stderr lines, so a terminal fed separate streams must be projected
+      stdout-then-stderr, not interleaved (shell exchanges are immune — their
+      `output` is one pre-combined string); and `default-tool-block`'s markdown text
+      result (`pickOutputBody(...).kind === "markdown"` branch). For the markdown
+      result, parse through `ensureParsed` with a new `tool.${toolUseId}.result`
+      identity. Note honestly what this buys: the renderer (`TugMarkdownBlock` in
+      static `initialText` mode) parses via `renderIncremental`, NOT `ensureParsed`,
+      so this cache entry is **index-owned** — the first index build pays one parse
+      and repeat builds are cache hits; there is no renderer-warmed entry to
+      free-ride on (unlike assistant prose). Calling raw
+      `parseMarkdownToSanitizedBlocks` per build remains banned.
 - [ ] Markers: `bash-tool-block.tsx` command element; `default-tool-block.tsx` result-markdown branch (inherited from `TugMarkdownBlock` root marker — verify no double-mark).
 - [ ] JSON trees / diffs / agent blocks remain unmarked + unprojected (#non-goals).
 
@@ -1055,7 +1084,7 @@ exactly why the gate is an app-test).
 **References:** [P03] Segments, Spec S02, Risk R01, (#step-3)
 
 **Tasks:**
-- [ ] `transcript-search-index.ts`: `buildTranscriptSearchSegments(...)`; all currently-searchable content stays one `dom` segment per row (byte-identical concatenation → behavior-identical matches).
+- [ ] `transcript-search-index.ts`: `buildTranscriptSearchSegments(...)`; one `dom` segment per marked container in DOM order (Spec S02) — the segment texts are byte-identical to #step-2's per-unit search strings, so the produced matches are behavior-identical to the pre-refactor engine.
 - [ ] Match assembly layer producing `SegmentedFindMatch`; `DevFindSession` typed to it; painter reads per-row `dom`-segment matches for its ordinal math (no `editor` segments exist yet).
 - [ ] `transcript-search.ts` untouched.
 
