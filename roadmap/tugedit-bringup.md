@@ -46,9 +46,9 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 #### Scope {#scope}
 
 1. **Rung 1:** remove `EXEC_TIMEOUT` (wall-clock) from the production shell dispatcher; convert the test-injectable timeout to an *idle* timeout used only by tests; reframe the affected unit tests.
-2. Inject the running tugcast port into the `$`-route shell child's environment so `tugedit` (and git under it) can find the instance.
+2. Inject the running tugcast port **and the session's `tug_session_id`** into the `$`-route shell child's environment so `tugedit` (and git under it) can find the instance and identify the originating exchange. (Neither exists today — nothing anywhere sets a `TUG_SESSION_ID` env var.)
 3. tugcast: a `POST /api/edit` endpoint + a `pending_edits` oneshot map + an `edit-done` resolution action; extend the `open-file` CONTROL frame with `wait` / `requestId` / `tug_session_id`.
-4. A new `tugedit` Rust crate: clap CLI (`[+line[:col]] <file>`, `path:line[:col]`, `--wait`, `--create`), loopback-HTTP client, port resolution (injected env → registry), and `install-git` / `uninstall-git` / `doctor` subcommands.
+4. A new `tugedit` Rust crate: clap CLI (`[+line[:col]] <file>`, `path:line[:col]`, `--wait`), loopback-HTTP client, port resolution (injected env → registry), and `install-git` / `uninstall-git` / `doctor` subcommands.
 5. Deck: honor wait-mode `open-file` — open a dedicated Text card, and on close **flush then report `edit-done`**.
 6. **Rung 2:** deck-side "parked on editor" state for the in-flight shell exchange of the handoff's `tug_session_id`.
 7. git integration: `tugedit install-git` writes `core.editor`; add `tugedit` to the build/bundle bin lists.
@@ -57,6 +57,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 
 - No PTY allocation, no terminal emulator, no long-running duplex shell tunnel (rungs 3–4 of the ladder). Interactive programs (`vim`, `htop`, password prompts) are still unsupported here.
 - No stdin piping (`git diff | tugedit`) or `--pipe-title` in v1 (see [Q02]).
+- No `--create` in v1. tugcast's `/api/fs/write` only creates **missing** files whose parent is under a Tug-owned root (`fs_write.rs`, `drafts_root()` / `asides_root()`); creating arbitrary new files from `tugedit` would open a card that fails at save time. v1 requires an existing file — git's `COMMIT_EDITMSG` always exists. Supporting `--create` needs an `fs_write` posture change (follow-on).
 - No `/usr/local/bin` symlink installer for `tugedit` beyond what the existing Justfile `~/.local/bin` symlink loop already provides (see [Q03]).
 - No change to the Text card editor itself, its save modes, or its conflict UX.
 - No fallback-to-terminal-editor behavior when Tug is unreachable (fail loud instead).
@@ -77,7 +78,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 
 #### Assumptions {#assumptions}
 
-- The `$`-route shell child inherits tugcast's process environment (it does — `spawn_shell_child` in `shell.rs` does not clear env), so `TUG_INSTANCE_ID` is already visible to descendants; only the live port needs explicit injection.
+- The `$`-route shell child inherits tugcast's process environment (it does — `spawn_shell_child` in `shell.rs` does not clear env), so `TUG_INSTANCE_ID` is already visible to descendants. The live port and the per-session `tug_session_id` are NOT in the environment today and must be injected explicitly (Step 2) — no `TUG_SESSION_ID` exists anywhere in the tree.
 - git invokes `core.editor` with a single file path and waits for the process to exit before reading the file back — the standard contract `bbedit --wait` already satisfies.
 - In the user's normal shell, `GIT_EDITOR` is unset (it is only `true` inside this Claude Code harness env), so `core.editor` governs. See [P07].
 - Closing a Text card flushes its buffer to disk (automatic mode autosaves and flushes on unmount; manual mode prompts save-on-close) — so "card closed" implies "file on disk", provided the flush is awaited before `edit-done` (see [P05]).
@@ -138,7 +139,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 
 **Risk R02: Flush/close ordering** {#r02-flush-ordering}
 - **Risk:** git reads `COMMIT_EDITMSG` the instant `tugedit` exits; if `edit-done` is posted before the Text card's buffer reaches disk, git commits a stale message.
-- **Mitigation:** The wait-mode close path **awaits** `store.flush()` (normal fetch, not keepalive) before `POST /api/tell {edit-done}` ([P05]).
+- **Mitigation:** The wait-mode close path sequences `store.flush()` (normal fetch, not keepalive) strictly before `POST /api/tell {edit-done}` via a promise chain ([P05]) — card close is an in-page unmount, so the chain runs to completion; a page reload never runs cleanups, so it can't false-fire.
 - **Residual risk:** A crash between flush and exit — same window any editor has.
 
 **Risk R04: Instance ambiguity from an external terminal** {#r04-instance-ambiguity}
@@ -186,11 +187,11 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 
 **Rationale:** Matches `tugutil tell` (`ureq` POST to `/api/tell`), reuses `tugcore::registry` discovery, and needs no cookie/token.
 
-**Implications:** `tugedit` depends on `ureq`, `clap`, `serde_json`, `tugcore`. Inside the `$` route, resolution is a direct env read (Step 2 injects `TUG_TUGCAST_PORT`); outside, it walks the registry.
+**Implications:** `tugedit` depends on `ureq`, `clap`, `serde_json`, `tugcore`. Inside the `$` route, resolution is a direct env read (Step 2 injects `TUG_TUGCAST_PORT`, and `TUG_SESSION_ID` for the rung-2 parked marker); outside, it walks the registry and sends no `tug_session_id`.
 
 #### [P05] Completion = wait-mode card closed AFTER an awaited flush; no-deck fast-fails (DECIDED) {#p05-completion}
 
-**Decision:** The `--wait` request resolves when the wait-mode Text card is closed. The deck's close path **awaits `store.flush()`** before posting `edit-done`. If no deck is connected, `/api/edit` returns an error immediately.
+**Decision:** The `--wait` request resolves when the wait-mode Text card is closed. The deck's close path **sequences `store.flush()` strictly before** posting `edit-done` (a promise chain in the effect cleanup — cleanups can't `await`). If no deck is connected, `/api/edit` returns an error immediately.
 
 **Rationale:** git reads the file the moment `tugedit` exits (R02). Fast-failing on no-deck avoids an indefinite hang (R01).
 
@@ -219,7 +220,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 #### End-to-end flow: `git commit` in the `$` route → edit in Tug → commit {#flow-git-commit}
 
 1. User runs `git commit` in a Dev-card `$` exchange (or a normal terminal). git spawns `core.editor` → `tugedit --wait <repo>/.git/COMMIT_EDITMSG` and blocks.
-2. `tugedit` resolves the tugcast port (Spec S05 — inside `$` it reads the injected `TUG_TUGCAST_PORT`), generates a `requestId`, and `POST`s `/api/edit {path, wait:true, requestId, tug_session_id?}` with **no read timeout**.
+2. `tugedit` resolves the tugcast port (Spec S05 — inside `$` it reads the injected `TUG_TUGCAST_PORT`), reads the injected `TUG_SESSION_ID` when present (it exists only inside a `$` exchange — Step 2 injects it), generates a `requestId`, and `POST`s `/api/edit {path, wait:true, requestId, tug_session_id?}` with **no read timeout**.
 3. tugcast's `/api/edit` handler: rejects non-loopback; if CONTROL has 0 receivers → error (R01); else registers `pending_edits[requestId]`, broadcasts a CONTROL `open-file` frame carrying `wait:true`, `requestId`, `tug_session_id`, and awaits the oneshot.
 4. The deck's `open-file` handler opens a dedicated Text card on `path` seeded with the `requestId`. Rung 2: if `tug_session_id` is present, the shell store marks that session's in-flight exchange **parked** ("editing in Tug…").
 5. User edits and closes the card. The card's wait-mode close path **awaits `store.flush()`**, then `POST`s `/api/tell {action:"edit-done", requestId}`; rung 2 clears the parked flag.
@@ -234,7 +235,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 |--------|---------|-----------|
 | `+<line>[:offset]` | Jump to line/column | **Adopt** `+<line>[:<col>]` (also `path:line[:col]`); maps to `open-file`'s `line`/`endLine`. |
 | `-w, --wait` | Block until closed | **Adopt** (the git-critical flag). |
-| `-c, --create` | Create if missing | **Adopt** (git's file always exists; harmless). |
+| `-c, --create` | Create if missing | **Defer.** `fs_write` only creates missing files under Tug-owned roots (drafts / asides — `fs_write.rs`); arbitrary creation would fail at save time. v1 errors on a missing path; git's file always exists. |
 | `-l, --launch` | Just launch the app | **Adapt** → `tugedit doctor` (connectivity check). |
 | `-b, --background` / `-F, --front-window` / `-N, --new-window` / `-S, --separate-windows` | Window placement | **Drop v1**; deck `openTarget` default governs placement. |
 | `-s, --worksheet` / `--scratchpad` / `--preview` / `--project` | BBEdit-specific surfaces | **Drop.** |
@@ -255,7 +256,7 @@ Loopback-only (reject non-loopback with 403, like `tell_handler`). Request body:
 ```
 
 - `path` (required), `requestId` (required), `wait` (default `true`), `line`/`endLine` (optional), `tug_session_id` (optional; present when invoked inside a `$` exchange).
-- Handler: if `wait` and the CONTROL broadcast `receiver_count() == 0` → `409` `{status:"error", message:"no Tug window connected"}`. Else broadcast a CONTROL `open-file` frame (Spec S04); if `wait`, register `pending_edits[requestId]` (a `tokio::sync::oneshot::Sender`) and await it under a generous absolute backstop timeout, returning `200 {status:"ok", closed:true}` on resolution or `504` on backstop elapse; if not `wait`, return `200` immediately.
+- Handler: if `wait` and the CONTROL broadcast `receiver_count() == 0` → `409` `{status:"error", message:"no Tug window connected"}`. Else broadcast a CONTROL `open-file` frame (Spec S04); if `wait`, register `pending_edits[requestId]` (a `tokio::sync::oneshot::Sender`; same map shape as `PendingEvals`, `router.rs`) and await it under a generous absolute backstop timeout, returning `200 {status:"ok", closed:true}` on resolution or `504` on backstop elapse — **removing the `pending_edits` entry on elapse**, exactly as `eval_handler` cleans up `pending_evals` on its timeout; if not `wait`, return `200` immediately.
 
 **Spec S02: `edit-done` resolution action** {#s02-edit-done}
 
@@ -276,7 +277,7 @@ tugedit uninstall-git
 tugedit doctor
 ```
 
-- Open args: `<file>` (required in v1), optional leading `+<line>[:<col>]`, and `path:line[:col]` convenience parsed off the positional. Flags: `-w/--wait`, `-c/--create`, `--port <P>`, `--instance <id>`.
+- Open args: `<file>` (required in v1; **must exist** — `tugedit` stats the path and exits non-zero on a missing file, because `fs_write` won't create files outside Tug-owned roots — see #non-goals), optional leading `+<line>[:<col>]`, and `path:line[:col]` convenience parsed off the positional. Flags: `-w/--wait`, `--port <P>`, `--instance <id>`.
 - Exit codes: `0` success (in `--wait`, after the card closed); non-zero on unreachable tugcast, no connected deck, or a bad path. `git` treats non-zero as "editor failed" and aborts the commit.
 - `--wait` uses a client with **no read timeout**.
 - `install-git`: `git config --global core.editor "<current_exe> --wait"`. `uninstall-git`: unset it (or restore a saved prior value if we recorded one). `doctor`: resolve the port, `GET /api/host`, and report reachability + connected-deck status.
@@ -289,7 +290,7 @@ The existing `open-file` action (`action-dispatch.ts`) gains optional fields, al
 { "action": "open-file", "path": "…", "line": 12, "wait": true, "requestId": "<uuid>", "tug_session_id": "…" }
 ```
 
-When `wait` + `requestId` are present, the deck opens a **dedicated** Text card (bypassing path-keyed reuse) seeded with the `requestId` so its close reports `edit-done`.
+When `wait` + `requestId` are present, the deck opens a **dedicated** Text card (bypassing the reuse/newTab open targets) seeded with the `requestId` so its close reports `edit-done`. The `requestId` rides the **open seed only** — it must never be written to the card's persistence bag (mirror `revealOnOpen`'s treatment in `text-card.tsx`: "Never written by the persistence save path — only the open seed carries it"), so a card restored after an app reload can never re-fire `edit-done` for a dead request. If the path is already open in a Text card, the deck activates that card and attaches the handoff to it instead of spawning a duplicate (see Step 5).
 
 **Spec S05: `tugedit` port resolution order** {#s05-port-resolution}
 
@@ -335,13 +336,14 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 | `EXEC_TIMEOUT` | const (remove) | `tugrust/crates/tugcast/src/feeds/shell.rs` | Delete; convert plumbing to `idle_timeout: Option<Duration>`. |
 | `run_dispatcher` / `shell_session_task` / `run_command` | fn (modify) | `feeds/shell.rs` | Idle-timeout semantics ([P02]). |
 | `shell_dispatcher_task` | fn (modify) | `feeds/shell.rs` | New `tugcast_port: u16` param; production passes `idle_timeout=None`. |
-| `spawn_shell_child` | fn (modify) | `feeds/shell.rs` | `.env("TUG_TUGCAST_PORT", port)` on the child. |
+| `spawn_shell_child` | fn (modify) | `feeds/shell.rs` | `.env("TUG_TUGCAST_PORT", port)` + `.env("TUG_SESSION_ID", tug_session_id)` on the child (session id threaded from `shell_session_task`, which already owns it). |
 | `pending_edits` | field | `tugrust/crates/tugcast/src/router.rs` (`FeedRouter`) | Mirror of `pending_evals`. |
 | `edit_handler` | fn (add) | `tugrust/crates/tugcast/src/server.rs` | `POST /api/edit` (Spec S01); route in `build_app`. |
 | `"edit-done"` arm | match arm (add) | `tugrust/crates/tugcast/src/actions.rs` | Resolve `pending_edits` (Spec S02). |
 | `open-file` handler | modify | `tugdeck/src/action-dispatch.ts` | Honor `wait`/`requestId`/`tug_session_id` (Spec S04). |
 | `openFileInCard` | modify | `tugdeck/src/lib/open-file-in-card.ts` | Wait-mode: dedicated card + seed `requestId`. |
-| `TextCardContent` | modify | `tugdeck/src/components/tugways/cards/text-card.tsx` | Wait-mode close: flush → `edit-done`. |
+| `TextCardContent` | modify | `tugdeck/src/components/tugways/cards/text-card.tsx` | Wait-mode close: flush → `edit-done` (requestId in a ref, seed-only, never bagged). |
+| `TextCardOpenEntry.attachEditHandoff` | method (add) | `tugdeck/src/lib/text-card-open-registry.ts` | Wait-mode open onto an already-open path attaches the pending `requestId` to the existing card. |
 | Justfile bin list | modify | `Justfile` (bin loop ~line 15; release inputs ~line 293) | Add `tugedit`. |
 
 ---
@@ -374,7 +376,7 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Rung 1 — remove the wall-clock exec reap | pending | — |
-| #step-2 | Inject tugcast port into the `$` shell child | pending | — |
+| #step-2 | Inject port + session id into the `$` shell child | pending | — |
 | #step-3 | tugcast `/api/edit` + `edit-done` + open-file frame | pending | — |
 | #step-4 | `tugedit` crate — CLI + HTTP client + git wiring | pending | — |
 | #step-5 | Deck — wait-mode open-file (flush → edit-done) | pending | — |
@@ -402,7 +404,7 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 **Tests:**
 - [ ] `exec_round_trip_and_exit_code`, `cwd_persists_across_commands`, `stdin_reading_command_does_not_desync` unchanged and green.
 - [ ] Reframed idle-reap test: a `vim` exchange settles null under a short idle timeout; a follow-up command proves recovery.
-- [ ] New: with `idle_timeout=None`, a command that streams output for > (old 120s scaled down in test via a short-output loop) is **not** reaped — asserts no wall-clock cap. (Keep the test fast: assert the timeout param is `None` on the production constructor + a streaming command with a small idle-safe cadence returns a real exit code.)
+- [ ] New: under a short **idle** timeout (e.g. 300ms), a command whose **total runtime exceeds the window** but which emits output more often than the window (a loop printing every ~100ms for ~1s) completes with a real exit code — directly proves the reap is idle-based, not wall-clock. Plus: assert the production `shell_dispatcher_task` constructs with `idle_timeout = None`.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast feeds::shell`
@@ -410,24 +412,25 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 
 ---
 
-#### Step 2: Inject tugcast port into the `$` shell child {#step-2}
+#### Step 2: Inject port + session id into the `$` shell child {#step-2}
 
 **Depends on:** #step-1
 
-**Commit:** `feat(tugcast): export TUG_TUGCAST_PORT into the $-route shell environment`
+**Commit:** `feat(tugcast): export TUG_TUGCAST_PORT and TUG_SESSION_ID into the $-route shell environment`
 
-**References:** [P04] Transport ([#p04-transport]), Spec S05 ([#s05-port-resolution])
+**References:** [P04] Transport ([#p04-transport]), [P06] Parked deck-only ([#p06-parked-deck-only]), Spec S05 ([#s05-port-resolution])
 
 **Artifacts:**
-- `feeds/shell.rs`: `spawn_shell_child` sets `TUG_TUGCAST_PORT`; port threaded from `main.rs`.
+- `feeds/shell.rs`: `spawn_shell_child` sets `TUG_TUGCAST_PORT` and `TUG_SESSION_ID`; port threaded from `main.rs`.
 
 **Tasks:**
 - [ ] Add a `tugcast_port: u16` param to `shell_dispatcher_task` and thread it to `spawn_session_shell` → `spawn_shell_child`, which adds `.env("TUG_TUGCAST_PORT", port.to_string())`.
+- [ ] Also inject `TUG_SESSION_ID`: `shell_session_task` already owns its `tug_session_id: String` — thread it into `spawn_session_shell` → `spawn_shell_child` and set `.env("TUG_SESSION_ID", &tug_session_id)` on the child. **Nothing sets this env var anywhere today**; it is new, and it is what lets a `tugedit` under a `$` exchange tag its `/api/edit` with the originating session so rung 2 can park the right row.
 - [ ] In `main.rs`, pass `actual_port` to the `shell::shell_dispatcher_task(...)` spawn.
 - [ ] Confirm no env is cleared on the child (it isn't), so `TUG_INSTANCE_ID` remains visible to descendants for the registry fallback.
 
 **Tests:**
-- [ ] Unit: extend a shell dispatcher test to run `printf %s "$TUG_TUGCAST_PORT"` and assert the exchange output equals the port passed in.
+- [ ] Unit: extend a shell dispatcher test to run `printf '%s %s' "$TUG_TUGCAST_PORT" "$TUG_SESSION_ID"` and assert the exchange output carries the port passed in and the exchange's own `tug_session_id`.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast feeds::shell`
@@ -447,8 +450,9 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 
 **Tasks:**
 - [ ] Add `pending_edits: PendingEdits` (alias of the `pending_evals` map type) to `FeedRouter`; construct it where `pending_evals` is constructed.
-- [ ] Add `edit_handler` in `server.rs` implementing Spec S01: loopback guard; 0-receiver fast-fail on the CONTROL broadcast (`receiver_count()`); broadcast the `open-file` frame with `wait`/`requestId`/`tug_session_id`/`line`; on `wait`, register the oneshot and `await` under a generous backstop `timeout`. Register `POST /api/edit` in `build_app`.
-- [ ] Add the `"edit-done"` arm to `dispatch_action` (thread `pending_edits` in as a new parameter, updating the `/api/tell` and control-socket call sites).
+- [ ] Add `edit_handler` in `server.rs` implementing Spec S01: loopback guard; 0-receiver fast-fail on the CONTROL broadcast (`receiver_count()`); broadcast the `open-file` frame with `wait`/`requestId`/`tug_session_id`/`line`; on `wait`, register the oneshot and `await` under a generous backstop `timeout`, **removing the `pending_edits` entry on backstop elapse** (mirror `eval_handler`'s timeout cleanup). Register `POST /api/edit` in `build_app`.
+- [ ] Verify the 0-receiver assumption before relying on it: confirm nothing inside tugcast holds a long-lived CONTROL broadcast **receiver** (sender clones like `LedgerSessionsRecorder::with_broadcast`'s don't count), so `receiver_count() == 0` truly means "no deck connected." If an internal receiver exists, demote the fast-fail to best-effort and let the backstop timeout be the real guard.
+- [ ] Add the `"edit-done"` arm to `dispatch_action` (thread `pending_edits` in as a new parameter). There are **three** production call sites to update, not two: `server.rs` `tell_handler`, `control.rs` control-socket recv loop (~`control.rs:120`), and the WS control-frame path in `router.rs` (the arm near `router.pending_evals`); plus the unit-test call in `actions.rs`.
 
 **Tests:**
 - [ ] Unit: `dispatch_action("edit-done", …)` fires a registered `pending_edits` oneshot; unknown id is a no-op.
@@ -473,9 +477,9 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 
 **Tasks:**
 - [ ] Scaffold the crate; add to `tugrust/Cargo.toml` `members`. Deps: `clap` (derive), `ureq`, `serde_json`, `uuid`, `tugcore`.
-- [ ] Parse the open form (Spec S03): positional `<file>`, optional leading `+<line>[:<col>]`, and `path:line[:col]` convenience; flags `-w/--wait`, `-c/--create`, `--port`, `--instance`.
+- [ ] Parse the open form (Spec S03): positional `<file>`, optional leading `+<line>[:<col>]`, and `path:line[:col]` convenience; flags `-w/--wait`, `--port`, `--instance`. Stat the path and exit non-zero with a clear message when the file does not exist — no `--create` in v1 (Table T01, #non-goals).
 - [ ] Implement port resolution (Spec S05) in `edit.rs` — read `TUG_TUGCAST_PORT`, else `tugcore::registry` (`find_by_id` via `TUG_INSTANCE_ID`, `find_for_cwd`, `list_live`).
-- [ ] Implement the `/api/edit` client: canonicalize the path to absolute; generate `requestId`; read `TUG_SESSION_ID` if present; POST with **no read timeout** in `--wait`; map transport failure / non-200 to a non-zero exit with a clear stderr message.
+- [ ] Implement the `/api/edit` client: canonicalize the path to absolute (git invokes the editor with a relative `.git/COMMIT_EDITMSG` from the repo root — resolve against `tugedit`'s own cwd); generate `requestId`; read `TUG_SESSION_ID` if present (injected by Step 2, `$`-route only); POST with **no read timeout** in `--wait`; map transport failure / non-200 to a non-zero exit with a clear stderr message.
 - [ ] Implement `install-git` (`git config --global core.editor "<current_exe> --wait"`, `--dry-run` prints the command), `uninstall-git`, and `doctor` (resolve port, `GET /api/host`, report reachability). Note: `TUG_SESSION_ID` is only present inside the `$` route; outside it, the handoff still works (no `tug_session_id`, so no rung-2 parked marker).
 
 **Tests:**
@@ -501,8 +505,9 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 
 **Tasks:**
 - [ ] Extend the `open-file` handler to read `wait`, `requestId`, `tug_session_id` and pass them to `openFileInCard`.
-- [ ] In `openFileInCard`, when `wait` + `requestId` are set, **bypass path-keyed reuse and the reuse/newTab targets** — always `addCard("text", seed)` with the `requestId` in the seed — so the handoff owns a dedicated card whose close is unambiguous.
-- [ ] In `TextCardContent`, when the seed carries an edit-handoff `requestId`, register a `useLayoutEffect` close path ([L03]/[L27]) that, on unmount/close, `await store.flush()` (normal fetch) then `fetch("/api/tell", { method:"POST", body: JSON.stringify({ action:"edit-done", requestId }) })` (relative URL, exactly like `file-io.ts`). Guard against double-send.
+- [ ] In `openFileInCard`, when `wait` + `requestId` are set, **bypass the reuse/newTab open targets** — `addCard("text", seed)` with the `requestId` in the seed — so the handoff owns a dedicated card whose close is unambiguous. Exception: if the path is **already open** in a Text card (`findTextCardByPath`), never spawn a second card onto the same file (the watcher-fight `text-card-open-registry` exists to prevent) — activate the existing card and attach the pending `requestId` to it via a new `attachEditHandoff(requestId)` method on `TextCardOpenEntry`, so *its* close reports `edit-done`.
+- [ ] In `TextCardContent`, hold the edit-handoff `requestId` in a **ref seeded from the open payload only** — it must never flow through the `onSave` bag path (mirror `revealOnOpen`'s "never written by the persistence save path" treatment), so a restored card can't re-fire `edit-done` after a reload.
+- [ ] Register the close report in a `useLayoutEffect` ([L03]/[L27]) whose **cleanup** (card unmount = real close; background tabs stay mounted per CardHost) runs `void store.flush().then(() => postEditDone(requestId))` — a promise **chain**, not an `await` (effect cleanups are synchronous), posting `fetch("/api/tell", { method: "POST", body: JSON.stringify({ action: "edit-done", requestId }) })` with a relative URL exactly like `file-io.ts`. Guard against double-send. Ordering note: in **manual** save mode the card's close guard (`registerCardCloseGuard`) resolves Save / Don't Save *before* unmount, so the unmount-time flush observes the settled buffer; "Don't Save" leaves the on-disk template unedited and git aborts on the empty message — the same semantics as closing bbedit without saving. A page reload never runs effect cleanups (page teardown, not unmount), so a reload cannot false-fire `edit-done`; the orphaned request falls to the server backstop (Risk R01 residual).
 
 **Tests:**
 - [ ] App-test: `POST /api/edit {wait:true}` (or drive `tugedit --wait`) against the running app opens a Text card on a temp file; programmatically close it; assert the file is on disk with edited content and that the `/api/edit` call returned (the CLI process exited 0).
@@ -598,6 +603,7 @@ When `wait` + `requestId` are present, the deck opens a **dedicated** Text card 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] stdin piping (`git diff | tugedit`) + `--pipe-title` ([Q02]).
+- [ ] `--create` — requires an `fs_write` posture change to create missing files outside the Tug-owned drafts/asides roots (see #non-goals).
 - [ ] A production idle-output backstop, if wedged-session reports appear ([Q01]).
 - [ ] Rung 3: an opt-in PTY-backed interactive session channel (password prompts, REPLs, `git rebase -i`).
 - [ ] Window-placement flags (`--new-window`, `--background`) and a `/usr/local/bin` installer.
