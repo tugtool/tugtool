@@ -2557,9 +2557,7 @@ impl AgentSupervisor {
             // capabilities frame replaces both wholesale.
             let capabilities = match entry.latest_capabilities.clone() {
                 Some(frame) => Some(frame),
-                None => {
-                    self.persisted_capabilities_replay_frame(tug_session_id.as_str())
-                }
+                None => self.persisted_capabilities_replay_frame(tug_session_id.as_str()),
             };
             // Rate-limit (the per-turn quota broadcast) is in-memory
             // only — replayed on reconnect / HMR remount so the Z4B
@@ -5517,7 +5515,9 @@ mod tests {
             .await
             .expect_handled();
 
-        let received = meta_rx.try_recv().expect("persisted capabilities replay present");
+        let received = meta_rx
+            .try_recv()
+            .expect("persisted capabilities replay present");
         assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
         let received_json: serde_json::Value = serde_json::from_slice(&received.payload).unwrap();
         assert_eq!(

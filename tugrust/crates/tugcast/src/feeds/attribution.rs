@@ -487,7 +487,12 @@ pub async fn snapshot_worktree(repo_root: &Path) -> HashMap<PathBuf, FileState> 
 /// the caller degrades to an empty snapshot.
 async fn run_git_status_porcelain(repo_root: &Path) -> Option<String> {
     let output = tokio::process::Command::new("git")
-        .args(["-C", &repo_root.to_string_lossy(), "status", "--porcelain=v2"])
+        .args([
+            "-C",
+            &repo_root.to_string_lossy(),
+            "status",
+            "--porcelain=v2",
+        ])
         .output()
         .await
         .ok()?;
@@ -724,7 +729,10 @@ mod tests {
         assert_eq!(by_path.get("/r/del.rs"), Some(&"deleted"));
         assert_eq!(by_path.get("/r/ren.rs"), Some(&"renamed"));
         assert_eq!(by_path.get("/r/gone.rs"), Some(&"modified"));
-        assert!(!by_path.contains_key("/r/mod.rs"), "unchanged path has no row");
+        assert!(
+            !by_path.contains_key("/r/mod.rs"),
+            "unchanged path has no row"
+        );
         // Every row carries Bash/bash provenance, the parent id, and the
         // owning session's project_dir.
         for r in &rows {
@@ -805,8 +813,22 @@ u UU N... 0 0 0 0 unmerged.rs
         // Two sessions bracket the same root concurrently; both deltas must
         // come out ambiguous, regardless of which closes first.
         let reg = BracketRegistry::new();
-        reg.open(PathBuf::from("/r"), "tug-A", "tu-A", None, 0, HashMap::new());
-        reg.open(PathBuf::from("/r"), "tug-B", "tu-B", None, 1, HashMap::new());
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-A",
+            "tu-A",
+            None,
+            0,
+            HashMap::new(),
+        );
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-B",
+            "tu-B",
+            None,
+            1,
+            HashMap::new(),
+        );
         let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
         let b = reg.close_by_tool_use("tug-B", "tu-B").unwrap();
         assert!(a.saw_overlap, "A overlapped B");
@@ -816,8 +838,22 @@ u UU N... 0 0 0 0 unmerged.rs
     #[test]
     fn bracket_registry_same_session_two_brackets_not_ambiguous() {
         let reg = BracketRegistry::new();
-        reg.open(PathBuf::from("/r"), "tug-A", "tu-1", None, 0, HashMap::new());
-        reg.open(PathBuf::from("/r"), "tug-A", "tu-2", None, 1, HashMap::new());
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-A",
+            "tu-1",
+            None,
+            0,
+            HashMap::new(),
+        );
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-A",
+            "tu-2",
+            None,
+            1,
+            HashMap::new(),
+        );
         let one = reg.close_by_tool_use("tug-A", "tu-1").unwrap();
         assert!(!one.saw_overlap, "same-owner brackets don't cross-flag");
     }
@@ -825,8 +861,22 @@ u UU N... 0 0 0 0 unmerged.rs
     #[test]
     fn bracket_registry_different_roots_do_not_overlap() {
         let reg = BracketRegistry::new();
-        reg.open(PathBuf::from("/r1"), "tug-A", "tu-A", None, 0, HashMap::new());
-        reg.open(PathBuf::from("/r2"), "tug-B", "tu-B", None, 1, HashMap::new());
+        reg.open(
+            PathBuf::from("/r1"),
+            "tug-A",
+            "tu-A",
+            None,
+            0,
+            HashMap::new(),
+        );
+        reg.open(
+            PathBuf::from("/r2"),
+            "tug-B",
+            "tu-B",
+            None,
+            1,
+            HashMap::new(),
+        );
         let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
         assert!(!a.saw_overlap, "brackets on different roots never overlap");
     }
@@ -834,8 +884,22 @@ u UU N... 0 0 0 0 unmerged.rs
     #[test]
     fn bracket_registry_sweep_drops_a_sessions_brackets() {
         let reg = BracketRegistry::new();
-        reg.open(PathBuf::from("/r"), "tug-A", "tu-A", None, 0, HashMap::new());
-        reg.open(PathBuf::from("/r"), "tug-B", "tu-B", None, 1, HashMap::new());
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-A",
+            "tu-A",
+            None,
+            0,
+            HashMap::new(),
+        );
+        reg.open(
+            PathBuf::from("/r"),
+            "tug-B",
+            "tu-B",
+            None,
+            1,
+            HashMap::new(),
+        );
         reg.sweep_session("tug-A");
         assert!(reg.close_by_tool_use("tug-A", "tu-A").is_none());
         assert!(

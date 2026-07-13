@@ -417,9 +417,21 @@ mod tests {
         let repo = init_repo(&["dirty.rs"]);
         let root = repo.path();
         let events = vec![
-            (root.join("dirty.rs").to_string_lossy().into_owned(), "write", "exact", false, 2),
+            (
+                root.join("dirty.rs").to_string_lossy().into_owned(),
+                "write",
+                "exact",
+                false,
+                2,
+            ),
             // clean.rs is committed/unmodified → not in git status → dropped.
-            (root.join("clean.rs").to_string_lossy().into_owned(), "edit", "exact", false, 1),
+            (
+                root.join("clean.rs").to_string_lossy().into_owned(),
+                "edit",
+                "exact",
+                false,
+                1,
+            ),
         ];
         let db = seed_db("s1", &events);
         let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
@@ -445,8 +457,20 @@ mod tests {
         let repo = init_repo(&["a.rs", "amb.rs"]);
         let root = repo.path();
         let events = vec![
-            (root.join("a.rs").to_string_lossy().into_owned(), "write", "exact", false, 1),
-            (root.join("amb.rs").to_string_lossy().into_owned(), "modified", "bash", true, 2),
+            (
+                root.join("a.rs").to_string_lossy().into_owned(),
+                "write",
+                "exact",
+                false,
+                1,
+            ),
+            (
+                root.join("amb.rs").to_string_lossy().into_owned(),
+                "modified",
+                "bash",
+                true,
+                2,
+            ),
         ];
         let db = seed_db("s1", &events);
         let conn = open_readonly(&db.path().join("sessions.db")).unwrap();

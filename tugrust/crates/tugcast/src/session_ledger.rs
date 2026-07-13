@@ -4609,7 +4609,8 @@ mod tests {
         let l = fresh();
         seed_live(&l, "s1", "ws", "card-1", millis(0));
         let payload = sample_capabilities_payload("2.1.207");
-        l.record_session_capabilities("s1", &payload, 5_000).unwrap();
+        l.record_session_capabilities("s1", &payload, 5_000)
+            .unwrap();
         let read = l.get_session_capabilities("s1").unwrap().unwrap();
         assert_eq!(read.session_id, "s1");
         assert_eq!(read.payload, payload);
@@ -4619,7 +4620,11 @@ mod tests {
     #[test]
     fn get_session_capabilities_returns_none_for_unknown_session() {
         let l = fresh();
-        assert!(l.get_session_capabilities("never-existed").unwrap().is_none());
+        assert!(
+            l.get_session_capabilities("never-existed")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

@@ -1971,7 +1971,8 @@ mod tests {
     async fn attribution_records_one_row_for_write_and_forwards_frames_unchanged() {
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs","content":"x"}}"#;
-        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
+        let tool_result =
+            r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
 
         let forwarded =
             drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
@@ -2023,7 +2024,8 @@ mod tests {
         // record anything for it (no file_path on the input, no exact op).
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"sed -i s/a/b/ x"}}"#;
-        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"","is_error":false}"#;
+        let tool_result =
+            r#"{"type":"tool_result","tool_use_id":"tu-1","output":"","is_error":false}"#;
 
         drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
 
@@ -2062,7 +2064,8 @@ mod tests {
     async fn attribution_records_subagent_parent_id() {
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-child","input":{"file_path":"/proj/sub.rs"},"parent_tool_use_id":"agent-1"}"#;
-        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-child","output":"ok","is_error":false}"#;
+        let tool_result =
+            r#"{"type":"tool_result","tool_use_id":"tu-child","output":"ok","is_error":false}"#;
 
         drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
 
@@ -2080,7 +2083,8 @@ mod tests {
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs"},"parent_tool_use_id":"agent-1"}"#;
         let turn_complete = r#"{"type":"turn_complete","msg_id":"m1"}"#;
-        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
+        let tool_result =
+            r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
 
         drive_relay(
             ledger.clone(),
@@ -2175,7 +2179,10 @@ mod tests {
         });
 
         // Handshake + Bash tool_use → relay takes the (clean) pre-snapshot.
-        feed_w.write_all(b"{\"type\":\"protocol_ack\"}\n").await.unwrap();
+        feed_w
+            .write_all(b"{\"type\":\"protocol_ack\"}\n")
+            .await
+            .unwrap();
         feed_w
             .write_all(b"{\"type\":\"tool_use\",\"tool_name\":\"Bash\",\"tool_use_id\":\"tu-b\",\"input\":{\"command\":\"echo two >> a.txt\"}}\n")
             .await
@@ -2643,13 +2650,7 @@ mod tests {
 
         let spawner = TugcodeSpawner::new(script);
         let mut child = spawner
-            .spawn_child(
-                dir.path(),
-                "tug-sess-xyz",
-                SessionMode::New,
-                None,
-                None,
-            )
+            .spawn_child(dir.path(), "tug-sess-xyz", SessionMode::New, None, None)
             .await
             .expect("spawn stand-in tugcode");
 

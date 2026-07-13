@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::sync::{watch, Notify};
+use tokio::sync::{Notify, watch};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
