@@ -2141,6 +2141,42 @@ impl AgentSupervisor {
         None
     }
 
+    /// Build a `SESSION_SIDEBAND` replay frame from the persisted
+    /// `session_capabilities` row, for a bind whose in-memory
+    /// `latest_capabilities` slot is empty — the app-restart case: the
+    /// slot died with the old process, and a resumed session's next
+    /// handshake is health-gated (it answers seconds after spawn at the
+    /// earliest). Without this fallback the card has no `/` command
+    /// catalog and no version in that window; with it, the last-known
+    /// catalog is on screen from the drop and the live handshake
+    /// replaces it wholesale when it lands.
+    ///
+    /// Keyed by the tug session id only — capabilities are spawn-scoped
+    /// (unlike `session_metadata`, which is keyed by claude's JSONL id).
+    /// The persisted payload is the tagged wire copy, but the tag is the
+    /// id of the ORIGINAL spawn; stamp the BOUND session's id so a
+    /// claude session re-bound under a different tug id still passes the
+    /// client-side [D06]/[D11] session filter
+    /// ([`stamp_tug_session_id`] overwrites a stale tag).
+    fn persisted_capabilities_replay_frame(&self, tug_session_id: &str) -> Option<Frame> {
+        let ledger = self.session_ledger.as_ref()?;
+        match ledger.get_session_capabilities(tug_session_id) {
+            Ok(Some(row)) => Some(Frame::new(
+                FeedId::SESSION_SIDEBAND,
+                stamp_tug_session_id(row.payload, tug_session_id),
+            )),
+            Ok(None) => None,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    session_id = tug_session_id,
+                    "get_session_capabilities failed during bind replay (ignored)"
+                );
+                None
+            }
+        }
+    }
+
     async fn do_spawn_session(
         &self,
         card_id: &str,
@@ -2504,22 +2540,26 @@ impl AgentSupervisor {
                     tug_session_id.as_str(),
                 ),
             };
-            // Capabilities (the turn-free `initialize` model list) are
-            // in-memory only — replayed on reconnect / HMR remount so the
-            // `/model` picker keeps its data even though the one-shot
-            // broadcast already flew. Absent for a fresh-process bind that
-            // hasn't handshaken yet (the next spawn re-emits them).
-            //
-            // Rate-limit (the per-turn quota broadcast) is likewise
-            // in-memory only — replayed on reconnect / HMR remount so the
-            // Z4B rate-limit chip keeps its state even though the last
+            // Capabilities (the turn-free `initialize` model list +
+            // command catalog) prefer the in-memory slot (freshest —
+            // captured this process); fall back to the persisted
+            // `session_capabilities` row so a resumed session's `/`
+            // catalog and version survive an app restart — the slot dies
+            // with the process, and the health-gated resume handshake
+            // answers seconds after spawn at the earliest. The next live
+            // capabilities frame replaces both wholesale.
+            let capabilities = match entry.latest_capabilities.clone() {
+                Some(frame) => Some(frame),
+                None => {
+                    self.persisted_capabilities_replay_frame(tug_session_id.as_str())
+                }
+            };
+            // Rate-limit (the per-turn quota broadcast) is in-memory
+            // only — replayed on reconnect / HMR remount so the Z4B
+            // rate-limit chip keeps its state even though the last
             // per-turn broadcast already flew. Absent until the first turn
             // emits one.
-            (
-                metadata,
-                entry.latest_capabilities.clone(),
-                entry.latest_rate_limit.clone(),
-            )
+            (metadata, capabilities, entry.latest_rate_limit.clone())
         };
         // Live-elsewhere visibility for cross-card pickers is driven by
         // the ledger row the bridge writes on `session_init` (with
@@ -4235,6 +4275,32 @@ impl AgentSupervisor {
                             let mut entry = entry_arc.lock().await;
                             entry.latest_capabilities = Some(cap_frame.clone());
                         }
+                        // Persist alongside the in-memory slot so the
+                        // catalog survives a tugcast restart: the slot dies
+                        // with the process, and a resumed session's next
+                        // handshake is health-gated (~2s after spawn at
+                        // best) — the sqlite row bridges that window at
+                        // bind time (`persisted_capabilities_replay_frame`).
+                        // Best-effort like `record_session_metadata`: a
+                        // write failure degrades to the pre-persistence
+                        // behavior, never blocks the live broadcast.
+                        if let Some(sql) = self.session_ledger.as_ref() {
+                            let captured_at = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as i64)
+                                .unwrap_or(0);
+                            if let Err(e) = sql.record_session_capabilities(
+                                id.as_str(),
+                                &cap_frame.payload,
+                                captured_at,
+                            ) {
+                                warn!(
+                                    session_id = %id,
+                                    error = %e,
+                                    "record_session_capabilities failed; broadcasting without persistence"
+                                );
+                            }
+                        }
                         self.session_sideband.publish_tagged(cap_frame);
                     } else if is_rate_limit_event(&frame.payload) {
                         // Per-turn subscription-quota broadcast ([#step-3]).
@@ -5407,6 +5473,102 @@ mod tests {
             meta_rx.try_recv().is_err(),
             "no replay for a session with no persisted row and no in-memory slot",
         );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_replays_persisted_capabilities_when_slot_empty() {
+        let (sup, mut meta_rx, ledger) = make_supervisor_with_real_ledger();
+
+        // Persist ONLY a capabilities row (no metadata row, no in-memory
+        // slots) — the app-restart resume case: the old process's
+        // `latest_capabilities` died with it, and the health-gated resume
+        // handshake hasn't answered yet. The persisted payload carries the
+        // ORIGINAL spawn's tag; the replay must re-stamp with the bound id.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "type": "session_capabilities",
+            "tug_session_id": "sess-original",
+            "version": "2.1.207",
+            "models": [{ "value": "default", "displayName": "Default" }],
+            "commands": ["tugplug:implement", "commit"],
+        }))
+        .unwrap();
+        ledger
+            .record_session_capabilities("sess-1", &payload, 1_000)
+            .unwrap();
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        assert!(
+            entry.lock().await.latest_capabilities.is_none(),
+            "precondition: in-memory capabilities slot is empty",
+        );
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("persisted capabilities replay present");
+        assert_eq!(received.feed_id, FeedId::SESSION_SIDEBAND);
+        let received_json: serde_json::Value = serde_json::from_slice(&received.payload).unwrap();
+        assert_eq!(
+            received_json.get("type").and_then(|v| v.as_str()),
+            Some("session_capabilities"),
+        );
+        assert_eq!(
+            received_json.get("tug_session_id").and_then(|v| v.as_str()),
+            Some("sess-1"),
+            "replay is stamped with the BOUND tug id, overwriting the original spawn's tag",
+        );
+        assert_eq!(
+            received_json
+                .get("commands")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len()),
+            Some(2),
+            "the persisted command catalog rides the replay intact",
+        );
+        assert!(
+            meta_rx.try_recv().is_err(),
+            "only the capabilities frame is replayed (no metadata row exists)",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_in_memory_capabilities_wins_over_persisted() {
+        let (sup, mut meta_rx, ledger) = make_supervisor_with_real_ledger();
+
+        // Both a persisted capabilities row AND an in-memory slot exist;
+        // the freshest (in-memory, captured this process) wins.
+        let persisted = serde_json::to_vec(&serde_json::json!({
+            "type": "session_capabilities",
+            "version": "2.1.204",
+            "commands": ["stale"],
+        }))
+        .unwrap();
+        ledger
+            .record_session_capabilities("sess-1", &persisted, 1_000)
+            .unwrap();
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        let in_memory = Frame::new(
+            FeedId::SESSION_SIDEBAND,
+            serde_json::to_vec(&serde_json::json!({
+                "type": "session_capabilities",
+                "tug_session_id": "sess-1",
+                "version": "2.1.207",
+                "commands": ["tugplug:implement", "fresh"],
+            }))
+            .unwrap(),
+        );
+        entry.lock().await.latest_capabilities = Some(in_memory.clone());
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let received = meta_rx.try_recv().expect("capabilities replay present");
+        assert_eq!(
+            received.payload, in_memory.payload,
+            "the in-memory slot is replayed verbatim; the persisted row is not consulted",
+        );
+        assert!(meta_rx.try_recv().is_err(), "single replay frame only");
     }
 
     #[tokio::test]

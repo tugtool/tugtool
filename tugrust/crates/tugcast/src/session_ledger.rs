@@ -247,6 +247,33 @@ pub struct SessionMetadataRow {
     pub captured_at: i64,
 }
 
+/// One row of the `session_capabilities` table — the most-recent turn-free
+/// `initialize` handshake payload for a session (model list, command
+/// catalog with plugin commands merged, version, effort), persisted as the
+/// tagged wire frame the supervisor broadcast.
+///
+/// Written by the supervisor's sideband capture whenever a live
+/// `session_capabilities` frame flows; read at session bind as the fallback
+/// when the in-memory `latest_capabilities` slot is empty — the app-restart
+/// case, where the slot died with the old process and the health-gated
+/// resume handshake hasn't answered yet. Without this row a resumed card
+/// has no `/` command catalog (and no version) until the handshake lands;
+/// with it, the last-known catalog is on screen from the drop and the live
+/// handshake replaces it wholesale seconds later.
+///
+/// Keyed by the **tug** session id — capabilities are a spawn-scoped fact
+/// (what tugcode + claude reported for this session's spawn), unlike
+/// `session_metadata`, which is keyed by claude's id (its JSONL identity).
+/// One row per session — UPSERT semantics; JSON BLOB for the same reasons
+/// as `session_metadata` (pure PK lookup, shape validated at the wire
+/// boundary).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionCapabilitiesRow {
+    pub session_id: String,
+    pub payload: Vec<u8>,
+    pub captured_at: i64,
+}
+
 /// One row of the `context_breakdown_latest` table — the most-recent
 /// `/context`-style per-category token breakdown for a session,
 /// persisted verbatim as the JSON wire frame tugcode emits. Written
@@ -669,6 +696,32 @@ impl SessionLedger {
             FOR EACH ROW
             BEGIN
                 DELETE FROM session_metadata WHERE session_id = OLD.session_id;
+            END;
+
+            -- Latest per-session `session_capabilities` handshake frame —
+            -- the turn-free model list + command catalog (plugin commands
+            -- merged) + version. Written by the supervisor's sideband
+            -- capture on every live capabilities frame; read at session
+            -- bind when the in-memory `latest_capabilities` slot is empty
+            -- (app restart), so a resumed card's `/` catalog survives
+            -- restarts instead of waiting on the resume handshake.
+            --
+            -- Keyed by the TUG session id (capabilities are spawn-scoped;
+            -- `session_metadata` is keyed by claude's JSONL id). JSON BLOB
+            -- for the same reasons as `session_metadata`: pure PK lookup,
+            -- shape owned by the wire boundary, no schema migration when
+            -- the handshake grows fields.
+            CREATE TABLE IF NOT EXISTS session_capabilities (
+                session_id  TEXT PRIMARY KEY,
+                payload     BLOB NOT NULL,
+                captured_at INTEGER NOT NULL
+            );
+
+            CREATE TRIGGER IF NOT EXISTS session_capabilities_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM session_capabilities WHERE session_id = OLD.session_id;
             END;
 
             -- Latest per-session `/context`-style breakdown — one row
@@ -1855,6 +1908,52 @@ impl SessionLedger {
                 params![session_id],
                 |row| {
                     Ok(SessionMetadataRow {
+                        session_id: row.get(0)?,
+                        payload: row.get(1)?,
+                        captured_at: row.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Upsert one `session_capabilities` row. Idempotent on `session_id`
+    /// via `INSERT OR REPLACE` — the supervisor persists on every live
+    /// capabilities frame, and only the most recent handshake matters
+    /// (the next one replaces it wholesale, mirroring the in-memory
+    /// `latest_capabilities` slot it backs).
+    pub fn record_session_capabilities(
+        &self,
+        session_id: &str,
+        payload: &[u8],
+        captured_at: i64,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO session_capabilities (session_id, payload, captured_at)
+             VALUES (?1, ?2, ?3)",
+            params![session_id, payload, captured_at],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch the persisted `session_capabilities` row for `session_id`,
+    /// or `None` if no handshake has ever been captured for it (a
+    /// brand-new session, or one whose every spawn predates this table).
+    pub fn get_session_capabilities(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionCapabilitiesRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let row = conn
+            .query_row(
+                "SELECT session_id, payload, captured_at
+                 FROM session_capabilities
+                 WHERE session_id = ?1",
+                params![session_id],
+                |row| {
+                    Ok(SessionCapabilitiesRow {
                         session_id: row.get(0)?,
                         payload: row.get(1)?,
                         captured_at: row.get(2)?,
@@ -4015,6 +4114,71 @@ mod tests {
         assert!(
             l.get_session_metadata("s1").unwrap().is_none(),
             "cascade trigger must purge session_metadata when parent session row is deleted",
+        );
+    }
+
+    // ---- session_capabilities table -------------------------------------
+
+    fn sample_capabilities_payload(version: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "type": "session_capabilities",
+            "version": version,
+            "models": [{ "value": "default", "displayName": "Default" }],
+            "commands": ["tugplug:implement", "tugplug:devise", "commit"],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn record_session_capabilities_round_trip() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let payload = sample_capabilities_payload("2.1.207");
+        l.record_session_capabilities("s1", &payload, 5_000).unwrap();
+        let read = l.get_session_capabilities("s1").unwrap().unwrap();
+        assert_eq!(read.session_id, "s1");
+        assert_eq!(read.payload, payload);
+        assert_eq!(read.captured_at, 5_000);
+    }
+
+    #[test]
+    fn get_session_capabilities_returns_none_for_unknown_session() {
+        let l = fresh();
+        assert!(l.get_session_capabilities("never-existed").unwrap().is_none());
+    }
+
+    #[test]
+    fn record_session_capabilities_idempotent_on_session_pk() {
+        // Every spawn's handshake re-persists; only the most recent
+        // catalog matters. Same-session writes overwrite, never
+        // duplicate-key.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let v1 = sample_capabilities_payload("2.1.204");
+        let v2 = sample_capabilities_payload("2.1.207");
+        l.record_session_capabilities("s1", &v1, 1_000).unwrap();
+        l.record_session_capabilities("s1", &v2, 2_000).unwrap();
+        let read = l.get_session_capabilities("s1").unwrap().unwrap();
+        assert_eq!(read.payload, v2);
+        assert_eq!(read.captured_at, 2_000);
+    }
+
+    #[test]
+    fn cascade_delete_removes_session_capabilities_when_session_deleted() {
+        // Pin the `session_capabilities_cascade_delete_on_session`
+        // trigger: trashing a session also removes its capabilities row.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.record_session_capabilities("s1", &sample_capabilities_payload("2.1.207"), 1_000)
+            .unwrap();
+        assert!(l.get_session_capabilities("s1").unwrap().is_some());
+
+        l.trash("s1").unwrap();
+
+        assert!(
+            l.get_session_capabilities("s1").unwrap().is_none(),
+            "cascade trigger must purge session_capabilities when parent session row is deleted",
         );
     }
 

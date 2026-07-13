@@ -182,6 +182,16 @@ const CANONICAL_PERMISSION_DENY_MESSAGE =
 export const REPLAY_HARD_TIMEOUT_MS = 10_000;
 
 /**
+ * Health gate for the resume-mode `initialize` handshake. A `--resume`
+ * spawn with a stale id prints "No conversation found" and exits well
+ * inside ~1s (the supervisor's eager-spawn contract leans on the same
+ * fast-exit); a spawn still alive after this delay is a healthy resume,
+ * safe to handshake without perturbing the early-exit watcher's view of
+ * a failing spawn. See `sendInitializeHandshake`.
+ */
+export const RESUME_INITIALIZE_DELAY_MS = 2_000;
+
+/**
  * Soft cap on the number of raw lines captured from claude's stdout
  * during the replay window. claude on `--resume` with no new user
  * input is essentially silent (a `system:init` plus occasional
@@ -3698,39 +3708,85 @@ export class SessionManager {
   }
 
   /**
-   * Send the `initialize` control-request to claude immediately after
-   * spawn so the frontend learns the session's capabilities (model list,
-   * command catalog, …) without waiting for the first user turn — claude
-   * in stream-json mode is otherwise silent until input arrives.
+   * Send the `initialize` control-request to claude after spawn so the
+   * frontend learns the session's capabilities (model list, command
+   * catalog with plugin commands merged, version, …) without waiting for
+   * the first user turn — claude in stream-json mode is otherwise silent
+   * until input arrives.
    *
-   * **New mode only.** On a `--resume` spawn whose conversation claude
-   * can't find, claude emits `result: error` + "No conversation found"
-   * and exits — tugcode classifies that as `resume_failed` (terminal, no
-   * retry) by pattern-matching the spawn's output. Injecting an
-   * `initialize` control-request into that window perturbs the failing
-   * spawn's output/timing enough that the classifier misses the
-   * resume-failed signature and treats the exit as a generic crash,
-   * which retries until `crash_budget_exhausted`. Gating to `new` mode
-   * keeps resume spawns byte-identical to their pre-handshake behavior;
-   * resumed sessions don't need the handshake anyway — their model /
-   * version / mode come from the on-bind ledger-metadata replay (tugcast,
-   * [#step-2a-1]), the accurate per-session truth. A fresh `--session-id`
-   * spawn answers `initialize` cleanly (verified) and has no ledger row
-   * to replay, so it is the case that needs the handshake.
+   * **Every spawn mode needs this handshake.** The capabilities frame is
+   * the ONLY producer of the command catalog: tugcast retains it in an
+   * in-memory `latest_capabilities` slot (not persisted), so after an app
+   * restart a resumed session's catalog exists only if ITS spawn ran the
+   * handshake. The on-bind ledger-metadata replay covers model / version /
+   * mode — never capabilities. Historically resume spawns skipped the
+   * handshake and got away with it because the pre-[D06]/[D11] sideband
+   * broadcast leaked every session's capabilities to every card; the
+   * per-session isolation filter (correctly) ended that, which surfaced
+   * the gap as "resumed sessions lose their slash commands until the
+   * first turn."
+   *
+   * **Resume spawns are health-gated, not skipped.** The original reason
+   * for skipping resume was real: a `--resume` spawn with a stale id
+   * emits "No conversation found" and exits fast (< ~1s — the supervisor
+   * eager-spawn contract), and injecting a control-request into that
+   * dying window perturbed failure classification. The gate preserves
+   * that property by *waiting out the fast-exit window*: the handshake is
+   * sent only after claude has survived {@link RESUME_INITIALIZE_DELAY_MS}
+   * — a failing resume is dead before we ever write to it (byte-identical
+   * to the pre-handshake behavior), and classification is stderr-pattern
+   * driven regardless (`claudeStderrClassification`). A healthy resume
+   * gets its catalog seconds after spawn, and tugcast captures it for
+   * every later bind / reload of the card.
    *
    * Fire-and-forget: the response is correlated by `request_id` and
-   * handled in {@link handleClaudeLine} (it arrives with no active turn).
-   * This does NOT block the first user message — `spawnClaudeAndWatch`'s
-   * readiness gate is independent. No-op if the process is gone or this
-   * is a resume spawn.
+   * handled in {@link handleClaudeLine}. This does NOT block the first
+   * user message — `spawnClaudeAndWatch`'s readiness gate is independent.
+   * No-op if the process is gone (or replaced) by send time.
    */
   private sendInitializeHandshake(): void {
     if (!this.claudeProcess) return;
-    if (this.sessionMode !== "new") return;
+    if (this.sessionMode === "new") {
+      this.dispatchInitializeHandshake(this.claudeProcess);
+      return;
+    }
+    // Resume: defer past the stale-id fast-exit window so a failing
+    // spawn is never written to and its exit stays byte-identical for
+    // the early-exit watcher.
+    const child = this.claudeProcess;
+    setTimeout(() => {
+      if (this.isShuttingDown) return;
+      // The spawn we gated on must still be the live process — a
+      // respawn or crash-restart in the window minted a new subprocess
+      // (whose own sendInitializeHandshake re-arms the gate).
+      if (this.claudeProcess !== child) return;
+      if (child.exitCode !== null) return;
+      this.dispatchInitializeHandshake(child);
+    }, RESUME_INITIALIZE_DELAY_MS);
+  }
+
+  /**
+   * Write the `initialize` control-request to a live claude subprocess
+   * and arm the `request_id` correlation. Split from
+   * {@link sendInitializeHandshake} so the immediate (new-mode) and
+   * health-gated (resume-mode) paths share one send site. A write racing
+   * a just-exited process is swallowed — the early-exit watcher owns
+   * that outcome, and a dangling correlation id is cleared so a later
+   * unrelated control_response can't match it.
+   */
+  private dispatchInitializeHandshake(child: ClaudeSubprocess): void {
     this.initializeRequestId = generateRequestId();
-    sendControlRequest(this.claudeProcess.stdin, this.initializeRequestId, {
-      subtype: "initialize",
+    logSessionLifecycle("tugcode.initialize_handshake", {
+      session_id: this.sessionId,
+      session_mode: this.sessionMode,
     });
+    try {
+      sendControlRequest(child.stdin, this.initializeRequestId, {
+        subtype: "initialize",
+      });
+    } catch {
+      this.initializeRequestId = null;
+    }
   }
 
   /**
