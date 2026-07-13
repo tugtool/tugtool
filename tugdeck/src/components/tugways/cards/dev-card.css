@@ -648,6 +648,14 @@
   --tugx-md-block-padding-x: 0;
   width: 100%;
 }
+/* The subject switches to `display:block` (above), so its markdown text
+   flows on its baseline and rides high in the line box, while the quiet
+   line's icon still geometrically centers in the `sm * 1.6` box — a
+   centered glyph against baseline text reads low. Raise the icon so it
+   optically centers on the first text line. */
+.dev-card-transcript-wake-trigger .tug-quiet-line-icon {
+  top: -1px;
+}
 
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
