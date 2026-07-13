@@ -33,7 +33,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { sessionNameStore } from "@/lib/session-name-store";
-import { sessionChipDisplay } from "@/lib/session-name";
+import { sessionChipDisplay, SESSION_ID_TRUNCATE } from "@/lib/session-name";
 import { encodeProjectDir } from "@/lib/memory-destinations";
 import { openPathInOS } from "@/lib/os-open";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
@@ -107,10 +107,12 @@ export function DevSessionIdBadge({
     tugSessionId === null ? null : sessionChipDisplay(name, tugSessionId);
   const value = display?.value ?? "";
 
-  // Copy "Session" + the short id (the chip face), not the full UUID. When the
-  // session was renamed, copy the full un-ellipsized name instead. `value` is
-  // already the short id when unnamed, so it doubles as the copy text there.
-  const copyValue = name?.trim() ? name.trim() : value;
+  // Always copy the UUID prefix (the stable, addressable handle); when the
+  // session has been renamed, copy the name alongside it so both are captured.
+  const idPrefix =
+    tugSessionId === null ? "" : tugSessionId.slice(0, SESSION_ID_TRUNCATE);
+  const trimmedName = name?.trim();
+  const copyValue = trimmedName ? `${trimmedName}/${idPrefix}` : idPrefix;
   const copy = useCopyableButton(`Session: ${copyValue}`);
 
   if (tugSessionId === null || display === null) return null;
