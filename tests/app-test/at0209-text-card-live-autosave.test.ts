@@ -70,6 +70,24 @@ function rmFixture(dir: string): void {
 const EDITOR_CONTENT_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-card-editor"] .cm-content';
 
+const EDITOR_SCROLLER_SELECTOR =
+  '[data-card-id="A"] [data-slot="tug-text-card-editor"] .cm-scroller';
+
+// A tall fixture — enough lines to scroll well past the 560px pane so a
+// nonzero scrollTop is a real viewport offset, not a rounding artifact.
+const TALL_LINES: ReadonlyArray<string> = Array.from(
+  { length: 200 },
+  (_, i) => `tall line ${String(i + 1).padStart(3, "0")} alpha beta gamma delta`,
+);
+const TALL_CONTENT = TALL_LINES.join("\n") + "\n";
+
+function mkTallFixture(): { dir: string; file: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0209-tall-"));
+  const file = path.join(dir, "tall.txt");
+  fs.writeFileSync(file, TALL_CONTENT, "utf8");
+  return { dir, file };
+}
+
 function deckShape() {
   return {
     cards: [{ id: "A", componentId: "text", title: "File", closable: true }],
@@ -277,6 +295,80 @@ describe.skipIf(!SHOULD_RUN)("at0209: Text card live autosave", () => {
       }
 
       rmFixture(dir);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  // -------------------------------------------------------------------------
+  // Scenario 3: in-place reload restores the scroll position
+  // -------------------------------------------------------------------------
+  //
+  // An in-place disk reload (here the conflict-banner "Reload from Disk",
+  // which routes through the store's `replaceText` bridge) must restore the
+  // pre-reload viewport — not reset to the top. `replaceText` captures
+  // `getPositions()` (anchor + head + scrollTop) before the swap and replays
+  // it through the SAME measure-deferred `restoreSelectionAndScroll` the card
+  // bag uses, so the `scrollTop` write lands AFTER CM6 measures the reloaded
+  // document instead of clamping/jumping.
+  //
+  // Only scroll is asserted here: CM6 owns the selection (it resets any
+  // DOM-seated range back to its own state, and `window.getSelection()`
+  // doesn't reflect the editor's selection through the harness), so a
+  // multi-char selection can't be seated/read from an app-test. The selection
+  // half rides the identical `restoreSelectionAndScroll` (both anchor and
+  // head), covered by the store-level round-trip.
+  test(
+    "in-place reload restores the scroll position",
+    async () => {
+      const { dir, file } = mkTallFixture();
+      const app = await launchTugApp({ testName: "at0209-reload-restore" });
+      try {
+        await seedTextCard(app, file);
+        await waitForEditorShowing(app, "tall line 001");
+
+        // Drive to a conflict: flush a local edit to disk, change the file
+        // externally, then edit again so the conditional write 409s into the
+        // banner (the same setup Scenario 1 proves). The external content is
+        // itself tall, so a mid-document scrollTop stays valid after reload.
+        await typeIntoEditor(app, "EDIT1 ");
+        await waitForDisk(file, (c) => c.includes("EDIT1"));
+        const EXTERNAL = "EXTERNAL-WRITER LINE\n" + TALL_CONTENT;
+        fs.writeFileSync(file, EXTERNAL, "utf8");
+        await typeIntoEditor(app, "EDIT2 ");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="text-card-conflict-reload"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+
+        // Park the viewport at a real mid-document offset; read back the
+        // ACTUAL scrollTop (CM6 may clamp) as the restore target.
+        const target = await app.evalJS<number>(
+          `(function(){
+            var scroller = document.querySelector('${EDITOR_SCROLLER_SELECTOR}');
+            scroller.scrollTop = 900;
+            return scroller.scrollTop;
+          })()`,
+        );
+        expect(target).toBeGreaterThan(200);
+
+        // Reload from disk (in-place) — adopts the external content.
+        await app.click('[data-testid="text-card-conflict-reload"]');
+        await waitForEditorShowing(app, "EXTERNAL-WRITER LINE");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-testid="text-card-conflict-reload"]') === null`,
+          { timeoutMs: 6000 },
+        );
+
+        // Scroll restored to (approximately) the pre-reload offset — not
+        // reset to the top. Measure-deferred restore is why this holds.
+        await app.waitForCondition<boolean>(
+          `Math.abs(document.querySelector('${EDITOR_SCROLLER_SELECTOR}').scrollTop - ${target}) <= 6`,
+          { timeoutMs: 6000 },
+        );
+      } finally {
+        await app.close();
+        rmFixture(dir);
+      }
     },
     TEST_TIMEOUT_MS,
   );

@@ -222,6 +222,20 @@ function applyWhitespaceAttrs(host: HTMLElement, settings: TextCardSettings): vo
  */
 const externalReplace = Annotation.define<boolean>();
 
+/**
+ * Map a persisted `{ line, ch }` pair to a clamped document offset in
+ * `state`. Line/ch (not a raw offset) is the currency for both the card
+ * bag and in-place reloads so a restore survives content that shifted.
+ */
+function offsetForLineCh(
+  state: EditorState,
+  p: { line: number; ch: number },
+): number {
+  const lineNumber = Math.max(1, Math.min(p.line, state.doc.lines));
+  const line = state.doc.line(lineNumber);
+  return line.from + Math.min(p.ch, line.length);
+}
+
 // ---------------------------------------------------------------------------
 // Reveal flash — a momentary accent highlight over jumped-to lines
 // ---------------------------------------------------------------------------
@@ -517,30 +531,27 @@ export const TugTextCardEditor = React.forwardRef<
     };
   }, []);
 
-  const applyPositions = useCallback((positions: FilePositions): void => {
-    const live = viewRef.current;
-    if (live === null) return;
-    const toOffset = (p: { line: number; ch: number }): number => {
-      const lineNumber = Math.max(1, Math.min(p.line, live.state.doc.lines));
-      const line = live.state.doc.line(lineNumber);
-      return line.from + Math.min(p.ch, line.length);
-    };
-    const anchor = toOffset(positions.anchor);
-    // A missing `head` (an older bag, or a fresh open-at-line) restores a
-    // collapsed caret at the anchor.
-    const head = positions.head === undefined ? anchor : toOffset(positions.head);
-
-    if (positions.scrollTop > 0) {
-      // A saved viewport: restore the selection now, then the scroll
-      // offset AFTER CM6 has measured the freshly-seeded document. A
-      // synchronous `scrollTop =` here lands before CM6 knows the line
-      // heights, so it re-measures and clamps and the viewport jumps
-      // (the [L23] regression this fixes). `requestMeasure`'s write
-      // phase runs once geometry is known — the "scroll last" ordering
-      // `card-host.tsx` uses for the same reason. The `alive` capture
-      // drops the restore if the card re-anchors before it fires.
-      live.dispatch({ selection: { anchor, head } });
+  // Restore BOTH selection ends and the EXACT scroll offset, deferring the
+  // scroll write into `requestMeasure` so it lands AFTER CM6 has measured
+  // the current document. A synchronous `scrollTop =` runs before CM6 knows
+  // the new line heights, so it re-measures, clamps, and the viewport jumps
+  // (the [L23] regression). This is the shared core behind both the card-bag
+  // restore (`applyPositions`) and the in-place reload (`replaceText`); the
+  // view-identity guard drops the restore if the card re-anchors before the
+  // measure fires.
+  const restoreSelectionAndScroll = useCallback(
+    (positions: FilePositions): void => {
+      const live = viewRef.current;
+      if (live === null) return;
+      const anchor = offsetForLineCh(live.state, positions.anchor);
+      // A missing `head` (an older bag) restores a collapsed caret at the
+      // anchor — never flattens a real selection ([L23]).
+      const head =
+        positions.head === undefined
+          ? anchor
+          : offsetForLineCh(live.state, positions.head);
       const target = positions.scrollTop;
+      live.dispatch({ selection: { anchor, head } });
       live.requestMeasure({
         read: () => null,
         write: (_measured, view) => {
@@ -548,15 +559,33 @@ export const TugTextCardEditor = React.forwardRef<
           view.scrollDOM.scrollTop = target;
         },
       });
-      return;
-    }
-    // No saved viewport (a fresh open-at-line): center the target so a
-    // deep-link into a long file lands with the line visible.
-    live.dispatch({
-      selection: { anchor, head },
-      effects: EditorView.scrollIntoView(head, { y: "center" }),
-    });
-  }, []);
+    },
+    [],
+  );
+
+  const applyPositions = useCallback(
+    (positions: FilePositions): void => {
+      const live = viewRef.current;
+      if (live === null) return;
+      // A saved viewport restores selection + exact scroll, measure-first.
+      if (positions.scrollTop > 0) {
+        restoreSelectionAndScroll(positions);
+        return;
+      }
+      // No saved viewport (a fresh open-at-line): center the target so a
+      // deep-link into a long file lands with the line visible.
+      const anchor = offsetForLineCh(live.state, positions.anchor);
+      const head =
+        positions.head === undefined
+          ? anchor
+          : offsetForLineCh(live.state, positions.head);
+      live.dispatch({
+        selection: { anchor, head },
+        effects: EditorView.scrollIntoView(head, { y: "center" }),
+      });
+    },
+    [restoreSelectionAndScroll],
+  );
 
   // Publish caret + counts to the status bar. Caret is read live from
   // `state`; the line/word/char counts come from `docStatsRef` (kept
@@ -576,21 +605,31 @@ export const TugTextCardEditor = React.forwardRef<
     });
   }, []);
 
-  const replaceText = useCallback((next: string): void => {
-    const live = viewRef.current;
-    if (live === null) return;
-    if (live.state.doc.toString() === next) return;
-    const scrollTop = live.scrollDOM.scrollTop;
-    const head = live.state.selection.main.head;
-    live.dispatch({
-      changes: { from: 0, to: live.state.doc.length, insert: next },
-      selection: { anchor: Math.min(head, next.length) },
-      annotations: externalReplace.of(true),
-    });
-    // Keep the viewport where the user left it; the revert should read
-    // as "the text changed under me", not "the editor jumped".
-    live.scrollDOM.scrollTop = scrollTop;
-  }, []);
+  const replaceText = useCallback(
+    (next: string): void => {
+      const live = viewRef.current;
+      if (live === null) return;
+      if (live.state.doc.toString() === next) return;
+      // Capture the pre-reload selection + scroll in line/ch currency (the
+      // same shape the card bag uses) BEFORE the swap, so an in-place disk
+      // reload — external out-of-process edit, Revert to Saved, Reload from
+      // Disk, conflict "Reload" — really tries to restore where the user
+      // was: both selection ends survive (never flattened to a caret) and
+      // the caret tracks its line/col rather than a raw offset.
+      const before = getPositions();
+      live.dispatch({
+        changes: { from: 0, to: live.state.doc.length, insert: next },
+        annotations: externalReplace.of(true),
+      });
+      // Re-apply selection + the exact scroll AFTER CM6 measures the new
+      // document (measure-deferred, so the viewport doesn't clamp/jump).
+      // The revert should read as "the text changed under me", not "the
+      // editor jumped". The selection-only dispatch inside carries no
+      // doc change, so it never re-arms autosave.
+      restoreSelectionAndScroll(before);
+    },
+    [getPositions, restoreSelectionAndScroll],
+  );
 
   // ---- Mount the EditorView ----
 
