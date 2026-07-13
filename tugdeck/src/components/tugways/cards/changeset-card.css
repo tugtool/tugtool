@@ -111,10 +111,13 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Trailing project · branch context on the trigger line. */
+/* Trailing project · branch context on the trigger line. The right margin
+   keeps it off the accordion chevron (the trigger's content span stretches
+   flush against it). */
 .changeset-entry-context {
   flex-shrink: 0;
   margin-left: auto;
+  margin-right: 0.625rem;
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;

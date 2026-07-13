@@ -206,6 +206,20 @@ function projectContext(project: ProjectChangeset): string {
   return context;
 }
 
+/** Hover tooltip spelling out the ↑ahead / ↓behind glyphs; undefined when
+ *  the branch is in sync (or there is no repo). */
+function aheadBehindTitle(project: ProjectChangeset): string | undefined {
+  if (project.no_repo) return undefined;
+  const parts: string[] = [];
+  if (project.ahead > 0) {
+    parts.push(`${project.ahead} commit${project.ahead === 1 ? "" : "s"} ahead of upstream`);
+  }
+  if (project.behind > 0) {
+    parts.push(`${project.behind} commit${project.behind === 1 ? "" : "s"} behind upstream`);
+  }
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
 function itemTitle(item: ChangesetItem): string {
   return item.kind === "unattributed" ? "Unattributed" : item.entry.display_name;
 }
@@ -405,7 +419,12 @@ function EntryTrigger({ item }: { item: ChangesetItem }) {
       >
         {itemTitle(item)}
       </span>
-      <span className="changeset-entry-context">{itemSubtitle(item)}</span>
+      <span
+        className="changeset-entry-context"
+        title={item.kind === "dash" ? undefined : aheadBehindTitle(item.project)}
+      >
+        {itemSubtitle(item)}
+      </span>
     </span>
   );
 }
@@ -531,7 +550,14 @@ const ChangesetTocCell: TugListViewCellRenderer<ChangesetTocDataSource> =
         leading={<ItemGlyph item={item} />}
         title={itemTitle(item)}
         titleSize="sm"
-        subtitle={itemSubtitle(item)}
+        subtitle={
+          // A node (not a string) so the ↑/↓ glyphs can carry their
+          // spelled-out tooltip; `.tug-list-row-subtitle` keeps the muted
+          // truncating treatment.
+          <span title={item.kind === "dash" ? undefined : aheadBehindTitle(item.project)}>
+            {itemSubtitle(item)}
+          </span>
+        }
         trailing={
           <span
             className={`changeset-toc-hint${hint.caution ? " changeset-toc-hint-changes" : ""}`}
