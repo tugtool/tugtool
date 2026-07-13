@@ -552,15 +552,19 @@ its frames reach clients only for the bootstrap `--source-tree` workspace:
   retired GIT feed before it — never adopted that; nobody noticed because the bootstrap repo
   is always open.
 
-`CHANGESET_ALL` sidesteps the gap by being **process-level from birth**. Two proven delivery
-templates exist in `main.rs`; either works — the invariant is **one process-wide
-registration, never per-workspace**:
+`CHANGESET_ALL` sidesteps the gap by being **process-level from birth**, delivered as a
+**single process-level snapshot watch** — the `spawn_stats_feeds` / `defaults_feed` pattern:
+the feed yields one `watch::Receiver` pushed into `add_snapshot_watches` once at startup
+(`spawn_snapshot_feed` in `tugcast-core/src/feed.rs` is the runner). The invariant is **one
+process-wide registration, never per-workspace**.
 
-1. **Broadcast** (the USAGE pattern): a `broadcast::channel` created in `main.rs`, sender
-   registered via `add_broadcast_senders`, the feed task `send`s framed snapshots.
-2. **Process-level snapshot watch** (the `spawn_stats_feeds` / `defaults_feed` pattern): the
-   feed yields a single `watch::Receiver` pushed into `add_snapshot_watches` once at startup
-   (`spawn_snapshot_feed` in `tugcast-core/src/feed.rs` is the runner).
+Do **not** use the USAGE broadcast pattern (`broadcast::channel` + `add_broadcast_senders`):
+the router documents that broadcast senders get **no deliver-on-connect pass** — broadcast
+streams are event-only with no retained latest value — while `snapshot_watches` deliver the
+retained latest frame to every newly connected client. USAGE tolerates that because it is
+request/response-driven; an aggregate *snapshot* card opened after the last recompute would
+sit blank until the next bump or poll tick. The watch pattern gives instant-on-connect for
+free.
 
 Client-side, aggregation must stay **server-side**: tugdeck's `FeedStore` keeps one value per
 feed id, so per-project frames on one id would clobber each other; the account-global client
@@ -772,7 +776,7 @@ tabindex (mousedown-focus default gotcha).
 | `WorkspaceRegistry::project_dirs()` (or `entries()`) | fn | `tugcast/src/feeds/workspace_registry.rs` | enumerate open projects for the aggregate feed (#step-12b) |
 | global changeset `Notify` + `ChangesetBumper` global ping | code | `tugcast/src/main.rs` + `tugcast/src/feeds/changeset.rs` | process-global bump; sole bump path after #step-12d |
 | `changeset_git_init` | verb | `tugcast/src/feeds/agent_supervisor.rs` `handle_control` | Spec S07 |
-| per-workspace `ChangesetFeed` retirement | code | `workspace_registry.rs` (`WorkspaceEntry::new`) + `main.rs` (`add_snapshot_watches`) | [P17]/#step-12d; `compose_snapshot` stays |
+| per-workspace `ChangesetFeed` retirement | code | `feeds/changeset.rs` (struct + `SnapshotFeed` impl deleted) + `workspace_registry.rs` (`WorkspaceEntry` changeset fields) + `main.rs` (`add_snapshot_watches`) | [P17]/#step-12d; `compose_snapshot` + `ChangesetBumper` stay |
 | changeset card rewrite (account-global) | code | `tugdeck/src/components/tugways/cards/changeset-card.tsx` + `tugdeck/src/main.tsx` | #step-12c; per-project sections over the M02 internals |
 
 ---
@@ -1298,11 +1302,12 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
   `compose_snapshot` (`feeds/changeset.rs`), a non-repo dir yields a `no_repo: true`
   `ProjectChangeset` with empty payload; emit **one** `WorkspacesChangesetSnapshot` frame,
   diff-suppressed like the other snapshot feeds.
-- **Process-level delivery** per #aggregate-delivery: register exactly one receiver/sender in
-  `main.rs` startup (the USAGE broadcast pattern or the `spawn_stats_feeds`/`defaults_feed`
-  single-watch pattern — pick whichever fits, the invariant is one process-wide
-  registration, **never** the per-workspace `add_snapshot_watches` path that stranded the
-  M02 frames).
+- **Process-level delivery** per #aggregate-delivery: the feed runs via `spawn_snapshot_feed`
+  yielding a single `watch::Receiver` pushed into `add_snapshot_watches` once at `main.rs`
+  startup (the `spawn_stats_feeds`/`defaults_feed` template — the registry Arc is constructed
+  well before the registration point, so ordering works). **Not** the USAGE broadcast
+  pattern (no deliver-on-connect — a freshly opened deck would render blank until the next
+  bump or poll), and **never** a per-workspace registration.
 - **Global bump:** a process-global `Arc<tokio::sync::Notify>` created in `main.rs`, handed
   to the feed and to `ChangesetBumper` (`feeds/changeset.rs`) — `bump()` pings it **in
   addition to** the per-workspace `Notify` (removed later at #step-12d). The feed
@@ -1311,6 +1316,10 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 **Tasks:**
 - [ ] `display_name` = basename of `project_dir`.
 - [ ] Bumps coalesce (Notify semantics) so a burst of file events yields one recompute.
+- [ ] Ping the global `Notify` from `WorkspaceRegistry::get_or_create` and `release` so a
+      project's section appears/disappears immediately when a dev card opens/closes, instead
+      of waiting out the poll backstop (hand the global notify to the registry at
+      construction).
 
 **Tests:**
 - [ ] Integration (two temp dirs: one git repo with attributed dirt via temp ledger rows, one
@@ -1348,7 +1357,11 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
   but inert until #step-12e wires the verb. Empty states: "No open projects" overall;
   per-project clean-tree state as in M02.
 - Registration from `tugdeck/src/main.tsx`: the card registration's `defaultFeedIds` becomes
-  `[FeedId.CHANGESET_ALL]`; the store initializes at app mount beside `UsageStore`.
+  `[FeedId.CHANGESET_ALL]`. The store initializes where the app-level singletons live:
+  either on the deck manager beside `UsageStore` (`tugdeck/src/deck-manager.ts`,
+  `new UsageStore(connection)`) or as a module-level singleton + hook the way `PulseStore`
+  does (`pulse-store.ts` `_activeStore` + `usePulse`) — pick whichever the context-hook
+  shape favors; both are established app-level homes.
 
 **Tasks:**
 - [ ] Section expand/collapse stays ephemeral UI state (the M02 controlled-`TugAccordion` /
@@ -1383,14 +1396,22 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
   `add_snapshot_watches` in `main.rs`, and the per-workspace `Notify` resolution inside
   `ChangesetBumper` (`feeds/changeset.rs`) — the #step-12b global bump becomes the only
   bump path.
-- **Keep** `compose_snapshot` and its tests (`feeds/changeset.rs`) — it is the aggregate's
-  per-project building block.
+- **Delete the dead code outright — warnings are errors**, so anything left without a
+  non-test consumer fails the build: the `ChangesetFeed` struct and its `SnapshotFeed` impl
+  in `feeds/changeset.rs`, its feed-loop tests (the ones exercising bump/poll emission
+  through the struct), and the `WorkspaceEntry` fields `changeset_watch_rx` /
+  `changeset_bump` / `changeset_task` with their construction and teardown.
+- **Keep** `compose_snapshot` and its tests, and `ChangesetBumper` with its global-notify
+  path (`feeds/changeset.rs`) — the aggregate's per-project building block and bump entry
+  point.
 - `FeedId::CHANGESET` (0x23) stops being registered; the constant stays, commented reserved
   (the same idiom as GIT 0x20 at #step-11). Never reuse the value.
 
 **Tasks:**
 - [ ] Sweep tugdeck for `FeedId.CHANGESET` consumers — after #step-12c the card no longer
       subscribes; remove any leftover references.
+- [ ] Confirm the workspace-registry tests that assert on the changeset task/watch fields
+      are removed or retargeted at the surviving fields.
 
 **Tests:**
 - [ ] Existing `compose_snapshot` tests keep passing; no test references the removed feed
