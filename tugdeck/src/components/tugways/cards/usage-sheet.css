@@ -1,0 +1,292 @@
+/**
+ * usage-sheet.css — layout for the `/usage` sheet (usage-sheet.tsx).
+ *
+ * Two regions: a top row (arc-gauge hero on the left, weekly gauges + the
+ * Session cost grid on the right) and a "what's contributing" region (periods
+ * side by side, each with its characteristic gauges and top tables). The panel
+ * runs a step smaller than the sheet default and keeps its numbers in the mono
+ * face with tabular figures, so it reads as tightly as the CONTEXT popover; name
+ * → value pairs carry a dotted leader so nothing smashes together ([L20]: the
+ * gauges keep their own paint).
+ */
+
+.usage-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  font-size: var(--tug-font-size-sm);
+  line-height: 1.4;
+  /* Breathing room so the last row never smashes into the pinned footer. */
+  padding-bottom: var(--tug-space-2xl);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-notice {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+  margin: var(--tug-space-xl) 0;
+}
+
+/* Mono, tabular figures for every number in the panel. */
+.usage-sheet-num {
+  font-family: var(--tug-font-mono, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scope the composed gauges a step down so their readouts match the panel,
+   and make every gauge fill its container so the tracks are all one length. */
+.usage-sheet-gauge {
+  font-size: var(--tug-font-size-xs);
+  width: 100%;
+}
+
+.usage-sheet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--tug-space-md);
+  width: 100%;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-section-title {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-2xs);
+  font-weight: var(--tug-font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--tug-space-xs);
+}
+
+/* ---- Top row: hero gauge + weekly gauges + session grid ------------------- */
+
+.usage-sheet-top {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--tug-space-xl);
+}
+
+.usage-sheet-hero {
+  flex: 0 0 auto;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-hero-reset {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+  text-align: center;
+}
+
+.usage-sheet-side {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+.usage-sheet-windows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.usage-sheet-window {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-window-label {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-window-reset {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+}
+
+/* Session cost / tokens — two self-contained label→value sub-grids side by
+   side, each row carrying a dotted leader. */
+.usage-sheet-grid {
+  display: flex;
+  gap: var(--tug-space-2xl);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.usage-sheet-grid-col {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  column-gap: var(--tug-space-2xs);
+  row-gap: 3px;
+  align-items: baseline;
+  flex: 0 1 auto;
+  min-width: 190px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 3px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-stat-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Dotted leader cell between a label and its value. */
+.usage-sheet-leader {
+  border-bottom: 1px dotted var(--tug7-element-global-border-normal-default-rest);
+  transform: translateY(-0.28em);
+  margin: 0 var(--tug-space-xs);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-stat-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* ---- Contributing region -------------------------------------------------- */
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-caveat {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+  margin: 0 0 var(--tug-space-md);
+  max-width: 70ch;
+}
+
+.usage-sheet-periods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--tug-space-xl);
+}
+
+.usage-sheet-period {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+.usage-sheet-period-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  padding-bottom: 3px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-period-label {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-period-meta {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+}
+
+.usage-sheet-chars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  margin-bottom: var(--tug-space-xs);
+}
+
+/* One characteristic: a showcased label on its own line over a full-width
+   gauge, so every characteristic bar is the same length regardless of label. */
+.usage-sheet-char {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-char-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.usage-sheet-tables {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.usage-sheet-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.usage-sheet-table-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  margin-bottom: 1px;
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-table-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-table-col {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* One `name … pct` row with a dotted leader between them. */
+.usage-sheet-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr max-content;
+  align-items: baseline;
+  font-size: var(--tug-font-size-xs);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-table-name {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-sheet-table-dots {
+  border-bottom: 1px dotted var(--tug7-element-global-border-normal-default-rest);
+  transform: translateY(-0.28em);
+  margin: 0 var(--tug-space-xs);
+}
+
+/* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
+.usage-sheet-table-pct {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}

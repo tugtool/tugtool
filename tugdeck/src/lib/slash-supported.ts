@@ -131,9 +131,10 @@ export const HIDDEN_SLASH_COMMANDS: ReadonlySet<string> = new Set<string>([
   "radio",
   "stickers",
   "sandbox",
-  "usage",
-  "cost", // alias of /usage.
-  "stats", // alias of /usage.
+  // (`/usage` graduated to a Tug-local command — it opens the graphical usage
+  // sheet; see LOCAL_SLASH_COMMANDS.)
+  "cost", // alias of /usage — still hidden (the sheet is reached via /usage).
+  "stats", // alias of /usage — still hidden.
   "usage-credits",
   "extra-usage",
   "team-onboarding",

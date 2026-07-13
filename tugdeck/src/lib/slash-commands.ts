@@ -132,6 +132,10 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "View the configured hooks for this session",
   },
   {
+    name: "usage",
+    description: "Show subscription usage limits and this session's cost",
+  },
+  {
     name: "btw",
     description: "Ask a quick side question, answered from the conversation with no tools",
     takesArgs: true,

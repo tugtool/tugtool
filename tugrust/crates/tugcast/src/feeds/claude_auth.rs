@@ -65,8 +65,10 @@ pub fn claude_executable() -> std::ffi::OsString {
     std::ffi::OsString::from("claude")
 }
 
-/// A `claude` command with the Anthropic auth env vars scrubbed.
-fn claude_command(args: &[&str]) -> Command {
+/// A `claude` command with the Anthropic auth env vars scrubbed. Shared with
+/// [`super::claude_usage`] so `/usage` authenticates via the same subscription
+/// path (`~/.claude.json`) that sessions and the auth probe use.
+pub(crate) fn claude_command(args: &[&str]) -> Command {
     let mut cmd = Command::new(claude_executable());
     cmd.args(args);
     for var in AUTH_ENV_VARS {

@@ -457,6 +457,13 @@ async fn main() {
     // buffer suffices — `/diff` is a user-initiated, infrequent action.
     let (gd_response_tx, _) = broadcast::channel::<Frame>(16);
 
+    // Shared USAGE-response broadcast channel. The USAGE_QUERY adapter (below)
+    // publishes one single-shot `UsageSnapshot` here per `/usage` request; the
+    // router fans it out and JS filters by `request_id`. Account-global (one
+    // `claude -p "/usage"` per request, no workspace scoping), user-initiated
+    // and infrequent, so a small buffer suffices.
+    let (usage_response_tx, _) = broadcast::channel::<Frame>(16);
+
     // Create the bootstrap WorkspaceRegistry. In W1 this holds exactly one
     // entry (the startup `--source-tree`); W2 adds per-session `get_or_create`
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
@@ -556,6 +563,45 @@ async fn main() {
                     }
                     Err(e) => {
                         warn!(error = %e, "GIT_DIFF: failed to serialize response");
+                    }
+                }
+            });
+        }
+    });
+
+    // Adapter: router sends raw Frames on USAGE_QUERY. Parse `{requestId}`, run
+    // one `claude -p "/usage"` (account-global — no workspace resolution), and
+    // broadcast the `UsageSnapshot` on USAGE. Each request runs in its own task
+    // so a slow `claude` invocation never head-of-line-blocks another card's
+    // `/usage`.
+    let (usage_input_tx, mut usage_input_rx) = mpsc::channel::<Frame>(16);
+    let usage_response_tx_loop = usage_response_tx.clone();
+    tokio::spawn(async move {
+        #[derive(serde::Deserialize)]
+        struct RawUsageQuery {
+            #[serde(rename = "requestId")]
+            request_id: Option<String>,
+        }
+        while let Some(frame) = usage_input_rx.recv().await {
+            let request_id = serde_json::from_slice::<RawUsageQuery>(&frame.payload)
+                .ok()
+                .and_then(|r| r.request_id)
+                .unwrap_or_default();
+            let response_tx = usage_response_tx_loop.clone();
+            tokio::spawn(async move {
+                let (ok, text, error) = crate::feeds::claude_usage::fetch_usage_text().await;
+                let snapshot = tugcast_core::types::UsageSnapshot {
+                    request_id,
+                    ok,
+                    text,
+                    error,
+                };
+                match serde_json::to_vec(&snapshot) {
+                    Ok(json) => {
+                        let _ = response_tx.send(Frame::new(FeedId::USAGE, json));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "USAGE: failed to serialize response");
                     }
                 }
             });
@@ -913,6 +959,7 @@ async fn main() {
     feed_router.register_input(FeedId::SHELL_INPUT, shell_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
+    feed_router.register_input(FeedId::USAGE_QUERY, usage_input_tx);
 
     // Attach the supervisor to the router so `handle_client` can intercept
     // session-lifecycle CONTROL frames and cross-check CODE_INPUT P5
@@ -958,7 +1005,7 @@ async fn main() {
     // `ClientState::Live` and forwards every frame to the socket. JS
     // filters by `workspace_key` to dispatch responses to the right
     // card. Per `roadmap/dev-atoms.md#step-pre-4`.
-    feed_router.add_broadcast_senders(vec![ft_response_tx, gd_response_tx]);
+    feed_router.add_broadcast_senders(vec![ft_response_tx, gd_response_tx, usage_response_tx]);
 
     // Filesystem, filetree, and git feed tasks are owned by the
     // WorkspaceRegistry's bootstrap entry — spawned inside

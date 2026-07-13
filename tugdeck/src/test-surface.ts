@@ -706,6 +706,14 @@ export interface TugTestSurface {
   ingestRateLimit(info: RateLimitInfo): void;
 
   /**
+   * Drive the app-level, account-global usage store with a `UsageSnapshot` as
+   * if a `claude -p "/usage"` response had landed on the USAGE feed — so the
+   * `/usage` sheet renders its gauges + contribution tables without a live
+   * `claude` invocation.
+   */
+  ingestUsage(payload: unknown): void;
+
+  /**
    * Drive a dev card's `SessionMetadataStore` with a decoded SESSION_SIDEBAND
    * payload (`session_capabilities` or `system_metadata`) as if it had landed
    * on the feed ([#step-4]). Resolves the card's services via
@@ -1602,6 +1610,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     ingestRateLimit(info: RateLimitInfo): void {
       deck.getRateLimitStore()._ingestForTest(info);
+    },
+
+    ingestUsage(payload: unknown): void {
+      deck.getUsageStore()._ingestForTest(payload);
     },
 
     ingestSessionMetadata(cardId: string, payload: unknown): void {

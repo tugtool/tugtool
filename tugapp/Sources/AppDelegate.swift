@@ -828,6 +828,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
         sessionMenu.addItem(sessionCommandItem("Show Code Changes", "diff", "session.diff"))
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
+        sessionMenu.addItem(sessionCommandItem("Show Usage", "usage", "session.usage"))
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Skills", "skills", "session.skills"))
         sessionMenu.addItem(sessionCommandItem("Agents", "agents", "session.agents"))

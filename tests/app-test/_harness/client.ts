@@ -809,6 +809,8 @@ export interface RateLimitInfo {
   overageStatus: string;
   overageDisabledReason?: string;
   isUsingOverage: boolean;
+  /** 0–1 window utilization — the fraction the `/usage` gauges key their % on. */
+  utilization?: number;
 }
 
 /**

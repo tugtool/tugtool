@@ -114,6 +114,13 @@ impl FeedId {
     /// Commentator lines (tugcast → tugdeck)
     pub const PULSE: Self = Self(0x80);
 
+    // -- Usage (subscription usage panel) --
+    /// Usage panel response (tugcast → tugdeck), a single-shot `UsageSnapshot`
+    /// carrying `claude -p "/usage"` output.
+    pub const USAGE: Self = Self(0x90);
+    /// Usage panel request (tugdeck → tugcast).
+    pub const USAGE_QUERY: Self = Self(0x91);
+
     // -- Router-internal --
     /// Control commands (tugdeck → tugcast, tugcast → tugdeck)
     pub const CONTROL: Self = Self(0xC0);
@@ -148,6 +155,8 @@ impl FeedId {
             Self::SESSION_SIDEBAND => Some("SessionSideband"),
             Self::SESSION_STATE => Some("SessionState"),
             Self::PULSE => Some("Pulse"),
+            Self::USAGE => Some("Usage"),
+            Self::USAGE_QUERY => Some("UsageQuery"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
             Self::SHELL_INPUT => Some("ShellInput"),
             Self::TUG_FEED => Some("TugFeed"),
@@ -434,6 +443,9 @@ mod tests {
         assert_eq!(FeedId::SESSION_STATE.name(), Some("SessionState"));
         assert_eq!(FeedId::SHELL_OUTPUT.as_byte(), 0x60);
         assert_eq!(FeedId::SHELL_INPUT.as_byte(), 0x61);
+        assert_eq!(FeedId::USAGE.as_byte(), 0x90);
+        assert_eq!(FeedId::USAGE_QUERY.as_byte(), 0x91);
+        assert_eq!(FeedId::USAGE.name(), Some("Usage"));
         assert_eq!(FeedId::TUG_FEED.as_byte(), 0x70);
         assert_eq!(FeedId::CONTROL.as_byte(), 0xC0);
         assert_eq!(FeedId::HEARTBEAT.as_byte(), 0xFF);

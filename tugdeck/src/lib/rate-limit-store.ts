@@ -47,6 +47,11 @@ function parseRateLimitInfo(raw: unknown): RateLimitInfo | null {
   if (typeof obj.overageDisabledReason === "string") {
     info.overageDisabledReason = obj.overageDisabledReason;
   }
+  // `utilization` is the 0–1 fraction the /usage gauges key their % on. Absent
+  // on older CLIs; carried through when present.
+  if (typeof obj.utilization === "number") {
+    info.utilization = obj.utilization;
+  }
   return info;
 }
 

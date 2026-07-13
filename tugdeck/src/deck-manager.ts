@@ -54,6 +54,8 @@ import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
 import { RateLimitBulletinBridge } from "./components/chrome/rate-limit-bulletin-bridge";
 import { RateLimitStore } from "./lib/rate-limit-store";
+import { UsageStore } from "./lib/usage-store";
+import { UsageContext } from "./lib/usage-context";
 import { ResponderChainProvider } from "./components/tugways/responder-chain-provider";
 import { TugTooltipProvider } from "./components/tugways/tug-tooltip";
 import { TugAlertProvider } from "./components/tugways/tug-alert";
@@ -218,6 +220,13 @@ export class DeckManager implements IDeckManagerStore {
    * the banner without a live claude round-trip.
    */
   private readonly rateLimitStore: RateLimitStore;
+
+  /**
+   * App-level, account-global usage-panel store. Serves every card's `/usage`
+   * sheet (one `claude -p "/usage"` for the machine); reached through
+   * {@link UsageContext}. The harness drives it via {@link getUsageStore}.
+   */
+  private readonly usageStore: UsageStore;
 
   /** Current canvas state (two-table shape). */
   private deckState: DeckState;
@@ -491,6 +500,7 @@ export class DeckManager implements IDeckManagerStore {
     this.container = container;
     this.connection = connection;
     this.rateLimitStore = new RateLimitStore(connection);
+    this.usageStore = new UsageStore(connection);
     this.testMode = options?.testMode === true;
     // Test mode: discard any tugbank-sourced boot arguments so the deck
     // starts empty. The harness drives state exclusively via
@@ -573,6 +583,7 @@ export class DeckManager implements IDeckManagerStore {
           [ErrorBoundary, null],
           [ResponderChainProvider, null],
           [DeckManagerContext.Provider, { value: this }],
+          [UsageContext.Provider, { value: this.usageStore }],
           [CardLifecycleContext.Provider, { value: this.cardLifecycle }],
           [AppLifecycleContext.Provider, { value: this.appLifecycle }],
           [SheetLifecycleContext.Provider, { value: this.sheetLifecycle }],
@@ -692,6 +703,14 @@ export class DeckManager implements IDeckManagerStore {
    */
   getRateLimitStore(): RateLimitStore {
     return this.rateLimitStore;
+  }
+
+  /**
+   * App-level account-global usage store, for the `__tug` test surface's
+   * `ingestUsage` seam. Production code reaches it through {@link UsageContext}.
+   */
+  getUsageStore(): UsageStore {
+    return this.usageStore;
   }
 
   // ---- Card / stack management () ----

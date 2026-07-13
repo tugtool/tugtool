@@ -49,6 +49,9 @@ export const FeedId = {
   TUG_FEED: 0x70,
   // Pulse (app-wide color commentary)
   PULSE: 0x80,
+  // Usage (subscription usage panel: `claude -p "/usage"` response + request)
+  USAGE: 0x90,
+  USAGE_QUERY: 0x91,
   // Router-internal
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,

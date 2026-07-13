@@ -152,6 +152,27 @@ pub struct GitDiffSnapshot {
     pub files: Vec<GitDiffFile>,
 }
 
+/// A single-shot subscription-usage payload, delivered on the USAGE feed
+/// (0x90) in response to a USAGE_QUERY (0x91).
+///
+/// Carries the verbatim text `claude -p "/usage"` prints — the same panel the
+/// terminal shows (limit gauges, reset times, and the "what's contributing"
+/// breakdown). The deck parses `text` into its graphical shape. `request_id`
+/// echoes the query's correlation id; `ok` is false (with `error` set) when the
+/// `claude` invocation failed or the user is logged out.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageSnapshot {
+    /// Correlation id echoed from the request.
+    pub request_id: String,
+    /// True when `claude -p "/usage"` exited successfully.
+    pub ok: bool,
+    /// Verbatim stdout of `claude -p "/usage"` (may be empty on failure).
+    pub text: String,
+    /// Human-readable failure reason when `ok` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// A single scored result from fuzzy file matching.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoredResult {

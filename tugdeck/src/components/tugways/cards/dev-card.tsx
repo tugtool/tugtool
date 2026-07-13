@@ -55,6 +55,7 @@ import { useSkillsSheet } from "./skills-sheet";
 import { useAgentsSheet } from "./agents-sheet";
 import { useMemorySheet } from "./memory-sheet";
 import { useHooksSheet } from "./hooks-sheet";
+import { useUsageSheet } from "./usage-sheet";
 import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
@@ -64,6 +65,7 @@ import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useDevCardServices } from "./use-dev-card-services";
 import { type LocalCommandName } from "@/lib/slash-commands";
+import { useUsageStore } from "@/lib/usage-context";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import type { PastedCommandResolver } from "@/components/tugways/tug-text-editor/clipboard-filters";
@@ -2791,6 +2793,17 @@ export function DevCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // `/usage` sheet, card-scoped per [D15]. The panel (limit gauges + reset
+  // times + the contributing breakdown) comes from the app-level `UsageStore`,
+  // which shells `claude -p "/usage"` on open (account-global, reached via
+  // context); the session cost/token totals fold from this card's transcript.
+  const usageStore = useUsageStore();
+  const usageSheet = useUsageSheet({
+    usageStore,
+    codeSessionStore,
+    showSheet: cardPickerSheet.showSheet,
+  });
+
   // `/help` tabbed sheet ([#step-13b2]) per [D16], card-scoped per [D15]. A
   // General tab (Dev + shortcuts + the unsupported-commands doc link) over a
   // Commands / Custom-commands browse of the session catalog, projected through
@@ -2924,6 +2937,7 @@ export function DevCardBody({
     agents: () => agentsSheet.openAgentsSheet(),
     memory: () => memorySheet.openMemorySheet(),
     hooks: () => hooksSheet.openHooksSheet(),
+    usage: () => usageSheet.openUsageSheet(),
     // `/btw` (arg) — ask a side question and open the non-modal overlay. The
     // trailing text is the question (`takesArgs`). Un-gated and pre-`canSubmit`
     // like every local command, so it works idle AND mid-turn with no
