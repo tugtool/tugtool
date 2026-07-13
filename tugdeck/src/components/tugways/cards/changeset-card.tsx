@@ -30,8 +30,16 @@
 
 import "./changeset-card.css";
 
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CircleCheck, GitBranch, FolderGit2 } from "lucide-react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { CircleCheck, GitBranch, FolderGit2, Folder } from "lucide-react";
 
 import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
@@ -39,9 +47,18 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugListRow } from "@/components/tugways/tug-list-row";
+import {
+  TugListView,
+  type TugListViewCellProps,
+  type TugListViewCellRenderer,
+  type TugListViewDataSource,
+  type TugListViewDelegate,
+} from "@/components/tugways/tug-list-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChangesetAll } from "@/lib/changeset-all-store";
 import { useChangesetGitInit } from "@/lib/changeset-verb-store";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import type {
   ChangesetEntry,
   ChangesetFile,
@@ -330,58 +347,112 @@ function countChanges(project: ProjectChangeset): number {
   return owned + project.unattributed.length;
 }
 
-// ---------------------------------------------------------------------------
-// Table of contents
-// ---------------------------------------------------------------------------
+/** The trailing status hint for a project's TOC row. */
+function projectStatusHint(project: ProjectChangeset): string {
+  if (project.no_repo) return "not a git repo";
+  const changes = countChanges(project);
+  return changes > 0 ? `${changes} change${changes === 1 ? "" : "s"}` : "clean";
+}
 
 /**
- * One thin table-of-contents row per tracked project — always visible above
- * the accordions so opening one project never loses the others. Clicking a row
- * reveals that project's accordion (expands it and scrolls it into view). The
- * caret reflects the accordion's open state so the TOC doubles as an overview
- * of what's expanded. Read-only-card focus discipline: refuses first-responder
- * so a click toggles without stealing the key view (mirrors `FilePathLink`).
+ * The canonical workspace_keys of the currently-open dev cards, read straight
+ * from the binding store ([L02]). This — not the server registry — is what
+ * "open projects" means: exactly the dev cards the user has open. A project the
+ * aggregate reports but no dev card is bound to (the bootstrap source-tree, or
+ * any residual registry entry) is filtered out.
  */
-function TocEntry({
-  project,
-  open,
-  onReveal,
-}: {
-  project: ProjectChangeset;
-  open: boolean;
-  onReveal: () => void;
-}) {
-  const changes = countChanges(project);
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
-    if (event.button === 0) event.preventDefault();
-  }, []);
-  const detail = project.no_repo
-    ? "no git"
-    : changes > 0
-      ? `${changes} change${changes === 1 ? "" : "s"}`
-      : "clean";
-  return (
-    <div
-      className={`changeset-toc-entry${open ? " changeset-toc-entry-open" : ""}`}
-      role="button"
-      data-testid="changeset-toc-entry"
-      data-tug-focus="refuse"
-      data-no-activate=""
-      title={project.project_dir}
-      onMouseDown={handleMouseDown}
-      onClick={onReveal}
-    >
-      <span
-        className={`changeset-toc-caret${open ? " changeset-toc-caret-open" : ""}`}
-        aria-hidden="true"
-      >
-        ▸
-      </span>
-      <span className="changeset-toc-name">{project.display_name}</span>
-      <span className="changeset-toc-detail">{detail}</span>
-    </div>
+function useOpenWorkspaceKeys(): ReadonlySet<string> {
+  const bindings = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    cardSessionBindingStore.getSnapshot,
+  );
+  return useMemo(
+    () => new Set(Array.from(bindings.values(), (b) => b.workspaceKey)),
+    [bindings],
   );
 }
+
+// ---------------------------------------------------------------------------
+// Table of contents — a TugListView of the open projects
+// ---------------------------------------------------------------------------
+
+const TOC_KIND = "project";
+
+/**
+ * Single-section data source over the visible project list. Recreated whenever
+ * the list changes; `subscribe` is therefore a no-op and `getVersion` returns
+ * the array identity (a fresh instance ⇒ TugListView re-reads).
+ */
+class ChangesetTocDataSource implements TugListViewDataSource {
+  constructor(private readonly projects: readonly ProjectChangeset[]) {}
+  numberOfItems(): number {
+    return this.projects.length;
+  }
+  idForIndex(index: number): string {
+    return projectSectionId(this.projects[index]);
+  }
+  kindForIndex(): string {
+    return TOC_KIND;
+  }
+  projectAt(index: number): ProjectChangeset {
+    return this.projects[index];
+  }
+  subscribe(): () => void {
+    return () => {};
+  }
+  getVersion(): unknown {
+    return this.projects;
+  }
+}
+
+/**
+ * One project row: a folder/git icon, the project name, and a trailing status
+ * hint (change count / "clean" / "not a git repo"). Clicking reveals the
+ * project's accordion (via the delegate). A flush `TugListRow` — proper tokens,
+ * proper sizing, no hand-rolled bullets.
+ */
+const ChangesetTocCell: TugListViewCellRenderer<ChangesetTocDataSource> =
+  function ChangesetTocCell({
+    index,
+    dataSource,
+  }: TugListViewCellProps<ChangesetTocDataSource>): React.ReactElement {
+    const project = dataSource.projectAt(index);
+    const Icon = project.no_repo ? Folder : FolderGit2;
+    // Only a dirty repo draws the eye (caution tint); "clean" and
+    // "not a git repo" stay muted.
+    const hasChanges = !project.no_repo && countChanges(project) > 0;
+    return (
+      <TugListRow
+        leading={
+          <Icon
+            size={16}
+            className={
+              project.no_repo ? "changeset-toc-icon changeset-toc-icon-muted" : "changeset-toc-icon"
+            }
+            aria-hidden="true"
+          />
+        }
+        title={project.display_name}
+        titleSize="sm"
+        trailing={
+          <span
+            className={`changeset-toc-hint${hasChanges ? " changeset-toc-hint-changes" : ""}`}
+          >
+            {projectStatusHint(project)}
+          </span>
+        }
+        data-testid="changeset-toc-entry"
+        data-project-dir={project.project_dir}
+      />
+    );
+  };
+
+const CHANGESET_TOC_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<ChangesetTocDataSource>
+> = {
+  [TOC_KIND]: ChangesetTocCell,
+};
 
 // ---------------------------------------------------------------------------
 // ChangesetCardContent
@@ -389,8 +460,17 @@ function TocEntry({
 
 export function ChangesetCardContent() {
   const data = useChangesetAll();
-  const projects = data.projects;
+  const openWorkspaceKeys = useOpenWorkspaceKeys();
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // The projects to show = exactly the open dev cards. The aggregate reports
+  // every registered workspace; we intersect it with the currently-bound dev
+  // cards so the bootstrap source-tree (and any residual registry entry) never
+  // appears here.
+  const projects = useMemo(
+    () => data.projects.filter((p) => openWorkspaceKeys.has(p.workspace_key)),
+    [data.projects, openWorkspaceKeys],
+  );
 
   // Controlled accordion ([L11]): the control dispatches toggleSection; the
   // form binding lands it in state. Projects open themselves the first time
@@ -444,6 +524,16 @@ export function ChangesetCardContent() {
     setOpenKeys((prev) => (prev.includes(id) ? [...prev] : [...prev, id]));
   }, []);
 
+  // TOC list: a TugListView over the visible projects. Recreated when the list
+  // changes; clicking a row reveals that project's accordion.
+  const tocDataSource = useMemo(() => new ChangesetTocDataSource(projects), [projects]);
+  const tocDelegate = useMemo<TugListViewDelegate>(
+    () => ({
+      onSelect: (index) => revealProject(projects[index], index),
+    }),
+    [projects, revealProject],
+  );
+
   if (projects.length === 0) {
     return (
       <div data-slot="changeset-card" className="changeset-card changeset-card-empty">
@@ -451,8 +541,6 @@ export function ChangesetCardContent() {
       </div>
     );
   }
-
-  const openSet = new Set(openKeys);
 
   return (
     <div ref={cardRef} data-slot="changeset-card" className="changeset-card">
@@ -481,16 +569,15 @@ export function ChangesetCardContent() {
             Collapse all
           </TugPushButton>
         </div>
-        <div className="changeset-toc" role="list">
-          {projects.map((project, i) => (
-            <TocEntry
-              key={projectSectionId(project)}
-              project={project}
-              open={openSet.has(projectSectionId(project))}
-              onReveal={() => revealProject(project, i)}
-            />
-          ))}
-        </div>
+        <TugListView<ChangesetTocDataSource>
+          dataSource={tocDataSource}
+          delegate={tocDelegate}
+          cellRenderers={CHANGESET_TOC_CELL_RENDERERS}
+          rowLayout="flush"
+          inline
+          scrollKey="changeset-toc"
+          className="changeset-toc-list"
+        />
       </div>
       <AccordionScope>
         <div
@@ -511,6 +598,7 @@ export function ChangesetCardContent() {
                 trigger={<ProjectTrigger project={project} />}
                 data-testid="changeset-project"
                 data-project-index={i}
+                data-project-dir={project.project_dir}
               >
                 <ProjectBody project={project} />
               </TugAccordionItem>

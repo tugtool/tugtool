@@ -4755,15 +4755,17 @@ impl AgentSupervisor {
             };
             let project_dir = PathBuf::from(&row.project_dir);
 
-            // Validate + acquire the workspace for this row. Invalid
-            // paths (nonexistent / not-a-directory / permission-denied)
-            // are logged and skipped — the user may have removed or
-            // renamed the project directory between runs.
-            let workspace_entry = match self
-                .registry
-                .get_or_create(&project_dir, self.cancel.clone())
-            {
-                Ok(e) => e,
+            // Compute the canonical workspace key WITHOUT registering a
+            // workspace — rebind must not eagerly FileWatch + tree-walk every
+            // historical project's directory (a closed card on the user's home
+            // dir or Desktop must not be re-watched on every boot). The
+            // workspace is registered only when a client actually re-spawns
+            // the session (`do_spawn_session` → `get_or_create`). Invalid
+            // paths (nonexistent / not-a-directory / permission-denied) are
+            // logged and skipped — the user may have removed or renamed the
+            // project directory between runs.
+            let workspace_key = match self.registry.canonical_key(&project_dir) {
+                Ok(k) => k,
                 Err(WorkspaceError::InvalidProjectDir { reason, .. }) => {
                     warn!(
                         card_id,
@@ -4775,11 +4777,9 @@ impl AgentSupervisor {
                     continue;
                 }
                 Err(WorkspaceError::UnknownKey(_)) => {
-                    unreachable!("get_or_create never returns UnknownKey")
+                    unreachable!("canonical_key never returns UnknownKey")
                 }
             };
-            let workspace_key = workspace_entry.workspace_key.clone();
-            drop(workspace_entry);
 
             // The ledger row's `session_id` is claude's id (post
             // session_init). Use it as the tug_session_id for the
@@ -4797,13 +4797,11 @@ impl AgentSupervisor {
             // picker against the same id still works.
             let rebound_mode = SessionMode::Resume;
 
-            // Insert the ledger entry — or, if one already exists (this
-            // function is idempotent per [F15]), release the workspace
-            // refcount we just acquired and skip.
+            // Insert the ledger entry — or skip if one already exists (this
+            // function is idempotent per [F15]). No workspace to release:
+            // `canonical_key` registered nothing.
             let mut ledger = self.ledger.lock().await;
             if ledger.contains_key(&tug_session_id) {
-                drop(ledger);
-                let _ = self.registry.release(&workspace_key);
                 continue;
             }
             let mut entry = LedgerEntry::new(

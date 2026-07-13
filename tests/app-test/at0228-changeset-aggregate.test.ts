@@ -1,27 +1,20 @@
 /**
- * at0228-changeset-aggregate.test.ts — the account-global changeset card with
- * a second (non-repo) open project, end-to-end over the aggregate
- * CHANGESET_ALL feed (0x24) and the `changeset_git_init` CONTROL verb.
+ * at0228-changeset-aggregate.test.ts — the changeset card, end-to-end, for the
+ * three behaviors that can ONLY be verified in the real browser against real
+ * dev cards + real git (everything else — snapshot partitioning, the aggregate
+ * feed, the git_init verb — is covered by Rust unit tests on real content):
  *
- * The aggregate card shows every open workspace at once. The bootstrap
- * `--source-tree` (a git repo) is always one project; this test opens a
- * SECOND workspace on a **non-repo** scratch dir by firing a real
- * `spawn_session(mode=resume)` against a fixture JSONL (the same registration
- * path production uses — `do_spawn_session` calls `WorkspaceRegistry::
- * get_or_create`). The aggregate then carries two projects:
+ *   1. **Open-dev-card filter** — the card shows EXACTLY the projects the user
+ *      has a dev card open on. The bootstrap `--source-tree` is registered but
+ *      has no dev card bound to it, so it must NOT appear.
+ *   2. **Init self-heal** — clicking "Initialize git" on a non-repo project
+ *      runs `git init`, and the section flips to a repo on the next recompute.
+ *   3. **File click** — a present file in a project opens in a Text card.
  *
- *   1. **Two project sections** — the bootstrap repo and the scratch dir both
- *      appear as collapsible project sections.
- *   2. **Non-repo Init affordance** — the scratch section shows the
- *      "Initialize git" button (it is not a git repository).
- *   3. **Init click-through** — clicking it fires `changeset_git_init`, tugcast
- *      runs `git init -b main`, fires the aggregate bump, and the section
- *      self-heals: the non-repo state (and its Init button) is gone on the
- *      next recompute.
- *
- * (The repo-project read path — owner grouping, badges, unattributed, and a
- * file click opening a Text card — is covered by at0227 on the bootstrap
- * project; this file focuses on the multi-project + non-repo + Init surface.)
+ * Two dev cards are opened via real `spawn_session(mode=resume)` (the
+ * production binding path): one on a non-repo scratch dir, one on a scratch git
+ * repo carrying a single untracked file. No synthetic ledger seeding — the file
+ * flows through the real compose + wire + render.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -34,8 +27,6 @@ import { launchTugApp } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
-
-const SID = "at0228-nonrepo-session";
 
 /** Mirror tugcode's `encodeProjectDir`: every non-`[A-Za-z0-9-]` char → `-`. */
 const encodeProjectDir = (absDir: string): string => absDir.replace(/[^A-Za-z0-9-]/g, "-");
@@ -66,7 +57,7 @@ function buildFixtureJsonl(cwd: string, sessionId: string): string {
       uuid: "00000000-0000-4000-8000-000000000d02",
       timestamp: "2026-06-17T10:00:01.000Z",
       message: {
-        id: "msg-nonrepo-1",
+        id: "msg-1",
         type: "message",
         role: "assistant",
         model: "claude-opus-4-8",
@@ -85,26 +76,60 @@ function buildFixtureJsonl(cwd: string, sessionId: string): string {
   return lines.map((e) => JSON.stringify(e)).join("\n") + "\n";
 }
 
-let projectDir = "";
-let fixtureDir = "";
+function git(dir: string, args: string[]): void {
+  const r = Bun.spawnSync(["git", "-C", dir, ...args]);
+  if (r.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${r.stderr.toString()}`);
+  }
+}
+
+const DIRTY_FILE = "at0228-dirty.txt";
+// A distinct marker written as the file's CONTENT, so the file-click assertion
+// can confirm the Text card opened on THIS file (the editor shows content).
+const DIRTY_CONTENT = "at0228-dirty-marker-9f3a";
+
+// Two scratch projects, each opened in its own dev card.
+interface Scratch {
+  cardId: string;
+  sid: string;
+  repo: boolean; // git-init'd + carries an untracked file
+  dir: string;
+  fixtureDir: string;
+}
+const NON_REPO: Scratch = { cardId: "B", sid: "at0228-b", repo: false, dir: "", fixtureDir: "" };
+const REPO: Scratch = { cardId: "C", sid: "at0228-c", repo: true, dir: "", fixtureDir: "" };
+const SCRATCH: Scratch[] = [NON_REPO, REPO];
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
-  // realpath: macOS mkdtemp returns /var/folders/…; tugcode + claude resolve
-  // /var → /private/var before encoding, so encode + spawn against the SAME
-  // resolved string or the fixture lands where neither reads it.
-  projectDir = realpathSync(mkdtempSync(join(tmpdir(), "at0228-proj-")));
-  fixtureDir = join(homedir(), ".claude", "projects", encodeProjectDir(projectDir));
-  mkdirSync(fixtureDir, { recursive: true });
-  writeFileSync(join(fixtureDir, `${SID}.jsonl`), buildFixtureJsonl(projectDir, SID));
+  for (const s of SCRATCH) {
+    // realpath: macOS mkdtemp returns /var/folders/…; tugcode + claude resolve
+    // /var → /private/var before encoding, so encode + spawn against the SAME
+    // resolved string or the fixture lands where neither reads it.
+    s.dir = realpathSync(mkdtempSync(join(tmpdir(), "at0228-proj-")));
+    if (s.repo) {
+      git(s.dir, ["init", "-q", "-b", "main"]);
+      git(s.dir, ["config", "user.email", "t@t"]);
+      git(s.dir, ["config", "user.name", "t"]);
+      writeFileSync(join(s.dir, "committed.txt"), "base\n");
+      git(s.dir, ["add", "."]);
+      git(s.dir, ["commit", "-q", "-m", "base"]);
+      // One untracked file — it flows into the card as an unattributed,
+      // clickable file row.
+      writeFileSync(join(s.dir, DIRTY_FILE), `${DIRTY_CONTENT}\n`);
+    }
+    s.fixtureDir = join(homedir(), ".claude", "projects", encodeProjectDir(s.dir));
+    mkdirSync(s.fixtureDir, { recursive: true });
+    writeFileSync(join(s.fixtureDir, `${s.sid}.jsonl`), buildFixtureJsonl(s.dir, s.sid));
+  }
 });
 
 afterAll(() => {
-  if (projectDir !== "" && existsSync(projectDir)) {
-    rmSync(projectDir, { recursive: true, force: true });
-  }
-  if (fixtureDir !== "" && existsSync(fixtureDir)) {
-    rmSync(fixtureDir, { recursive: true, force: true });
+  for (const s of SCRATCH) {
+    if (s.dir !== "" && existsSync(s.dir)) rmSync(s.dir, { recursive: true, force: true });
+    if (s.fixtureDir !== "" && existsSync(s.fixtureDir)) {
+      rmSync(s.fixtureDir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -114,133 +139,95 @@ function deckShape() {
   return {
     cards: [
       { id: "A", componentId: "changeset", title: "Changeset", closable: true },
-      { id: "B", componentId: "dev", title: "Dev", closable: true },
+      { id: "B", componentId: "dev", title: "Dev B", closable: true },
+      { id: "C", componentId: "dev", title: "Dev C", closable: true },
     ],
     panes: [
-      {
-        id: "p1",
-        position: { x: 40, y: 40 },
-        size: { width: 720, height: 560 },
-        cardIds: ["A"],
-        activeCardId: "A",
-        title: "",
-        acceptsFamilies: ["maker"],
-      },
-      {
-        id: "p2",
-        position: { x: 800, y: 40 },
-        size: { width: 720, height: 560 },
-        cardIds: ["B"],
-        activeCardId: "B",
-        title: "",
-        acceptsFamilies: ["maker"],
-      },
+      { id: "p1", position: { x: 40, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
+      { id: "p2", position: { x: 740, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
+      { id: "p3", position: { x: 740, y: 620 }, size: { width: 680, height: 560 }, cardIds: ["C"], activeCardId: "C", title: "", acceptsFamilies: ["maker"] },
     ],
     activePaneId: "p1",
     hasFocus: true,
   };
 }
 
-/** The project section whose display name === `name`, or null. Returns a small
- *  descriptor the caller can assert on. */
-function projectSectionProbe(name: string): string {
+const PROJECT_NAMES_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-project"] .changeset-project-name')).map(function(n){ return n.textContent.trim(); })`;
+
+function nonRepoProbe(name: string): string {
   return `(function(){
-    var sections = Array.from(document.querySelectorAll(${JSON.stringify(`${CARD} [data-testid="changeset-project"]`)}));
+    var sections = Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-project"]'));
     var match = sections.find(function(s){
       var n = s.querySelector(".changeset-project-name");
       return n !== null && n.textContent.trim() === ${JSON.stringify(name)};
     });
-    if (!match) return { present: false, nonRepo: false, count: sections.length };
-    return {
-      present: true,
-      nonRepo: match.querySelector('[data-testid="changeset-non-repo"]') !== null,
-      count: sections.length,
-    };
+    if (!match) return { present: false, nonRepo: false };
+    return { present: true, nonRepo: match.querySelector('[data-testid="changeset-non-repo"]') !== null };
   })()`;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0228: aggregate changeset — two projects + non-repo Init", () => {
+describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, Init, file click", () => {
   test(
-    "a second non-repo workspace shows an Init affordance that self-heals on click",
+    "shows exactly the open dev-card projects; Init self-heals; a file opens in a Text card",
     async () => {
       const app = await launchTugApp({ testName: "at0228-changeset-aggregate" });
-      const scratchName = basename(projectDir);
+      const nonRepoName = basename(NON_REPO.dir);
+      const repoName = basename(REPO.dir);
       try {
-        await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        for (const s of SCRATCH) {
+          await app.spawnSessionResume(s.cardId, { tugSessionId: s.sid, projectDir: s.dir });
+        }
 
-        // The bootstrap project (the source-tree repo) is always present.
+        // (1) Filter: the card settles on EXACTLY the two open-dev-card
+        // projects. The bootstrap source-tree is registered but unbound to any
+        // dev card, so it must be absent.
         await app.waitForCondition<boolean>(
           `(function(){
-            return document.querySelectorAll(${JSON.stringify(`${CARD} [data-testid="changeset-project"]`)}).length >= 1;
+            var names = ${PROJECT_NAMES_JS};
+            return names.length === 2 &&
+              names.indexOf(${JSON.stringify(nonRepoName)}) !== -1 &&
+              names.indexOf(${JSON.stringify(repoName)}) !== -1;
           })()`,
-          { timeoutMs: 20_000 },
-        );
-
-        // Open a SECOND workspace on the non-repo scratch dir via a real
-        // resume — `do_spawn_session` registers it with the WorkspaceRegistry,
-        // so the aggregate picks it up.
-        await app.spawnSessionResume("B", { tugSessionId: SID, projectDir });
-
-        // The scratch project appears as a non-repo section (Init affordance),
-        // alongside the bootstrap repo — two project sections total.
-        await app.waitForCondition<boolean>(
-          `(function(){ var p = ${projectSectionProbe(scratchName)}; return p.present && p.nonRepo && p.count >= 2; })()`,
           { timeoutMs: 30_000 },
         );
+        const names = await app.evalJS<string[]>(PROJECT_NAMES_JS);
+        expect(names.sort()).toEqual([nonRepoName, repoName].sort());
 
-        const before = await app.evalJS<{ present: boolean; nonRepo: boolean; count: number }>(
-          projectSectionProbe(scratchName),
+        // (2) Init self-heal: click "Initialize git" on the non-repo project →
+        // the section flips to a repo on the next recompute.
+        expect(
+          (await app.evalJS<{ nonRepo: boolean }>(nonRepoProbe(nonRepoName))).nonRepo,
+          "the non-repo project shows the Init affordance",
+        ).toBe(true);
+        await app.click(
+          `${CARD} [data-testid="changeset-project"][data-project-dir="${NON_REPO.dir}"] [data-testid="changeset-git-init"]`,
         );
-        expect(before.present, "scratch project section present").toBe(true);
-        expect(before.nonRepo, "scratch project shows the non-repo Init state").toBe(true);
-        expect(before.count, "bootstrap + scratch = at least two projects").toBeGreaterThanOrEqual(
-          2,
+        await app.waitForCondition<boolean>(
+          `(function(){ var p = ${nonRepoProbe(nonRepoName)}; return p.present && !p.nonRepo; })()`,
+          { timeoutMs: 20_000 },
         );
+        expect(existsSync(join(NON_REPO.dir, ".git")), "git init created a .git dir").toBe(true);
 
-        // TOC: one thin entry per project, matching the section count.
-        const tocCount = await app.evalJS<number>(
-          `document.querySelectorAll('${CARD} [data-testid="changeset-toc-entry"]').length`,
+        // (3) File click: the repo project's untracked file renders as a link;
+        // clicking it opens that file in a Text card.
+        const FILE_LINK = `${CARD} [data-testid="changeset-project"][data-project-dir="${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${FILE_LINK}') !== null`,
+          { timeoutMs: 20_000 },
         );
-        expect(tocCount, "one TOC entry per project section").toBe(before.count);
-
-        const openCountJs = `document.querySelectorAll('${CARD} [data-testid="changeset-project"][data-state="open"]').length`;
-
-        // Collapse all → no project accordion open.
-        await app.click(`${CARD} [data-testid="changeset-collapse-all"]`);
-        await app.waitForCondition<boolean>(`${openCountJs} === 0`, { timeoutMs: 8000 });
-
-        // Click the scratch project's TOC entry → exactly its (non-repo)
-        // accordion opens.
-        await app.click(`${CARD} [data-testid="changeset-toc-entry"][title="${projectDir}"]`);
+        await app.click(FILE_LINK);
+        // A Text card opens showing THIS file's content (the marker).
         await app.waitForCondition<boolean>(
           `(function(){
-            var open = Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-project"][data-state="open"]'));
-            return open.length === 1 &&
-              open[0].querySelector('[data-testid="changeset-non-repo"]') !== null;
+            var eds = document.querySelectorAll('[data-slot="tug-text-card-editor"] .cm-content');
+            for (var i = 0; i < eds.length; i++) {
+              if ((eds[i].textContent || "").indexOf(${JSON.stringify(DIRTY_CONTENT)}) !== -1) return true;
+            }
+            return false;
           })()`,
           { timeoutMs: 8000 },
         );
-
-        // Expand all → every project accordion open.
-        await app.click(`${CARD} [data-testid="changeset-expand-all"]`);
-        await app.waitForCondition<boolean>(`${openCountJs} === ${before.count}`, {
-          timeoutMs: 8000,
-        });
-
-        // Click "Initialize git" → the verb runs `git init -b main`, fires the
-        // aggregate bump, and the section self-heals: no longer non-repo.
-        await app.click(`${CARD} [data-testid="changeset-git-init"]`);
-        await app.waitForCondition<boolean>(
-          `(function(){ var p = ${projectSectionProbe(scratchName)}; return p.present && !p.nonRepo; })()`,
-          { timeoutMs: 20_000 },
-        );
-
-        const after = await app.evalJS<{ present: boolean; nonRepo: boolean }>(
-          projectSectionProbe(scratchName),
-        );
-        expect(after.present, "scratch project still present after init").toBe(true);
-        expect(after.nonRepo, "scratch project is no longer non-repo after git init").toBe(false);
-        expect(existsSync(join(projectDir, ".git")), "git init created a .git dir").toBe(true);
       } finally {
         await app.close();
       }

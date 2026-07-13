@@ -52,59 +52,37 @@
   flex: 1 1 auto;
 }
 
-/* ---- Table of contents (one thin row per project) ---- */
+/* ---- Table of contents — a TugListView of the open projects ----
+   Sized to fit the project count up to 6 rows (`--tugx-list-row-min-height`
+   pins the row height so the 6-row cap is exact); the list scrolls only
+   beyond that. Fewer than 6 projects ⇒ the list is exactly that tall, no
+   empty space, no scrollbar. */
 
-.changeset-toc {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 40%;
-  overflow-y: auto;
+.changeset-toc-list {
+  --tugx-list-row-min-height: 2.25rem;
+  flex: 0 0 auto;
+  max-height: calc(6 * 2.25rem);
 }
 
-.changeset-toc-entry {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.changeset-toc-entry:hover {
-  background: var(--tug7-surface-global-primary-normal-raised-rest);
-}
-
-.changeset-toc-caret {
+/* Leading folder/git glyph — legible, not a microscopic bullet. */
+.changeset-toc-icon {
   flex-shrink: 0;
-  width: 0.75em;
-  font-size: 0.625rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  transition: transform 0.12s ease;
-}
-
-.changeset-toc-caret-open {
-  transform: rotate(90deg);
-}
-
-.changeset-toc-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.changeset-toc-entry-open .changeset-toc-name {
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
-.changeset-toc-detail {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 0.6875rem;
+.changeset-toc-icon-muted {
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Trailing status hint. Muted for clean / not-a-repo; caution when dirty. */
+.changeset-toc-hint {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-toc-hint-changes {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
 /* ---- Scrollable accordion body ---- */
