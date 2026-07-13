@@ -430,6 +430,34 @@ retires.
 reserved (never reuse); `GIT_DIFF`/`GIT_DIFF_QUERY` (0x21/0x22) survive — the dev card's
 `/diff` and the Changeset card both use them after Step 13.
 
+#### [P17] Account-global aggregate feed replaces the per-workspace changeset feed (DECIDED) {#p17-aggregate-feed}
+
+**Decision:** One **process-level** feed, `FeedId::CHANGESET_ALL` (propose `0x24` — confirm
+free on both sides at implementation), aggregates **every open project** into a single
+`WorkspacesChangesetSnapshot` frame (Spec S06) delivered to every deck the way `USAGE`/`PULSE`
+frames are. The project set is exactly the current **`WorkspaceRegistry` entries** — one per
+project with a live dev session, refcounted per card, bootstrap `--source-tree` always
+present. A project appears while a dev card is open on it and drops when its last card
+closes; there is **no linger-while-dirty and no ledger crawl**. The per-workspace
+`ChangesetFeed` (0x23) is **removed** (#step-12d); `compose_snapshot` survives as the
+per-project building block; **0x23 stays reserved, never reused**. Non-repo project dirs are
+no longer skipped: they surface as `no_repo: true` elements with an "Initialize git"
+affordance (Spec S07).
+
+**Rationale:** Locked upstream as decisions **D1** (one feed, replace) and **D2** (project
+set = registered workspaces) in `roadmap/workspace-tracking-plan.md` — **do not re-open**.
+The M02 card proved structurally bootstrap-only (#aggregate-delivery): per-workspace frames
+publish to per-workspace watch receivers that `main.rs` never registers for session
+workspaces. Aggregation must be **server-side** because tugdeck's `FeedStore` holds one
+value per feed id — a second project's frame on the same id would overwrite the first.
+
+**Implications:** Supersedes [P09]'s workspace-scoped *delivery* (its event-driven-bump +
+poll composition survives per project) and resolves [Q01]'s deferral in the aggregate
+direction. `WorkspaceRegistry` gains an enumeration accessor (`project_dirs()`); the bump
+path gains a process-global `Notify` alongside the per-workspace one until #step-12d removes
+the latter. Cost is ~2 git subprocesses per open project per recompute, gated per dir by the
+subprocess-free `is_within_git_worktree` — negligible at "handful of open cards" scale.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -506,6 +534,38 @@ re-streams of subagent children arrive as LIVE frames (not `in_replay`). This is
 needs no special handling — re-streamed exact events upsert into existing rows, and a
 re-streamed Bash child re-opens a bracket whose close computes an empty delta (the disk
 hasn't changed), recording nothing. Do not add a dedup layer for this case.
+
+#### Aggregate delivery — why the M02 feed was bootstrap-only, and the CHANGESET_ALL blueprint {#aggregate-delivery}
+
+The M02 per-workspace CHANGESET feed computes correct snapshots for **every** workspace, but
+its frames reach clients only for the bootstrap `--source-tree` workspace:
+
+- Each `WorkspaceEntry`'s `ChangesetFeed` publishes to a **per-workspace**
+  `watch::Receiver`, and `main.rs`'s `add_snapshot_watches` registers only the **bootstrap**
+  entry's receiver into the router.
+- Per-session `WorkspaceEntry`s created in `AgentSupervisor` are **dropped** right after
+  registration (only their `workspace_key` is retained), so their changeset watch receivers
+  dangle — frames computed, never routed.
+- `FILETREE` escapes this because it publishes to a **shared broadcast channel** every client
+  subscribes to (`ft_response_tx` created in `main.rs`, handed into each `FileTreeFeed` in
+  `workspace_registry.rs`, registered once via `add_broadcast_senders`). CHANGESET — and the
+  retired GIT feed before it — never adopted that; nobody noticed because the bootstrap repo
+  is always open.
+
+`CHANGESET_ALL` sidesteps the gap by being **process-level from birth**. Two proven delivery
+templates exist in `main.rs`; either works — the invariant is **one process-wide
+registration, never per-workspace**:
+
+1. **Broadcast** (the USAGE pattern): a `broadcast::channel` created in `main.rs`, sender
+   registered via `add_broadcast_senders`, the feed task `send`s framed snapshots.
+2. **Process-level snapshot watch** (the `spawn_stats_feeds` / `defaults_feed` pattern): the
+   feed yields a single `watch::Receiver` pushed into `add_snapshot_watches` once at startup
+   (`spawn_snapshot_feed` in `tugcast-core/src/feed.rs` is the runner).
+
+Client-side, aggregation must stay **server-side**: tugdeck's `FeedStore` keeps one value per
+feed id, so per-project frames on one id would clobber each other; the account-global client
+precedents are `UsageStore` (`new FeedStore(conn, [FeedId.USAGE])`, no workspace filter) and
+`PulseStore` — **not** the filtered `useCardData` → `useCardWorkspaceKey` path.
 
 ---
 
@@ -588,6 +648,46 @@ ambiguous rows with the flag set. Exit 2 when the session id is missing/unknown.
 [--json]` · `tugdash show <name> [--json]`. Behavior identical to today's `tugutil dash`
 except: new worktree home ([P13]), join engine v2 ([P14]), auto-commit failure is fatal.
 
+**Spec S06: `WorkspacesChangesetSnapshot` wire shape (CHANGESET_ALL feed, ~0x24)** {#s06-workspaces-changeset-snapshot}
+
+```jsonc
+{
+  "projects": [
+    {
+      "project_dir":   "/abs/checkout/root",  // absolute; also the clickable-link base
+      "display_name":  "tugtool",             // basename of project_dir
+      "workspace_key": "…",
+      "no_repo":       false,                 // true → "Not a git repository" + Init affordance
+      // when no_repo is false, the ChangesetSnapshot payload (Spec S02) follows:
+      "branch": "main", "ahead": 0, "behind": 0,
+      "head_sha": "…", "head_message": "…",
+      "changesets":   [ /* ChangesetEntry, Spec S02 — reused, not redefined */ ],
+      "unattributed": [ /* UnattributedFile, Spec S02 */ ]
+    }
+  ]
+}
+```
+
+`no_repo: true` elements carry empty `changesets`/`unattributed` and empty-string/zero git
+header fields. Rust structs `WorkspacesChangesetSnapshot` / `ProjectChangeset` in
+`tugcast-core/src/types.rs` reuse the Step-8 `ChangesetEntry`/`ChangesetFile`/
+`UnattributedFile` types; TS mirror in `tugdeck/src/lib/changeset-types.ts`; golden fixture
+guarded on both sides per [P10]. Whether the S02 fields are flattened into `ProjectChangeset`
+or embedded as a nested object is decided at #step-12a and pinned by the fixture.
+
+**Spec S07: `changeset_git_init` CONTROL verb** {#s07-changeset-git-init}
+
+Handled in `AgentSupervisor::handle_control` alongside the Spec S03 verbs:
+
+- `changeset_git_init {project_dir}` → `changeset_git_init_ok {}` |
+  `changeset_git_init_err {detail}`. Validates that `project_dir` matches a **current
+  `WorkspaceRegistry` entry** (never init an arbitrary path off the wire) and is **not**
+  already inside a git worktree (`is_within_git_worktree`), then runs `git init -b main` in
+  `project_dir`; `err` carries stderr detail. On success it fires the global aggregate bump
+  so the card's section **self-heals** to a clean/empty changeset on the next recompute —
+  no client-side state transition needed. Ships in M02A per decision D4 in
+  `roadmap/workspace-tracking-plan.md` ([P17]).
+
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
@@ -598,6 +698,9 @@ except: new worktree home ([P13]), join engine v2 ([P14]), auto-commit failure i
 | Commit/summarize in-flight + result | local-data (external, async verb round-trip) | small module store + `useSyncExternalStore` (CONTROL request/response, like other verb stores) | [L02] |
 | Diff sheet visibility/content | local-data (external) | existing `git-diff-store.ts` pattern (extended for pathspec) | [L02] |
 | Hover/active row appearance | appearance | CSS only | [L06] |
+| WorkspacesChangesetSnapshot (aggregate feed data, M02A) | local-data (external) | app-level singleton store (`FeedStore` on CHANGESET_ALL, the UsageStore pattern, no workspace filter) + context hook via `useSyncExternalStore` | [L02] |
+| Per-project section expand/collapse (M02A) | local-data (ephemeral UI) | `useState` in the card component | — |
+| git-init in-flight/result (M02A) | local-data (external, async verb round-trip) | verb round-trip store + `useSyncExternalStore` | [L02] |
 
 No new persistent UI state; nothing touches localStorage. Read-only file lists render no
 tabindex (mousedown-focus default gotcha).
@@ -646,6 +749,9 @@ tabindex (mousedown-focus default gotcha).
 | `tugdeck/src/lib/changeset-types.ts` | TS mirror of the wire types |
 | `tugdeck/src/lib/changeset-verb-store.ts` | commit/summarize round-trip store |
 | `tugdeck/src/__tests__/fixtures/changeset-snapshot.golden.json` | Golden contract fixture ([P10]), referenced by both the Rust and bun contract tests |
+| `tugrust/crates/tugcast/src/feeds/changeset_all.rs` | M02A aggregate `CHANGESET_ALL` feed: enumerates `WorkspaceRegistry` entries, composes per-project snapshots via `compose_snapshot`, emits `WorkspacesChangesetSnapshot` ([P17]) |
+| `tugdeck/src/lib/changeset-all-store.ts` | M02A app-level singleton store for the aggregate snapshot (UsageStore pattern) + context/hook |
+| `tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json` | M02A golden contract fixture for the aggregate wire shape (Spec S06) |
 
 #### Symbols to add / modify {#symbols}
 
@@ -661,6 +767,13 @@ tabindex (mousedown-focus default gotcha).
 | pathspec on diff query | code | `tugcast/src/main.rs` GIT_DIFF adapter + `feeds/git.rs` `build_git_diff_snapshot` + `tugdeck/src/lib/git-diff-store.ts` | Step 13 |
 | `registerGitCard` removal, `newGitCard` → `newChangesetCard` | code | `tugdeck/src/main.tsx`, `tugdeck/src/components/tugways/cards/git-card.tsx` (deleted), `tugapp/Sources/AppDelegate.swift` | [P16] |
 | skills cutover | docs | `tugplug/skills/{commit,implement,dash}/SKILL.md`, `tugplug/CLAUDE.md` | Steps 6, 20 |
+| `FeedId::CHANGESET_ALL` (~0x24) | const | `tugcast-core/src/protocol.rs` + `tugdeck/src/protocol.ts` | [P17]; confirm the value is free at #step-12a; 0x23 stays reserved |
+| `WorkspacesChangesetSnapshot`, `ProjectChangeset` | structs | `tugcast-core/src/types.rs` (+ TS mirror `tugdeck/src/lib/changeset-types.ts`) | Spec S06; reuse the Step-8 entry/file types |
+| `WorkspaceRegistry::project_dirs()` (or `entries()`) | fn | `tugcast/src/feeds/workspace_registry.rs` | enumerate open projects for the aggregate feed (#step-12b) |
+| global changeset `Notify` + `ChangesetBumper` global ping | code | `tugcast/src/main.rs` + `tugcast/src/feeds/changeset.rs` | process-global bump; sole bump path after #step-12d |
+| `changeset_git_init` | verb | `tugcast/src/feeds/agent_supervisor.rs` `handle_control` | Spec S07 |
+| per-workspace `ChangesetFeed` retirement | code | `workspace_registry.rs` (`WorkspaceEntry::new`) + `main.rs` (`add_snapshot_watches`) | [P17]/#step-12d; `compose_snapshot` stays |
+| changeset card rewrite (account-global) | code | `tugdeck/src/components/tugways/cards/changeset-card.tsx` + `tugdeck/src/main.tsx` | #step-12c; per-project sections over the M02 internals |
 
 ---
 
@@ -721,6 +834,12 @@ tabindex (mousedown-focus default gotcha).
 | #step-10 | Changeset card (read-only) | done | bb712bf4d |
 | #step-11 | Git card + GitFeed retirement | done | 60eadf0a7 |
 | #step-12 | M02 integration checkpoint | done | (verification only) |
+| #step-12a | Aggregate wire types + golden fixture | pending | — |
+| #step-12b | Aggregate CHANGESET_ALL feed | pending | — |
+| #step-12c | Account-global changeset card | pending | — |
+| #step-12d | Retire the per-workspace feed path | pending | — |
+| #step-12e | changeset_git_init verb + Init button | pending | — |
+| #step-12f | M02A integration checkpoint | pending | — |
 | #step-13 | Pathspec diff query | pending | — |
 | #step-14 | changeset_commit verb + card commit flow | pending | — |
 | #step-15 | Scribe sidecar + summarize verb + card UI | pending | — |
@@ -734,6 +853,7 @@ tabindex (mousedown-focus default gotcha).
 
 **Milestone M01: Attribution engine** {#m01-attribution} — steps 1–7.
 **Milestone M02: Changeset feed + read-only card** {#m02-card} — steps 8–12.
+**Milestone M02A: All-projects aggregate changeset** {#m02a-aggregate} — steps 12a–12f.
 **Milestone M03: Card actions** {#m03-actions} — steps 13–16.
 **Milestone M04: tugdash** {#m04-tugdash} — steps 17–22.
 
@@ -1121,6 +1241,230 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 
 ---
 
+#### Step 12a: Aggregate wire types + golden fixture {#step-12a}
+
+**Depends on:** #step-8
+
+**Commit:** `feat(tugcast-core): WorkspacesChangesetSnapshot aggregate wire types with golden fixture`
+
+**References:** [P10] Wire types, [P17] Aggregate feed, Spec S06, Milestone M02A
+
+**Artifacts:**
+- `WorkspacesChangesetSnapshot` / `ProjectChangeset` in
+  `tugrust/crates/tugcast-core/src/types.rs` (serde snake_case, beside the Step-8
+  `ChangesetSnapshot` types). `ProjectChangeset` carries
+  `project_dir`/`display_name`/`workspace_key`/`no_repo` plus the Spec S02 payload — **reuse**
+  `ChangesetEntry`/`ChangesetFile`/`UnattributedFile`, never duplicate them.
+- TS mirror + type guards in `tugdeck/src/lib/changeset-types.ts` beside the Step-8 mirrors.
+- Golden fixture `tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json`
+  containing at least two projects — one repo project with session + dash entries and
+  unattributed files, one `no_repo: true` project — deserialized by a Rust test (beside the
+  Step-8 fixture test) and validated by a bun test
+  (`tugdeck/src/__tests__/changeset-types.test.ts`).
+
+**Tasks:**
+- [ ] `FeedId::CHANGESET_ALL` in `tugcast-core/src/protocol.rs` and `tugdeck/src/protocol.ts`
+      (name `"changeset_all"`); propose `0x24` — confirm the value is free on **both** sides
+      before claiming it.
+- [ ] Decide flatten-vs-embed for the S02 fields inside `ProjectChangeset` and mirror the
+      choice exactly in TS — the golden fixture pins whichever shape ships.
+
+**Tests:**
+- [ ] Rust round-trip serde test over the fixture; bun fixture-validation test over the same
+      file (drift fails either side, per [P10]).
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast-core`
+- [ ] `cd tugdeck && bun test changeset && bunx tsc --noEmit`
+
+---
+
+#### Step 12b: Aggregate CHANGESET_ALL feed {#step-12b}
+
+**Depends on:** #step-12a, #step-9
+
+**Commit:** `feat(tugcast): process-level CHANGESET_ALL feed aggregating all open projects`
+
+**References:** [P17] Aggregate feed, Spec S06, Milestone M02A, (#aggregate-delivery,
+#snapshot-composition)
+
+**Artifacts:**
+- `tugrust/crates/tugcast/src/feeds/changeset_all.rs`: one **process-level** feed holding
+  `Arc<WorkspaceRegistry>` + `Arc<SessionLedger>` (main.rs already owns the ledger Arc). On
+  recompute: enumerate the registry's current entries via a new
+  `WorkspaceRegistry::project_dirs()` (or `entries()`) accessor over its `inner` map
+  (`find_entry_by_path` is the existing sibling); for each `project_dir`, gate with the
+  subprocess-free `is_within_git_worktree` — a repo dir goes through the existing
+  `compose_snapshot` (`feeds/changeset.rs`), a non-repo dir yields a `no_repo: true`
+  `ProjectChangeset` with empty payload; emit **one** `WorkspacesChangesetSnapshot` frame,
+  diff-suppressed like the other snapshot feeds.
+- **Process-level delivery** per #aggregate-delivery: register exactly one receiver/sender in
+  `main.rs` startup (the USAGE broadcast pattern or the `spawn_stats_feeds`/`defaults_feed`
+  single-watch pattern — pick whichever fits, the invariant is one process-wide
+  registration, **never** the per-workspace `add_snapshot_watches` path that stranded the
+  M02 frames).
+- **Global bump:** a process-global `Arc<tokio::sync::Notify>` created in `main.rs`, handed
+  to the feed and to `ChangesetBumper` (`feeds/changeset.rs`) — `bump()` pings it **in
+  addition to** the per-workspace `Notify` (removed later at #step-12d). The feed
+  `select!`s on { global notify, poll interval (backstop for hand edits), cancel }.
+
+**Tasks:**
+- [ ] `display_name` = basename of `project_dir`.
+- [ ] Bumps coalesce (Notify semantics) so a burst of file events yields one recompute.
+
+**Tests:**
+- [ ] Integration (two temp dirs: one git repo with attributed dirt via temp ledger rows, one
+      non-repo dir): the snapshot carries two `projects` elements with correct `no_repo`
+      flags and correct owner grouping in the repo element; a global bump recomputes without
+      waiting for the poll.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+
+---
+
+#### Step 12c: Account-global changeset card {#step-12c}
+
+**Depends on:** #step-12a, #step-12b
+
+**Commit:** `feat(tugdeck): account-global changeset card — every open project in one view`
+
+**References:** [P17] Aggregate feed, Spec S06, Milestone M02A, (#state-zone-mapping,
+#aggregate-delivery)
+
+**Artifacts:**
+- `tugdeck/src/lib/changeset-all-store.ts`: app-level singleton store on the **UsageStore
+  pattern** — `new FeedStore(conn, [FeedId.CHANGESET_ALL])` with **no workspace filter** —
+  plus a context/hook exposed via `useSyncExternalStore` (the `useUsage`/`usePulse` idiom).
+  Must **NOT** go through `useCardData` → `useCardWorkspaceKey`: `FeedStore` holds one value
+  per feed id, and the aggregate frame is account-global by construction.
+- `tugdeck/src/components/tugways/cards/changeset-card.tsx` rewritten account-global: one
+  collapsible section per project (display name + branch/ahead-behind + HEAD subject
+  header), each containing the existing M02 internals — owner sections, file rows,
+  status glyphs, ambiguous/shared badges, live dots, `FilePathLink` clickable links — with
+  each project's own `project_dir` as the absolute-path link base (replacing the M02 card's
+  single `snapshot.workspace_key` base). Deleted files stay inert.
+- Non-repo section state: "Not a git repository" + an **"Initialize git"** button, rendered
+  but inert until #step-12e wires the verb. Empty states: "No open projects" overall;
+  per-project clean-tree state as in M02.
+- Registration from `tugdeck/src/main.tsx`: the card registration's `defaultFeedIds` becomes
+  `[FeedId.CHANGESET_ALL]`; the store initializes at app mount beside `UsageStore`.
+
+**Tasks:**
+- [ ] Section expand/collapse stays ephemeral UI state (the M02 controlled-`TugAccordion` /
+      `useResponderForm` approach carries over).
+- [ ] Compose Tug* components; read-only rows keep no tabindex; the Init button reserves its
+      busy-state width (width-stabilize).
+
+**Tests:**
+- [ ] App-test (extend `tests/app-test/at0227-changeset-card.test.ts` or a new at02xx):
+      seeded scratch repo + ledger rows → the aggregate card shows that project's section
+      with grouped owners; clicking a present file opens a Text card. (Two-project +
+      non-repo coverage is #step-12f; `just app-test-build` first — Rust changed.)
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test`
+
+---
+
+#### Step 12d: Retire the per-workspace feed path {#step-12d}
+
+**Depends on:** #step-12c
+
+**Commit:** `feat(tugcast): retire the per-workspace changeset feed path`
+
+**References:** [P17] Aggregate feed (supersedes [P09] delivery), Milestone M02A,
+(#aggregate-delivery)
+
+**Artifacts:**
+- Remove the per-workspace `ChangesetFeed` construction from `WorkspaceEntry::new`
+  (`tugcast/src/feeds/workspace_registry.rs`), the changeset watch receiver from
+  `add_snapshot_watches` in `main.rs`, and the per-workspace `Notify` resolution inside
+  `ChangesetBumper` (`feeds/changeset.rs`) — the #step-12b global bump becomes the only
+  bump path.
+- **Keep** `compose_snapshot` and its tests (`feeds/changeset.rs`) — it is the aggregate's
+  per-project building block.
+- `FeedId::CHANGESET` (0x23) stops being registered; the constant stays, commented reserved
+  (the same idiom as GIT 0x20 at #step-11). Never reuse the value.
+
+**Tasks:**
+- [ ] Sweep tugdeck for `FeedId.CHANGESET` consumers — after #step-12c the card no longer
+      subscribes; remove any leftover references.
+
+**Tests:**
+- [ ] Existing `compose_snapshot` tests keep passing; no test references the removed feed
+      wiring.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` ; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+
+---
+
+#### Step 12e: changeset_git_init verb + Init button {#step-12e}
+
+**Depends on:** #step-12c
+
+**Commit:** `feat(tugcast,tugdeck): initialize git from the changeset card`
+
+**References:** [P17] Aggregate feed, Spec S07, Milestone M02A, (#state-zone-mapping)
+
+**Artifacts:**
+- `changeset_git_init` in `AgentSupervisor::handle_control` per Spec S07: validates
+  `project_dir` matches a current `WorkspaceRegistry` entry and is not already inside a git
+  worktree (`is_within_git_worktree`), runs `git init -b main` in `project_dir`, replies
+  ok / err-with-stderr-detail; fires the global aggregate bump on success so the section
+  self-heals on the next recompute.
+- Card wiring: the Init button (inert since #step-12c) dispatches the verb through a small
+  round-trip store (`useSyncExternalStore`; if `changeset-verb-store.ts` — planned at
+  #step-14 — does not exist yet, create it here carrying just this verb and let Step 14
+  extend it), shows in-flight state on the width-stabilized button, surfaces errors via
+  `TugAlert`. No client-side section flip: the recompute is the state transition.
+
+**Tasks:**
+- [ ] tugcode inbound allowlist if the verb rides a new client→tugcode message type
+      (`tugcode/src/types.ts`: union + guard + `isInboundMessage`); if it rides the existing
+      CONTROL request path like `changeset_commit` will, no tugcode change.
+
+**Tests:**
+- [ ] Rust integration: the verb inits a temp non-repo dir (branch `main`); refuses an
+      already-repo dir and a dir that is not a registry entry; the error path returns
+      stderr detail.
+- [ ] App-test click-through coverage folds into #step-12f.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast` ; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+
+---
+
+#### Step 12f: M02A integration checkpoint {#step-12f}
+
+**Depends on:** #step-12c, #step-12d, #step-12e
+
+**Commit:** `N/A (verification only)`
+
+**References:** Milestone M02A, (#success-criteria)
+
+**Tasks:**
+- [ ] App-test (after `just app-test-build` — Rust and Swift-adjacent artifacts changed):
+      open two dev cards on two scratch dirs — one `git init`ed with seeded dirt + ledger
+      rows, one non-repo. The aggregate card shows both project sections; the non-repo
+      section shows the Init affordance, and clicking it flips the section to a repo state
+      on the next recompute; clicking a present file opens a Text card.
+- [ ] Live: with two projects open, a Write in either project lands in its section within
+      ~1s (global bump); closing a project's last dev card drops its section; the bootstrap
+      project is always present.
+
+**Tests:**
+- [ ] Full-suite pass.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run`
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test`
+
+---
+
 #### Step 13: Pathspec diff query {#step-13}
 
 **Depends on:** #step-10
@@ -1446,7 +1790,7 @@ tears down atomically.
       `bunx vite build`, `just app-test`.
 
 **Acceptance tests:**
-- [ ] Step 7, 12, 16, 22 integration checkpoints.
+- [ ] Step 7, 12, 12f, 16, 22 integration checkpoints.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -1461,5 +1805,6 @@ tears down atomically.
 |------------|--------------|
 | M01 attribution | #step-7 |
 | M02 card read path | #step-12 |
+| M02A aggregate card | #step-12f |
 | M03 card actions | #step-16 |
 | M04 tugdash + exit | #step-22 |
