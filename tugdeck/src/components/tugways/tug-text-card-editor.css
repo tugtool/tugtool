@@ -146,3 +146,14 @@ body {
     animation: none;
   }
 }
+
+/* Anchor links — ⌘-click intra-document navigation (see
+ * `tug-text-card-editor/anchor-links.ts`). A resolvable reference carries
+ * `.cm-anchor-link`; the pointer + underline affordance appears only while
+ * the platform accelerator is held (the plugin toggles `.cm-anchor-mod` on
+ * the `.cm-editor`), so a plain click still reads as ordinary editing. */
+.tug-text-card-editor .cm-anchor-mod .cm-anchor-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+}

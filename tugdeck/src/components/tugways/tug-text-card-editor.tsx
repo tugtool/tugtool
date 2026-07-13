@@ -128,9 +128,10 @@ import {
 } from "@/lib/text-card-settings";
 import type { EditorStats } from "@/lib/editor-stats-store";
 import { countWords, wordCountDelta } from "@/lib/word-count";
-import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
+import { languageForExtension, tugTextCardHighlightStyle } from "@/lib/language-registry";
 
 import { mdListHangingIndent } from "./tug-text-card-editor/list-hanging-indent";
+import { anchorLinkExtension } from "./tug-text-card-editor/anchor-links";
 import { useOptionalResponder } from "./use-responder";
 import { useCardId } from "./use-card-state-preservation";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -475,6 +476,9 @@ export const TugTextCardEditor = React.forwardRef<
   useLayoutEffect(() => {
     onSaveCommandRef.current = onSaveCommand;
   }, [onSaveCommand]);
+  // ⌘-click anchor navigation jumps through this ref so the mount-time
+  // extension always calls the latest `revealLine` closure [L07].
+  const anchorNavigateRef = useRef<(line: number) => void>(() => {});
   // Doc-derived counts, recomputed only on document change; caret is
   // recomputed on every selection change from the live state.
   const docStatsRef = useRef<DocStats>({ lines: 1, words: 0, chars: 0 });
@@ -665,6 +669,10 @@ export const TugTextCardEditor = React.forwardRef<
         activeLineCompartment.of(activeLineFor(s)),
         languageCompartment.of([]),
         revealFlashField,
+        // ⌘-click intra-document link/anchor navigation (plain click still
+        // edits). Jumps via the live `revealLine` through a ref so the
+        // mount-time closure never goes stale.
+        anchorLinkExtension((line) => anchorNavigateRef.current(line)),
         search({ top: true }),
         // Every user edit arms the autosave debounce. Store-driven
         // replacements (external-change reverts) carry the
@@ -810,7 +818,7 @@ export const TugTextCardEditor = React.forwardRef<
       if (live === null) return;
       live.dispatch({
         effects: languageCompartment.reconfigure(
-          language !== null ? [language, tugHighlightStyle] : [],
+          language !== null ? [language, tugTextCardHighlightStyle] : [],
         ),
       });
     });
@@ -1007,6 +1015,7 @@ export const TugTextCardEditor = React.forwardRef<
     },
     [],
   );
+  anchorNavigateRef.current = revealLineFn;
 
   useImperativeHandle(
     ref,

@@ -53,7 +53,9 @@ import { StyleModule } from "style-mod";
  * punctuation, constants, tags, and attributes each land in their own
  * slot — so diffs and read/write snippets read as richly as the editor.
  */
-export const tugHighlightStyleInner = HighlightStyle.define([
+// Every rule but the link/url pair, which the two variants below style
+// differently (default underline vs none) while sharing this base.
+const tugHighlightSpecsBase = [
   { tag: [tags.keyword, tags.modifier, tags.operatorKeyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.self], color: "var(--tug-syntax-keyword)" },
   { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: "var(--tug-syntax-string)" },
   { tag: tags.escape, color: "var(--tug-syntax-string-expression)" },
@@ -73,11 +75,31 @@ export const tugHighlightStyleInner = HighlightStyle.define([
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "bold" },
   { tag: tags.monospace, color: "var(--tug-syntax-code)" },
+];
+
+export const tugHighlightStyleInner = HighlightStyle.define([
+  ...tugHighlightSpecsBase,
   { tag: [tags.link, tags.url], color: "var(--tug-syntax-string)", textDecoration: "underline" },
 ]);
 
 /** Editor-extension form of {@link tugHighlightStyleInner}. */
 export const tugHighlightStyle: Extension = syntaxHighlighting(tugHighlightStyleInner);
+
+// Text-card write-surface variant: markdown links carry NO default
+// underline. There the underline is reserved as the ⌘-hover "linkify"
+// affordance (see `tug-text-card-editor/anchor-links.ts`) — an always-on
+// underline would blunt that signal. Color is retained so a reference still
+// reads as distinct. Only the editable text card uses this; the read-only
+// code view and diff snippets keep {@link tugHighlightStyle}.
+const tugTextCardHighlightStyleInner = HighlightStyle.define([
+  ...tugHighlightSpecsBase,
+  { tag: [tags.link, tags.url], color: "var(--tug-syntax-string)" },
+]);
+
+/** Editor-extension form for the text card (no default link underline). */
+export const tugTextCardHighlightStyle: Extension = syntaxHighlighting(
+  tugTextCardHighlightStyleInner,
+);
 
 // ---------------------------------------------------------------------------
 // Extension → lazy grammar
