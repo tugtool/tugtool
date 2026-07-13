@@ -426,15 +426,25 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   }, [cardLifecycle, focusManager, cardId, manager]);
 
   useCardDelegate(cardId, {
-    // Activation is the em contract's core moment ([P21] content half): the
-    // card claims its focus destination so first-responder-routed
-    // accelerators (⌘F, ⌘G, ⌘S, clipboard) land on its content. The
-    // lifecycle pipe covers EVERY way the card becomes active — click, tab
-    // switch, pane cycle, cross-pane move — and `cardDidActivate`'s
-    // initial-sync covers a card created-and-activated before it mounted
-    // (Open Quickly / File ▸ Open), so no activation ordering is missed.
-    // Same shape as the Dev card's delegate.
-    cardDidActivate: () => reclaimFocusDestination(),
+    // `cardDidActivate` is deliberately a no-op — the SAME shape as the Dev
+    // card. Activation focus for an em card rides the framework single
+    // channel, not a delegate reclaim: `applyBagFocus` resolves this card to
+    // its registered engine hook and calls
+    // `invokeEnginePaintMirrorAsActive`, whose `paintMirrorAsActive` focuses
+    // the CM6 view (`tug-text-card-editor.tsx`); the resulting `focusin`
+    // promotes the editor's responder ([P21] content half). A late editor
+    // bind (Open Quickly's create-before-mount) is covered by the same
+    // channel: registering the engine hook bumps the engine-hooks version,
+    // and `CardHost`'s `subscribeEngineHooksChange` retry re-runs
+    // `applyBagFocus`. A `cardDidActivate` reclaim here would only duplicate
+    // that claim — and, draining AFTER the framework's single-channel claim,
+    // risk clobbering a framework-axis target ([L05] timing-derived ordering;
+    // [L23] single-channel), exactly as the Dev card's comment records.
+    //
+    // `cardDidMove` / `cardDidResize` keep their reclaim: those gestures move
+    // the card's DOM identity (cross-pane move) or fire off a title-bar
+    // interaction that pulled first responder onto the pane, and re-asserting
+    // the editor destination is the recovery path (same as the Dev card).
     cardDidMove: () => reclaimFocusDestination(),
     cardDidResize: () => reclaimFocusDestination(),
   });
@@ -491,10 +501,9 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       }
     },
     onCardActivated: () => {
-      // Resolve the destination through the same gate as the move reclaim,
-      // so an open sheet keeps its key view rather than being clobbered by
-      // a raw editor focus (focus-language.md L68).
-      reclaimFocusDestination();
+      // No focus reclaim here: activation focus rides the engine hook via the
+      // framework single channel (see the `useCardDelegate` no-op comment).
+      // A reclaim at this activation moment would only duplicate that claim.
       // Focus-time recheck: files outside the watcher's workspace roots
       // get no FILESYSTEM events, so activation is when an external change
       // is caught.
@@ -740,16 +749,13 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     store.applyPositions(pending);
   }, [snapshot.phase, store]);
 
-  // The editor binds ASYNC (file load) — often after `cardDidActivate`
-  // already drained, when `reclaimFocusDestination` had no editor to land
-  // on. The bind is a content-internal moment, so the em contract's second
-  // claim lives here: once the document is ready, re-assert the focus
-  // destination (self-gated on this card still being the first-responder
-  // card, so an inactive card's late bind never steals focus).
-  useLayoutEffect(() => {
-    if (snapshot.phase !== "ready") return;
-    reclaimFocusDestination();
-  }, [snapshot.phase, reclaimFocusDestination]);
+  // No editor-attach focus reclaim here: the async editor bind is covered by
+  // the framework single channel. When the editor mounts it registers its
+  // engine hook, which bumps the engine-hooks version; `CardHost`'s
+  // `subscribeEngineHooksChange` retry re-runs `applyBagFocus`, resolves this
+  // card to `engine`, and `paintMirrorAsActive` focuses the freshly-created
+  // CM6 view. One claim, one channel — the same path the Dev card's late
+  // editor bind rides.
 
   // ---- Render ----
 

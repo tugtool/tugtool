@@ -1573,9 +1573,12 @@ export class FocusManager {
     // provider's `syncKeyCard` fires it for every way a card becomes active
     // (click, tab switch, **pane activation / frontmost change**, cross-pane
     // move, pane cycle, cold boot). This is the synchronous edge of the [P21]
-    // reconciler; the chain-change subscriptions in {@link attach} keep the
-    // invariant settled through everything that happens AFTER the activation
-    // moment (late content mounts, unregister cascades). FR promotion is
+    // framework half. What happens AFTER the activation moment is settled by
+    // the OTHER two owners, not by this call: a late content mount (an em
+    // card's editor binding after activation) is claimed by the framework's
+    // engine-hook retry (`applyBagFocus` re-run via `subscribeEngineHooks
+    // change` — the [P21] content half), and an unregister cascade is repaired
+    // by the chain's own unregister-promotes-ancestor path. FR promotion is
     // chain (structure) state, not a DOM focus claim, so it belongs here
     // beside naming the key card; the DOM focus claim stays in `adoptKeyCard`.
     if (cardId !== null) this.reconcileFirstResponder();
@@ -1621,13 +1624,16 @@ export class FocusManager {
    * card-author-tagged priority chain `traceApplyDefaultFocus` walks); as a
    * last resort, the card's own container responder (Cmd-W must still land).
    *
-   * The CONTENT half is the em-card lifecycle-delegate contract
-   * ([lifecycle-delegates.md]): the card registers a `TugCardDelegate` and
-   * reclaims its focus destination on `cardDidActivate` — whose initial-sync
-   * covers a card created-and-activated before it mounted — and again at
-   * its own editor-attach moment (an async file bind). Late-mounting
-   * content settles itself through the established pipe; the engine never
-   * observes chain registrations.
+   * The CONTENT half is the em-card engine-hook contract
+   * ([lifecycle-delegates.md]): the card registers an engine hook whose
+   * `paintMirrorAsActive` focuses its text surface, and the framework's
+   * single focus channel (`applyBagFocus`) invokes it — on the activation
+   * route, and again via `CardHost`'s `subscribeEngineHooksChange` retry when
+   * the editor binds late (create-before-mount, async file load). The
+   * `focusin` from that focus promotes the content responder, so late-mounting
+   * content settles the chain register itself through the established channel;
+   * the engine never observes chain registrations, and no `cardDidActivate`
+   * reclaim runs.
    *
    * **Yield rules — who keeps first responder.** Containment is REGISTRY
    * containment (`chain.nodeIsWithin`, the `parentId` walk), never DOM

@@ -2,8 +2,9 @@
  * transcript-find-highlighter — the imperative Custom-Highlight painter for the
  * Dev card's Find route.
  *
- * The authoritative match set lives in `DevFindSession` (computed over the
- * whole-transcript index). This painter is the *appearance* half ([L06]): it
+ * The authoritative match set lives in the `FindSession` + `TranscriptFind
+ * Engine` (computed over the whole-transcript index). This painter is the
+ * *appearance* half ([L06]): it
  * resolves DOM Ranges for the handful of currently-mounted rows and paints them
  * via the CSS Custom Highlight API — the same mechanism `selection-guard` uses
  * for inactive selection — which is the only way to tint ranges uniformly

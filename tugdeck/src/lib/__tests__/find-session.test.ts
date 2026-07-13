@@ -60,7 +60,11 @@ describe("FindSession", () => {
     expect(snap.hasQuery).toBe(true);
   });
 
-  test("setDelegate replays a standing query into a late-attaching engine", () => {
+  test("setDelegate replays a standing query into a SYNCHRONOUS late-attaching engine", () => {
+    // The stub resolves `matchInfo` synchronously, so the count lands on the
+    // `refresh()` inside `setDelegate`. This is the CM6 `documentFindEngine`
+    // shape (its search is synchronous); the debounced transcript engine is
+    // covered by the async test below.
     const { engine, calls } = stubEngine(2);
     const session = new FindSession();
     session.setQuery("beta");
@@ -68,6 +72,42 @@ describe("FindSession", () => {
     session.setDelegate(engine);
     expect(calls).toEqual(["search:beta"]);
     expect(session.getSnapshot().count).toBe(2);
+  });
+
+  test("setDelegate replays a standing query into an ASYNC (debounced) engine", () => {
+    // Faithful model of `TranscriptFindEngine`: `searchDidChange` only
+    // SCHEDULES; `matchInfo` reads 0 until the debounce settles, at which
+    // point the engine calls `session.refresh()` itself. So the synchronous
+    // `refresh()` inside `setDelegate` must NOT invent a count — it publishes
+    // 0 — and the real count only lands when the engine settles.
+    let sessionRef: FindSession | null = null;
+    let settledCount = 0;
+    const asyncEngine: FindEngineDelegate & { settle: (n: number) => void } = {
+      didAttach: (s) => {
+        sessionRef = s;
+      },
+      searchDidChange: () => {
+        // Debounced: no result yet.
+      },
+      matchInfo: (): FindMatchInfo => ({
+        count: settledCount,
+        activeOrdinal: settledCount > 0 ? 0 : null,
+        capped: false,
+      }),
+      settle: (n: number) => {
+        settledCount = n;
+        sessionRef?.refresh();
+      },
+    };
+    const session = new FindSession();
+    session.setQuery("beta");
+    session.setDelegate(asyncEngine);
+    // Synchronous replay: the debounce has not fired, so the count is still 0.
+    expect(session.getSnapshot().count).toBe(0);
+    // The debounce settles and re-publishes via `refresh()`.
+    asyncEngine.settle(2);
+    expect(session.getSnapshot().count).toBe(2);
+    expect(session.getSnapshot().activeOrdinal).toBe(0);
   });
 
   test("options changes re-search and fire the persistence hook", () => {
