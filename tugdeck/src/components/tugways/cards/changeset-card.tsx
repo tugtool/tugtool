@@ -1,14 +1,19 @@
 /**
- * Changeset card — the account-global view of every open project's dirty
- * state, grouped project → owner → files.
+ * Changeset card — the account-global view of every open session's dirty
+ * state: one entry per session, plus per-project dash and unattributed
+ * pseudo-entries.
  *
- * Renders the aggregate CHANGESET_ALL feed (0x24): one collapsible section
- * per open project (display name + branch/ahead-behind + HEAD subject), each
- * containing that project's owner groups (session sections with a live dot,
- * dash sections with base/rounds/worktree state) and an unattributed group,
- * or — for a non-git directory — a "Not a git repository" state with an
- * "Initialize git" affordance. File rows carry a git-status glyph, op/origin
- * provenance, and ambiguous/shared badges. Read-only rows render no tabindex.
+ * Renders the aggregate CHANGESET_ALL feed (0x24) joined against the open
+ * dev cards (the card-session binding store). Each entry is a session bound
+ * to an open dev card — the feed emits a (possibly fileless) entry for every
+ * live session, titled by the chooser's rule (name → prompt snippet → id
+ * prefix) — or a session with attributed dirty files, plus one entry per
+ * dash worktree and an "Unattributed" entry per project with unclaimed dirty
+ * files. A fixed table of contents (a bordered `TugListView`, one row per
+ * entry) sits over a scrollable accordion of the same entries; file rows
+ * carry a git-status glyph, op/origin provenance, and ambiguous/shared
+ * badges. A session in a non-git directory hosts the "Initialize git"
+ * affordance. Read-only rows render no tabindex.
  *
  * Data arrives via `useChangesetAll()` — an app-level singleton store
  * (`FeedStore` over CHANGESET_ALL, no workspace filter), NOT `useCardData`:
@@ -16,10 +21,11 @@
  * feed id, so aggregation is server-side. Clickable links use each project's
  * own `project_dir` as the absolute-path base.
  *
- * Project sections are a controlled `TugAccordion type="multiple"`; owner and
- * unattributed groups render statically inside an expanded project (one level
- * of collapse — the project). Sections a snapshot introduces open themselves
- * once, so a user's collapse sticks across recomputes.
+ * Entry sections are a controlled `TugAccordion type="multiple"`. Sections a
+ * snapshot introduces open themselves once, so a user's collapse sticks
+ * across recomputes. A TOC click expands the entry and scrolls it into view
+ * only when its trigger is outside the scroller's viewport — an in-view
+ * section never hops.
  *
  * Laws: [L02] external state via useSyncExternalStore, [L06] appearance via
  *       CSS, [L11] controls emit actions, [L20] composed children keep
@@ -39,7 +45,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CircleCheck, GitBranch, FolderGit2, Folder } from "lucide-react";
+import { CircleCheck, CircleDashed } from "lucide-react";
 
 import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
@@ -58,21 +64,209 @@ import {
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useChangesetAll } from "@/lib/changeset-all-store";
 import { useChangesetGitInit } from "@/lib/changeset-verb-store";
-import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import {
+  cardSessionBindingStore,
+  type CardSessionBinding,
+} from "@/lib/card-session-binding-store";
 import type {
-  ChangesetEntry,
   ChangesetFile,
+  DashChangesetEntry,
   ProjectChangeset,
+  SessionChangesetEntry,
+  UnattributedFile,
+  WorkspacesChangesetSnapshot,
 } from "@/lib/changeset-types";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Entry model — one item per session (+ dash / unattributed pseudo-entries)
 // ---------------------------------------------------------------------------
 
-/** Section id for a project — its dir is unique across open projects. */
-function projectSectionId(project: ProjectChangeset): string {
-  return `project:${project.project_dir}`;
+interface SessionItem {
+  kind: "session";
+  id: string;
+  project: ProjectChangeset;
+  entry: SessionChangesetEntry;
 }
+
+interface DashItem {
+  kind: "dash";
+  id: string;
+  project: ProjectChangeset;
+  entry: DashChangesetEntry;
+}
+
+interface UnattributedItem {
+  kind: "unattributed";
+  id: string;
+  project: ProjectChangeset;
+  files: UnattributedFile[];
+}
+
+type ChangesetItem = SessionItem | DashItem | UnattributedItem;
+
+/**
+ * Join the aggregate snapshot with the open dev cards. Projects narrow to
+ * those with at least one bound card; within a project, session entries show
+ * when they have files OR belong to a bound session (so every open session
+ * gets a row, and a closed session's dirty files stay visible). A bound
+ * session the feed hasn't emitted yet gets a synthesized fileless entry, so
+ * a fresh card appears immediately. Dash entries always show; unattributed
+ * files form one trailing pseudo-entry per project.
+ */
+function buildItems(
+  data: WorkspacesChangesetSnapshot,
+  bindings: ReadonlyMap<string, CardSessionBinding>,
+): ChangesetItem[] {
+  const workspaceKeys = new Set<string>();
+  const boundSessionIds = new Set<string>();
+  for (const binding of bindings.values()) {
+    workspaceKeys.add(binding.workspaceKey);
+    boundSessionIds.add(binding.tugSessionId);
+  }
+
+  const items: ChangesetItem[] = [];
+  for (const project of data.projects) {
+    if (!workspaceKeys.has(project.workspace_key)) continue;
+
+    const seenSessions = new Set<string>();
+    const dashes: DashItem[] = [];
+    for (const entry of project.changesets) {
+      if (entry.kind === "session") {
+        seenSessions.add(entry.owner_id);
+        if (entry.files.length === 0 && !boundSessionIds.has(entry.owner_id)) {
+          continue;
+        }
+        items.push({
+          kind: "session",
+          id: `session:${entry.owner_id}`,
+          project,
+          entry,
+        });
+      } else {
+        dashes.push({
+          kind: "dash",
+          id: `dash:${project.project_dir}:${entry.owner_id}`,
+          project,
+          entry,
+        });
+      }
+    }
+    for (const binding of bindings.values()) {
+      if (
+        binding.workspaceKey !== project.workspace_key ||
+        seenSessions.has(binding.tugSessionId)
+      ) {
+        continue;
+      }
+      seenSessions.add(binding.tugSessionId);
+      items.push({
+        kind: "session",
+        id: `session:${binding.tugSessionId}`,
+        project,
+        entry: {
+          kind: "session",
+          owner_id: binding.tugSessionId,
+          display_name: binding.tugSessionId.slice(0, 8),
+          live: true,
+          files: [],
+        },
+      });
+    }
+    items.push(...dashes);
+    if (project.unattributed.length > 0) {
+      items.push({
+        kind: "unattributed",
+        id: `unattributed:${project.project_dir}`,
+        project,
+        files: project.unattributed,
+      });
+    }
+  }
+  return items;
+}
+
+/** The open dev cards' bindings, read straight from the store ([L02]). */
+function useOpenBindings(): ReadonlyMap<string, CardSessionBinding> {
+  return useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    cardSessionBindingStore.getSnapshot,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Presentation helpers
+// ---------------------------------------------------------------------------
+
+/** `project · branch ↑a ↓b`, or the non-repo phrase. */
+function projectContext(project: ProjectChangeset): string {
+  if (project.no_repo) return `${project.display_name} · not a git repository`;
+  let context = `${project.display_name} · ${project.branch}`;
+  if (project.ahead > 0) context += ` ↑${project.ahead}`;
+  if (project.behind > 0) context += ` ↓${project.behind}`;
+  return context;
+}
+
+function itemTitle(item: ChangesetItem): string {
+  return item.kind === "unattributed" ? "Unattributed" : item.entry.display_name;
+}
+
+function itemSubtitle(item: ChangesetItem): string {
+  switch (item.kind) {
+    case "session":
+      return `${projectContext(item.project)} · id ${item.entry.owner_id.slice(0, 8)}`;
+    case "dash": {
+      const { entry } = item;
+      const rounds = `${entry.rounds} round${entry.rounds === 1 ? "" : "s"}`;
+      const dirty = entry.worktree_dirty ? " · dirty worktree" : "";
+      return `${item.project.display_name} · ${entry.base} · ${rounds}${dirty}`;
+    }
+    case "unattributed":
+      return projectContext(item.project);
+  }
+}
+
+function itemFileCount(item: ChangesetItem): number {
+  return item.kind === "unattributed" ? item.files.length : item.entry.files.length;
+}
+
+/** The trailing status hint for an entry's TOC row. */
+function itemStatusHint(item: ChangesetItem): { text: string; caution: boolean } {
+  if (item.kind === "session" && item.project.no_repo) {
+    return { text: "not a git repo", caution: false };
+  }
+  const count = itemFileCount(item);
+  if (count > 0) {
+    return { text: `${count} file${count === 1 ? "" : "s"}`, caution: true };
+  }
+  return { text: "clean", caution: false };
+}
+
+/** The entry's leading glyph: session live-dot, dash mark, or dashed circle. */
+function ItemGlyph({ item }: { item: ChangesetItem }) {
+  switch (item.kind) {
+    case "session":
+      return (
+        <span
+          className={`changeset-live-dot ${item.entry.live ? "changeset-live-dot-on" : ""}`}
+          aria-hidden="true"
+        />
+      );
+    case "dash":
+      return (
+        <span className="changeset-dash-mark" aria-hidden="true">
+          ⌁
+        </span>
+      );
+    case "unattributed":
+      return (
+        <CircleDashed size={12} className="changeset-unattributed-mark" aria-hidden="true" />
+      );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File rows
+// ---------------------------------------------------------------------------
 
 /** Tone class for a git-status glyph (first significant letter wins). */
 function statusToneClass(gitStatus: string): string {
@@ -172,10 +366,6 @@ function FilePathLink({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Rows and groups
-// ---------------------------------------------------------------------------
-
 function FileRow({ file, projectRoot }: { file: ChangesetFile; projectRoot: string }) {
   return (
     <div className="changeset-file-row" data-testid="changeset-file">
@@ -199,250 +389,160 @@ function FileRow({ file, projectRoot }: { file: ChangesetFile; projectRoot: stri
   );
 }
 
-/** A static owner-group header + its file list, shown inside an expanded project. */
-function OwnerGroup({ entry, projectRoot }: { entry: ChangesetEntry; projectRoot: string }) {
-  return (
-    <div className="changeset-owner-group" data-testid={`changeset-${entry.kind}`}>
-      {entry.kind === "session" ? (
-        <div className="changeset-owner-header">
-          <span
-            className={`changeset-live-dot ${entry.live ? "changeset-live-dot-on" : ""}`}
-            aria-hidden="true"
-          />
-          <span className="changeset-section-name">{entry.display_name}</span>
-          <span className="changeset-section-detail">
-            {entry.files.length} file{entry.files.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      ) : (
-        <div className="changeset-owner-header">
-          <span className="changeset-dash-mark" aria-hidden="true">
-            ⌁
-          </span>
-          <span className="changeset-section-name">{entry.display_name}</span>
-          <span className="changeset-section-detail">
-            {entry.base} · {entry.rounds} round{entry.rounds === 1 ? "" : "s"}
-            {entry.worktree_dirty ? " · dirty worktree" : ""}
-          </span>
-        </div>
-      )}
-      <div className="changeset-file-list">
-        {entry.files.map((file) => (
-          <FileRow key={file.path} file={file} projectRoot={projectRoot} />
-        ))}
-      </div>
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------
+// Entry trigger + body
+// ---------------------------------------------------------------------------
 
-/** The collapsed trigger for one project. */
-function ProjectTrigger({ project }: { project: ProjectChangeset }) {
+/** The collapsed trigger for one entry. */
+function EntryTrigger({ item }: { item: ChangesetItem }) {
   return (
-    <span className="changeset-project-trigger">
-      <FolderGit2 size={14} className="changeset-project-icon" aria-hidden="true" />
-      <span className="changeset-project-name">{project.display_name}</span>
-      {project.no_repo ? (
-        <span className="changeset-project-detail changeset-project-detail-muted">
-          not a git repository
-        </span>
-      ) : (
-        <span className="changeset-project-detail">
-          <GitBranch size={12} className="changeset-branch-icon" aria-hidden="true" />
-          {project.branch}
-          {project.ahead > 0 && <span className="changeset-ahead-behind">↑{project.ahead}</span>}
-          {project.behind > 0 && <span className="changeset-ahead-behind">↓{project.behind}</span>}
-        </span>
-      )}
+    <span className="changeset-entry-trigger">
+      <ItemGlyph item={item} />
+      <span
+        className={`changeset-entry-title${
+          item.kind === "unattributed" ? " changeset-entry-title-muted" : ""
+        }`}
+      >
+        {itemTitle(item)}
+      </span>
+      <span className="changeset-entry-context">{itemSubtitle(item)}</span>
     </span>
   );
 }
 
-/** The body of one project section — repo changes, clean state, or non-repo Init. */
-function ProjectBody({ project }: { project: ProjectChangeset }) {
-  const { phase, error, init } = useChangesetGitInit(project.project_dir);
-
-  if (project.no_repo) {
-    return (
-      <div className="changeset-non-repo" role="group" data-testid="changeset-non-repo">
-        <div className="changeset-non-repo-message">
-          This directory is not a git repository.
-        </div>
-        <TugPushButton
-          emphasis="outlined"
-          role="accent"
-          onClick={init}
-          disabled={phase === "pending"}
-          data-testid="changeset-git-init"
-        >
-          Initialize git
-        </TugPushButton>
-        {error !== null && (
-          <div className="changeset-non-repo-error" role="alert">
-            {error}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const hasChanges = project.changesets.length > 0 || project.unattributed.length > 0;
-  if (!hasChanges) {
-    return (
-      <div className="changeset-clean" role="status">
-        <CircleCheck size={14} />
-        Clean working tree
-      </div>
-    );
-  }
-
+/** A session entry in a non-git directory: the "Initialize git" affordance. */
+function NonRepoBody({ projectDir }: { projectDir: string }) {
+  const { phase, error, init } = useChangesetGitInit(projectDir);
   return (
-    <div className="changeset-project-body">
-      {project.head_message && (
-        <div className="changeset-head-message" title={project.head_sha}>
-          {project.head_message}
-        </div>
-      )}
-      {project.changesets.map((entry) => (
-        <OwnerGroup
-          key={`${entry.kind}:${entry.owner_id}`}
-          entry={entry}
-          projectRoot={project.project_dir}
-        />
-      ))}
-      {project.unattributed.length > 0 && (
-        <div className="changeset-owner-group" data-testid="changeset-unattributed">
-          <div className="changeset-owner-header">
-            <span className="changeset-section-name changeset-section-name-muted">
-              Unattributed
-            </span>
-            <span className="changeset-section-detail">
-              {project.unattributed.length} file
-              {project.unattributed.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className="changeset-file-list">
-            {project.unattributed.map((file) => (
-              <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
-                <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
-                  {statusGlyph(file.git_status)}
-                </span>
-                <FilePathLink
-                  path={file.path}
-                  op=""
-                  gitStatus={file.git_status}
-                  projectRoot={project.project_dir}
-                />
-              </div>
-            ))}
-          </div>
+    <div className="changeset-non-repo" role="group" data-testid="changeset-non-repo">
+      <div className="changeset-non-repo-message">
+        This directory is not a git repository.
+      </div>
+      <TugPushButton
+        emphasis="outlined"
+        role="accent"
+        onClick={init}
+        disabled={phase === "pending"}
+        data-testid="changeset-git-init"
+      >
+        Initialize git
+      </TugPushButton>
+      {error !== null && (
+        <div className="changeset-non-repo-error" role="alert">
+          {error}
         </div>
       )}
     </div>
   );
 }
 
-/** Total changed files across a project's owners + unattributed bucket. */
-function countChanges(project: ProjectChangeset): number {
-  const owned = project.changesets.reduce((n, entry) => n + entry.files.length, 0);
-  return owned + project.unattributed.length;
-}
+/** The expanded body of one entry — its file list (or clean/init state). */
+function EntryBody({ item }: { item: ChangesetItem }) {
+  if (item.kind === "session" && item.project.no_repo) {
+    return <NonRepoBody projectDir={item.project.project_dir} />;
+  }
 
-/** The trailing status hint for a project's TOC row. */
-function projectStatusHint(project: ProjectChangeset): string {
-  if (project.no_repo) return "not a git repo";
-  const changes = countChanges(project);
-  return changes > 0 ? `${changes} change${changes === 1 ? "" : "s"}` : "clean";
-}
+  const files = item.kind === "unattributed" ? null : item.entry.files;
+  const projectRoot = item.project.project_dir;
 
-/**
- * The canonical workspace_keys of the currently-open dev cards, read straight
- * from the binding store ([L02]). This — not the server registry — is what
- * "open projects" means: exactly the dev cards the user has open. A project the
- * aggregate reports but no dev card is bound to (the bootstrap source-tree, or
- * any residual registry entry) is filtered out.
- */
-function useOpenWorkspaceKeys(): ReadonlySet<string> {
-  const bindings = useSyncExternalStore(
-    cardSessionBindingStore.subscribe,
-    cardSessionBindingStore.getSnapshot,
-  );
-  return useMemo(
-    () => new Set(Array.from(bindings.values(), (b) => b.workspaceKey)),
-    [bindings],
+  if (item.kind === "unattributed") {
+    return (
+      <div className="changeset-file-list" data-testid="changeset-unattributed">
+        {item.files.map((file) => (
+          <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
+            <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
+              {statusGlyph(file.git_status)}
+            </span>
+            <FilePathLink
+              path={file.path}
+              op=""
+              gitStatus={file.git_status}
+              projectRoot={projectRoot}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (files === null || files.length === 0) {
+    return (
+      <div className="changeset-clean" role="status">
+        <CircleCheck size={14} />
+        {item.kind === "dash" ? "No files past base" : "No changes from this session"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="changeset-file-list">
+      {files.map((file) => (
+        <FileRow key={file.path} file={file} projectRoot={projectRoot} />
+      ))}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Table of contents — a TugListView of the open projects
+// Table of contents — a TugListView of the entries
 // ---------------------------------------------------------------------------
 
-const TOC_KIND = "project";
-
 /**
- * Single-section data source over the visible project list. Recreated whenever
+ * Single-section data source over the visible entry list. Recreated whenever
  * the list changes; `subscribe` is therefore a no-op and `getVersion` returns
  * the array identity (a fresh instance ⇒ TugListView re-reads).
  */
 class ChangesetTocDataSource implements TugListViewDataSource {
-  constructor(private readonly projects: readonly ProjectChangeset[]) {}
+  constructor(private readonly items: readonly ChangesetItem[]) {}
   numberOfItems(): number {
-    return this.projects.length;
+    return this.items.length;
   }
   idForIndex(index: number): string {
-    return projectSectionId(this.projects[index]);
+    return this.items[index].id;
   }
-  kindForIndex(): string {
-    return TOC_KIND;
+  kindForIndex(index: number): string {
+    return this.items[index].kind;
   }
-  projectAt(index: number): ProjectChangeset {
-    return this.projects[index];
+  itemAt(index: number): ChangesetItem {
+    return this.items[index];
   }
   subscribe(): () => void {
     return () => {};
   }
   getVersion(): unknown {
-    return this.projects;
+    return this.items;
   }
 }
 
 /**
- * One project row: a folder/git icon, the project name, and a trailing status
- * hint (change count / "clean" / "not a git repo"). Clicking reveals the
- * project's accordion (via the delegate). A flush `TugListRow` — proper tokens,
- * proper sizing, no hand-rolled bullets.
+ * One entry row: leading glyph, the entry title over its project · branch ·
+ * id subtitle, and a trailing status hint (file count / "clean" / "not a git
+ * repo"). Clicking reveals the entry's accordion (via the delegate).
  */
 const ChangesetTocCell: TugListViewCellRenderer<ChangesetTocDataSource> =
   function ChangesetTocCell({
     index,
     dataSource,
   }: TugListViewCellProps<ChangesetTocDataSource>): React.ReactElement {
-    const project = dataSource.projectAt(index);
-    const Icon = project.no_repo ? Folder : FolderGit2;
-    // Only a dirty repo draws the eye (caution tint); "clean" and
-    // "not a git repo" stay muted.
-    const hasChanges = !project.no_repo && countChanges(project) > 0;
+    const item = dataSource.itemAt(index);
+    const hint = itemStatusHint(item);
     return (
       <TugListRow
-        leading={
-          <Icon
-            size={16}
-            className={
-              project.no_repo ? "changeset-toc-icon changeset-toc-icon-muted" : "changeset-toc-icon"
-            }
-            aria-hidden="true"
-          />
-        }
-        title={project.display_name}
+        leading={<ItemGlyph item={item} />}
+        title={itemTitle(item)}
         titleSize="sm"
+        subtitle={itemSubtitle(item)}
         trailing={
           <span
-            className={`changeset-toc-hint${hasChanges ? " changeset-toc-hint-changes" : ""}`}
+            className={`changeset-toc-hint${hint.caution ? " changeset-toc-hint-changes" : ""}`}
           >
-            {projectStatusHint(project)}
+            {hint.text}
           </span>
         }
         data-testid="changeset-toc-entry"
-        data-project-dir={project.project_dir}
+        data-entry-id={item.id}
+        data-project-dir={item.project.project_dir}
+        data-session-id={item.kind === "session" ? item.entry.owner_id : undefined}
       />
     );
   };
@@ -451,7 +551,9 @@ const CHANGESET_TOC_CELL_RENDERERS: Record<
   string,
   TugListViewCellRenderer<ChangesetTocDataSource>
 > = {
-  [TOC_KIND]: ChangesetTocCell,
+  session: ChangesetTocCell,
+  dash: ChangesetTocCell,
+  unattributed: ChangesetTocCell,
 };
 
 // ---------------------------------------------------------------------------
@@ -460,20 +562,13 @@ const CHANGESET_TOC_CELL_RENDERERS: Record<
 
 export function ChangesetCardContent() {
   const data = useChangesetAll();
-  const openWorkspaceKeys = useOpenWorkspaceKeys();
+  const bindings = useOpenBindings();
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // The projects to show = exactly the open dev cards. The aggregate reports
-  // every registered workspace; we intersect it with the currently-bound dev
-  // cards so the bootstrap source-tree (and any residual registry entry) never
-  // appears here.
-  const projects = useMemo(
-    () => data.projects.filter((p) => openWorkspaceKeys.has(p.workspace_key)),
-    [data.projects, openWorkspaceKeys],
-  );
+  const items = useMemo(() => buildItems(data, bindings), [data, bindings]);
 
   // Controlled accordion ([L11]): the control dispatches toggleSection; the
-  // form binding lands it in state. Projects open themselves the first time
+  // form binding lands it in state. Entries open themselves the first time
   // a snapshot introduces them (tracked by id, so a user's collapse sticks
   // across recomputes).
   const accordionSenderId = useId();
@@ -484,7 +579,7 @@ export function ChangesetCardContent() {
     },
   });
 
-  const sectionIds = useMemo(() => projects.map(projectSectionId), [projects]);
+  const entryIds = useMemo(() => items.map((item) => item.id), [items]);
 
   const seenSectionsRef = useRef<Set<string>>(new Set());
   const openNewSections = useCallback((ids: string[]) => {
@@ -494,50 +589,66 @@ export function ChangesetCardContent() {
     setOpenKeys((prev) => [...prev, ...fresh]);
   }, []);
   useEffect(() => {
-    openNewSections(sectionIds);
-  }, [sectionIds, openNewSections]);
+    openNewSections(entryIds);
+  }, [entryIds, openNewSections]);
 
-  // TOC reveal: after the expand commits, scroll the revealed project's
-  // accordion into view. Scrolls the accordion body (not the whole card), so
-  // the fixed TOC + toolbar stay put. Appearance-only DOM op ([L06]).
+  // TOC reveal: after the expand commits, make the revealed entry's trigger
+  // visible in the accordion scroller. An already-visible trigger is left
+  // alone — the section expands in place with no hop; an out-of-view trigger
+  // scrolls to the top so the expanding body has room. Scroller-relative
+  // math, so the fixed TOC + toolbar never move. Appearance-only DOM op
+  // ([L06]).
   const pendingRevealRef = useRef<number | null>(null);
   useEffect(() => {
     if (pendingRevealRef.current === null) return;
     const idx = pendingRevealRef.current;
     pendingRevealRef.current = null;
-    const el = cardRef.current?.querySelector(`[data-project-index="${idx}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const scroller = cardRef.current?.querySelector(".changeset-scroll");
+    const trigger = scroller?.querySelector(
+      `[data-entry-index="${idx}"] .tug-accordion-trigger`,
+    );
+    if (!scroller || !trigger) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    if (triggerRect.top >= scrollerRect.top && triggerRect.bottom <= scrollerRect.bottom) {
+      return;
+    }
+    scroller.scrollBy({ top: triggerRect.top - scrollerRect.top, behavior: "smooth" });
   }, [openKeys]);
 
   const expandAll = useCallback(() => {
-    sectionIds.forEach((id) => seenSectionsRef.current.add(id));
-    setOpenKeys(sectionIds);
-  }, [sectionIds]);
+    entryIds.forEach((id) => seenSectionsRef.current.add(id));
+    setOpenKeys(entryIds);
+  }, [entryIds]);
   const collapseAll = useCallback(() => setOpenKeys([]), []);
 
-  const revealProject = useCallback((project: ProjectChangeset, index: number) => {
-    const id = projectSectionId(project);
-    seenSectionsRef.current.add(id);
+  const revealEntry = useCallback((item: ChangesetItem, index: number) => {
+    seenSectionsRef.current.add(item.id);
     pendingRevealRef.current = index;
     // Adding when absent, or a fresh array when already open, so the reveal
-    // effect (keyed on `openKeys` identity) always fires and re-scrolls.
-    setOpenKeys((prev) => (prev.includes(id) ? [...prev] : [...prev, id]));
+    // effect (keyed on `openKeys` identity) always fires and re-checks.
+    setOpenKeys((prev) => (prev.includes(item.id) ? [...prev] : [...prev, item.id]));
   }, []);
 
-  // TOC list: a TugListView over the visible projects. Recreated when the list
-  // changes; clicking a row reveals that project's accordion.
-  const tocDataSource = useMemo(() => new ChangesetTocDataSource(projects), [projects]);
+  // TOC list: a TugListView over the visible entries. Recreated when the
+  // list changes; clicking a row reveals that entry's accordion.
+  const tocDataSource = useMemo(() => new ChangesetTocDataSource(items), [items]);
   const tocDelegate = useMemo<TugListViewDelegate>(
     () => ({
-      onSelect: (index) => revealProject(projects[index], index),
+      onSelect: (index) => revealEntry(items[index], index),
     }),
-    [projects, revealProject],
+    [items, revealEntry],
   );
 
-  if (projects.length === 0) {
+  const sessionCount = useMemo(
+    () => items.filter((item) => item.kind === "session").length,
+    [items],
+  );
+
+  if (items.length === 0) {
     return (
       <div data-slot="changeset-card" className="changeset-card changeset-card-empty">
-        No open projects
+        No open sessions
       </div>
     );
   }
@@ -547,7 +658,7 @@ export function ChangesetCardContent() {
       <div className="changeset-head">
         <div className="changeset-toolbar">
           <span className="changeset-toolbar-title">
-            {projects.length} project{projects.length === 1 ? "" : "s"}
+            {sessionCount} session{sessionCount === 1 ? "" : "s"}
           </span>
           <span className="changeset-toolbar-spacer" />
           <TugPushButton
@@ -591,16 +702,17 @@ export function ChangesetCardContent() {
             senderId={accordionSenderId}
             className="changeset-sections"
           >
-            {projects.map((project, i) => (
+            {items.map((item, i) => (
               <TugAccordionItem
-                key={projectSectionId(project)}
-                value={projectSectionId(project)}
-                trigger={<ProjectTrigger project={project} />}
-                data-testid="changeset-project"
-                data-project-index={i}
-                data-project-dir={project.project_dir}
+                key={item.id}
+                value={item.id}
+                trigger={<EntryTrigger item={item} />}
+                data-testid="changeset-entry"
+                data-entry-index={i}
+                data-entry-id={item.id}
+                data-project-dir={item.project.project_dir}
               >
-                <ProjectBody project={project} />
+                <EntryBody item={item} />
               </TugAccordionItem>
             ))}
           </TugAccordion>
@@ -632,8 +744,8 @@ export function registerChangesetCard(): void {
     // immediately; the singleton store handles delivery.
     cardFeedIds: [],
     sizePolicy: {
-      min: { width: 280, height: 200 },
-      preferred: { width: 650, height: 350 },
+      min: { width: 360, height: 280 },
+      preferred: { width: 560, height: 480 },
     },
   });
 }

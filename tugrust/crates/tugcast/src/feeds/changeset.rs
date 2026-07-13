@@ -9,7 +9,7 @@
 //! and delivers the aggregate; `ChangesetBumper` pings that feed's global
 //! recompute signal after each file-event write.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ use tugcast_core::types::{ChangesetEntry, ChangesetFile, ChangesetSnapshot, Unat
 use super::attribution::{parse_worktree_states, repo_root_for};
 use super::git::{fetch_git_status, fetch_head_message, parse_porcelain_v2};
 use super::workspace_registry::WorkspaceRegistry;
-use crate::session_ledger::{ProjectFileEvent, SessionLedger};
+use crate::session_ledger::{ProjectFileEvent, SessionLedger, SessionRow, SessionState};
 
 /// Fires the account-global changeset recompute after a file-event write.
 ///
@@ -187,6 +187,96 @@ pub(crate) async fn compose_snapshot(
         changesets,
         unattributed,
     })
+}
+
+/// Join a workspace's ledger session rows into a composed snapshot.
+///
+/// Two effects, both keyed by `session_id`:
+///
+/// - every **live** session gains an entry — fileless when it owns no dirty
+///   files — so the card can list every open session, clean or not;
+/// - every session entry with a matching ledger row takes its
+///   `display_name` from [`session_row_title`] (the chooser's rule: name →
+///   prompt snippet → id prefix) and its `live` flag from the row's state.
+///
+/// Entries re-sort to (sessions by id, dashes by ref) so injection order
+/// never perturbs diff-suppression.
+pub(crate) fn apply_session_rows(snapshot: &mut ChangesetSnapshot, rows: &[SessionRow]) {
+    let by_id: HashMap<&str, &SessionRow> = rows
+        .iter()
+        .map(|row| (row.session_id.as_str(), row))
+        .collect();
+
+    let mut present: HashSet<String> = HashSet::new();
+    for entry in &mut snapshot.changesets {
+        if let ChangesetEntry::Session {
+            owner_id,
+            display_name,
+            live,
+            ..
+        } = entry
+        {
+            present.insert(owner_id.clone());
+            if let Some(row) = by_id.get(owner_id.as_str()) {
+                *display_name = session_row_title(row);
+                *live = row.state == SessionState::Live;
+            }
+        }
+    }
+
+    for row in rows {
+        if row.state != SessionState::Live || present.contains(&row.session_id) {
+            continue;
+        }
+        snapshot.changesets.push(ChangesetEntry::Session {
+            owner_id: row.session_id.clone(),
+            display_name: session_row_title(row),
+            live: true,
+            files: Vec::new(),
+        });
+    }
+
+    snapshot.changesets.sort_by(|a, b| entry_sort_key(a).cmp(&entry_sort_key(b)));
+}
+
+/// Deterministic entry order: sessions (by id) before dashes (by ref).
+fn entry_sort_key(entry: &ChangesetEntry) -> (u8, &str) {
+    match entry {
+        ChangesetEntry::Session { owner_id, .. } => (0, owner_id.as_str()),
+        ChangesetEntry::Dash { owner_id, .. } => (1, owner_id.as_str()),
+    }
+}
+
+/// Session row title, the session chooser's rule: the session's name (a
+/// `/rename` or auto `aiTitle`) when set, else a one-line snippet of the
+/// last user prompt, else the first 8 chars of the session id.
+fn session_row_title(row: &SessionRow) -> String {
+    if let Some(name) = &row.name {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_owned();
+        }
+    }
+    if let Some(prompt) = &row.last_user_prompt {
+        let snippet = snippet_for_display(prompt, 64);
+        if !snippet.is_empty() {
+            return snippet;
+        }
+    }
+    row.session_id.chars().take(8).collect()
+}
+
+/// Collapse whitespace runs to single spaces and truncate to `max` chars
+/// with an ellipsis — mirrors the picker's `truncateForDisplay`.
+fn snippet_for_display(s: &str, max: usize) -> String {
+    let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = flat.chars();
+    let head: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        format!("{head}…")
+    } else {
+        head
+    }
 }
 
 /// Owner display name: the session's `name` when the user set it, else the
@@ -527,6 +617,114 @@ mod tests {
         }
     }
 
+
+    fn session_row(
+        id: &str,
+        name: Option<&str>,
+        prompt: Option<&str>,
+        state: SessionState,
+    ) -> SessionRow {
+        SessionRow {
+            session_id: id.to_owned(),
+            workspace_key: "ws".to_owned(),
+            project_dir: "/proj".to_owned(),
+            created_at: 0,
+            last_used_at: 0,
+            turn_count: 0,
+            last_user_prompt: prompt.map(str::to_owned),
+            state,
+            card_id: Some("card-1".to_owned()),
+            name: name.map(str::to_owned),
+            name_user_set: false,
+        }
+    }
+
+    #[test]
+    fn apply_session_rows_injects_fileless_live_sessions_and_retitles() {
+        let mut snapshot = ChangesetSnapshot {
+            workspace_key: "ws".to_owned(),
+            branch: "main".to_owned(),
+            ahead: 0,
+            behind: 0,
+            head_sha: String::new(),
+            head_message: String::new(),
+            changesets: vec![
+                ChangesetEntry::Dash {
+                    owner_id: "tugdash/demo".to_owned(),
+                    display_name: "demo".to_owned(),
+                    base: "main".to_owned(),
+                    rounds: 1,
+                    worktree: ".tugtree/tugdash__demo".to_owned(),
+                    worktree_dirty: false,
+                    files: Vec::new(),
+                },
+                ChangesetEntry::Session {
+                    owner_id: "sess-writer".to_owned(),
+                    display_name: "sess-wri".to_owned(),
+                    live: false,
+                    files: Vec::new(),
+                },
+            ],
+            unattributed: Vec::new(),
+        };
+
+        let long_prompt = "word ".repeat(20); // 100 chars flat → truncates
+        let rows = vec![
+            session_row(
+                "sess-writer",
+                None,
+                Some("fix   the\nparser bug"),
+                SessionState::Live,
+            ),
+            session_row("sess-clean", Some("polish pass"), None, SessionState::Live),
+            session_row("sess-long", None, Some(&long_prompt), SessionState::Live),
+            session_row("sess-closed", None, None, SessionState::Closed),
+        ];
+        apply_session_rows(&mut snapshot, &rows);
+
+        // Live rows all have entries (fileless when injected); the closed row
+        // without files does not. Sessions sort by id ahead of the dash.
+        let owners: Vec<&str> = snapshot
+            .changesets
+            .iter()
+            .map(|e| match e {
+                ChangesetEntry::Session { owner_id, .. } => owner_id.as_str(),
+                ChangesetEntry::Dash { owner_id, .. } => owner_id.as_str(),
+            })
+            .collect();
+        assert_eq!(
+            owners,
+            ["sess-clean", "sess-long", "sess-writer", "tugdash/demo"]
+        );
+
+        let ChangesetEntry::Session {
+            display_name,
+            live,
+            files,
+            ..
+        } = &snapshot.changesets[0]
+        else {
+            panic!("expected session entry");
+        };
+        assert_eq!(display_name, "polish pass");
+        assert!(live);
+        assert!(files.is_empty());
+
+        let ChangesetEntry::Session { display_name, .. } = &snapshot.changesets[1] else {
+            panic!("expected session entry");
+        };
+        assert_eq!(display_name.chars().count(), 65, "64 chars + ellipsis");
+        assert!(display_name.ends_with('…'));
+
+        let ChangesetEntry::Session {
+            display_name, live, ..
+        } = &snapshot.changesets[2]
+        else {
+            panic!("expected session entry");
+        };
+        assert_eq!(display_name, "fix the parser bug");
+        assert!(*live, "row state overrides the event-derived flag");
+    }
 
     #[test]
     fn parse_name_status_maps_letters_and_renames() {

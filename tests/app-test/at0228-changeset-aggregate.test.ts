@@ -2,14 +2,18 @@
  * at0228-changeset-aggregate.test.ts — the changeset card, end-to-end, for the
  * three behaviors that can ONLY be verified in the real browser against real
  * dev cards + real git (everything else — snapshot partitioning, the aggregate
- * feed, the git_init verb — is covered by Rust unit tests on real content):
+ * feed's session-row join, the git_init verb — is covered by Rust unit tests
+ * on real content):
  *
- *   1. **Open-dev-card filter** — the card shows EXACTLY the projects the user
- *      has a dev card open on. The bootstrap `--source-tree` is registered but
- *      has no dev card bound to it, so it must NOT appear.
- *   2. **Init self-heal** — clicking "Initialize git" on a non-repo project
- *      runs `git init`, and the section flips to a repo on the next recompute.
- *   3. **File click** — a present file in a project opens in a Text card.
+ *   1. **Open-dev-card filter** — the card shows one session entry per open
+ *      dev card, and ONLY those. The bootstrap `--source-tree` is registered
+ *      (and its workspace has ledger rows) but no dev card here is bound to
+ *      it, so it must NOT appear.
+ *   2. **Init self-heal** — clicking "Initialize git" on a session entry in a
+ *      non-repo directory runs `git init`, and the entry flips to a repo on
+ *      the next recompute.
+ *   3. **File click** — a dirty file (in the project's Unattributed entry)
+ *      opens in a Text card.
  *
  * Two dev cards are opened via real `spawn_session(mode=resume)` (the
  * production binding path): one on a non-repo scratch dir, one on a scratch git
@@ -22,7 +26,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { launchTugApp } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
@@ -152,17 +156,13 @@ function deckShape() {
   };
 }
 
-const PROJECT_NAMES_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-project"] .changeset-project-name')).map(function(n){ return n.textContent.trim(); })`;
+const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-toc-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
 
-function nonRepoProbe(name: string): string {
+function nonRepoProbe(sid: string): string {
   return `(function(){
-    var sections = Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-project"]'));
-    var match = sections.find(function(s){
-      var n = s.querySelector(".changeset-project-name");
-      return n !== null && n.textContent.trim() === ${JSON.stringify(name)};
-    });
-    if (!match) return { present: false, nonRepo: false };
-    return { present: true, nonRepo: match.querySelector('[data-testid="changeset-non-repo"]') !== null };
+    var entry = document.querySelector('${CARD} [data-testid="changeset-entry"][data-entry-id="session:${sid}"]');
+    if (!entry) return { present: false, nonRepo: false };
+    return { present: true, nonRepo: entry.querySelector('[data-testid="changeset-non-repo"]') !== null };
   })()`;
 }
 
@@ -171,47 +171,47 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
     "shows exactly the open dev-card projects; Init self-heals; a file opens in a Text card",
     async () => {
       const app = await launchTugApp({ testName: "at0228-changeset-aggregate" });
-      const nonRepoName = basename(NON_REPO.dir);
-      const repoName = basename(REPO.dir);
       try {
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
         for (const s of SCRATCH) {
           await app.spawnSessionResume(s.cardId, { tugSessionId: s.sid, projectDir: s.dir });
         }
 
-        // (1) Filter: the card settles on EXACTLY the two open-dev-card
-        // projects. The bootstrap source-tree is registered but unbound to any
-        // dev card, so it must be absent.
+        // (1) Filter: the card settles on EXACTLY the two open dev cards'
+        // sessions (one row each). The bootstrap source-tree is registered but
+        // unbound to any dev card here, so none of its sessions appear.
         await app.waitForCondition<boolean>(
           `(function(){
-            var names = ${PROJECT_NAMES_JS};
-            return names.length === 2 &&
-              names.indexOf(${JSON.stringify(nonRepoName)}) !== -1 &&
-              names.indexOf(${JSON.stringify(repoName)}) !== -1;
+            var ids = ${SESSION_IDS_JS};
+            return ids.length === 2 &&
+              ids.indexOf(${JSON.stringify(NON_REPO.sid)}) !== -1 &&
+              ids.indexOf(${JSON.stringify(REPO.sid)}) !== -1;
           })()`,
           { timeoutMs: 30_000 },
         );
-        const names = await app.evalJS<string[]>(PROJECT_NAMES_JS);
-        expect(names.sort()).toEqual([nonRepoName, repoName].sort());
+        const ids = await app.evalJS<string[]>(SESSION_IDS_JS);
+        expect(ids.sort()).toEqual([NON_REPO.sid, REPO.sid].sort());
 
-        // (2) Init self-heal: click "Initialize git" on the non-repo project →
-        // the section flips to a repo on the next recompute.
+        // (2) Init self-heal: the non-repo session entry hosts the Init
+        // affordance; clicking it flips the entry to a repo on the next
+        // recompute.
         expect(
-          (await app.evalJS<{ nonRepo: boolean }>(nonRepoProbe(nonRepoName))).nonRepo,
-          "the non-repo project shows the Init affordance",
+          (await app.evalJS<{ nonRepo: boolean }>(nonRepoProbe(NON_REPO.sid))).nonRepo,
+          "the non-repo session entry shows the Init affordance",
         ).toBe(true);
         await app.click(
-          `${CARD} [data-testid="changeset-project"][data-project-dir="${NON_REPO.dir}"] [data-testid="changeset-git-init"]`,
+          `${CARD} [data-testid="changeset-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="changeset-git-init"]`,
         );
         await app.waitForCondition<boolean>(
-          `(function(){ var p = ${nonRepoProbe(nonRepoName)}; return p.present && !p.nonRepo; })()`,
+          `(function(){ var p = ${nonRepoProbe(NON_REPO.sid)}; return p.present && !p.nonRepo; })()`,
           { timeoutMs: 20_000 },
         );
         expect(existsSync(join(NON_REPO.dir, ".git")), "git init created a .git dir").toBe(true);
 
-        // (3) File click: the repo project's untracked file renders as a link;
-        // clicking it opens that file in a Text card.
-        const FILE_LINK = `${CARD} [data-testid="changeset-project"][data-project-dir="${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
+        // (3) File click: the repo's untracked file lands in the project's
+        // Unattributed entry as a link; clicking it opens the file in a Text
+        // card.
+        const FILE_LINK = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
         await app.waitForCondition<boolean>(
           `document.querySelector('${FILE_LINK}') !== null`,
           { timeoutMs: 20_000 },

@@ -29,7 +29,7 @@ use tracing::{debug, info};
 use tugcast_core::types::{ChangesetSnapshot, ProjectChangeset, WorkspacesChangesetSnapshot};
 use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
-use super::changeset::compose_snapshot;
+use super::changeset::{apply_session_rows, compose_snapshot};
 use super::git::is_within_git_worktree;
 use super::workspace_registry::WorkspaceRegistry;
 use crate::session_ledger::SessionLedger;
@@ -126,6 +126,11 @@ impl SnapshotFeed for ChangesetAllFeed {
 /// empty repo element rather than flipping to `no_repo` — it self-heals on
 /// the next recompute, and the card never offers "Initialize git" for a real
 /// repository.
+///
+/// Every project (repo or not) then joins its workspace's ledger session
+/// rows via [`apply_session_rows`]: live sessions gain (possibly fileless)
+/// entries and session titles follow the chooser's name → prompt → id rule,
+/// so the card can render one row per open session.
 pub(crate) async fn compose_aggregate(
     registry: &WorkspaceRegistry,
     ledger: Option<&SessionLedger>,
@@ -140,36 +145,33 @@ pub(crate) async fn compose_aggregate(
             .unwrap_or_else(|| project_dir.to_string_lossy().into_owned());
         let dir_str = project_dir.to_string_lossy().into_owned();
 
-        if is_within_git_worktree(&project_dir).await {
+        let (no_repo, mut snapshot) = if is_within_git_worktree(&project_dir).await {
             match compose_snapshot(&project_dir, ledger).await {
                 Some(mut snapshot) => {
                     snapshot.workspace_key = workspace_key;
-                    projects.push(ProjectChangeset {
-                        project_dir: dir_str,
-                        display_name,
-                        no_repo: false,
-                        snapshot,
-                    });
+                    (false, snapshot)
                 }
-                None => {
-                    // Within a worktree but `git status` failed this cycle —
-                    // keep the project as a repo, empty until it recovers.
-                    projects.push(ProjectChangeset {
-                        project_dir: dir_str,
-                        display_name,
-                        no_repo: false,
-                        snapshot: empty_snapshot(workspace_key),
-                    });
-                }
+                // Within a worktree but `git status` failed this cycle —
+                // keep the project as a repo, empty until it recovers.
+                None => (false, empty_snapshot(workspace_key)),
             }
         } else {
-            projects.push(ProjectChangeset {
-                project_dir: dir_str,
-                display_name,
-                no_repo: true,
-                snapshot: empty_snapshot(workspace_key),
-            });
+            (true, empty_snapshot(workspace_key))
+        };
+
+        if let Some(ledger) = ledger {
+            match ledger.list_for_workspace(&snapshot.workspace_key) {
+                Ok(rows) => apply_session_rows(&mut snapshot, &rows),
+                Err(err) => debug!(error = %err, "session-row join skipped"),
+            }
         }
+
+        projects.push(ProjectChangeset {
+            project_dir: dir_str,
+            display_name,
+            no_repo,
+            snapshot,
+        });
     }
 
     WorkspacesChangesetSnapshot { projects }
@@ -254,9 +256,27 @@ mod tests {
         let _repo_entry = registry.get_or_create(&repo, cancel.clone()).unwrap();
         let _plain_entry = registry.get_or_create(&plain, cancel.clone()).unwrap();
 
+        // Sessions recorded under the registry's canonical keys, one per
+        // project — the aggregate's ledger join must give each a (fileless)
+        // entry even before any file event lands.
         let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
         ledger
-            .record_spawn("sess-a", "ws", &repo.to_string_lossy(), "card-1", 0)
+            .record_spawn(
+                "sess-a",
+                _repo_entry.workspace_key.as_ref(),
+                &repo.to_string_lossy(),
+                "card-1",
+                0,
+            )
+            .unwrap();
+        ledger
+            .record_spawn(
+                "sess-b",
+                _plain_entry.workspace_key.as_ref(),
+                &plain.to_string_lossy(),
+                "card-2",
+                0,
+            )
             .unwrap();
 
         let bump = Arc::new(Notify::new());
@@ -274,7 +294,8 @@ mod tests {
         let task = spawn_snapshot_feed(Box::new(feed), tx, feed_cancel.clone());
 
         // First emission: the immediate initial tick. Both projects present;
-        // repo clean, plain flagged no_repo.
+        // each carries a fileless entry for its live session (the ledger
+        // join), the repo otherwise clean, plain flagged no_repo.
         tokio::time::timeout(Duration::from_secs(5), rx.changed())
             .await
             .expect("initial snapshot within timeout")
@@ -289,7 +310,19 @@ mod tests {
             .expect("repo project present");
         assert!(!repo_proj.no_repo);
         assert_eq!(repo_proj.snapshot.branch, "main");
-        assert!(repo_proj.snapshot.changesets.is_empty());
+        assert_eq!(repo_proj.snapshot.changesets.len(), 1);
+        let tugcast_core::types::ChangesetEntry::Session {
+            owner_id,
+            live,
+            files,
+            ..
+        } = &repo_proj.snapshot.changesets[0]
+        else {
+            panic!("expected session entry");
+        };
+        assert_eq!(owner_id, "sess-a");
+        assert!(live);
+        assert!(files.is_empty(), "no file events yet — a fileless entry");
         let plain_proj = initial
             .projects
             .iter()
@@ -297,6 +330,11 @@ mod tests {
             .expect("plain project present");
         assert!(plain_proj.no_repo);
         assert_eq!(plain_proj.snapshot.branch, "");
+        assert_eq!(
+            plain_proj.snapshot.changesets.len(),
+            1,
+            "non-repo projects list their live sessions too"
+        );
 
         // A new attributed file in the repo + a global bump → recompute long
         // before the 60s poll.
@@ -318,6 +356,12 @@ mod tests {
             .find(|p| p.project_dir == repo.to_string_lossy())
             .expect("repo project present");
         assert_eq!(repo_proj.snapshot.changesets.len(), 1);
+        let tugcast_core::types::ChangesetEntry::Session { files, .. } =
+            &repo_proj.snapshot.changesets[0]
+        else {
+            panic!("expected session entry");
+        };
+        assert_eq!(files.len(), 1, "the attributed write now shows");
 
         feed_cancel.cancel();
         let _ = task.await;

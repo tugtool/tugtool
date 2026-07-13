@@ -52,26 +52,22 @@
   flex: 1 1 auto;
 }
 
-/* ---- Table of contents — a TugListView of the open projects ----
-   Sized to fit the project count up to 6 rows (`--tugx-list-row-min-height`
-   pins the row height so the 6-row cap is exact); the list scrolls only
-   beyond that. Fewer than 6 projects ⇒ the list is exactly that tall, no
-   empty space, no scrollbar. */
+/* ---- Table of contents — a TugListView of the entries ----
+   A bordered list with hairline dividers (the `flush` row layout supplies
+   the dividers; the list view clips its rows to the border radius). Rows are
+   two lines (title + project · branch · id subtitle), pinned to a uniform
+   height so the 4-row cap is exact; the list scrolls only beyond that. Fewer
+   entries ⇒ the list is exactly that tall, no empty space, no scrollbar. */
 
-.changeset-toc-list {
-  --tugx-list-row-min-height: 2.25rem;
+.changeset-toc-list.tug-list-view {
+  --tugx-list-row-min-height: 3.25rem;
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
   flex: 0 0 auto;
-  max-height: calc(6 * 2.25rem);
-}
-
-/* Leading folder/git glyph — legible, not a microscopic bullet. */
-.changeset-toc-icon {
-  flex-shrink: 0;
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-
-.changeset-toc-icon-muted {
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  height: auto;
+  max-height: calc(4 * 3.25rem + 2px);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm, 6px);
 }
 
 /* Trailing status hint. Muted for clean / not-a-repo; caution when dirty. */
@@ -94,9 +90,9 @@
   padding: 8px 14px 12px;
 }
 
-/* ---- Project triggers (one per open project) ---- */
+/* ---- Entry triggers (one accordion section per entry) ---- */
 
-.changeset-project-trigger {
+.changeset-entry-trigger {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -104,89 +100,27 @@
   font-size: 0.875rem;
 }
 
-.changeset-project-icon {
-  flex-shrink: 0;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.changeset-project-name {
+.changeset-entry-title {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.changeset-project-detail {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.changeset-entry-title-muted {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Trailing project · branch context on the trigger line. */
+.changeset-entry-context {
   flex-shrink: 0;
   margin-left: auto;
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.changeset-project-detail-muted {
-  font-style: italic;
-}
-
-.changeset-branch-icon {
-  flex-shrink: 0;
-}
-
-.changeset-ahead-behind {
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-/* ---- Project body ---- */
-
-.changeset-project-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.changeset-head-message {
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* ---- Owner groups (static sub-headers within an expanded project) ---- */
-
-.changeset-owner-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.changeset-owner-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 0.8125rem;
-}
-
-.changeset-section-name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.changeset-section-name-muted {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.changeset-section-detail {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  max-width: 55%;
 }
 
 /* Session liveness: a dot that lights via the success tone when the owning
@@ -209,6 +143,12 @@
   flex-shrink: 0;
   font-size: 0.8125rem;
   color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* Unattributed pseudo-entry glyph — a quiet dashed circle. */
+.changeset-unattributed-mark {
+  flex-shrink: 0;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ---- File rows (read-only: no tabindex, no hover affordance) ---- */
