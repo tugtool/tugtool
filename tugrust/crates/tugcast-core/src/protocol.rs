@@ -47,12 +47,16 @@ impl FeedId {
     pub const FILETREE: Self = Self(0x11);
     /// File tree query (tugdeck → tugcast)
     pub const FILETREE_QUERY: Self = Self(0x12);
-    /// Git status snapshot (tugcast → tugdeck)
+    /// Retired: the GIT status snapshot feed was replaced by CHANGESET
+    /// (0x23) when the git card retired ([P16]). The constant stays
+    /// reserved — never reuse 0x20 for another feed.
     pub const GIT: Self = Self(0x20);
     /// Git diff response — single-shot per `/diff` request (tugcast → tugdeck)
     pub const GIT_DIFF: Self = Self(0x21);
     /// Git diff request — `/diff` over the bound card's project dir (tugdeck → tugcast)
     pub const GIT_DIFF_QUERY: Self = Self(0x22);
+    /// Workspace changeset snapshot (tugcast → tugdeck)
+    pub const CHANGESET: Self = Self(0x23);
 
     // -- Stats --
     /// Aggregate stats snapshot (tugcast → tugdeck)
@@ -144,6 +148,7 @@ impl FeedId {
             Self::GIT => Some("Git"),
             Self::GIT_DIFF => Some("GitDiff"),
             Self::GIT_DIFF_QUERY => Some("GitDiffQuery"),
+            Self::CHANGESET => Some("Changeset"),
             Self::STATS => Some("Stats"),
             Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
             Self::STATS_TOKEN_USAGE => Some("StatsTokenUsage"),
@@ -428,6 +433,8 @@ mod tests {
         assert_eq!(FeedId::GIT.as_byte(), 0x20);
         assert_eq!(FeedId::GIT_DIFF.as_byte(), 0x21);
         assert_eq!(FeedId::GIT_DIFF_QUERY.as_byte(), 0x22);
+        assert_eq!(FeedId::CHANGESET.as_byte(), 0x23);
+        assert_eq!(FeedId::CHANGESET.name(), Some("Changeset"));
         assert_eq!(FeedId::STATS.as_byte(), 0x30);
         assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);
         assert_eq!(FeedId::STATS_TOKEN_USAGE.as_byte(), 0x32);

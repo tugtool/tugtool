@@ -44,7 +44,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "app.settings", key: ",", mods: MOD.command },
   // File
   { id: "file.newDevCard", key: "n", mods: MOD.command },
-  { id: "file.newGitCard", key: "n", mods: MOD.command | MOD.shift },
+  { id: "file.newChangesetCard", key: "n", mods: MOD.command | MOD.shift },
   { id: "file.closeCard", key: "w", mods: MOD.command },
   { id: "file.closeAllCardTabs", key: "w", mods: MOD.command | MOD.option },
   { id: "file.exportTranscript", key: "" },

@@ -492,11 +492,14 @@ pub struct FileEventRow {
 /// the same rule the Z4B session chip uses). `owner_name` /
 /// `owner_name_user_set` are `None`/`false` when no `sessions` row
 /// matches the event's `tug_session_id` (a headless or evicted session).
+/// `owner_live` reflects the session row's `state` — the changeset card's
+/// live dot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectFileEvent {
     pub event: FileEventRow,
     pub owner_name: Option<String>,
     pub owner_name_user_set: bool,
+    pub owner_live: bool,
 }
 
 /// Result of a successful `trash` call.
@@ -2072,7 +2075,7 @@ impl SessionLedger {
             "SELECT fe.tug_session_id, fe.tool_use_id, fe.file_path,
                     fe.tool_name, fe.op, fe.origin, fe.ambiguous,
                     fe.parent_tool_use_id, fe.project_dir, fe.at,
-                    s.name, s.name_user_set
+                    s.name, s.name_user_set, s.state
              FROM file_events fe
              LEFT JOIN sessions s ON s.session_id = fe.tug_session_id
              WHERE fe.project_dir = ?1
@@ -2096,6 +2099,7 @@ impl SessionLedger {
                     owner_name: row.get(10)?,
                     // NULL when no session row matched (LEFT JOIN miss).
                     owner_name_user_set: row.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
+                    owner_live: row.get::<_, Option<String>>(12)?.as_deref() == Some("live"),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -4374,7 +4378,13 @@ mod tests {
         assert_eq!(read.len(), 1);
         assert_eq!(read[0].owner_name.as_deref(), Some("my session"));
         assert!(read[0].owner_name_user_set);
+        assert!(read[0].owner_live);
         assert_eq!(read[0].event.tug_session_id, "s1");
+
+        // A closed session's events read back owner_live = false.
+        l.demote_live_to_closed().unwrap();
+        let read = l.file_events_for_project("/proj").unwrap();
+        assert!(!read[0].owner_live);
     }
 
     #[test]

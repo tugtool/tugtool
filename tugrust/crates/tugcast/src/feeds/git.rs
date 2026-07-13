@@ -1,46 +1,20 @@
-//! Git feed implementation
+//! Git status parsing + `/diff` sourcing.
 //!
-//! Polls git repository status and broadcasts GitStatus snapshots when changes are detected.
+//! The GIT status feed (0x20) was retired when the Changeset card replaced
+//! the git card ([P16]); this module keeps the shared `git status`
+//! porcelain-v2 parser (now driven by `feeds/changeset.rs`) and the
+//! single-shot `git diff HEAD` sourcing for the `/diff` sheet (GIT_DIFF,
+//! 0x21).
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::path::Path;
 
-use async_trait::async_trait;
 use tokio::process::Command;
-use tokio::sync::watch;
-use tokio::time;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use tugcast_core::types::{FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitStatus};
-use tugcast_core::{FeedId, Frame, SnapshotFeed};
-
-use super::code::splice_workspace_key;
-
-/// Polling interval for git status
-const POLL_INTERVAL_SECS: u64 = 2;
-
-/// Git feed that polls repository status at fixed intervals
-pub struct GitFeed {
-    repo_dir: PathBuf,
-    workspace_key: Arc<str>,
-}
-
-impl GitFeed {
-    /// Create a new git feed watching the given repository directory.
-    ///
-    /// `workspace_key` is spliced as the first field of every emitted GIT frame.
-    pub fn new(repo_dir: PathBuf, workspace_key: Arc<str>) -> Self {
-        Self {
-            repo_dir,
-            workspace_key,
-        }
-    }
-}
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus
-fn parse_porcelain_v2(output: &str) -> GitStatus {
+pub(crate) fn parse_porcelain_v2(output: &str) -> GitStatus {
     let mut branch = String::new();
     let mut ahead: u32 = 0;
     let mut behind: u32 = 0;
@@ -145,7 +119,7 @@ fn parse_porcelain_v2(output: &str) -> GitStatus {
 }
 
 /// Fetch the HEAD commit message
-async fn fetch_head_message(repo_dir: &Path) -> String {
+pub(crate) async fn fetch_head_message(repo_dir: &Path) -> String {
     let output = Command::new("git")
         .args([
             "-C",
@@ -164,7 +138,7 @@ async fn fetch_head_message(repo_dir: &Path) -> String {
 }
 
 /// Fetch git status output
-async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
+pub(crate) async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
     let output = Command::new("git")
         .args([
             "-C",
@@ -207,7 +181,7 @@ async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
 /// appears (a `git init` after the card is already live). The ancestor walk
 /// matters because a project dir can be a *subdirectory* of a repo, where
 /// `.git` lives above it.
-async fn is_within_git_worktree(dir: &Path) -> bool {
+pub(crate) async fn is_within_git_worktree(dir: &Path) -> bool {
     let mut cursor = Some(dir);
     while let Some(current) = cursor {
         if tokio::fs::metadata(current.join(".git")).await.is_ok() {
@@ -216,64 +190,6 @@ async fn is_within_git_worktree(dir: &Path) -> bool {
         cursor = current.parent();
     }
     false
-}
-
-#[async_trait]
-impl SnapshotFeed for GitFeed {
-    fn feed_id(&self) -> FeedId {
-        FeedId::GIT
-    }
-
-    fn name(&self) -> &str {
-        "git"
-    }
-
-    async fn run(self: Box<Self>, tx: watch::Sender<Frame>, cancel: CancellationToken) {
-        info!(dir = ?self.repo_dir, "git feed started");
-
-        let mut interval = time::interval(Duration::from_secs(POLL_INTERVAL_SECS));
-        let mut previous: Option<GitStatus> = None;
-
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    info!("git feed shutting down");
-                    break;
-                }
-                _ = interval.tick() => {
-                    // Skip the `git status` subprocess entirely when this dir
-                    // isn't in a git working tree yet — cheap `stat`s only, no
-                    // fork, no warn-spam. The feed self-activates on a later
-                    // tick once a `.git` appears (`git init` mid-session).
-                    if !is_within_git_worktree(&self.repo_dir).await {
-                        continue;
-                    }
-
-                    // Fetch git status
-                    let status_output = match fetch_git_status(&self.repo_dir).await {
-                        Some(output) => output,
-                        None => continue, // Skip this cycle on error
-                    };
-
-                    // Parse status
-                    let mut status = parse_porcelain_v2(&status_output);
-
-                    // Fetch head message
-                    status.head_message = fetch_head_message(&self.repo_dir).await;
-
-                    // Compare with previous -- only send if changed
-                    if previous.as_ref() != Some(&status) {
-                        let json = serde_json::to_vec(&status).unwrap_or_default();
-                        let json = splice_workspace_key(&json, &self.workspace_key);
-                        let frame = Frame::new(FeedId::GIT, json);
-                        let _ = tx.send(frame);
-                        debug!(branch = %status.branch, "git status updated");
-                        previous = Some(status);
-                    }
-                }
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -643,202 +559,6 @@ mod tests {
         assert_ne!(status1, status3);
     }
 
-    #[test]
-    fn test_feed_id_and_name() {
-        let feed = GitFeed::new(
-            PathBuf::from("/unused-in-this-test"),
-            Arc::from("test-workspace"),
-        );
-        assert_eq!(feed.feed_id(), FeedId::GIT);
-        assert_eq!(feed.name(), "git");
-    }
-
-    #[tokio::test]
-    async fn test_git_feed_integration() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path().to_path_buf();
-
-        // Initialize git repo
-        Command::new("git")
-            .args(["-C", &repo_path.to_string_lossy(), "init"])
-            .output()
-            .await
-            .unwrap();
-
-        // Configure git user
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "config",
-                "user.name",
-                "test",
-            ])
-            .output()
-            .await
-            .unwrap();
-
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "config",
-                "user.email",
-                "test@test.com",
-            ])
-            .output()
-            .await
-            .unwrap();
-
-        // Create initial commit
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "commit",
-                "--allow-empty",
-                "-m",
-                "init",
-            ])
-            .output()
-            .await
-            .unwrap();
-
-        // Derive the fixture workspace_key from the real TempDir repo path —
-        // mirrors how WorkspaceRegistry builds the key in production.
-        let fixture_key: Arc<str> = Arc::from(repo_path.to_string_lossy().as_ref());
-
-        // Create git feed
-        let feed = GitFeed::new(repo_path.clone(), fixture_key.clone());
-
-        // Create watch channel
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
-
-        // Create cancellation token
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-
-        // Spawn feed in background
-        let feed_task = tokio::spawn(async move {
-            Box::new(feed).run(tx, cancel_clone).await;
-        });
-
-        // Wait for first poll
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        // Check first snapshot
-        rx.changed().await.unwrap();
-        let frame = rx.borrow_and_update().clone();
-        assert_eq!(frame.feed_id, FeedId::GIT);
-
-        let status: GitStatus = serde_json::from_slice(&frame.payload).unwrap();
-        assert!(!status.branch.is_empty());
-        assert!(!status.head_sha.is_empty());
-
-        // Create a file and stage it
-        let test_file = repo_path.join("test.txt");
-        fs::write(&test_file, "hello").unwrap();
-
-        Command::new("git")
-            .args(["-C", &repo_path.to_string_lossy(), "add", "test.txt"])
-            .output()
-            .await
-            .unwrap();
-
-        // Wait for next poll cycle
-        tokio::time::sleep(Duration::from_secs(3)).await;
-
-        // Check updated snapshot
-        rx.changed().await.unwrap();
-        let frame = rx.borrow_and_update().clone();
-        let status: GitStatus = serde_json::from_slice(&frame.payload).unwrap();
-
-        // Verify the file is in staged list
-        assert!(!status.staged.is_empty());
-        assert_eq!(status.staged[0].path, "test.txt");
-
-        // Cancel and cleanup
-        cancel.cancel();
-        let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
-    }
-
-    /// W1: GitFeed splices `workspace_key` as the first field of every
-    /// emitted frame.
-    #[tokio::test]
-    async fn test_workspace_key_spliced_into_git_frame() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path().to_path_buf();
-
-        // Initialize git repo with a commit so `git status` returns a valid snapshot.
-        Command::new("git")
-            .args(["-C", &repo_path.to_string_lossy(), "init"])
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "config",
-                "user.name",
-                "test",
-            ])
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "config",
-                "user.email",
-                "test@test.com",
-            ])
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &repo_path.to_string_lossy(),
-                "commit",
-                "--allow-empty",
-                "-m",
-                "init",
-            ])
-            .output()
-            .await
-            .unwrap();
-
-        // Derive fixture key from the real repo_path.
-        let fixture_key: Arc<str> = Arc::from(repo_path.to_string_lossy().as_ref());
-
-        let feed = GitFeed::new(repo_path.clone(), fixture_key.clone());
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let feed_task = tokio::spawn(async move {
-            Box::new(feed).run(tx, cancel_clone).await;
-        });
-
-        rx.changed().await.unwrap();
-        let frame = rx.borrow_and_update().clone();
-
-        // Field ordering check is done on the raw bytes because
-        // `serde_json::Value` normalizes object key order (BTreeMap).
-        let expected_prefix = format!(r#"{{"workspace_key":"{}","#, fixture_key);
-        assert!(
-            frame.payload.starts_with(expected_prefix.as_bytes()),
-            "workspace_key must be the first field of GIT frames; got: {}",
-            String::from_utf8_lossy(&frame.payload)
-        );
-        let parsed: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
-        assert_eq!(parsed["workspace_key"], fixture_key.as_ref());
-
-        cancel.cancel();
-        let _ = tokio::time::timeout(Duration::from_secs(2), feed_task).await;
-    }
-
     // -- is_within_git_worktree gate (skip git poll for non-repos) --
 
     #[tokio::test]
@@ -860,49 +580,6 @@ mod tests {
             is_within_git_worktree(&sub).await,
             "a subdir of a repo must walk up to the ancestor .git",
         );
-    }
-
-    #[tokio::test]
-    async fn test_git_feed_skips_until_repo_initialized() {
-        let temp = TempDir::new().unwrap();
-        let dir = temp.path().to_path_buf();
-        let key: Arc<str> = Arc::from(dir.to_string_lossy().as_ref());
-        let feed = GitFeed::new(dir.clone(), key);
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::GIT, vec![]));
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        let task = tokio::spawn(async move {
-            Box::new(feed).run(tx, cancel_clone).await;
-        });
-
-        // No repo yet: the feed must emit nothing — the watch stays at its
-        // initial empty frame (the poll is gated out, no `git` is forked).
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        assert!(
-            rx.borrow_and_update().payload.is_empty(),
-            "no git status must be emitted for a non-repo dir",
-        );
-
-        // Initialize a repo mid-run; the feed must self-activate on a later tick.
-        git_in(&dir, &["init"]).await;
-        git_in(&dir, &["config", "user.name", "test"]).await;
-        git_in(&dir, &["config", "user.email", "test@test.com"]).await;
-        git_in(&dir, &["commit", "--allow-empty", "-m", "init"]).await;
-
-        let mut emitted = false;
-        for _ in 0..30 {
-            if !rx.borrow().payload.is_empty() {
-                emitted = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-        assert!(emitted, "feed must emit once the repo is initialized");
-        let status: GitStatus = serde_json::from_slice(&rx.borrow().payload).unwrap();
-        assert!(!status.head_sha.is_empty());
-
-        cancel.cancel();
-        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
     }
 
     // -- git diff sourcing ([#step-10a]) --

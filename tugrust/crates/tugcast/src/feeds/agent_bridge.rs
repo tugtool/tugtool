@@ -538,6 +538,10 @@ pub async fn run_session_bridge(
     // [`relay_session_io`]). Swept of this session's abandoned brackets
     // after each relay iteration ends.
     bracket_registry: BracketRegistry,
+    // Recompute signal for the workspace's ChangesetFeed, fired after
+    // each file-event write so the changeset card updates without
+    // waiting for the poll.
+    changeset_bumper: crate::feeds::changeset::ChangesetBumper,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -716,6 +720,7 @@ pub async fn run_session_bridge(
             sessions_recorder.as_ref(),
             session_ledger.as_deref(),
             &bracket_registry,
+            &changeset_bumper,
             &cancel,
         )
         .await;
@@ -858,6 +863,10 @@ pub async fn relay_session_io(
     // each other ambiguous ([P05]). Only consulted for Bash frames on the
     // live path; replay never opens a bracket.
     bracket_registry: &BracketRegistry,
+    // Fired after each file-event write so the workspace's ChangesetFeed
+    // recomputes immediately. Disconnected in harnesses without a
+    // workspace registry.
+    changeset_bumper: &crate::feeds::changeset::ChangesetBumper,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -1474,6 +1483,8 @@ pub async fn relay_session_io(
                                                     error = %err,
                                                     "record_file_event failed; frame forwarded unchanged"
                                                 );
+                                            } else {
+                                                changeset_bumper.bump(Path::new(project_dir));
                                             }
                                         }
                                     } else if let Some(bracket) = bracket_registry
@@ -1488,6 +1499,7 @@ pub async fn relay_session_io(
                                         // and exact events share a bucket).
                                         let post = snapshot_worktree(&bracket.repo_root).await;
                                         let at = crate::session_ledger::now_millis();
+                                        let mut recorded = false;
                                         for row in bracket.into_delta_rows(&post, project_dir, at) {
                                             if let Err(err) = ledger.record_file_event(&row) {
                                                 warn!(
@@ -1495,11 +1507,13 @@ pub async fn relay_session_io(
                                                     error = %err,
                                                     "record_file_event (bash) failed; frame forwarded unchanged"
                                                 );
+                                            } else {
+                                                recorded = true;
                                             }
                                         }
-                                        // Step 9 fires the workspace
-                                        // ChangesetFeed bump here (a no-op
-                                        // until that step wires the channel).
+                                        if recorded {
+                                            changeset_bumper.bump(Path::new(project_dir));
+                                        }
                                     }
                                 }
                             }
@@ -1925,6 +1939,7 @@ mod tests {
                 &recorder,
                 Some(ledger_for_relay.as_ref()),
                 &registry_for_relay,
+                &crate::feeds::changeset::ChangesetBumper::disconnected(),
                 &cancel,
             )
             .await
@@ -2153,6 +2168,7 @@ mod tests {
                 &recorder,
                 Some(ledger_for_relay.as_ref()),
                 &registry_for_relay,
+                &crate::feeds::changeset::ChangesetBumper::disconnected(),
                 &cancel,
             )
             .await

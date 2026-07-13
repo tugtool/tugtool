@@ -4593,6 +4593,8 @@ impl AgentSupervisor {
         let sessions_recorder = self.sessions_recorder.clone();
         let session_ledger_for_bridge = self.session_ledger.clone();
         let bracket_registry_for_bridge = self.bracket_registry.clone();
+        let changeset_bumper_for_bridge =
+            crate::feeds::changeset::ChangesetBumper::new(Arc::clone(&self.registry));
         tokio::spawn(async move {
             run_session_bridge(
                 tug_session_id_owned,
@@ -4607,6 +4609,7 @@ impl AgentSupervisor {
                 sessions_recorder,
                 session_ledger_for_bridge,
                 bracket_registry_for_bridge,
+                changeset_bumper_for_bridge,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
             )
@@ -7064,6 +7067,7 @@ mod tests {
             &recorder,
             None,
             &crate::feeds::attribution::BracketRegistry::new(),
+            &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )
         .await;
@@ -7174,6 +7178,7 @@ mod tests {
             &recorder,
             None,
             &crate::feeds::attribution::BracketRegistry::new(),
+            &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )
         .await;
@@ -7347,6 +7352,7 @@ mod tests {
             &recorder,
             Some(ledger.as_ref()),
             &crate::feeds::attribution::BracketRegistry::new(),
+            &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )
         .await;

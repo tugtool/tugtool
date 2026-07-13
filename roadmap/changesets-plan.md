@@ -716,11 +716,11 @@ tabindex (mousedown-focus default gotcha).
 | #step-5 | tugutil changes | done | 930cb51f1 |
 | #step-6 | Commit-skill rewire | done | cef2a9e7b |
 | #step-7 | M01 integration checkpoint | done | (verification only) |
-| #step-8 | Changeset wire types + golden fixture | pending | — |
-| #step-9 | ChangesetFeed + bump channel | pending | — |
-| #step-10 | Changeset card (read-only) | pending | — |
-| #step-11 | Git card + GitFeed retirement | pending | — |
-| #step-12 | M02 integration checkpoint | pending | — |
+| #step-8 | Changeset wire types + golden fixture | done | 9a5a5aa02 |
+| #step-9 | ChangesetFeed + bump channel | done | 6567e92be |
+| #step-10 | Changeset card (read-only) | done | bb712bf4d |
+| #step-11 | Git card + GitFeed retirement | done | 60eadf0a7 |
+| #step-12 | M02 integration checkpoint | done | (verification only) |
 | #step-13 | Pathspec diff query | pending | — |
 | #step-14 | changeset_commit verb + card commit flow | pending | — |
 | #step-15 | Scribe sidecar + summarize verb + card UI | pending | — |

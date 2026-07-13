@@ -37,7 +37,7 @@ import {
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
-import { registerGitCard } from "./components/tugways/cards/git-card";
+import { registerChangesetCard } from "./components/tugways/cards/changeset-card";
 import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
@@ -250,7 +250,7 @@ if (!container) {
   // Register card types before DeckManager construction so addCard("hello") works
   // from the first render.
   registerHelloWorldCard();
-  registerGitCard();
+  registerChangesetCard();
   registerDevCard();
   registerAboutCard();
   registerSettingsCard();

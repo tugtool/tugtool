@@ -152,6 +152,111 @@ pub struct GitDiffSnapshot {
     pub files: Vec<GitDiffFile>,
 }
 
+/// One file inside a changeset entry on the CHANGESET feed (0x23).
+///
+/// `git_status` is the porcelain-v2 XY pair for working-tree files, or the
+/// name-status letter for a dash's `base..branch` files. `op` / `origin`
+/// carry the attribution provenance recorded in `file_events`; `ambiguous`
+/// marks files whose Bash bracket overlapped another session's, and `shared`
+/// marks files owned by more than one changeset — both are excluded from the
+/// card's default commit selection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChangesetFile {
+    /// Path relative to the repository root.
+    pub path: String,
+    /// Porcelain-v2 XY status (working tree) or name-status letter (dash).
+    pub git_status: String,
+    /// Attribution operation: write | edit | notebook | created | modified |
+    /// deleted | renamed.
+    pub op: String,
+    /// Attribution origin: exact | bash | replay | dash.
+    pub origin: String,
+    /// True when a concurrent session's Bash bracket overlapped this file.
+    pub ambiguous: bool,
+    /// True when more than one changeset owns this file.
+    pub shared: bool,
+    /// Epoch milliseconds of the most recent attribution event for this file.
+    pub last_touched: i64,
+}
+
+/// A file the attribution engine has no owner for (hand edits, detached
+/// background writes). Rendered in the card's unattributed section.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UnattributedFile {
+    /// Path relative to the repository root.
+    pub path: String,
+    /// Porcelain-v2 XY status pair.
+    pub git_status: String,
+}
+
+/// One owner's slice of the workspace's dirty state on the CHANGESET feed.
+///
+/// Internally tagged on `kind` (`"session"` | `"dash"`) so the client can
+/// discriminate without a separate field check.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChangesetEntry {
+    /// Files attributed to one Claude session's `file_events` rows.
+    Session {
+        /// The tug session id that owns these files.
+        owner_id: String,
+        /// Session display name (`name` when user-set, else the id hash).
+        display_name: String,
+        /// True when the session has a live relay right now.
+        live: bool,
+        /// The session's attributed dirty files.
+        files: Vec<ChangesetFile>,
+    },
+    /// A dash worktree branch (`refs/heads/tugdash/…`) and its accumulated
+    /// `base..branch` changes.
+    Dash {
+        /// The dash branch ref name (e.g. `tugdash/fix-join`).
+        owner_id: String,
+        /// The dash's short name (branch name without the `tugdash/` prefix).
+        display_name: String,
+        /// The base branch the dash was created from.
+        base: String,
+        /// Number of commits on the dash branch past its base.
+        rounds: u32,
+        /// Worktree path relative to the repository root.
+        worktree: String,
+        /// True when the dash worktree has uncommitted changes.
+        worktree_dirty: bool,
+        /// `base..branch` name-status files.
+        files: Vec<ChangesetFile>,
+    },
+}
+
+/// The workspace-scoped changeset snapshot, delivered on the CHANGESET feed
+/// (0x23).
+///
+/// Embeds the branch / ahead-behind / HEAD header (the retired git card's
+/// data) plus every owner's attributed files and the unattributed remainder.
+/// Composition rules live with the feed; this is the wire contract, mirrored
+/// in `tugdeck/src/lib/changeset-types.ts` and guarded by the shared golden
+/// fixture `tugdeck/src/__tests__/fixtures/changeset-snapshot.golden.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChangesetSnapshot {
+    /// Canonical key of the workspace the snapshot was computed in.
+    /// Serialized like every other snapshot feed's spliced key.
+    #[serde(default)]
+    pub workspace_key: String,
+    /// Current branch name, or "(detached)" if HEAD is detached.
+    pub branch: String,
+    /// Number of commits ahead of upstream.
+    pub ahead: u32,
+    /// Number of commits behind upstream.
+    pub behind: u32,
+    /// SHA of HEAD commit.
+    pub head_sha: String,
+    /// Subject line of HEAD commit.
+    pub head_message: String,
+    /// One entry per owner (session or dash) with attributed files.
+    pub changesets: Vec<ChangesetEntry>,
+    /// Dirty files no owner claims.
+    pub unattributed: Vec<UnattributedFile>,
+}
+
 /// A single-shot subscription-usage payload, delivered on the USAGE feed
 /// (0x90) in response to a USAGE_QUERY (0x91).
 ///
@@ -510,5 +615,93 @@ mod tests {
         let decoded: StatSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(snapshot, decoded);
         assert_eq!(decoded.collectors.len(), 0);
+    }
+
+    /// The shared wire-contract fixture, also validated by the tugdeck bun
+    /// test suite — drift on either side of the mirror fails one of the two.
+    const CHANGESET_GOLDEN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tugdeck/src/__tests__/fixtures/changeset-snapshot.golden.json"
+    ));
+
+    #[test]
+    fn test_changeset_snapshot_golden_fixture() {
+        let snapshot: ChangesetSnapshot = serde_json::from_str(CHANGESET_GOLDEN).unwrap();
+        assert_eq!(snapshot.branch, "main");
+        assert_eq!(snapshot.ahead, 2);
+        assert_eq!(snapshot.changesets.len(), 2);
+        assert_eq!(snapshot.unattributed.len(), 1);
+
+        match &snapshot.changesets[0] {
+            ChangesetEntry::Session {
+                owner_id,
+                live,
+                files,
+                ..
+            } => {
+                assert!(owner_id.starts_with("sess-"));
+                assert!(live);
+                assert_eq!(files.len(), 2);
+                assert!(files[1].ambiguous);
+                assert!(files[1].shared);
+            }
+            other => panic!("expected session entry, got {other:?}"),
+        }
+        match &snapshot.changesets[1] {
+            ChangesetEntry::Dash {
+                owner_id,
+                base,
+                rounds,
+                worktree_dirty,
+                files,
+                ..
+            } => {
+                assert_eq!(owner_id, "tugdash/fix-join");
+                assert_eq!(base, "main");
+                assert_eq!(*rounds, 3);
+                assert!(!worktree_dirty);
+                assert_eq!(files.len(), 1);
+            }
+            other => panic!("expected dash entry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_changeset_snapshot_round_trip() {
+        let snapshot: ChangesetSnapshot = serde_json::from_str(CHANGESET_GOLDEN).unwrap();
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let decoded: ChangesetSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, decoded);
+    }
+
+    #[test]
+    fn test_changeset_entry_kind_tags() {
+        let session = ChangesetEntry::Session {
+            owner_id: "sess-1".to_string(),
+            display_name: "s".to_string(),
+            live: false,
+            files: vec![],
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        assert!(json.contains(r#""kind":"session""#));
+
+        let dash = ChangesetEntry::Dash {
+            owner_id: "tugdash/x".to_string(),
+            display_name: "x".to_string(),
+            base: "main".to_string(),
+            rounds: 0,
+            worktree: ".tug/worktrees/tugdash__x".to_string(),
+            worktree_dirty: true,
+            files: vec![],
+        };
+        let json = serde_json::to_string(&dash).unwrap();
+        assert!(json.contains(r#""kind":"dash""#));
+    }
+
+    #[test]
+    fn test_changeset_snapshot_workspace_key_defaults_empty() {
+        let json = r#"{"branch":"main","ahead":0,"behind":0,"head_sha":"","head_message":"","changesets":[],"unattributed":[]}"#;
+        let snapshot: ChangesetSnapshot = serde_json::from_str(json).unwrap();
+        assert_eq!(snapshot.workspace_key, "");
     }
 }

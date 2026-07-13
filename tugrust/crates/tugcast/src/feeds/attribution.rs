@@ -503,7 +503,7 @@ async fn run_git_status_porcelain(repo_root: &Path) -> Option<String> {
 /// (rename's `X` is `R`); `? ` untracked entries yield `"?"`. Unmerged
 /// (`u `) and header (`# `) lines are ignored. Mirrors the field layout
 /// `feeds/git.rs::parse_porcelain_v2` reads.
-fn parse_worktree_states(output: &str) -> Vec<(String, String)> {
+pub(crate) fn parse_worktree_states(output: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for line in output.lines() {
         if let Some(rest) = line.strip_prefix("1 ") {

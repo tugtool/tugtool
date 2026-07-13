@@ -606,7 +606,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // creators live in the app-maker menu, gated at compile time on
         // BuildInfo.profile.
         fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
-        fileMenu.addItem(NSMenuItem(title: "New Git Card", action: #selector(newGitCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newGitCard"))
+        fileMenu.addItem(NSMenuItem(title: "New Changeset Card", action: #selector(newChangesetCard(_:)), keyEquivalent: "n", modifierMask: [.command, .shift]).identified("file.newChangesetCard"))
 
         // Text-card section: New Text Card / Open File… form their own group
         // under a divider, distinct from the card creators above.
@@ -1048,8 +1048,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("show-card", params: ["component": "hello"])
     }
 
-    @objc private func newGitCard(_ sender: Any) {
-        sendControl("show-card", params: ["component": "git"])
+    @objc private func newChangesetCard(_ sender: Any) {
+        sendControl("show-card", params: ["component": "changeset"])
     }
 
     @objc private func newDevCard(_ sender: Any) {

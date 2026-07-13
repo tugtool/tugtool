@@ -1,0 +1,215 @@
+/* @tug-pairings:
+   - --tug7-element-tone-text-normal-success-rest  (added status, live dot)
+   - --tug7-element-tone-text-normal-danger-rest   (deleted status)
+   - --tug7-element-tone-text-normal-caution-rest  (modified status, ambiguous badge)
+   - --tug7-element-tone-text-normal-accent-rest   (renamed status, shared badge)
+
+   Text-color-only on the card's inherited surface: sections come from the
+   composed TugAccordion, which keeps its own tokens ([L20]). Status glyphs
+   and badges tint via tone *text* tokens, so no @tug-renders-on ([L16]). */
+
+.changeset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow-y: auto;
+}
+
+.changeset-card-waiting {
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.875rem;
+}
+
+/* ---- Header: branch / ahead-behind / HEAD subject ---- */
+
+.changeset-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changeset-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.changeset-branch-icon {
+  flex-shrink: 0;
+}
+
+.changeset-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changeset-ahead-behind {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.changeset-head-message {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Section triggers ---- */
+
+.changeset-section-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.8125rem;
+}
+
+.changeset-section-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changeset-section-name-muted {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-section-detail {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Session liveness: a dot that lights via the success tone when the owning
+   session has a live relay. Appearance only — no React state ([L06]). */
+.changeset-live-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tug7-element-global-text-normal-muted-rest);
+  opacity: 0.45;
+}
+
+.changeset-live-dot-on {
+  background: var(--tug7-element-tone-text-normal-success-rest);
+  opacity: 1;
+}
+
+.changeset-dash-mark {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* ---- File rows (read-only: no tabindex, no hover affordance) ---- */
+
+.changeset-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.changeset-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-family: var(--tug-font-family-mono);
+}
+
+.changeset-file-status {
+  flex-shrink: 0;
+  width: 2ch;
+  white-space: pre;
+}
+
+.changeset-status-added {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+.changeset-status-deleted {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+.changeset-status-modified {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
+.changeset-status-renamed {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+.changeset-status-untracked {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Clickable path → opens the file in a Text card. Appearance only ([L06]):
+   the interaction is wired in the component; here we only signal it. */
+.changeset-file-path--link {
+  cursor: pointer;
+}
+
+.changeset-file-path--link:hover {
+  text-decoration: underline;
+}
+
+.changeset-file-provenance {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.6875rem;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Ambiguous / shared marks: text-tone chips, excluded-from-default-commit
+   semantics land in a later milestone. */
+.changeset-badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+
+.changeset-badge-ambiguous {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
+.changeset-badge-shared {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* ---- Empty state ---- */
+
+.changeset-clean {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
