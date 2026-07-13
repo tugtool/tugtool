@@ -2387,6 +2387,7 @@ dependencies = [
  "dirs",
  "libc",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "serial_test",

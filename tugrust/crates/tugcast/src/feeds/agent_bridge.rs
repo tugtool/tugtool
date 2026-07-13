@@ -29,6 +29,10 @@ use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
 use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
+use super::attribution::{
+    BracketRegistry, InspectedToolResult, InspectedToolUse, PendingCalls, exact_op_for_tool,
+    file_path_for_tool, repo_root_for, snapshot_worktree,
+};
 use super::code::{parse_code_input, splice_tug_session_id};
 
 // ---------------------------------------------------------------------------
@@ -387,6 +391,17 @@ impl ChildSpawner for TugcodeSpawner {
                 .env_remove("ANTHROPIC_API_KEY")
                 .env_remove("ANTHROPIC_AUTH_TOKEN")
                 .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
+                // Self-identification for the session subprocess chain:
+                // tugcode's `scrubbedEnv` passes this through unmodified
+                // (it strips only the three auth keys above), and claude
+                // forwards its environment to Bash tool calls — so a
+                // skill or CLI run inside this session can read
+                // `$TUG_SESSION_ID` to know which session it is. This is
+                // load-bearing for `tugutil changes`, which keys the
+                // file-event query on it. The value is the tug session id
+                // (also passed as claude's `--session-id`, so the two
+                // coincide).
+                .env("TUG_SESSION_ID", &session_id)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -519,6 +534,10 @@ pub async fn run_session_bridge(
     // unchanged and the client reducer's merge falls back to its
     // zero-telemetry derived block — correct behavior, no crash.
     session_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+    // Supervisor-owned bracket registry, shared across all relays (see
+    // [`relay_session_io`]). Swept of this session's abandoned brackets
+    // after each relay iteration ends.
+    bracket_registry: BracketRegistry,
     cancel: CancellationToken,
     retry_delay: Duration,
 ) {
@@ -696,9 +715,15 @@ pub async fn run_session_bridge(
             &project_dir_str,
             sessions_recorder.as_ref(),
             session_ledger.as_deref(),
+            &bracket_registry,
             &cancel,
         )
         .await;
+
+        // Sweep any Bash brackets this relay left open (a crash mid-command)
+        // so an abandoned pre-snapshot never lingers in the shared registry
+        // and can't spuriously flag another session's bracket ambiguous.
+        bracket_registry.sweep_session(tug_session_id.as_str());
 
         // Hold a handle to this spawn's captured stderr before the child
         // drops, so the crash arm below can snapshot the tail as the
@@ -828,6 +853,11 @@ pub async fn relay_session_io(
     // during the replay window. `None` in tests that don't wire a
     // ledger — replayed `turn_complete` frames pass through unchanged.
     session_ledger: Option<&crate::session_ledger::SessionLedger>,
+    // Cross-relay registry of open Bash brackets, shared across every
+    // session's relay so overlapping brackets on the same checkout can flag
+    // each other ambiguous ([P05]). Only consulted for Bash frames on the
+    // live path; replay never opens a bracket.
+    bracket_registry: &BracketRegistry,
     cancel: &CancellationToken,
 ) -> RelayOutcome {
     // Captured when tugcode emits `resume_failed`. tugcode then
@@ -867,6 +897,15 @@ pub async fn relay_session_io(
     // separately at the router's lag-recovery branch.
     let mut replay_forward_started: Option<std::time::Instant> = None;
     let mut replay_frames_forwarded: u64 = 0;
+
+    // Attribution pending map ([P04]). Populated on each exact-tool
+    // `tool_use`, consumed on its successful `tool_result`. Relay-local
+    // (one per session's relay), size-capped with oldest eviction, and
+    // never cleared on `turn_complete` — a background agent's child
+    // `tool_use`/`tool_result` pair can straddle a turn boundary
+    // (subagent-tail re-emission), and clearing at the boundary would
+    // orphan exactly the edits attribution exists to catch.
+    let mut pending_calls = PendingCalls::new();
 
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
@@ -1347,6 +1386,125 @@ pub async fn relay_session_io(
                             }
                         }
 
+                        // Attribution intercept ([P03]–[P06]). Exact file
+                        // events for Write/Edit/MultiEdit/NotebookEdit are
+                        // captured as a pure side effect: `tool_use`
+                        // populates the pending map; a successful
+                        // `tool_result` resolves it to a `file_events`
+                        // upsert. Result-gated so denied/errored calls
+                        // don't pollute the record; `origin='replay'` and
+                        // the tool_use timestamp are used on the replay
+                        // path so a resumed session backfills historical
+                        // rows idempotently (the PK collapses re-streams).
+                        // Every branch is best-effort — a parse or ledger
+                        // error is logged and the frame still forwards
+                        // unchanged; attribution must never gate wire
+                        // delivery. (Bash bracketing is layered on in the
+                        // next step.)
+                        if let Some(ledger) = session_ledger {
+                            if line.contains("\"type\":\"tool_use\"") {
+                                if let Some(tu) = InspectedToolUse::from_slice(line.as_bytes()) {
+                                    if let (Some(op), Some(path)) = (
+                                        exact_op_for_tool(&tu.tool_name),
+                                        file_path_for_tool(&tu.tool_name, &tu.input),
+                                    ) {
+                                        pending_calls.insert(
+                                            tu.tool_use_id.clone(),
+                                            crate::feeds::attribution::PendingCall {
+                                                tool_name: tu.tool_name,
+                                                file_path: path,
+                                                op,
+                                                parent_tool_use_id: tu.parent_tool_use_id,
+                                                timestamp: tu.timestamp,
+                                            },
+                                        );
+                                    } else if tu.tool_name == "Bash" && !in_replay {
+                                        // Bash is the one opaque mutator: open
+                                        // a working-tree bracket now (before
+                                        // the command runs — the tool_use
+                                        // frame precedes execution, [R01]).
+                                        // Never in replay ([P06]: no
+                                        // fingerprint is reconstructable after
+                                        // the fact). Non-repo dirs open no
+                                        // bracket.
+                                        if let Some(repo_root) =
+                                            repo_root_for(Path::new(project_dir)).await
+                                        {
+                                            let pre = snapshot_worktree(&repo_root).await;
+                                            bracket_registry.open(
+                                                repo_root,
+                                                tug_session_id.as_str(),
+                                                &tu.tool_use_id,
+                                                tu.parent_tool_use_id,
+                                                crate::session_ledger::now_millis(),
+                                                pre,
+                                            );
+                                        }
+                                    }
+                                }
+                            } else if line.contains("\"type\":\"tool_result\"") {
+                                if let Some(tr) = InspectedToolResult::from_slice(line.as_bytes()) {
+                                    if let Some(pending) = pending_calls.take(&tr.tool_use_id) {
+                                        // Exact call. is_error → dropped
+                                        // (already taken from the map): a
+                                        // refused or failed exact call records
+                                        // nothing.
+                                        if !tr.is_error {
+                                            let origin = if in_replay { "replay" } else { "exact" };
+                                            let at = if in_replay {
+                                                pending
+                                                    .timestamp
+                                                    .or(tr.timestamp)
+                                                    .unwrap_or_else(
+                                                        crate::session_ledger::now_millis,
+                                                    )
+                                            } else {
+                                                crate::session_ledger::now_millis()
+                                            };
+                                            let row = pending.into_row(
+                                                tug_session_id.as_str(),
+                                                &tr.tool_use_id,
+                                                project_dir,
+                                                origin,
+                                                at,
+                                            );
+                                            if let Err(err) = ledger.record_file_event(&row) {
+                                                warn!(
+                                                    session = %tug_session_id,
+                                                    error = %err,
+                                                    "record_file_event failed; frame forwarded unchanged"
+                                                );
+                                            }
+                                        }
+                                    } else if let Some(bracket) = bracket_registry
+                                        .close_by_tool_use(tug_session_id.as_str(), &tr.tool_use_id)
+                                    {
+                                        // Bash call: close the bracket and
+                                        // attribute the delta — regardless of
+                                        // is_error, since a failing command
+                                        // can have mutated files before it
+                                        // failed. The session's own
+                                        // project_dir owns the rows (so Bash
+                                        // and exact events share a bucket).
+                                        let post = snapshot_worktree(&bracket.repo_root).await;
+                                        let at = crate::session_ledger::now_millis();
+                                        for row in bracket.into_delta_rows(&post, project_dir, at) {
+                                            if let Err(err) = ledger.record_file_event(&row) {
+                                                warn!(
+                                                    session = %tug_session_id,
+                                                    error = %err,
+                                                    "record_file_event (bash) failed; frame forwarded unchanged"
+                                                );
+                                            }
+                                        }
+                                        // Step 9 fires the workspace
+                                        // ChangesetFeed bump here (a no-op
+                                        // until that step wires the channel).
+                                    }
+                                }
+                            }
+                        }
+
                         let spliced = splice_tug_session_id(&line_to_emit, tug_session_id.as_str());
                         let frame = Frame::new(FeedId::CODE_OUTPUT, spliced);
                         if in_replay {
@@ -1684,6 +1842,363 @@ fn parse_user_message_text(json: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- relay attribution intercept harness ([P03]–[P06]) -----------
+
+    /// Forwarded frame captured off the merger channel.
+    struct ForwardedFrame {
+        payload: Vec<u8>,
+    }
+
+    /// Drive the real [`relay_session_io`] over a scripted tugcode stdout:
+    /// a `protocol_ack`, then each line in `frames`, then EOF. Returns the
+    /// frames forwarded to the merger (post-splice, exactly what the card
+    /// would see). Attribution is a pure side effect against `ledger`, so
+    /// the returned frames also prove the intercept never mutates delivery.
+    async fn drive_relay(
+        ledger: Arc<crate::session_ledger::SessionLedger>,
+        tug_id: &str,
+        project_dir: &str,
+        frames: &[&str],
+    ) -> Vec<ForwardedFrame> {
+        drive_relay_with_registry(
+            ledger,
+            tug_id,
+            project_dir,
+            frames,
+            &crate::feeds::attribution::BracketRegistry::new(),
+        )
+        .await
+    }
+
+    /// As [`drive_relay`], but with a caller-supplied bracket registry so a
+    /// test can drive two sessions' relays against one shared registry (the
+    /// Bash overlap / ambiguity path).
+    async fn drive_relay_with_registry(
+        ledger: Arc<crate::session_ledger::SessionLedger>,
+        tug_id: &str,
+        project_dir: &str,
+        frames: &[&str],
+        bracket_registry: &crate::feeds::attribution::BracketRegistry,
+    ) -> Vec<ForwardedFrame> {
+        use crate::feeds::agent_supervisor::NoopSessionsRecorder;
+        use crate::feeds::workspace_registry::WorkspaceKey;
+
+        let tug_session_id = TugSessionId::new(tug_id.to_string());
+        let ledger_entry = Arc::new(Mutex::new(
+            crate::feeds::agent_supervisor::LedgerEntry::new(
+                tug_session_id.clone(),
+                WorkspaceKey::from_test_str("ws-test"),
+                PathBuf::from(project_dir),
+                SessionMode::New,
+                CrashBudget::new(3, Duration::from_secs(60)),
+            ),
+        ));
+
+        let (_input_tx, mut input_rx) = mpsc::channel::<Frame>(16);
+        let (merger_tx, mut merger_rx) = mpsc::channel::<Frame>(256);
+        let (state_tx, _state_rx) = broadcast::channel::<Frame>(64);
+        let cancel = CancellationToken::new();
+
+        // tugcode stdin: the relay writes `protocol_init` here; we hold the
+        // read end only so the small write never blocks (never read).
+        let (relay_stdin_w, _tugcode_stdin_r) = tokio::io::duplex(64 * 1024);
+        // tugcode stdout: the relay reads; we script the bytes.
+        let (relay_stdout_r, mut feed_w) = tokio::io::duplex(256 * 1024);
+        let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(relay_stdout_r);
+        let lines = BufReader::new(reader).lines();
+
+        let project_dir_owned = project_dir.to_string();
+        let ledger_for_relay = ledger.clone();
+        let registry_for_relay = bracket_registry.clone();
+        let relay = tokio::spawn(async move {
+            let recorder = NoopSessionsRecorder;
+            relay_session_io(
+                &tug_session_id,
+                &ledger_entry,
+                &mut input_rx,
+                &merger_tx,
+                &state_tx,
+                Box::new(relay_stdin_w),
+                lines,
+                &project_dir_owned,
+                &recorder,
+                Some(ledger_for_relay.as_ref()),
+                &registry_for_relay,
+                &cancel,
+            )
+            .await
+        });
+
+        // Script the stdout: handshake ack, the frames, then EOF (drop).
+        feed_w
+            .write_all(b"{\"type\":\"protocol_ack\"}\n")
+            .await
+            .expect("write ack");
+        for f in frames {
+            feed_w.write_all(f.as_bytes()).await.expect("write frame");
+            feed_w.write_all(b"\n").await.expect("write newline");
+        }
+        drop(feed_w);
+
+        // Relay ends on EOF; then drain everything it forwarded.
+        let _ = relay.await.expect("relay task");
+        let mut out = Vec::new();
+        while let Ok(frame) = merger_rx.try_recv() {
+            out.push(ForwardedFrame {
+                payload: frame.payload,
+            });
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn attribution_records_one_row_for_write_and_forwards_frames_unchanged() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs","content":"x"}}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
+
+        let forwarded =
+            drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let rows = ledger.file_events_for_session("tug-1").unwrap();
+        assert_eq!(rows.len(), 1, "one exact event recorded");
+        assert_eq!(rows[0].file_path, "/proj/a.rs");
+        assert_eq!(rows[0].tool_name, "Write");
+        assert_eq!(rows[0].op, "write");
+        assert_eq!(rows[0].origin, "exact");
+        assert_eq!(rows[0].project_dir, "/proj");
+
+        // The intercept is side-effect only: each frame is forwarded exactly
+        // as the splice path would emit it without attribution.
+        assert_eq!(forwarded.len(), 2);
+        assert_eq!(
+            forwarded[0].payload,
+            splice_tug_session_id(tool_use.as_bytes(), "tug-1")
+        );
+        assert_eq!(
+            forwarded[1].payload,
+            splice_tug_session_id(tool_result.as_bytes(), "tug-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn attribution_drops_errored_tool_result() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Edit","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs"}}"#;
+        let errored = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"old_string not found","is_error":true}"#;
+
+        let forwarded = drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, errored]).await;
+
+        assert!(
+            ledger.file_events_for_session("tug-1").unwrap().is_empty(),
+            "an errored exact call records nothing"
+        );
+        // Still forwarded byte-for-byte (post-splice).
+        assert_eq!(forwarded.len(), 2);
+        assert_eq!(
+            forwarded[1].payload,
+            splice_tug_session_id(errored.as_bytes(), "tug-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn attribution_ignores_bash_in_this_step() {
+        // Bash is bracketed in the next step; the exact intercept must not
+        // record anything for it (no file_path on the input, no exact op).
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"sed -i s/a/b/ x"}}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"","is_error":false}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        assert!(ledger.file_events_for_session("tug-1").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn attribution_replay_backfills_historical_time_idempotently() {
+        // Replay-bracketed frames (between replay_started / replay_complete)
+        // carry `timestamp` and backfill rows with `origin='replay'` at that
+        // historical `at`. Replaying the same history twice leaves the row
+        // count and the row unchanged (PK upsert, #replay-idempotency).
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let replay_started = r#"{"type":"replay_started"}"#;
+        let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs"},"timestamp":1700000000123}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false,"timestamp":1700000000456}"#;
+        let replay_complete = r#"{"type":"replay_complete"}"#;
+        let script = &[replay_started, tool_use, tool_result, replay_complete];
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", script).await;
+        let after_first = ledger.file_events_for_session("tug-1").unwrap();
+        assert_eq!(after_first.len(), 1);
+        assert_eq!(after_first[0].origin, "replay");
+        assert_eq!(
+            after_first[0].at, 1_700_000_000_123,
+            "replay row keeps the tool_use timestamp as `at`"
+        );
+
+        // Resume again: same history re-streamed, no new/changed rows.
+        drive_relay(ledger.clone(), "tug-1", "/proj", script).await;
+        let after_second = ledger.file_events_for_session("tug-1").unwrap();
+        assert_eq!(after_second, after_first, "replay is idempotent");
+    }
+
+    #[tokio::test]
+    async fn attribution_records_subagent_parent_id() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-child","input":{"file_path":"/proj/sub.rs"},"parent_tool_use_id":"agent-1"}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-child","output":"ok","is_error":false}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let rows = ledger.file_events_for_session("tug-1").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].parent_tool_use_id.as_deref(), Some("agent-1"));
+    }
+
+    #[tokio::test]
+    async fn attribution_pending_map_survives_turn_boundary() {
+        // A background agent's child tool_use can arrive before a
+        // turn_complete with its tool_result after (subagent-tail
+        // re-emission). The pending map is NOT cleared on turn_complete, so
+        // the straddling pair still records.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Write","tool_use_id":"tu-1","input":{"file_path":"/proj/a.rs"},"parent_tool_use_id":"agent-1"}"#;
+        let turn_complete = r#"{"type":"turn_complete","msg_id":"m1"}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"ok","is_error":false}"#;
+
+        drive_relay(
+            ledger.clone(),
+            "tug-1",
+            "/proj",
+            &[tool_use, turn_complete, tool_result],
+        )
+        .await;
+
+        assert_eq!(
+            ledger.file_events_for_session("tug-1").unwrap().len(),
+            1,
+            "the tool_use/tool_result pair straddling turn_complete still records"
+        );
+    }
+
+    #[tokio::test]
+    async fn attribution_brackets_a_real_bash_edit_end_to_end() {
+        use crate::feeds::agent_supervisor::NoopSessionsRecorder;
+        use crate::feeds::attribution::BracketRegistry;
+        use crate::feeds::workspace_registry::WorkspaceKey;
+        use tokio::io::AsyncWriteExt;
+
+        // Real git repo with a committed file (clean pre-snapshot).
+        let repo = tempfile::tempdir().expect("tempdir");
+        let root = repo.path().to_path_buf();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&root)
+                    .output()
+                    .expect("git")
+                    .status
+                    .success(),
+                "git {args:?}"
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.test"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-q", "-m", "init"]);
+
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let project_dir = root.to_str().unwrap().to_string();
+
+        // Hand-driven relay so the file can be mutated *between* the Bash
+        // tool_use (pre-snapshot) and its tool_result (post-snapshot) — the
+        // real bracket window.
+        let tug_session_id = TugSessionId::new("tug-bash".to_string());
+        let ledger_entry = Arc::new(Mutex::new(
+            crate::feeds::agent_supervisor::LedgerEntry::new(
+                tug_session_id.clone(),
+                WorkspaceKey::from_test_str("ws-test"),
+                PathBuf::from(&project_dir),
+                SessionMode::New,
+                CrashBudget::new(3, Duration::from_secs(60)),
+            ),
+        ));
+        let (_input_tx, mut input_rx) = mpsc::channel::<Frame>(16);
+        let (merger_tx, mut _merger_rx) = mpsc::channel::<Frame>(256);
+        let (state_tx, _state_rx) = broadcast::channel::<Frame>(64);
+        let cancel = CancellationToken::new();
+        let (relay_stdin_w, _tugcode_stdin_r) = tokio::io::duplex(64 * 1024);
+        let (relay_stdout_r, mut feed_w) = tokio::io::duplex(256 * 1024);
+        let reader: Box<dyn AsyncRead + Send + Unpin> = Box::new(relay_stdout_r);
+        let lines = BufReader::new(reader).lines();
+        let registry = BracketRegistry::new();
+
+        let ledger_for_relay = ledger.clone();
+        let registry_for_relay = registry.clone();
+        let relay = tokio::spawn(async move {
+            let recorder = NoopSessionsRecorder;
+            relay_session_io(
+                &tug_session_id,
+                &ledger_entry,
+                &mut input_rx,
+                &merger_tx,
+                &state_tx,
+                Box::new(relay_stdin_w),
+                lines,
+                &project_dir,
+                &recorder,
+                Some(ledger_for_relay.as_ref()),
+                &registry_for_relay,
+                &cancel,
+            )
+            .await
+        });
+
+        // Handshake + Bash tool_use → relay takes the (clean) pre-snapshot.
+        feed_w.write_all(b"{\"type\":\"protocol_ack\"}\n").await.unwrap();
+        feed_w
+            .write_all(b"{\"type\":\"tool_use\",\"tool_name\":\"Bash\",\"tool_use_id\":\"tu-b\",\"input\":{\"command\":\"echo two >> a.txt\"}}\n")
+            .await
+            .unwrap();
+        // Let the pre-snapshot land before the "command" mutates the tree.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        std::fs::write(root.join("a.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(root.join("c.txt"), "created\n").unwrap();
+        // tool_result closes the bracket → post-snapshot + delta rows.
+        feed_w
+            .write_all(b"{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b\",\"output\":\"\",\"is_error\":false}\n")
+            .await
+            .unwrap();
+        // Give the close path time to record before EOF ends the relay.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop(feed_w);
+        let _ = relay.await.expect("relay task");
+
+        let rows = ledger.file_events_for_session("tug-bash").unwrap();
+        let by_path: std::collections::HashMap<String, String> = rows
+            .iter()
+            .map(|r| (r.file_path.clone(), r.op.clone()))
+            .collect();
+        assert_eq!(
+            by_path.get(root.join("a.txt").to_str().unwrap()),
+            Some(&"modified".to_owned()),
+            "the Bash-edited tracked file is attributed"
+        );
+        assert_eq!(
+            by_path.get(root.join("c.txt").to_str().unwrap()),
+            Some(&"created".to_owned()),
+            "the Bash-created file is attributed"
+        );
+        for r in &rows {
+            assert_eq!(r.origin, "bash");
+            assert_eq!(r.tool_name, "Bash");
+            assert!(!r.ambiguous);
+        }
+    }
 
     #[test]
     fn test_crash_budget_within_window() {
@@ -2084,6 +2599,53 @@ mod tests {
             reaped,
             "SessionChild drop must terminate the underlying subprocess within {MAX_WAIT:?} \
              (kill_on_drop(true) is load-bearing for tugcode cleanup)"
+        );
+    }
+
+    #[tokio::test]
+    async fn tugcode_spawn_exports_tug_session_id_to_the_child_env() {
+        // The env chain that lets a skill / CLI inside the session self-
+        // identify (and `tugutil changes` scope its query) starts here:
+        // tugcast must set TUG_SESSION_ID on the tugcode spawn. Drive the
+        // real `TugcodeSpawner::spawn_child` against a stand-in "tugcode"
+        // that ignores its argv and echoes the variable, then read it back
+        // off the child's stdout.
+        use tokio::io::AsyncReadExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Named `tugcode` so `build_tugcode_command` runs it directly as a
+        // binary (the `.ts` path would route through `bun run`).
+        let script = dir.path().join("tugcode");
+        std::fs::write(&script, "#!/bin/sh\nprintf '%s' \"$TUG_SESSION_ID\"\n")
+            .expect("write stand-in tugcode");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod +x");
+        }
+
+        let spawner = TugcodeSpawner::new(script);
+        let mut child = spawner
+            .spawn_child(
+                dir.path(),
+                "tug-sess-xyz",
+                SessionMode::New,
+                None,
+                None,
+            )
+            .await
+            .expect("spawn stand-in tugcode");
+
+        let mut out = String::new();
+        child
+            .stdout
+            .read_to_string(&mut out)
+            .await
+            .expect("read child stdout");
+        assert_eq!(
+            out, "tug-sess-xyz",
+            "tugcode child must inherit TUG_SESSION_ID set on the spawn"
         );
     }
 

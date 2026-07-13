@@ -709,13 +709,13 @@ tabindex (mousedown-focus default gotcha).
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | file_events table + ledger API | pending | — |
-| #step-2 | TUG_SESSION_ID env plumbing | pending | — |
-| #step-3 | Exact attribution intercept + replay backfill | pending | — |
-| #step-4 | Bash fingerprint bracketing | pending | — |
-| #step-5 | tugutil changes | pending | — |
-| #step-6 | Commit-skill rewire | pending | — |
-| #step-7 | M01 integration checkpoint | pending | — |
+| #step-1 | file_events table + ledger API | done | 8cd2c31bf |
+| #step-2 | TUG_SESSION_ID env plumbing | done | a68ea0145 |
+| #step-3 | Exact attribution intercept + replay backfill | done | 2c406e7a3 |
+| #step-4 | Bash fingerprint bracketing | done | 0e529e2b2 |
+| #step-5 | tugutil changes | done | 930cb51f1 |
+| #step-6 | Commit-skill rewire | done | cef2a9e7b |
+| #step-7 | M01 integration checkpoint | done | (verification only) |
 | #step-8 | Changeset wire types + golden fixture | pending | — |
 | #step-9 | ChangesetFeed + bump channel | pending | — |
 | #step-10 | Changeset card (read-only) | pending | — |

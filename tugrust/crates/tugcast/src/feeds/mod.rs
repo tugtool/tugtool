@@ -6,6 +6,7 @@
 pub mod activity;
 pub mod agent_bridge;
 pub mod agent_supervisor;
+pub mod attribution;
 pub mod claude_auth;
 pub mod claude_usage;
 pub mod code;

@@ -17,9 +17,50 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
 
 When the arguments are silent on scope, the default (session-only) applies — do not ask which one; just scope to this session's files.
 
+### The authoritative session file list — `tugutil changes`
+
+Do not reconstruct "the files I changed this session" from conversation memory as the
+primary source — that memory is reliable for `Write`/`Edit` but blind to `Bash`-mediated
+edits (`sed`, `perl`, `git mv`, redirection). Instead, when scope is session-only, get
+the list from tugcast's authoritative attribution record:
+
+```
+tugutil changes --json
+```
+
+One clean command — no `cd`, no heredoc, no port discovery. It reads the file-event rows
+tugcast recorded at the moment of each change (exact for Write/Edit/NotebookEdit,
+working-tree-bracketed for Bash) for `$TUG_SESSION_ID`, joins them against the current
+`git status`, and returns:
+
+```jsonc
+{ "session": "…", "project": "…",
+  "files": [ { "path": "tugdeck/src/foo.ts", "op": "edit", "origin": "exact",
+               "ambiguous": false, "git_status": " M" } ] }
+```
+
+- **Use the `--json` form, not the plain form.** Plain output silently omits `ambiguous`
+  files; the skill must see the `ambiguous` flag to make a judgment about them rather than
+  stage (or skip) them blindly.
+- **`ambiguous: true`** means an overlapping session had a Bash bracket open on this repo
+  at the same time, so the file's ownership is uncertain. Do **not** auto-stage an
+  ambiguous file — call it out in your report and include it only if the diff clearly
+  shows it as this session's work.
+- The `files` list already excludes files that were committed or reverted since (the
+  `git status` join), so every listed path is a live change.
+- **Fallback:** if `tugutil changes` is unavailable (older tugcast, or `$TUG_SESSION_ID`
+  unset — it exits non-zero with a hint), fall back to reconstructing the list from this
+  conversation's Write/Edit/Bash calls. Either way, keep the `git status` / `git diff`
+  cross-check below — the authoritative list tells you *which* files; the diff tells you
+  *what* changed in them.
+
 ## Your Process
 
 1. **Gather Context**
+   - For session-only scope, run `tugutil changes --json` first — the authoritative list
+     of files this session changed (see **The authoritative session file list** above).
+     This is the primary source for *which* files to stage; the git commands below tell
+     you *what* changed in them and cross-check the working tree.
    - Run `git status` to see staged and unstaged changes
    - Run `git diff` and `git diff --cached` to understand what changed
    - Run `git log --oneline -10` to see recent commit history and follow the existing message style
@@ -49,7 +90,12 @@ When the arguments are silent on scope, the default (session-only) applies — d
    - NEVER include Co-Authored-By lines or any AI/agent attribution
 
 4. **Stage and Commit**
-   - Stage per the **Scope of Changes** decision above: by default `git add` only the files you changed in this session; stage the rest of the working tree only when the arguments asked to commit everything. Be deliberate — do not blindly `git add .`
+   - Stage per the **Scope of Changes** decision above: by default `git add` exactly the
+     non-ambiguous paths from `tugutil changes --json` (this session's files); stage the
+     rest of the working tree only when the arguments asked to commit everything. Be
+     deliberate — do not blindly `git add .`. Hold back `ambiguous: true` files unless the
+     diff clearly shows them as this session's work, and note any such decision in your
+     report.
    - Commit, then append a per-file stat to the SAME command so the Dev card's
      commit receipt can render the per-file breakdown:
      `git commit -m "message" && git --no-pager show --numstat --format= HEAD`

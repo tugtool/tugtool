@@ -3455,6 +3455,14 @@ export class SessionManager {
     void ANTHROPIC_AUTH_TOKEN;
     void CLAUDE_CODE_OAUTH_TOKEN;
 
+    // `TUG_SESSION_ID` (set by tugcast on the tugcode spawn, next to the
+    // `env_remove` auth-scrub above) is deliberately NOT destructured out
+    // here — it rides through `scrubbedEnv` to claude, which forwards its
+    // environment to Bash tool calls. This is the chain that lets a skill
+    // or CLI run inside the session read `$TUG_SESSION_ID` and self-
+    // identify; `tugutil changes` keys its file-event query on it. If the
+    // auth-scrub destructure ever grows, keep this variable out of it.
+
     // Enable file checkpointing so the dev-card's `/rewind` can restore the
     // *code* dimension (not just the conversation). The terminal has this on
     // by default; in stream-json/SDK mode it is opt-in via this env var.

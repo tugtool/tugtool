@@ -429,6 +429,76 @@ pub struct ScanCacheRow {
     pub frontier_pending_close_msg_id: Option<String>,
 }
 
+/// One row of the `file_events` table — an authoritative record that a
+/// session changed a file, written at the moment of change from the
+/// agent-bridge relay loop. A session's file knowledge is concentrated
+/// here (a sqlite row per tool call that touched a file) rather than
+/// reconstructed after the fact from conversation context — exact for
+/// `Write`/`Edit`/`MultiEdit`/`NotebookEdit` (straight from the tool
+/// input), bracketed for `Bash` (working-tree fingerprint delta).
+///
+/// Keyed by `(tug_session_id, tool_use_id, file_path)`: the tug session
+/// id is the card-bound identity that survives resumes (claude ids
+/// rotate underneath it), so attribution keyed here gets resume-lineage
+/// for free. That primary key is also the idempotency contract — replay
+/// re-emits the full persisted history and `subagent-tail` re-streams
+/// background-agent children from offset 0, so any frame may be seen more
+/// than once; the upsert (`ON CONFLICT DO NOTHING`) makes processing the
+/// same frame twice a no-op.
+///
+/// `at` is the wall-clock millisecond time of the event: frame-arrival
+/// time on the live path, the tool's own `timestamp` on the replay path
+/// so backfilled rows keep historical time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEventRow {
+    /// The tug session id that owns the change (the `sessions.session_id`
+    /// for a Tug-created session — tugcast passes it to claude as
+    /// `--session-id`, so the two coincide).
+    pub tug_session_id: String,
+    /// The tool call's `tool_use_id`. A Bash call touching N files yields
+    /// N rows that share this id.
+    pub tool_use_id: String,
+    /// The changed path, as given by the tool input (absolute) or derived
+    /// from the bracket delta. Repo-relative projection happens at query
+    /// time against `project_dir`.
+    pub file_path: String,
+    /// `Write` | `Edit` | `MultiEdit` | `NotebookEdit` | `Bash`.
+    pub tool_name: String,
+    /// `write` | `edit` | `notebook` | `created` | `modified` | `deleted`
+    /// | `renamed` — the exact tools record their verb; Bash rows derive
+    /// it from the working-tree status transition.
+    pub op: String,
+    /// `exact` (tool input) | `bash` (bracket delta) | `replay`
+    /// (exact tool, backfilled on resume).
+    pub origin: String,
+    /// Set when another session's Bash bracket on the same repo root
+    /// overlapped this one's window — the delta is recorded, never
+    /// guessed. Ambiguous rows are excluded from one-click commit.
+    pub ambiguous: bool,
+    /// Set for subagent-issued calls (the `parent_tool_use_id` from the
+    /// stream); `None` for top-level calls.
+    pub parent_tool_use_id: Option<String>,
+    /// The checkout root at event time (worktree-aware): a worktree
+    /// session records its worktree root, not the base checkout.
+    pub project_dir: String,
+    /// Epoch milliseconds — frame time on the live path,
+    /// `ToolUse.timestamp` on replay.
+    pub at: i64,
+}
+
+/// A `file_events` row joined with its owning `sessions` row's display
+/// fields — the shape the workspace changeset composition reads (owner
+/// display name = session `name` when `name_user_set`, else the id hash,
+/// the same rule the Z4B session chip uses). `owner_name` /
+/// `owner_name_user_set` are `None`/`false` when no `sessions` row
+/// matches the event's `tug_session_id` (a headless or evicted session).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectFileEvent {
+    pub event: FileEventRow,
+    pub owner_name: Option<String>,
+    pub owner_name_user_set: bool,
+}
+
 /// Result of a successful `trash` call.
 ///
 /// `jsonl_moved_to` is `None` when the JSONL file is missing or the
@@ -547,6 +617,25 @@ impl SessionLedger {
         ("session_init_tokens", "INTEGER"),
     ];
 
+    /// The `(name, declared-type)` columns the current `file_events`
+    /// `CREATE TABLE` defines, in order. `file_events` is an advisory,
+    /// fully-rebuildable record (nothing else keys on it; a resumed
+    /// session backfills its exact events), so a drifted on-disk shape
+    /// is resolved by the same DROP-and-recreate guard as
+    /// `turn_telemetry` rather than a migration.
+    const FILE_EVENTS_SCHEMA: &'static [(&'static str, &'static str)] = &[
+        ("tug_session_id", "TEXT"),
+        ("tool_use_id", "TEXT"),
+        ("file_path", "TEXT"),
+        ("tool_name", "TEXT"),
+        ("op", "TEXT"),
+        ("origin", "TEXT"),
+        ("ambiguous", "INTEGER"),
+        ("parent_tool_use_id", "TEXT"),
+        ("project_dir", "TEXT"),
+        ("at", "INTEGER"),
+    ];
+
     fn bootstrap_schema(conn: &Connection) -> Result<(), LedgerError> {
         // Self-healing schema guard. `CREATE TABLE IF NOT EXISTS` does
         // not alter a table that already exists, so when a typed
@@ -569,6 +658,7 @@ impl SessionLedger {
         // whose drift was observed — and a future change to another
         // typed table can opt in with one more call.
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
+        Self::rebuild_table_if_schema_drifted(conn, "file_events", Self::FILE_EVENTS_SCHEMA)?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
         Self::migrate_sessions_add_name_user_set(conn)?;
@@ -858,6 +948,50 @@ impl SessionLedger {
 
             CREATE INDEX IF NOT EXISTS external_scan_cache_project
                 ON external_scan_cache(project_dir);
+
+            -- Authoritative per-session file attribution — one row per
+            -- (tug_session_id, tool_use_id, file_path). Written from the
+            -- agent-bridge relay loop at the moment a tool call that
+            -- changed a file lands: exact for Write/Edit/MultiEdit/
+            -- NotebookEdit (straight from the tool input), bracketed for
+            -- Bash (working-tree fingerprint delta). This concentrates a
+            -- session's file knowledge down to the point of change rather
+            -- than reconstructing the session file list from conversation
+            -- context (which is blind to Bash-mediated edits like sed,
+            -- perl, or git mv).
+            --
+            -- Keyed by the tug session id — the card-bound identity that
+            -- survives resumes (claude ids rotate underneath it), so
+            -- attribution gets resume-lineage for free. The PK is the
+            -- idempotency contract: resume replays the full history and
+            -- subagent-tail re-streams background-agent children from
+            -- offset 0, so a frame may be seen twice; `record_file_event`
+            -- upserts with ON CONFLICT DO NOTHING, making the repeat a
+            -- no-op. Cascade-on-DELETE mirrors the `turns` journal so
+            -- evicting a `sessions` row takes its attribution with it.
+            CREATE TABLE IF NOT EXISTS file_events (
+                tug_session_id      TEXT NOT NULL,
+                tool_use_id         TEXT NOT NULL,
+                file_path           TEXT NOT NULL,
+                tool_name           TEXT NOT NULL,
+                op                  TEXT NOT NULL,
+                origin              TEXT NOT NULL,
+                ambiguous           INTEGER NOT NULL DEFAULT 0,
+                parent_tool_use_id  TEXT,
+                project_dir         TEXT NOT NULL,
+                at                  INTEGER NOT NULL,
+                PRIMARY KEY (tug_session_id, tool_use_id, file_path)
+            );
+
+            CREATE INDEX IF NOT EXISTS file_events_project
+                ON file_events(project_dir, at);
+
+            CREATE TRIGGER IF NOT EXISTS file_events_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM file_events WHERE tug_session_id = OLD.session_id;
+            END;
             ",
         )?;
         Ok(())
@@ -1867,6 +2001,107 @@ impl SessionLedger {
         Ok(rows)
     }
 
+    /// Upsert one `file_events` row. Idempotent on the
+    /// `(tug_session_id, tool_use_id, file_path)` primary key via
+    /// `ON CONFLICT DO NOTHING` — the first write wins and every replay
+    /// / re-stream of the same frame is a no-op, which is the
+    /// invariant the attribution pipeline relies on ([P06],
+    /// #replay-idempotency). A repeat of the *same* tool call never
+    /// mutates the row (so a re-streamed live frame can't flip an
+    /// already-recorded `origin='replay'` back to `exact`, or vice
+    /// versa) — the point of change is recorded once.
+    pub fn record_file_event(&self, row: &FileEventRow) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT INTO file_events (
+                tug_session_id, tool_use_id, file_path,
+                tool_name, op, origin, ambiguous,
+                parent_tool_use_id, project_dir, at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT (tug_session_id, tool_use_id, file_path) DO NOTHING",
+            params![
+                row.tug_session_id,
+                row.tool_use_id,
+                row.file_path,
+                row.tool_name,
+                row.op,
+                row.origin,
+                i64::from(row.ambiguous),
+                row.parent_tool_use_id,
+                row.project_dir,
+                row.at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Every `file_events` row owned by `tug_session_id`, oldest-first by
+    /// `at`. The authoritative "files this session changed" list that
+    /// `tugutil changes` filters against current `git status`.
+    pub fn file_events_for_session(
+        &self,
+        tug_session_id: &str,
+    ) -> Result<Vec<FileEventRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT tug_session_id, tool_use_id, file_path,
+                    tool_name, op, origin, ambiguous,
+                    parent_tool_use_id, project_dir, at
+             FROM file_events
+             WHERE tug_session_id = ?1
+             ORDER BY at ASC, tool_use_id ASC, file_path ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![tug_session_id], file_event_row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Every `file_events` row recorded against `project_dir`, joined with
+    /// its owning `sessions` row for the owner display fields, oldest-first
+    /// by `at`. The workspace changeset composition groups these by owner
+    /// (the LEFT JOIN keeps events whose session row was evicted — they
+    /// fall into the unattributed/unknown-owner bucket rather than
+    /// vanishing).
+    pub fn file_events_for_project(
+        &self,
+        project_dir: &str,
+    ) -> Result<Vec<ProjectFileEvent>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT fe.tug_session_id, fe.tool_use_id, fe.file_path,
+                    fe.tool_name, fe.op, fe.origin, fe.ambiguous,
+                    fe.parent_tool_use_id, fe.project_dir, fe.at,
+                    s.name, s.name_user_set
+             FROM file_events fe
+             LEFT JOIN sessions s ON s.session_id = fe.tug_session_id
+             WHERE fe.project_dir = ?1
+             ORDER BY fe.at ASC, fe.tool_use_id ASC, fe.file_path ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![project_dir], |row| {
+                Ok(ProjectFileEvent {
+                    event: FileEventRow {
+                        tug_session_id: row.get(0)?,
+                        tool_use_id: row.get(1)?,
+                        file_path: row.get(2)?,
+                        tool_name: row.get(3)?,
+                        op: row.get(4)?,
+                        origin: row.get(5)?,
+                        ambiguous: row.get::<_, i64>(6)? != 0,
+                        parent_tool_use_id: row.get(7)?,
+                        project_dir: row.get(8)?,
+                        at: row.get(9)?,
+                    },
+                    owner_name: row.get(10)?,
+                    // NULL when no session row matched (LEFT JOIN miss).
+                    owner_name_user_set: row.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Upsert one `session_metadata` row. Idempotent on `session_id`
     /// via `INSERT OR REPLACE` — the bridge intercept runs the merge
     /// on every outbound `system_metadata` line, so a steady-state
@@ -2267,6 +2502,25 @@ fn turn_telemetry_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Tu
         max_stream_gap_ms: row.get(14)?,
         ended_at: row.get(15)?,
         session_init_tokens: row.get(16)?,
+    })
+}
+
+/// Decode one row from a `SELECT … FROM file_events` cursor matching the
+/// column order in `file_events_for_session`. Every column is a fixed
+/// scalar (the `ambiguous` INTEGER is coerced to `bool`), so there is no
+/// fallible decode beyond rusqlite's own type coercion.
+fn file_event_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileEventRow> {
+    Ok(FileEventRow {
+        tug_session_id: row.get(0)?,
+        tool_use_id: row.get(1)?,
+        file_path: row.get(2)?,
+        tool_name: row.get(3)?,
+        op: row.get(4)?,
+        origin: row.get(5)?,
+        ambiguous: row.get::<_, i64>(6)? != 0,
+        parent_tool_use_id: row.get(7)?,
+        project_dir: row.get(8)?,
+        at: row.get(9)?,
     })
 }
 
@@ -4021,6 +4275,217 @@ mod tests {
             0,
             "cascade trigger must purge turn_telemetry rows when the parent session row is deleted",
         );
+    }
+
+    // ---- file_events table ---------------------------------------------
+
+    fn sample_file_event(session_id: &str, tool_use_id: &str, path: &str) -> FileEventRow {
+        FileEventRow {
+            tug_session_id: session_id.to_owned(),
+            tool_use_id: tool_use_id.to_owned(),
+            file_path: path.to_owned(),
+            tool_name: "Write".to_owned(),
+            op: "write".to_owned(),
+            origin: "exact".to_owned(),
+            ambiguous: false,
+            parent_tool_use_id: None,
+            project_dir: "/proj".to_owned(),
+            at: 1_700_000_000_000,
+        }
+    }
+
+    #[test]
+    fn record_file_event_round_trip_preserves_every_field() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let mut row = sample_file_event("s1", "tu-A", "/proj/src/foo.rs");
+        row.tool_name = "Bash".to_owned();
+        row.op = "modified".to_owned();
+        row.origin = "bash".to_owned();
+        row.ambiguous = true;
+        row.parent_tool_use_id = Some("tu-parent".to_owned());
+        l.record_file_event(&row).unwrap();
+        let read = l.file_events_for_session("s1").unwrap();
+        assert_eq!(read, vec![row]);
+    }
+
+    #[test]
+    fn record_file_event_idempotent_on_session_tool_path_pk() {
+        // Replay re-emits the full history and subagent-tail re-streams
+        // background children from offset 0, so the same frame can arrive
+        // twice. ON CONFLICT DO NOTHING keeps one row and the first write
+        // wins — a re-streamed live frame does not flip an already-
+        // recorded `origin` (#replay-idempotency).
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let first = {
+            let mut r = sample_file_event("s1", "tu-A", "/proj/foo.rs");
+            r.origin = "replay".to_owned();
+            r
+        };
+        l.record_file_event(&first).unwrap();
+        // Same PK, different non-key columns — must NOT overwrite.
+        let second = {
+            let mut r = sample_file_event("s1", "tu-A", "/proj/foo.rs");
+            r.origin = "exact".to_owned();
+            r.op = "edit".to_owned();
+            r
+        };
+        l.record_file_event(&second).unwrap();
+        let read = l.file_events_for_session("s1").unwrap();
+        assert_eq!(read.len(), 1, "ON CONFLICT DO NOTHING keeps one row per PK");
+        assert_eq!(read[0].origin, "replay", "first write wins");
+        assert_eq!(read[0].op, "write");
+    }
+
+    #[test]
+    fn record_file_event_distinct_paths_of_one_bash_call_are_separate_rows() {
+        // A Bash call touching N files yields N rows sharing tool_use_id.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.record_file_event(&sample_file_event("s1", "tu-bash", "/proj/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("s1", "tu-bash", "/proj/b.rs"))
+            .unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn file_events_for_session_filters_by_session() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        seed_live(&l, "s2", "ws", "card-2", millis(0));
+        l.record_file_event(&sample_file_event("s1", "tu-1", "/proj/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("s2", "tu-1", "/proj/b.rs"))
+            .unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
+        assert_eq!(l.file_events_for_session("s2").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn file_events_for_project_joins_owner_display_fields() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.rename("s1", Some("my session")).unwrap();
+        l.record_file_event(&sample_file_event("s1", "tu-1", "/proj/a.rs"))
+            .unwrap();
+        let read = l.file_events_for_project("/proj").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].owner_name.as_deref(), Some("my session"));
+        assert!(read[0].owner_name_user_set);
+        assert_eq!(read[0].event.tug_session_id, "s1");
+    }
+
+    #[test]
+    fn file_events_for_project_keeps_events_with_no_session_row() {
+        // LEFT JOIN: an event whose session row was evicted still shows
+        // up (unattributed/unknown-owner bucket), never silently dropped.
+        let l = fresh();
+        l.record_file_event(&sample_file_event("ghost", "tu-1", "/proj/a.rs"))
+            .unwrap();
+        let read = l.file_events_for_project("/proj").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].owner_name, None);
+        assert!(!read[0].owner_name_user_set);
+    }
+
+    #[test]
+    fn file_events_for_project_filters_by_project_dir() {
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let mut here = sample_file_event("s1", "tu-1", "/proj/a.rs");
+        here.project_dir = "/proj".to_owned();
+        let mut elsewhere = sample_file_event("s1", "tu-2", "/other/b.rs");
+        elsewhere.project_dir = "/other".to_owned();
+        l.record_file_event(&here).unwrap();
+        l.record_file_event(&elsewhere).unwrap();
+        assert_eq!(l.file_events_for_project("/proj").unwrap().len(), 1);
+        assert_eq!(l.file_events_for_project("/other").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn cascade_delete_removes_file_events_when_session_deleted() {
+        // Pin the `file_events_cascade_delete_on_session` trigger: trashing
+        // a session takes its attribution rows with it.
+        let l = fresh();
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        l.mark_closed("s1").unwrap();
+        l.record_file_event(&sample_file_event("s1", "tu-A", "/proj/a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("s1", "tu-B", "/proj/b.rs"))
+            .unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 2);
+
+        l.trash("s1").unwrap();
+
+        assert_eq!(
+            l.file_events_for_session("s1").unwrap().len(),
+            0,
+            "cascade trigger must purge file_events when the parent session row is deleted",
+        );
+    }
+
+    #[test]
+    fn opening_a_db_with_a_drifted_file_events_schema_rebuilds_it() {
+        // file_events is advisory + fully rebuildable, so a stale on-disk
+        // shape is DROPPED and recreated (never migrated) — the same guard
+        // that protects turn_telemetry from silent INSERT failures.
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        // A prior shape missing the `parent_tool_use_id` column, carrying a row.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE file_events (
+                    tug_session_id TEXT NOT NULL,
+                    tool_use_id    TEXT NOT NULL,
+                    file_path      TEXT NOT NULL,
+                    tool_name      TEXT NOT NULL,
+                    op             TEXT NOT NULL,
+                    origin         TEXT NOT NULL,
+                    ambiguous      INTEGER NOT NULL DEFAULT 0,
+                    project_dir    TEXT NOT NULL,
+                    at             INTEGER NOT NULL,
+                    PRIMARY KEY (tug_session_id, tool_use_id, file_path)
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, project_dir, at)
+                 VALUES ('stale', 'tu', '/p/x', 'Write', 'write', 'exact', '/p', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        // Open via SessionLedger — the bootstrap guard sees the drift and
+        // rebuilds the table with the current shape.
+        let l = SessionLedger::open(&path).unwrap();
+        // A write listing `parent_tool_use_id` now succeeds — it would have
+        // failed against the stale shape.
+        seed_live(&l, "s1", "ws", "card-1", millis(0));
+        let mut row = sample_file_event("s1", "tu-A", "/proj/a.rs");
+        row.parent_tool_use_id = Some("tu-parent".to_owned());
+        l.record_file_event(&row).unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap(), vec![row]);
+        // The rebuild dropped the stale row — recreate, not migrate.
+        assert_eq!(l.file_events_for_session("stale").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn bootstrap_leaves_a_matching_file_events_untouched() {
+        // Drift-only: reopening a current-shape DB keeps the rows.
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        {
+            let l = SessionLedger::open(&path).unwrap();
+            seed_live(&l, "s1", "ws", "card-1", millis(0));
+            l.record_file_event(&sample_file_event("s1", "tu-A", "/proj/a.rs"))
+                .unwrap();
+        }
+        let l = SessionLedger::open(&path).unwrap();
+        assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
     }
 
     // ---- session_metadata table ----------------------------------------
