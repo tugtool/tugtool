@@ -89,12 +89,14 @@
   display: none;
 }
 
-/* In-progress fill is a fixed intense blue — slightly more saturated than
-   brio's Key — applied identically across every theme. Overrides the
-   parent-inherited `--tugx-progress-indicator-fill` (the action/Key tone)
-   for this state only, so "in progress" never collides with a theme's
-   success green (e.g. nocturne) where the Key is itself a green. */
-.tug-progress-pulsing-dot[data-state="running"] {
+/* The action-role in-progress fill is a fixed intense blue — slightly more
+   saturated than brio's Key — applied identically across every theme.
+   Overrides the parent-inherited `--tugx-progress-indicator-fill` (the
+   action/Key tone) so "in progress" never collides with a theme's success
+   green (e.g. nocturne) where the Key is itself a green. Scoped to the
+   action role: a running dot in another role (caution-yellow for
+   awaiting/restoring/interrupting, danger, …) keeps its own role tone. */
+.tug-progress-indicator[data-role="action"] .tug-progress-pulsing-dot[data-state="running"] {
   --tugx-progress-indicator-fill: --tug-color(cobalt, l: 700, c: 320);
 }
 
