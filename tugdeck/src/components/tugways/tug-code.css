@@ -47,6 +47,8 @@ body {
   /* text-derived — inherits per-theme via fg-default override */
   --tugx-syntax-operator: var(--tug7-element-global-text-normal-default-rest);
   --tugx-syntax-punctuation: var(--tug7-element-global-text-normal-default-rest);
+  /* text-derived — the transcript's per-theme inline-code tint (30%/40% spot) */
+  --tug-syntax-code: var(--tug7-element-tone-text-normal-code-rest);
   --tug-syntax-constant: --tug-color(gold, l: 840, c: 240);
   --tug-syntax-decorator: --tug-color(purple, l: 760, c: 280);
   --tug-syntax-tag: --tug-color(pink, l: 780, c: 280);

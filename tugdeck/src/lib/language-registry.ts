@@ -72,6 +72,7 @@ export const tugHighlightStyleInner = HighlightStyle.define([
   { tag: tags.heading, color: "var(--tug-syntax-keyword)", fontWeight: "bold" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.monospace, color: "var(--tug-syntax-code)" },
   { tag: [tags.link, tags.url], color: "var(--tug-syntax-string)", textDecoration: "underline" },
 ]);
 
