@@ -834,6 +834,28 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return target.closest(FOCUS_REFUSE_SELECTOR) !== null;
     }
 
+    // First-responder-preserving chrome. Structural gesture surfaces (the
+    // pane title bar) are activation/drag targets, never responder targets:
+    // a click there must not promote the coarse pane/card container — which
+    // would strand every accelerator registered on the card's CONTENT
+    // (route switching on the prompt entry, find on the editors, cut/copy/
+    // paste) since the chain walk is upward-only. Distinct from
+    // `data-tug-focus="refuse"` (button-class-only by doctrine); this is
+    // the structural-marker sibling the responder-chain doc calls for.
+    // Cross-pane activation still lands first responder on the newly-active
+    // card through the engine's [P21] restore.
+    const FR_PRESERVE_SELECTOR = "[data-tug-fr-preserve]";
+
+    function isFrPreserving(target: EventTarget | null): boolean {
+      const el =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      return el !== null && el.closest(FR_PRESERVE_SELECTOR) !== null;
+    }
+
     // ---- Modal scrim barrier: card-modal ([P16]/[P19]) + pane-modal ----
     //
     // While an inline dialog (permission / question) is pending its card is
@@ -910,6 +932,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // dispatch and need the first responder to stay on the
       // editor, so skipping promotion here is correct for both.
       if (isFocusRefusing(event.target)) return;
+      // First-responder-preserving chrome (the pane title bar): an
+      // activation/drag gesture, not a responder target — leave first
+      // responder wherever the user was working.
+      if (isFrPreserving(event.target)) return;
       // Card-modal barrier: a stray click on the scrimmed surround promotes the
       // dialog island instead of the click target, and does so as a PROGRAMMATIC
       // (non-pointer) promotion — so `seedKeyViewFromChain` yields to the finer
@@ -937,6 +963,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // surround; the dialog owns focus. The click event still fires.
       if (
         isFocusRefusing(event.target) ||
+        isFrPreserving(event.target) ||
         modalScrimRedirectTarget(event.target) !== null
       ) {
         event.preventDefault();

@@ -29,6 +29,12 @@
  *      transcript, the count chip reads the whole-transcript total
  *      regardless of what is mounted, and ⌘G navigation (with wrap) walks
  *      both matches.
+ *   3. Reveal + flash containment: typing a query (no ⌘G) scrolls the first
+ *      match into the visible band between the pinned chrome and the
+ *      scroller's bottom edge; refining the query re-reveals when the
+ *      active match's identity moves; and the landing-flash ring is an
+ *      absolutely-positioned child of the scroller, contained by its box
+ *      and overlapping the active match — never floating over chrome.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -603,6 +609,84 @@ async function clearQuery(app: App): Promise<void> {
   await app.nativeKey("Delete");
 }
 
+/**
+ * Wait until the ACTIVE match's rect lies inside the transcript's visible
+ * band: below the pinned chrome (`--tugx-pin-stack-top`, inherited onto the
+ * scroller) at the top, above the scroller's own bottom edge at the bottom.
+ * The reveal enforces an 8px inset on both edges; the check allows 1px of
+ * sub-pixel slack. Polled — the reveal settles over a few animation frames.
+ */
+async function waitForActiveInBand(app: App): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `(() => {
+      const hl = CSS.highlights.get('transcript-find-active');
+      if (!hl) return false;
+      let rect = null;
+      let el = null;
+      for (const r of hl) {
+        rect = r.getBoundingClientRect();
+        el = r.startContainer.parentElement;
+        break;
+      }
+      if (!rect || (rect.width === 0 && rect.height === 0)) return false;
+      const scroller = document.querySelector('[data-tug-scroll-key="dev-card-transcript"]');
+      if (!scroller) return false;
+      const s = scroller.getBoundingClientRect();
+      // The pin stack is per-entry — read it from inside the match's entry
+      // (the same element the reveal reads), not from the scroller.
+      const sticky =
+        parseFloat(getComputedStyle(el || scroller).getPropertyValue('--tugx-pin-stack-top')) || 0;
+      return rect.top >= s.top + sticky + 7 && rect.bottom <= s.bottom - 7;
+    })()`,
+    { timeoutMs: 8000 },
+  );
+}
+
+/**
+ * Install a one-shot MutationObserver on the scroller that captures the
+ * next landing-flash ring at insertion (its 640ms lifetime is too short to
+ * poll for reliably): parent, computed position, containment by the
+ * scroller's box, and overlap with the active match's rect (measured one
+ * frame after insertion so styles have applied). The report lands on
+ * `window.__at0221Flash`.
+ */
+const INSTALL_FLASH_PROBE_JS = `(() => {
+  const scroller = document.querySelector('[data-tug-scroll-key="dev-card-transcript"]');
+  if (!scroller) return false;
+  window.__at0221Flash = undefined;
+  const obs = new MutationObserver((muts) => {
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (!node.classList.contains('tugx-find-flash-overlay')) continue;
+        obs.disconnect();
+        const inScroller = node.parentElement === scroller;
+        requestAnimationFrame(() => {
+          const o = node.getBoundingClientRect();
+          const s = scroller.getBoundingClientRect();
+          let a = null;
+          const hl = CSS.highlights.get('transcript-find-active');
+          if (hl) for (const r of hl) { a = r.getBoundingClientRect(); break; }
+          window.__at0221Flash = {
+            inScroller,
+            position: getComputedStyle(node).position,
+            contained:
+              o.top >= s.top - 1 && o.bottom <= s.bottom + 1 &&
+              o.left >= s.left - 1 && o.right <= s.right + 1,
+            overlapsActive:
+              a !== null &&
+              !(o.bottom < a.top || o.top > a.bottom ||
+                o.right < a.left || o.left > a.right),
+          };
+        });
+        return;
+      }
+    }
+  });
+  obs.observe(scroller, { childList: true });
+  return true;
+})()`;
+
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!SHOULD_RUN)("AT0221: transcript find fidelity gate", () => {
@@ -720,6 +804,66 @@ describe.skipIf(!SHOULD_RUN)("AT0221: transcript find fidelity gate", () => {
         // Wrap: advancing past the last match returns to the first.
         await findNext(app);
         await waitForCountChip(app, "1 of 2");
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "typing reveals into the visible band; refinement re-reveals; the flash ring is scroller-contained",
+    async () => {
+      const app = await launchTugApp({ testName: "at0221-reveal" });
+      try {
+        // Short pane; the replayed transcript rests at the bottom while the
+        // first match sits in the TOP row.
+        await mountAndReplay(app, SID_VIRTUAL, 560, 3);
+        await enterFind(app);
+
+        // Scroll-as-you-type: the typed query alone (no ⌘G) must reveal the
+        // first match — far above the resting viewport — into the band.
+        await app.nativeType("zephyrmark");
+        await waitForCountChip(app, "1 of 2");
+        await waitForActiveInBand(app);
+        const painted = await readPaintedRanges(app);
+        const active = painted.find((p) => p.active);
+        expect(active).toBeDefined();
+        // The active match is the document-first one (the top row).
+        expect(active!.row).toBe(Math.min(...painted.map((p) => p.row)));
+
+        // Refinement: extending the query kills the top match, so the active
+        // match becomes the BOTTOM row's occurrence — same activeIndex (0),
+        // different identity. The transcript must follow it back down, and
+        // the match must clear the scroller's bottom edge (never tucked
+        // under the prompt entry).
+        await app.nativeType(" omega");
+        await waitForCountChip(app, "1 of 1");
+        await waitForActiveText(app, "zephyrmark omega");
+        await waitForActiveInBand(app);
+
+        // Flash containment: arm the insertion probe, then navigate (a
+        // one-match wrap re-reveals and flashes). The ring must be an
+        // absolutely-positioned CHILD of the scroller, contained by its
+        // box, overlapping the active match.
+        expect(await app.evalJS<boolean>(INSTALL_FLASH_PROBE_JS)).toBe(true);
+        await findNext(app);
+        await app.waitForCondition<boolean>(
+          `window.__at0221Flash !== undefined`,
+          { timeoutMs: 6000 },
+        );
+        const report = JSON.parse(
+          await app.evalJS<string>(`JSON.stringify(window.__at0221Flash)`),
+        ) as {
+          inScroller: boolean;
+          position: string;
+          contained: boolean;
+          overlapsActive: boolean;
+        };
+        expect(report.inScroller, "ring must be a child of the scroller").toBe(true);
+        expect(report.position).toBe("absolute");
+        expect(report.contained, "ring must stay inside the scroller box").toBe(true);
+        expect(report.overlapsActive, "ring must sit on the active match").toBe(true);
       } finally {
         await app.close();
       }

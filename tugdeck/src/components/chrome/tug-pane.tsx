@@ -426,6 +426,15 @@ function CardTitleBar({
       data-slot="tug-pane-title-bar"
       onPointerDown={handleTitleBarPointerDown}
       data-testid="tug-pane-title-bar"
+      // The title bar is an ACTIVATION/DRAG gesture surface, never a
+      // responder target: clicking it must not steal first responder (or
+      // browser focus) from the card's content — the caret keeps blinking
+      // in the editor and the card's accelerators keep landing there.
+      // Cross-pane activation still restores the newly-active card's first
+      // responder through the engine ([P21]); this marker only stops the
+      // pointer walk from promoting the coarse pane container. See
+      // responder-chain.md § First responder.
+      data-tug-fr-preserve=""
     >
       {/* Icon + title as one Cmd-click target for the path menu. Plain
           click falls through to drag/activation as before. */}

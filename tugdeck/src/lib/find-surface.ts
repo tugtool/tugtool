@@ -17,7 +17,6 @@
  */
 
 import type { FindOptions } from "@/lib/transcript-search";
-import type { DevFindSession } from "@/lib/dev-find-session";
 
 /** What the shared cluster renders — one immutable snapshot per change. */
 export interface FindSurfaceSnapshot {
@@ -44,34 +43,5 @@ export interface FindSurface {
   setOptions(next: FindOptions): void;
 }
 
-/**
- * Adapt a {@link DevFindSession} to the {@link FindSurface} contract.
- * `onSetOptions` is the write path (typically `session.setOptions` plus the
- * tugbank persist). The returned surface caches its snapshot per underlying
- * session state, preserving `Object.is` stability for
- * `useSyncExternalStore`.
- */
-export function devFindSurface(
-  session: DevFindSession,
-  onSetOptions: (next: FindOptions) => void,
-): FindSurface {
-  let lastState: ReturnType<DevFindSession["getSnapshot"]> | null = null;
-  let lastSnapshot: FindSurfaceSnapshot | null = null;
-  return {
-    subscribe: session.subscribe,
-    getSnapshot: (): FindSurfaceSnapshot => {
-      const state = session.getSnapshot();
-      if (lastSnapshot !== null && state === lastState) return lastSnapshot;
-      lastState = state;
-      lastSnapshot = {
-        options: state.options,
-        count: state.matches.length,
-        activeOrdinal: state.activeIndex >= 0 ? state.activeIndex : null,
-        capped: false,
-        hasQuery: state.query.length > 0,
-      };
-      return lastSnapshot;
-    },
-    setOptions: onSetOptions,
-  };
-}
+// The shared `FindSession` (lib/find-session.ts) implements this interface
+// directly — hosts hand the session itself to `TugFindCluster`.

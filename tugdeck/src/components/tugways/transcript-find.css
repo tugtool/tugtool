@@ -8,32 +8,46 @@
  * flash is a separate overlay element (below) since a ring can't ride a
  * highlight pseudo. [L06] appearance-only. */
 
-/* Other matches — a faint accent wash, well below the muddy mid-opacity zone
- * so it reads as a light highlight, not brown. */
-::highlight(transcript-find-match) {
-  background-color: color-mix(
+/* ---- The ONE find paint token family [L17] --------------------------------
+   Every find surface — the transcript's Custom Highlights, the Text card's
+   CM6 decorations, and any future engine — resolves through these slots, so
+   the surfaces cannot drift apart. Each alias resolves to a base token in
+   one hop. */
+body {
+  /* Other matches — a faint accent wash, well below the muddy mid-opacity
+     zone so it reads as a light highlight, not brown. */
+  --tugx-find-match-bg: color-mix(
     in oklab,
     var(--tug7-element-global-border-normal-accent-rest) 20%,
     transparent
   );
+  /* The current match — full-strength SOLID accent + its on-accent text. */
+  --tugx-find-active-bg: var(--tug7-surface-control-primary-filled-accent-rest);
+  --tugx-find-active-text: var(--tug7-element-control-text-filled-accent-rest);
+}
+
+::highlight(transcript-find-match) {
+  background-color: var(--tugx-find-match-bg);
 }
 
 /* The current match — full-strength SOLID accent (the filled-accent control
  * surface + its on-accent text), so it is unmistakable and never muddy. The
  * landing flash shares this colour and differs only by an animated-size ring. */
 ::highlight(transcript-find-active) {
-  background-color: var(--tug7-surface-control-primary-filled-accent-rest);
-  color: var(--tug7-element-control-text-filled-accent-rest);
+  background-color: var(--tugx-find-active-bg);
+  color: var(--tugx-find-active-text);
 }
 
 /* Landing flash — a one-shot full-strength accent ring drawn over the ACTIVE
- * MATCH's rect only (a fixed-position overlay the painter appends to <body>),
- * never the whole row. Mirrors the code-view find-flash: a 3px accent ring that
- * fades out. [L14] honours reduced-motion. */
+ * MATCH's rect only (an absolutely-positioned child the painter appends to
+ * the transcript scroller, in content coordinates — so it scrolls with the
+ * content and clips at the card's edge), never the whole row. Mirrors the
+ * code-view find-flash: a 3px accent ring that fades out. [L14] honours
+ * reduced-motion. */
 .tugx-find-flash-overlay {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 3;
   border-radius: 2px;
   animation: tugx-find-flash var(--tug-motion-duration-slow)
     var(--tug-motion-easing-exit);

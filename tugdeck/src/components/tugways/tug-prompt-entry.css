@@ -38,89 +38,20 @@
    ----------------------------------------------------------------------------- */
 
 body {
-  --tugx-prompt-entry-surface: var(--tug7-surface-global-primary-normal-control-rest);
   --tugx-prompt-entry-errored:  var(--tug7-element-field-border-normal-danger-rest);
-  /* The editor's resting/blurred/deactivated surface: the CARD body surface
-     (--tugx-pane-bg) carrying a measure of the theme's focus surface, so a
-     deactivated prompt still reads as an INPUT — distinct from the Pulse bar
-     and transcript that share the bare pane background above it — while the
-     full focus surface stays reserved for the caret-blinking state. A
-     component-tier color-mix over two existing tokens, so no theme-file edit
-     is needed ([D11]); each theme's own focus surface drives the tint. */
-  --tugx-prompt-entry-editor-rest: color-mix(
-    in oklab,
-    var(--tug7-surface-field-primary-normal-plain-focus) 65%,
-    var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest))
-  );
-  /* The single "lit" state: caret blinking here. Aliased so the focus surface is
-     retunable in one place; today it reuses the existing field focus surface, so
-     no theme-file edit is needed ([D11]). */
-  --tugx-prompt-entry-editor-focus: var(--tug7-surface-field-primary-normal-plain-focus);
 }
 
-/* ----------------------------------------------------------------------------
-   .tug-prompt-entry — root container
-   ----------------------------------------------------------------------------
-   Content-sized: `flex: 0 0 auto` — the entry sizes to its content. The
-   embedded editor auto-grows with its text up to `maxRows` rows and then
-   scrolls (see `tug-text-editor.css`), so the entry is as tall as the prompt
-   and the host gives the rest of its column to the transcript. No JS
-   measurement, no split-pane sash — the browser sizes it natively.
-
-   Host chrome — pane edges, card frame, sheet background — belongs to the
-   parent; the entry itself has no border, no radius, no padding. The
-   toolbar sits at the bottom naturally via the flex-column order.
-   ----------------------------------------------------------------------------- */
+/* The shared entry-surface / editor-surface aliases and the structural
+   panel / input-area / toolbar rules moved to tug-entry-shell.css
+   (`--tugx-entry-shell-*`, `.tug-entry-shell*`) — TugPromptEntry composes
+   TugEntryShell, and its zone elements carry BOTH classes, so the rules
+   below keep matching on the legacy names. */
 
 /* Whole-entry stand-down (session restore in flight). The root is
    `inert` (interaction blocked natively); this rule carries the visual
    reading. [L06] appearance via a data attribute. */
 .tug-prompt-entry[data-disabled] {
   opacity: 0.55;
-}
-
-.tug-prompt-entry {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
-  min-height: 0;
-  background-color: var(--tugx-prompt-entry-surface);
-  transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
-}
-
-/* When the composed input is focused (editor carries focus), the whole
-   entry adopts the input's focus surface so the status row, tools panel,
-   input, and toolbar all read as one coherent control. This is the
-   informational coloration the user sees when the prompt is active.
-   Rule sets only background-color — self-documenting per [L16]. */
-.tug-prompt-entry:focus-within {
-  background-color: var(--tugx-prompt-entry-editor-focus);
-}
-
-/* .tug-prompt-entry-input-area — wrapper around the embedded TugTextEditor.
-   Exists so phase-sensitive selectors (e.g., awaiting_approval dim) can
-   target the input region without reaching into the substrate's own
-   token slot [L20]. The substrate takes the remaining horizontal space
-   and stretches vertically to fill the area. */
-/* Content-sized so the auto-height editor drives the entry's height. */
-.tug-prompt-entry-input-area {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: stretch;
-  min-height: 0;
-}
-
-/* The substrate sits flush against the entry's edges — drop the
-   substrate's default rounded corners (and the inner `.cm-editor`
-   clip radius that pairs with them) so the entry reads as a single
-   continuous panel. `min-width: 0` prevents the editor's intrinsic width
-   from forcing the row wider than its column. Flex is NOT set here: the
-   editor governs its own height via `maxRows` auto-grow. */
-.tug-prompt-entry-input-area > .tug-text-editor,
-.tug-prompt-entry-input-area > .tug-text-editor > .cm-editor {
-  min-width: 0;
-  border-radius: 0;
 }
 
 /* .tug-prompt-entry-attachments — Z4C, the compose-phase attachment-preview
@@ -157,33 +88,6 @@ body {
   padding: 0 var(--tug-space-md);
 }
 
-/* ----------------------------------------------------------------------------
-   Background consolidation — editor surface tracks the card / transcript
-   ----------------------------------------------------------------------------
-   BACKGROUND ONLY. The embedded CodeMirror substrate paints its OWN surface
-   (`tug-text-editor/theme.ts` → `contentBg` / `contentBgFocus` / `contentBgDisabled`
-   on `.cm-editor`), which sits over the wrapper's CSS background. So we override
-   the inner `.cm-editor` here, scoped to `.tug-prompt-entry` (the shared substrate
-   is untouched for every other editor).
-
-   - Rest, blurred, AND deactivated (pane/window inactive — the editor is blurred,
-     so never `.cm-focused`) all read as ONE resting surface: the card body
-     surface tinted with a measure of the theme's focus surface (see the
-     `--tugx-prompt-entry-editor-rest` alias above), so the input stays
-     distinguishable from the Pulse bar / transcript on the bare pane
-     background. No field-rest / disabled (red-tinted) surfaces of its own.
-   - Focused (caret blinking, pane active → `.cm-focused`) diverges onto the
-     full focus surface.
-
-   Specificity (4 classes) intentionally beats the substrate's `&` (1), `&.cm-focused`
-   (2), and `&[data-disabled]` (2) generated theme rules. ----------------------- */
-.tug-prompt-entry .tug-text-editor .cm-editor:not(.cm-focused) {
-  background-color: var(--tugx-prompt-entry-editor-rest);
-}
-.tug-prompt-entry .tug-text-editor .cm-editor.cm-focused {
-  background-color: var(--tugx-prompt-entry-editor-focus);
-}
-
 /* The compose attachment zone (Z4C) is part of the SAME input block as the
    editor above it — a dropped image is draft content exactly like typed
    text. So the zone carries the editor's surface, state for state (rest
@@ -194,66 +98,10 @@ body {
    caret itself, so editor focus is the block's focus. Rules set only
    background-color — self-documenting per [L16]. */
 .tug-prompt-entry .tug-prompt-entry-attachments {
-  background-color: var(--tugx-prompt-entry-editor-rest);
+  background-color: var(--tugx-entry-shell-editor-rest);
 }
 .tug-prompt-entry:focus-within .tug-prompt-entry-attachments {
-  background-color: var(--tugx-prompt-entry-editor-focus);
-}
-
-/* Drop the field border outright. `borderless` only zeroes its COLOR, leaving a
-   1px transparent ring that revealed the wrapper's own (field-rest) background as
-   a faint hairline around the now card-body editor surface. Zeroing the width
-   removes the ring entirely; states only ever set border-color, so this holds. */
-.tug-prompt-entry .tug-text-editor {
-  border-width: 0;
-}
-
-/* The prompt entry communicates keyboard focus through its OWN treatment — the
-   editor's accentCool border and the input-area `::after` ring above — NEVER the
-   global accent `outline` (focus-ring.css). On this embedded, full-bleed editor
-   that global outline is clipped by the CodeMirror substrate down to a
-   meaningless top/bottom-only accent bar. It is normally held off by the card's
-   `[data-cycling="false"]` suppression while the caret rests here, but it leaks
-   back in the moment that suppression stops covering the stop — e.g. when the
-   title-bar "Close Card?" popover takes the key view and the input-area flips
-   from key-view to key-cursor. Kill the global ring + behind-tint on the
-   input-area stop and the editor host in every key state. This only zeroes
-   `outline` / `background-image`; the intentional focus + cycle stand-down rings
-   are `::after` borders, untouched. */
-.tug-prompt-entry-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]),
-.tug-prompt-entry .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
-  outline: none;
-  background-image: none;
-}
-
-/* ----------------------------------------------------------------------------
-   .tug-prompt-entry-toolbar — the row under the editor
-   ----------------------------------------------------------------------------
-   Three zones: Z4A (leading-fixed) and Z4B (centred-floating) are the
-   prompt-entry toolbar's two sub-slots; Z5 (the queue + submit / stop
-   buttons) is fixed-trailing. Two equal flex spacers flank Z4B so it
-   centres in the gap between Z4A and Z5 ([D05]). Naturally pinned to
-   the bottom by the parent flex-column; sizes to its content height.
-   ----------------------------------------------------------------------------- */
-
-.tug-prompt-entry-toolbar {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: row;
-  /* Vertical-center every toolbar member — route popup, footer-
-     content slot, submit button — against the row's midline. When
-     one item grows taller than the others (e.g. the submit button
-     vs the smaller route popup, or the footer-content carrying a
-     telemetry chip), all stay aligned on a shared horizontal axis
-     instead of drifting to the bottom. */
-  align-items: center;
-  gap: var(--tug-space-md);
-  /* Breathing room: space above separates the toolbar from the input area;
-     space below separates it from the component's bottom edge. Inline
-     padding keeps the buttons off the side edges. */
-  margin-top: var(--tug-space-md);
-  margin-bottom: var(--tug-space-md);
-  padding: 0 var(--tug-space-md);
+  background-color: var(--tugx-entry-shell-editor-focus);
 }
 
 /* Z4A route popup trigger — the theme SELECTION color, not a control role.
@@ -400,30 +248,6 @@ body {
 [data-cycling="true"]
   .tug-prompt-entry-submit-button.tug-button-filled-danger:not([data-key-view-kbd]):not([data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-outlined-danger-rest);
-}
-
-/* The indicator slot — the toolbar's `indicatorsContent` cluster.
-   Content-sized (`flex: 0 0 auto`); the two spacers do the centring.
-   Currently the `Z4B` (centred) occupant. The host owns only the layout
-   box per [L20] — composed children declare their own tokens. */
-.tug-prompt-entry-indicators {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  /* Condensed face for the tight Z4B chip band — buys horizontal room for
-     long values (project paths, "Opus 4.8 · 1M") without shrinking type.
-     The chips inherit it: .tug-badge is `font-family: inherit` and
-     TugPushButton sets no family of its own, so both pick this up. */
-  font-family: var(--tug-font-family-condensed);
-}
-
-/* The two equal flex spacers flanking Z4B. Each absorbs an equal share
-   of the toolbar's free width, so Z4B's centre lands at the midpoint of
-   the gap between Z4A's trailing edge and Z5's leading edge ([D05]). */
-.tug-prompt-entry-toolbar-spacer {
-  flex: 1 1 auto;
 }
 
 /* ----------------------------------------------------------------------------

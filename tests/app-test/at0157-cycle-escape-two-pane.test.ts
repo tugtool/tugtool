@@ -83,7 +83,10 @@ const EDITOR_FOCUSED = `(function(){
   return el !== null && document.activeElement === el;
 })()`;
 
-const POPOVER_OPEN = `document.querySelector('[data-slot="tug-popover"]') !== null`;
+// The Z2 status cells open the shared TugPlacard (`data-slot="tug-placard"`)
+// since the placard refactor; the PULSE label still opens a plain TugPopover.
+// Match either, mirroring at0140.
+const POPOVER_OPEN = `(document.querySelector('[data-slot="tug-popover"]') !== null || document.querySelector('[data-slot="tug-placard"]') !== null)`;
 
 // Effort-capable model payload. The EFFORT chip disables itself (and drops out
 // of the Tab cycle) when the bound model lacks effort support; a synthetic

@@ -39,9 +39,11 @@
  * span two containers — mirroring `searchRowParts` on the index side.
  *
  * The landing flash is a one-shot **accent ring drawn over the active match's
- * rect only** (a fixed-position overlay element), never the whole row — a large
- * response must not wash the transcript. `paint` and `flashActive` are separate
- * so the host can settle its sticky-clear scroll before the ring is drawn.
+ * rect only** (an absolutely-positioned child of the transcript scroller, in
+ * content coordinates — clipped by the card and scrolling with the content),
+ * never the whole row — a large response must not wash the transcript.
+ * `paint` and `flashActive` are separate so the host can settle its
+ * band-reveal scroll before the ring is drawn.
  *
  * @module components/tugways/transcript-find-highlighter
  */
@@ -52,15 +54,13 @@ import {
   type SegmentedFindMatch,
 } from "@/lib/transcript-search";
 import type { FindTargetRegistry } from "@/components/tugways/cards/blocks/find-target-registry";
+import { placeFindFlash, type FindFlashHandle } from "@/components/tugways/find-flash";
 
 /** The opt-in searchable-content marker attribute (present/absent, no value). */
 export const FINDABLE_ATTR = "data-tugx-findable";
 
 const MATCH_HIGHLIGHT = "transcript-find-match";
 const ACTIVE_HIGHLIGHT = "transcript-find-active";
-const FLASH_OVERLAY_CLASS = "tugx-find-flash-overlay";
-/** Flash lifetime (mirrors the code-view find-flash window). */
-const FLASH_MS = 640;
 
 /** What the painter needs each paint — supplied by the transcript host. */
 export interface FindPaintInput {
@@ -76,6 +76,15 @@ export interface FindPaintInput {
    * hosts without embedded editors can omit it.
    */
   findTargets?: FindTargetRegistry | null;
+  /**
+   * The transcript's scroll container. The flash ring is appended HERE,
+   * absolutely positioned in content coordinates — so it scrolls with the
+   * content, is clipped by the card's overflow, and can never paint over
+   * chrome outside the scroller (the prompt entry, the status bar) or
+   * detach from streaming content the way a fixed body-level overlay does.
+   * Optional; without it `flashActive` is a no-op.
+   */
+  scroller?: HTMLElement | null;
 }
 
 /**
@@ -168,12 +177,13 @@ export class TranscriptFindHighlighter {
   private readonly matchHighlight: Highlight | null;
   private readonly activeHighlight: Highlight | null;
   private activeRange: Range | null = null;
-  private flashOverlay: HTMLDivElement | null = null;
-  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  private flash: FindFlashHandle | null = null;
   // Editor delegates driven by the LAST paint, so a later paint (or clear)
   // can retract the in-editor highlights of editors that dropped out.
   private touchedEditors = new Set<string>();
   private lastFindTargets: FindTargetRegistry | null = null;
+  // The scroll container from the last paint — the flash ring's parent.
+  private scroller: HTMLElement | null = null;
 
   constructor() {
     if (typeof CSS !== "undefined" && CSS.highlights !== undefined) {
@@ -194,6 +204,7 @@ export class TranscriptFindHighlighter {
     matchHL.clear();
     activeHL.clear();
     this.activeRange = null;
+    this.scroller = input.scroller ?? null;
 
     const { matches, activeIndex, query, options, getElementForIndex } = input;
     if (matches.length === 0 || query === "") {
@@ -318,35 +329,35 @@ export class TranscriptFindHighlighter {
   }
 
   /**
-   * One-shot accent-ring flash over the active match's rect only — a
-   * fixed-position overlay, so it emphasizes the match without touching the
-   * row. Call after the host has settled any reveal scroll.
+   * The element containing the active match's range start, or `null` when
+   * there is none. The host reads the entry-scoped `--tugx-pin-stack-top`
+   * from here — the pin stack is written per transcript ENTRY (live header
+   * height), so only an element inside the entry computes the real value.
+   */
+  activeRangeElement(): HTMLElement | null {
+    return this.activeRange?.startContainer.parentElement ?? null;
+  }
+
+  /**
+   * One-shot accent-ring flash over the active match's rect only — an
+   * absolutely-positioned child of the transcript scroller, placed in
+   * content coordinates so it scrolls with the content and is clipped by
+   * the card's overflow. Call after the host has settled any reveal scroll.
+   * Skipped entirely when the rect lies outside the scroller's visible box
+   * (a match that could not be revealed must not ring over chrome).
    */
   flashActive(): void {
-    if (typeof document === "undefined") return;
+    const scroller = this.scroller;
+    if (scroller === null) return;
     const rect = this.activeRangeRect();
     if (rect === null) return;
     this.removeFlashOverlay();
-    const overlay = document.createElement("div");
-    overlay.className = FLASH_OVERLAY_CLASS;
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    document.body.appendChild(overlay);
-    this.flashOverlay = overlay;
-    this.flashTimer = setTimeout(() => this.removeFlashOverlay(), FLASH_MS);
+    this.flash = placeFindFlash(scroller, rect);
   }
 
   private removeFlashOverlay(): void {
-    if (this.flashTimer !== null) {
-      clearTimeout(this.flashTimer);
-      this.flashTimer = null;
-    }
-    if (this.flashOverlay !== null) {
-      this.flashOverlay.remove();
-      this.flashOverlay = null;
-    }
+    this.flash?.remove();
+    this.flash = null;
   }
 
   /** Drop all paint (empty query / leaving Find). */

@@ -1,224 +1,284 @@
 /**
- * `TextCardFindBar` — the Text card's bottom-docked find bar.
+ * `TextCardFindBar` — the Text card's bottom-docked find bar: the Dev
+ * entry's find face, minus the route popup and the status row.
  *
- * The document twin of the Dev card's Find route: a query field, the shared
- * {@link TugFindCluster} (Case / Word / Grep + the width-stabilized
- * "N of M" chip), and the Previous / Next pair styled like the Dev entry's
- * Z5 buttons (outlined ↑ beside filled ↓). It docks between the editor and
- * the status bar; ⌘F summons it (the card's `onFindRequested`), Escape (or
- * ✕) dismisses.
+ * One find face across the deck: the bar composes the same real components
+ * the prompt entry mounts on its ⌕ route — {@link TugEntryShell} (the shared
+ * entry panel + toolbar shell), a {@link TugTextEditor} CM6 substrate as the
+ * query field, the shared {@link TugFindCluster} (Case / Word / Grep + the
+ * count badge) centred in the toolbar, and the Z5 pair at the trailing edge
+ * (outlined ↑ "Find previous" beside filled ↓ "Find next"). It docks between
+ * the editor and the status bar; ⌘F summons it (the card's
+ * `onFindRequested`), Escape dismisses — there is no ✕.
  *
- * The engine is the editor's own CodeMirror search, reached through
- * `TugTextCardEditorDelegate` — CM6 works off the document, so counting and
- * match painting are virtualization-proof. This bar owns the query (a
- * controlled input) and the option toggles (seeded from the GLOBAL find
- * options at `dev.tugtool.find`/`options` and written back through
- * `putFindOptions` — one preference shared by every find surface); the
- * {@link FindSurface} it feeds the cluster is a thin snapshot cache over
- * `delegate.getMatchInfo()`, re-read after every query / option / navigation
- * action (parity note: like the previous find strip, the count refreshes on
- * find actions, not on document edits made while the bar is open).
+ * Keys: Enter → next, Shift-Enter → previous, Escape → dismiss — a
+ * dedicated find field follows the universal find-bar convention (the Dev
+ * ⌕ editor maps Return to newline because it doubles as the multi-line
+ * prompt editor; this field does not). Bound as a `Prec.high` keymap
+ * through the substrate's `extensions` seam; the query mirrors out of the
+ * CM6 doc via an `updateListener` (the same technique the prompt entry
+ * uses for its ⌕ query mirror), so there is no controlled-input
+ * round-trip.
+ *
+ * One find CONTROLLER across the deck: the bar instantiates the shared
+ * {@link FindSession} (query, options, wrap bookkeeping, the cluster face)
+ * and supplies the Text card's {@link FindEngineDelegate} — a thin object
+ * over the editor's own CodeMirror search (`TugTextCardEditorDelegate`),
+ * which is virtualization-proof because CM6 works off the document. The
+ * session is what the shared cluster and the shared {@link FindWrapOverlay}
+ * read; options seed from the GLOBAL find preference and persist back
+ * through the session's `onOptionsChanged` hook (`putFindOptions`) —
+ * identical wiring to the Dev card. (Parity note: the count refreshes on
+ * find actions, not on document edits made while the bar is open.)
  *
  * Laws: [L02] the surface snapshot is `Object.is`-stable between refreshes;
  * [L06] match painting is CM6 decoration state, never React state; [L11]
- * the cluster's toggles emit `setValue` and this bar's responder applies it.
+ * the cluster's toggles emit `setValue` and this bar's responder applies it;
+ * [L22]-adjacent: the query lives in the CM6 doc, mirrored imperatively.
  *
  * @module components/tugways/cards/text-card-find-bar
  */
 
 import "./text-card-find-bar.css";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { Prec } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 
+import { TugEntryShell } from "@/components/tugways/tug-entry-shell";
+import { FindWrapOverlay } from "@/components/tugways/chrome/find-wrap-overlay";
 import { TugFindCluster } from "@/components/tugways/tug-find-cluster";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
-import { TugInput } from "@/components/tugways/tug-input";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import {
+  TugTextEditor,
+  type TugTextEditorDelegate,
+} from "@/components/tugways/tug-text-editor";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { readFindOptions, putFindOptions } from "@/settings-api";
-import { DEFAULT_FIND_OPTIONS } from "@/lib/dev-find-session";
-import type { FindSurface, FindSurfaceSnapshot } from "@/lib/find-surface";
-import type { FindOptions } from "@/lib/transcript-search";
+import {
+  FindSession,
+  DEFAULT_FIND_OPTIONS,
+  type FindEngineDelegate,
+} from "@/lib/find-session";
 import type { TugTextCardEditorDelegate } from "@/components/tugways/tug-text-card-editor";
 
-/** Mutable find-surface over the editor delegate's `getMatchInfo`. */
-class TextCardFindSurface implements FindSurface {
-  private listeners = new Set<() => void>();
-  private snapshot: FindSurfaceSnapshot;
-
-  constructor(
-    private readonly getDelegate: () => TugTextCardEditorDelegate | null,
-    private readonly onSetOptions: (next: FindOptions) => void,
-    initialOptions: FindOptions,
-  ) {
-    this.snapshot = {
-      options: initialOptions,
-      count: 0,
-      activeOrdinal: null,
-      capped: false,
-      hasQuery: false,
-    };
-  }
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+/**
+ * The Text card's find engine: CM6 search behind the shared
+ * {@link FindEngineDelegate} protocol. Search-as-you-type lands on the
+ * first result (select + reveal — vertical centre, horizontal pan); the
+ * session owns everything else.
+ */
+function documentFindEngine(
+  getDelegate: () => TugTextCardEditorDelegate | null,
+): FindEngineDelegate {
+  return {
+    searchDidChange: (query, options) => {
+      const delegate = getDelegate();
+      if (delegate === null) return;
+      delegate.setSearchQuery({
+        search: query,
+        caseSensitive: options.caseSensitive,
+        regexp: options.grep,
+        wholeWord: options.wholeWord,
+      });
+      if (query.length > 0) delegate.selectFirstMatch();
+    },
+    findNext: () => getDelegate()?.findNext(),
+    findPrevious: () => getDelegate()?.findPrevious(),
+    matchInfo: () =>
+      getDelegate()?.getMatchInfo() ?? {
+        count: 0,
+        activeOrdinal: null,
+        capped: false,
+      },
+    clear: () => getDelegate()?.clearSearch(),
   };
-
-  getSnapshot = (): FindSurfaceSnapshot => this.snapshot;
-
-  setOptions = (next: FindOptions): void => {
-    this.onSetOptions(next);
-  };
-
-  /** Re-read the delegate's match info into a fresh snapshot and notify. */
-  refresh(options: FindOptions, hasQuery: boolean): void {
-    const info = hasQuery
-      ? (this.getDelegate()?.getMatchInfo() ?? {
-          count: 0,
-          activeOrdinal: null,
-          capped: false,
-        })
-      : { count: 0, activeOrdinal: null, capped: false };
-    this.snapshot = { options, hasQuery, ...info };
-    for (const listener of this.listeners) listener();
-  }
 }
 
 export interface TextCardFindBarProps {
   /** Resolve the live editor delegate (null while unmounted). */
   getDelegate: () => TugTextCardEditorDelegate | null;
-  /** Dismiss gesture (Escape / ✕). The host clears the search + refocuses. */
+  /** Dismiss gesture (Escape). The host clears the search + refocuses. */
   onClose: () => void;
+  /**
+   * The card's root element — the shared {@link FindWrapOverlay}'s
+   * containment box (the wrap graphic anchors to the card, exactly as it
+   * does over the Dev card).
+   */
+  cardRootRef: React.RefObject<HTMLElement | null>;
 }
 
-export function TextCardFindBar({
-  getDelegate,
-  onClose,
-}: TextCardFindBarProps): React.ReactElement {
-  const [query, setQuery] = useState("");
-  // Seeded from the global find-options preference; written back on toggle.
-  const [options, setOptions] = useState<FindOptions>(() => {
-    const client = getTugbankClient();
-    return (client ? readFindOptions(client) : null) ?? DEFAULT_FIND_OPTIONS;
-  });
-  const inputRef = useRef<HTMLInputElement | null>(null);
+/** Imperative surface the Text card drives: ⌘F on an already-open bar must
+ *  put the caret back in the query field, unconditionally; and a find
+ *  navigation performed OUTSIDE the bar (the document editor's own ⌘G
+ *  handler) refreshes the count badge through `refreshCount`. */
+export interface TextCardFindBarHandle {
+  focusQuery(): void;
+  refreshCount(): void;
+}
+
+export const TextCardFindBar = React.forwardRef<
+  TextCardFindBarHandle,
+  TextCardFindBarProps
+>(function TextCardFindBar(
+  { getDelegate, onClose, cardRootRef }: TextCardFindBarProps,
+  ref,
+): React.ReactElement {
+  const barResponderId = React.useId();
+  const substrateRef = useRef<TugTextEditorDelegate | null>(null);
 
   const getDelegateRef = useRef(getDelegate);
   getDelegateRef.current = getDelegate;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
-  const runSearch = useCallback(
-    (nextQuery: string, nextOptions: FindOptions): void => {
-      getDelegateRef.current()?.setSearchQuery({
-        search: nextQuery,
-        caseSensitive: nextOptions.caseSensitive,
-        regexp: nextOptions.grep,
-        wholeWord: nextOptions.wholeWord,
-      });
-    },
-    [],
-  );
-
-  const surfaceRef = useRef<TextCardFindSurface | null>(null);
-  const handleSetOptions = useCallback(
-    (next: FindOptions): void => {
-      setOptions(next);
-      putFindOptions(next);
-    },
-    [],
-  );
-  if (surfaceRef.current === null) {
-    surfaceRef.current = new TextCardFindSurface(
-      () => getDelegateRef.current(),
-      handleSetOptions,
-      options,
-    );
+  // ONE shared find controller ([lib/find-session]): options seed from the
+  // global preference and persist back through the session hook; the Text
+  // card supplies its CM6 engine as the session's delegate. The session is
+  // both the cluster's FindSurface and the wrap overlay's source.
+  const sessionRef = useRef<FindSession | null>(null);
+  if (sessionRef.current === null) {
+    const client = getTugbankClient();
+    const seeded = client ? readFindOptions(client) : null;
+    const session = new FindSession(seeded ?? undefined, {
+      onOptionsChanged: putFindOptions,
+    });
+    session.setDelegate(documentFindEngine(() => getDelegateRef.current()));
+    sessionRef.current = session;
   }
-  const surface = surfaceRef.current;
+  const session = sessionRef.current;
+  useEffect(() => () => session.clear(), [session]);
 
-  // Re-run the live query when the options change (toggle click), then
-  // refresh the chip from the new decoration state.
-  const optionsRef = useRef(options);
-  useEffect(() => {
-    if (optionsRef.current === options) return;
-    optionsRef.current = options;
-    runSearch(query, options);
-    surface.refresh(options, query.length > 0);
-    // `query` is deliberately read from state without re-running on its own
-    // changes — the input's onChange already re-ran the search for those.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options]);
+  // Substrate extensions — captured at mount (the substrate's `extensions`
+  // contract), so every callback reads through stable refs. `Prec.high`
+  // puts the find keys ahead of the substrate's own Enter handling.
+  const findBarExtensions = useMemo(
+    () => [
+      Prec.high(
+        keymap.of([
+          {
+            key: "Enter",
+            run: () => {
+              session.next();
+              return true;
+            },
+          },
+          {
+            key: "Shift-Enter",
+            run: () => {
+              session.previous();
+              return true;
+            },
+          },
+          {
+            key: "Escape",
+            run: () => {
+              onCloseRef.current();
+              return true;
+            },
+          },
+        ]),
+      ),
+      // The query is the CM6 doc — mirror every edit into the session
+      // (search-as-you-type; the engine selects + reveals the first result).
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged) return;
+        session.setQuery(update.state.doc.toString());
+      }),
+    ],
+    [session],
+  );
 
-  // Summoned: take the caret.
+  // Summoned: take the caret. ⌘F on an already-open bar re-summons through
+  // the same imperative seam.
   useEffect(() => {
-    inputRef.current?.focus();
+    substrateRef.current?.focus();
   }, []);
-
-  const handleQueryChange = useCallback(
-    (value: string): void => {
-      setQuery(value);
-      runSearch(value, optionsRef.current);
-      surface.refresh(optionsRef.current, value.length > 0);
-    },
-    [runSearch, surface],
+  React.useImperativeHandle(
+    ref,
+    (): TextCardFindBarHandle => ({
+      focusQuery: () => {
+        substrateRef.current?.focus();
+      },
+      refreshCount: () => {
+        session.refresh();
+      },
+    }),
+    [session],
   );
 
-  const navigate = useCallback(
-    (direction: "next" | "previous"): void => {
-      const delegate = getDelegateRef.current();
-      if (delegate === null) return;
-      if (direction === "next") delegate.findNext();
-      else delegate.findPrevious();
-      surface.refresh(optionsRef.current, query.length > 0);
+  // The bar is the responder for find NAVIGATION while it is open: with the
+  // caret in the query field, ⌘G / ⇧⌘G walk field → bar and land here (the
+  // document editor's own handlers are a sibling branch the walk from the
+  // field can never reach). FIND re-summons the caret into the field. The
+  // bar owns the search session state (query, options, count) — it is the
+  // responder for the actions that mutate it ([L11]).
+  const { ResponderScope, responderRef } = useOptionalResponder({
+    id: barResponderId,
+    actions: {
+      [TUG_ACTIONS.FIND]: () => {
+        substrateRef.current?.focus();
+      },
+      [TUG_ACTIONS.FIND_NEXT]: () => {
+        session.next();
+      },
+      [TUG_ACTIONS.FIND_PREVIOUS]: () => {
+        session.previous();
+      },
     },
-    [surface, query],
-  );
-
-  const clusterSurface = useMemo(() => surface, [surface]);
+  });
 
   return (
-    <div className="text-card-find-bar" data-slot="text-card-find-bar">
-      <TugInput
-        ref={inputRef}
-        size="sm"
-        value={query}
+    <ResponderScope>
+    <TugEntryShell
+      ref={responderRef as (el: HTMLDivElement | null) => void}
+      className="text-card-find-bar"
+      data-slot="text-card-find-bar"
+      toolbarCenter={<TugFindCluster surface={session} />}
+      toolbarTrailing={
+        <>
+          <TugPushButton
+            subtype="icon"
+            size="lg"
+            // Outlined, not filled: Previous is the secondary of the
+            // Next/Previous pair — the filled button is "next" (the Return
+            // gesture's twin), this outlined one is "previous". Mirrors the
+            // Dev entry's ⌕-route Z5 pair.
+            emphasis="outlined"
+            role="action"
+            onClick={() => session.previous()}
+            aria-label="Find previous"
+            icon={<ChevronUp size={18} strokeWidth={2.5} />}
+          />
+          <TugPushButton
+            subtype="icon"
+            size="lg"
+            emphasis="filled"
+            role="action"
+            onClick={() => session.next()}
+            aria-label="Find next"
+            icon={<ChevronDown size={18} strokeWidth={2.5} />}
+          />
+        </>
+      }
+    >
+      <TugTextEditor
+        ref={substrateRef}
+        borderless
+        maxRows={6}
         placeholder="Find in file"
         aria-label="Find in file"
         data-testid="text-card-find-input"
-        className="text-card-find-bar-input"
-        onChange={(e) => handleQueryChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            navigate(e.shiftKey ? "previous" : "next");
-          } else if (e.key === "Escape") {
-            onClose();
-          }
-        }}
+        /* The Text card owns its card-state-preservation slot; a transient
+           find field must not stash editor state into the card bag. */
+        preserveState={false}
+        extensions={findBarExtensions}
       />
-      <span className="text-card-find-bar-spacer" aria-hidden="true" />
-      <TugFindCluster surface={clusterSurface} />
-      <span className="text-card-find-bar-spacer" aria-hidden="true" />
-      <div className="text-card-find-bar-nav" data-slot="text-card-find-nav">
-        <TugIconButton
-          icon={<ChevronUp />}
-          aria-label="Previous match"
-          onClick={() => navigate("previous")}
-        />
-        <TugIconButton
-          icon={<ChevronDown />}
-          aria-label="Next match"
-          onClick={() => navigate("next")}
-        />
-        <TugIconButton icon={<X />} aria-label="Close find" onClick={onClose} />
-      </div>
-    </div>
+    </TugEntryShell>
+      <FindWrapOverlay findSession={session} cardRef={cardRootRef} />
+    </ResponderScope>
   );
-}
+});

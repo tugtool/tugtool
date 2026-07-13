@@ -483,6 +483,16 @@ export interface TugListViewHandle {
   scrollToTop(): void;
 
   /**
+   * Break auto-follow-bottom on behalf of a named `source` (deck-trace
+   * attribution tag). For programmatic reveals that must own the scroll
+   * position against streaming growth — e.g. a find reveal — where
+   * `scrollToIndex` alone leaves follow-bottom engaged and the next
+   * content-growth pin would slam the view back to the live edge.
+   * No-op before the scroll instance exists.
+   */
+  disengageFollowBottom(source: string): void;
+
+  /**
    * Step the scroller one entry (one transcript turn-half) up or down,
    * pinning the target entry's top flush to the viewport top — the same
    * motion PageUp / PageDown perform inside the scroll container, but
@@ -2677,6 +2687,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           // growth can't slam the view back down, then land at the top.
           ss.disengage("scroll-home-key");
           ss.scrollToTop(false);
+        },
+        disengageFollowBottom(source: string): void {
+          smartScrollRef.current?.disengage(source);
         },
         pageByEntry(direction: "up" | "down"): void {
           pageByEntryStep(direction);

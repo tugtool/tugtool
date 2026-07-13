@@ -106,8 +106,8 @@ import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
-import { DevFindSession } from "@/lib/dev-find-session";
-import { DevFindCluster } from "../chrome/dev-find-cluster";
+import { FindSession } from "@/lib/find-session";
+import { TugFindCluster } from "@/components/tugways/tug-find-cluster";
 import { FindWrapOverlay } from "@/components/tugways/chrome/find-wrap-overlay";
 import type { GitDiffStore } from "@/lib/git-diff-store";
 import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
@@ -165,7 +165,7 @@ import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { useHostFacts } from "@/lib/host-facts-store";
 import { requestLogout } from "@/lib/logout-store";
-import { putDevRecentProjects, readFindOptions } from "@/settings-api";
+import { putDevRecentProjects, putFindOptions, readFindOptions } from "@/settings-api";
 import {
   useSessionLedger,
   getDevSessionLedgerStore,
@@ -2113,7 +2113,9 @@ export function DevCardBody({
   const [findSession] = useState(() => {
     const client = getTugbankClient();
     const seeded = client ? readFindOptions(client) : null;
-    return new DevFindSession(seeded ?? undefined);
+    return new FindSession(seeded ?? undefined, {
+      onOptionsChanged: putFindOptions,
+    });
   });
 
   useDevCardObserver(cardId, codeSessionStore);
@@ -3750,8 +3752,8 @@ export function DevCardBody({
                       />
                     }
                     find={
-                      <DevFindCluster
-                        findSession={findSession}
+                      <TugFindCluster
+                        surface={findSession}
                         focusGroup={DEV_CYCLE_GROUP}
                         focusOrder={DEV_CYCLE_ORDER_FIND}
                       />

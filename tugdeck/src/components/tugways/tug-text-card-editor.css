@@ -3,7 +3,7 @@
    - --tugx-block-code-font / --tugx-block-code-font-size / --tugx-block-code-line-height (shared code typography)
    - --tugx-textcard-gutter-bg / --tugx-textcard-gutter-text (editor-local line-number gutter)
    - --tugx-textcard-selection-bg / --tugx-textcard-caret (editor-local selection + caret paint)
-   - --tugx-textcard-match-bg / --tugx-textcard-match-active-bg (editor-local search-match overlays)
+   - --tugx-find-* (shared find-match paint; from transcript-find.css)
    `TugTextCardEditor` paints a CM6-backed read-write file editing surface.
    Frame and code typography come from `--tugx-block-*`; editor-specific
    slots live here under `--tugx-textcard-*`. The host `<div>` fills
@@ -64,10 +64,9 @@ body {
    * native text selection elsewhere in the app. */
   --tugx-textcard-selection-bg: var(--tug7-surface-selection-primary-normal-plain-rest);
 
-  /* Search-match highlight, mirroring the code viewer's slots. */
-  --tugx-textcard-match-bg:             var(--tug7-surface-card-primary-normal-findmatch-rest);
-  --tugx-textcard-match-active-bg:      var(--tug7-surface-card-primary-normal-findmatch-active);
-  --tugx-textcard-match-active-outline: var(--tug7-element-global-border-normal-accent-rest);
+  /* Search-match highlight: the shared `--tugx-find-*` family
+     (transcript-find.css) — one find paint language across the deck; no
+     editor-local recolor. */
 }
 
 /* ---- Host wrapper ---- */

@@ -16,10 +16,13 @@
  *    ([L02]) — the engine is the single source, the group is a controlled
  *    face over it.
  *
- *  - **Count** — a read-only `‹active+1› of ‹total›` chip (`No results` on a
- *    hitless query; `N+` when the engine capped its enumeration),
- *    width-stabilized via {@link TugStableOverlay} so stepping through
- *    matches never reflows the cluster. It emits no action.
+ *  - **Count** — a read-only `‹active+1› of ‹total›` {@link TugBadge}
+ *    (tinted / action — the same coloration as the Z4B Mode / Model /
+ *    Effort chips; `No results` on a hitless query; `N+` when the engine
+ *    capped its enumeration), width-stabilized via {@link TugStableOverlay}
+ *    so stepping through matches never reflows the cluster. A badge is a
+ *    label, never a control — it emits no action, and it hides (never
+ *    unmounts) when there is no query, so the cluster's width is steady.
  *
  * **Refuses focus-steal ([L11]).** The toggle buttons carry
  * `data-tug-focus="refuse"` (from `TugOptionGroup`) so a click never pulls
@@ -37,6 +40,7 @@ import "./tug-find-cluster.css";
 import React, { useCallback, useId, useMemo, useSyncExternalStore } from "react";
 import { CaseSensitive, Regex, WholeWord } from "lucide-react";
 
+import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugOptionGroup, type TugOptionItem } from "@/components/tugways/tug-option-group";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -157,12 +161,29 @@ export function TugFindCluster({
           focusGroup={focusGroup}
           focusOrder={focusOrder}
         />
-        <span className="tugx-find-count" data-slot="find-count" aria-live="polite">
+        <TugBadge
+          emphasis="tinted"
+          role="action"
+          size="sm"
+          // Two-line chip, matching the Z4B legend discipline (the PROJECT /
+          // MODE / MODEL chips): letter-spaced caption above the value.
+          layout="label-top"
+          label="RESULTS"
+          className="tugx-find-count"
+          data-slot="find-count"
+          // Queryless → no badge. Rendered as a data attribute from the
+          // snapshot (not a CSS `:has(:empty)` probe — WebKit's `:has`
+          // invalidation is unreliable when the value span's text mutates
+          // in place, leaving the badge stuck hidden with a live count).
+          data-empty={countText === "" ? "" : undefined}
+          aria-live="polite"
+          copyText={`Results: ${countText}`}
+        >
           <TugStableOverlay
             active={<span data-slot="find-count-value">{countText}</span>}
             alternates={["No results", "888 of 888"]}
           />
-        </span>
+        </TugBadge>
       </div>
     </ResponderScope>
   );

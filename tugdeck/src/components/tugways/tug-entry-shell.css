@@ -1,0 +1,201 @@
+/* ============================================================================
+   tug-entry-shell.css
+   ============================================================================
+   The shared structural shell behind bottom-docked entry surfaces (the
+   prompt entry, the Text card's find bar): the panel root with the entry
+   surface + focus tint, the input area that flushes the embedded
+   TugTextEditor into the panel, and the toolbar row with its two centring
+   spacers ([D05]).
+
+   Rules here were extracted verbatim from tug-prompt-entry.css and re-keyed
+   to `.tug-entry-shell*` selectors / `--tugx-entry-shell-*` aliases; hosts
+   keep their own legacy classes on the SAME elements, so host-specific
+   rules (drop states, errored ring, route trigger, …) stay in the host's
+   stylesheet untouched. Per [D11] the aliases resolve to existing base-tier
+   tokens — no theme-file edits in this file's name.
+   ========================================================================= */
+
+/* ----------------------------------------------------------------------------
+   Component-tier aliases [L17]
+   ----------------------------------------------------------------------------
+   Each alias resolves to a base-tier --tug7-* token in exactly one hop.
+   Local to this file; never authored into the theme files per [D11].
+   ----------------------------------------------------------------------------- */
+
+body {
+  --tugx-entry-shell-surface: var(--tug7-surface-global-primary-normal-control-rest);
+  /* The editor's resting/blurred/deactivated surface: the CARD body surface
+     (--tugx-pane-bg) carrying a measure of the theme's focus surface, so a
+     deactivated entry still reads as an INPUT — distinct from the chrome
+     that shares the bare pane background around it — while the full focus
+     surface stays reserved for the caret-blinking state. A component-tier
+     color-mix over two existing tokens, so no theme-file edit is needed
+     ([D11]); each theme's own focus surface drives the tint. */
+  --tugx-entry-shell-editor-rest: color-mix(
+    in oklab,
+    var(--tug7-surface-field-primary-normal-plain-focus) 65%,
+    var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest))
+  );
+  /* The single "lit" state: caret blinking here. Aliased so the focus surface
+     is retunable in one place; today it reuses the existing field focus
+     surface, so no theme-file edit is needed ([D11]). */
+  --tugx-entry-shell-editor-focus: var(--tug7-surface-field-primary-normal-plain-focus);
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-entry-shell — root container
+   ----------------------------------------------------------------------------
+   Content-sized: `flex: 0 0 auto` — the shell sizes to its content. The
+   embedded editor auto-grows with its text up to `maxRows` rows and then
+   scrolls (see `tug-text-editor.css`), so the shell is as tall as the draft
+   and the host gives the rest of its column to its own content. No JS
+   measurement, no split-pane sash — the browser sizes it natively.
+
+   Host chrome — pane edges, card frame, sheet background — belongs to the
+   parent; the shell itself has no border, no radius, no padding. The
+   toolbar sits at the bottom naturally via the flex-column order.
+   ----------------------------------------------------------------------------- */
+
+.tug-entry-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 0;
+  background-color: var(--tugx-entry-shell-surface);
+  transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
+}
+
+/* When the composed input is focused (editor carries focus), the whole
+   shell adopts the input's focus surface so the status row, input, and
+   toolbar all read as one coherent control. Rule sets only
+   background-color — self-documenting per [L16]. */
+.tug-entry-shell:focus-within {
+  background-color: var(--tugx-entry-shell-editor-focus);
+}
+
+/* .tug-entry-shell-input-area — wrapper around the embedded TugTextEditor.
+   Exists so host-phase-sensitive selectors (e.g., the prompt entry's
+   awaiting_approval dim) can target the input region without reaching into
+   the substrate's own token slot [L20]. Content-sized so the auto-height
+   editor drives the shell's height. */
+.tug-entry-shell-input-area {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* The substrate sits flush against the shell's edges — drop the
+   substrate's default rounded corners (and the inner `.cm-editor`
+   clip radius that pairs with them) so the shell reads as a single
+   continuous panel. `min-width: 0` prevents the editor's intrinsic width
+   from forcing the row wider than its column. Flex is NOT set here: the
+   editor governs its own height via `maxRows` auto-grow. */
+.tug-entry-shell-input-area > .tug-text-editor,
+.tug-entry-shell-input-area > .tug-text-editor > .cm-editor {
+  min-width: 0;
+  border-radius: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Background consolidation — editor surface tracks the card / host body
+   ----------------------------------------------------------------------------
+   BACKGROUND ONLY. The embedded CodeMirror substrate paints its OWN surface
+   (`tug-text-editor/theme.ts` → `contentBg` / `contentBgFocus` /
+   `contentBgDisabled` on `.cm-editor`), which sits over the wrapper's CSS
+   background. So we override the inner `.cm-editor` here, scoped to
+   `.tug-entry-shell` (the shared substrate is untouched for every other
+   editor).
+
+   - Rest, blurred, AND deactivated (pane/window inactive — the editor is
+     blurred, so never `.cm-focused`) all read as ONE resting surface (see
+     the `--tugx-entry-shell-editor-rest` alias above), so the input stays
+     distinguishable from the chrome around it on the bare pane background.
+     No field-rest / disabled (red-tinted) surfaces of its own.
+   - Focused (caret blinking, pane active → `.cm-focused`) diverges onto the
+     full focus surface.
+
+   Specificity (4 classes) intentionally beats the substrate's `&` (1),
+   `&.cm-focused` (2), and `&[data-disabled]` (2) generated theme rules. --- */
+.tug-entry-shell .tug-text-editor .cm-editor:not(.cm-focused) {
+  background-color: var(--tugx-entry-shell-editor-rest);
+}
+.tug-entry-shell .tug-text-editor .cm-editor.cm-focused {
+  background-color: var(--tugx-entry-shell-editor-focus);
+}
+
+/* Drop the field border outright. `borderless` only zeroes its COLOR, leaving
+   a 1px transparent ring that revealed the wrapper's own (field-rest)
+   background as a faint hairline around the now shell-surface editor. Zeroing
+   the width removes the ring entirely; states only ever set border-color, so
+   this holds. */
+.tug-entry-shell .tug-text-editor {
+  border-width: 0;
+}
+
+/* The shell communicates keyboard focus through its OWN treatment — the
+   editor's accentCool border and any host input-area `::after` ring — NEVER
+   the global accent `outline` (focus-ring.css). On this embedded, full-bleed
+   editor that global outline is clipped by the CodeMirror substrate down to
+   a meaningless top/bottom-only accent bar. Kill the global ring +
+   behind-tint on the input-area stop and the editor host in every key
+   state. This only zeroes `outline` / `background-image`; intentional focus
+   + cycle stand-down rings are host `::after` borders, untouched. */
+.tug-entry-shell-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]),
+.tug-entry-shell .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
+  outline: none;
+  background-image: none;
+}
+
+/* ----------------------------------------------------------------------------
+   .tug-entry-shell-toolbar — the row under the editor
+   ----------------------------------------------------------------------------
+   Three zones: a leading-fixed slot and a centred-floating slot are the
+   toolbar's two sub-slots; the trailing slot (buttons) is fixed-trailing.
+   Two equal flex spacers flank the centre so it lands at the midpoint of
+   the leading–trailing gap ([D05]). Naturally pinned to the bottom by the
+   parent flex-column; sizes to its content height.
+   ----------------------------------------------------------------------------- */
+
+.tug-entry-shell-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: row;
+  /* Vertical-center every toolbar member — leading popup, indicator
+     cluster, trailing buttons — against the row's midline. When one item
+     grows taller than the others, all stay aligned on a shared horizontal
+     axis instead of drifting to the bottom. */
+  align-items: center;
+  gap: var(--tug-space-md);
+  /* Breathing room: space above separates the toolbar from the input area;
+     space below separates it from the component's bottom edge. Inline
+     padding keeps the buttons off the side edges. */
+  margin-top: var(--tug-space-md);
+  margin-bottom: var(--tug-space-md);
+  padding: 0 var(--tug-space-md);
+}
+
+/* The indicator slot — the toolbar's centred occupant. Content-sized
+   (`flex: 0 0 auto`); the two spacers do the centring. The shell owns only
+   the layout box per [L20] — composed children declare their own tokens. */
+.tug-entry-shell-indicators {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  /* Condensed face for the tight indicator chip band — buys horizontal room
+     for long values (project paths, "Opus 4.8 · 1M") without shrinking
+     type. The chips inherit it: .tug-badge is `font-family: inherit` and
+     TugPushButton sets no family of its own, so both pick this up. */
+  font-family: var(--tug-font-family-condensed);
+}
+
+/* The two equal flex spacers flanking the centre slot. Each absorbs an
+   equal share of the toolbar's free width, so the centre lands at the
+   midpoint of the gap between the leading slot's trailing edge and the
+   trailing slot's leading edge ([D05]). */
+.tug-entry-shell-toolbar-spacer {
+  flex: 1 1 auto;
+}

@@ -660,6 +660,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     });
   }, [cardId, store]);
 
+
   // Counts how many "real" (carrying `restorePendingRef`)
   // registrations have landed on this CardHost since mount. The
   // first one is the content factory's initial registration; any

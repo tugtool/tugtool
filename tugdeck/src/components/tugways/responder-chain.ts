@@ -482,6 +482,26 @@ export class ResponderChainManager {
   }
 
   /**
+   * Whether `id`'s CHAIN ancestry (the `parentId` walk, `id` itself
+   * included) passes through `ancestorId`. This is registry containment —
+   * the dispatch-side notion of "within" — NOT DOM containment: a surface
+   * portaled outside a card's DOM subtree but chain-parented into it (a
+   * pane-modal sheet) is within by this test, which is what the
+   * first-responder reconciler needs so it never steals from a modal
+   * surface legitimately holding first responder.
+   */
+  nodeIsWithin(id: string, ancestorId: string): boolean {
+    let cursor: string | null = id;
+    const seen = new Set<string>();
+    while (cursor !== null && !seen.has(cursor)) {
+      if (cursor === ancestorId) return true;
+      seen.add(cursor);
+      cursor = this.nodes.get(cursor)?.parentId ?? null;
+    }
+    return false;
+  }
+
+  /**
    * Return the id of any registered root responder
    * (`parentId === null`), or `null` if none is registered.
    *

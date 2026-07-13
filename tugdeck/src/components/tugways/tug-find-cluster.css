@@ -22,14 +22,20 @@
   height: 18px;
 }
 
-/* Read-only match count. Muted, tabular figures so "1 of 9" → "10 of 90"
-   holds a steady width (the stable overlay reserves the widest face). */
+/* Read-only match-count badge. Tabular figures so "1 of 9" → "10 of 90"
+   holds a steady width (the stable overlay reserves the widest face); the
+   pill surface and text colors are the badge's own (tinted / action). */
 .tugx-find-count {
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   user-select: none;
+}
+
+/* No query → no badge at all. `display: none` (not a reserved hidden slot)
+   so the option toggles centre alone in a queryless cluster; the badge
+   appearing when a query lands is a deliberate one-time reflow. Keyed on a
+   snapshot-driven data attribute, never `:has(:empty)` — WebKit's `:has`
+   invalidation misses in-place text mutation of the value span. */
+.tugx-find-count[data-empty] {
+  display: none;
 }

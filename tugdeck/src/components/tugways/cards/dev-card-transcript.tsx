@@ -135,8 +135,8 @@ import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
 } from "@/components/tugways/cards/blocks/expansion-state";
-import type { DevFindSession } from "@/lib/dev-find-session";
-import { searchSegments } from "@/lib/transcript-search";
+import type { FindSession } from "@/lib/find-session";
+import { TranscriptFindEngine } from "@/lib/transcript-find-engine";
 import { buildTranscriptSearchSegments } from "@/lib/transcript-search-index";
 import { TranscriptFindHighlighter } from "@/components/tugways/transcript-find-highlighter";
 import {
@@ -1335,7 +1335,61 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
 // Host
 // ---------------------------------------------------------------------------
 
-
+/**
+ * Complete a find reveal for a mounted `dom`-segment active match: re-issue
+ * the reveal through the list's exact-rect path (which also clears the
+ * pending estimated-jump correction that would otherwise re-align the row a
+ * commit later and undo the nudges), then nudge the scroll region until the
+ * active range lies inside the visible band — below the pinned chrome
+ * (`--tugx-pin-stack-top`) at the top, above the scroller's own bottom edge
+ * at the bottom (overscan-mounted rows resolve Ranges below that edge, which
+ * reads as "under the prompt entry"). Bottom edge first, then top, so a rect
+ * taller than the band keeps its top visible; live Ranges track the scroll,
+ * so the rect is re-read between nudges and the flash lands at the settled
+ * position.
+ *
+ * Returns `false` when the active range is not yet paintable (row still
+ * unmounted) — the caller retries or waits for the next windowing commit.
+ */
+function settleFindReveal(
+  highlighter: TranscriptFindHighlighter,
+  root: HTMLElement | null,
+  listView: TugListViewHandle | null,
+  activeRow: number,
+): boolean {
+  let rect = highlighter.activeRangeRect();
+  if (rect === null) return false;
+  listView?.scrollToIndex(activeRow, { block: "nearest" });
+  rect = highlighter.activeRangeRect() ?? rect;
+  const scroller =
+    root?.querySelector<HTMLElement>(
+      '[data-tug-scroll-key="dev-card-transcript"]',
+    ) ?? null;
+  if (scroller !== null) {
+    // The pin stack is per-ENTRY — each entry root carries its live header
+    // height as `--tugx-pin-stack-top` (the card CSS provides a static
+    // fallback below the host root) — so it must be read from an element
+    // inside the active match's entry, never from the transcript host root,
+    // which sits above every setter and computes 0.
+    const stickyEl = highlighter.activeRangeElement() ?? scroller;
+    const stickyTop =
+      parseFloat(
+        getComputedStyle(stickyEl).getPropertyValue("--tugx-pin-stack-top"),
+      ) || 0;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const bandTop = scrollerRect.top + stickyTop + 8;
+    const bandBottom = scrollerRect.bottom - 8;
+    if (rect.bottom > bandBottom) {
+      scroller.scrollTop += rect.bottom - bandBottom;
+    }
+    const settled = highlighter.activeRangeRect();
+    if (settled !== null && settled.top < bandTop) {
+      scroller.scrollTop -= bandTop - settled.top;
+    }
+  }
+  highlighter.flashActive();
+  return true;
+}
 
 export interface DevTranscriptHostProps {
   /**
@@ -1360,7 +1414,7 @@ export interface DevTranscriptHostProps {
    * whole-transcript index, runs the search over it, paints matches via the
    * Custom-Highlight painter, and scrolls + flashes the active match.
    */
-  findSession: DevFindSession;
+  findSession: FindSession;
   /**
    * Z1 — per-turn trailing slot renderer. Invoked once per row half:
    *   - on the user row at the trailing edge (next to the copy button)
@@ -1897,20 +1951,29 @@ export const DevTranscriptHost = forwardRef<
     // `expansionVersion` bumps on every expand/collapse toggle.
     [dataSource, streamingStore, toolBlockExpansion, codeSnapshot, expansionVersion],
   );
-  const findQuery = findSnap.query;
-  const findOptions = findSnap.options;
+  // The transcript's find ENGINE — the session's delegate: the session owns
+  // query/options/wrap semantics; this engine owns the index search, the
+  // match set, and the active index.
+  // The host consumes the engine's own store ([L02]) to paint and reveal.
+  const findEngineRef = useRef<TranscriptFindEngine | null>(null);
+  if (findEngineRef.current === null) {
+    findEngineRef.current = new TranscriptFindEngine();
+  }
+  const findEngine = findEngineRef.current;
+  useLayoutEffect(() => {
+    findSession.setDelegate(findEngine);
+    return () => {
+      findSession.setDelegate(null);
+      findEngine.dispose();
+    };
+  }, [findSession, findEngine]);
   useEffect(() => {
-    if (findQuery === "") {
-      findSession.setMatches([]);
-      return;
-    }
-    // Debounced so search-on-type over a large transcript can't cost a frame
-    // per keystroke. The index is NOT rebuilt here — only the search re-runs.
-    const timer = setTimeout(() => {
-      findSession.setMatches(searchSegments(searchIndex, findQuery, findOptions));
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [findSession, searchIndex, findQuery, findOptions]);
+    findEngine.setIndex(searchIndex);
+  }, [findEngine, searchIndex]);
+  const engineSnap = useSyncExternalStore(
+    findEngine.subscribe,
+    findEngine.getSnapshot,
+  );
 
   const findHighlighterRef = useRef<TranscriptFindHighlighter | null>(null);
   if (findHighlighterRef.current === null) {
@@ -1930,21 +1993,40 @@ export const DevTranscriptHost = forwardRef<
     return () => highlighter?.dispose();
   }, []);
 
-  const findPrevActiveRef = useRef<number>(-1);
+  // The previously-revealed active match, by IDENTITY — `(row, segment,
+  // start)` plus the session's monotonic `wrapSeq` — not by index. While a
+  // narrowing query keeps the user's match alive, `setMatches` preserves it
+  // and the key is unchanged (stay put); the moment the active match becomes
+  // a *different* match — typically the refined query's first hit, whose
+  // index is still 0 — the key changes and the transcript follows it
+  // (scroll-as-you-type). `wrapSeq` in the key re-reveals on a wrap even when
+  // the wrap lands back on the same match (a one-match set).
+  const findPrevActiveRef = useRef<string | null>(null);
+  // Armed when a reveal is issued and cleared when it completes (band-settled
+  // + flashed, or handed to CM6). A far jump's target row can mount after the
+  // reveal loop's frame budget — the rendered-range-change handler checks
+  // this flag and finishes the reveal at mount time.
+  const findPendingRevealRef = useRef<boolean>(false);
   useEffect(() => {
     const highlighter = findHighlighterRef.current;
     if (highlighter === null) return;
-    const { matches, activeIndex, query, options } = findSnap;
+    const { query, options } = findSnap;
+    const { matches, activeIndex } = engineSnap;
     if (matches.length === 0 || query === "") {
-      findPrevActiveRef.current = -1;
+      findPrevActiveRef.current = null;
+      findPendingRevealRef.current = false;
       highlighter.clear();
       return;
     }
     const getElementForIndex = (index: number): HTMLElement | null =>
       listViewRef.current?.getElementForIndex(index) ?? null;
-    const activeChanged = activeIndex !== findPrevActiveRef.current;
-    findPrevActiveRef.current = activeIndex;
     const activeMatch = activeIndex >= 0 ? matches[activeIndex] : undefined;
+    const activeKey =
+      activeMatch !== undefined
+        ? `${activeMatch.row}:${activeMatch.segment}:${activeMatch.start}:${findSnap.wrapSeq}`
+        : null;
+    const activeChanged = activeKey !== findPrevActiveRef.current;
+    findPrevActiveRef.current = activeKey;
     const activeRow = activeMatch?.row;
     const input = {
       matches,
@@ -1953,6 +2035,10 @@ export const DevTranscriptHost = forwardRef<
       options,
       getElementForIndex,
       findTargets,
+      scroller:
+        rootRef.current?.querySelector<HTMLElement>(
+          '[data-tug-scroll-key="dev-card-transcript"]',
+        ) ?? null,
     };
     if (activeChanged && activeRow !== undefined) {
       // Bring the active match on-screen (mounting it), then paint + reveal
@@ -1960,70 +2046,84 @@ export const DevTranscriptHost = forwardRef<
       // body kind's INTERNAL fold (a terminal preview's tail, a folded file
       // body whose editor is unmounted) unfolds through the find-target
       // registry — the unfold commits over the following frames, so the
-      // paint retries a bounded handful of times until the match is
-      // paintable (or the budget runs out).
+      // paint retries a bounded handful of times. A far jump can outlive the
+      // frame budget entirely (the estimated scroll mounts the target row on
+      // a later windowing commit), so the reveal stays ARMED
+      // (`findPendingRevealRef`) and the rendered-range-change handler
+      // completes it the moment the row mounts.
+      //
+      // A reveal owns the scroll position: break follow-bottom first, or a
+      // streaming turn's next content-growth pin would slam the view back to
+      // the live edge out from under the match. Once the user is finding,
+      // the find is what the scroller favors; the jump-to-latest affordance
+      // remains one click away.
+      findPendingRevealRef.current = true;
+      listViewRef.current?.disengageFollowBottom("find-reveal");
       listViewRef.current?.scrollToIndex(activeRow, { block: "nearest" });
       const paintAndReveal = (attempt: number): void => {
+        if (!findPendingRevealRef.current) return;
         highlighter.paint(input);
         const key = activeMatch?.segmentKey;
-        if (activeMatch !== undefined && key !== undefined) {
-          const hidden =
-            activeMatch.segmentKind === "editor"
-              ? (findTargets.resolve(key)?.codeView?.() ?? null) === null
-              : highlighter.activeRangeRect() === null;
-          if (hidden) {
-            findTargets.resolve(key)?.unfold();
+        if (activeMatch === undefined) {
+          findPendingRevealRef.current = false;
+          return;
+        }
+        if (activeMatch.segmentKind === "editor") {
+          // The editor's own search selects + reveals the match
+          // (`.cm-searchMatch-selected`); the transcript-level ring and
+          // band nudges are DOM-walk affordances and don't apply inside
+          // CM6. A folded file body's editor is unmounted — unfold and
+          // retry until the delegate appears.
+          const mounted =
+            key !== undefined &&
+            (findTargets.resolve(key)?.codeView?.() ?? null) !== null;
+          if (!mounted) {
+            if (key !== undefined) findTargets.resolve(key)?.unfold();
             if (attempt < 8) {
               requestAnimationFrame(() => paintAndReveal(attempt + 1));
               return;
             }
           }
-        }
-        if (activeMatch !== undefined && activeMatch.segmentKind === "editor") {
-          // The editor's own search selected + revealed the match
-          // (`.cm-searchMatch-selected`); the transcript-level ring and
-          // sticky-clear are DOM-walk affordances and don't apply inside CM6.
+          findPendingRevealRef.current = false;
           return;
         }
-        // Sticky-clear reveal: `scrollToIndex` can leave the match tucked under
-        // the pinned entry / tool-block header (`--tugx-pin-stack-top`). If the
-        // freshly-painted active range sits above that stacked chrome, nudge the
-        // scroll region down so the match is fully visible (mirrors the
-        // file-block match-reveal math). Then flash the ring at the settled
-        // position — live Ranges track the scroll, so the rect is current.
-        const root = rootRef.current;
-        const rect = highlighter.activeRangeRect();
-        const scroller = root?.querySelector<HTMLElement>(
-          '[data-tug-scroll-key="dev-card-transcript"]',
-        );
-        if (root !== null && rect !== null && scroller != null) {
-          const stickyTop =
-            parseFloat(
-              getComputedStyle(root).getPropertyValue("--tugx-pin-stack-top"),
-            ) || 0;
-          const visibleTop =
-            scroller.getBoundingClientRect().top + stickyTop + 8;
-          if (rect.top < visibleTop) {
-            scroller.scrollTop -= visibleTop - rect.top;
-          }
+        if (
+          settleFindReveal(
+            highlighter,
+            rootRef.current,
+            listViewRef.current,
+            activeMatch.row,
+          )
+        ) {
+          findPendingRevealRef.current = false;
+          return;
         }
-        highlighter.flashActive();
+        // Row not mounted yet — unfold a fold owner (a terminal tail's
+        // match) and retry; past the budget the rendered-range-change
+        // handler finishes the reveal when the row mounts.
+        if (key !== undefined) findTargets.resolve(key)?.unfold();
+        if (attempt < 8) {
+          requestAnimationFrame(() => paintAndReveal(attempt + 1));
+        }
       };
       requestAnimationFrame(() => paintAndReveal(0));
     } else {
       highlighter.paint(input);
     }
-  }, [findSnap, findTargets]);
+  }, [findSnap, engineSnap, findTargets]);
 
   // Repaint when the list's mounted window turns over (hand-scroll, resize):
   // rows that mount as they enter the viewport get their matches painted, and
   // rows that leave drop cleanly. The count is authoritative from the index and
   // never changes here — only the paint follows the mounted set (Risk R01). No
-  // flash: this is not a navigation, just keeping the live cells decorated.
+  // flash for the repaint itself — but when a reveal is still ARMED (a far
+  // jump whose target row outlived the reveal loop's frame budget), this is
+  // the moment the row exists: finish the reveal here (band nudge + flash).
   const handleFindRenderedRangeChange = useCallback((): void => {
     const highlighter = findHighlighterRef.current;
     if (highlighter === null) return;
-    const { matches, activeIndex, query, options } = findSession.getSnapshot();
+    const { query, options } = findSession.getSnapshot();
+    const { matches, activeIndex } = findEngine.getSnapshot();
     if (matches.length === 0 || query === "") {
       highlighter.clear();
       return;
@@ -2036,8 +2136,29 @@ export const DevTranscriptHost = forwardRef<
       getElementForIndex: (index) =>
         listViewRef.current?.getElementForIndex(index) ?? null,
       findTargets: findTargetsRef.current,
+      scroller:
+        rootRef.current?.querySelector<HTMLElement>(
+          '[data-tug-scroll-key="dev-card-transcript"]',
+        ) ?? null,
     });
-  }, [findSession]);
+    if (findPendingRevealRef.current) {
+      const active = activeIndex >= 0 ? matches[activeIndex] : undefined;
+      if (active !== undefined && active.segmentKind === "dom") {
+        if (
+          settleFindReveal(
+            highlighter,
+            rootRef.current,
+            listViewRef.current,
+            active.row,
+          )
+        ) {
+          findPendingRevealRef.current = false;
+        }
+      } else {
+        findPendingRevealRef.current = false;
+      }
+    }
+  }, [findSession, findEngine]);
 
   // Floating "scroll to latest" button. It is always mounted ([L26]);
   // its visibility is appearance state ([L06]) — `handleFollowBottom

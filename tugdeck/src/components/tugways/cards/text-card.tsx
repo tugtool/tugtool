@@ -76,7 +76,10 @@ import { TugTextCardEditor, type TugTextCardEditorDelegate } from "../tug-text-c
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugPushButton } from "../tug-push-button";
-import { TextCardFindBar } from "./text-card-find-bar";
+import {
+  TextCardFindBar,
+  type TextCardFindBarHandle,
+} from "./text-card-find-bar";
 import { TugLabel } from "../tug-label";
 import { TextCardTopBar } from "./text-card-top-bar";
 import { TextCardStatusBar } from "./text-card-status-bar";
@@ -260,10 +263,15 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // editor); the query, options, and count live inside `TextCardFindBar`,
   // which drives the editor's CM6 search through the delegate.
   const [findOpen, setFindOpen] = useState(false);
+  const findBarRef = useRef<TextCardFindBarHandle | null>(null);
+  // Root element — the shared wrap overlay's containment box.
+  const cardRootRef = useRef<HTMLDivElement | null>(null);
 
   const openFindBar = useCallback(() => {
-    // The bar focuses its own input on mount.
+    // Fresh bar: it focuses its own field on mount. Already open: ⌘F must
+    // still land the caret in the query field, unconditionally.
     setFindOpen(true);
+    findBarRef.current?.focusQuery();
   }, []);
 
   const closeFindBar = useCallback(() => {
@@ -418,6 +426,15 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   }, [cardLifecycle, focusManager, cardId, manager]);
 
   useCardDelegate(cardId, {
+    // Activation is the em contract's core moment ([P21] content half): the
+    // card claims its focus destination so first-responder-routed
+    // accelerators (⌘F, ⌘G, ⌘S, clipboard) land on its content. The
+    // lifecycle pipe covers EVERY way the card becomes active — click, tab
+    // switch, pane cycle, cross-pane move — and `cardDidActivate`'s
+    // initial-sync covers a card created-and-activated before it mounted
+    // (Open Quickly / File ▸ Open), so no activation ordering is missed.
+    // Same shape as the Dev card's delegate.
+    cardDidActivate: () => reclaimFocusDestination(),
     cardDidMove: () => reclaimFocusDestination(),
     cardDidResize: () => reclaimFocusDestination(),
   });
@@ -723,6 +740,17 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     store.applyPositions(pending);
   }, [snapshot.phase, store]);
 
+  // The editor binds ASYNC (file load) — often after `cardDidActivate`
+  // already drained, when `reclaimFocusDestination` had no editor to land
+  // on. The bind is a content-internal moment, so the em contract's second
+  // claim lives here: once the document is ready, re-assert the focus
+  // destination (self-gated on this card still being the first-responder
+  // card, so an inactive card's late bind never steals focus).
+  useLayoutEffect(() => {
+    if (snapshot.phase !== "ready") return;
+    reclaimFocusDestination();
+  }, [snapshot.phase, reclaimFocusDestination]);
+
   // ---- Render ----
 
   if (snapshot.phase === "empty" || snapshot.phase === "loading") {
@@ -798,7 +826,11 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // autosave sub-state [L26].
   const conflict = snapshot.conflict;
   return (
-    <div className="text-card text-card--editor" data-slot="text-card">
+    <div
+      ref={cardRootRef}
+      className="text-card text-card--editor"
+      data-slot="text-card"
+    >
       <TextCardTopBar
         path={snapshot.path}
         isDraft={snapshot.draftId !== null}
@@ -822,13 +854,16 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         languageExt={effectiveLanguageExt}
         className="text-card-editor"
         onFindRequested={openFindBar}
+        onFindNavigated={() => findBarRef.current?.refreshCount()}
         onSaveCommand={onSaveCommand}
         onStats={statsStore.set}
       />
       {findOpen ? (
         <TextCardFindBar
+          ref={findBarRef}
           getDelegate={() => editorRef.current}
           onClose={closeFindBar}
+          cardRootRef={cardRootRef}
         />
       ) : null}
       <TextCardStatusBar

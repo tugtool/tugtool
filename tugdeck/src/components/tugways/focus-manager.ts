@@ -49,6 +49,7 @@ import type { TugAction } from "./action-vocabulary";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
 import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spatial-order";
+import { resolveDefaultFocusTarget } from "@/default-focus";
 
 /**
  * The behavior a key-view component declares to the engine ([P01]): the pure
@@ -1567,16 +1568,17 @@ export class FocusManager {
     const changed = this.keyCardId !== cardId;
     this.keyCardId = cardId;
     this.activeContext().projectAll();
-    // Restore the first responder for the now-active card — the per-card FR axis
-    // of activation. setKeyCard is the UNIVERSAL activation signal: the provider's
-    // `syncKeyCard` fires it for every way a card becomes active (click, tab
-    // switch, **pane activation / frontmost change**, cross-pane move, cold boot),
-    // including a pane promoted to frontmost whose active card never *changed*
-    // activation — which fires no card-level focus claim (`adoptKeyCard`) and no
-    // `focusin`, the exact case that strands the frontmost pane. FR promotion is
-    // chain (structure) state, not a DOM focus claim, so it belongs here beside
-    // naming the key card; the DOM focus claim stays in `adoptKeyCard`. [P21]
-    if (cardId !== null) this.restoreCardFirstResponder(cardId);
+    // Reconcile the first responder for the now-active card — the per-card FR
+    // axis of activation. setKeyCard is the UNIVERSAL activation signal: the
+    // provider's `syncKeyCard` fires it for every way a card becomes active
+    // (click, tab switch, **pane activation / frontmost change**, cross-pane
+    // move, pane cycle, cold boot). This is the synchronous edge of the [P21]
+    // reconciler; the chain-change subscriptions in {@link attach} keep the
+    // invariant settled through everything that happens AFTER the activation
+    // moment (late content mounts, unregister cascades). FR promotion is
+    // chain (structure) state, not a DOM focus claim, so it belongs here
+    // beside naming the key card; the DOM focus claim stays in `adoptKeyCard`.
+    if (cardId !== null) this.reconcileFirstResponder();
     if (changed) this.touch();
   }
 
@@ -1612,55 +1614,74 @@ export class FocusManager {
   }
 
   /**
-   * Promote the responder that CONTAINS the active key view to first responder —
-   * what a `focusin` on that key view would have done — so the activated card
-   * owns first-responder-routed accelerators. No-op when the current first
-   * responder is already within `cardId`: a pointer promotion (or an in-card
-   * focus) just set a finer one and must not be clobbered. The key view itself
-   * is the target when it is a registered responder (a resting card's editor);
-   * otherwise its nearest registered DOM ancestor is (a sheet's focused control →
-   * the sheet's responder, which owns `CANCEL_DIALOG`). Promoting that *coarser*
-   * container does not coarsen the finer key view — {@link seedKeyViewFromChain}
-   * yields via {@link keyViewIsFinerThan}. No-op without a chain / DOM / key view.
+   * The framework half of [P21], run at the ACTIVATION MOMENT (`setKeyCard`,
+   * the universal activation signal): settle the chain's first responder on
+   * a responder that serves the key card — the key view's responder; for a
+   * never-focused card, the responder owning its default-focus target (the
+   * card-author-tagged priority chain `traceApplyDefaultFocus` walks); as a
+   * last resort, the card's own container responder (Cmd-W must still land).
+   *
+   * The CONTENT half is the em-card lifecycle-delegate contract
+   * ([lifecycle-delegates.md]): the card registers a `TugCardDelegate` and
+   * reclaims its focus destination on `cardDidActivate` — whose initial-sync
+   * covers a card created-and-activated before it mounted — and again at
+   * its own editor-attach moment (an async file bind). Late-mounting
+   * content settles itself through the established pipe; the engine never
+   * observes chain registrations.
+   *
+   * **Yield rules — who keeps first responder.** Containment is REGISTRY
+   * containment (`chain.nodeIsWithin`, the `parentId` walk), never DOM
+   * containment, so a pane-modal sheet portaled outside the card's DOM
+   * subtree but chain-parented into it counts as serving the card:
+   *
+   *  - FR already within the key card and NOT a chain ancestor of the
+   *    ideal target (a finer promotion, a sibling editor the user clicked,
+   *    a modal surface holding focus) → keep it.
+   *  - FR is a chain ANCESTOR of the target (the card/pane container a
+   *    chrome click or a pre-mount `addCard` promotion left) → the coarse
+   *    container is masking the card's content accelerators; promote.
+   *  - FR outside the key card entirely (stranded on a previous card, on
+   *    the canvas after an unregister cascade, or null) → promote.
    */
-  private restoreCardFirstResponder(cardId: string): void {
-    if (this.chain === null || typeof document === "undefined") return;
-    const currentFr = this.chain.getFirstResponder();
-    const within = currentFr !== null && this.responderWithinCard(currentFr, cardId);
+  private reconcileFirstResponder(): void {
+    const chain = this.chain;
+    if (chain === null || typeof document === "undefined") return;
+    const cardId = this.keyCardId;
+    if (cardId === null) return;
+    const currentFr = chain.getFirstResponder();
+
+    // The ideal target, best first: the key view's responder…
     let target: string | null = null;
     const keyViewId = this.activeContext().keyView();
-    if (!within) {
-      if (keyViewId !== null) {
-        // The responder owning the key view: the key view itself if registered,
-        // else its nearest registered DOM ancestor.
-        target = this.chain.hasResponder(keyViewId) ? keyViewId : null;
-        if (target === null) {
-          const el = this.elementForFocusKey(keyViewId);
-          target = el ? this.chain.findResponderForTarget(el) : null;
-        }
-      }
+    if (keyViewId !== null) {
+      target = chain.hasResponder(keyViewId) ? keyViewId : null;
       if (target === null) {
-        // No key view (a pane promoted to frontmost whose card was never focused).
-        // Fall back to the card's own responder so the activated card still owns
-        // its accelerators (Cmd-W reaches it). Resolve via any registered
-        // responder element inside the card subtree.
-        const cardEl = document.querySelector(`[data-card-id="${cssEscapeId(cardId)}"]`);
-        const inner = cardEl?.querySelector("[data-responder-id]") ?? null;
-        target = inner ? this.chain.findResponderForTarget(inner) : null;
+        const el = this.elementForFocusKey(keyViewId);
+        target = el ? chain.findResponderForTarget(el) : null;
       }
     }
-    if (!within && target !== null && this.chain.getFirstResponder() !== target) {
-      this.chain.makeFirstResponder(target);
+    const cardEl = document.querySelector<HTMLElement>(
+      `[data-card-id="${cssEscapeId(cardId)}"]`,
+    );
+    // …else the default-focus target's responder (never-focused card)…
+    if (target === null && cardEl !== null) {
+      const { el } = resolveDefaultFocusTarget(cardEl);
+      target = el ? chain.findResponderForTarget(el) : null;
     }
-  }
+    // …else the card's own container responder (Cmd-W must still land).
+    if (target === null && cardEl !== null) {
+      const inner = cardEl.querySelector("[data-responder-id]");
+      target = inner ? chain.findResponderForTarget(inner) : null;
+    }
+    if (target === null || target === currentFr) return;
 
-  /** Whether `responderId`'s element lives inside card `cardId`'s subtree. */
-  private responderWithinCard(responderId: string, cardId: string): boolean {
-    if (typeof document === "undefined") return false;
-    const esc = cssEscapeId;
-    const rEl = document.querySelector(`[data-responder-id="${esc(responderId)}"]`);
-    const cardEl = document.querySelector(`[data-card-id="${esc(cardId)}"]`);
-    return rEl !== null && cardEl !== null && cardEl.contains(rEl);
+    const promote =
+      currentFr === null ||
+      !chain.nodeIsWithin(currentFr, cardId) ||
+      chain.nodeIsWithin(target, currentFr);
+    if (promote && chain.getFirstResponder() !== target) {
+      chain.makeFirstResponder(target);
+    }
   }
 
   /** The element carrying a focus key — a responder id or a focusable id. */

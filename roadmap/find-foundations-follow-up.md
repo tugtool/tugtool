@@ -22,7 +22,7 @@ identical face.
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented |
 | Target branch | main |
 | Last updated | 2026-07-12 |
 
@@ -694,13 +694,13 @@ data-slots) into the slots.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Reveal on identity, two-edge visible band | pending | — |
-| #step-2 | Flash overlay into the scroller | pending | — |
-| #step-3 | at0221: reveal + containment scenarios | pending | — |
-| #step-4 | Count badge in the shared cluster | pending | — |
-| #step-5 | TugEntryShell extraction; prompt entry composes it | pending | — |
-| #step-6 | Text card find bar on the shell | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Reveal on identity, two-edge visible band | done | `c93369379` |
+| #step-2 | Flash overlay into the scroller | done | `31d9f7d12` |
+| #step-3 | at0221: reveal + containment scenarios | done | `87b2aa644` |
+| #step-4 | Count badge in the shared cluster | done | `2bcfdf2e4` |
+| #step-5 | TugEntryShell extraction; prompt entry composes it | done | `929d9a13b` |
+| #step-6 | Text card find bar on the shell | done | `a37ee34f2` |
+| #step-7 | Integration checkpoint | done | N/A (verification only) |
 
 #### Step 1: Reveal on identity, two-edge visible band {#step-1}
 
@@ -713,30 +713,30 @@ data-slots) into the slots.
   `tugdeck/src/components/tugways/cards/dev-card-transcript.tsx`.
 
 **Tasks:**
-- [ ] Replace `findPrevActiveRef: useRef<number>(-1)` with an identity key of the
+- [x] Replace `findPrevActiveRef: useRef<number>(-1)` with an identity key of the
       active match — `row`, `segment`, `start`, plus the session's `wrapSeq` — reset
       to a sentinel when matches empty. Reveal when the key changes.
-- [ ] Extend the post-paint nudge in `paintAndReveal` to enforce both band edges per
+- [x] Extend the post-paint nudge in `paintAndReveal` to enforce both band edges per
       [P02]: bottom first (`rect.bottom > scrollerRect.bottom − 8` ⇒ scroll down),
       then top (existing pin-stack rule). Re-read the rect between nudges (live
       Ranges track scroll).
-- [ ] Keep the bounded unfold-retry loop, the `editor`-segment early return, and
+- [x] Keep the bounded unfold-retry loop, the `editor`-segment early return, and
       `handleFindRenderedRangeChange` untouched.
-- [ ] Verify against follow-bottom: with a turn streaming, run a find and navigate;
+- [x] Verify against follow-bottom: with a turn streaming, run a find and navigate;
       if the follow-bottom machinery overrides the reveal nudge, disengage it when a
       reveal runs (find is favored once underway — [P01] rationale). Record what was
       needed in the commit message.
 
 **Tests:**
-- [ ] Covered by Step 3's at0221 scenarios (kept separate so this step's commit is
+- [x] Covered by Step 3's at0221 scenarios (kept separate so this step's commit is
       reviewable on its own; manual verification in the debug app here).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && ./node_modules/.bin/tsc --noEmit`
-- [ ] In the debug app: type a query on ⌕ whose first match is far below — the
+- [x] `cd tugdeck && ./node_modules/.bin/tsc --noEmit`
+- [x] In the debug app: type a query on ⌕ whose first match is far below — the
       transcript scrolls to it as you type; ⌘G to a bottom-area match never leaves it
       under the entry region.
-- [ ] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` still
+- [x] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` still
       passes (existing scenarios unbroken).
 
 ---
@@ -754,23 +754,23 @@ data-slots) into the slots.
   `tugdeck/src/components/tugways/transcript-find.css`.
 
 **Tasks:**
-- [ ] Add `scroller: HTMLElement | null` to `FindPaintInput`; the highlighter stores
+- [x] Add `scroller: HTMLElement | null` to `FindPaintInput`; the highlighter stores
       it each paint. `dev-card-transcript.tsx` passes the
       `[data-tug-scroll-key="dev-card-transcript"]` element from both paint sites.
-- [ ] Rework `flashActive()`: no-op without a scroller; convert the active rect to
+- [x] Rework `flashActive()`: no-op without a scroller; convert the active rect to
       content coordinates (subtract `scrollerRect.left/top` and `clientLeft/Top`, add
       `scrollLeft/Top`); append the overlay to the scroller; skip the flash when the
       rect does not intersect the scroller's visible box.
-- [ ] CSS: `.tugx-find-flash-overlay` → `position: absolute`; drop the body-level
+- [x] CSS: `.tugx-find-flash-overlay` → `position: absolute`; drop the body-level
       `z-index: 9999` for a small scroller-scoped value.
-- [ ] `removeFlashOverlay` / `clear()` / `dispose()` continue to remove the element.
+- [x] `removeFlashOverlay` / `clear()` / `dispose()` continue to remove the element.
 
 **Tests:**
-- [ ] Covered by Step 3's containment assertions.
+- [x] Covered by Step 3's containment assertions.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && ./node_modules/.bin/tsc --noEmit`
-- [ ] Debug app: the ring lands on the match, scrolls with the content mid-flash, and
+- [x] `cd tugdeck && ./node_modules/.bin/tsc --noEmit`
+- [x] Debug app: the ring lands on the match, scrolls with the content mid-flash, and
       never appears over the prompt entry or status bar.
 
 ---
@@ -788,27 +788,27 @@ data-slots) into the slots.
   row in `tuglaws/app-test-inventory.md`.
 
 **Tasks:**
-- [ ] Scenario: viewport at transcript top, type (synthetic keydowns / nativeType) a
+- [x] Scenario: viewport at transcript top, type (synthetic keydowns / nativeType) a
       query whose only match lies far below → poll until the active-match rect (via
       the painted active highlight / `waitForActiveText` helpers already in the file)
       sits inside the band `[scrollerRect.top + pinStack + 8, scrollerRect.bottom −
       8]`.
-- [ ] Scenario: query refinement — type a short query with a nearby first match, then
+- [x] Scenario: query refinement — type a short query with a nearby first match, then
       extend it so the first match moves elsewhere → assert the transcript re-revealed
       (active rect back inside the band).
-- [ ] Scenario: navigate (⌘G synthetic keydown) to a match in the last visible row
+- [x] Scenario: navigate (⌘G synthetic keydown) to a match in the last visible row
       region → assert `rect.bottom ≤ scrollerRect.bottom` (never under the entry).
-- [ ] Scenario: immediately after a navigation, query `.tugx-find-flash-overlay` →
+- [x] Scenario: immediately after a navigation, query `.tugx-find-flash-overlay` →
       assert it exists, is a DOM descendant of the
       `[data-tug-scroll-key="dev-card-transcript"]` element, and its bounding rect is
       contained by (and overlaps the active rect within) the scroller's rect. Poll
       fast — the overlay lives 640 ms.
 
 **Tests:**
-- [ ] The scenarios above are the tests.
+- [x] The scenarios above are the tests.
 
 **Checkpoint:**
-- [ ] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` →
+- [x] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` →
       `VERDICT: PASS`
 
 ---
@@ -824,28 +824,28 @@ data-slots) into the slots.
   `tug-find-cluster.css`.
 
 **Tasks:**
-- [ ] Replace the count `<span className="tugx-find-count">` with
+- [x] Replace the count `<span className="tugx-find-count">` with
       `<TugBadge emphasis="tinted" role="action" size="sm"
       className="tugx-find-count" data-slot="find-count" aria-live="polite">`
       whose children are the existing `TugStableOverlay` (active face keeps
       `data-slot="find-count-value"`; alternates `"No results"`, `"888 of 888"`).
       Note: `TugBadge` spreads rest props after its own `data-slot="tug-badge"`, so
       the caller's `data-slot` wins — verify in the DOM.
-- [ ] CSS: hide the badge (`visibility: hidden`) when the value slot is empty (no
+- [x] CSS: hide the badge (`visibility: hidden`) when the value slot is empty (no
       query), keeping it mounted for stable cluster width; trim the old text-run
       styling.
-- [ ] Confirm at0221's chip selector
+- [x] Confirm at0221's chip selector
       (`[data-slot="find-count"] [data-slot="find-count-value"]`) and at0223's
       still resolve.
 
 **Tests:**
-- [ ] Existing at0221 count assertions exercise the badge face end-to-end.
+- [x] Existing at0221 count assertions exercise the badge face end-to-end.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
-- [ ] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` and
+- [x] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
+- [x] `just app-test tests/app-test/at0221-transcript-find-fidelity.test.ts` and
       `tests/app-test/at0223-text-card-find-bar.test.ts` → `VERDICT: PASS`
-- [ ] Debug app: the ⌕ route's Z4B shows the count as a tinted action pill matching
+- [x] Debug app: the ⌕ route's Z4B shows the count as a tinted action pill matching
       the Mode/Model/Effort chips; it is not clickable.
 
 ---
@@ -861,15 +861,15 @@ data-slots) into the slots.
 - Refactored `tug-prompt-entry.tsx`; slimmed `tug-prompt-entry.css`.
 
 **Tasks:**
-- [ ] Create `TugEntryShell` per Spec S01 (stateless; `React.forwardRef` with the ref
+- [x] Create `TugEntryShell` per Spec S01 (stateless; `React.forwardRef` with the ref
       on the root div; root spreads rest props; toolbar carries
       `data-tug-focus="refuse"`; two flanking spacers centre the middle slot per
       [D05]).
-- [ ] Move the shared rules per Table T01 into `tug-entry-shell.css`, re-keyed to
+- [x] Move the shared rules per Table T01 into `tug-entry-shell.css`, re-keyed to
       `.tug-entry-shell*` selectors and `--tugx-entry-shell-*` vars; re-point the
       prompt entry's Z4C surface rules at the shell vars; leave every
       prompt-entry-specific rule in `tug-prompt-entry.css` on its legacy selector.
-- [ ] Refactor `TugPromptEntry`'s render body to compose the shell: root
+- [x] Refactor `TugPromptEntry`'s render body to compose the shell: root
       `className="tug-prompt-entry"` + drag handlers + `inert`/`data-*` via rest; the
       entry's composed `rootRef + responderRef` callback goes to the shell's
       forwarded root ref (preserving the `data-empty` bridge — the substrate
@@ -882,23 +882,23 @@ data-slots) into the slots.
       `editorStopRef`, `inputAreaTabIndex` as today,
       `inputAreaClassName="tug-prompt-entry-input-area"`,
       `toolbarClassName="tug-prompt-entry-toolbar"`.
-- [ ] Sweep for selector references to the migrated rules (`grep -rn
+- [x] Sweep for selector references to the migrated rules (`grep -rn
       "tug-prompt-entry-toolbar\|tug-prompt-entry-input-area"` across `src` and
       `tests/`) and confirm each still matches (the legacy classes remain on the same
       elements — no test edits expected).
 
 **Tests:**
-- [ ] Regression only: the prompt-entry app-test battery (see checkpoint).
-- [ ] `bun test` (unit suite; `tug-prompt-entry-submit-button.test.ts` and the
+- [x] Regression only: the prompt-entry app-test battery (see checkpoint).
+- [x] `bun test` (unit suite; `tug-prompt-entry-submit-button.test.ts` and the
       strip-and-migrate tests must be untouched-green).
 
 **Checkpoint:**
-- [ ] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build && bun test`
-- [ ] `just app-test tests/app-test/at0085-prompt-entry-route.test.ts` and
+- [x] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build && bun test`
+- [x] `just app-test tests/app-test/at0085-prompt-entry-route.test.ts` and
       `tests/app-test/at0204-prompt-entry-text-surface.test.ts` and
       `tests/app-test/at0215-route-chrome.test.ts` and
       `tests/app-test/at0222-one-shot-commands.test.ts` → all `VERDICT: PASS`
-- [ ] Debug app: ❯/$/?/⌕ routes render pixel-identically (surface tint, focus tint,
+- [x] Debug app: ❯/$/?/⌕ routes render pixel-identically (surface tint, focus tint,
       toolbar spacing, Z4B centring, Z5 placement, attachments zone, drop ring).
 
 ---
@@ -919,34 +919,34 @@ data-slots) into the slots.
   `tuglaws/app-test-inventory.md` row.
 
 **Tasks:**
-- [ ] Rebuild the bar per Spec S02: shell + `TugTextEditor` (borderless, `maxRows=6`,
+- [x] Rebuild the bar per Spec S02: shell + `TugTextEditor` (borderless, `maxRows=6`,
       placeholder "Find in file", `preserveState={false}` — the substrate defaults to
       `true`, and the Text card already owns its preservation slot) + centred
       `TugFindCluster` + trailing Z5 pair
       (outlined ↑ / filled ↓, `size="lg"`, icons `size={18} strokeWidth={2.5}`).
       Delete the `TugInput` face, the ✕ button, and their imports.
-- [ ] Wire `findBarExtensions`: `Prec.high` keymap (Enter → next, Shift-Enter →
+- [x] Wire `findBarExtensions`: `Prec.high` keymap (Enter → next, Shift-Enter →
       previous, Escape → `onClose`) + `EditorView.updateListener` mirroring the doc
       into `runSearch` + `surface.refresh` ([P07]; the query-mirror technique the
       prompt entry uses).
-- [ ] Focus the substrate on mount via the `TugTextEditorDelegate.focus()` seam.
-- [ ] Keep `TextCardFindSurface`, options seed/write-back, and `navigate` unchanged;
+- [x] Focus the substrate on mount via the `TugTextEditorDelegate.focus()` seam.
+- [x] Keep `TextCardFindSurface`, options seed/write-back, and `navigate` unchanged;
       keep `data-slot="text-card-find-bar"` on the shell root.
-- [ ] Rewrite `text-card-find-bar.css` to docking-only rules (top divider,
+- [x] Rewrite `text-card-find-bar.css` to docking-only rules (top divider,
       `--tug-text-editor-min-height: 0`); the panel look comes from the shell.
-- [ ] Rework at0223: focus lands in the CM6 substrate on ⌘F (type via `nativeType`);
+- [x] Rework at0223: focus lands in the CM6 substrate on ⌘F (type via `nativeType`);
       Enter advances (two Returns reach "2 of 3" — first lands, second advances, as
       the shipped test learned); Shift-Enter retreats; Escape dismisses and refocuses
       the document editor; assert the bar contains a `.tug-entry-shell-toolbar`, the
       find cluster, the count badge, the two Z5 buttons, and NO route trigger / ✕.
 
 **Tests:**
-- [ ] at0223 (reworked) is the proof.
+- [x] at0223 (reworked) is the proof.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
-- [ ] `just app-test tests/app-test/at0223-text-card-find-bar.test.ts` → `VERDICT: PASS`
-- [ ] Debug app: side-by-side, the Text card bar and the Dev ⌕ entry read as the same
+- [x] `cd tugdeck && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build`
+- [x] `just app-test tests/app-test/at0223-text-card-find-bar.test.ts` → `VERDICT: PASS`
+- [x] Debug app: side-by-side, the Text card bar and the Dev ⌕ entry read as the same
       component (minus route popup / status row); Cmd-A/C/V work in the bar's field.
 
 ---
@@ -960,16 +960,16 @@ data-slots) into the slots.
 **References:** (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Full sweep: `just app-test` (repo root) → `VERDICT: PASS`.
-- [ ] `cd tugdeck && bun test && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build` — all clean.
-- [ ] Reconcile this plan's Step Status Ledger and checkboxes.
+- [x] Full sweep: `just app-test` (repo root) → `VERDICT: PASS`.
+- [x] `cd tugdeck && bun test && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build` — all clean.
+- [x] Reconcile this plan's Step Status Ledger and checkboxes.
 
 **Tests:**
-- [ ] The aggregate sweep is the test.
+- [x] The aggregate sweep is the test.
 
 **Checkpoint:**
-- [ ] `just app-test` → `VERDICT: PASS`
-- [ ] `cd tugdeck && bun test` → 0 fail
+- [x] `just app-test` → `VERDICT: PASS`
+- [x] `cd tugdeck && bun test` → 0 fail
 
 ---
 
@@ -982,21 +982,21 @@ in the Dev card and the Text card.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Typing on ⌕ follows the first match; navigation never parks a match under the
+- [x] Typing on ⌕ follows the first match; navigation never parks a match under the
       prompt entry (at0221).
-- [ ] The flash ring is scroller-contained and scroll-tracking (at0221).
-- [ ] The count renders in a tinted/action `TugBadge` in both surfaces (at0221 /
+- [x] The flash ring is scroller-contained and scroll-tracking (at0221).
+- [x] The count renders in a tinted/action `TugBadge` in both surfaces (at0221 /
       at0223 / debug-app inspection).
-- [ ] `TugPromptEntry` composes `TugEntryShell` with zero behavioral drift
+- [x] `TugPromptEntry` composes `TugEntryShell` with zero behavioral drift
       (prompt-entry app-test battery green).
-- [ ] `TextCardFindBar` is the shell + substrate + cluster + Z5 pair, no Z4A/Z2/✕
+- [x] `TextCardFindBar` is the shell + substrate + cluster + Z5 pair, no Z4A/Z2/✕
       (at0223).
-- [ ] Full `just app-test` sweep, `bun test`, `tsc`, `vite build` all green.
+- [x] Full `just app-test` sweep, `bun test`, `tsc`, `vite build` all green.
 
 **Acceptance tests:**
-- [ ] `tests/app-test/at0221-transcript-find-fidelity.test.ts` (extended)
-- [ ] `tests/app-test/at0223-text-card-find-bar.test.ts` (reworked)
-- [ ] Full `just app-test` sweep
+- [x] `tests/app-test/at0221-transcript-find-fidelity.test.ts` (extended)
+- [x] `tests/app-test/at0223-text-card-find-bar.test.ts` (reworked)
+- [x] Full `just app-test` sweep
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

@@ -46,6 +46,10 @@ export const tugTextCardEditorTheme: Extension = EditorView.theme({
     fontFamily: "var(--tugx-block-code-font)",
     lineHeight: "var(--tugx-block-code-line-height)",
     scrollbarGutter: "stable",
+    // Positioning context for the find landing-flash ring (an absolutely
+    // positioned child of the scroller in content coordinates, so it
+    // scrolls with the text and clips at the editor edge).
+    position: "relative",
   },
   ".cm-content": {
     caretColor: "var(--tugx-textcard-caret)",
@@ -105,11 +109,15 @@ export const tugTextCardEditorTheme: Extension = EditorView.theme({
   ".cm-panels": {
     display: "none",
   },
+  // Mirrors the Dev card's transcript-find paint exactly: faint accent wash
+  // on other matches, full-strength solid accent (+ on-accent text) on the
+  // current one — no outline; the landing emphasis is the one-shot ring
+  // flash the delegate draws on navigation.
   ".cm-searchMatch": {
-    backgroundColor: "var(--tugx-textcard-match-bg)",
+    backgroundColor: "var(--tugx-find-match-bg)",
   },
   ".cm-searchMatch-selected": {
-    backgroundColor: "var(--tugx-textcard-match-active-bg)",
-    outline: "1px solid var(--tugx-textcard-match-active-outline)",
+    backgroundColor: "var(--tugx-find-active-bg)",
+    color: "var(--tugx-find-active-text)",
   },
 });

@@ -3,7 +3,7 @@
  * Dev card's Find route.
  *
  * When Find navigation crosses an end (Next from the last match back to the
- * first, or Previous from the first to the last), `DevFindSession` raises its
+ * first, or Previous from the first to the last), `FindSession` raises its
  * `wrapped` flag. This component watches that flag ([L02] via
  * `useSyncExternalStore`) and, on its rising edge, paints a brief BBEdit-style
  * circular-arrow panel centred over the canvas — imperative appearance ([L06],
@@ -19,7 +19,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
-import type { DevFindSession } from "@/lib/dev-find-session";
+import type { FindSession } from "@/lib/find-session";
 import "./find-wrap-overlay.css";
 
 const SVG_OPEN =
@@ -88,7 +88,7 @@ export function FindWrapOverlay({
   findSession,
   cardRef,
 }: {
-  findSession: DevFindSession;
+  findSession: FindSession;
   /** The card root — the wrap panel centres on this, not the deck. */
   cardRef: RefObject<HTMLElement | null>;
 }): null {

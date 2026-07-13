@@ -37,6 +37,8 @@
 
 import "./tug-prompt-entry.css";
 
+import { TugEntryShell } from "./tug-entry-shell";
+
 import React, {
   useCallback,
   useContext,
@@ -140,7 +142,7 @@ import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
-import type { DevFindSession } from "@/lib/dev-find-session";
+import type { FindSession } from "@/lib/find-session";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -680,7 +682,7 @@ export interface TugPromptEntryProps {
    * active match; leaving the route clears it. Optional so hosts without a
    * transcript (the gallery) can omit it.
    */
-  findSession?: DevFindSession;
+  findSession?: FindSession;
   /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
@@ -2295,13 +2297,13 @@ export const TugPromptEntry = React.forwardRef<
       // host reacts to the active-index change (scroll + flash).
       [TUG_ACTIONS.FIND_NEXT]: () => {
         const session = findSessionRef.current;
-        if (session !== undefined && session.getSnapshot().matches.length > 0) {
+        if (session !== undefined && session.getSnapshot().count > 0) {
           session.next();
         }
       },
       [TUG_ACTIONS.FIND_PREVIOUS]: () => {
         const session = findSessionRef.current;
-        if (session !== undefined && session.getSnapshot().matches.length > 0) {
+        if (session !== undefined && session.getSnapshot().count > 0) {
           session.previous();
         }
       },
@@ -2638,98 +2640,13 @@ export const TugPromptEntry = React.forwardRef<
     [responderRef],
   );
 
-  // Render the status row only when there is something to put in it.
-  const hasStatusRow =
-    statusContent !== undefined || cautionContent !== undefined;
-
-  return (
-    <RouteLifecycleContext.Provider value={routeLifecycle}>
-      <ResponderScope>
-        <div
-          ref={composedRootRef}
-          data-slot="tug-prompt-entry"
-          data-phase={snap.phase}
-          data-can-interrupt={String(snap.canInterrupt)}
-          data-can-submit={String(snap.canSubmit)}
-          data-errored={snap.lastError ? "" : undefined}
-          data-pending-approval={snap.pendingApproval ? "" : undefined}
-          data-pending-question={snap.pendingQuestion ? "" : undefined}
-          data-empty="true"
-          // Whole-entry stand-down: `inert` blocks mouse, keyboard,
-          // and focus for the entire subtree — the route toggle,
-          // chips, and submit included — while a restore replays.
-          // React 19 boolean prop; dimming rides `data-disabled`
-          // ([L06]).
-          inert={disabled || undefined}
-          data-disabled={disabled ? "" : undefined}
-          className={cn("tug-prompt-entry", className)}
-          // One continuous drop surface (see the handlers above): a file
-          // drag anywhere over the entry — chrome included — accepts and
-          // lands in the editor. The substrate's own host-level handlers
-          // claim drags over the editor first; these catch the rest.
-          onDragOver={handleEntryDragOver}
-          onDragLeave={handleEntryDragLeave}
-          onDragEnd={clearEntryDropState}
-          onDrop={handleEntryDrop}
-        >
-          {hasStatusRow && (
-            <div className="tug-prompt-entry-status">
-              <div className="tug-prompt-entry-status-content">
-                {statusContent}
-              </div>
-              {cautionContent !== undefined && (
-                <div
-                  className="tug-prompt-entry-status-caution"
-                  data-slot="tug-prompt-entry-status-caution"
-                >
-                  {cautionContent}
-                </div>
-              )}
-            </div>
-          )}
-          <div
-            className="tug-prompt-entry-input-area"
-            ref={editorStopRef as (el: HTMLDivElement | null) => void}
-            tabIndex={editorFocusGroup !== undefined ? -1 : undefined}
-          >
-            <TugTextEditor
-              ref={textEditorRef}
-              borderless
-              // Auto-height: opens at the host's `--tug-text-editor-min-height`
-              // (the Dev card sets 200px), grows with content up to its
-              // height cap, then scrolls. The cap is `maxRows` rows by
-              // default; a host may override the scroller's `max-height`
-              // (the Dev card caps by card height instead — see
-              // `dev-card.css` — so the gallery prompt keeps the 20-row cap
-              // while the Dev prompt scrolls at a fraction of the card).
-              maxRows={20}
-              disabled={deactivated}
-              placeholder={placeholderByRoute?.[route] ?? ""}
-              completionProviders={routeGatedCompletionProviders}
-              argumentHintResolver={argumentHintResolver}
-              argumentHintRefresh={argumentHintRefresh}
-              pastedCommandResolver={pastedCommandResolver}
-              inlineCommandMatcher={inlineCommandMatcher}
-              dropHandler={dropHandler}
-              attachmentBytesStore={attachmentBytesStore}
-              onAttachmentError={publishAttachmentError}
-              historyProvider={currentHistoryProvider}
-              returnAction={
-                returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
-              }
-              numpadEnterAction={numpadEnterAction}
-              lineWrap={lineWrap}
-              lineNumbers={lineNumbers}
-              highlightActiveLineGutter={highlightActiveLineGutter}
-              onSubmit={performSubmit}
-              extensions={editorExtensions}
-              /* State preservation is owned by TugPromptEntry. Disable
-                 the substrate's registration so only one component
-                 claims the single CardStatePreservationContext slot. */
-              preserveState={false}
-            />
-          </div>
-          {/*
+  /*
+   * Shell-slot occupants, hoisted so the {@link TugEntryShell} tag below
+   * stays readable. Zone semantics (Z4C accessory strip, Z4A route popup,
+   * Z4B indicators, Z5 buttons) are unchanged — the shell owns only the
+   * layout positions.
+   */
+  {/*
             Z4C — the compose-phase attachment-preview zone. A flow sibling
             between the editor's scroll viewport and the toolbar (Z4), so it
             stays pinned below the scrolling text and directly above the
@@ -2741,7 +2658,9 @@ export const TugPromptEntry = React.forwardRef<
             affordance is live here ([compose phase] — `onDelete` supplied),
             unlike the read-only transcript strip.
           */}
-          {composeImageAtoms.length > 0 && (
+  const entryAccessoryRow =
+    composeImageAtoms.length > 0 ? (
+
             <div
               className="tug-prompt-entry-attachments"
               data-slot="tug-prompt-entry-attachments"
@@ -2762,18 +2681,10 @@ export const TugPromptEntry = React.forwardRef<
                 focusOrderBase={attachmentFocusOrderBase}
               />
             </div>
-          )}
-          <div
-            className="tug-prompt-entry-toolbar"
-            // The toolbar is chrome: clicking anywhere in it — a badge, the
-            // route toggle, the spacers, the empty gaps — must not steal
-            // first-responder or DOM focus from the editor. `data-tug-focus`
-            // is ancestor-matched (`closest`), so marking the row refuses
-            // focus for every descendant that doesn't already (the TugBadge
-            // chips and the empty spacers); TugButton children already refuse
-            // on their own. [L11 / responder-chain-provider focus-refusal]
-            data-tug-focus="refuse"
-          >
+    ) : undefined;
+
+  const entryRoutePopup = (
+    <>
             {/* Z4A — leading-fixed slot; the route popup. A filled TugButton
               trigger (icon + name of the current route + chevron), tinted in
               the theme selection color to match the old choice-group's
@@ -2827,21 +2738,11 @@ export const TugPromptEntry = React.forwardRef<
                 });
               }}
             />
-            {/*
-              Z4B — centred-floating slot; currently the indicator
-              cluster. Two equal flex spacers flank it, so the free
-              width splits evenly and Z4B's centre lands at the midpoint
-              of the Z4A–Z5 gap ([D05]). Z4A / Z4B are layout positions
-              — the occupant placed in each is free to change.
-            */}
-            <div className="tug-prompt-entry-toolbar-spacer" aria-hidden="true" />
-            <div
-              className="tug-prompt-entry-indicators"
-              data-slot="tug-prompt-entry-indicators"
-            >
-              {indicatorsContent}
-            </div>
-            <div className="tug-prompt-entry-toolbar-spacer" aria-hidden="true" />
+    </>
+  );
+
+  const entryToolbarTrailing = (
+    <>
             {/*
               Z5 `+` queue button — mounted alongside the primary Stop
               button while a turn runs (mode `stop`). CSS-gated on the
@@ -2917,8 +2818,108 @@ export const TugPromptEntry = React.forwardRef<
                 )
               }
             />
-          </div>
-        </div>
+    </>
+  );
+
+  // Render the status row only when there is something to put in it.
+  const hasStatusRow =
+    statusContent !== undefined || cautionContent !== undefined;
+
+  return (
+    <RouteLifecycleContext.Provider value={routeLifecycle}>
+      <ResponderScope>
+        <TugEntryShell
+          // The shell's forwarded root ref carries BOTH the entry's own
+          // rootRef (the substrate's `data-empty` bridge writes through it
+          // per [L22]) and the responder-chain registration.
+          ref={composedRootRef}
+          data-slot="tug-prompt-entry"
+          data-phase={snap.phase}
+          data-can-interrupt={String(snap.canInterrupt)}
+          data-can-submit={String(snap.canSubmit)}
+          data-errored={snap.lastError ? "" : undefined}
+          data-pending-approval={snap.pendingApproval ? "" : undefined}
+          data-pending-question={snap.pendingQuestion ? "" : undefined}
+          data-empty="true"
+          // Whole-entry stand-down: `inert` blocks mouse, keyboard,
+          // and focus for the entire subtree — the route toggle,
+          // chips, and submit included — while a restore replays.
+          // React 19 boolean prop; dimming rides `data-disabled`
+          // ([L06]).
+          inert={disabled || undefined}
+          data-disabled={disabled ? "" : undefined}
+          className={cn("tug-prompt-entry", className)}
+          // One continuous drop surface (see the handlers above): a file
+          // drag anywhere over the entry — chrome included — accepts and
+          // lands in the editor. The substrate's own host-level handlers
+          // claim drags over the editor first; these catch the rest.
+          onDragOver={handleEntryDragOver}
+          onDragLeave={handleEntryDragLeave}
+          onDragEnd={clearEntryDropState}
+          onDrop={handleEntryDrop}
+          statusRow={
+            hasStatusRow ? (
+              <div className="tug-prompt-entry-status">
+                <div className="tug-prompt-entry-status-content">
+                  {statusContent}
+                </div>
+                {cautionContent !== undefined && (
+                  <div
+                    className="tug-prompt-entry-status-caution"
+                    data-slot="tug-prompt-entry-status-caution"
+                  >
+                    {cautionContent}
+                  </div>
+                )}
+              </div>
+            ) : undefined
+          }
+          inputAreaClassName="tug-prompt-entry-input-area"
+          inputAreaRef={editorStopRef as (el: HTMLDivElement | null) => void}
+          inputAreaTabIndex={editorFocusGroup !== undefined ? -1 : undefined}
+          accessoryRow={entryAccessoryRow}
+          toolbarClassName="tug-prompt-entry-toolbar"
+          toolbarLeading={entryRoutePopup}
+          toolbarCenter={indicatorsContent}
+          toolbarTrailing={entryToolbarTrailing}
+        >
+            <TugTextEditor
+              ref={textEditorRef}
+              borderless
+              // Auto-height: opens at the host's `--tug-text-editor-min-height`
+              // (the Dev card sets 200px), grows with content up to its
+              // height cap, then scrolls. The cap is `maxRows` rows by
+              // default; a host may override the scroller's `max-height`
+              // (the Dev card caps by card height instead — see
+              // `dev-card.css` — so the gallery prompt keeps the 20-row cap
+              // while the Dev prompt scrolls at a fraction of the card).
+              maxRows={20}
+              disabled={deactivated}
+              placeholder={placeholderByRoute?.[route] ?? ""}
+              completionProviders={routeGatedCompletionProviders}
+              argumentHintResolver={argumentHintResolver}
+              argumentHintRefresh={argumentHintRefresh}
+              pastedCommandResolver={pastedCommandResolver}
+              inlineCommandMatcher={inlineCommandMatcher}
+              dropHandler={dropHandler}
+              attachmentBytesStore={attachmentBytesStore}
+              onAttachmentError={publishAttachmentError}
+              historyProvider={currentHistoryProvider}
+              returnAction={
+                returnActionOverride ?? RETURN_ACTION_BY_ROUTE[route] ?? "submit"
+              }
+              numpadEnterAction={numpadEnterAction}
+              lineWrap={lineWrap}
+              lineNumbers={lineNumbers}
+              highlightActiveLineGutter={highlightActiveLineGutter}
+              onSubmit={performSubmit}
+              extensions={editorExtensions}
+              /* State preservation is owned by TugPromptEntry. Disable
+                 the substrate's registration so only one component
+                 claims the single CardStatePreservationContext slot. */
+              preserveState={false}
+            />
+        </TugEntryShell>
       </ResponderScope>
     </RouteLifecycleContext.Provider>
   );

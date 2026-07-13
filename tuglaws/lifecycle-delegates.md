@@ -172,6 +172,8 @@ Subscriptions install in `useLayoutEffect` ([L03] — registrations that events 
 
 ## Authoring rules
 
+**Every engine-managed (`engineKind: "em"`) card MUST register a `TugCardDelegate` that reclaims its focus destination on `cardDidActivate`** (and re-asserts it from its own editor-attach moment when its editor binds asynchronously). This is the content half of [P21] — see [responder-chain.md § First responder](responder-chain.md) — and is what keeps first-responder-routed accelerators (⌘F, ⌘S, clipboard, route chords) working on the card no matter how it became active. `cardDidActivate`'s initial-sync makes the contract ordering-proof for cards created and activated before they mount.
+
 **Register a `TugCardDelegate` when:** the consumer is React-context-bound (needs to call back into a hook surface) and the work needs to survive a gesture or a React commit-cycle race. The canonical example is post-activation focus assertion — `entryDelegate.focus()` from `cardDidActivate` runs after the gesture focus-lock and after the activation commit.
 
 **Use `observeCard*` directly when:** the consumer is non-React (`selectionGuard`), needs synchronous pre-mutation state, or needs ordering with other synchronous observers. The store is in its pre-mutation state inside `observeCardWillDeactivate`; the delegate's `cardWillDeactivate` runs after the commit.

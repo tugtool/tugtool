@@ -1,36 +1,31 @@
 /**
- * TextCardFindBar — the Text card's bottom-docked find bar.
- *
- * Styled on the Dev entry's bottom-toolbar composition: the query field
- * leads, flex spacers flank the centred find cluster, and the Previous /
- * Next / Close buttons trail at the right edge. Layout-only rules here
- * ([L20]); the composed `TugInput` / `TugFindCluster` / `TugIconButton`
- * keep their own tokens.
+ * TextCardFindBar — docking rules only. The bar IS a `TugEntryShell` (the
+ * same panel / input-area / toolbar shell the prompt entry composes), so its
+ * look comes from `tug-entry-shell.css`; this file owns only how the bar
+ * sits inside the Text card ([L20]).
  */
 
 .text-card-find-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  min-height: 2.25rem;
-  box-sizing: border-box;
-  padding: var(--tug-space-2xs) var(--tug-space-sm);
-  flex: 0 0 auto;
   /* Same contrasting rule the status bar draws against the editor. */
   border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  /* A find field opens one line tall (the substrate's own minimum) and
+     grows with a longer query up to its `maxRows` cap — no tall prompt
+     floor here. */
+  --tug-text-editor-min-height: 0;
 }
 
-.text-card-find-bar-input {
-  flex: 0 1 22rem;
-  min-width: 10rem;
+/* Centre the cluster on the CARD's midline, not the spacer midpoint. With
+   no leading occupant the shell's flanking spacers centre the cluster in
+   the gap LEFT of the trailing Z5 pair — visibly off-centre in a wide
+   card. Absolute centring pins it to the true middle; the toolbar row
+   (position: relative) is the containing block. The Z5 pair keeps its
+   trailing flex position and wins pointer events where they'd overlap on
+   a very narrow card (it comes later in DOM order). */
+.text-card-find-bar .tug-entry-shell-toolbar {
+  position: relative;
 }
-
-.text-card-find-bar-spacer {
-  flex: 1 1 0;
-}
-
-.text-card-find-bar-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tug-space-2xs);
+.text-card-find-bar .tug-entry-shell-indicators {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }

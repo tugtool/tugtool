@@ -55,6 +55,10 @@
  */
 
 import "./tug-text-card-editor.css";
+// The find landing-flash ring class + keyframes — the SAME one-shot accent
+// ring the Dev card's transcript find draws ([L14] reduced-motion aware).
+import "./transcript-find.css";
+import { placeFindFlash, type FindFlashHandle } from "./find-flash";
 
 import React, {
   useCallback,
@@ -67,6 +71,7 @@ import React, {
 import {
   Annotation,
   Compartment,
+  EditorSelection,
   EditorState,
   StateEffect,
   StateField,
@@ -126,6 +131,8 @@ import { countWords, wordCountDelta } from "@/lib/word-count";
 import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
 
 import { useOptionalResponder } from "./use-responder";
+import { useCardId } from "./use-card-state-preservation";
+import { getDeckStore } from "@/lib/deck-store-registry";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
@@ -311,6 +318,15 @@ export interface TugTextCardEditorDelegate {
   revealLine(line: number, endLine?: number): void;
   /** Set / replace the active search query (paints match highlights). */
   setSearchQuery(query: TugTextCardEditorSearchQuery): void;
+  /**
+   * Select the active query's FIRST match and reveal it — vertically
+   * centred and horizontally scrolled to the match (a long unwrapped line
+   * must pan). Selection + scroll only; no focus claim, so a find field
+   * driving this keeps its caret. No-op when the query has no match.
+   * The find bar calls this after every query edit (search-as-you-type
+   * lands on the first result the way every find bar does).
+   */
+  selectFirstMatch(): void;
   /** Tear down the active search and clear match highlights. */
   clearSearch(): void;
   findNext(): void;
@@ -370,6 +386,13 @@ export interface TugTextCardEditorProps {
    */
   onFindRequested?: () => void;
   /**
+   * Invoked after this editor's OWN find-navigation handlers run (⌘G /
+   * ⇧⌘G handled here because the walk from the focused document reaches
+   * this responder first). The host forwards it to the find bar so the
+   * count badge tracks navigations made outside the bar.
+   */
+  onFindNavigated?: () => void;
+  /**
    * Route a save-verb chain action (⌘S and the File menu items) up to the
    * card, which owns the save panels and confirm sheets. In manual mode
    * `SAVE` routes here too (the card's `save()` + needs-path panel flow);
@@ -401,6 +424,7 @@ export const TugTextCardEditor = React.forwardRef<
     languageExt,
     className,
     onFindRequested,
+    onFindNavigated,
     onSaveCommand,
     onStats,
   },
@@ -419,6 +443,7 @@ export const TugTextCardEditor = React.forwardRef<
   const settingsRef = useRef(settings);
   const readOnlyRef = useRef(readOnly);
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
+  const onFindNavigatedRef = useRef<(() => void) | undefined>(onFindNavigated);
   const onSaveCommandRef = useRef<TugTextCardEditorProps["onSaveCommand"]>(onSaveCommand);
   const onStatsRef = useRef<((stats: EditorStats) => void) | undefined>(onStats);
   useLayoutEffect(() => {
@@ -442,6 +467,33 @@ export const TugTextCardEditor = React.forwardRef<
   useLayoutEffect(() => {
     onFindRequestedRef.current = onFindRequested;
   }, [onFindRequested]);
+  useLayoutEffect(() => {
+    onFindNavigatedRef.current = onFindNavigated;
+  }, [onFindNavigated]);
+
+  // Engine-hook registration — the Text card is an engine-managed card
+  // (`engineKind: "em"`), so the activation focus channel resolves through
+  // `store.invokeEnginePaintMirrorAsActive`. Without this registration a
+  // FRESH text card's activation claim resolves `deferred-engine` forever
+  // (nothing ever registers), leaving `document.activeElement` — and every
+  // content accelerator (⌘F, ⌘G, clipboard) — stranded on the previous
+  // card. The active hook claims real DOM focus on the CM6 view; the
+  // resulting `focusin` promotes this editor's responder ([P21] closes the
+  // loop). The inactive hook is deliberately a no-op: the text card's
+  // deactivated-selection paint is unchanged from its long-standing
+  // behavior, and the focus channel only needs the active half.
+  const engineCardId = useCardId();
+  useLayoutEffect(() => {
+    if (engineCardId === null) return;
+    const store = getDeckStore();
+    if (store === null) return;
+    return store.registerEngineHooks(engineCardId, {
+      paintMirrorAsActive: () => {
+        viewRef.current?.focus();
+      },
+      paintMirrorAsInactive: () => {},
+    });
+  }, [engineCardId]);
 
   // ---- Bridge helpers ----
 
@@ -741,6 +793,84 @@ export const TugTextCardEditor = React.forwardRef<
     });
   }, []);
 
+  // Find landing-flash ring + horizontal settle. After every find
+  // navigation (typed landing, next, previous):
+  //  - if the selected match is fully visible with the scroller panned all
+  //    the way LEFT, snap `scrollLeft` to 0 — zero horizontal scroll is
+  //    favored over the minimal pan CM6's scrollIntoView leaves behind;
+  //  - draw the one-shot accent ring over the match (the Dev card's
+  //    landing flash), absolutely positioned in the scroller's content
+  //    coordinates so it scrolls with the text and clips at the editor.
+  const findFlashRef = useRef<FindFlashHandle | null>(null);
+  const removeFindFlash = useCallback((): void => {
+    findFlashRef.current?.remove();
+    findFlashRef.current = null;
+  }, []);
+  useLayoutEffect(() => removeFindFlash, [removeFindFlash]);
+
+  const settleFindNavigation = useCallback((): void => {
+    const live = viewRef.current;
+    if (live === null) return;
+    const sel = live.state.selection.main;
+    if (sel.empty) return;
+    live.requestMeasure({
+      read: (view) => {
+        const scroller = view.scrollDOM;
+        const start = view.coordsAtPos(sel.from, 1);
+        const end = view.coordsAtPos(sel.to, -1);
+        if (start === null || end === null) return null;
+        const rect = scroller.getBoundingClientRect();
+        const contentLeft = start.left - rect.left + scroller.scrollLeft;
+        const contentRight = end.right - rect.left + scroller.scrollLeft;
+        const contentTop = start.top - rect.top + scroller.scrollTop;
+        return {
+          scroller,
+          contentLeft,
+          contentTop,
+          width: Math.max(contentRight - contentLeft, 8),
+          height: Math.max(start.bottom - start.top, 12),
+          snapZero:
+            scroller.scrollLeft > 0 &&
+            contentRight <= scroller.clientWidth - 8,
+        };
+      },
+      write: (m) => {
+        if (m === null) return;
+        if (m.snapZero) m.scroller.scrollLeft = 0;
+        removeFindFlash();
+        // Shared placement helper takes VIEWPORT coordinates; convert the
+        // measured content-space rect back through the live scroller box.
+        const box = m.scroller.getBoundingClientRect();
+        findFlashRef.current = placeFindFlash(m.scroller, {
+          left: m.contentLeft + box.left + m.scroller.clientLeft - m.scroller.scrollLeft,
+          top: m.contentTop + box.top + m.scroller.clientTop - m.scroller.scrollTop,
+          width: m.width,
+          height: m.height,
+        });
+      },
+    });
+  }, [removeFindFlash]);
+
+  const selectFirstMatchFn = useCallback((): void => {
+    const live = viewRef.current;
+    if (live === null) return;
+    const query = getSearchQuery(live.state);
+    if (!query.valid) return;
+    const first = query.getCursor(live.state).next();
+    if (first.done) return;
+    live.dispatch({
+      selection: EditorSelection.single(first.value.from, first.value.to),
+      effects: EditorView.scrollIntoView(
+        EditorSelection.range(first.value.from, first.value.to),
+        // `x: "nearest"` pans a long unwrapped line to the match; the
+        // vertical centre matches the findNext/findPrevious landing.
+        { y: "center", x: "nearest" },
+      ),
+      userEvent: "select.search",
+    });
+    settleFindNavigation();
+  }, [settleFindNavigation]);
+
   const clearSearchFn = useCallback(() => {
     const live = viewRef.current;
     if (live === null) return;
@@ -837,19 +967,31 @@ export const TugTextCardEditor = React.forwardRef<
       responderId: () => responderId,
       revealLine: revealLineFn,
       setSearchQuery: setSearchQueryFn,
+      selectFirstMatch: selectFirstMatchFn,
       clearSearch: clearSearchFn,
       findNext: () => {
         const live = viewRef.current;
         if (live !== null) cmFindNext(live);
+        settleFindNavigation();
       },
       findPrevious: () => {
         const live = viewRef.current;
         if (live !== null) cmFindPrevious(live);
+        settleFindNavigation();
       },
       getMatchCount: getMatchCountFn,
       getMatchInfo: getMatchInfoFn,
     }),
-    [revealLineFn, setSearchQueryFn, clearSearchFn, getMatchCountFn, getMatchInfoFn, responderId],
+    [
+      revealLineFn,
+      setSearchQueryFn,
+      selectFirstMatchFn,
+      clearSearchFn,
+      getMatchCountFn,
+      getMatchInfoFn,
+      settleFindNavigation,
+      responderId,
+    ],
   );
 
   // ---- Context menu ----
@@ -1058,11 +1200,13 @@ export const TugTextCardEditor = React.forwardRef<
   const handleFindNext = useCallback((): ActionHandlerResult => {
     const live = viewRef.current;
     if (live !== null) cmFindNext(live);
+    onFindNavigatedRef.current?.();
   }, []);
 
   const handleFindPrevious = useCallback((): ActionHandlerResult => {
     const live = viewRef.current;
     if (live !== null) cmFindPrevious(live);
+    onFindNavigatedRef.current?.();
   }, []);
 
   const actions: Partial<Record<TugAction, ActionHandler>> = {
