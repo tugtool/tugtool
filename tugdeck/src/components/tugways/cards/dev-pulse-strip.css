@@ -2,12 +2,11 @@
  * dev-pulse-strip.css — the Z2 PULSE strip's scoped styling.
  *
  * One fixed-height line: a letterspaced mono PULSE legend, then the
- * machine's latest thought in a small italic, ellipsized. A changed
- * line CROSS-FADES TO the incoming: the incoming text sits in flow ON
- * TOP and rises to full opacity while the outgoing text holds still
- * absolutely beneath it — TugAnimator drives only the incoming opacity,
- * so there is no fade-out ([L06] — appearance through WAAPI on DOM, no
- * CSS keyframes and no React state).
+ * machine's latest thought in a small italic, ellipsized. A changed line
+ * SWAPS INSTANTLY — one text node, no animation. Text cannot cross-fade
+ * (two different strings in one box interleave their glyphs into a
+ * smash), and the dwell paces changes ≥1.8s apart, so an instant replace
+ * reads calm; the sparkline carries the liveness.
  *
  * Tuglaw cross-check:
  *  - [L19] component file pair with `data-slot="dev-pulse-strip"`.
@@ -135,9 +134,9 @@
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .dev-pulse-strip-text {
-  /* The incoming/current line sits IN FLOW so its baseline drives the
-   * stage's baseline (shared with the legend). One line, ellipsized at the
-   * stage's right edge — fills the available width, not a character count. */
+  /* The current line sits IN FLOW so its baseline drives the stage's
+   * baseline (shared with the legend). One line, ellipsized at the stage's
+   * right edge — fills the available width, not a character count. */
   display: block;
   color: var(--tug7-element-global-text-normal-default-rest);
   font-size: var(--dev-pulse-strip-font-size);
@@ -145,11 +144,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  /* The current line stacks ABOVE the outgoing so it fades in ON TOP during a
-   * change (the cross-fade-TO — no fade-out). Positioned (relative) but still
-   * in flow, so layout is unchanged; the outgoing rule below drops to z 0. */
-  position: relative;
-  z-index: 1;
 }
 
 /* The activity sparkline; flex-centered in the bar, then nudged by the
@@ -183,17 +177,6 @@
    mirroring the legend pill. */
 .dev-pulse-strip-spark-trigger[data-state="open"] {
   background-color: var(--tug7-surface-control-primary-ghost-accent-active);
-}
-
-/* The outgoing layer sits absolutely BENEATH the incoming, holding still at
- * full opacity while the incoming fades in over it (the cross-fade-TO — no
- * fade-out). Same geometry; the incoming (z 1) paints on top and the outgoing
- * settles out once the fade completes. */
-.dev-pulse-strip-outgoing {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  z-index: 0;
 }
 
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */

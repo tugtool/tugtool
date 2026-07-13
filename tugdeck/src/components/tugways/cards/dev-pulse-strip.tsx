@@ -13,20 +13,20 @@
  *    replaces it (rapid thoughts coalesce — the newest pending line
  *    wins when the dwell expires), except the user's own clear
  *    (submit), which swaps immediately;
- *  - a changed line CROSS-FADES TO the incoming via TugAnimator (the new
- *    line rises to full opacity over the still, outgoing line — no
- *    fade-out); a beat that re-states the identical line never restages,
- *    so unchanged text shows no motion at all;
+ *  - a changed line SWAPS INSTANTLY — one text node, no animation. Text
+ *    cannot cross-fade (two different strings in one box interleave their
+ *    glyphs into a smash), and the dwell already paces changes ≥1.8s
+ *    apart, so an instant replace reads calm; the sparkline carries the
+ *    liveness. Only one string is ever painted, so overlap is impossible;
  *  - a dimmed `None` placeholder before the session's first line.
  *
  * Laws: [L02] both stores via `useSyncExternalStore` (`usePulse` and
  *       the session-id selector below);
- *       [L06] the cross-fade runs through TugAnimator (WAAPI on DOM
- *       refs) — opacity never passes through React state; the dwell
- *       queue is local presentation data (`useState`/`useRef`), which
- *       changes WHAT text exists, not how it looks;
+ *       [L06] the dwell queue is local presentation data
+ *       (`useState`/`useRef`), which changes WHAT text exists, not how it
+ *       looks — no appearance passes through React state;
  *       [L19] `.tsx`/`.css` pair, `data-slot="dev-pulse-strip"`;
- *       [L26] mounted whenever enabled; only the text layers change.
+ *       [L26] mounted whenever enabled; only the text changes.
  *
  * @module components/tugways/cards/dev-pulse-strip
  */
@@ -36,13 +36,11 @@ import "./dev-pulse-strip.css";
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 
-import { animate } from "@/components/tugways/tug-animator";
 import {
   sparklineCurves,
   TugSparkline,
@@ -82,8 +80,6 @@ const PULSE_HISTORY_COUNT = 8;
 
 /** Every line holds the strip at least this long before the next. */
 export const MIN_DWELL_MS = 1_800;
-/** Cross-fade length (raw ms; TugAnimator scales by the timing dial). */
-export const XFADE_MS = 600;
 /**
  * Sparkline full-scale, in streamed chars per 1s. Fixed (no autoscale) so the
  * line never rescales vertically. The ceiling sits ~4× above typical output
@@ -123,36 +119,17 @@ const NONE_ENTRY: DisplayEntry = Object.freeze({
 });
 
 /**
- * Whether two entries RENDER the same line — same placeholder state, same
- * beat text, same retained intent. A new pulse line always carries a fresh
- * `key` (a new beat), but a beat that re-states the identical text (or rides
- * an unchanged intent) must NOT restage the line: there is nothing to
- * cross-fade to, so the strip stays perfectly still.
- */
-function sameDisplay(a: DisplayEntry, b: DisplayEntry): boolean {
-  return (
-    a.placeholder === b.placeholder &&
-    a.text === b.text &&
-    a.intent === b.intent
-  );
-}
-
-/**
  * The dwell queue: `target` is what the store wants shown; `current`
  * is what the strip shows. A swap happens immediately when the
  * current line has dwelt long enough (or the target is the user-clear
  * placeholder); otherwise the newest target waits out the remainder.
- * A swap that changes the VISIBLE line parks the previous entry in
- * `outgoing` for the cross-fade; a swap to identical text updates the key
- * silently (no fade); the animation effect settles the outgoing back to null.
+ * A swap replaces the text INSTANTLY — one node, no animation (text can't
+ * cross-fade without the two strings smashing together).
  */
 function useDwellDisplay(target: DisplayEntry): {
   current: DisplayEntry;
-  outgoing: DisplayEntry | null;
-  settleOutgoing: (entry: DisplayEntry) => void;
 } {
   const [current, setCurrent] = useState<DisplayEntry>(target);
-  const [outgoing, setOutgoing] = useState<DisplayEntry | null>(null);
   const currentKeyRef = useRef(target.key);
   const lastSwapAtRef = useRef(0);
   const pendingRef = useRef<DisplayEntry | null>(null);
@@ -163,14 +140,7 @@ function useDwellDisplay(target: DisplayEntry): {
   }, [current.key]);
 
   const swap = useCallback((next: DisplayEntry): void => {
-    setCurrent((prev) => {
-      if (prev.key === next.key) return prev;
-      // Only stage a cross-fade when the VISIBLE line differs. A new beat
-      // that renders the same text (or an unchanged retained intent) updates
-      // the key in place — no outgoing layer, no animation, nothing to see.
-      if (!sameDisplay(prev, next)) setOutgoing(prev);
-      return next;
-    });
+    setCurrent((prev) => (prev.key === next.key ? prev : next));
     lastSwapAtRef.current = Date.now();
   }, []);
 
@@ -214,11 +184,7 @@ function useDwellDisplay(target: DisplayEntry): {
     [],
   );
 
-  const settleOutgoing = useCallback((entry: DisplayEntry): void => {
-    setOutgoing((live) => (live === entry ? null : live));
-  }, []);
-
-  return { current, outgoing, settleOutgoing };
+  return { current };
 }
 
 export function DevPulseStrip({
@@ -279,7 +245,7 @@ export function DevPulseStrip({
           placeholder: false,
         }
       : NONE_ENTRY;
-  const { current, outgoing, settleOutgoing } = useDwellDisplay(target);
+  const { current } = useDwellDisplay(target);
 
   // Live activity feed for the sparkline. The app-scoped store is a stable
   // singleton (NOT snapshot state): the sparkline samples its composite
@@ -298,33 +264,6 @@ export function DevPulseStrip({
   // Color-by-channel is legible only where the label sits beside the line
   // (the expanded Pulse card); on this word-sized strip a shifting color has
   // no legend, so it reads as noise. The expansion carries the color story.
-
-  const currentElRef = useRef<HTMLSpanElement | null>(null);
-  const outgoingElRef = useRef<HTMLSpanElement | null>(null);
-
-  // The cross-fade TO the incoming: the new line rises to full opacity ON TOP
-  // of the parked outgoing, which holds still underneath — there is NO
-  // fade-out ([L06] — WAAPI on DOM, never React state). Because the outgoing
-  // stays put, an unchanged line (were one ever staged) would show no motion;
-  // in practice `swap` already suppresses identical lines, so a staged
-  // outgoing always differs and the new line develops in over the old. The
-  // outgoing settles out once the incoming is fully opaque.
-  useLayoutEffect(() => {
-    if (outgoing === null) return;
-    const currentEl = currentElRef.current;
-    if (currentEl === null) {
-      settleOutgoing(outgoing);
-      return;
-    }
-    const fade = animate(currentEl, [{ opacity: 0 }, { opacity: 1 }], {
-      duration: XFADE_MS,
-      easing: "ease",
-      key: "dev-pulse-xfade-in",
-    });
-    fade.finished
-      .then(() => settleOutgoing(outgoing))
-      .catch(() => settleOutgoing(outgoing));
-  }, [outgoing, settleOutgoing]);
 
   // The last few pulses for this card's session — shown in the legend popover.
   const history = linesForScope(pulse.lines, tugSessionId, PULSE_HISTORY_COUNT);
@@ -374,7 +313,6 @@ export function DevPulseStrip({
         className="dev-pulse-strip-stage"
       >
         <PulseLineText
-          spanRef={currentElRef}
           entry={current}
           className={
             current.placeholder
@@ -382,18 +320,6 @@ export function DevPulseStrip({
               : "dev-pulse-strip-text"
           }
         />
-        {outgoing !== null ? (
-          <PulseLineText
-            spanRef={outgoingElRef}
-            entry={outgoing}
-            className={
-              outgoing.placeholder
-                ? "dev-pulse-strip-text dev-pulse-strip-outgoing dev-pulse-strip-placeholder"
-                : "dev-pulse-strip-text dev-pulse-strip-outgoing"
-            }
-            ariaHidden
-          />
-        ) : null}
       </span>
       {/*
         The compact sparkline is the entry point to the expanded Activity
@@ -543,13 +469,9 @@ function composeLineCopy(intent: string | undefined, text: string): string {
 function PulseLineText({
   entry,
   className,
-  spanRef,
-  ariaHidden,
 }: {
   entry: DisplayEntry;
   className: string;
-  spanRef: React.MutableRefObject<HTMLSpanElement | null>;
-  ariaHidden?: boolean;
 }): React.ReactElement {
   const [engineEpoch, bumpEngineReady] = React.useReducer(
     (n: number) => n + 1,
@@ -583,11 +505,7 @@ function PulseLineText({
     };
   }, [render]);
   if (render === null) {
-    return (
-      <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
-        {entry.text}
-      </span>
-    );
+    return <span className={className}>{entry.text}</span>;
   }
   const textNode =
     render.text.html.length === 0 ? (
@@ -596,11 +514,7 @@ function PulseLineText({
       <span dangerouslySetInnerHTML={{ __html: render.text.html }} />
     );
   if (entry.intent === undefined) {
-    return (
-      <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
-        {textNode}
-      </span>
-    );
+    return <span className={className}>{textNode}</span>;
   }
   const intentNode =
     render.intent === null || render.intent.html.length === 0 ? (
@@ -613,7 +527,7 @@ function PulseLineText({
   // the intent ellipsizes first, so the thing happening NOW is never the
   // part that gets cut. `›` reads as "drilling into detail".
   return (
-    <span ref={spanRef} className={className} aria-hidden={ariaHidden}>
+    <span className={className}>
       <span className="dev-pulse-line dev-pulse-line--twolevel">
         <span className="dev-pulse-intent">{intentNode}</span>
         <span className="dev-pulse-intent-sep" aria-hidden="true">
