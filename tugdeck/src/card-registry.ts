@@ -105,8 +105,15 @@ export interface CardRegistration {
   contentFactory: (cardId: string) => React.ReactNode;
   /** Default title, icon, and closable for this card type. */
   defaultMeta: CardMeta;
-  /** Default feed IDs. Defaults to `[]` when omitted. */
-  defaultFeedIds?: readonly FeedIdValue[];
+  /**
+   * The feeds this card's content reads through the host-managed, per-card
+   * (workspace-key-filtered) FeedStore, surfaced via `useCardData`. The host
+   * also gates the card behind "Loading…" until at least one of these feeds
+   * delivers a frame. Omit or pass `[]` when the card manages its own data
+   * (e.g. reads an app-level singleton store): the card then renders
+   * immediately with no per-card feed subscription. Defaults to `[]`.
+   */
+  cardFeedIds?: readonly FeedIdValue[];
   /** Card type family (e.g. "standard", "maker"). Defaults to "standard". */
   family?: string;
   /** Families this card can host in its type picker. Defaults to `["standard"]`. */

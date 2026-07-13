@@ -55,8 +55,13 @@ impl FeedId {
     pub const GIT_DIFF: Self = Self(0x21);
     /// Git diff request — `/diff` over the bound card's project dir (tugdeck → tugcast)
     pub const GIT_DIFF_QUERY: Self = Self(0x22);
-    /// Workspace changeset snapshot (tugcast → tugdeck)
+    /// Retired: the per-workspace changeset snapshot feed was replaced by the
+    /// account-global CHANGESET_ALL (0x24) aggregate. The constant stays
+    /// reserved — never reuse 0x23 for another feed.
     pub const CHANGESET: Self = Self(0x23);
+    /// Account-global aggregate changeset snapshot — every open project in
+    /// one frame, delivered process-level like USAGE/PULSE (tugcast → tugdeck)
+    pub const CHANGESET_ALL: Self = Self(0x24);
 
     // -- Stats --
     /// Aggregate stats snapshot (tugcast → tugdeck)
@@ -149,6 +154,7 @@ impl FeedId {
             Self::GIT_DIFF => Some("GitDiff"),
             Self::GIT_DIFF_QUERY => Some("GitDiffQuery"),
             Self::CHANGESET => Some("Changeset"),
+            Self::CHANGESET_ALL => Some("ChangesetAll"),
             Self::STATS => Some("Stats"),
             Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
             Self::STATS_TOKEN_USAGE => Some("StatsTokenUsage"),
@@ -434,6 +440,7 @@ mod tests {
         assert_eq!(FeedId::GIT_DIFF.as_byte(), 0x21);
         assert_eq!(FeedId::GIT_DIFF_QUERY.as_byte(), 0x22);
         assert_eq!(FeedId::CHANGESET.as_byte(), 0x23);
+        assert_eq!(FeedId::CHANGESET_ALL.as_byte(), 0x24);
         assert_eq!(FeedId::CHANGESET.name(), Some("Changeset"));
         assert_eq!(FeedId::STATS.as_byte(), 0x30);
         assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);

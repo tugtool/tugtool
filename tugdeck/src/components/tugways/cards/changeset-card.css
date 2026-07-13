@@ -11,14 +11,13 @@
 .changeset-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px 14px;
+  height: 100%;
+  min-height: 0;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
-  overflow-y: auto;
 }
 
-.changeset-card-waiting {
+.changeset-card-empty {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
@@ -26,35 +25,149 @@
   font-size: 0.875rem;
 }
 
-/* ---- Header: branch / ahead-behind / HEAD subject ---- */
+/* ---- Fixed head: toolbar + table of contents (always visible) ---- */
 
-.changeset-header {
+.changeset-head {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }
 
-.changeset-branch-row {
+.changeset-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.9375rem;
+}
+
+.changeset-toolbar-title {
+  font-size: 0.75rem;
   font-weight: 600;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---- Table of contents (one thin row per project) ---- */
+
+.changeset-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.changeset-toc-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.changeset-toc-entry:hover {
+  background: var(--tug7-surface-global-primary-normal-raised-rest);
+}
+
+.changeset-toc-caret {
+  flex-shrink: 0;
+  width: 0.75em;
+  font-size: 0.625rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  transition: transform 0.12s ease;
+}
+
+.changeset-toc-caret-open {
+  transform: rotate(90deg);
+}
+
+.changeset-toc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.changeset-toc-entry-open .changeset-toc-name {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+.changeset-toc-detail {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- Scrollable accordion body ---- */
+
+.changeset-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 12px;
+}
+
+/* ---- Project triggers (one per open project) ---- */
+
+.changeset-project-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.changeset-project-icon {
+  flex-shrink: 0;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-project-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changeset-project-detail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-project-detail-muted {
+  font-style: italic;
 }
 
 .changeset-branch-icon {
   flex-shrink: 0;
 }
 
-.changeset-branch-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .changeset-ahead-behind {
   font-size: 0.75rem;
   font-weight: 500;
+}
+
+/* ---- Project body ---- */
+
+.changeset-project-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .changeset-head-message {
@@ -65,9 +178,15 @@
   white-space: nowrap;
 }
 
-/* ---- Section triggers ---- */
+/* ---- Owner groups (static sub-headers within an expanded project) ---- */
 
-.changeset-section-trigger {
+.changeset-owner-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.changeset-owner-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -212,4 +331,24 @@
   gap: 6px;
   font-size: 0.875rem;
   color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+/* ---- Non-repo project: "Initialize git" affordance ---- */
+
+.changeset-non-repo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.changeset-non-repo-message {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-non-repo-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
 }

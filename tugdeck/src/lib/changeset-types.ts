@@ -1,11 +1,15 @@
 /**
- * Changeset feed wire types — TS mirror of `tugcast-core/src/types.rs`
- * (`ChangesetSnapshot` / `ChangesetEntry` / `ChangesetFile`), delivered on
- * the CHANGESET feed (0x23).
+ * Changeset feed wire types — TS mirror of `tugcast-core/src/types.rs`.
+ *
+ * The per-workspace `ChangesetSnapshot` / `ChangesetEntry` / `ChangesetFile`
+ * ride the CHANGESET feed (0x23); the account-global aggregate
+ * `WorkspacesChangesetSnapshot` / `ProjectChangeset` ride the CHANGESET_ALL
+ * feed (0x24).
  *
  * The Rust definitions are authoritative; both sides deserialize the shared
- * golden fixture `src/__tests__/fixtures/changeset-snapshot.golden.json`,
- * so drift on either side fails a test.
+ * golden fixtures `src/__tests__/fixtures/changeset-snapshot.golden.json` and
+ * `src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json`, so drift
+ * on either side fails a test.
  *
  * @module lib/changeset-types
  */
@@ -148,5 +152,48 @@ export function isChangesetSnapshot(value: unknown): value is ChangesetSnapshot 
     value.changesets.every(isChangesetEntry) &&
     Array.isArray(value.unattributed) &&
     value.unattributed.every(isUnattributedFile)
+  );
+}
+
+/**
+ * One project's slice of the account-global aggregate snapshot.
+ *
+ * Extends {@link ChangesetSnapshot} (the per-project payload is flattened on
+ * the wire — Spec S06) with the project's identity. When `no_repo` is true the
+ * project dir is not a git working tree: the snapshot fields are empty/zero
+ * and the card renders an "Initialize git" affordance.
+ */
+export interface ProjectChangeset extends ChangesetSnapshot {
+  /** Absolute checkout root; also the base for the card's clickable links. */
+  project_dir: string;
+  /** Basename of `project_dir`, shown as the section title. */
+  display_name: string;
+  /** True when `project_dir` is not inside a git working tree. */
+  no_repo: boolean;
+}
+
+/** The account-global aggregate changeset snapshot (CHANGESET_ALL feed, 0x24). */
+export interface WorkspacesChangesetSnapshot {
+  /** One entry per open project, in registry-enumeration order. */
+  projects: ProjectChangeset[];
+}
+
+export function isProjectChangeset(value: unknown): value is ProjectChangeset {
+  return (
+    isRecord(value) &&
+    typeof value.project_dir === "string" &&
+    typeof value.display_name === "string" &&
+    typeof value.no_repo === "boolean" &&
+    isChangesetSnapshot(value)
+  );
+}
+
+export function isWorkspacesChangesetSnapshot(
+  value: unknown,
+): value is WorkspacesChangesetSnapshot {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.projects) &&
+    value.projects.every(isProjectChangeset)
   );
 }

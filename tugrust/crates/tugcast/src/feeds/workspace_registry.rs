@@ -25,12 +25,10 @@ use tokio_util::sync::CancellationToken;
 use tugcast_core::protocol::{FeedId, Frame};
 use tugcast_core::spawn_snapshot_feed;
 
-use crate::feeds::changeset::ChangesetFeed;
 use crate::feeds::file_watcher::FileWatcher;
 use crate::feeds::filesystem::FilesystemFeed;
 use crate::feeds::filetree::{FileTreeFeed, FileTreeQuery};
 use crate::path_resolver::PathResolver;
-use crate::session_ledger::SessionLedger;
 
 /// Errors from [`WorkspaceRegistry`] operations.
 ///
@@ -96,14 +94,10 @@ pub struct WorkspaceEntry {
     /// `release`. Production now reads this field, so the W1
     /// `#[allow(dead_code)]` annotation has been removed.
     pub workspace_key: WorkspaceKey,
-    /// Original (pre-canonicalized) path input to `get_or_create`. The
-    /// supervisor stores and reads the per-session path via
-    /// `LedgerEntry.project_dir` rather than via this field, so the
-    /// per-workspace copy is retained for tests and for future callers
-    /// but remains unread in production. When something in production
-    /// starts reading it (e.g. W3's workspace-level diagnostics), drop
-    /// the allow.
-    #[allow(dead_code)]
+    /// Original (pre-canonicalized) path input to `get_or_create`. Read in
+    /// production by `WorkspaceRegistry::project_dirs()` — the enumeration the
+    /// account-global `ChangesetAllFeed` composes over — and used as the
+    /// `git init` target for the non-repo "Initialize git" affordance.
     pub project_dir: PathBuf,
     /// Router watch receivers.
     pub fs_watch_rx: watch::Receiver<Frame>,
@@ -117,12 +111,6 @@ pub struct WorkspaceEntry {
     /// it's unread for them but cheap to keep symmetrical with the
     /// bootstrap.
     pub ft_watch_rx: watch::Receiver<Frame>,
-    pub changeset_watch_rx: watch::Receiver<Frame>,
-    /// Recompute signal for this workspace's `ChangesetFeed`. The
-    /// attribution intercept fires it (via `ChangesetBumper`) after each
-    /// `file_events` write so the card updates without waiting for the
-    /// poll. Permit semantics — bursts coalesce into one recompute.
-    pub changeset_bump: Arc<tokio::sync::Notify>,
     /// FILETREE_QUERY input for the adapter in main.rs.
     pub ft_query_tx: mpsc::Sender<FileTreeQuery>,
     /// Spawned task handles. Retained so tests can assert `!is_finished()`
@@ -133,11 +121,9 @@ pub struct WorkspaceEntry {
     pub filesystem_task: JoinHandle<()>,
     #[allow(dead_code)]
     pub filetree_task: JoinHandle<()>,
-    #[allow(dead_code)]
-    pub changeset_task: JoinHandle<()>,
     /// Cancellation token owned by this entry. Cloned into each spawned
     /// task at construction; `release` fires it when the refcount hits
-    /// zero so the four tasks exit cleanly. Retained on the struct
+    /// zero so the tasks exit cleanly. Retained on the struct
     /// (rather than only cloned into tasks) so `release` has something
     /// to fire without needing to reach into the tasks themselves.
     ///
@@ -156,21 +142,21 @@ pub struct WorkspaceEntry {
 }
 
 impl WorkspaceEntry {
-    /// Construct a workspace entry — creates all four feeds and spawns their
-    /// tasks. Synchronous (does not `.await`), so it is safe to call while
-    /// holding `WorkspaceRegistry::inner`'s std Mutex.
+    /// Construct a workspace entry — creates the filesystem + filetree feeds
+    /// and spawns their tasks. Synchronous (does not `.await`), so it is safe
+    /// to call while holding `WorkspaceRegistry::inner`'s std Mutex.
     ///
     /// Feed constructors take `workspace_key` via `workspace_key.arc()`. The
-    /// three watch channels are initialized with empty-payload frames,
-    /// matching `main.rs` bootstrap — seeding is not needed because the
-    /// tugcast router strips empty-payload frames from the LIVE-state
-    /// initial snapshot send (see `router.rs`).
+    /// two watch channels are initialized with empty-payload frames, matching
+    /// `main.rs` bootstrap — seeding is not needed because the tugcast router
+    /// strips empty-payload frames from the LIVE-state initial snapshot send
+    /// (see `router.rs`). Changeset state is no longer per-workspace: the
+    /// account-global `ChangesetAllFeed` composes every open project.
     fn new(
         project_dir: PathBuf,
         workspace_key: WorkspaceKey,
         parent_cancel: CancellationToken,
         ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
-        ledger: Option<Arc<SessionLedger>>,
     ) -> Arc<Self> {
         // Derive a per-entry child cancel token. Firing this child tears
         // down just this workspace's tasks; the parent (process-wide)
@@ -192,8 +178,6 @@ impl WorkspaceEntry {
         // Watch channels — empty payload, same as today's main.rs.
         let (fs_watch_tx, fs_watch_rx) = watch::channel(Frame::new(FeedId::FILESYSTEM, vec![]));
         let (ft_watch_tx, ft_watch_rx) = watch::channel(Frame::new(FeedId::FILETREE, vec![]));
-        let (changeset_watch_tx, changeset_watch_rx) =
-            watch::channel(Frame::new(FeedId::CHANGESET, vec![]));
 
         // Construct feeds — pass `workspace_key.arc()` as a cheap Arc<str>
         // clone per [D02].
@@ -211,13 +195,6 @@ impl WorkspaceEntry {
             workspace_key.arc(),
             ft_response_tx,
         );
-        let changeset_bump = Arc::new(tokio::sync::Notify::new());
-        let changeset_feed = ChangesetFeed::new(
-            project_dir.clone(),
-            workspace_key.arc(),
-            ledger,
-            Arc::clone(&changeset_bump),
-        );
 
         // Spawn the watcher task directly (it is an event source, not a
         // router feed) and the snapshot feeds through the trait helper —
@@ -229,21 +206,16 @@ impl WorkspaceEntry {
 
         let filesystem_task = spawn_snapshot_feed(Box::new(fs_feed), fs_watch_tx, cancel.clone());
         let filetree_task = spawn_snapshot_feed(Box::new(ft_feed), ft_watch_tx, cancel.clone());
-        let changeset_task =
-            spawn_snapshot_feed(Box::new(changeset_feed), changeset_watch_tx, cancel.clone());
 
         Arc::new(Self {
             workspace_key,
             project_dir,
             fs_watch_rx,
             ft_watch_rx,
-            changeset_watch_rx,
-            changeset_bump,
             ft_query_tx,
             file_watcher_task,
             filesystem_task,
             filetree_task,
-            changeset_task,
             cancel,
             ref_count: AtomicUsize::new(1),
         })
@@ -271,28 +243,37 @@ pub struct WorkspaceRegistry {
     /// publishes responses to one place. The router subscribes once
     /// at the process level. Per `roadmap/dev-atoms.md#step-pre-4`.
     ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
-    /// Shared session-ledger handle, cloned into each `WorkspaceEntry`'s
-    /// `ChangesetFeed` for the `file_events` / owner joins. `None` in
-    /// harnesses without a ledger — those workspaces' changeset
-    /// snapshots simply carry no owned changesets.
-    ledger: Option<Arc<SessionLedger>>,
+    /// Process-global recompute signal for the account-global CHANGESET_ALL
+    /// feed. Pinged whenever the open-project set changes (`get_or_create`
+    /// inserts a fresh entry, `release` tears one down) so a project's
+    /// section appears/disappears immediately rather than waiting out the
+    /// aggregate feed's poll backstop. Shared (cloned) with the feed and the
+    /// `ChangesetBumper`.
+    changeset_all_bump: Arc<tokio::sync::Notify>,
 }
 
 impl WorkspaceRegistry {
     /// Construct a registry. `ft_response_tx` is the shared broadcast
     /// channel into which every workspace's `FileTreeFeed` publishes
     /// its responses; the router subscribes once at the process level
-    /// (see `main.rs`). `ledger` feeds each workspace's `ChangesetFeed`
-    /// composition.
+    /// (see `main.rs`). `changeset_all_bump` is the process-global recompute
+    /// signal the registry pings when the open-project set changes.
     pub fn new(
         ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
-        ledger: Option<Arc<SessionLedger>>,
+        changeset_all_bump: Arc<tokio::sync::Notify>,
     ) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
             ft_response_tx,
-            ledger,
+            changeset_all_bump,
         }
+    }
+
+    /// The process-global aggregate-changeset recompute signal, cloned for
+    /// the `ChangesetBumper` (which pings it on every file-event write) and
+    /// the `ChangesetAllFeed` (which awaits it).
+    pub fn changeset_all_bump(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.changeset_all_bump)
     }
 
     /// Test-only constructor that creates its own throwaway broadcast
@@ -302,7 +283,7 @@ impl WorkspaceRegistry {
     #[cfg(test)]
     pub fn new_for_test() -> Self {
         let (ft_response_tx, _) = tokio::sync::broadcast::channel(16);
-        Self::new(ft_response_tx, None)
+        Self::new(ft_response_tx, Arc::new(tokio::sync::Notify::new()))
     }
 
     /// Look up or construct the workspace entry for `project_dir`.
@@ -362,10 +343,29 @@ impl WorkspaceRegistry {
             workspace_key.clone(),
             cancel,
             self.ft_response_tx.clone(),
-            self.ledger.clone(),
         );
         map.insert(workspace_key, Arc::clone(&entry));
+        drop(map);
+        // A fresh project joined the open set — recompute the aggregate now
+        // so its section shows immediately instead of after the poll.
+        self.changeset_all_bump.notify_one();
         Ok(entry)
+    }
+
+    /// The `(project_dir, workspace_key)` of every currently-open workspace —
+    /// the input the account-global `ChangesetAllFeed` enumerates each
+    /// recompute. `project_dir` is the original (pre-canonicalized) path the
+    /// entry was created with (used for display and as the `git init` target);
+    /// `workspace_key` is the canonical key. Sorted by `project_dir` so the
+    /// aggregate frame's project order is stable for diff-suppression.
+    pub fn project_dirs(&self) -> Vec<(PathBuf, String)> {
+        let map = self.inner.lock().expect("WorkspaceRegistry mutex poisoned");
+        let mut dirs: Vec<(PathBuf, String)> = map
+            .values()
+            .map(|e| (e.project_dir.clone(), e.workspace_key.as_ref().to_string()))
+            .collect();
+        dirs.sort_by(|a, b| a.0.cmp(&b.0));
+        dirs
     }
 
     /// Look up the workspace entry whose canonical key matches `project_dir`,
@@ -511,6 +511,10 @@ impl WorkspaceRegistry {
             // The Arc<WorkspaceEntry> we just removed drops here, and
             // with it the FileWatcher OS handle. Spawned tasks exit on
             // their own as the cancel token propagates.
+            drop(map);
+            // A project left the open set — recompute the aggregate now so
+            // its section drops immediately instead of after the poll.
+            self.changeset_all_bump.notify_one();
         }
         Ok(())
     }
@@ -546,7 +550,6 @@ mod tests {
         assert!(!entry.file_watcher_task.is_finished());
         assert!(!entry.filesystem_task.is_finished());
         assert!(!entry.filetree_task.is_finished());
-        assert!(!entry.changeset_task.is_finished());
         let key: &str = entry.workspace_key.as_ref();
         assert!(!key.is_empty());
         assert_eq!(

@@ -19,7 +19,7 @@
  * ## Why the harness can render dev-card
  *
  * Dev-card's content factory gates on `feedsReady` — its
- * `defaultFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA,
+ * `cardFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA,
  * FILETREE]` would otherwise block mount until a live
  * tugcast/tugcode backend populated frames. In test mode
  * (`window.__tugTestMode === true`, set by the Swift host's

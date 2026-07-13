@@ -1976,6 +1976,13 @@ impl AgentSupervisor {
                 self.do_list_card_bindings().await;
                 Ok(())
             }
+            "changeset_git_init" => match parse_project_dir_payload(payload) {
+                Ok(project_dir) => {
+                    self.do_changeset_git_init(&project_dir).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
             "trash_session" => match parse_trash_session_payload(payload) {
                 Ok((session_id, project_dir)) => {
                     self.do_trash_session(&session_id, project_dir.as_deref())
@@ -3000,6 +3007,94 @@ impl AgentSupervisor {
                 }
             }
         });
+    }
+
+    /// Handle a `changeset_git_init` CONTROL request (Spec S07): `git init
+    /// -b main` a non-repo project the changeset card offered to initialize.
+    ///
+    /// Guards, in order: `project_dir` must match a current
+    /// `WorkspaceRegistry` entry (never init an arbitrary path off the wire),
+    /// and it must not already be inside a git working tree. On success the
+    /// process-global aggregate bump is fired so the card's section
+    /// self-heals to a clean repo on the next recompute — there is no
+    /// client-side state transition. Broadcasts `changeset_git_init_ok` /
+    /// `changeset_git_init_err {detail}`.
+    async fn do_changeset_git_init(&self, project_dir: &str) {
+        let dir = std::path::Path::new(project_dir);
+
+        // Guard 1: only an open workspace may be initialized.
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_git_init_err(
+                &self.control_tx,
+                project_dir,
+                "not an open project",
+            );
+            return;
+        }
+
+        // Guard 2: refuse a directory already inside a git working tree.
+        if crate::feeds::git::is_within_git_worktree(dir).await {
+            Self::send_changeset_git_init_err(
+                &self.control_tx,
+                project_dir,
+                "already a git repository",
+            );
+            return;
+        }
+
+        let output = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["init", "-b", "main"])
+            .output()
+            .await;
+
+        match output {
+            Ok(out) if out.status.success() => {
+                // The next aggregate recompute sees a repo and the section
+                // flips to a clean changeset — self-healing, no client flip.
+                self.registry.changeset_all_bump().notify_one();
+                Self::send_changeset_git_init_ok(&self.control_tx, project_dir);
+            }
+            Ok(out) => {
+                let detail = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                Self::send_changeset_git_init_err(
+                    &self.control_tx,
+                    project_dir,
+                    if detail.is_empty() { "git init failed" } else { &detail },
+                );
+            }
+            Err(e) => {
+                Self::send_changeset_git_init_err(&self.control_tx, project_dir, &e.to_string());
+            }
+        }
+    }
+
+    fn send_changeset_git_init_ok(control_tx: &broadcast::Sender<Frame>, project_dir: &str) {
+        let body = serde_json::json!({
+            "action": "changeset_git_init_ok",
+            "project_dir": project_dir,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_git_init_ok serializes"),
+        ));
+    }
+
+    fn send_changeset_git_init_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_git_init_err",
+            "project_dir": project_dir,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_git_init_err serializes"),
+        ));
     }
 
     /// Handle a `list_card_bindings` CONTROL request. Reads every
@@ -5154,6 +5249,60 @@ mod tests {
     }
 
     // ---- handle_control: spawn_session ----
+
+    #[tokio::test]
+    async fn changeset_git_init_inits_non_repo_and_guards() {
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+
+        async fn next_control(rx: &mut broadcast::Receiver<Frame>) -> serde_json::Value {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                .await
+                .expect("control response within timeout")
+                .expect("sender alive");
+            serde_json::from_slice(&frame.payload).expect("control body is JSON")
+        }
+
+        fn init_payload(project_dir: &str) -> Vec<u8> {
+            serde_json::to_vec(&serde_json::json!({
+                "action": "changeset_git_init",
+                "project_dir": project_dir,
+            }))
+            .unwrap()
+        }
+
+        // Register a temp non-repo dir as an open workspace.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+
+        // Init it → ok, and the dir is now a git repo.
+        sup.handle_control("changeset_git_init", &init_payload(&root_str), 1)
+            .await;
+        let ok = next_control(&mut control_rx).await;
+        assert_eq!(ok["action"], "changeset_git_init_ok");
+        assert_eq!(ok["project_dir"], root_str);
+        assert!(root.join(".git").exists(), "git init created a repo");
+
+        // Re-init the now-repo dir → err "already a git repository".
+        sup.handle_control("changeset_git_init", &init_payload(&root_str), 1)
+            .await;
+        let already = next_control(&mut control_rx).await;
+        assert_eq!(already["action"], "changeset_git_init_err");
+        assert_eq!(already["detail"], "already a git repository");
+
+        // A dir that is not a registered workspace → err "not an open project".
+        let other = tempfile::tempdir().unwrap();
+        let other_str = other.path().canonicalize().unwrap().to_string_lossy().to_string();
+        sup.handle_control("changeset_git_init", &init_payload(&other_str), 1)
+            .await;
+        let unknown = next_control(&mut control_rx).await;
+        assert_eq!(unknown["action"], "changeset_git_init_err");
+        assert_eq!(unknown["detail"], "not an open project");
+
+        cancel.cancel();
+    }
 
     #[tokio::test]
     async fn test_spawn_session_writes_pending() {

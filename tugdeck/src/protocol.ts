@@ -29,6 +29,7 @@ export const FeedId = {
   GIT_DIFF: 0x21,
   GIT_DIFF_QUERY: 0x22,
   CHANGESET: 0x23,
+  CHANGESET_ALL: 0x24,
   // Stats
   STATS: 0x30,
   STATS_PROCESS_INFO: 0x31,

@@ -20,7 +20,7 @@ export function registerDevCard(): void {
     componentId: "dev",
     contentFactory: (cardId) => <DevCardContent cardId={cardId} />,
     defaultMeta: { title: "Dev", icon: "MessageSquareText", closable: true, confirmClose: true },
-    defaultFeedIds: [
+    cardFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,
       FeedId.SESSION_SIDEBAND,

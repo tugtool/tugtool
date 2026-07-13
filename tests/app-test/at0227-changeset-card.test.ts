@@ -1,15 +1,16 @@
 /**
  * at0227-changeset-card.test.ts — the Changeset card end-to-end over the
- * live CHANGESET feed (0x23).
+ * account-global aggregate CHANGESET_ALL feed (0x24).
  *
- * Drives the REAL pipeline: tugcast's workspace ChangesetFeed polls the
- * bootstrap checkout's `git status`, joins the per-instance sessions.db
- * `file_events` rows for owner grouping, and the card renders the grouped
- * snapshot. The test seeds real state — untracked files created at the
- * repo root plus attribution rows written into the live per-instance
- * sessions.db — and asserts the card's owner sections, badges, and
- * unattributed bucket settle from feed frames alone (no synthetic frame
- * injection, no Claude session).
+ * Drives the REAL pipeline: tugcast's process-level ChangesetAllFeed
+ * enumerates the open workspaces, composes each with `git status` + the
+ * per-instance sessions.db `file_events` rows for owner grouping, and the
+ * card renders one collapsible section per project (auto-expanded on first
+ * appearance) holding that project's owner groups. The test seeds real
+ * state — untracked files created at the bootstrap repo root plus attribution
+ * rows written into the live per-instance sessions.db — and asserts the
+ * bootstrap project's owner sections, badges, and unattributed bucket settle
+ * from feed frames alone (no synthetic frame injection, no Claude session).
  *
  *   1. **Header** — the card renders the checkout's branch from the live
  *      feed before any seeding (the retired git card's data).
@@ -153,12 +154,13 @@ describe.skipIf(!SHOULD_RUN)("AT0227: changeset card — grouped live snapshot",
       try {
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
 
-        // Header from the live feed: the branch row fills in once the
-        // first CHANGESET frame lands (bootstrap workspace, 2s poll).
+        // The bootstrap project section appears once the first CHANGESET_ALL
+        // frame lands (process-level feed, 2s poll) and shows its branch in
+        // the trigger — the aggregate's equivalent of the old header.
         await app.waitForCondition<boolean>(
           `(function(){
-            var b = document.querySelector(${JSON.stringify(`${CARD_BODY} .changeset-branch-name`)});
-            return b !== null && b.textContent.trim().length > 0;
+            var d = document.querySelector(${JSON.stringify(`${CARD} [data-testid="changeset-project"] .changeset-project-detail`)});
+            return d !== null && d.textContent.trim().length > 0;
           })()`,
           { timeoutMs: 20_000 },
         );

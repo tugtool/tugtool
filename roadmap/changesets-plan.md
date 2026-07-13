@@ -838,12 +838,12 @@ tabindex (mousedown-focus default gotcha).
 | #step-10 | Changeset card (read-only) | done | bb712bf4d |
 | #step-11 | Git card + GitFeed retirement | done | 60eadf0a7 |
 | #step-12 | M02 integration checkpoint | done | (verification only) |
-| #step-12a | Aggregate wire types + golden fixture | pending | — |
-| #step-12b | Aggregate CHANGESET_ALL feed | pending | — |
-| #step-12c | Account-global changeset card | pending | — |
-| #step-12d | Retire the per-workspace feed path | pending | — |
-| #step-12e | changeset_git_init verb + Init button | pending | — |
-| #step-12f | M02A integration checkpoint | pending | — |
+| #step-12a | Aggregate wire types + golden fixture | done | 40f6395eb |
+| #step-12b | Aggregate CHANGESET_ALL feed | done | 2b7d31c9a |
+| #step-12c | Account-global changeset card | done | 705a2ae2c |
+| #step-12d | Retire the per-workspace feed path | done | bfcc53316 |
+| #step-12e | changeset_git_init verb + Init button | done | 05c65450b |
+| #step-12f | M02A integration checkpoint | done | 877e79d81 |
 | #step-13 | Pathspec diff query | pending | — |
 | #step-14 | changeset_commit verb + card commit flow | pending | — |
 | #step-15 | Scribe sidecar + summarize verb + card UI | pending | — |

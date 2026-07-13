@@ -469,9 +469,16 @@ async fn main() {
     // calls from AgentSupervisor::spawn_session_worker. The registry owns
     // the FileWatcher, FilesystemFeed, FileTreeFeed, and GitFeed plus their
     // spawned tasks — see feeds/workspace_registry.rs and roadmap T3.0.W1.
+    // Process-global recompute signal for the account-global CHANGESET_ALL
+    // feed. Created before the registry so the registry can ping it on
+    // open/close and the aggregate feed (built below) can await it. Shared
+    // with the attribution `ChangesetBumper` so a file-event write in any
+    // open project recomputes the aggregate.
+    let changeset_all_bump = Arc::new(tokio::sync::Notify::new());
+
     let registry = Arc::new(WorkspaceRegistry::new(
         ft_response_tx.clone(),
-        Some(Arc::clone(&ledger)),
+        Arc::clone(&changeset_all_bump),
     ));
     let bootstrap = registry
         .get_or_create(&watch_dir, cancel.clone())
@@ -992,10 +999,28 @@ async fn main() {
     // produces the same snapshot. Per-card workspaces write only to
     // the broadcast (their watches are never registered with the
     // router), so they don't double-publish.
+    // Account-global aggregate changeset feed (CHANGESET_ALL, 0x24). One
+    // process-level feed composing every open project into a single frame,
+    // delivered like the other snapshot feeds (registered once, retained
+    // latest value delivered on connect). Replaces the per-workspace
+    // CHANGESET delivery, which only ever reached the bootstrap workspace.
+    let (changeset_all_tx, changeset_all_rx) =
+        tokio::sync::watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
+    let changeset_all_feed = feeds::changeset_all::ChangesetAllFeed::new(
+        Arc::clone(&registry),
+        Some(Arc::clone(&ledger)),
+        Arc::clone(&changeset_all_bump),
+    );
+    tugcast_core::spawn_snapshot_feed(
+        Box::new(changeset_all_feed),
+        changeset_all_tx,
+        cancel.clone(),
+    );
+
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
         bootstrap.ft_watch_rx.clone(),
-        bootstrap.changeset_watch_rx.clone(),
+        changeset_all_rx,
     ];
     snapshot_watches.extend(stats_watch_rxs);
     if let Some(rx) = defaults_rx {

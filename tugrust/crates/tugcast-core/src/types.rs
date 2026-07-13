@@ -257,6 +257,45 @@ pub struct ChangesetSnapshot {
     pub unattributed: Vec<UnattributedFile>,
 }
 
+/// One project's slice of the account-global aggregate changeset snapshot.
+///
+/// Carries the project's identity (`project_dir` — the absolute checkout root,
+/// also the client's clickable-link base — plus `display_name` and
+/// `workspace_key`) and, flattened alongside, the per-project
+/// [`ChangesetSnapshot`] payload. When `no_repo` is true the project dir is not
+/// inside a git working tree: the flattened snapshot fields are empty/zero and
+/// the card renders an "Initialize git" affordance instead of changeset rows.
+///
+/// The flatten keeps the wire shape flat (Spec S06) — `workspace_key` comes
+/// from the embedded snapshot, so it is not repeated here.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectChangeset {
+    /// Absolute checkout root; also the base for the card's clickable links.
+    pub project_dir: String,
+    /// Basename of `project_dir`, shown as the section title.
+    pub display_name: String,
+    /// True when `project_dir` is not inside a git working tree.
+    pub no_repo: bool,
+    /// The per-project changeset payload (branch header + changesets +
+    /// unattributed), flattened so the wire shape stays flat. Empty/zero
+    /// when `no_repo` is true.
+    #[serde(flatten)]
+    pub snapshot: ChangesetSnapshot,
+}
+
+/// The account-global aggregate changeset snapshot, delivered process-level on
+/// the CHANGESET_ALL feed (0x24) — one frame carrying every open project.
+///
+/// Composed by the aggregate feed over the current `WorkspaceRegistry` entries
+/// (one per open dev card, plus the bootstrap project); mirrored in
+/// `tugdeck/src/lib/changeset-types.ts` and guarded by the shared golden
+/// fixture `tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WorkspacesChangesetSnapshot {
+    /// One entry per open project, in registry-enumeration order.
+    pub projects: Vec<ProjectChangeset>,
+}
+
 /// A single-shot subscription-usage payload, delivered on the USAGE feed
 /// (0x90) in response to a USAGE_QUERY (0x91).
 ///
@@ -703,5 +742,72 @@ mod tests {
         let json = r#"{"branch":"main","ahead":0,"behind":0,"head_sha":"","head_message":"","changesets":[],"unattributed":[]}"#;
         let snapshot: ChangesetSnapshot = serde_json::from_str(json).unwrap();
         assert_eq!(snapshot.workspace_key, "");
+    }
+
+    /// The shared aggregate wire-contract fixture, also validated by the
+    /// tugdeck bun suite — drift on either side of the mirror fails one.
+    const WORKSPACES_CHANGESET_GOLDEN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json"
+    ));
+
+    #[test]
+    fn test_workspaces_changeset_snapshot_golden_fixture() {
+        let snapshot: WorkspacesChangesetSnapshot =
+            serde_json::from_str(WORKSPACES_CHANGESET_GOLDEN).unwrap();
+        assert_eq!(snapshot.projects.len(), 2);
+
+        let repo = &snapshot.projects[0];
+        assert_eq!(repo.display_name, "tugtool");
+        assert!(!repo.no_repo);
+        // Flattened snapshot fields decode onto the embedded ChangesetSnapshot.
+        assert_eq!(repo.snapshot.branch, "main");
+        assert_eq!(repo.snapshot.workspace_key, "a1b2c3d4e5f60718");
+        assert_eq!(repo.snapshot.changesets.len(), 2);
+        assert_eq!(repo.snapshot.unattributed.len(), 1);
+
+        let non_repo = &snapshot.projects[1];
+        assert_eq!(non_repo.display_name, "scratchpad");
+        assert!(non_repo.no_repo);
+        assert_eq!(non_repo.snapshot.branch, "");
+        assert!(non_repo.snapshot.changesets.is_empty());
+        assert!(non_repo.snapshot.unattributed.is_empty());
+    }
+
+    #[test]
+    fn test_workspaces_changeset_snapshot_round_trip() {
+        let snapshot: WorkspacesChangesetSnapshot =
+            serde_json::from_str(WORKSPACES_CHANGESET_GOLDEN).unwrap();
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let decoded: WorkspacesChangesetSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, decoded);
+    }
+
+    #[test]
+    fn test_project_changeset_flattens_snapshot_fields() {
+        // The flatten keeps the wire shape flat: project identity and the
+        // snapshot header sit at the same object level, workspace_key not
+        // duplicated.
+        let project = ProjectChangeset {
+            project_dir: "/tmp/proj".to_string(),
+            display_name: "proj".to_string(),
+            no_repo: false,
+            snapshot: ChangesetSnapshot {
+                workspace_key: "deadbeef".to_string(),
+                branch: "main".to_string(),
+                ahead: 0,
+                behind: 0,
+                head_sha: "abc".to_string(),
+                head_message: "msg".to_string(),
+                changesets: vec![],
+                unattributed: vec![],
+            },
+        };
+        let json = serde_json::to_string(&project).unwrap();
+        assert!(json.contains(r#""project_dir":"/tmp/proj""#));
+        assert!(json.contains(r#""workspace_key":"deadbeef""#));
+        assert!(json.contains(r#""branch":"main""#));
+        // Exactly one workspace_key in the flattened output.
+        assert_eq!(json.matches("workspace_key").count(), 1);
     }
 }

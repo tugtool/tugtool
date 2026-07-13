@@ -1,44 +1,31 @@
-//! Changeset feed — the workspace-scoped, owner-grouped view of a
-//! checkout's dirty state (CHANGESET, 0x23).
+//! Changeset composition — the workspace-scoped, owner-grouped view of a
+//! checkout's dirty state.
 //!
-//! One feed per workspace, owned by `WorkspaceEntry` beside `GitFeed`. Each
-//! recompute joins `git status` against the attribution ledger
-//! (`file_events` grouped by owning session), derives dash entries from
-//! `refs/heads/tugdash/`, and partitions dirty files into owned / shared /
-//! unattributed buckets. Emission is diff-suppressed like GitFeed's.
-//!
-//! Recompute triggers: a per-workspace `Notify` bump fired by the
-//! attribution intercept after each file-event write (the "never out of
-//! date" path), plus a poll fallback that catches hand edits.
+//! `compose_snapshot` is the pure building block: each call joins `git
+//! status` against the attribution ledger (`file_events` grouped by owning
+//! session), derives dash entries from `refs/heads/tugdash/`, and partitions
+//! dirty files into owned / shared / unattributed buckets. The account-global
+//! `ChangesetAllFeed` (`feeds::changeset_all`) calls it once per open project
+//! and delivers the aggregate; `ChangesetBumper` pings that feed's global
+//! recompute signal after each file-event write.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
-
-use async_trait::async_trait;
-use tokio::sync::{Notify, watch};
-use tokio::time;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
 
 use tugcast_core::types::{ChangesetEntry, ChangesetFile, ChangesetSnapshot, UnattributedFile};
-use tugcast_core::{FeedId, Frame, SnapshotFeed};
 
 use super::attribution::{parse_worktree_states, repo_root_for};
 use super::git::{fetch_git_status, fetch_head_message, parse_porcelain_v2};
 use super::workspace_registry::WorkspaceRegistry;
 use crate::session_ledger::{ProjectFileEvent, SessionLedger};
 
-/// Poll fallback interval — catches hand edits the bump channel can't see.
-const POLL_INTERVAL_SECS: u64 = 2;
-
-/// Fires a workspace's changeset recompute after a file-event write.
+/// Fires the account-global changeset recompute after a file-event write.
 ///
-/// Held by the relay loop (one per session); `bump` resolves the session's
-/// `project_dir` to its registered workspace and pings that workspace's
-/// `Notify`. Cheap to clone. A disconnected bumper (test harnesses without
-/// a registry) makes every `bump` a no-op.
+/// Held by the relay loop (one per session); `bump` pings the process-global
+/// `ChangesetAllFeed` recompute signal via the registry. Cheap to clone. A
+/// disconnected bumper (test harnesses without a registry) makes every `bump`
+/// a no-op.
 #[derive(Clone, Default)]
 pub struct ChangesetBumper {
     registry: Option<Arc<WorkspaceRegistry>>,
@@ -58,100 +45,14 @@ impl ChangesetBumper {
         Self::default()
     }
 
-    /// Ping the changeset feed of the workspace registered at
-    /// `project_dir`, if any. Notifications coalesce (a permit, not a
-    /// queue), so bursts of writes cost one recompute.
-    pub fn bump(&self, project_dir: &Path) {
+    /// Ping the account-global `ChangesetAllFeed` after a write in
+    /// `project_dir`. The aggregate spans every open project, so any
+    /// registered write triggers one recompute; `project_dir` no longer
+    /// scopes the bump (the per-workspace feed was retired). Notifications
+    /// coalesce (a permit, not a queue), so bursts cost one recompute.
+    pub fn bump(&self, _project_dir: &Path) {
         if let Some(registry) = &self.registry {
-            if let Some(entry) = registry.find_entry_by_path(project_dir) {
-                entry.changeset_bump.notify_one();
-            }
-        }
-    }
-}
-
-/// The CHANGESET snapshot feed for one workspace.
-pub struct ChangesetFeed {
-    project_dir: PathBuf,
-    workspace_key: Arc<str>,
-    /// `None` in harnesses without a ledger — the snapshot then has no
-    /// owned changesets and every dirty file lands unattributed.
-    ledger: Option<Arc<SessionLedger>>,
-    /// The workspace's bump channel — shared with `WorkspaceEntry` so the
-    /// attribution intercept can fire it through a `ChangesetBumper`.
-    bump: Arc<Notify>,
-    poll_interval: Duration,
-}
-
-impl ChangesetFeed {
-    pub fn new(
-        project_dir: PathBuf,
-        workspace_key: Arc<str>,
-        ledger: Option<Arc<SessionLedger>>,
-        bump: Arc<Notify>,
-    ) -> Self {
-        Self {
-            project_dir,
-            workspace_key,
-            ledger,
-            bump,
-            poll_interval: Duration::from_secs(POLL_INTERVAL_SECS),
-        }
-    }
-
-    /// Test hook: stretch the poll so a recompute inside the test window
-    /// can only have come from the bump channel.
-    #[cfg(test)]
-    pub fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
-        self.poll_interval = poll_interval;
-        self
-    }
-}
-
-#[async_trait]
-impl SnapshotFeed for ChangesetFeed {
-    fn feed_id(&self) -> FeedId {
-        FeedId::CHANGESET
-    }
-
-    fn name(&self) -> &str {
-        "changeset"
-    }
-
-    async fn run(self: Box<Self>, tx: watch::Sender<Frame>, cancel: CancellationToken) {
-        info!(dir = ?self.project_dir, "changeset feed started");
-
-        let mut interval = time::interval(self.poll_interval);
-        let mut previous: Option<ChangesetSnapshot> = None;
-
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    info!("changeset feed shutting down");
-                    break;
-                }
-                _ = interval.tick() => {}
-                _ = self.bump.notified() => {}
-            }
-
-            let Some(mut snapshot) =
-                compose_snapshot(&self.project_dir, self.ledger.as_deref()).await
-            else {
-                continue; // not a git repo (yet), or git failed this cycle
-            };
-            snapshot.workspace_key = self.workspace_key.to_string();
-
-            if previous.as_ref() != Some(&snapshot) {
-                let json = serde_json::to_vec(&snapshot).unwrap_or_default();
-                let _ = tx.send(Frame::new(FeedId::CHANGESET, json));
-                debug!(
-                    branch = %snapshot.branch,
-                    changesets = snapshot.changesets.len(),
-                    unattributed = snapshot.unattributed.len(),
-                    "changeset snapshot updated"
-                );
-                previous = Some(snapshot);
-            }
+            registry.changeset_all_bump().notify_one();
         }
     }
 }
@@ -446,7 +347,7 @@ async fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
 mod tests {
     use super::*;
     use crate::session_ledger::FileEventRow;
-    use tugcast_core::spawn_snapshot_feed;
+    use std::path::PathBuf;
 
     fn git(dir: &Path, args: &[&str]) {
         let out = std::process::Command::new("git")
@@ -626,59 +527,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn bump_recomputes_without_waiting_for_the_poll() {
-        let (_dir, root) = init_repo();
-        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
-        let bump = Arc::new(Notify::new());
-
-        // Poll stretched to 60s: after the immediate first tick, any
-        // further emission inside the test window must come from the bump.
-        let feed = ChangesetFeed::new(
-            root.clone(),
-            Arc::from(root.to_string_lossy().as_ref()),
-            Some(Arc::clone(&ledger)),
-            Arc::clone(&bump),
-        )
-        .with_poll_interval(Duration::from_secs(60));
-
-        let (tx, mut rx) = watch::channel(Frame::new(FeedId::CHANGESET, vec![]));
-        let cancel = CancellationToken::new();
-        let task = spawn_snapshot_feed(Box::new(feed), tx, cancel.clone());
-
-        // First emission: the immediate initial tick (clean tree).
-        tokio::time::timeout(Duration::from_secs(5), rx.changed())
-            .await
-            .expect("initial snapshot within timeout")
-            .expect("sender alive");
-        let initial: ChangesetSnapshot =
-            serde_json::from_slice(&rx.borrow_and_update().payload).unwrap();
-        assert!(initial.changesets.is_empty());
-        assert!(initial.unattributed.is_empty());
-
-        // A new attributed file + a bump → recompute long before the poll.
-        std::fs::write(root.join("bumped.txt"), "x").unwrap();
-        ledger
-            .record_file_event(&event("sess-live", "tu-9", &root.join("bumped.txt"), &root))
-            .unwrap();
-        bump.notify_one();
-
-        tokio::time::timeout(Duration::from_secs(5), rx.changed())
-            .await
-            .expect("bumped snapshot within timeout")
-            .expect("sender alive");
-        let bumped: ChangesetSnapshot =
-            serde_json::from_slice(&rx.borrow_and_update().payload).unwrap();
-        assert_eq!(bumped.workspace_key, root.to_string_lossy());
-        assert_eq!(bumped.changesets.len(), 1);
-        let ChangesetEntry::Session { files, .. } = &bumped.changesets[0] else {
-            panic!("expected session entry");
-        };
-        assert_eq!(files[0].path, "bumped.txt");
-
-        cancel.cancel();
-        let _ = task.await;
-    }
 
     #[test]
     fn parse_name_status_maps_letters_and_renames() {

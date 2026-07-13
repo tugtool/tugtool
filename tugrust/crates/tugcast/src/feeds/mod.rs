@@ -8,6 +8,7 @@ pub mod agent_bridge;
 pub mod agent_supervisor;
 pub mod attribution;
 pub mod changeset;
+pub mod changeset_all;
 pub mod claude_auth;
 pub mod claude_usage;
 pub mod code;

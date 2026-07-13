@@ -1,20 +1,25 @@
 /**
- * Changeset card — the workspace's dirty state grouped by owner.
+ * Changeset card — the account-global view of every open project's dirty
+ * state, grouped project → owner → files.
  *
- * Renders the CHANGESET feed (0x23): a branch/ahead-behind/HEAD header (the
- * retired git card's data), one collapsible section per changeset — session
- * sections show the owner's display name and a live dot, dash sections show
- * base/rounds/worktree state — plus an unattributed section for dirty files
- * no owner claims. File rows carry a git-status glyph, op/origin provenance,
- * and ambiguous/shared badges. Read-only in this milestone: no selection,
- * no commit actions.
+ * Renders the aggregate CHANGESET_ALL feed (0x24): one collapsible section
+ * per open project (display name + branch/ahead-behind + HEAD subject), each
+ * containing that project's owner groups (session sections with a live dot,
+ * dash sections with base/rounds/worktree state) and an unattributed group,
+ * or — for a non-git directory — a "Not a git repository" state with an
+ * "Initialize git" affordance. File rows carry a git-status glyph, op/origin
+ * provenance, and ambiguous/shared badges. Read-only rows render no tabindex.
  *
- * Data arrives via `useCardData<ChangesetSnapshot>()` (FeedStore →
- * `useSyncExternalStore`, workspace-key filtered by the host). Sections are
- * a controlled `TugAccordion type="multiple"` — the accordion emits
- * `toggleSection` through the responder chain and the form binding captures
- * it into `useState`; sections a snapshot introduces open themselves once.
- * Read-only rows render no tabindex.
+ * Data arrives via `useChangesetAll()` — an app-level singleton store
+ * (`FeedStore` over CHANGESET_ALL, no workspace filter), NOT `useCardData`:
+ * the aggregate frame is account-global and `FeedStore` holds one value per
+ * feed id, so aggregation is server-side. Clickable links use each project's
+ * own `project_dir` as the absolute-path base.
+ *
+ * Project sections are a controlled `TugAccordion type="multiple"`; owner and
+ * unattributed groups render statically inside an expanded project (one level
+ * of collapse — the project). Sections a snapshot introduces open themselves
+ * once, so a user's collapse sticks across recomputes.
  *
  * Laws: [L02] external state via useSyncExternalStore, [L06] appearance via
  *       CSS, [L11] controls emit actions, [L20] composed children keep
@@ -26,32 +31,31 @@
 import "./changeset-card.css";
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { CircleCheck, GitBranch } from "lucide-react";
+import { CircleCheck, GitBranch, FolderGit2 } from "lucide-react";
 
 import { registerCard } from "@/card-registry";
-import { FeedId } from "@/protocol";
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { useCardData } from "@/components/tugways/hooks/use-card-data";
+import { useChangesetAll } from "@/lib/changeset-all-store";
+import { useChangesetGitInit } from "@/lib/changeset-verb-store";
 import type {
   ChangesetEntry,
   ChangesetFile,
-  ChangesetSnapshot,
+  ProjectChangeset,
 } from "@/lib/changeset-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Section id for the accordion — owner ids are unique per snapshot. */
-function sectionId(entry: ChangesetEntry): string {
-  return `${entry.kind}:${entry.owner_id}`;
+/** Section id for a project — its dir is unique across open projects. */
+function projectSectionId(project: ProjectChangeset): string {
+  return `project:${project.project_dir}`;
 }
-
-const UNATTRIBUTED_SECTION = "unattributed";
 
 /** Tone class for a git-status glyph (first significant letter wins). */
 function statusToneClass(gitStatus: string): string {
@@ -71,7 +75,7 @@ function statusToneClass(gitStatus: string): string {
 
 /** Render the porcelain XY pair with dots shown as spaces (v1 style). */
 function statusGlyph(gitStatus: string): string {
-  return gitStatus.replace(/\./g, " ");
+  return gitStatus.replace(/\./g, " ");
 }
 
 /**
@@ -85,25 +89,25 @@ function isDeleted(op: string, gitStatus: string): boolean {
 
 /**
  * A repo-relative file path, rendered as an `open-file` link when the file
- * still exists. Absolute path = the snapshot's `workspace_key` (the repo
- * root) joined with the repo-relative path. Reuses the same dispatch +
- * focus discipline as `ToolFileRef`: a primary click opens the file in a
- * Text card without stealing first-responder from this read-only card; a
- * right-click offers Open in Editor / Show in Finder. Deleted files (and
- * the case where no workspace root is known) render inert.
+ * still exists. Absolute path = the project's `project_dir` (the checkout
+ * root) joined with the repo-relative path. Reuses the same dispatch + focus
+ * discipline as `ToolFileRef`: a primary click opens the file in a Text card
+ * without stealing first-responder from this read-only card; a right-click
+ * offers Open in Editor / Show in Finder. Deleted files (and the case where
+ * no project root is known) render inert.
  */
 function FilePathLink({
   path,
   op,
   gitStatus,
-  workspaceRoot,
+  projectRoot,
 }: {
   path: string;
   op: string;
   gitStatus: string;
-  workspaceRoot: string;
+  projectRoot: string;
 }) {
-  const absolutePath = workspaceRoot ? `${workspaceRoot}/${path}` : path;
+  const absolutePath = projectRoot ? `${projectRoot}/${path}` : path;
 
   const handleClick = useCallback(
     (event: React.MouseEvent) => {
@@ -121,7 +125,7 @@ function FilePathLink({
     event.preventDefault();
   }, []);
 
-  if (isDeleted(op, gitStatus) || !workspaceRoot) {
+  if (isDeleted(op, gitStatus) || !projectRoot) {
     return (
       <span className="changeset-file-path" title={path}>
         {path}
@@ -152,10 +156,10 @@ function FilePathLink({
 }
 
 // ---------------------------------------------------------------------------
-// Rows
+// Rows and groups
 // ---------------------------------------------------------------------------
 
-function FileRow({ file, workspaceRoot }: { file: ChangesetFile; workspaceRoot: string }) {
+function FileRow({ file, projectRoot }: { file: ChangesetFile; projectRoot: string }) {
   return (
     <div className="changeset-file-row" data-testid="changeset-file">
       <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
@@ -165,7 +169,7 @@ function FileRow({ file, workspaceRoot }: { file: ChangesetFile; workspaceRoot: 
         path={file.path}
         op={file.op}
         gitStatus={file.git_status}
-        workspaceRoot={workspaceRoot}
+        projectRoot={projectRoot}
       />
       {file.ambiguous && (
         <span className="changeset-badge changeset-badge-ambiguous">ambiguous</span>
@@ -178,32 +182,204 @@ function FileRow({ file, workspaceRoot }: { file: ChangesetFile; workspaceRoot: 
   );
 }
 
-function SectionTrigger({ entry }: { entry: ChangesetEntry }) {
-  if (entry.kind === "session") {
-    return (
-      <span className="changeset-section-trigger">
-        <span
-          className={`changeset-live-dot ${entry.live ? "changeset-live-dot-on" : ""}`}
-          aria-hidden="true"
-        />
-        <span className="changeset-section-name">{entry.display_name}</span>
-        <span className="changeset-section-detail">
-          {entry.files.length} file{entry.files.length === 1 ? "" : "s"}
+/** A static owner-group header + its file list, shown inside an expanded project. */
+function OwnerGroup({ entry, projectRoot }: { entry: ChangesetEntry; projectRoot: string }) {
+  return (
+    <div className="changeset-owner-group" data-testid={`changeset-${entry.kind}`}>
+      {entry.kind === "session" ? (
+        <div className="changeset-owner-header">
+          <span
+            className={`changeset-live-dot ${entry.live ? "changeset-live-dot-on" : ""}`}
+            aria-hidden="true"
+          />
+          <span className="changeset-section-name">{entry.display_name}</span>
+          <span className="changeset-section-detail">
+            {entry.files.length} file{entry.files.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      ) : (
+        <div className="changeset-owner-header">
+          <span className="changeset-dash-mark" aria-hidden="true">
+            ⌁
+          </span>
+          <span className="changeset-section-name">{entry.display_name}</span>
+          <span className="changeset-section-detail">
+            {entry.base} · {entry.rounds} round{entry.rounds === 1 ? "" : "s"}
+            {entry.worktree_dirty ? " · dirty worktree" : ""}
+          </span>
+        </div>
+      )}
+      <div className="changeset-file-list">
+        {entry.files.map((file) => (
+          <FileRow key={file.path} file={file} projectRoot={projectRoot} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The collapsed trigger for one project. */
+function ProjectTrigger({ project }: { project: ProjectChangeset }) {
+  return (
+    <span className="changeset-project-trigger">
+      <FolderGit2 size={14} className="changeset-project-icon" aria-hidden="true" />
+      <span className="changeset-project-name">{project.display_name}</span>
+      {project.no_repo ? (
+        <span className="changeset-project-detail changeset-project-detail-muted">
+          not a git repository
         </span>
-      </span>
+      ) : (
+        <span className="changeset-project-detail">
+          <GitBranch size={12} className="changeset-branch-icon" aria-hidden="true" />
+          {project.branch}
+          {project.ahead > 0 && <span className="changeset-ahead-behind">↑{project.ahead}</span>}
+          {project.behind > 0 && <span className="changeset-ahead-behind">↓{project.behind}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** The body of one project section — repo changes, clean state, or non-repo Init. */
+function ProjectBody({ project }: { project: ProjectChangeset }) {
+  const { phase, error, init } = useChangesetGitInit(project.project_dir);
+
+  if (project.no_repo) {
+    return (
+      <div className="changeset-non-repo" role="group" data-testid="changeset-non-repo">
+        <div className="changeset-non-repo-message">
+          This directory is not a git repository.
+        </div>
+        <TugPushButton
+          emphasis="outlined"
+          role="accent"
+          onClick={init}
+          disabled={phase === "pending"}
+          data-testid="changeset-git-init"
+        >
+          Initialize git
+        </TugPushButton>
+        {error !== null && (
+          <div className="changeset-non-repo-error" role="alert">
+            {error}
+          </div>
+        )}
+      </div>
     );
   }
+
+  const hasChanges = project.changesets.length > 0 || project.unattributed.length > 0;
+  if (!hasChanges) {
+    return (
+      <div className="changeset-clean" role="status">
+        <CircleCheck size={14} />
+        Clean working tree
+      </div>
+    );
+  }
+
   return (
-    <span className="changeset-section-trigger">
-      <span className="changeset-dash-mark" aria-hidden="true">
-        ⌁
+    <div className="changeset-project-body">
+      {project.head_message && (
+        <div className="changeset-head-message" title={project.head_sha}>
+          {project.head_message}
+        </div>
+      )}
+      {project.changesets.map((entry) => (
+        <OwnerGroup
+          key={`${entry.kind}:${entry.owner_id}`}
+          entry={entry}
+          projectRoot={project.project_dir}
+        />
+      ))}
+      {project.unattributed.length > 0 && (
+        <div className="changeset-owner-group" data-testid="changeset-unattributed">
+          <div className="changeset-owner-header">
+            <span className="changeset-section-name changeset-section-name-muted">
+              Unattributed
+            </span>
+            <span className="changeset-section-detail">
+              {project.unattributed.length} file
+              {project.unattributed.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="changeset-file-list">
+            {project.unattributed.map((file) => (
+              <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
+                <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
+                  {statusGlyph(file.git_status)}
+                </span>
+                <FilePathLink
+                  path={file.path}
+                  op=""
+                  gitStatus={file.git_status}
+                  projectRoot={project.project_dir}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Total changed files across a project's owners + unattributed bucket. */
+function countChanges(project: ProjectChangeset): number {
+  const owned = project.changesets.reduce((n, entry) => n + entry.files.length, 0);
+  return owned + project.unattributed.length;
+}
+
+// ---------------------------------------------------------------------------
+// Table of contents
+// ---------------------------------------------------------------------------
+
+/**
+ * One thin table-of-contents row per tracked project — always visible above
+ * the accordions so opening one project never loses the others. Clicking a row
+ * reveals that project's accordion (expands it and scrolls it into view). The
+ * caret reflects the accordion's open state so the TOC doubles as an overview
+ * of what's expanded. Read-only-card focus discipline: refuses first-responder
+ * so a click toggles without stealing the key view (mirrors `FilePathLink`).
+ */
+function TocEntry({
+  project,
+  open,
+  onReveal,
+}: {
+  project: ProjectChangeset;
+  open: boolean;
+  onReveal: () => void;
+}) {
+  const changes = countChanges(project);
+  const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    if (event.button === 0) event.preventDefault();
+  }, []);
+  const detail = project.no_repo
+    ? "no git"
+    : changes > 0
+      ? `${changes} change${changes === 1 ? "" : "s"}`
+      : "clean";
+  return (
+    <div
+      className={`changeset-toc-entry${open ? " changeset-toc-entry-open" : ""}`}
+      role="button"
+      data-testid="changeset-toc-entry"
+      data-tug-focus="refuse"
+      data-no-activate=""
+      title={project.project_dir}
+      onMouseDown={handleMouseDown}
+      onClick={onReveal}
+    >
+      <span
+        className={`changeset-toc-caret${open ? " changeset-toc-caret-open" : ""}`}
+        aria-hidden="true"
+      >
+        ▸
       </span>
-      <span className="changeset-section-name">{entry.display_name}</span>
-      <span className="changeset-section-detail">
-        {entry.base} · {entry.rounds} round{entry.rounds === 1 ? "" : "s"}
-        {entry.worktree_dirty ? " · dirty worktree" : ""}
-      </span>
-    </span>
+      <span className="changeset-toc-name">{project.display_name}</span>
+      <span className="changeset-toc-detail">{detail}</span>
+    </div>
   );
 }
 
@@ -212,10 +388,12 @@ function SectionTrigger({ entry }: { entry: ChangesetEntry }) {
 // ---------------------------------------------------------------------------
 
 export function ChangesetCardContent() {
-  const data = useCardData<ChangesetSnapshot>();
+  const data = useChangesetAll();
+  const projects = data.projects;
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   // Controlled accordion ([L11]): the control dispatches toggleSection; the
-  // form binding lands it in state. Sections open themselves the first time
+  // form binding lands it in state. Projects open themselves the first time
   // a snapshot introduces them (tracked by id, so a user's collapse sticks
   // across recomputes).
   const accordionSenderId = useId();
@@ -226,12 +404,7 @@ export function ChangesetCardContent() {
     },
   });
 
-  const sectionIds = useMemo(() => {
-    if (!data) return [] as string[];
-    const ids = data.changesets.map(sectionId);
-    if (data.unattributed.length > 0) ids.push(UNATTRIBUTED_SECTION);
-    return ids;
-  }, [data]);
+  const sectionIds = useMemo(() => projects.map(projectSectionId), [projects]);
 
   const seenSectionsRef = useRef<Set<string>>(new Set());
   const openNewSections = useCallback((ids: string[]) => {
@@ -244,108 +417,107 @@ export function ChangesetCardContent() {
     openNewSections(sectionIds);
   }, [sectionIds, openNewSections]);
 
-  if (!data) {
+  // TOC reveal: after the expand commits, scroll the revealed project's
+  // accordion into view. Scrolls the accordion body (not the whole card), so
+  // the fixed TOC + toolbar stay put. Appearance-only DOM op ([L06]).
+  const pendingRevealRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (pendingRevealRef.current === null) return;
+    const idx = pendingRevealRef.current;
+    pendingRevealRef.current = null;
+    const el = cardRef.current?.querySelector(`[data-project-index="${idx}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [openKeys]);
+
+  const expandAll = useCallback(() => {
+    sectionIds.forEach((id) => seenSectionsRef.current.add(id));
+    setOpenKeys(sectionIds);
+  }, [sectionIds]);
+  const collapseAll = useCallback(() => setOpenKeys([]), []);
+
+  const revealProject = useCallback((project: ProjectChangeset, index: number) => {
+    const id = projectSectionId(project);
+    seenSectionsRef.current.add(id);
+    pendingRevealRef.current = index;
+    // Adding when absent, or a fresh array when already open, so the reveal
+    // effect (keyed on `openKeys` identity) always fires and re-scrolls.
+    setOpenKeys((prev) => (prev.includes(id) ? [...prev] : [...prev, id]));
+  }, []);
+
+  if (projects.length === 0) {
     return (
-      <div data-slot="changeset-card" className="changeset-card changeset-card-waiting">
-        Waiting for changeset…
+      <div data-slot="changeset-card" className="changeset-card changeset-card-empty">
+        No open projects
       </div>
     );
   }
 
-  const hasChanges = data.changesets.length > 0 || data.unattributed.length > 0;
+  const openSet = new Set(openKeys);
 
   return (
-    <div data-slot="changeset-card" className="changeset-card">
-      <div className="changeset-header">
-        <div className="changeset-branch-row">
-          <GitBranch size={16} className="changeset-branch-icon" />
-          <span className="changeset-branch-name">{data.branch}</span>
-          {data.ahead > 0 && <span className="changeset-ahead-behind">↑{data.ahead}</span>}
-          {data.behind > 0 && <span className="changeset-ahead-behind">↓{data.behind}</span>}
+    <div ref={cardRef} data-slot="changeset-card" className="changeset-card">
+      <div className="changeset-head">
+        <div className="changeset-toolbar">
+          <span className="changeset-toolbar-title">
+            {projects.length} project{projects.length === 1 ? "" : "s"}
+          </span>
+          <span className="changeset-toolbar-spacer" />
+          <TugPushButton
+            emphasis="ghost"
+            role="action"
+            size="2xs"
+            onClick={expandAll}
+            data-testid="changeset-expand-all"
+          >
+            Expand all
+          </TugPushButton>
+          <TugPushButton
+            emphasis="ghost"
+            role="action"
+            size="2xs"
+            onClick={collapseAll}
+            data-testid="changeset-collapse-all"
+          >
+            Collapse all
+          </TugPushButton>
         </div>
-        {data.head_message && (
-          <div className="changeset-head-message" title={data.head_sha}>
-            {data.head_message}
-          </div>
-        )}
+        <div className="changeset-toc" role="list">
+          {projects.map((project, i) => (
+            <TocEntry
+              key={projectSectionId(project)}
+              project={project}
+              open={openSet.has(projectSectionId(project))}
+              onReveal={() => revealProject(project, i)}
+            />
+          ))}
+        </div>
       </div>
-
-      {hasChanges ? (
-        <AccordionScope>
-          <div ref={accordionRef as (el: HTMLDivElement | null) => void}>
-            <TugAccordion
-              type="multiple"
-              variant="separator"
-              value={openKeys}
-              senderId={accordionSenderId}
-              className="changeset-sections"
-            >
-              {data.changesets.map((entry) => (
-                <TugAccordionItem
-                  key={sectionId(entry)}
-                  value={sectionId(entry)}
-                  trigger={<SectionTrigger entry={entry} />}
-                  data-testid={`changeset-${entry.kind}`}
-                >
-                  <div className="changeset-file-list">
-                    {entry.files.map((file) => (
-                      <FileRow
-                        key={file.path}
-                        file={file}
-                        workspaceRoot={data.workspace_key}
-                      />
-                    ))}
-                  </div>
-                </TugAccordionItem>
-              ))}
-              {data.unattributed.length > 0 && (
-                <TugAccordionItem
-                  value={UNATTRIBUTED_SECTION}
-                  trigger={
-                    <span className="changeset-section-trigger">
-                      <span className="changeset-section-name changeset-section-name-muted">
-                        Unattributed
-                      </span>
-                      <span className="changeset-section-detail">
-                        {data.unattributed.length} file
-                        {data.unattributed.length === 1 ? "" : "s"}
-                      </span>
-                    </span>
-                  }
-                  data-testid="changeset-unattributed"
-                >
-                  <div className="changeset-file-list">
-                    {data.unattributed.map((file) => (
-                      <div
-                        className="changeset-file-row"
-                        data-testid="changeset-file"
-                        key={file.path}
-                      >
-                        <span
-                          className={`changeset-file-status ${statusToneClass(file.git_status)}`}
-                        >
-                          {statusGlyph(file.git_status)}
-                        </span>
-                        <FilePathLink
-                          path={file.path}
-                          op=""
-                          gitStatus={file.git_status}
-                          workspaceRoot={data.workspace_key}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </TugAccordionItem>
-              )}
-            </TugAccordion>
-          </div>
-        </AccordionScope>
-      ) : (
-        <div className="changeset-clean" role="status">
-          <CircleCheck size={14} />
-          Clean working tree
+      <AccordionScope>
+        <div
+          ref={accordionRef as (el: HTMLDivElement | null) => void}
+          className="changeset-scroll"
+        >
+          <TugAccordion
+            type="multiple"
+            variant="separator"
+            value={openKeys}
+            senderId={accordionSenderId}
+            className="changeset-sections"
+          >
+            {projects.map((project, i) => (
+              <TugAccordionItem
+                key={projectSectionId(project)}
+                value={projectSectionId(project)}
+                trigger={<ProjectTrigger project={project} />}
+                data-testid="changeset-project"
+                data-project-index={i}
+              >
+                <ProjectBody project={project} />
+              </TugAccordionItem>
+            ))}
+          </TugAccordion>
         </div>
-      )}
+      </AccordionScope>
     </div>
   );
 }
@@ -363,7 +535,14 @@ export function registerChangesetCard(): void {
     componentId: "changeset",
     contentFactory: () => <ChangesetCardContent />,
     defaultMeta: { title: "Changeset", icon: "GitBranch", closable: true },
-    defaultFeedIds: [FeedId.CHANGESET],
+    // No per-card feed: the card reads the account-global aggregate via the
+    // app-level `useChangesetAll` singleton, not `useCardData`. Declaring
+    // CHANGESET_ALL here would route it through the host's per-card,
+    // workspace-key-filtered FeedStore — which drops the aggregate frame (it
+    // carries no top-level workspace_key), so the host's `feedsReady` gate
+    // would hang on "Loading..." forever. An empty list makes the card ready
+    // immediately; the singleton store handles delivery.
+    cardFeedIds: [],
     sizePolicy: {
       min: { width: 280, height: 200 },
       preferred: { width: 650, height: 350 },

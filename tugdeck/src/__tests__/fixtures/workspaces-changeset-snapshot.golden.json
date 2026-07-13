@@ -1,0 +1,82 @@
+{
+  "projects": [
+    {
+      "project_dir": "/Users/dev/src/tugtool",
+      "display_name": "tugtool",
+      "no_repo": false,
+      "workspace_key": "a1b2c3d4e5f60718",
+      "branch": "main",
+      "ahead": 2,
+      "behind": 0,
+      "head_sha": "3722f2496c1a9d0b8e47f5a2c6d3e8b1f0a9c7d5",
+      "head_message": "Add graphical usage sheet",
+      "changesets": [
+        {
+          "kind": "session",
+          "owner_id": "sess-0197a2b4-c8d1-7e02-9f3a-b5c6d7e8f901",
+          "display_name": "wire the changeset card",
+          "live": true,
+          "files": [
+            {
+              "path": "tugdeck/src/lib/changeset-types.ts",
+              "git_status": ".M",
+              "op": "edit",
+              "origin": "exact",
+              "ambiguous": false,
+              "shared": false,
+              "last_touched": 1752264000000
+            },
+            {
+              "path": "tugrust/crates/tugcast/src/feeds/changeset.rs",
+              "git_status": "A.",
+              "op": "created",
+              "origin": "bash",
+              "ambiguous": true,
+              "shared": true,
+              "last_touched": 1752264120000
+            }
+          ]
+        },
+        {
+          "kind": "dash",
+          "owner_id": "tugdash/fix-join",
+          "display_name": "fix-join",
+          "base": "main",
+          "rounds": 3,
+          "worktree": ".tug/worktrees/tugdash__fix-join",
+          "worktree_dirty": false,
+          "files": [
+            {
+              "path": "tugrust/crates/tugutil/src/commands/dash.rs",
+              "git_status": "M",
+              "op": "modified",
+              "origin": "dash",
+              "ambiguous": false,
+              "shared": false,
+              "last_touched": 0
+            }
+          ]
+        }
+      ],
+      "unattributed": [
+        {
+          "path": "notes/scratch.md",
+          "git_status": "??"
+        }
+      ]
+    },
+    {
+      "project_dir": "/Users/dev/src/scratchpad",
+      "display_name": "scratchpad",
+      "no_repo": true,
+      "workspace_key": "f0e1d2c3b4a59687",
+      "branch": "",
+      "ahead": 0,
+      "behind": 0,
+      "head_sha": "",
+      "head_message": "",
+      "changesets": [],
+      "unattributed": []
+    }
+  ]
+}

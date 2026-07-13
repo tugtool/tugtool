@@ -19,6 +19,8 @@ import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
 import { attachSessionActivityStore } from "./lib/session-activity-store";
+import { attachChangesetAllStore } from "./lib/changeset-all-store";
+import { attachChangesetVerbStore } from "./lib/changeset-verb-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { transportStateStore } from "./lib/transport-state-store";
 import {
@@ -420,6 +422,16 @@ if (!container) {
   // per-session activity feed ([P01]), routed by each frame's own
   // `tug_session_id`. The Z2 sparkline reads its `compositeSeries`.
   attachSessionActivityStore(connection);
+
+  // Wire the account-global changeset store: the aggregate CHANGESET_ALL
+  // feed (every open project in one frame). The changeset card reads it via
+  // `useChangesetAll` — no workspace filter, unlike the per-card feeds.
+  attachChangesetAllStore(connection);
+
+  // Wire the changeset CONTROL-verb round-trip store (M02A: changeset_git_init
+  // for the non-repo "Initialize git" affordance). The card reads it via
+  // `useChangesetGitInit`.
+  attachChangesetVerbStore(connection);
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;

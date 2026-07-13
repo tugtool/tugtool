@@ -634,7 +634,7 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // `callbacksVersion` is the bridge from a child's late registration
   // back into the restore-effect's dep set. Cards whose content factory
   // mounts conditionally (e.g. dev-card gates on `feedsReady` — its
-  // editor doesn't render until `defaultFeedIds` resolve from tugcast)
+  // editor doesn't render until `cardFeedIds` resolve from tugcast)
   // can have their state-preservation-callback registration arrive
   // several commits AFTER hostContentEl is non-null. Without this
   // counter, the restore effect would have already fired with
@@ -1375,10 +1375,10 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     saveRef: saveCurrentCardStateRef,
   });
 
-  const feedIds = useMemo(() => registration?.defaultFeedIds ?? [], [registration]);
+  const feedIds = useMemo(() => registration?.cardFeedIds ?? [], [registration]);
   const feedData = useCardFeedStore(hostStackId, feedIds);
   // Test-mode override: bypass the feed-data gate so cards whose
-  // `defaultFeedIds` would otherwise wait on a live tugcast/tugcode
+  // `cardFeedIds` would otherwise wait on a live tugcast/tugcode
   // backend (notably dev-card, which gates on `[CODE_INPUT,
   // CODE_OUTPUT, SESSION_SIDEBAND, FILETREE]`) can mount in the
   // in-app harness. Tests don't drive the AI side of those cards;
