@@ -647,6 +647,12 @@ export class CodeSessionStore {
       // fires exactly once per CASE A interrupt — not on every
       // snapshot rebuild that touches an unrelated field.
       pendingDraftRestore: this.state.pendingDraftRestore,
+      // Same identity-stability contract: the reducer parks a fresh
+      // object only on `insert_command_draft` and clears it to null on
+      // `consume_command_insert`, so passing the reference through
+      // unchanged lets the prompt entry's seeding `useLayoutEffect` (keyed
+      // on the slot's identity) fire exactly once per clicked command.
+      pendingCommandInsert: this.state.pendingCommandInsert,
       lastCost: this.state.lastCost,
       // Live API-retry announcement (or null). The reducer assigns a
       // fresh object only on an `api_retry` frame and clears it to null
@@ -1265,6 +1271,31 @@ export class CodeSessionStore {
   consumePendingDraftRestore(): void {
     if (this._disposed) return;
     this.dispatch({ type: "consume_draft_restore" });
+  }
+
+  /**
+   * Park a clicked transcript slash command on `pendingCommandInsert` for
+   * the prompt entry to seed as a ready-to-run draft. `name` is the bare
+   * command name (no leading slash — the value an editor command atom
+   * carries); `args` is the trailing argument text (`""` when none). The
+   * prompt entry observes the slot, seeds the atomized command, and calls
+   * {@link consumePendingCommandInsert}. Public for the same reason as
+   * {@link consumePendingDraftRestore}: the dispatch source is a UI
+   * surface (the transcript click), not the reducer.
+   */
+  insertCommandDraft(name: string, args: string): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "insert_command_draft", name, args });
+  }
+
+  /**
+   * Clear `pendingCommandInsert` once the prompt entry has seeded the
+   * editor. Idempotent — a call while the slot is already `null` is a
+   * state-ref-stable no-op and produces no listener notification.
+   */
+  consumePendingCommandInsert(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "consume_command_insert" });
   }
 
   /**

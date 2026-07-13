@@ -409,6 +409,20 @@ body {
   border-radius: var(--tugx-md-inline-code-radius);
 }
 
+/* Clickable slash command — an inline `<code>` span that parsed as a
+   *known* slash command (`enhance-slash-commands` tags it with this class
+   plus `data-slash-command` / `data-slash-args`). The transcript's
+   delegated click listener turns a click into a ready-to-run command
+   draft. Resting appearance is the ordinary inline-code chip; only hover
+   reveals interactivity (pointer + link-colored underline). */
+.tugx-md-block code.tugx-md-slashcmd {
+  cursor: pointer;
+}
+.tugx-md-block code.tugx-md-slashcmd:hover {
+  color: var(--tugx-md-link-color-hover);
+  text-decoration: var(--tugx-md-link-decoration);
+}
+
 /* Fenced code chrome — `enhanceFencedCode` wraps each `<pre>` in a
    `.tugx-md-fenced-code` div with the shared `.tugx-md-chrome-header`
    (language label + Copy + fold cue). Framed to MATCH the

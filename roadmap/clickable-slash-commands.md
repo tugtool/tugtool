@@ -329,11 +329,11 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Grammar helper + enhancer + pipeline wiring | pending | — |
-| #step-2 | Transcript predicate + block prop + hover CSS | pending | — |
-| #step-3 | `pendingCommandInsert` slot + entry consumption | pending | — |
-| #step-4 | Delegated click → activate + set slot | pending | — |
-| #step-5 | Integration checkpoint | pending | — |
+| #step-1 | Grammar helper + enhancer + pipeline wiring | done | 6071a572e |
+| #step-2 | Transcript predicate + block prop + hover CSS | done | b57a82baa |
+| #step-3 | `pendingCommandInsert` slot + entry consumption | done | 4aa1dda44 |
+| #step-4 | Delegated click → activate + set slot | done | 6dc4f46c6 |
+| #step-5 | Integration checkpoint | done | N/A (verification only) |
 
 #### Step 1: Grammar helper + enhancer + pipeline wiring {#step-1}
 

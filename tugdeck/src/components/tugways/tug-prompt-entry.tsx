@@ -1363,6 +1363,37 @@ export const TugPromptEntry = React.forwardRef<
     editor.focus();
   }, [pendingShellShare, shellSessionStore, routeLifecycle]);
 
+  // Command insert ([P03]/[P04]). A click on a known slash command in the
+  // transcript parks `{ name, args }` on the code-session store; this
+  // effect observes the slot, flips the route to Code (`❯`), seeds the
+  // editor with the atomized command — a leading command atom (`name`)
+  // plus the trailing argument text — focuses, and consumes. Unlike draft
+  // restore, the seed is UNCONDITIONAL (no empty-guard): a click is an
+  // explicit intent to run this command, and a command atom must lead at
+  // document position 0 to expand as a user invocation, so `restoreState`
+  // replaces any in-progress draft. The seed shape matches a typed
+  // command — `TUG_ATOM_CHAR` + a trailing space (+ args) — so a clicked
+  // command is byte-identical to one accepted from the `/` completion.
+  // Mirrors the share effect: [L02] slot via useSyncExternalStore; [L03]
+  // useLayoutEffect so the doc change + route flip land in one paint; the
+  // slot survives until an editor exists (no consume on a missing view) so
+  // a click is never silently dropped.
+  const pendingCommandInsert = snap.pendingCommandInsert;
+  useLayoutEffect(() => {
+    if (pendingCommandInsert === null) return;
+    const editor = textEditorRef.current;
+    if (editor === null) return;
+    const { name, args } = pendingCommandInsert;
+    editor.restoreState(
+      buildEditingStateFromDraftRestore(`${TUG_ATOM_CHAR} ${args}`, [
+        { kind: "atom", type: "command", label: name, value: name },
+      ]),
+    );
+    routeLifecycle.setRoute(DEFAULT_ROUTE);
+    editor.focus();
+    codeSessionStore.consumePendingCommandInsert();
+  }, [pendingCommandInsert, codeSessionStore, routeLifecycle]);
+
   // [L02] The route is external state once the Z4B indicator reads it,
   // so it enters React through `useSyncExternalStore` only. Submit and
   // extension closures read the live value via `routeLifecycle.getRoute()`

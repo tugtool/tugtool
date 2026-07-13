@@ -860,6 +860,22 @@ export interface CodeSessionSnapshot {
     atoms: ReadonlyArray<AtomSegment>;
   } | null;
 
+  /**
+   * A click on a known slash command in the transcript parks it here for
+   * the prompt entry to seed as a ready-to-run command draft. `name` is
+   * the bare command name (no leading slash — the value an editor command
+   * atom carries); `args` is the trailing argument text (`""` when none).
+   * Set by {@link CodeSessionStore.insertCommandDraft}, cleared by
+   * {@link CodeSessionStore.consumePendingCommandInsert} once the prompt
+   * entry has seeded the editor. Survives snapshot rebuilds until consumed
+   * (like {@link pendingDraftRestore}) so a late- or re-mounted prompt
+   * entry still picks it up.
+   */
+  pendingCommandInsert: {
+    name: string;
+    args: string;
+  } | null;
+
   lastCost: CostSnapshot | null;
   /**
    * Live API-retry announcement, or `null` when no retry is in flight.

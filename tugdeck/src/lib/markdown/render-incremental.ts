@@ -67,6 +67,7 @@ import { enhanceImg } from "./enhance-img";
 import { enhanceLinks } from "./enhance-links";
 import { enhanceMath } from "./enhance-math";
 import { enhanceMermaid } from "./enhance-mermaid";
+import { enhanceSlashCommands } from "./enhance-slash-commands";
 import { enhanceTable } from "./enhance-table";
 import {
   parseMarkdownToSanitizedBlocks,
@@ -116,6 +117,18 @@ export interface ReconcilePlan {
   appendCount: number;
   /** Trailing blocks past the new length — remove existing wrappers. */
   removeCount: number;
+}
+
+/**
+ * Options for {@link renderIncremental}: the markdown parse options plus
+ * the optional slash-command clickability predicate. When
+ * `isKnownSlashCommand` is set, inline `<code>` spans that parse as a
+ * known slash command are tagged for the transcript's click-to-run
+ * gesture (see `enhance-slash-commands`); omitting it — every
+ * non-transcript consumer — skips command enhancement entirely.
+ */
+export interface RenderIncrementalOptions extends ParseMarkdownOptions {
+  isKnownSlashCommand?: (name: string) => boolean;
 }
 
 /** Outcome of one {@link renderIncremental} call. */
@@ -185,7 +198,10 @@ const BLOCK_CLASS = "tugx-md-block";
  * the previous render. See {@link domHashes} for why the DOM, not a
  * module-level cache, is the diff's source of truth.
  */
-function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
+function buildBlockElement(
+  block: SanitizedMarkdownBlock,
+  isKnownSlashCommand?: (name: string) => boolean,
+): HTMLDivElement {
   const el = document.createElement("div");
   el.className = BLOCK_CLASS;
   el.dataset.blockType = block.type;
@@ -197,12 +213,16 @@ function buildBlockElement(block: SanitizedMarkdownBlock): HTMLDivElement {
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
+  if (isKnownSlashCommand !== undefined) {
+    enhanceSlashCommands(el, isKnownSlashCommand);
+  }
   return el;
 }
 
 function updateBlockElement(
   el: HTMLElement,
   block: SanitizedMarkdownBlock,
+  isKnownSlashCommand?: (name: string) => boolean,
 ): void {
   el.dataset.blockType = block.type;
   el.dataset.contentHash = block.contentHash.toString();
@@ -213,6 +233,9 @@ function updateBlockElement(
   enhanceTable(el);
   void enhanceMath(el);
   void enhanceMermaid(el);
+  if (isKnownSlashCommand !== undefined) {
+    enhanceSlashCommands(el, isKnownSlashCommand);
+  }
 }
 
 /**
@@ -269,7 +292,7 @@ function domHashes(children: ReadonlyArray<Element>): bigint[] {
 export function renderIncremental(
   container: HTMLElement,
   text: string,
-  options?: ParseMarkdownOptions,
+  options?: RenderIncrementalOptions,
 ): RenderResult {
   if (text === "") {
     const removeCount = container.children.length;
@@ -289,7 +312,11 @@ export function renderIncremental(
     transformers: options?.transformers ?? DEFAULT_BLOCK_TRANSFORMERS,
   };
   const blocks = parseMarkdownToSanitizedBlocks(text, mergedOptions);
-  return renderIncrementalFromBlocks(container, blocks);
+  return renderIncrementalFromBlocks(
+    container,
+    blocks,
+    options?.isKnownSlashCommand,
+  );
 }
 
 /**
@@ -308,6 +335,7 @@ export function renderIncremental(
 export function renderIncrementalFromBlocks(
   container: HTMLElement,
   blocks: ReadonlyArray<SanitizedMarkdownBlock>,
+  isKnownSlashCommand?: (name: string) => boolean,
 ): RenderResult {
   // Snapshot existing children once. The reconciler's contract is
   // that it owns every child of `container` (no foreign nodes); the
@@ -343,10 +371,10 @@ export function renderIncrementalFromBlocks(
     if (child === undefined) {
       // Defensive: state and DOM disagreed (unexpected). Treat the
       // missing slot as an append so the new content still lands.
-      container.appendChild(buildBlockElement(blocks[i]));
+      container.appendChild(buildBlockElement(blocks[i], isKnownSlashCommand));
       continue;
     }
-    updateBlockElement(child, blocks[i]);
+    updateBlockElement(child, blocks[i], isKnownSlashCommand);
   }
 
   // Phase 2 — append new wrappers beyond the previous length.
@@ -355,7 +383,7 @@ export function renderIncrementalFromBlocks(
     i < prevHashes.length + plan.appendCount;
     i += 1
   ) {
-    container.appendChild(buildBlockElement(blocks[i]));
+    container.appendChild(buildBlockElement(blocks[i], isKnownSlashCommand));
   }
 
   // Phase 3 — remove trailing wrappers past the new length. Walked

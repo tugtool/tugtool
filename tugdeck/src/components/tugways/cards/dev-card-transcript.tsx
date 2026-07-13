@@ -93,6 +93,7 @@ import {
 } from "lucide-react";
 import {
   useSessionModelName,
+  useKnownSlashCommand,
   formatTranscriptTimestamp,
   useTranscriptCellMenu,
   type CopyMarkdownResolver,
@@ -153,6 +154,7 @@ import {
   turnEntryToMarkdown,
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
+import { SLASH_COMMAND_CLASS } from "@/lib/markdown/enhance-slash-commands";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import {
@@ -722,6 +724,12 @@ interface CodeRowBodyProps {
    * its text arrives — never flashes a plumbing marker or placeholder.
    */
   committed?: boolean;
+  /**
+   * Clickability gate for inline slash-command spans in this turn's
+   * `assistant_text` prose — forwarded to `TugMarkdownBlock`. See
+   * `useKnownSlashCommand`.
+   */
+  isKnownSlashCommand?: (name: string) => boolean;
 }
 
 /**
@@ -780,6 +788,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
   awaitingToolUseId,
   turnInterrupted = false,
   committed = false,
+  isKnownSlashCommand,
 }) => {
   // Partition tool_use Messages into top-level vs nested per
   // `parentToolUseId` ([#step-17-5]). Subagent children render
@@ -896,6 +905,7 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
             streamingPath={path}
             className="dev-card-transcript-code-body"
             findable
+            isKnownSlashCommand={isKnownSlashCommand}
           />
         </StreamedTextGate>,
       );
@@ -1029,6 +1039,10 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // cell mounted across the (one-time at session-init, occasional
   // mid-session) `modelName` resolution. [L02] / [L26].
   const modelName = useSessionModelName(sessionMetadataStore);
+  // Known-command gate for clickable slash commands in this turn's prose
+  // ([L02] via the metadata store's catalog). Subscribed HERE in the cell,
+  // like `modelName`, so the host renderer lambda stays identity-stable.
+  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
   // Address the row by its true session turn ([L02]/[P04]). The assistant
   // row carries one `#a{turn}` address on its attribution row (a wake/cron
   // turn is the assistant speaking, so it is `#a` too); the inline messages
@@ -1243,6 +1257,7 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
                   turnKey={turnKey}
                   streamingStore={streamingStore}
                   session={codeSessionStore}
+                  isKnownSlashCommand={isKnownSlashCommand}
                   awaitingToolUseId={
                     // Id-join the live pending dialog to its tool row so
                     // that row's lifecycle dot reads `awaiting` ([Q01]).
@@ -1783,6 +1798,35 @@ export const DevTranscriptHost = forwardRef<
     responseStore.bind(el);
     return () => responseStore.unbind();
   }, [responseStore]);
+
+  // Clickable slash commands ([P03]/[P06]). A click on a `.tugx-md-slashcmd`
+  // span — tagged by `enhance-slash-commands` when its inline `<code>`
+  // parsed as a *known* command — activates this card and parks the command
+  // on the code-session store; the prompt entry seeds it as a ready-to-run
+  // draft. Delegated on the transcript root so it covers every rendered
+  // markdown block with a single listener. [L03] — the listener must be
+  // live before any click it services.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root === null) return;
+    const onClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const span = target.closest<HTMLElement>(`.${SLASH_COMMAND_CLASS}`);
+      if (span === null) return;
+      // Ignore a click that is the tail of a text drag-selection over the
+      // span — only a plain, collapsed-selection click seeds the command.
+      const selection = window.getSelection();
+      if (selection !== null && !selection.isCollapsed) return;
+      const name = span.dataset.slashCommand;
+      if (name === undefined) return;
+      const args = span.dataset.slashArgs ?? "";
+      deck.activateCard(cardId);
+      codeSessionStore.insertCommandDraft(name, args);
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, [cardId, codeSessionStore, deck]);
 
   // Deferred-content hold ([P03] as amended: progressive AFFORDANCE,
   // deferred CONTENT). While the INITIAL resume replay window is open

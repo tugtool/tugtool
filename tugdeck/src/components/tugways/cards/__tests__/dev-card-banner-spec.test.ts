@@ -77,6 +77,7 @@ function baseSnap(
     jobs: [],
     goal: null,
     pendingDraftRestore: null,
+    pendingCommandInsert: null,
     lastCost: null,
     apiRetry: null,
     refusalFallback: null,

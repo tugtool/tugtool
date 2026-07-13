@@ -421,6 +421,33 @@ export interface ConsumeDraftRestoreActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.insertCommandDraft`. Not
+ * a wire event. Parks a `{ name, args }` on `pendingCommandInsert` when a
+ * known slash command is clicked in the transcript; the prompt entry
+ * observes the slot via `useSyncExternalStore`, seeds the editor with the
+ * atomized command inside a `useLayoutEffect`, and dispatches
+ * `consume_command_insert`. `name` is the bare command name (no leading
+ * slash), `args` the trailing argument text (`""` when none).
+ */
+export interface InsertCommandDraftActionEvent {
+  type: "insert_command_draft";
+  name: string;
+  args: string;
+}
+
+/**
+ * Internal action injected by
+ * `CodeSessionStore.consumePendingCommandInsert`. Clears
+ * `pendingCommandInsert` to `null` once the prompt entry has seeded the
+ * editor. Idempotent — a consume while the slot is already `null` is a
+ * state-ref-stable no-op, so the seeding `useLayoutEffect` can fire it
+ * without a notification storm.
+ */
+export interface ConsumeCommandInsertActionEvent {
+  type: "consume_command_insert";
+}
+
+/**
  * Internal action injected by `CodeSessionStore.cancelQueuedSend`. Not
  * a wire event. Removes one entry from `queuedSends` by `turnKey` — a
  * true un-send of a mid-turn submission that was queued but never
@@ -1185,6 +1212,8 @@ export type CodeSessionEvent =
   | SetModelActionEvent
   | SetEffortActionEvent
   | ConsumeDraftRestoreActionEvent
+  | InsertCommandDraftActionEvent
+  | ConsumeCommandInsertActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent
   | StreamingUsageEvent

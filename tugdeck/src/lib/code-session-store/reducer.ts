@@ -43,6 +43,7 @@ import type {
   MarkCompactionSeedActionEvent,
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
+  InsertCommandDraftActionEvent,
   CodeSessionEvent,
   ContentBlockStartEvent,
   ContextBreakdownEvent,
@@ -394,6 +395,20 @@ export interface CodeSessionState {
   pendingDraftRestore: {
     text: string;
     atoms: ReadonlyArray<AtomSegment>;
+  } | null;
+
+  /**
+   * A clicked transcript slash command, parked by `insert_command_draft`
+   * for the prompt entry to seed as a ready-to-run draft, cleared by
+   * `consume_command_insert` once seeded. `name` is the bare command name
+   * (no leading slash); `args` the trailing argument text (`""` when
+   * none). Mirrored onto `CodeSessionSnapshot.pendingCommandInsert` with a
+   * shared reference so the seeding `useLayoutEffect` fires once per
+   * click, matching the `pendingDraftRestore` stability contract.
+   */
+  pendingCommandInsert: {
+    name: string;
+    args: string;
   } | null;
   /**
    * Counter of outstanding CASE A wire echoes the reducer expects to
@@ -861,6 +876,7 @@ export function createInitialState(
     prevPhase: null,
     pendingTurn: null,
     pendingDraftRestore: null,
+    pendingCommandInsert: null,
     pendingCaseAEchoes: 0,
     queuedSends: [],
     lastError: null,
@@ -1319,6 +1335,34 @@ function handleConsumeDraftRestore(
   }
   return {
     state: { ...state, pendingDraftRestore: null },
+    effects: [],
+  };
+}
+
+function handleInsertCommandDraft(
+  state: CodeSessionState,
+  event: InsertCommandDraftActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: {
+      ...state,
+      pendingCommandInsert: { name: event.name, args: event.args },
+    },
+    effects: [],
+  };
+}
+
+function handleConsumeCommandInsert(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idempotent — ref-stable no-op when the slot is already null, so the
+  // prompt entry's seeding `useLayoutEffect` can fire this without a
+  // notification storm (mirrors `handleConsumeDraftRestore`).
+  if (state.pendingCommandInsert === null) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, pendingCommandInsert: null },
     effects: [],
   };
 }
@@ -5368,6 +5412,10 @@ export function reduce(
       return handleSetEffort(state, event);
     case "consume_draft_restore":
       return handleConsumeDraftRestore(state);
+    case "insert_command_draft":
+      return handleInsertCommandDraft(state, event);
+    case "consume_command_insert":
+      return handleConsumeCommandInsert(state);
     case "cancel_queued_send":
       return handleCancelQueuedSend(state, event);
     case "cost_update":

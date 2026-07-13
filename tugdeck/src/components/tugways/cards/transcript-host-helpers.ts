@@ -18,8 +18,9 @@
  * @module components/tugways/cards/transcript-host-helpers
  */
 
-import React, { useCallback, useId, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
 import {
   HighlightSelectionAdapter,
   type TextSelectionAdapter,
@@ -46,6 +47,37 @@ export function useSessionModelName(
       [sessionMetadataStore],
     ),
   );
+}
+
+/**
+ * Build a predicate over the *known* slash-command set: claude's live
+ * catalog (`SessionMetadataStore.slashCommands`) unioned with the dev
+ * card's locally-handled commands (`LOCAL_SLASH_COMMANDS`). The transcript
+ * passes this to `TugMarkdownBlock` to gate which inline `<code>` command
+ * spans become clickable (`enhance-slash-commands`) — the strict known-list
+ * gate, not a loose regex.
+ *
+ * [L02] — the catalog is read through `useSyncExternalStore`. The predicate
+ * identity is memoized on the catalog array (stable between store changes,
+ * so unrelated metadata updates don't rebuild the set); a catalog change
+ * yields a fresh predicate, which newly-mounting turn cells pick up.
+ */
+export function useKnownSlashCommand(
+  sessionMetadataStore: SessionMetadataStore,
+): (name: string) => boolean {
+  const catalog = useSyncExternalStore(
+    sessionMetadataStore.subscribe,
+    useCallback(
+      () => sessionMetadataStore.getSnapshot().slashCommands,
+      [sessionMetadataStore],
+    ),
+  );
+  return useMemo(() => {
+    const set = new Set<string>();
+    for (const cmd of catalog) set.add(cmd.name);
+    for (const cmd of LOCAL_SLASH_COMMANDS) set.add(cmd.name);
+    return (name: string) => set.has(name);
+  }, [catalog]);
 }
 
 /**

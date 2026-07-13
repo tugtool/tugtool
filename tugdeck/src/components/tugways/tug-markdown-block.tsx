@@ -84,6 +84,7 @@ import React from "react";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { ensureParsed } from "@/lib/markdown/parse-cache";
 import { recordRowParse } from "@/lib/markdown/parse-counters";
+import { enhanceSlashCommands } from "@/lib/markdown/enhance-slash-commands";
 import {
   renderIncremental,
   renderIncrementalFromBlocks,
@@ -140,6 +141,21 @@ export interface TugMarkdownBlockProps {
    * unsearchable.
    */
   findable?: boolean;
+
+  /**
+   * Clickability gate for inline slash-command `<code>` spans. When set,
+   * a code span that parses as a known slash command (this predicate
+   * returns `true` for its bare name) is tagged for the transcript's
+   * click-to-run gesture (`enhance-slash-commands`). Omit — every
+   * non-transcript host — and no command enhancement runs.
+   *
+   * Delivered to the imperative render closures via a ref, NOT closed
+   * over directly: the streaming render effect's deps are
+   * `[streamingStore, streamingPath]`, so a captured prop would be stale
+   * — the ref keeps the predicate current at the mount build (which tags
+   * finalized blocks) and at every streaming delta.
+   */
+  isKnownSlashCommand?: (name: string) => boolean;
 }
 
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
@@ -148,8 +164,17 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   streamingPath = DEFAULT_STREAMING_PATH,
   className,
   findable = false,
+  isKnownSlashCommand,
 }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // The slash-command predicate is read from a ref inside the render
+  // closures below, never closed over directly: the streaming effect's
+  // deps are `[streamingStore, streamingPath]`, so a captured prop would
+  // be stale. Reassigned every render so the closures see the live
+  // predicate (see the `isKnownSlashCommand` prop doc).
+  const predicateRef = React.useRef(isKnownSlashCommand);
+  predicateRef.current = isKnownSlashCommand;
 
   // Static `initialText` mode — runs once at mount, never again.
   // Skipped entirely when `streamingStore` is set; the streaming
@@ -171,7 +196,13 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     // Parse-economy counter: `renderIncremental` skips the parse
     // entirely for empty text, so only non-empty renders count.
     if (text !== "") recordRowParse("static");
-    renderIncremental(el, text);
+    renderIncremental(
+      el,
+      text,
+      predicateRef.current === undefined
+        ? undefined
+        : { isKnownSlashCommand: predicateRef.current },
+    );
     // Empty deps — `initialText` changes after mount are intentionally
     // ignored per the [#md-block-api] mount-once contract. A consumer
     // that wants to swap content remounts via a fresh React key.
@@ -218,7 +249,7 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
       // an emptied parse cache costs at most one extra parse, never a
       // duplicate-append.
       const blocks = ensureParsed(streamingStore, streamingPath, text);
-      renderIncrementalFromBlocks(el, blocks);
+      renderIncrementalFromBlocks(el, blocks, predicateRef.current);
     };
 
     // G1 — render the store's current value before paint. The
@@ -263,6 +294,21 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
       // them — the worst case is a wasted re-parse on a cache miss.
     };
   }, [streamingStore, streamingPath]);
+
+  // Re-tag clickable slash commands when the known-command predicate
+  // changes identity — the on-resume catalog race. The render effects
+  // above tag at block *build* time; a finalized block is hash-stable and
+  // never rebuilt, so if the transcript replayed from JSONL before the
+  // handshake catalog landed, its command spans were built untagged. This
+  // effect re-runs `enhanceSlashCommands` over the already-rendered DOM
+  // once the catalog (and thus the predicate) arrives — an idempotent
+  // add/remove sync, no DOM rebuild (scroll anchor preserved). Runs after
+  // the render effects so the container is populated. [L06] DOM-only.
+  React.useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el === null || isKnownSlashCommand === undefined) return;
+    enhanceSlashCommands(el, isKnownSlashCommand);
+  }, [isKnownSlashCommand]);
 
   return (
     <div

@@ -150,6 +150,7 @@ function snapshotWith(args: {
     lastRewindResult: null,
     activeTurn: args.activeTurn ?? null,
     pendingDraftRestore: null,
+    pendingCommandInsert: null,
     lastCost: null,
     apiRetry: null,
     refusalFallback: null,
