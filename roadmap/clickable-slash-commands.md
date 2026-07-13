@@ -28,7 +28,7 @@ The user's explicit guidance: **validate clickability against the known command 
 #### Strategy {#strategy}
 
 - Add a new markdown **enhancer** (`enhanceSlashCommands`) beside the existing `enhance-*` passes. It walks rendered inline `<code>` spans, parses each against a strict command-line grammar, and — for spans whose command name passes a caller-supplied **known-command predicate** — tags the `<code>` with a class and `data-*` attributes. This is pure DOM ([L06]); no store dependency inside the pipeline.
-- Thread an optional `isKnownSlashCommand` predicate from the transcript (which owns the live catalog) down through `TugMarkdownBlock` → `renderIncremental` → the enhancer. When the predicate is absent (every other markdown consumer), the enhancer is a no-op, so nothing else in the app changes.
+- Thread an optional `isKnownSlashCommand` predicate from the transcript (which owns the live catalog) down through `TugMarkdownBlock` → `renderIncremental` → the enhancer. When the predicate is absent (every other markdown consumer), the enhancer is a no-op, so nothing else in the app changes. **The block reads the predicate from a ref inside its `reconcile` closure, not from a captured prop** — the streaming render effect's deps are `[streamingStore, streamingPath]`, so a closed-over prop would be stale ([P02], [R02]).
 - Style the tagged span with hover underline + pointer cursor via CSS ([L06]).
 - Handle the click with **one delegated listener** on the `.dev-card-transcript` root (which has `cardId`, `useDeckManager()`, and `codeSessionStore`). On a click it activates the card and sets a new store slot, `pendingCommandInsert`, on `codeSessionStore`.
 - The prompt entry **consumes** that slot in a `useLayoutEffect` — mirroring the existing `pendingShare` / `pendingDraftRestore` effects — by flipping the route to Code (`❯`), seeding the editor with a command atom (+ trailing arg text), and focusing. Decoupling transcript from composer via a store slot, not a direct delegate reach, follows the established pattern.
@@ -57,6 +57,7 @@ The user's explicit guidance: **validate clickability against the known command 
 - Keyboard activation / tab-focus of the code span (mouse-first). Deferred ([Q02]).
 - Making slash commands in **un-backticked** prose clickable. Only inline `<code>` spans are targeted (bounded, deliberate, no false positives in flowing prose). ([P01])
 - Any change to how commands are typed, completed, or submitted from the composer — this feature only *produces* a draft the existing submit path already handles.
+- **Tool-result prose.** Only the `assistant_text` message is wired in this phase. Tool results can also contain backticked commands, but they mount through a different renderer path; extending the same enhancer to them is a follow-on (#roadmap). The motivating case (the devise/implement hint in assistant prose) is `assistant_text`.
 
 #### Dependencies / Prerequisites {#dependencies}
 
@@ -74,7 +75,7 @@ The user's explicit guidance: **validate clickability against the known command 
 #### Assumptions {#assumptions}
 
 - `SlashCommandInfo.name` in the catalog is the **full** command token as typed — the `plugin:command` form for plugin commands (`tugplug:implement`) and bare `command` for others — matching what the chip displays and what the completion provider keys off (`getCommandCompletionProvider` builds items with `value: cmd.name`). Verify against a live catalog snapshot during [#step-2].
-- The catalog is populated **from the drop** (the `initialize` handshake `session_capabilities`), so by the time any assistant message renders, `slashCommands` is non-empty in the normal case. Late-arrival is handled by predicate-identity re-render ([R02]).
+- The catalog is populated **from the drop** (the `initialize` handshake `session_capabilities`), so by the time any assistant message renders, `slashCommands` is non-empty in the normal case. Enhancement happens once at block build/update time and finalized blocks are not re-enhanced on a later catalog change — but for `assistant_text` that change effectively cannot happen after the drop, so the tag is correct at mount ([R02]).
 - The transcript's `assistant_text` `TugMarkdownBlock` mount site can receive a predicate argument from the host render (the host reads the catalog via `useSyncExternalStore`).
 
 ---
@@ -125,7 +126,7 @@ Anchors are explicit `{#kebab-case}`; plan-local decisions are `[P01]` (never `[
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Draft clobber on click when composer non-empty | med | low | Explicit user gesture; documented; follow-on could confirm/stash | user reports lost drafts |
-| Catalog late-arrival → span not yet clickable | low | low | Predicate identity changes on catalog update → block re-renders and re-enhances | catalog observed empty at render |
+| Catalog late-arrival → span not yet clickable | low | very low | Catalog is from-the-drop; enhancement is correct at block mount; finalized blocks not re-enhanced but assistant_text never renders pre-catalog | catalog observed empty at an assistant render |
 | Shared markdown renderer signature change ripples to all consumers | med | low | New param is **optional**; enhancer no-ops when absent | build/type breakage in other consumers |
 | Grammar false-positive makes a non-command clickable | med | low | Strict grammar **and** known-list predicate must both pass | any unknown span shows affordance |
 
@@ -138,8 +139,9 @@ Anchors are explicit `{#kebab-case}`; plan-local decisions are `[P01]` (never `[
 **Risk R02: Catalog late-arrival** {#r02-catalog-late}
 
 - **Risk:** An assistant message renders before the command catalog lands, so its command spans aren't tagged.
-- **Mitigation:** The host builds the predicate with `useMemo` over the live catalog snapshot; when the catalog changes the predicate identity changes, `TugMarkdownBlock` re-renders, and the enhancer re-runs with the fresh known-set.
-- **Residual risk:** A one-frame window where a just-rendered command isn't yet clickable. Invisible in practice (catalog is from-the-drop).
+- **Reality of the mechanism:** Enhancement is a **build/update-time** act — it runs only inside `buildBlockElement` / `updateBlockElement` (`render-incremental.ts`). The reconciler **skips hash-stable blocks**, so re-invoking `renderIncremental` with unchanged text does **not** re-enhance an already-built (finalized) block. There is therefore **no** "re-render → re-enhance" mitigation; a finalized block keeps whatever tags it got at build time.
+- **Mitigation:** The predicate is read from a **ref** inside the block's `reconcile` closure (updated on each render), so it is current at the first (mount) build — which is what tags a finalized `assistant_text` block — and also current for any *streaming* delta that builds/updates a block mid-turn. Because the catalog is populated from-the-drop, an `assistant_text` block never builds before the catalog exists, so the mount-time tag is correct.
+- **Residual risk:** If the catalog somehow changed *after* a finalized block was built (not observed for assistant text), that block's already-rendered commands would not re-tag until its text changes (which finalized text never does). Accepted as effectively unreachable.
 
 **Risk R03: Shared-renderer ripple** {#r03-shared-renderer}
 
@@ -174,7 +176,7 @@ Anchors are explicit `{#kebab-case}`; plan-local decisions are `[P01]` (never `[
 
 **Implications:**
 - `renderIncremental` / `renderIncrementalFromBlocks` / `buildBlockElement` / `updateBlockElement` gain an optional options carrier (e.g. `{ isKnownSlashCommand?: (name: string) => boolean }`); when absent, `enhanceSlashCommands` is skipped.
-- `TugMarkdownBlock` gains an optional `isKnownSlashCommand` prop it forwards to `renderIncremental`.
+- `TugMarkdownBlock` gains an optional `isKnownSlashCommand` prop. It must **not** be closed over directly in the streaming render effect — that effect's deps are `[streamingStore, streamingPath]` (it does not re-run on a prop change), so a captured prop would be stale. Instead the block stores the latest predicate in a `useRef` assigned on every render and the `reconcile` closure reads `predicateRef.current`, passing it into `renderIncremental` / `renderIncrementalFromBlocks`. This makes the predicate current at the mount build (which tags finalized blocks) and at every streaming delta, without adding it to the effect deps.
 
 #### [P03] Interaction via a `pendingCommandInsert` store slot (DECIDED) {#p03-store-slot}
 
@@ -205,7 +207,9 @@ Anchors are explicit `{#kebab-case}`; plan-local decisions are `[P01]` (never `[
 
 **Rationale:** This is the single-source-of-truth convention documented in `command-atom.ts`; deviating would break chip rendering and claude's expansion.
 
-**Implications:** The enhancer's parsed `name` (from the `<code>` text) already excludes the leading `/`; store it verbatim.
+**Implications:**
+- The enhancer's parsed `name` (from the `<code>` text) already excludes the leading `/`; store it verbatim.
+- The known set spans **both** claude commands and the dev card's **local** commands (`LOCAL_SLASH_COMMANDS`). Seeding a *local* command (`/diff`, `/model`, `/permissions`) produces a local command atom that the existing submit path intercepts and opens as a graphical surface rather than sending to claude — this is correct and desirable (clicking `` `/diff` `` opens the diff surface), not a special case to handle.
 
 #### [P06] Card activation from the transcript via DeckManager (DECIDED) {#p06-activate}
 
@@ -266,7 +270,7 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 |-------|------|-----------|-----|
 | `.tugx-md-slashcmd` class + `data-slash-*` attrs on `<code>` | structure/appearance | DOM written by `enhanceSlashCommands` (imperative, in the render pipeline) | [L06] |
 | Hover underline + `cursor: pointer` | appearance | CSS on `.tugx-md-block code.tugx-md-slashcmd` | [L06] |
-| `isKnownSlashCommand` predicate | derived/local-data | `useMemo` over `SessionMetadataStore` snapshot read via `useSyncExternalStore` in the host | [L02] |
+| `isKnownSlashCommand` predicate | derived/local-data | `useMemo` over `SessionMetadataStore` snapshot read via `useSyncExternalStore` in the host; delivered to the block via a per-render `predicateRef` read in `reconcile` (not an effect dep) | [L02] |
 | `pendingCommandInsert` slot | local-data | `CodeSessionStore` snapshot field + actions; entry reads via `useSyncExternalStore` | [L02] |
 | Slot consumption (route flip + seed + focus) | — | `useLayoutEffect` in the entry (same-paint doc change) | [L03] |
 | Delegated click listener registration | — | `useLayoutEffect` on the transcript root | [L03] |
@@ -290,7 +294,7 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 | `enhanceSlashCommands` | fn | `lib/markdown/enhance-slash-commands.ts` | tags `<code>`; skips when no match/unknown |
 | `renderIncremental` / `renderIncrementalFromBlocks` | fn (modify) | `lib/markdown/render-incremental.ts` | accept optional `{ isKnownSlashCommand? }` |
 | `buildBlockElement` / `updateBlockElement` | fn (modify) | `lib/markdown/render-incremental.ts` | call `enhanceSlashCommands` when predicate present |
-| `isKnownSlashCommand` | prop (add) | `TugMarkdownBlock` (`tug-markdown-block.tsx`) | optional; forwarded to `renderIncremental` |
+| `isKnownSlashCommand` | prop (add) | `TugMarkdownBlock` (`tug-markdown-block.tsx`) | optional; stored in a per-render `predicateRef` and read inside `reconcile` (NOT closed over / NOT an effect dep — [P02]) |
 | `.tugx-md-block code.tugx-md-slashcmd` | CSS rule | `tug-markdown-view.css` | hover underline + pointer |
 | `pendingCommandInsert` | snapshot field | `CodeSessionStore` (`src/lib/code-session-store/`) | `{ name, args } \| null` |
 | `insertCommandDraft` / `consumePendingCommandInsert` | actions | `CodeSessionStore` | set / clear the slot |
@@ -371,7 +375,7 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 - Modified `tug-markdown-view.css`: hover underline + `cursor: pointer` for `.tugx-md-block code.tugx-md-slashcmd`.
 
 **Tasks:**
-- [ ] Add `isKnownSlashCommand?: (name: string) => boolean` to `TugMarkdownBlockProps`; forward to both `renderIncremental` and `renderIncrementalFromBlocks` calls.
+- [ ] Add `isKnownSlashCommand?: (name: string) => boolean` to `TugMarkdownBlockProps`. Store it in a `predicateRef` (`useRef`) assigned on **every** render; have the `reconcile` closure read `predicateRef.current` and pass it into both `renderIncremental` and `renderIncrementalFromBlocks`. Do **not** add the prop to the streaming effect's dep array (`[streamingStore, streamingPath]`) and do **not** close over it directly — see [P02] / [R02]. Also pass it in the static `initialText` mode's `renderIncremental` call for completeness (unused by the transcript, which is streaming-mode).
 - [ ] In the host, memoize a `Set` from `sessionMetadataStore` catalog (read via the existing `useSyncExternalStore`) ∪ `LOCAL_SLASH_COMMANDS`; wrap as a `(name) => set.has(name)` predicate; thread it to the `assistant_text` mount site.
 - [ ] Confirm the assumption that catalog `name` is the full `plugin:command` token by logging one live snapshot (`tugDevLogStore.debug`) or reading it in the app; adjust the predicate if names are namespaced differently.
 - [ ] Add the CSS rule (hover underline + pointer). Keep the resting appearance identical to today's inline code so only hover reveals interactivity.
@@ -397,7 +401,9 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 
 **Tasks:**
 - [ ] Add `pendingCommandInsert: { name: string; args: string } | null` to the `CodeSessionStore` snapshot (default `null`); add `insertCommandDraft` (set + recompute) and `consumePendingCommandInsert` (clear + recompute) preserving snapshot-reference stability when unchanged.
-- [ ] In `TugPromptEntry`, add a `useLayoutEffect` (mirroring the `pendingShare` effect) that, on a non-null slot: builds `buildEditingStateFromDraftRestore(TUG_ATOM_CHAR + (args ? " " + args : ""), [{ kind: "atom", type: "command", label: name, value: name }])`, calls `editor.restoreState(...)`, `routeLifecycle.setRoute(DEFAULT_ROUTE)`, `editor.focus()`, then `codeSessionStore.consumePendingCommandInsert()`. Unconditional seed (no empty-guard — [P04]).
+- [ ] In `TugPromptEntry`, add a `useLayoutEffect` (mirroring the `pendingShare` effect) that, on a non-null slot: builds `buildEditingStateFromDraftRestore(TUG_ATOM_CHAR + " " + (args ? args : ""), [{ kind: "atom", type: "command", label: name, value: name }])`, calls `editor.restoreState(...)`, `routeLifecycle.setRoute(DEFAULT_ROUTE)`, `editor.focus()`, then `codeSessionStore.consumePendingCommandInsert()`. Unconditional seed (no empty-guard — [P04]).
+- [ ] **Seed-shape parity:** insert `TUG_ATOM_CHAR + " "` (atom + trailing space) even for a no-arg command, matching what completion acceptance inserts for a typed command (`acceptCompletionAt` in `completion-extension.ts`), so a clicked command is byte-identical to a typed one and the caret sits after a space ready to keep typing.
+- [ ] **Confirm `restoreState` fully replaces** prior content *and atoms* (not a merge). This is the queued-send-cancel path, which already carries command atoms, so it is proven — verify the resulting doc holds exactly the one command chip + arg text with no residue from a prior draft.
 - [ ] Guard for a missing editor view (survive a late mount; leave the slot until an editor exists, like `pendingShare`).
 
 **Tests:**
@@ -421,8 +427,8 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 - Modified `dev-card-transcript.tsx` (`DevTranscriptHost`): a delegated `click` listener on the `.dev-card-transcript` root.
 
 **Tasks:**
-- [ ] In the host, add a `useLayoutEffect` ([L03]) that registers a delegated `click` listener on the transcript root element. On a click whose `event.target.closest(".tugx-md-slashcmd")` is non-null: read `data-slash-command` / `data-slash-args`, call `deck.activateCard(cardId)` then `codeSessionStore.insertCommandDraft(name, args ?? "")`. Clean up the listener on unmount.
-- [ ] Confirm the listener attaches to the same root the host already binds `responseStore` CSS props to (reuse that root ref/element).
+- [ ] In the host, add a `useLayoutEffect` ([L03]) that registers a delegated `click` listener on the transcript root element (`rootRef.current`, the same `.dev-card-transcript` element the host already binds `responseStore` CSS props to). On a click whose `event.target.closest(".tugx-md-slashcmd")` is non-null: read `data-slash-command` / `data-slash-args`, call `deck.activateCard(cardId)` then `codeSessionStore.insertCommandDraft(name, args ?? "")`. Clean up the listener on unmount.
+- [ ] **Selection-drag guard:** ignore a click that is the tail of a text drag-selection over the span — bail when `window.getSelection()` is non-collapsed (or gate on `event.detail === 1`) so selecting text that overlaps a command doesn't fire the seed.
 
 **Tests:**
 - [ ] Real-app end-to-end (below).
@@ -444,11 +450,12 @@ Built once per render in the host with `useMemo` over the catalog snapshot (a `S
 - [ ] Verify the whole flow in the running Tug.app on a real session that contains a backticked known command in assistant prose.
 
 **Tests:**
-- [ ] Click `` `/tugplug:implement roadmap/find-route.md` ``: card activates, route reads Code (`❯`), composer shows the `/tugplug:implement` chip + `roadmap/find-route.md` text, focused with caret at end; pressing Return submits and claude expands it.
+- [ ] Click `` `/tugplug:implement roadmap/find-route.md` ``: card activates, route reads Code (`❯`), composer shows the `/tugplug:implement` chip + `roadmap/find-route.md` text, and **the composer is the first responder** (focused — assert focus explicitly, not just that the doc is populated; a non-tabindex `<code>` click plus programmatic focus must actually land first responder, per the `mousedown` default-focus behavior in `reference_mousedown_focus_default`). Caret at end; pressing Return submits and claude expands it.
 - [ ] A backticked unknown command / path is not clickable (no affordance, click is inert).
+- [ ] Clicking a backticked **local** command (e.g. `` `/diff` ``) seeds it and opens its local surface on submit (sanity that the local/claude split from [P05] holds through the click path).
 
 **Checkpoint:**
-- [ ] `/verify` (or `just app-test`) drives the flow end-to-end and observes the composer state + submission.
+- [ ] `/verify` (or `just app-test`) drives the flow end-to-end and observes the composer state, **first-responder focus**, and submission.
 - [ ] `cd tugdeck && bunx vite build` and `cd tugrust && cargo nextest run` (if any Rust touched) are green.
 
 ---
