@@ -155,6 +155,9 @@ interface RouteItem {
   value: string;
   label: string;
   icon: React.ReactNode;
+  /** Keyboard-shortcut label shown right-aligned in the route menu. Mirrors
+   * the accelerator wired in `keybinding-map.ts` for this route. */
+  shortcut: string;
 }
 
 /**
@@ -170,10 +173,10 @@ interface RouteItem {
  * Route characters typed into the editor are ordinary text.
  */
 const ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
-  { value: "❯", label: "Code",  icon: <Bot size={14} /> },
-  { value: "$", label: "Shell", icon: <Shell size={14} /> },
-  { value: "?", label: "btw",   icon: <MessageSquareDashed size={14} /> },
-  { value: "⌕", label: "Find",  icon: <Search size={14} /> },
+  { value: "❯", label: "Code",  icon: <Bot size={14} />,                 shortcut: "⇧⌘C" },
+  { value: "$", label: "Shell", icon: <Shell size={14} />,               shortcut: "⇧⌘S" },
+  { value: "?", label: "btw",   icon: <MessageSquareDashed size={14} />, shortcut: "⇧⌘B" },
+  { value: "⌕", label: "Find",  icon: <Search size={14} />,              shortcut: "⇧⌘F" },
 ];
 
 /**
@@ -2753,6 +2756,7 @@ export const TugPromptEntry = React.forwardRef<
                 label: item.label,
                 icon: item.icon,
                 selected: item.value === route,
+                shortcut: item.shortcut,
               }))}
               onSelect={(nextRoute) => {
                 // Dispatch to this entry's own responder ([L11]) so the

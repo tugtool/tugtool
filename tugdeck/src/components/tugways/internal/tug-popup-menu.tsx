@@ -90,6 +90,12 @@ export interface TugPopupMenuItem {
    * check column).
    */
   selected?: boolean;
+  /**
+   * Optional keyboard-shortcut label rendered right-aligned after the label
+   * (e.g. `"⇧⌘C"`). Presentational only — the accelerator itself is wired in
+   * the keybinding map, not here. Omit for items with no shortcut.
+   */
+  shortcut?: string;
 }
 
 /** A visual separator line between menu sections. */
@@ -457,6 +463,11 @@ export function TugPopupMenu({
             </span>
           )}
           <span className="tug-menu-item-label">{item.label}</span>
+          {item.shortcut !== undefined && (
+            <span className="tug-menu-item-shortcut" aria-hidden="true">
+              {item.shortcut}
+            </span>
+          )}
         </DropdownMenuPrimitive.Item>
       );
     });
