@@ -130,6 +130,7 @@ import type { EditorStats } from "@/lib/editor-stats-store";
 import { countWords, wordCountDelta } from "@/lib/word-count";
 import { languageForExtension, tugHighlightStyle } from "@/lib/language-registry";
 
+import { mdListHangingIndent } from "./tug-text-card-editor/list-hanging-indent";
 import { useOptionalResponder } from "./use-responder";
 import { useCardId } from "./use-card-state-preservation";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -185,6 +186,17 @@ interface DocStats {
   lines: number;
   words: number;
   chars: number;
+}
+
+/**
+ * Soft-wrap extensions for a settings snapshot. When wrap is on we also
+ * install the markdown list hanging indent, so a wrapped list item's
+ * continuation aligns under its content instead of the marker.
+ */
+function lineWrapFor(settings: TextCardSettings): Extension {
+  return settings.lineWrap
+    ? [EditorView.lineWrapping, mdListHangingIndent]
+    : [];
 }
 
 /** The active-line-highlight extensions for a settings snapshot. */
@@ -645,7 +657,7 @@ export const TugTextCardEditor = React.forwardRef<
       extensions: [
         history(),
         readOnlyCompartment.of(EditorState.readOnly.of(readOnlyRef.current)),
-        lineWrapCompartment.of(s.lineWrap ? EditorView.lineWrapping : []),
+        lineWrapCompartment.of(lineWrapFor(s)),
         lineNumbersCompartment.of(s.lineNumbers ? cmLineNumbers() : []),
         foldGutterCompartment.of(s.foldGutter ? cmFoldGutter() : []),
         tabConfigCompartment.of(tabConfigFor(s)),
@@ -729,9 +741,7 @@ export const TugTextCardEditor = React.forwardRef<
 
   useLayoutEffect(() => {
     viewRef.current?.dispatch({
-      effects: lineWrapCompartment.reconfigure(
-        settings.lineWrap ? EditorView.lineWrapping : [],
-      ),
+      effects: lineWrapCompartment.reconfigure(lineWrapFor(settings)),
     });
   }, [settings.lineWrap]);
 
