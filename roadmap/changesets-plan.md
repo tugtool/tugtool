@@ -93,6 +93,9 @@ attribution data.
 - Staging-area management UI (interactive hunk staging, partial-file commits).
 - Recovering pre-feature Bash attribution on resume (replay backfill covers exact tools only —
   a bracketed delta cannot be reconstructed after the fact; see [P06]).
+- Attributing writes a `run_in_background` Bash command makes *after* its `tool_result`
+  returns — the bracket closes at the result, and the detached command's later writes land
+  as unattributed (visible in the card, honest, just not owned). See #bracket-algorithm.
 - Removing the dev card's existing `/diff` sheet or `GIT_DIFF` machinery (it is generalized,
   not replaced).
 - IndexedDB/SessionCache anything — that layer is slated for removal; nothing here builds on it.
@@ -245,7 +248,12 @@ pollute the record. `ToolResult` frames carry only `tool_use_id`/`output`/`is_er
 `tool_use_id → (tool_name, file_path, parent_tool_use_id)` populated at `tool_use` time and
 consumed at `tool_result` time.
 
-**Implications:** The pending map is relay-local, bounded, and cleared on `turn_complete`.
+**Implications:** The pending map is relay-local and size-capped with oldest-entry
+eviction (a few hundred entries; each is tiny). It is NOT cleared on `turn_complete`:
+`subagent-tail.ts` re-emits a background agent's child frames on a ~250ms poll while the
+parent turn may already be over, so a child's `tool_use` can precede a `turn_complete` and
+its `tool_result` follow it — clearing at the turn boundary would orphan exactly the edits
+this feature exists to catch.
 
 #### [P05] Fingerprint bracketing for Bash only; overlap → ambiguous (DECIDED) {#p05-bracketing}
 
@@ -399,12 +407,12 @@ can render it and offer AI-assisted resolution ([#step-21]).
 **Decision:** The `changeset_commit` CONTROL verb takes `{project_dir, files[], message}`,
 runs `git add -- <files...>` then `git commit -m <message>` in `project_dir`, and responds
 with the `git show --numstat --format= HEAD` receipt (the commit skill's receipt idiom).
-Files whose only attribution rows are `ambiguous=1` are excluded from the card's default
-selection and require explicit user inclusion.
+Files that are `ambiguous=1` or multi-owned (`shared: true`, see #snapshot-composition) are
+excluded from the card's default selection and require explicit user inclusion.
 
 **Rationale:** This is the session-scoped `git add` the commit skill does by inference, done
-by construction. Ambiguity policy resolves the brief's open item: visible badge, opt-in
-commit.
+by construction. Ambiguity and shared-ownership policy resolves the brief's open item:
+visible badge, opt-in commit — one session's commit never silently sweeps another's file.
 
 **Implications:** The verb refuses an empty `files` list and never falls back to `git add .`.
 
@@ -437,7 +445,8 @@ claude stream-json ─▶ tugcode session.ts (assembles ToolUse{input}, ToolResu
         tool_result: is_error? drop : persist file_events rows      [P04]
                      Bash → close bracket (post-snapshot, delta)
                      → bump workspace ChangesetFeed                 [P09]
-        turn_complete: clear pending map
+        (pending map: size-capped, evict-oldest — never cleared on turn_complete;
+         background-agent child frames straddle turn boundaries)
   ─▶ splice_tug_session_id ─▶ FeedId::CODE_OUTPUT (unchanged, always)
 ```
 
@@ -466,6 +475,11 @@ path becomes a `file_events` row with `origin='bash'`, `op` derived from the tra
 same root overlapped `[opened_at, closed_at]`. Brackets abandoned by a dying relay are
 dropped with the relay (registry entries carry the session id; relay teardown sweeps them).
 
+Known limitation, by design: a `run_in_background` Bash command returns its `tool_result`
+immediately, so writes the detached command makes after the bracket closes land as
+unattributed. Do not hold brackets open to chase this — unattributed-but-visible is the
+honest answer (see Non-goals).
+
 #### ChangesetSnapshot composition {#snapshot-composition}
 
 The feed recomputes by: (1) run the `GitFeed` status parse (branch, ahead/behind, head,
@@ -474,8 +488,12 @@ staged/unstaged/untracked); (2) query `file_events` for all sessions whose ledge
 session `name` when `name_user_set`, else the id hash — same rule the Z4B chip uses); (3)
 derive dash entries the way `run_dash_list` does (`git for-each-ref refs/heads/tugdash/`,
 config `branch.<b>.tugbase`, worktree dirt); (4) partition dirty files: owned (event row
-exists), ambiguous, unattributed. Committed-but-unpushed work appears via ahead-count only —
-per-owner committed history is not in the M02 snapshot.
+exists), ambiguous, unattributed. **Multi-owner rule:** a file with event rows from more
+than one owner (e.g. an exact row from session A and a bash row from session B) appears in
+*each* owning changeset with `shared: true`; shared files, like ambiguous ones, are excluded
+from the card's default commit selection ([P15]) — one session's commit must never silently
+sweep a file another session also touched. Committed-but-unpushed work appears via
+ahead-count only — per-owner committed history is not in the M02 snapshot.
 
 #### Replay/idempotency invariant {#replay-idempotency}
 
@@ -483,7 +501,11 @@ Any frame may be seen more than once per row lifetime (resume replays full histo
 `subagent-tail.resetForReplay()` re-streams background-agent children from offset 0 on
 reconnect). The invariant: **persisting a file event is an upsert keyed
 `(tug_session_id, tool_use_id, file_path)`; processing the same frame twice is a no-op.**
-Brackets never open in replay (`in_replay` guard) — [P06].
+Brackets never open in replay (`in_replay` guard) — [P06]. Note one asymmetry: reconnect
+re-streams of subagent children arrive as LIVE frames (not `in_replay`). This is benign and
+needs no special handling — re-streamed exact events upsert into existing rows, and a
+re-streamed Bash child re-opens a bracket whose close computes an empty delta (the disk
+hasn't changed), recording nothing. Do not add a dedup layer for this case.
 
 ---
 
@@ -522,7 +544,8 @@ Bash rows use the bracket's `tool_use_id`; a Bash call touching N files yields N
     { "kind": "session", "owner_id": "<tug_session_id>", "display_name": "…",
       "live": true,
       "files": [ { "path": "tugdeck/src/foo.ts", "git_status": "M ",
-                   "op": "edit", "origin": "exact", "ambiguous": false, "last_touched": 0 } ] },
+                   "op": "edit", "origin": "exact", "ambiguous": false,
+                   "shared": false, "last_touched": 0 } ] },
     { "kind": "dash", "owner_id": "tugdash/fix-join", "display_name": "fix-join",
       "base": "main", "rounds": 3, "worktree": ".tug/worktrees/tugdash__fix-join",
       "worktree_dirty": false, "files": [ /* base..branch name-status */ ] }
@@ -551,9 +574,11 @@ Handled in `AgentSupervisor::handle_control` alongside `spawn_session`/`list_ses
 
 `tugutil changes [--session <tug_session_id>] [--project <dir>] [--json]`. Session defaults
 from `$TUG_SESSION_ID`; project from cwd. Joins event rows against `git status --porcelain=v2`
-so vanished/committed files drop out. Plain output: one repo-relative path per line (the
-commit-skill contract); `--json`: `{session, project, files: [{path, op, origin, ambiguous,
-git_status}]}`. Exit 2 when the session id is missing/unknown.
+so vanished/committed files drop out. Plain output: one repo-relative path per line,
+**excluding ambiguous rows**, with a one-line stderr note when any were excluded
+("N ambiguous file(s) omitted — use --json"). `--json` (the commit-skill contract):
+`{session, project, files: [{path, op, origin, ambiguous, git_status}]}` — includes
+ambiguous rows with the flag set. Exit 2 when the session id is missing/unknown.
 
 **Spec S05: `tugdash` CLI surface** {#s05-tugdash-cli}
 
@@ -790,8 +815,11 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 - New `else if` branches in the relay loop (`agent_bridge.rs`, beside the `turn_complete` /
   `system_metadata` intercepts): `tool_use` populates the pending map; `tool_result` with
   `is_error:false` resolves it to `record_file_event` rows (`origin='exact'` live,
-  `'replay'` when `in_replay`; `at` from `timestamp` when present); `turn_complete` clears
-  the pending map. All failure paths forward the frame unchanged.
+  `'replay'` when `in_replay`; `at` from `timestamp` when present). The pending map is
+  size-capped with oldest-entry eviction and is never cleared on `turn_complete` — a
+  background agent's child `tool_use`/`tool_result` pair can straddle a turn boundary
+  (subagent-tail re-emission), and clearing would orphan it. All failure paths forward the
+  frame unchanged.
 
 **Tasks:**
 - [ ] Substring pre-filters (`"\"type\":\"tool_use\""`, `"\"type\":\"tool_result\""`) before
@@ -808,6 +836,8 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 - [ ] Replay-bracketed frames with `timestamp` backfill rows with historical `at`; replaying
       twice leaves the count unchanged.
 - [ ] Subagent frame (`parent_tool_use_id` set) records the parent id.
+- [ ] Straddle: a `tool_use` before a `turn_complete` with its `tool_result` after still
+      records (the map survives the turn boundary); eviction test at the size cap.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -872,7 +902,8 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 
 **Tests:**
 - [ ] Integration: temp sessions.db + temp repo → exact expected stdout for plain and
-      `--json` forms; ambiguous rows carry the flag in JSON.
+      `--json` forms; plain output omits ambiguous rows and notes the omission on stderr;
+      JSON includes them with the flag set.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugutil`
@@ -891,11 +922,13 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 
 **Artifacts:**
 - `tugplug/skills/commit/SKILL.md`: the "commit ONLY the files you changed in this session"
-  section gains the authoritative path — run `tugutil changes` (one command, no heredoc, no
-  `cd`) as the primary source of the session file list; retain the transcript-memory method
-  as fallback when the command is unavailable (old tugcast, missing env) and keep the
-  `git status`/`git diff` cross-check. Ambiguous-flagged files are called out for judgment
-  rather than silently staged.
+  section gains the authoritative path — run `tugutil changes --json` (one command, no
+  heredoc, no `cd`) as the primary source of the session file list; retain the
+  transcript-memory method as fallback when the command is unavailable (old tugcast,
+  missing env) and keep the `git status`/`git diff` cross-check. The JSON form is
+  mandatory for the skill: plain output silently omits ambiguous rows (Spec S04), and the
+  skill must see the `ambiguous` flag to call those files out for judgment rather than
+  stage them blindly.
 
 **Tasks:**
 - [ ] Update the Context-gathering and Stage-and-Commit sections; preserve the
@@ -986,7 +1019,8 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 **Tasks:**
 - [ ] Owner display-name rule: ledger `name` when `name_user_set`, else id hash (the Z4B
       chip rule).
-- [ ] Partition dirty files into owned / ambiguous / unattributed.
+- [ ] Partition dirty files into owned / ambiguous / unattributed; mark multi-owned files
+      `shared: true` in every owning changeset (#snapshot-composition).
 
 **Tests:**
 - [ ] Integration (temp repo + temp ledger): snapshot groups a session-owned file, a
@@ -1011,8 +1045,8 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 - `tugdeck/src/components/tugways/cards/changeset-card.tsx`: header (branch, ahead/behind,
   HEAD message — the git card's data, restyled), one collapsible section per changeset
   (session sections show display name + live dot; dash sections show base/rounds/worktree
-  state), file rows with git-status glyph + op/origin provenance, ambiguous badge,
-  unattributed section, clean-tree empty state. `registerChangesetCard()` with
+  state), file rows with git-status glyph + op/origin provenance, ambiguous and shared
+  badges, unattributed section, clean-tree empty state. `registerChangesetCard()` with
   `componentId: "changeset"`, `defaultFeedIds: [FeedId.CHANGESET]`, registered from
   `tugdeck/src/main.tsx`.
 
@@ -1024,9 +1058,12 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 - [ ] Section expand/collapse as `useState`.
 
 **Tests:**
-- [ ] App-test: drive the real app on a scratch repo state; assert the card shows the
-      expected grouped sections and updates when a session edits a file (screenshot +
-      DOM assertions per the app-test harness conventions).
+- [ ] App-test: drive the real app against seeded state (scratch-repo dirt + pre-populated
+      `file_events` rows in the ledger); assert the card renders the expected grouped
+      sections, badges, and unattributed bucket (screenshot + DOM assertions per app-test
+      conventions). Do NOT drive a real Claude session here — real-claude tests are
+      on-demand only; the event-driven bump path is covered by Step 9's Rust integration
+      test, and live-session behavior is Step 12's manual checkpoint.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
@@ -1135,8 +1172,14 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
   error surface via TugAlert.
 
 **Tasks:**
-- [ ] Ambiguous rows excluded from default selection with the badge explaining why.
+- [ ] Ambiguous and shared rows excluded from default selection with the badge explaining
+      why ([P15], #snapshot-composition).
 - [ ] Selection state reconciles when a snapshot removes files (committed elsewhere).
+- [ ] The commit-message input is an editing surface: register the substrate responders
+      (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) via the standard responder hook
+      (registration in `useLayoutEffect` per [L03]), or compose an existing Tug input
+      component that already carries them — otherwise Cmd-A/C/X/V/Z go dead under the
+      capture-phase preventDefault above the card.
 
 **Tests:**
 - [ ] Rust integration: verb commits exactly the listed files in a temp repo; refuses empty
