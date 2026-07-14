@@ -2313,6 +2313,7 @@ dependencies = [
  "tugcast-core",
  "tugcore",
  "tuglog",
+ "tugutil-core",
  "uuid",
 ]
 

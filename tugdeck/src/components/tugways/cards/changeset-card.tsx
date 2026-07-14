@@ -47,7 +47,13 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CircleCheck, CircleDashed, GitCompareArrows } from "lucide-react";
+import {
+  Bot,
+  CircleCheck,
+  CircleDashed,
+  GitCompareArrows,
+  SquareArrowOutUpRight,
+} from "lucide-react";
 
 import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
@@ -66,22 +72,35 @@ import {
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { TugInput } from "@/components/tugways/tug-input";
+import { TugTextarea } from "@/components/tugways/tug-textarea";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
-import { useDiffSheet } from "./diff-sheet";
+import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
+import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
+import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
 import { useChangesetAll } from "@/lib/changeset-all-store";
 import {
   useChangesetCommit,
   useChangesetGitInit,
-  useChangesetSummarize,
 } from "@/lib/changeset-verb-store";
-import { getChangesetDiffStore } from "@/lib/changeset-diff-store";
-import type { GitDiffScope } from "@/lib/git-diff-store";
+import { useChangesetDraft } from "@/lib/changeset-draft-store";
+import {
+  getEntryDiffStore,
+  sweepEntryDiffStores,
+} from "@/lib/changeset-diff-store";
+import {
+  diffDescriptorKey,
+  type DiffDescriptor,
+  type GitDiffFile,
+  type GitDiffSnapshot,
+} from "@/lib/git-diff-store";
 import {
   cardSessionBindingStore,
   type CardSessionBinding,
 } from "@/lib/card-session-binding-store";
 import type {
+  ChangesetDraft,
   ChangesetFile,
   DashChangesetEntry,
   ProjectChangeset,
@@ -402,8 +421,8 @@ function hasHeadDiff(gitStatus: string): boolean {
   return !gitStatus.startsWith("??");
 }
 
-/** The per-file diff affordance — opens the diff sheet scoped to one path. */
-function FileDiffButton({ path, onDiff }: { path: string; onDiff: () => void }) {
+/** The per-file diff affordance — toggles the file's diff inline under the row. */
+function FileDiffButton({ path, onToggle }: { path: string; onToggle: () => void }) {
   return (
     <TugPushButton
       subtype="icon"
@@ -415,8 +434,174 @@ function FileDiffButton({ path, onDiff }: { path: string; onDiff: () => void }) 
       aria-label={`Show diff for ${path}`}
       data-testid="changeset-file-diff"
       data-path={path}
-      onClick={onDiff}
+      onClick={onToggle}
     />
+  );
+}
+
+/** Pop a diff descriptor out into its own Diff card ([P20]). */
+function PopOutDiffButton({
+  descriptor,
+  label,
+}: {
+  descriptor: DiffDescriptor;
+  label: string;
+}) {
+  return (
+    <TugPushButton
+      subtype="icon"
+      icon={<SquareArrowOutUpRight size={12} />}
+      size="2xs"
+      emphasis="ghost"
+      role="action"
+      title="Open diff in a card"
+      aria-label={label}
+      data-testid="changeset-diff-popout"
+      onClick={() =>
+        dispatchAction({ action: TUG_ACTIONS.OPEN_DIFF, descriptor })
+      }
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Diff descriptors + inline diff sourcing
+// ---------------------------------------------------------------------------
+
+const DIFF_IDLE_SNAPSHOT: GitDiffSnapshot = {
+  phase: "idle",
+  requestId: null,
+  payload: null,
+  error: null,
+};
+
+const DIFF_NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
+/**
+ * The diff descriptor for a whole entry: `git diff HEAD` scoped to the
+ * entry's diffable paths for sessions/unattributed (head flavor), or the
+ * dash range (rounds + worktree dirt) for dashes. `null` when there is
+ * nothing to diff (a non-repo project, or no file has a HEAD side).
+ */
+function entryDiffDescriptor(item: ChangesetItem): DiffDescriptor | null {
+  const root = item.project.project_dir;
+  if (item.kind === "dash") {
+    return {
+      kind: "range",
+      root,
+      worktree: item.entry.worktree,
+      base: item.entry.base,
+      branch: item.entry.owner_id,
+    };
+  }
+  if (item.project.no_repo) return null;
+  const files = item.kind === "unattributed" ? item.files : item.entry.files;
+  const paths = files
+    .filter((file) => hasHeadDiff(file.git_status))
+    .map((file) => file.path);
+  if (paths.length === 0) return null;
+  return { kind: "head", root, paths };
+}
+
+/**
+ * The pop-out descriptor for one file. Head entries pop out just that path;
+ * a dash file has no HEAD side, so it pops out the whole dash range (the
+ * server can't scope a range diff to one path).
+ */
+function fileDiffDescriptor(item: ChangesetItem, file: GitDiffFileRef): DiffDescriptor | null {
+  if (item.kind === "dash") return entryDiffDescriptor(item);
+  if (item.project.no_repo || !hasHeadDiff(file.git_status)) return null;
+  return { kind: "head", root: item.project.project_dir, paths: [file.path] };
+}
+
+/** The minimal file shape both `ChangesetFile` and `UnattributedFile` satisfy. */
+interface GitDiffFileRef {
+  path: string;
+  git_status: string;
+}
+
+/**
+ * The entry's inline diff store + snapshot. One `GitDiffStore` per entry over
+ * the shared unfiltered GIT_DIFF feed; `ensureRequested` fires the entry's
+ * descriptor once per distinct scope (a superseding scope re-requests).
+ */
+function useEntryDiff(item: ChangesetItem): {
+  snapshot: GitDiffSnapshot;
+  ensureRequested: () => void;
+} {
+  const store = getEntryDiffStore(item.id);
+  const descriptor = useMemo(() => entryDiffDescriptor(item), [item]);
+  const requestedKeyRef = useRef<string | null>(null);
+  const snapshot = useSyncExternalStore(
+    store?.subscribe ?? DIFF_NOOP_SUBSCRIBE,
+    store?.getSnapshot ?? (() => DIFF_IDLE_SNAPSHOT),
+  );
+  const ensureRequested = useCallback(() => {
+    if (store === null || descriptor === null) return;
+    const key = diffDescriptorKey(descriptor);
+    if (requestedKeyRef.current === key) return;
+    requestedKeyRef.current = key;
+    store.requestDiff(descriptor);
+  }, [store, descriptor]);
+  return { snapshot, ensureRequested };
+}
+
+/** One file's diff rendered inline under its row, from the entry snapshot. */
+function InlineFileDiff({
+  snapshot,
+  path,
+  popOut,
+}: {
+  snapshot: GitDiffSnapshot;
+  path: string;
+  popOut: DiffDescriptor | null;
+}) {
+  let inner: React.ReactNode;
+  if (snapshot.phase === "error") {
+    inner = (
+      <p className="changeset-inline-diff-notice" role="alert">
+        {snapshot.error ?? "Couldn't load the diff."}
+      </p>
+    );
+  } else if (snapshot.phase === "loading" || snapshot.payload === null) {
+    inner = (
+      <p className="changeset-inline-diff-notice" role="status">
+        Loading diff…
+      </p>
+    );
+  } else {
+    const file = snapshot.payload.files.find((f) => f.path === path);
+    if (file === undefined) {
+      inner = (
+        <p className="changeset-inline-diff-notice" role="status">
+          No diff for this file.
+        </p>
+      );
+    } else if (file.binary) {
+      inner = (
+        <p className="changeset-inline-diff-notice" role="note">
+          Binary file — no textual diff.
+        </p>
+      );
+    } else {
+      inner = (
+        <DiffBlock
+          data={{ source: "unified", text: file.unified, filePath: file.path }}
+          suppressHeader
+          className="changeset-inline-diff-block"
+        />
+      );
+    }
+  }
+  return (
+    <div className="changeset-inline-diff" data-testid="changeset-inline-diff" data-path={path}>
+      {popOut !== null ? (
+        <div className="changeset-inline-diff-actions">
+          <PopOutDiffButton descriptor={popOut} label={`Open diff for ${path} in a card`} />
+        </div>
+      ) : null}
+      {inner}
+    </div>
   );
 }
 
@@ -458,12 +643,12 @@ interface RowSelection {
 function FileRow({
   file,
   projectRoot,
-  onDiff,
+  onToggleDiff,
   selection,
 }: {
   file: ChangesetFile;
   projectRoot: string;
-  onDiff?: () => void;
+  onToggleDiff?: () => void;
   selection?: RowSelection;
 }) {
   return (
@@ -492,7 +677,9 @@ function FileRow({
       <span className="changeset-file-provenance">
         {file.origin === "dash" ? file.op : `${file.op} · ${file.origin}`}
       </span>
-      {onDiff !== undefined && <FileDiffButton path={file.path} onDiff={onDiff} />}
+      {onToggleDiff !== undefined && (
+        <FileDiffButton path={file.path} onToggle={onToggleDiff} />
+      )}
     </div>
   );
 }
@@ -549,6 +736,72 @@ function NonRepoBody({ projectDir }: { projectDir: string }) {
   );
 }
 
+/** The maintained draft for an entry (Spec S10): session/dash on the entry,
+ *  unattributed on the project. */
+function entryDraft(item: ChangesetItem): ChangesetDraft | undefined {
+  return item.kind === "unattributed"
+    ? item.project.unattributed_draft
+    : item.entry.draft;
+}
+
+/**
+ * The maintained commit-message draft, rendered as a mini-transcript ([P21],
+ * [P24]) — a Bot row over the draft as markdown, a thinking indicator while
+ * the engine regenerates, a subtle "updating…" freshness state, a copy
+ * affordance, and an error hint (a scribe failure never blanks the draft).
+ * Borrows the `side-question-overlay.tsx` styling.
+ */
+function DraftPanel({ text, drafting, error }: {
+  text: string | null;
+  drafting: boolean;
+  error: string | null;
+}) {
+  if (text === null && !drafting) return null;
+  return (
+    <div className="changeset-draft" data-testid="changeset-draft" data-drafting={drafting ? "" : undefined}>
+      <div className="changeset-draft-row">
+        <span className="changeset-draft-avatar" aria-hidden>
+          <Bot size={14} strokeWidth={2} />
+        </span>
+        <div className="changeset-draft-body">
+          {text !== null ? (
+            <TugMarkdownBlock initialText={text} className="changeset-draft-markdown" />
+          ) : (
+            <TugProgressIndicator
+              variant="wave"
+              state="running"
+              role="inherit"
+              size={12}
+              aria-label="Drafting…"
+            />
+          )}
+          <div className="changeset-draft-foot">
+            {drafting ? (
+              <span className="changeset-draft-freshness" role="status">
+                updating…
+              </span>
+            ) : null}
+            {error !== null ? (
+              <span className="changeset-draft-error" role="alert">
+                {error}
+              </span>
+            ) : null}
+            {text !== null ? (
+              <BlockCopyButton
+                subtype="icon"
+                emphasis="ghost"
+                size="2xs"
+                aria-label="Copy the draft message"
+                getText={() => text}
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** A file the entry can commit: its path plus its default selection. */
 interface SelectableFile {
   path: string;
@@ -557,14 +810,16 @@ interface SelectableFile {
 }
 
 /**
- * The expanded body of one entry — its file list (or clean/init state) plus
- * the commit flow ([P15]).
+ * The expanded body of one entry — its file list (or clean/init state), the
+ * inline diff affordances ([P20]), and the commit flow ([P15]).
  *
- * `onDiff` opens the shared diff sheet scoped to a pathspec within the
- * entry's project. It applies to session and unattributed entries (working
- * tree vs HEAD) — a dash entry's files are commits past its base, which a
- * `git diff HEAD` in the project dir cannot show, so dashes get no diff
- * affordance. Untracked files likewise (no HEAD side).
+ * Diffs render inline: a file's diff button toggles its `DiffBlock` under the
+ * row; the entry-level action toggles the whole `TugDiffDocument` in the body.
+ * Both source from one per-entry `GitDiffStore` — head flavor (`git diff HEAD`
+ * scoped to the entry's diffable paths) for sessions/unattributed, the dash
+ * range (rounds + worktree dirt) for dashes, which now get real diffs too.
+ * Each diff carries an "open as card" pop-out (`OPEN_DIFF`). Untracked files
+ * (no HEAD side) get no per-file diff.
  *
  * The same entries get the commit flow: per-file checkboxes (ambiguous /
  * shared rows deselected by default — explicit opt-in), a message field
@@ -576,16 +831,35 @@ interface SelectableFile {
  */
 function EntryBody({
   item,
-  onDiff,
   onError,
-  onInfo,
 }: {
   item: ChangesetItem;
-  onDiff?: (scope: GitDiffScope) => void;
   onError?: (title: string, message: string) => void;
-  onInfo?: (title: string, message: string) => void;
 }) {
   const projectRoot = item.project.project_dir;
+
+  // Inline diff state ([P20]): which file rows are expanded, whether the
+  // whole-entry document is expanded, and the shared per-entry diff source.
+  const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
+  const [docExpanded, setDocExpanded] = useState(false);
+  const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
+  const entryDescriptor = useMemo(() => entryDiffDescriptor(item), [item]);
+  const toggleFileDiff = useCallback(
+    (path: string) => {
+      ensureRequested();
+      setExpandedFiles((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
+    },
+    [ensureRequested],
+  );
+  const toggleDocDiff = useCallback(() => {
+    ensureRequested();
+    setDocExpanded((v) => !v);
+  }, [ensureRequested]);
 
   // Commit-flow state. Hooks run for every entry kind (dash bodies just
   // never render the controls).
@@ -604,14 +878,24 @@ function EntryBody({
 
   const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [message, setMessage] = useState("");
+  // The commit-message field is pinned once the user edits it, so a newer
+  // draft never clobbers their text ([P24]); a landed commit unpins it.
+  const [pinned, setPinned] = useState(false);
   const { phase, error, sha, receipt, commit, clear } = useChangesetCommit(item.id);
 
-  // Scribe round trips ([P11]): "Draft message" fills the commit-message
-  // field; "Summarize" presents its text as an info sheet.
-  const draft = useChangesetSummarize(item.id, "commit_message");
-  const summary = useChangesetSummarize(item.id, "summary");
   const ownerKind = item.kind;
   const ownerId = item.kind === "unattributed" ? "" : item.entry.owner_id;
+
+  // The maintained draft ([P21]): the live streamed text while regenerating,
+  // else the persisted snapshot draft. `null` when there is none yet.
+  const draftOverlay = useChangesetDraft(projectRoot, ownerKind, ownerId);
+  const snapshotDraft = entryDraft(item);
+  const draftText =
+    draftOverlay.text.length > 0
+      ? draftOverlay.text
+      : (snapshotDraft?.message ?? null);
+  const drafting = draftOverlay.phase === "drafting";
+  const draftError = draftOverlay.phase === "error" ? draftOverlay.detail : null;
 
   const selectSender = (path: string): string => `${item.id}|${path}`;
   const { ResponderScope: CommitScope, responderRef: commitRef } = useResponderForm({
@@ -636,85 +920,108 @@ function EntryBody({
     clear();
   }, [phase, error, onError, clear]);
 
-  // A landed commit clears the drafted message; the receipt panel stays up
-  // until dismissed (or until the next commit round).
+  // A landed commit clears the field and unpins it so the next draft flows in;
+  // the receipt panel stays up until dismissed (or the next commit round).
   useEffect(() => {
-    if (phase === "done") setMessage("");
+    if (phase === "done") {
+      setMessage("");
+      setPinned(false);
+    }
   }, [phase]);
 
-  // The drafted message lands in the message field; the summary lands in an
-  // info sheet. Both scribe states clear on consumption so the buttons are
-  // immediately reusable; failures surface like commit failures.
-  const draftClear = draft.clear;
-  const summaryClear = summary.clear;
+  // While the field is pristine, it follows the maintained draft.
   useEffect(() => {
-    if (draft.phase === "done" && draft.text !== null) {
-      setMessage(draft.text);
-      draftClear();
-    } else if (draft.phase === "error" && draft.error !== null) {
-      onError?.("Couldn't Draft a Message", draft.error);
-      draftClear();
-    }
-  }, [draft.phase, draft.text, draft.error, draftClear, onError]);
-  useEffect(() => {
-    if (summary.phase === "done" && summary.text !== null) {
-      onInfo?.("Summary", summary.text);
-      summaryClear();
-    } else if (summary.phase === "error" && summary.error !== null) {
-      onError?.("Couldn't Summarize", summary.error);
-      summaryClear();
-    }
-  }, [summary.phase, summary.text, summary.error, summaryClear, onError, onInfo]);
+    if (!pinned) setMessage(draftText ?? "");
+  }, [pinned, draftText]);
+
+  const useLatestDraft = useCallback(() => {
+    setMessage(draftText ?? "");
+    setPinned(false);
+  }, [draftText]);
 
   if (item.kind === "session" && item.project.no_repo) {
     return <NonRepoBody projectDir={item.project.project_dir} />;
   }
 
   const files = item.kind === "unattributed" ? null : item.entry.files;
-  const diffScoped =
-    item.kind === "dash" || onDiff === undefined
-      ? undefined
-      : (paths: string[]) => onDiff({ root: projectRoot, paths });
 
-  // The entry's action row: Summarize (all of the entry's files) plus a
-  // whole-changeset diff when more than one file has a HEAD side.
-  const entryActionsRow = (diffablePaths: string[], allPaths: string[]) => {
-    const summarizeButton =
-      selectable.length === 0 ? null : (
-        <TugPushButton
-          emphasis="ghost"
-          role="action"
-          size="2xs"
-          disabled={summary.phase === "pending"}
-          widthStabilize={{ alternateLabel: "Summarizing…" }}
-          onClick={() =>
-            summary.summarize({ projectDir: projectRoot, ownerKind, ownerId, files: allPaths })
-          }
-          data-testid="changeset-entry-summarize"
-        >
-          {summary.phase === "pending" ? "Summarizing…" : "Summarize"}
-        </TugPushButton>
-      );
+  // How many files the whole-entry diff covers (dash: all rows; head: the
+  // files with a HEAD side).
+  const diffFileCount =
+    entryDescriptor === null
+      ? 0
+      : entryDescriptor.kind === "range"
+        ? (files?.length ?? 0)
+        : (entryDescriptor.paths?.length ?? 0);
+
+  /** Whether a file row shows a per-file diff toggle. */
+  const showFileDiff = (gitStatus: string): boolean =>
+    entryDescriptor !== null && (item.kind === "dash" || hasHeadDiff(gitStatus));
+
+  // The entry's action row: a whole-changeset inline diff toggle when the
+  // entry has anything to diff. (Summarize/Draft retired — the draft is
+  // maintained automatically, [P21].)
+  const entryActionsRow = () => {
     const diffButton =
-      diffScoped !== undefined && diffablePaths.length > 1 ? (
+      entryDescriptor !== null && diffFileCount > 1 ? (
         <TugPushButton
           emphasis="ghost"
           role="action"
           size="2xs"
-          onClick={() => diffScoped(diffablePaths)}
+          onClick={toggleDocDiff}
           data-testid="changeset-entry-diff"
         >
-          Diff {diffablePaths.length} files
+          {docExpanded ? "Hide diff" : `Diff ${diffFileCount} files`}
         </TugPushButton>
       ) : null;
-    if (summarizeButton === null && diffButton === null) return null;
-    return (
-      <div className="changeset-entry-actions">
-        {summarizeButton}
-        {diffButton}
-      </div>
-    );
+    if (diffButton === null) return null;
+    return <div className="changeset-entry-actions">{diffButton}</div>;
   };
+
+  // The whole-entry diff document, rendered inline when toggled on.
+  const entryDocInline =
+    !docExpanded || entryDescriptor === null ? null : diffSnapshot.phase ===
+      "error" ? (
+      <p className="changeset-inline-diff-notice" role="alert">
+        {diffSnapshot.error ?? "Couldn't load the diff."}
+      </p>
+    ) : diffSnapshot.phase === "loading" || diffSnapshot.payload === null ? (
+      <p className="changeset-inline-diff-notice" role="status">
+        Loading diff…
+      </p>
+    ) : diffSnapshot.payload.files.length === 0 ? (
+      <p className="changeset-inline-diff-notice" role="status">
+        No changes to show.
+      </p>
+    ) : (
+      <TugDiffDocument
+        payload={diffSnapshot.payload}
+        className="changeset-entry-diff-doc"
+        headerActions={
+          <PopOutDiffButton
+            descriptor={entryDescriptor}
+            label="Open the whole diff in a card"
+          />
+        }
+        fileTrailing={(file) => {
+          // The document's file is a diff-payload `GitDiffFile` (already
+          // has a HEAD side): head entries pop out that path; a dash pops
+          // out its whole range (no per-file range scoping server-side).
+          const descriptor: DiffDescriptor | null =
+            item.kind === "dash"
+              ? entryDescriptor
+              : item.project.no_repo
+                ? null
+                : { kind: "head", root: projectRoot, paths: [file.path] };
+          return descriptor !== null ? (
+            <PopOutDiffButton
+              descriptor={descriptor}
+              label={`Open diff for ${file.path} in a card`}
+            />
+          ) : null;
+        }}
+      />
+    );
 
   const rowSelection = (path: string): RowSelection => ({
     senderId: selectSender(path),
@@ -745,57 +1052,57 @@ function EntryBody({
           </div>
         ) : (
           <div className="changeset-commit-row">
-            <TugInput
-              size="sm"
+            <TugTextarea
               placeholder="Commit message"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                setPinned(true);
+              }}
               disabled={phase === "pending"}
+              rows={3}
               aria-label="Commit message"
               data-testid="changeset-commit-message"
+              className="changeset-commit-message"
             />
-            <TugPushButton
-              size="sm"
-              emphasis="ghost"
-              role="action"
-              disabled={draft.phase === "pending" || selectedPaths.length === 0}
-              widthStabilize={{ alternateLabel: "Drafting…" }}
-              onClick={() =>
-                draft.summarize({
-                  projectDir: projectRoot,
-                  ownerKind,
-                  ownerId,
-                  files: selectedPaths,
-                })
-              }
-              data-testid="changeset-draft-message"
-            >
-              {draft.phase === "pending" ? "Drafting…" : "Draft"}
-            </TugPushButton>
-            <TugPushButton
-              size="sm"
-              emphasis="outlined"
-              role="accent"
-              disabled={
-                phase === "pending" ||
-                selectedPaths.length === 0 ||
-                message.trim().length === 0
-              }
-              widthStabilize={{ alternateLabel: "Committing…" }}
-              onClick={() => commit(projectRoot, selectedPaths, message.trim())}
-              data-testid="changeset-commit-button"
-            >
-              {phase === "pending" ? "Committing…" : "Commit"}
-            </TugPushButton>
+            <div className="changeset-commit-actions">
+              {pinned && draftText !== null && draftText !== message ? (
+                <TugPushButton
+                  size="sm"
+                  emphasis="ghost"
+                  role="action"
+                  onClick={useLatestDraft}
+                  data-testid="changeset-use-latest-draft"
+                >
+                  Use latest draft
+                </TugPushButton>
+              ) : null}
+              <TugPushButton
+                size="sm"
+                emphasis="outlined"
+                role="accent"
+                disabled={
+                  phase === "pending" ||
+                  selectedPaths.length === 0 ||
+                  message.trim().length === 0
+                }
+                widthStabilize={{ alternateLabel: "Committing…" }}
+                onClick={() => commit(projectRoot, selectedPaths, message.trim())}
+                data-testid="changeset-commit-button"
+              >
+                {phase === "pending" ? "Committing…" : "Commit"}
+              </TugPushButton>
+            </div>
           </div>
         )}
       </div>
     );
 
+  const draftPanel = (
+    <DraftPanel text={draftText} drafting={drafting} error={draftError} />
+  );
+
   if (item.kind === "unattributed") {
-    const diffablePaths = item.files
-      .filter((file) => hasHeadDiff(file.git_status))
-      .map((file) => file.path);
     return (
       <CommitScope>
         <div
@@ -806,31 +1113,45 @@ function EntryBody({
           {item.files.map((file) => {
             const selection = rowSelection(file.path);
             return (
-              <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
-                <FileSelectCheckbox
-                  path={file.path}
-                  senderId={selection.senderId}
-                  selected={selection.selected}
-                  disabled={selection.disabled}
-                />
-                <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
-                  {statusGlyph(file.git_status)}
-                </span>
-                <FilePathLink
-                  path={file.path}
-                  op=""
-                  gitStatus={file.git_status}
-                  projectRoot={projectRoot}
-                />
-                {diffScoped !== undefined && hasHeadDiff(file.git_status) && (
-                  <span className="changeset-file-trailing">
-                    <FileDiffButton path={file.path} onDiff={() => diffScoped([file.path])} />
+              <React.Fragment key={file.path}>
+                <div className="changeset-file-row" data-testid="changeset-file">
+                  <FileSelectCheckbox
+                    path={file.path}
+                    senderId={selection.senderId}
+                    selected={selection.selected}
+                    disabled={selection.disabled}
+                  />
+                  <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
+                    {statusGlyph(file.git_status)}
                   </span>
+                  <FilePathLink
+                    path={file.path}
+                    op=""
+                    gitStatus={file.git_status}
+                    projectRoot={projectRoot}
+                  />
+                  {showFileDiff(file.git_status) && (
+                    <span className="changeset-file-trailing">
+                      <FileDiffButton
+                        path={file.path}
+                        onToggle={() => toggleFileDiff(file.path)}
+                      />
+                    </span>
+                  )}
+                </div>
+                {expandedFiles.has(file.path) && (
+                  <InlineFileDiff
+                    snapshot={diffSnapshot}
+                    path={file.path}
+                    popOut={fileDiffDescriptor(item, file)}
+                  />
                 )}
-              </div>
+              </React.Fragment>
             );
           })}
-          {entryActionsRow(diffablePaths, item.files.map((file) => file.path))}
+          {entryActionsRow()}
+          {entryDocInline}
+          {draftPanel}
           {commitControls}
         </div>
       </CommitScope>
@@ -846,9 +1167,6 @@ function EntryBody({
     );
   }
 
-  const diffablePaths = files
-    .filter((file) => hasHeadDiff(file.git_status))
-    .map((file) => file.path);
   return (
     <CommitScope>
       <div
@@ -856,19 +1174,29 @@ function EntryBody({
         className="changeset-file-list"
       >
         {files.map((file) => (
-          <FileRow
-            key={file.path}
-            file={file}
-            projectRoot={projectRoot}
-            onDiff={
-              diffScoped !== undefined && hasHeadDiff(file.git_status)
-                ? () => diffScoped([file.path])
-                : undefined
-            }
-            selection={item.kind === "session" ? rowSelection(file.path) : undefined}
-          />
+          <React.Fragment key={file.path}>
+            <FileRow
+              file={file}
+              projectRoot={projectRoot}
+              onToggleDiff={
+                showFileDiff(file.git_status)
+                  ? () => toggleFileDiff(file.path)
+                  : undefined
+              }
+              selection={item.kind === "session" ? rowSelection(file.path) : undefined}
+            />
+            {expandedFiles.has(file.path) && (
+              <InlineFileDiff
+                snapshot={diffSnapshot}
+                path={file.path}
+                popOut={fileDiffDescriptor(item, file)}
+              />
+            )}
+          </React.Fragment>
         ))}
-        {entryActionsRow(diffablePaths, files.map((file) => file.path))}
+        {entryActionsRow()}
+        {entryDocInline}
+        {draftPanel}
         {commitControls}
       </div>
     </CommitScope>
@@ -964,17 +1292,10 @@ export function ChangesetCardContent() {
   const bindings = useOpenBindings();
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // The shared diff sheet, hosted by this card. The store is the app-level
-  // changeset diff singleton (unfiltered — every project flows through it);
-  // each open names its project via the scope's `root`.
-  const { showSheet, renderSheet } = useTugSheet();
-  const { openDiffSheet } = useDiffSheet({
-    gitDiffStore: getChangesetDiffStore(),
-    showSheet,
-  });
-
   // Verb failures (commit, scribe) and scribe summaries surface as a
-  // pane-modal TugAlert sheet.
+  // pane-modal TugAlert sheet. Diffs render inline in the entries ([P20]),
+  // not through a sheet — the sheet host stays only for these alerts.
+  const { showSheet, renderSheet } = useTugSheet();
   const presentNotice = useCallback(
     (title: string, message: string) => {
       void presentAlertSheet(showSheet, { title, message });
@@ -983,6 +1304,11 @@ export function ChangesetCardContent() {
   );
 
   const items = useMemo(() => buildItems(data, bindings), [data, bindings]);
+
+  // Drop per-entry inline-diff stores whose entries have left the snapshot.
+  useEffect(() => {
+    sweepEntryDiffStores(new Set(items.map((item) => item.id)));
+  }, [items]);
 
   // Controlled accordion ([L11]): the control dispatches toggleSection; the
   // form binding lands it in state. Entries open themselves the first time
@@ -1129,12 +1455,7 @@ export function ChangesetCardContent() {
                 data-entry-id={item.id}
                 data-project-dir={item.project.project_dir}
               >
-                <EntryBody
-                  item={item}
-                  onDiff={openDiffSheet}
-                  onError={presentNotice}
-                  onInfo={presentNotice}
-                />
+                <EntryBody item={item} onError={presentNotice} />
               </TugAccordionItem>
             ))}
           </TugAccordion>

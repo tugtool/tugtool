@@ -502,6 +502,15 @@ export const TUG_ACTIONS = {
   REVERT_TO_SAVED:        "revert-to-saved",
   RELOAD_FROM_DISK:       "reload-from-disk",
   OPEN_FILE:              "open-file",
+  // OPEN_DIFF:              payload — `{ descriptor: DiffDescriptor }` (a
+  //                         head or range diff, `lib/git-diff-store.ts`).
+  //                         Open the diff in a Diff card: an existing card
+  //                         showing the same descriptor (by
+  //                         `diffDescriptorKey`) is activated; otherwise a
+  //                         new Diff card is created seeded with the
+  //                         descriptor. Registry handler in
+  //                         `action-dispatch.ts`; both call `openDiffInCard`.
+  OPEN_DIFF:              "open-diff",
   REVEAL_IN_FINDER:       "reveal-in-finder",
 
   // ---- Dev session management ----

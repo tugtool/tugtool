@@ -1,0 +1,133 @@
+/* @tug-pairings:
+   - --tug7-element-tone-text-normal-success-rest  (added: status "A", +N stat)
+   - --tug7-element-tone-text-normal-danger-rest   (deleted: status "D", −M stat)
+   - --tug7-element-tone-text-normal-caution-rest  (modified: status "M")
+   - --tug7-element-tone-text-normal-accent-rest   (renamed: status "R")
+
+   Text-color-only (no background painting): the document surface and foreground
+   come from the composing host (sheet / card / Text card); per-file hunks come
+   from the composed DiffBlock; the accordion from TugAccordion; buttons and the
+   view toggle from TugPushButton / TugChoiceGroup. Status letters and the +/−
+   stat tint via the tone *text* tokens above, which layer on the inherited host
+   foreground — so no @tug-renders-on ([L16]). */
+
+.tug-diff-document {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Header: label + "N files changed +X −Y" summary on the left, the view
+   toggle + Expand/Collapse All + host actions (Refresh) on the right. */
+.tug-diff-document-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.tug-diff-document-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.tug-diff-document-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.tug-diff-document-summary {
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.tug-diff-document-binary-note {
+  margin: 0;
+  padding: 0.5rem 0;
+  font-size: 0.875rem;
+  opacity: 0.6;
+}
+
+/* One accordion item per file. The trigger is a single row: status badge,
+   path (grows + truncates), the +N −M stat, then an optional trailing
+   affordance (the pop-out). */
+.tug-diff-document-file-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.8125rem;
+}
+
+.tug-diff-document-file-status {
+  flex: 0 0 auto;
+  width: 1.1em;
+  text-align: center;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+.tug-diff-document-file-status[data-status="added"] {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.tug-diff-document-file-status[data-status="deleted"] {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.tug-diff-document-file-status[data-status="modified"] {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+.tug-diff-document-file-status[data-status="renamed"] {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+.tug-diff-document-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.tug-diff-document-file-stat {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tug-diff-document-file-trailing {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tug-diff-document-stat-add {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.tug-diff-document-stat-remove {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.tug-diff-document-stat-binary {
+  opacity: 0.6;
+}
+
+/* The per-file DiffBlock sits flush inside its accordion item — the item
+   already provides the boundary, so drop DiffBlock's standalone frame to
+   avoid a double border. */
+.tug-diff-document-file-diff.tugx-diff {
+  border: 0;
+  border-radius: 0;
+}
+
+/* Long code lines scroll horizontally within their hunk rather than being
+   clipped by the document column. */
+.tug-diff-document-file-diff .tugx-diff-hunk-rows {
+  overflow-x: auto;
+}

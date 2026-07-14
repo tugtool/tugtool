@@ -9,7 +9,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  type DiffDescriptor,
   type GitDiffFile,
+  diffDescriptorKey,
   diffStatusLabel,
   diffStatusLetter,
   diffSummaryLine,
@@ -131,5 +133,33 @@ describe("parseGitDiffPayload", () => {
     expect(parseGitDiffPayload("nope")).toBeNull();
     expect(parseGitDiffPayload({ files: [] })).toBeNull(); // no request_id
     expect(parseGitDiffPayload({ request_id: "x" })).toBeNull(); // no files
+  });
+});
+
+describe("diffDescriptorKey", () => {
+  test("range keys are stable and distinct per (root, worktree, base, branch)", () => {
+    const a: DiffDescriptor = {
+      kind: "range",
+      root: "/repo",
+      worktree: ".tugtree/tugdash__demo",
+      base: "main",
+      branch: "tugdash/demo",
+    };
+    expect(diffDescriptorKey(a)).toBe(
+      "range:/repo:.tugtree/tugdash__demo:main:tugdash/demo",
+    );
+    const b: DiffDescriptor = { ...a, branch: "tugdash/other" };
+    expect(diffDescriptorKey(b)).not.toBe(diffDescriptorKey(a));
+  });
+
+  test("head keys sort paths so order does not perturb identity", () => {
+    const a: DiffDescriptor = { kind: "head", root: "/repo", paths: ["b.ts", "a.ts"] };
+    const b: DiffDescriptor = { kind: "head", root: "/repo", paths: ["a.ts", "b.ts"] };
+    expect(diffDescriptorKey(a)).toBe(diffDescriptorKey(b));
+    expect(diffDescriptorKey(a)).toBe("head:/repo:a.ts\nb.ts");
+  });
+
+  test("whole-tree head key omits paths", () => {
+    expect(diffDescriptorKey({ kind: "head" })).toBe("head::");
   });
 });

@@ -13,7 +13,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use tugcast_core::types::{ChangesetEntry, ChangesetFile, ChangesetSnapshot, UnattributedFile};
+use tugcast_core::types::{
+    ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, UnattributedFile,
+};
 
 use super::attribution::{parse_worktree_states, repo_root_for};
 use super::git::{fetch_git_status, fetch_head_message, parse_porcelain_v2};
@@ -173,9 +175,49 @@ pub(crate) async fn compose_snapshot(
             display_name: agg.display_name,
             live: agg.live,
             files: agg.files.into_values().collect(),
+            draft: None,
         })
         .collect();
     changesets.extend(dash_entries(&repo_root).await);
+
+    // Attach maintained drafts (Spec S10) to eligible entries: a session
+    // entry with files, a dash with rounds or worktree dirt. The engine only
+    // persists drafts for eligible entries, but gating here keeps a stale
+    // draft off an entry that has since gone clean.
+    if let Some(ledger) = ledger {
+        if let Ok(drafts) = ledger.changeset_drafts_for_project(&project_dir.to_string_lossy()) {
+            let by_owner: HashMap<(&str, &str), &crate::session_ledger::ChangesetDraftRow> = drafts
+                .iter()
+                .map(|d| ((d.owner_kind.as_str(), d.owner_id.as_str()), d))
+                .collect();
+            for entry in &mut changesets {
+                match entry {
+                    ChangesetEntry::Session {
+                        owner_id,
+                        files,
+                        draft,
+                        ..
+                    } if !files.is_empty() => {
+                        *draft = by_owner
+                            .get(&("session", owner_id.as_str()))
+                            .map(|row| draft_from_row(row));
+                    }
+                    ChangesetEntry::Dash {
+                        owner_id,
+                        rounds,
+                        worktree_dirty,
+                        draft,
+                        ..
+                    } if *rounds > 0 || *worktree_dirty => {
+                        *draft = by_owner
+                            .get(&("dash", owner_id.as_str()))
+                            .map(|row| draft_from_row(row));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 
     Some(ChangesetSnapshot {
         workspace_key: String::new(),
@@ -233,6 +275,7 @@ pub(crate) fn apply_session_rows(snapshot: &mut ChangesetSnapshot, rows: &[Sessi
             display_name: session_row_title(row),
             live: true,
             files: Vec::new(),
+            draft: None,
         });
     }
 
@@ -291,6 +334,17 @@ fn session_display_name(pfe: &ProjectFileEvent) -> String {
     }
     let id = &pfe.event.tug_session_id;
     id.chars().take(8).collect()
+}
+
+/// Project a persisted draft row onto its wire shape (Spec S10).
+pub(crate) fn draft_from_row(
+    row: &crate::session_ledger::ChangesetDraftRow,
+) -> ChangesetDraft {
+    ChangesetDraft {
+        fingerprint: row.fingerprint.clone(),
+        message: row.message.clone(),
+        updated_at: row.updated_at,
+    }
 }
 
 fn repo_relative(repo_root: &Path, file_path: &str) -> String {
@@ -374,6 +428,7 @@ async fn dash_entries(repo_root: &Path) -> Vec<ChangesetEntry> {
             worktree: worktree_rel,
             worktree_dirty,
             files,
+            draft: None,
         });
     }
     entries
@@ -602,6 +657,7 @@ mod tests {
             display_name,
             live,
             files,
+            ..
         } = &snapshot.changesets[0]
         else {
             panic!("expected session entry");
@@ -622,6 +678,7 @@ mod tests {
             display_name,
             live,
             files,
+            ..
         } = &snapshot.changesets[1]
         else {
             panic!("expected session entry");
@@ -662,6 +719,7 @@ mod tests {
             worktree,
             worktree_dirty,
             files,
+            ..
         } = &snapshot.changesets[0]
         else {
             panic!("expected dash entry");
@@ -728,12 +786,14 @@ mod tests {
                     worktree: ".tugtree/tugdash__demo".to_owned(),
                     worktree_dirty: false,
                     files: Vec::new(),
+                    draft: None,
                 },
                 ChangesetEntry::Session {
                     owner_id: "sess-writer".to_owned(),
                     display_name: "sess-wri".to_owned(),
                     live: false,
                     files: Vec::new(),
+                    draft: None,
                 },
             ],
             unattributed: Vec::new(),

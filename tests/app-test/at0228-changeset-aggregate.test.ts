@@ -224,13 +224,12 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
 
         // (3) Diff click: the modified tracked file's row carries the diff
         // affordance (the untracked file's must not — no HEAD side), and
-        // clicking it opens the diff sheet scoped to exactly that file:
-        // other.txt is also modified but excluded by the pathspec. This leg
-        // runs before the file-click leg so no Text card can overlap the
-        // changeset pane, and the sheet is dismissed before that leg clicks
-        // the (otherwise sheet-covered) file link.
+        // clicking it reveals that file's diff *inline* under its row ([P20]),
+        // carrying the added line's marker. A second click collapses it so
+        // the later commit leg reads a clean file list.
         const UNATTRIBUTED = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
         const DIFF_BUTTON = `${UNATTRIBUTED} [data-testid="changeset-file-diff"][data-path="committed.txt"]`;
+        const INLINE_DIFF = `${UNATTRIBUTED} [data-testid="changeset-inline-diff"][data-path="committed.txt"]`;
         await app.waitForCondition<boolean>(
           `document.querySelector('${DIFF_BUTTON}') !== null`,
           { timeoutMs: 20_000 },
@@ -244,27 +243,15 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         await app.click(DIFF_BUTTON);
         await app.waitForCondition<boolean>(
           `(function(){
-            var sheet = document.querySelector('.diff-sheet');
-            if (!sheet) return false;
-            var files = sheet.querySelectorAll('[data-testid="diff-file"]');
-            return files.length === 1 &&
-              (files[0].textContent || "").indexOf("committed.txt") !== -1;
+            var d = document.querySelector('${INLINE_DIFF}');
+            return d !== null &&
+              (d.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
           })()`,
           { timeoutMs: 15_000 },
         );
-        // Expand the one file and confirm the hunk carries the added line.
-        await app.click('.diff-sheet [data-testid="diff-expand-all"]');
+        await app.click(DIFF_BUTTON);
         await app.waitForCondition<boolean>(
-          `(function(){
-            var sheet = document.querySelector('.diff-sheet');
-            return sheet !== null &&
-              (sheet.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
-          })()`,
-          { timeoutMs: 8000 },
-        );
-        await app.click('[data-testid="diff-done"]');
-        await app.waitForCondition<boolean>(
-          `document.querySelector('.diff-sheet') === null`,
+          `document.querySelector('${INLINE_DIFF}') === null`,
           { timeoutMs: 8000 },
         );
 

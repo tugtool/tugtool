@@ -502,6 +502,30 @@ pub struct ProjectFileEvent {
     pub owner_live: bool,
 }
 
+/// One maintained changeset draft (Spec S09) — the continuously-current,
+/// convention-correct commit message the draft engine keeps for a changeset
+/// entry. Keyed by `(owner_kind, owner_id, project_dir)`; the `fingerprint`
+/// (a hash of the entry's scoped content) gates regeneration, and `message`
+/// is the draft that rides the aggregate snapshot to the card. Advisory and
+/// regenerable — never cascade-deleted, superseded in place.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChangesetDraftRow {
+    /// `session` | `dash` | `unattributed`.
+    pub owner_kind: String,
+    /// `tug_session_id` | `tugdash/<name>` | `""` (unattributed).
+    pub owner_id: String,
+    /// The checkout root the entry belongs to.
+    pub project_dir: String,
+    /// Hash of the entry's scoped content (Spec S11); an unchanged
+    /// fingerprint means the draft is still current and no scribe runs.
+    pub fingerprint: String,
+    /// The maintained commit message (subject + terse bullets); its body
+    /// doubles as the summary.
+    pub message: String,
+    /// Epoch milliseconds of the last regeneration.
+    pub updated_at: i64,
+}
+
 /// Result of a successful `trash` call.
 ///
 /// `jsonl_moved_to` is `None` when the JSONL file is missing or the
@@ -639,6 +663,20 @@ impl SessionLedger {
         ("at", "INTEGER"),
     ];
 
+    /// The `(name, declared-type)` columns the current `changeset_drafts`
+    /// `CREATE TABLE` defines, in order. Drafts are advisory and
+    /// fully-regenerable (the maintained-draft engine recomposes on the next
+    /// cycle), so a drifted on-disk shape is resolved by the same
+    /// DROP-and-recreate guard as `file_events`, not a migration.
+    const CHANGESET_DRAFTS_SCHEMA: &'static [(&'static str, &'static str)] = &[
+        ("owner_kind", "TEXT"),
+        ("owner_id", "TEXT"),
+        ("project_dir", "TEXT"),
+        ("fingerprint", "TEXT"),
+        ("message", "TEXT"),
+        ("updated_at", "INTEGER"),
+    ];
+
     fn bootstrap_schema(conn: &Connection) -> Result<(), LedgerError> {
         // Self-healing schema guard. `CREATE TABLE IF NOT EXISTS` does
         // not alter a table that already exists, so when a typed
@@ -662,6 +700,11 @@ impl SessionLedger {
         // typed table can opt in with one more call.
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
         Self::rebuild_table_if_schema_drifted(conn, "file_events", Self::FILE_EVENTS_SCHEMA)?;
+        Self::rebuild_table_if_schema_drifted(
+            conn,
+            "changeset_drafts",
+            Self::CHANGESET_DRAFTS_SCHEMA,
+        )?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
         Self::migrate_sessions_add_name_user_set(conn)?;
@@ -995,6 +1038,16 @@ impl SessionLedger {
             BEGIN
                 DELETE FROM file_events WHERE tug_session_id = OLD.session_id;
             END;
+
+            CREATE TABLE IF NOT EXISTS changeset_drafts (
+                owner_kind   TEXT NOT NULL,
+                owner_id     TEXT NOT NULL,
+                project_dir  TEXT NOT NULL,
+                fingerprint  TEXT NOT NULL,
+                message      TEXT NOT NULL,
+                updated_at   INTEGER NOT NULL,
+                PRIMARY KEY (owner_kind, owner_id, project_dir)
+            );
             ",
         )?;
         Ok(())
@@ -2106,6 +2159,68 @@ impl SessionLedger {
         Ok(rows)
     }
 
+    /// Upsert one maintained changeset draft (Spec S09). `INSERT OR REPLACE`
+    /// on the `(owner_kind, owner_id, project_dir)` key — the draft engine
+    /// writes the latest message for an entry, superseding any prior draft.
+    pub fn upsert_changeset_draft(&self, row: &ChangesetDraftRow) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT OR REPLACE INTO changeset_drafts (
+                owner_kind, owner_id, project_dir, fingerprint, message, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                row.owner_kind,
+                row.owner_id,
+                row.project_dir,
+                row.fingerprint,
+                row.message,
+                row.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The maintained draft for one entry, or `None` when none is stored.
+    pub fn changeset_draft(
+        &self,
+        owner_kind: &str,
+        owner_id: &str,
+        project_dir: &str,
+    ) -> Result<Option<ChangesetDraftRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at
+             FROM changeset_drafts
+             WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
+        )?;
+        let mut rows = stmt.query_map(
+            params![owner_kind, owner_id, project_dir],
+            changeset_draft_row_from_query,
+        )?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Every maintained draft recorded against `project_dir` — the
+    /// compose-time bulk read that attaches drafts to their entries.
+    pub fn changeset_drafts_for_project(
+        &self,
+        project_dir: &str,
+    ) -> Result<Vec<ChangesetDraftRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at
+             FROM changeset_drafts
+             WHERE project_dir = ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![project_dir], changeset_draft_row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Upsert one `session_metadata` row. Idempotent on `session_id`
     /// via `INSERT OR REPLACE` — the bridge intercept runs the merge
     /// on every outbound `system_metadata` line, so a steady-state
@@ -2525,6 +2640,19 @@ fn file_event_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileEv
         parent_tool_use_id: row.get(7)?,
         project_dir: row.get(8)?,
         at: row.get(9)?,
+    })
+}
+
+fn changeset_draft_row_from_query(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ChangesetDraftRow> {
+    Ok(ChangesetDraftRow {
+        owner_kind: row.get(0)?,
+        owner_id: row.get(1)?,
+        project_dir: row.get(2)?,
+        fingerprint: row.get(3)?,
+        message: row.get(4)?,
+        updated_at: row.get(5)?,
     })
 }
 
@@ -4496,6 +4624,89 @@ mod tests {
         }
         let l = SessionLedger::open(&path).unwrap();
         assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
+    }
+
+    // ---- changeset_drafts table ----------------------------------------
+
+    fn sample_draft(
+        owner_kind: &str,
+        owner_id: &str,
+        project_dir: &str,
+        fingerprint: &str,
+        message: &str,
+    ) -> ChangesetDraftRow {
+        ChangesetDraftRow {
+            owner_kind: owner_kind.to_owned(),
+            owner_id: owner_id.to_owned(),
+            project_dir: project_dir.to_owned(),
+            fingerprint: fingerprint.to_owned(),
+            message: message.to_owned(),
+            updated_at: 1_700_000_000_000,
+        }
+    }
+
+    #[test]
+    fn changeset_draft_upsert_read_and_supersede() {
+        let l = SessionLedger::open_in_memory().unwrap();
+        let row = sample_draft("session", "s1", "/proj", "fp-1", "Add a thing\n\n- detail");
+        l.upsert_changeset_draft(&row).unwrap();
+        assert_eq!(
+            l.changeset_draft("session", "s1", "/proj").unwrap(),
+            Some(row.clone())
+        );
+
+        // Re-upsert on the same key supersedes in place (no duplicate row).
+        let mut newer = row.clone();
+        newer.fingerprint = "fp-2".to_owned();
+        newer.message = "Add a better thing".to_owned();
+        newer.updated_at = 1_700_000_001_000;
+        l.upsert_changeset_draft(&newer).unwrap();
+        assert_eq!(
+            l.changeset_draft("session", "s1", "/proj").unwrap(),
+            Some(newer.clone())
+        );
+        assert_eq!(l.changeset_drafts_for_project("/proj").unwrap(), vec![newer]);
+
+        // A different owner kind on the same id/project is a distinct row.
+        let dash = sample_draft("dash", "tugdash/x", "/proj", "fp-d", "Dash join message");
+        l.upsert_changeset_draft(&dash).unwrap();
+        assert_eq!(l.changeset_drafts_for_project("/proj").unwrap().len(), 2);
+        assert!(l.changeset_draft("session", "missing", "/proj").unwrap().is_none());
+    }
+
+    #[test]
+    fn opening_a_db_with_a_drifted_changeset_drafts_schema_rebuilds_it() {
+        // changeset_drafts is advisory + regenerable, so a stale on-disk
+        // shape is DROPPED and recreated (never migrated).
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        // A prior shape missing the `fingerprint` column, carrying a row.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE changeset_drafts (
+                    owner_kind   TEXT NOT NULL,
+                    owner_id     TEXT NOT NULL,
+                    project_dir  TEXT NOT NULL,
+                    message      TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    PRIMARY KEY (owner_kind, owner_id, project_dir)
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO changeset_drafts (owner_kind, owner_id, project_dir, message, updated_at)
+                 VALUES ('session', 'stale', '/p', 'old', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let l = SessionLedger::open(&path).unwrap();
+        // A write listing `fingerprint` now succeeds; the stale row is gone.
+        l.upsert_changeset_draft(&sample_draft("session", "s1", "/p", "fp", "msg"))
+            .unwrap();
+        assert_eq!(l.changeset_drafts_for_project("/p").unwrap().len(), 1);
+        assert!(l.changeset_draft("session", "stale", "/p").unwrap().is_none());
     }
 
     // ---- session_metadata table ----------------------------------------

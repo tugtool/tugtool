@@ -1,60 +1,11 @@
-/* @tug-pairings:
-   - --tug7-element-tone-text-normal-success-rest  (added: status "A", +N stat)
-   - --tug7-element-tone-text-normal-danger-rest   (deleted: status "D", −M stat)
-   - --tug7-element-tone-text-normal-caution-rest  (modified: status "M")
-   - --tug7-element-tone-text-normal-accent-rest   (renamed: status "R")
+/* The `/diff` sheet chrome. The diff document itself (summary header, view
+   toggle, per-file accordion, hunks) is the composed TugDiffDocument, which
+   owns its own tokens and layout ([L20]) — this file styles only the sheet's
+   notices and footer. Layout (scrolling body → fixed Done) comes from the
+   composed TugSheetScaffold. */
 
-   Text-color-only (no background painting): the sheet surface and foreground
-   come from the composed TugSheet; per-file hunks come from the composed
-   DiffBlock; the accordion from TugAccordion; buttons from TugPushButton.
-   Status letters and the +/− stat tint via the tone *text* tokens above, which
-   layer on the inherited sheet foreground — so no @tug-renders-on ([L16]). */
-
-/* Layout (fixed header → scrolling file list → fixed Done) comes from the
-   composed TugSheetScaffold; the diff sheet only adds the header→body gap and
-   the diff-specific styling below. (The footer gap is the composed
-   `.tug-sheet-actions` row's own `margin-top`.) */
-.diff-sheet .tug-sheet-scaffold-header {
-  margin-bottom: 0.5rem;
-}
-
-/* Header: "Uncommitted changes (git diff HEAD)" + summary on the left, the
-   Refresh control on the right. */
-.diff-sheet-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.diff-sheet-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-/* Pushes the action cluster to the right when there is no header text
-   (empty / no-repo / loading), so the controls stay in their usual place. */
-.diff-sheet-header-spacer {
-  flex: 1 1 auto;
-}
-
-/* Right-side controls: Expand All / Collapse All (when there are files) +
-   Refresh. Ghost buttons, matching block-renderer affordances. */
-.diff-sheet-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 0 0 auto;
-}
-
-.diff-sheet-summary {
-  font-size: 0.8125rem;
-  opacity: 0.7;
-}
-
-/* Single centered notice for the loading / empty / no-repo / error states. */
+/* Single centered notice for the loading / empty / no-repo / error states
+   (the resolved-with-files case renders TugDiffDocument instead). */
 .diff-sheet-notice {
   display: flex;
   align-items: center;
@@ -66,82 +17,7 @@
   text-align: center;
 }
 
-.diff-sheet-binary-note {
-  margin: 0;
-  padding: 0.5rem 0;
-  font-size: 0.875rem;
-  opacity: 0.6;
-}
-
-/* One accordion item per file. The trigger is a single row: status badge,
-   path (grows + truncates), and the +N −M stat pinned to the right. */
-.diff-sheet-file-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  min-width: 0;
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.8125rem;
-}
-
-.diff-sheet-file-status {
-  flex: 0 0 auto;
-  width: 1.1em;
-  text-align: center;
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-.diff-sheet-file-status[data-status="added"] {
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-.diff-sheet-file-status[data-status="deleted"] {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-.diff-sheet-file-status[data-status="modified"] {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
-}
-.diff-sheet-file-status[data-status="renamed"] {
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-
-.diff-sheet-file-path {
+/* Push Refresh (left) away from Done (right) in the footer action row. */
+.diff-sheet-footer-spacer {
   flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-.diff-sheet-file-stat {
-  flex: 0 0 auto;
-  display: inline-flex;
-  gap: 0.4em;
-  font-variant-numeric: tabular-nums;
-}
-
-.diff-sheet-stat-add {
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-.diff-sheet-stat-remove {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-.diff-sheet-stat-binary {
-  opacity: 0.6;
-}
-
-/* The per-file DiffBlock sits flush inside its accordion item — the item
-   already provides the boundary, so drop DiffBlock's standalone frame to
-   avoid a double border. */
-.diff-sheet-file-diff.tugx-diff {
-  border: 0;
-  border-radius: 0;
-}
-
-/* Long code lines scroll horizontally within their hunk rather than being
-   clipped by the 800px document column. Scoped to the sheet so DiffBlock's
-   other hosts (transcript) keep their own overflow behavior. */
-.diff-sheet-file-diff .tugx-diff-hunk-rows {
-  overflow-x: auto;
 }

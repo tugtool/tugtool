@@ -21,6 +21,7 @@ import { attachPulseStore } from "./lib/pulse-store";
 import { attachSessionActivityStore } from "./lib/session-activity-store";
 import { attachChangesetAllStore } from "./lib/changeset-all-store";
 import { attachChangesetVerbStore } from "./lib/changeset-verb-store";
+import { attachChangesetDraftStore } from "./lib/changeset-draft-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { transportStateStore } from "./lib/transport-state-store";
 import {
@@ -44,6 +45,7 @@ import { registerDevCard } from "./components/tugways/cards/dev-card-registratio
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
+import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
 import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
@@ -257,6 +259,7 @@ if (!container) {
   registerAboutCard();
   registerSettingsCard();
   registerTextCard();
+  registerDiffCard();
   registerGalleryCards();
   registerDevPanelInspectorTabs();
 
@@ -432,6 +435,9 @@ if (!container) {
   // for the non-repo "Initialize git" affordance). The card reads it via
   // `useChangesetGitInit`.
   attachChangesetVerbStore(connection);
+  // Wire the maintained-draft overlay store ([P24]): live streaming text +
+  // freshness for the changeset card's draft panel, read via `useChangesetDraft`.
+  attachChangesetDraftStore(connection);
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;

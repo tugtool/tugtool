@@ -546,8 +546,15 @@ async fn main() {
             request_id: Option<String>,
             /// Optional repo-relative pathspec — the changeset card scopes
             /// its diff to one file or one changeset. Absent/empty keeps
-            /// the whole-tree diff (dev card `/diff`).
+            /// the whole-tree diff (dev card `/diff`). Head flavor only.
             paths: Option<Vec<String>>,
+            /// Dash range flavor ([P19]): a present `branch` selects
+            /// `<base>...<branch>` + worktree dirt instead of `git diff HEAD`.
+            /// `worktree` is the dash worktree path relative to the resolved
+            /// project dir; `base` the dash's base branch.
+            worktree: Option<String>,
+            base: Option<String>,
+            branch: Option<String>,
         }
         while let Some(frame) = gd_input_rx.recv().await {
             let raw = match serde_json::from_slice::<RawDiffQuery>(&frame.payload) {
@@ -565,15 +572,36 @@ async fn main() {
             let entry = gd_registry.resolve_diff_target(root_pb.as_deref(), &gd_bootstrap);
             let request_id = raw.request_id.unwrap_or_default();
             let paths = raw.paths.unwrap_or_default();
+            let branch = raw.branch;
+            let base = raw.base;
+            let worktree = raw.worktree;
             let response_tx = gd_response_tx_loop.clone();
             tokio::spawn(async move {
-                let snapshot = crate::feeds::git::build_git_diff_snapshot(
-                    &entry.project_dir,
-                    request_id,
-                    entry.workspace_key.as_ref(),
-                    &paths,
-                )
-                .await;
+                // A present `branch` routes to the dash range flavor; otherwise
+                // the head flavor (today's `git diff HEAD`, whole tree or
+                // pathspec-scoped) runs unchanged.
+                let snapshot = match branch {
+                    Some(branch) => {
+                        crate::feeds::git::build_dash_diff_snapshot(
+                            &entry.project_dir,
+                            request_id,
+                            entry.workspace_key.as_ref(),
+                            worktree.as_deref().unwrap_or_default(),
+                            base.as_deref().unwrap_or("main"),
+                            &branch,
+                        )
+                        .await
+                    }
+                    None => {
+                        crate::feeds::git::build_git_diff_snapshot(
+                            &entry.project_dir,
+                            request_id,
+                            entry.workspace_key.as_ref(),
+                            &paths,
+                        )
+                        .await
+                    }
+                };
                 match serde_json::to_vec(&snapshot) {
                     Ok(json) => {
                         let _ = response_tx.send(Frame::new(FeedId::GIT_DIFF, json));
@@ -840,10 +868,12 @@ async fn main() {
         supervisor.set_shell_ledger(Arc::clone(sl));
     }
 
-    // The changeset scribe ([P11]): `changeset_summarize` runs a headless
-    // `claude -p` with the model from the tugbank default
-    // `dev.tugtool.changeset`/`scribe_model` (resolved per request, so a
-    // settings change applies immediately), falling back to `haiku`.
+    // The changeset scribe ([P11]/[P22]): the maintained-draft engine runs a
+    // headless `claude -p` with the model from
+    // the tugbank default `dev.tugtool.changeset`/`scribe_model` (resolved per
+    // request, so a settings change applies immediately), falling back to
+    // `sonnet` — the fingerprint gate ([P22]) bounds how often it runs, so the
+    // model choice is a quality call, not a cost one.
     let scribe_model: Arc<dyn Fn() -> String + Send + Sync> = {
         let bank = bank_client.clone();
         Arc::new(move || {
@@ -853,7 +883,7 @@ async fn main() {
                     tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
                     _ => None,
                 })
-                .unwrap_or_else(|| "haiku".to_string())
+                .unwrap_or_else(|| "sonnet".to_string())
         })
     };
     supervisor.set_scribe(feeds::agent_supervisor::ScribeContext {
@@ -1044,6 +1074,11 @@ async fn main() {
         changeset_all_tx,
         cancel.clone(),
     );
+
+    // The maintained-draft engine ([P21], #draft-engine) taps a CLONE of the
+    // aggregate watch receiver — never the bump `Notify` (single waiter) — so
+    // it sees every recompute the router does.
+    supervisor.start_draft_engine(changeset_all_rx.clone(), cancel.clone());
 
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),

@@ -172,6 +172,59 @@ export interface GitDiffScope {
 }
 
 /**
+ * A discriminated diff request ([P19], Spec S08). Two flavors:
+ *
+ * - `head` — `git diff HEAD [-- <paths…>]` in the project at `root`
+ *   (sessions / unattributed / the dev card's `/diff`). Equivalent to the
+ *   legacy {@link GitDiffScope}.
+ * - `range` — the dash view: committed rounds past `base` **plus** worktree
+ *   dirt, resolved as `merge-base(base, branch)` diffed against the worktree
+ *   working tree (see `feeds/git.rs::fetch_dash_diff`).
+ */
+export type DiffDescriptor =
+  | { kind: "head"; root?: string; paths?: string[] }
+  | { kind: "range"; root?: string; worktree: string; base: string; branch: string };
+
+/**
+ * Stable identity key for a descriptor — the reuse key for `OPEN_DIFF`'s
+ * descriptor-keyed Text-card reuse ([P20]). Two descriptors that resolve to
+ * the same diff share a key.
+ */
+export function diffDescriptorKey(descriptor: DiffDescriptor): string {
+  if (descriptor.kind === "range") {
+    return `range:${descriptor.root ?? ""}:${descriptor.worktree}:${descriptor.base}:${descriptor.branch}`;
+  }
+  const paths = [...(descriptor.paths ?? [])].sort().join("\n");
+  return `head:${descriptor.root ?? ""}:${paths}`;
+}
+
+/** A `GitDiffScope` (legacy head form) or a `DiffDescriptor` (either flavor). */
+export type DiffRequest = GitDiffScope | DiffDescriptor;
+
+/** Runtime guard for an unknown value being a {@link DiffDescriptor}. */
+export function isDiffDescriptor(value: unknown): value is DiffDescriptor {
+  if (typeof value !== "object" || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind === "head") return true;
+  if (kind === "range") {
+    const v = value as { worktree?: unknown; base?: unknown; branch?: unknown };
+    return (
+      typeof v.worktree === "string" &&
+      typeof v.base === "string" &&
+      typeof v.branch === "string"
+    );
+  }
+  return false;
+}
+
+/** True when a request is the dash range flavor. */
+function isRangeDescriptor(
+  request: DiffRequest,
+): request is Extract<DiffDescriptor, { kind: "range" }> {
+  return (request as { kind?: string }).kind === "range";
+}
+
+/**
  * Store-instance counter baked into every `requestId` so concurrent
  * requests from different stores (a dev card's `/diff` and the changeset
  * card's scoped diff) can never correlate to each other's responses —
@@ -188,7 +241,7 @@ export class GitDiffStore {
   private readonly _feedId: FeedIdValue;
   private readonly _projectDir: string | undefined;
   private readonly _storeId: number;
-  private _scope: GitDiffScope = {};
+  private _scope: DiffRequest = {};
   private _seq = 0;
 
   constructor(feedStore: FeedStore, feedId: FeedIdValue, projectDir?: string) {
@@ -222,14 +275,16 @@ export class GitDiffStore {
   }
 
   /**
-   * Fire a fresh `git diff HEAD` request. Moves the store to `loading` under
-   * a new `requestId`; the matching `GIT_DIFF` response resolves it to
-   * `ready`. Passing a `scope` adopts it (a scoped open from the changeset
-   * card, or `{}` for the whole tree); omitting it repeats the last scope —
-   * the in-sheet Refresh re-runs whatever the sheet is showing.
+   * Fire a fresh diff request. Moves the store to `loading` under a new
+   * `requestId`; the matching `GIT_DIFF` response resolves it to `ready`.
+   * Passing a `request` adopts it — a legacy {@link GitDiffScope} (head
+   * flavor), `{}` for the whole tree, or a {@link DiffDescriptor} of either
+   * flavor (the dash range flavor names `worktree`/`base`/`branch`, [P19]).
+   * Omitting it repeats the last request — the in-sheet Refresh re-runs
+   * whatever is showing.
    */
-  requestDiff(scope?: GitDiffScope): void {
-    if (scope !== undefined) this._scope = scope;
+  requestDiff(request?: DiffRequest): void {
+    if (request !== undefined) this._scope = request;
     const conn = getConnection();
     if (!conn) {
       this._set({
@@ -243,12 +298,21 @@ export class GitDiffStore {
     this._seq += 1;
     const requestId = `gd-${this._storeId}-${this._seq}`;
     const query: Record<string, unknown> = { requestId };
-    const root = this._scope.root ?? this._projectDir;
-    if (root !== undefined && root.length > 0) {
-      query.root = root;
-    }
-    if (this._scope.paths !== undefined && this._scope.paths.length > 0) {
-      query.paths = this._scope.paths;
+    if (isRangeDescriptor(this._scope)) {
+      // Dash range flavor: `root` still resolves the workspace; the dash
+      // fields select `<base>...<branch>` + worktree dirt server-side.
+      const root = this._scope.root ?? this._projectDir;
+      if (root !== undefined && root.length > 0) query.root = root;
+      query.worktree = this._scope.worktree;
+      query.base = this._scope.base;
+      query.branch = this._scope.branch;
+    } else {
+      // Head flavor (legacy scope or `{kind:"head"}`): whole tree or pathspec.
+      const root = this._scope.root ?? this._projectDir;
+      if (root !== undefined && root.length > 0) query.root = root;
+      if (this._scope.paths !== undefined && this._scope.paths.length > 0) {
+        query.paths = this._scope.paths;
+      }
     }
     this._set({ phase: "loading", requestId, payload: null, error: null });
     const bytes = new TextEncoder().encode(JSON.stringify(query));

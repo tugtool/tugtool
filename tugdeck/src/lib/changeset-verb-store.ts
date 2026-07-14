@@ -30,7 +30,6 @@ import { useSyncExternalStore } from "react";
 
 import type { TugConnection } from "../connection";
 import { FeedId } from "../protocol";
-import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 
 export type GitInitPhase = "idle" | "pending" | "error";
 
@@ -61,25 +60,6 @@ const COMMIT_IDLE: CommitState = Object.freeze({
   receipt: null,
 });
 
-/** What the scribe is asked to produce (Spec S03 `kind`). */
-export type SummarizeKind = "summary" | "commit_message";
-
-export type SummarizePhase = "idle" | "pending" | "error" | "done";
-
-/** One scribe round trip's state, keyed by (card entry, kind). */
-export interface SummarizeState {
-  phase: SummarizePhase;
-  error: string | null;
-  /** The generated text when `phase === "done"`. */
-  text: string | null;
-}
-
-const SUMMARIZE_IDLE: SummarizeState = Object.freeze({
-  phase: "idle",
-  error: null,
-  text: null,
-});
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -94,10 +74,6 @@ export class ChangesetVerbStore {
   private _commits = new Map<string, CommitState>();
   /** project_dir → the entry key whose commit is in flight. */
   private _commitInflight = new Map<string, string>();
-  /** `entryKey|kind` → scribe round-trip state. Absent ⇒ idle. */
-  private _summaries = new Map<string, SummarizeState>();
-  /** `project_dir|owner_id|kind` → the `entryKey|kind` in flight. */
-  private _summarizeInflight = new Map<string, string>();
   private readonly _decoder = new TextDecoder();
 
   constructor(connection: TugConnection) {
@@ -141,29 +117,6 @@ export class ChangesetVerbStore {
       this._commitInflight.delete(projectDir);
       const detail = typeof body.detail === "string" ? body.detail : "git commit failed";
       this._setCommit(entryKey, { phase: "error", error: detail, sha: null, receipt: null });
-    } else if (
-      body.action === "changeset_summarize_ok" ||
-      body.action === "changeset_summarize_err"
-    ) {
-      const ownerId = typeof body.owner_id === "string" ? body.owner_id : "";
-      const kind = typeof body.kind === "string" ? body.kind : "";
-      const stateKey = this._summarizeInflight.get(`${projectDir}|${ownerId}|${kind}`);
-      if (stateKey === undefined) return;
-      this._summarizeInflight.delete(`${projectDir}|${ownerId}|${kind}`);
-      if (body.action === "changeset_summarize_ok") {
-        const text = typeof body.text === "string" ? body.text : "";
-        this._setSummarize(stateKey, { phase: "done", error: null, text });
-      } else {
-        const detail = typeof body.detail === "string" ? body.detail : "scribe failed";
-        // Scribe failures also land in the TugDevPanel log ([P11] — never
-        // the console) so the raw detail survives past the alert.
-        tugDevLogStore.warn("changeset-scribe", "changeset_summarize failed", {
-          project_dir: projectDir,
-          kind,
-          detail,
-        });
-        this._setSummarize(stateKey, { phase: "error", error: detail, text: null });
-      }
     }
   }
 
@@ -219,54 +172,6 @@ export class ChangesetVerbStore {
   /** Clear a terminal (done/error) commit state back to idle. */
   clearCommit(entryKey: string): void {
     this._setCommit(entryKey, COMMIT_IDLE);
-  }
-
-  private _setSummarize(stateKey: string, state: SummarizeState): void {
-    if (state.phase === "idle") {
-      this._summaries.delete(stateKey);
-    } else {
-      this._summaries.set(stateKey, state);
-    }
-    for (const listener of [...this._listeners]) listener();
-  }
-
-  /**
-   * Send `changeset_summarize` for one card entry. Correlation mirrors the
-   * commit verb: the response echoes `{project_dir, owner_id, kind}`, which
-   * the in-flight map resolves back to the initiating entry.
-   */
-  summarize(
-    entryKey: string,
-    request: {
-      projectDir: string;
-      ownerKind: string;
-      ownerId: string;
-      files: string[];
-      kind: SummarizeKind;
-    },
-  ): void {
-    const stateKey = `${entryKey}|${request.kind}`;
-    this._summarizeInflight.set(
-      `${request.projectDir}|${request.ownerId}|${request.kind}`,
-      stateKey,
-    );
-    this._setSummarize(stateKey, { phase: "pending", error: null, text: null });
-    this._connection.sendControlFrame("changeset_summarize", {
-      project_dir: request.projectDir,
-      owner_kind: request.ownerKind,
-      owner_id: request.ownerId,
-      files: request.files,
-      kind: request.kind,
-    });
-  }
-
-  summarizeState(entryKey: string, kind: SummarizeKind): SummarizeState {
-    return this._summaries.get(`${entryKey}|${kind}`) ?? SUMMARIZE_IDLE;
-  }
-
-  /** Clear a terminal (done/error) scribe state back to idle. */
-  clearSummarize(entryKey: string, kind: SummarizeKind): void {
-    this._setSummarize(`${entryKey}|${kind}`, SUMMARIZE_IDLE);
   }
 
   dispose(): void {
@@ -347,38 +252,4 @@ export function useChangesetCommit(entryKey: string): CommitState & {
     _activeStore?.clearCommit(entryKey);
   };
   return { ...state, commit, clear };
-}
-
-/**
- * React hook: one scribe kind's round-trip state for one card entry plus its
- * triggers. Returns idle + no-op triggers when no store is attached.
- */
-export function useChangesetSummarize(
-  entryKey: string,
-  kind: SummarizeKind,
-): SummarizeState & {
-  summarize: (request: { projectDir: string; ownerKind: string; ownerId: string; files: string[] }) => void;
-  clear: () => void;
-} {
-  const state = useSyncExternalStore(
-    (listener) => {
-      const store = _activeStore;
-      if (store === null) return () => {};
-      return store.subscribe(listener);
-    },
-    () => _activeStore?.summarizeState(entryKey, kind) ?? SUMMARIZE_IDLE,
-    () => SUMMARIZE_IDLE,
-  );
-  const summarize = (request: {
-    projectDir: string;
-    ownerKind: string;
-    ownerId: string;
-    files: string[];
-  }): void => {
-    _activeStore?.summarize(entryKey, { ...request, kind });
-  };
-  const clear = (): void => {
-    _activeStore?.clearSummarize(entryKey, kind);
-  };
-  return { ...state, summarize, clear };
 }

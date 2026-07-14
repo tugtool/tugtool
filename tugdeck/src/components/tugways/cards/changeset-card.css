@@ -236,22 +236,107 @@
   padding-top: 4px;
 }
 
+/* ---- Inline diffs ([P20]) ---- */
+
+/* One file's diff, revealed under its row. Indented so it reads as belonging
+   to the row above it; the composed DiffBlock owns its own hunk styling. */
+.changeset-inline-diff {
+  margin: 2px 0 6px 22px;
+  min-width: 0;
+}
+
+.changeset-inline-diff-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2px;
+}
+
+.changeset-inline-diff-notice {
+  margin: 4px 0;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+/* The whole-entry diff document, revealed in the entry body. */
+.changeset-entry-diff-doc {
+  margin-top: 6px;
+  min-width: 0;
+}
+
 /* ---- Commit flow ([P15]) ---- */
 
 .changeset-commit {
   padding-top: 6px;
 }
 
-/* Message field + width-stabilized commit button on one line. */
+/* Message field (a TugTextarea, pre-filled from the maintained draft) over a
+   trailing action row (Use latest draft + Commit). */
 .changeset-commit-row {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.changeset-commit-message {
+  width: 100%;
+  min-width: 0;
+}
+
+.changeset-commit-actions {
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
-.changeset-commit-row .tug-input {
+/* ---- Maintained draft panel ([P21]/[P24]) ---- */
+
+.changeset-draft {
+  padding-top: 6px;
+}
+
+.changeset-draft-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.changeset-draft-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  opacity: 0.7;
+}
+
+.changeset-draft-body {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* A subtle desaturation while the engine is regenerating ([L06] — appearance
+   via a data-attr, never React state). */
+.changeset-draft[data-drafting] .changeset-draft-markdown {
+  opacity: 0.7;
+}
+
+.changeset-draft-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.changeset-draft-freshness {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.changeset-draft-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
 }
 
 .changeset-commit-receipt {

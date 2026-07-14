@@ -189,6 +189,21 @@ pub struct UnattributedFile {
     pub git_status: String,
 }
 
+/// The maintained commit-message draft for a changeset entry (Spec S10), the
+/// artifact the draft engine keeps current so Commit is one click. Rides the
+/// aggregate snapshot when present; absent while an entry has no draft yet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChangesetDraft {
+    /// Hash of the entry's scoped content the draft was generated for
+    /// (Spec S11) — lets the client tell a fresh draft from a stale one.
+    pub fingerprint: String,
+    /// The maintained commit message (subject + terse bullets); its body
+    /// doubles as the summary.
+    pub message: String,
+    /// Epoch milliseconds of the last regeneration.
+    pub updated_at: i64,
+}
+
 /// One owner's slice of the workspace's dirty state on the CHANGESET feed.
 ///
 /// Internally tagged on `kind` (`"session"` | `"dash"`) so the client can
@@ -206,6 +221,9 @@ pub enum ChangesetEntry {
         live: bool,
         /// The session's attributed dirty files.
         files: Vec<ChangesetFile>,
+        /// The maintained commit-message draft, when one exists (Spec S10).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        draft: Option<ChangesetDraft>,
     },
     /// A dash worktree branch (`refs/heads/tugdash/…`) and its accumulated
     /// `base..branch` changes.
@@ -224,6 +242,10 @@ pub enum ChangesetEntry {
         worktree_dirty: bool,
         /// `base..branch` name-status files.
         files: Vec<ChangesetFile>,
+        /// The maintained draft — the dash's eventual squash/join message
+        /// ([P23], Spec S10) — when one exists.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        draft: Option<ChangesetDraft>,
     },
 }
 
@@ -281,6 +303,10 @@ pub struct ProjectChangeset {
     /// when `no_repo` is true.
     #[serde(flatten)]
     pub snapshot: ChangesetSnapshot,
+    /// The maintained draft for this project's unattributed bucket (Spec
+    /// S10), when one exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unattributed_draft: Option<ChangesetDraft>,
 }
 
 /// The account-global aggregate changeset snapshot, delivered process-level on
@@ -720,9 +746,12 @@ mod tests {
             display_name: "s".to_string(),
             live: false,
             files: vec![],
+            draft: None,
         };
         let json = serde_json::to_string(&session).unwrap();
         assert!(json.contains(r#""kind":"session""#));
+        // An absent draft is skipped on the wire.
+        assert!(!json.contains("draft"));
 
         let dash = ChangesetEntry::Dash {
             owner_id: "tugdash/x".to_string(),
@@ -732,9 +761,16 @@ mod tests {
             worktree: ".tug/worktrees/tugdash__x".to_string(),
             worktree_dirty: true,
             files: vec![],
+            draft: Some(ChangesetDraft {
+                fingerprint: "fp".to_string(),
+                message: "Do the thing".to_string(),
+                updated_at: 5,
+            }),
         };
         let json = serde_json::to_string(&dash).unwrap();
         assert!(json.contains(r#""kind":"dash""#));
+        // A present draft rides the wire.
+        assert!(json.contains(r#""message":"Do the thing""#));
     }
 
     #[test]
@@ -802,6 +838,7 @@ mod tests {
                 changesets: vec![],
                 unattributed: vec![],
             },
+            unattributed_draft: None,
         };
         let json = serde_json::to_string(&project).unwrap();
         assert!(json.contains(r#""project_dir":"/tmp/proj""#));

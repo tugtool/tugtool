@@ -9,6 +9,7 @@ pub mod agent_supervisor;
 pub mod attribution;
 pub mod changeset;
 pub mod changeset_all;
+pub mod draft_engine;
 pub mod claude_auth;
 pub mod claude_usage;
 pub mod code;

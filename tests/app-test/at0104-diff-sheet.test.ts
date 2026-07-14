@@ -33,7 +33,7 @@ const SUBMIT_BTN = `${CARD} .tug-prompt-entry-submit-button`;
 const SHEET = '[data-slot="tug-sheet"]';
 const SHEET_TITLE = `${SHEET} .tug-sheet-title`;
 const DIFF_FILE = `${SHEET} [data-testid="diff-file"]`;
-const DIFF_SUMMARY = `${SHEET} .diff-sheet-summary`;
+const DIFF_SUMMARY = `${SHEET} .tug-diff-document-summary`;
 const DIFF_HUNK = `${SHEET} [data-slot="diff-hunk"]`;
 const ACCORDION_TRIGGER = `${SHEET} .tug-accordion-trigger`;
 const ALERT_TITLE = `${SHEET} .tug-alert-title`;

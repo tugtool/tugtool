@@ -1231,13 +1231,13 @@ tabindex (mousedown-focus default gotcha).
 | #step-14 | changeset_commit verb + card commit flow | done | d861a0408 |
 | #step-15 | Scribe sidecar + summarize verb + card UI | done | 9e324ce50 |
 | #step-16 | M03 integration checkpoint | done | (verification only) |
-| #step-16a | TugDiffDocument + diff-sheet rebase | pending | — |
-| #step-16b | Diff descriptor + dash range diffs | pending | — |
-| #step-16c | Inline card diffs + OPEN_DIFF Text-card diff mode | pending | — |
-| #step-16d | Drafts ledger + streaming scribe + prompt composers | pending | — |
-| #step-16e | The maintained-draft engine | pending | — |
-| #step-16f | Card draft UI + Summarize/Draft deletion | pending | — |
-| #step-16g | M03A integration checkpoint | pending | — |
+| #step-16a | TugDiffDocument + diff-sheet rebase | done | 731dd1a9d |
+| #step-16b | Diff descriptor + dash range diffs | done | 2c11a0135 |
+| #step-16c | Inline card diffs + OPEN_DIFF Text-card diff mode | done | 0016dffc9 |
+| #step-16d | Drafts ledger + streaming scribe + prompt composers | done | 8b44c5812 |
+| #step-16e | The maintained-draft engine | done | 8b44c5812 |
+| #step-16f | Card draft UI + Summarize/Draft deletion | done | 47e50ae09 |
+| #step-16g | M03A integration checkpoint | done | (verification only) |
 | #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
 | #step-18 | .tug/worktrees home + migration | pending | — |
 | #step-19 | Join engine v2 | pending | — |
@@ -2092,6 +2092,16 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 **Commit:** `feat(tugdeck): inline changeset diffs; OPEN_DIFF opens a Text card in diff mode`
 
 **References:** [P20] Inline diff, Spec S08, Milestone M03A, (#state-zone-mapping)
+
+**As built (deviation from [P20]):** the pop-out target is a **dedicated Diff card**
+(`componentId: "diff"`, `cards/diff-card.tsx` + `.css`, registered in `main.tsx`), NOT a
+"Text card in diff mode" — overloading the CM6 Text card's editor/focus/save engine with a
+non-editor body would fight React's hook rules and the editor lifecycle. The Diff card owns
+its own standalone `GitDiffStore` (`createGitDiffStore`), reads the descriptor via the card
+initial-content channel (`useCardStatePreservation`), and renders `TugDiffDocument` with
+Refresh. Descriptor-keyed reuse lives in a dedicated `lib/diff-card-open-registry.ts`
+(`findDiffCardByKey`) consumed by `lib/open-diff-in-card.ts`; user-facing behavior (pop-out
++ reuse) is exactly as [P20] specifies.
 
 **Artifacts:**
 - Changeset card (`cards/changeset-card.tsx`): a per-entry `GitDiffStore` — rework

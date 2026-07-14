@@ -254,6 +254,132 @@ pub async fn build_git_diff_snapshot(
     }
 }
 
+/// Assemble a single-shot [`GitDiffSnapshot`] for a **dash range** diff — the
+/// "everything this dash has done past its base" view: committed rounds plus
+/// uncommitted worktree dirt ([P19], #diff-descriptor-resolution).
+///
+/// `repo_dir` is the checkout root (the workspace); `worktree_rel` is the
+/// dash worktree path relative to it (e.g. `.tugtree/tugdash__demo`). The diff
+/// itself is resolved by [`fetch_dash_diff`]: working tree vs. merge-base when
+/// the worktree exists (rounds + dirt), else committed rounds only. The
+/// snapshot's `base` field carries the human-readable range `<base>...<branch>`
+/// so the document header reads correctly.
+pub async fn build_dash_diff_snapshot(
+    repo_dir: &Path,
+    request_id: String,
+    workspace_key: &str,
+    worktree_rel: &str,
+    base: &str,
+    branch: &str,
+) -> GitDiffSnapshot {
+    let range = format!("{base}...{branch}");
+    if !is_within_git_worktree(repo_dir).await {
+        return GitDiffSnapshot {
+            request_id,
+            workspace_key: workspace_key.to_string(),
+            base: range,
+            no_repo: true,
+            file_count: 0,
+            total_added: 0,
+            total_removed: 0,
+            files: Vec::new(),
+        };
+    }
+    let files = match fetch_dash_diff(repo_dir, worktree_rel, base, branch).await {
+        Some(output) => parse_git_diff(&output),
+        None => Vec::new(),
+    };
+    let total_added = files.iter().map(|f| f.added).sum();
+    let total_removed = files.iter().map(|f| f.removed).sum();
+    GitDiffSnapshot {
+        request_id,
+        workspace_key: workspace_key.to_string(),
+        base: range,
+        no_repo: false,
+        file_count: files.len() as u32,
+        total_added,
+        total_removed,
+        files,
+    }
+}
+
+/// Fetch a dash's "rounds + worktree dirt" diff ([P19]).
+///
+/// When the dash worktree exists, resolve `merge-base(<base>, <branch>)` in it
+/// and diff the working tree against that base — this captures both committed
+/// rounds and uncommitted dirt in one pass, while keeping upstream drift on
+/// `base` out (the same committed-part semantics as `<base>...<branch>`).
+/// Three-dot syntax can't include a dirty working tree, hence the two-step
+/// merge-base resolution. When the worktree is absent (a dash branch without a
+/// checkout), fall back to `git diff <base>...<branch>` in the repo root —
+/// committed rounds only, which is then the whole truth. Returns `None` (and
+/// logs) on a non-zero exit or spawn failure.
+pub(crate) async fn fetch_dash_diff(
+    repo_dir: &Path,
+    worktree_rel: &str,
+    base: &str,
+    branch: &str,
+) -> Option<String> {
+    let worktree_abs = repo_dir.join(worktree_rel);
+    if worktree_abs.is_dir() {
+        let merge_base = run_git_line(
+            &worktree_abs,
+            &["merge-base", base, branch],
+        )
+        .await?;
+        run_git_diff_against(&worktree_abs, &merge_base).await
+    } else {
+        run_git_diff_against(repo_dir, &format!("{base}...{branch}")).await
+    }
+}
+
+/// Run `git diff --no-color -M <target>` in `dir`, returning stdout on success.
+async fn run_git_diff_against(dir: &Path, target: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &dir.to_string_lossy(),
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--no-color",
+            "-M",
+            target,
+        ])
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            warn!(stderr = %stderr.trim_end(), target, "git diff (dash range) failed");
+            None
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to execute git diff (dash range)");
+            None
+        }
+    }
+}
+
+/// Run a git command expected to print a single line (e.g. `merge-base`),
+/// returning the trimmed stdout on success, `None` otherwise.
+async fn run_git_line(dir: &Path, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    let output = cmd.output().await.ok()?;
+    if output.status.success() {
+        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if line.is_empty() {
+            None
+        } else {
+            Some(line)
+        }
+    } else {
+        None
+    }
+}
+
 /// Fetch the combined `git diff HEAD` output for the working tree, optionally
 /// narrowed to a `-- <paths…>` pathspec. Returns `None` (and logs) on a
 /// non-zero exit or spawn failure. Crate-visible: the scribe composes its
@@ -858,5 +984,85 @@ Binary files a/img.png and b/img.png differ
         assert!(snapshot.no_repo, "a non-git dir must set no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
+    }
+
+    /// A repo on `main` with a base commit, a `tugdash/demo` branch that adds
+    /// `round.txt` in a checked-out worktree under `.tugtree/`, tracked worktree
+    /// dirt on `keep.txt`, and a later main-only commit that must stay out of
+    /// the dash range (merge-base semantics).
+    async fn init_dash_fixture_repo() -> (TempDir, String) {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init", "-b", "main"]).await;
+        git_in(&repo, &["config", "user.name", "test"]).await;
+        git_in(&repo, &["config", "user.email", "test@test.com"]).await;
+        fs::write(repo.join("keep.txt"), "base\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "base"]).await;
+
+        // The dash branch + its worktree under `.tugtree/`.
+        git_in(&repo, &["branch", "tugdash/demo"]).await;
+        git_in(&repo, &["config", "branch.tugdash/demo.tugbase", "main"]).await;
+        let worktree_rel = ".tugtree/tugdash__demo";
+        git_in(&repo, &["worktree", "add", worktree_rel, "tugdash/demo"]).await;
+        let worktree_abs = repo.join(worktree_rel);
+
+        // One committed round in the worktree: add round.txt.
+        fs::write(worktree_abs.join("round.txt"), "round\n").unwrap();
+        git_in(&worktree_abs, &["add", "-A"]).await;
+        git_in(&worktree_abs, &["commit", "-m", "round 1"]).await;
+
+        // Tracked worktree dirt: modify keep.txt (uncommitted).
+        fs::write(worktree_abs.join("keep.txt"), "base\ndirt\n").unwrap();
+
+        // A later commit on main only — must NOT appear in the dash range.
+        fs::write(repo.join("mainonly.txt"), "upstream\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "main drift"]).await;
+
+        (temp, worktree_rel.to_string())
+    }
+
+    #[tokio::test]
+    async fn test_build_dash_diff_snapshot_rounds_plus_dirt() {
+        let (temp, worktree_rel) = init_dash_fixture_repo().await;
+        let snapshot = build_dash_diff_snapshot(
+            temp.path(),
+            "req-dash".to_string(),
+            "ws-key",
+            &worktree_rel,
+            "main",
+            "tugdash/demo",
+        )
+        .await;
+
+        assert!(!snapshot.no_repo);
+        assert_eq!(snapshot.request_id, "req-dash");
+        assert_eq!(snapshot.base, "main...tugdash/demo", "header carries the range");
+        let paths: Vec<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"round.txt"), "committed round: {paths:?}");
+        assert!(paths.contains(&"keep.txt"), "worktree dirt: {paths:?}");
+        assert!(
+            !paths.contains(&"mainonly.txt"),
+            "upstream drift on base stays out (merge-base): {paths:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_dash_diff_snapshot_no_worktree_falls_back_to_committed_rounds() {
+        let (temp, _worktree_rel) = init_dash_fixture_repo().await;
+        // A worktree path that does not exist forces the committed-only fallback.
+        let snapshot = build_dash_diff_snapshot(
+            temp.path(),
+            "req-dash-2".to_string(),
+            "ws-key",
+            ".tugtree/does-not-exist",
+            "main",
+            "tugdash/demo",
+        )
+        .await;
+
+        let paths: Vec<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["round.txt"], "committed round only, no dirt: {paths:?}");
     }
 }

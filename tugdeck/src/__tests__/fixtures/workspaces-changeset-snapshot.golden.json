@@ -35,7 +35,12 @@
               "shared": true,
               "last_touched": 1752264120000
             }
-          ]
+          ],
+          "draft": {
+            "fingerprint": "a1f0",
+            "message": "Wire the changeset card\n\n- mirror the aggregate wire types\n- render per-project sections",
+            "updated_at": 1752264130000
+          }
         },
         {
           "kind": "dash",
@@ -55,7 +60,12 @@
               "shared": false,
               "last_touched": 0
             }
-          ]
+          ],
+          "draft": {
+            "fingerprint": "d33f",
+            "message": "Fix the join engine\n\n- intersection-aware preflight\n- journaled teardown",
+            "updated_at": 1752264200000
+          }
         }
       ],
       "unattributed": [
@@ -63,7 +73,12 @@
           "path": "notes/scratch.md",
           "git_status": "??"
         }
-      ]
+      ],
+      "unattributed_draft": {
+        "fingerprint": "7c0f",
+        "message": "Add scratch notes",
+        "updated_at": 1752264090000
+      }
     },
     {
       "project_dir": "/Users/dev/src/scratchpad",

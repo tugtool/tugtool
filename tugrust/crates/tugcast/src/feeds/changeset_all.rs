@@ -166,11 +166,23 @@ pub(crate) async fn compose_aggregate(
             }
         }
 
+        // The unattributed bucket's maintained draft (Spec S10), attached only
+        // when the bucket has files.
+        let unattributed_draft = if snapshot.unattributed.is_empty() {
+            None
+        } else {
+            ledger
+                .and_then(|l| l.changeset_draft("unattributed", "", &dir_str).ok().flatten())
+                .as_ref()
+                .map(super::changeset::draft_from_row)
+        };
+
         projects.push(ProjectChangeset {
             project_dir: dir_str,
             display_name,
             no_repo,
             snapshot,
+            unattributed_draft,
         });
     }
 

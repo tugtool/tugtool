@@ -44,6 +44,8 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { openFileInCard } from "@/lib/open-file-in-card";
+import { openDiffInCard } from "@/lib/open-diff-in-card";
+import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { allocateUntitledNumber } from "@/lib/untitled-naming";
 import { clearRecentDocuments } from "@/lib/recent-documents";
 import { openOpenQuickly } from "@/lib/open-quickly-store";
@@ -504,6 +506,19 @@ export function initActionDispatch(
     const endLine =
       typeof payload.endLine === "number" ? payload.endLine : undefined;
     openFileInCard(deckManager, path, line, endLine);
+  });
+
+  // open-diff: pop a diff descriptor out into a Diff card. Descriptor-keyed
+  // reuse — a card already showing the same descriptor is activated;
+  // otherwise a new Diff card is created seeded with it. Dispatched by the
+  // changeset card's per-file and whole-entry pop-out affordances.
+  registerAction(TUG_ACTIONS.OPEN_DIFF, (payload) => {
+    const descriptor = payload.descriptor;
+    if (!isDiffDescriptor(descriptor)) {
+      console.warn("open-diff: missing or invalid descriptor", payload);
+      return;
+    }
+    openDiffInCard(deckManager, descriptor);
   });
 
   // clear-recent-documents: File ▸ Open Recent ▸ Clear Menu. Empties the

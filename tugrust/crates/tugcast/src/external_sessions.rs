@@ -314,7 +314,7 @@ pub(crate) fn user_submission_opens_turn(
 
 /// Extract the submission's display text: string content verbatim, or
 /// the concatenated `text` fields of array content.
-fn submission_text(content: &serde_json::Value) -> String {
+pub(crate) fn submission_text(content: &serde_json::Value) -> String {
     match content {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Array(blocks) => blocks
@@ -339,7 +339,7 @@ fn truncate_prompt(text: &str) -> String {
 }
 
 /// Parse an ISO-8601 record timestamp to unix millis.
-fn parse_timestamp_millis(raw: &str) -> Option<i64> {
+pub(crate) fn parse_timestamp_millis(raw: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(raw)
         .ok()
         .map(|dt| dt.timestamp_millis())

@@ -38,6 +38,16 @@ export interface UnattributedFile {
   git_status: string;
 }
 
+/** The maintained commit-message draft for a changeset entry (Spec S10). */
+export interface ChangesetDraft {
+  /** Hash of the entry's scoped content the draft was generated for. */
+  fingerprint: string;
+  /** The maintained commit message (subject + terse bullets). */
+  message: string;
+  /** Epoch milliseconds of the last regeneration. */
+  updated_at: number;
+}
+
 /** Files attributed to one Claude session. */
 export interface SessionChangesetEntry {
   kind: "session";
@@ -48,6 +58,8 @@ export interface SessionChangesetEntry {
   /** True when the session has a live relay right now. */
   live: boolean;
   files: ChangesetFile[];
+  /** The maintained commit-message draft, when one exists (Spec S10). */
+  draft?: ChangesetDraft;
 }
 
 /** A dash worktree branch and its accumulated base..branch changes. */
@@ -66,6 +78,8 @@ export interface DashChangesetEntry {
   /** True when the dash worktree has uncommitted changes. */
   worktree_dirty: boolean;
   files: ChangesetFile[];
+  /** The maintained draft — the dash's eventual join message ([P23]). */
+  draft?: ChangesetDraft;
 }
 
 export type ChangesetEntry = SessionChangesetEntry | DashChangesetEntry;
@@ -115,13 +129,25 @@ export function isUnattributedFile(value: unknown): value is UnattributedFile {
   );
 }
 
+/** A present draft must be well-formed; absent is valid (the field is optional). */
+export function isOptionalChangesetDraft(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    isRecord(value) &&
+    typeof value.fingerprint === "string" &&
+    typeof value.message === "string" &&
+    typeof value.updated_at === "number"
+  );
+}
+
 export function isChangesetEntry(value: unknown): value is ChangesetEntry {
   if (
     !isRecord(value) ||
     typeof value.owner_id !== "string" ||
     typeof value.display_name !== "string" ||
     !Array.isArray(value.files) ||
-    !value.files.every(isChangesetFile)
+    !value.files.every(isChangesetFile) ||
+    !isOptionalChangesetDraft(value.draft)
   ) {
     return false;
   }
@@ -170,6 +196,8 @@ export interface ProjectChangeset extends ChangesetSnapshot {
   display_name: string;
   /** True when `project_dir` is not inside a git working tree. */
   no_repo: boolean;
+  /** The maintained draft for this project's unattributed bucket (Spec S10). */
+  unattributed_draft?: ChangesetDraft;
 }
 
 /** The account-global aggregate changeset snapshot (CHANGESET_ALL feed, 0x24). */
@@ -184,6 +212,7 @@ export function isProjectChangeset(value: unknown): value is ProjectChangeset {
     typeof value.project_dir === "string" &&
     typeof value.display_name === "string" &&
     typeof value.no_repo === "boolean" &&
+    isOptionalChangesetDraft(value.unattributed_draft) &&
     isChangesetSnapshot(value)
   );
 }
