@@ -8,7 +8,6 @@ mod splash;
 use std::process::ExitCode;
 
 use cli::Commands;
-use commands::DashCommands;
 
 fn main() -> ExitCode {
     let cli = cli::parse();
@@ -27,20 +26,6 @@ fn main() -> ExitCode {
             instance,
             param,
         }) => commands::run_tell(action, port, instance, param, cli.json),
-        Some(Commands::Dash(dash_cmd)) => match dash_cmd {
-            DashCommands::Create { name, description } => {
-                commands::run_dash_create(name, description, cli.json, cli.quiet)
-            }
-            DashCommands::Commit { name, message } => {
-                commands::run_dash_commit(name, message, cli.json, cli.quiet)
-            }
-            DashCommands::Join { name, message } => {
-                commands::run_dash_join(name, message, cli.json, cli.quiet)
-            }
-            DashCommands::Release { name } => commands::run_dash_release(name, cli.json, cli.quiet),
-            DashCommands::List => commands::run_dash_list(cli.json, cli.quiet),
-            DashCommands::Show { name } => commands::run_dash_show(name, cli.json, cli.quiet),
-        },
         Some(Commands::Instance(cmd)) => commands::run_instance(cmd),
         Some(Commands::Gate(cmd)) => Ok(commands::run_gate(cmd, cli.json, cli.quiet)),
         Some(Commands::StateDir) => commands::run_state_dir(cli.json, cli.quiet),

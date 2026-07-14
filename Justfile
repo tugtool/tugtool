@@ -7,12 +7,12 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank
+    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
     mkdir -p ~/.local/bin
-    for bin in tugcast tugexec tugutil tugcode tugpulse tugrelaunch tugbank; do
+    for bin in tugcast tugexec tugutil tugdash tugcode tugpulse tugrelaunch tugbank; do
         ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
     done
 
@@ -846,7 +846,7 @@ build-app:
     )"
 
     echo "==> [1/5] Rust debug binaries"
-    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
+    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
 

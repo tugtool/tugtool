@@ -1,7 +1,6 @@
 //! CLI command implementations
 
 pub mod changes;
-pub mod dash;
 pub mod gate;
 pub mod init;
 pub mod instance;
@@ -11,10 +10,6 @@ pub mod tell;
 pub mod version;
 
 pub use changes::run_changes;
-pub use dash::{
-    DashCommands, run_dash_commit, run_dash_create, run_dash_join, run_dash_list, run_dash_release,
-    run_dash_show,
-};
 pub use gate::{GateCommands, run_gate};
 pub use init::run_init;
 pub use instance::{InstanceCommands, run_instance};

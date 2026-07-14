@@ -6,10 +6,10 @@
 //! commands build on: name validation, default-branch detection, and the
 //! append-only visibility log.
 
-use crate::error::TugError;
-use crate::paths::project_state_dir;
-use crate::session::now_iso8601;
 use serde::{Deserialize, Serialize};
+use tugutil_core::error::TugError;
+use tugutil_core::paths::project_state_dir;
+use tugutil_core::session::now_iso8601;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;

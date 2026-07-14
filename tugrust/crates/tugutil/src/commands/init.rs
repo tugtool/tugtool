@@ -125,10 +125,14 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
     Ok(0)
 }
 
-/// Ensure .tugtree/ is listed in .gitignore
+/// Ensure `.tug/` is listed in .gitignore ([P13]).
+///
+/// `.tug/` covers the new worktree home (`.tug/worktrees/`). Any pre-existing
+/// `.tugtree/` line is left in place so a project mid-migration keeps its legacy
+/// worktrees ignored until they move.
 fn ensure_gitignore(_quiet: bool) -> Result<(), String> {
     let gitignore_path = Path::new(".gitignore");
-    let gitignore_entry = ".tugtree/";
+    let gitignore_entry = ".tug/";
 
     let should_add_entry = if gitignore_path.exists() {
         let content = fs::read_to_string(gitignore_path)

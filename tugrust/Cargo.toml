@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tugutil", "crates/tugutil-core", "crates/tugcast", "crates/tugcast-core", "crates/tugexec", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank", "crates/tuglog", "crates/tugcore"]
+members = ["crates/tugutil", "crates/tugutil-core", "crates/tugdash", "crates/tugdash-core", "crates/tugcast", "crates/tugcast-core", "crates/tugexec", "crates/tugrelaunch", "crates/tugbank-core", "crates/tugbank", "crates/tuglog", "crates/tugcore"]
 
 [workspace.package]
 version = "0.8.0"
@@ -59,6 +59,7 @@ sha2 = "0.10"
 
 # Internal crates
 tugutil-core = { path = "crates/tugutil-core" }
+tugdash-core = { path = "crates/tugdash-core" }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

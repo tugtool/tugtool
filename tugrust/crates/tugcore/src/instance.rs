@@ -100,6 +100,39 @@ pub fn tmux_bin() -> String {
     "tmux".to_string()
 }
 
+/// Reap the tmux server/session belonging to `instance_id`. A running
+/// instance owns a private `tug-<token>` server (current scheme) hosting a
+/// `cc-<id>` session; pre-isolation builds put `cc-<id>` on the shared default
+/// server. Both are killed best-effort so a removed instance's tmux never
+/// outlives it. tmux's "no server"/"no session" errors when the instance never
+/// launched an app are expected and ignored.
+///
+/// Shared home for the reaper so both `tugutil instance` and `tugdash`'s
+/// worktree teardown drive the exact same identity math.
+pub fn reap_instance_tmux(instance_id: &str) {
+    let label = tmux_socket_label_for(instance_id);
+    let _ = std::process::Command::new(tmux_bin())
+        .args(["-L", &label, "kill-server"])
+        .output();
+    let _ = std::process::Command::new(tmux_bin())
+        .args(["kill-session", "-t", &format!("cc-{instance_id}")])
+        .output();
+}
+
+/// Non-destructively test whether the `cc-<instance_id>` session is live on the
+/// instance's private `tug-<token>` server. Used to decide whether it is safe to
+/// touch a worktree an instance's app might still be holding (e.g. the
+/// `.tugtree/` → `.tug/worktrees/` migration): `has-session` exits 0 only when
+/// the session exists, so a dead/never-launched instance reads as not-live.
+pub fn instance_tmux_live(instance_id: &str) -> bool {
+    let label = tmux_socket_label_for(instance_id);
+    std::process::Command::new(tmux_bin())
+        .args(["-L", &label, "has-session", "-t", &format!("cc-{instance_id}")])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Per-instance data directory.
 ///
 /// - With `TUG_INSTANCE_ID=<id>`: `<base>/Tug/instances/<id>/`

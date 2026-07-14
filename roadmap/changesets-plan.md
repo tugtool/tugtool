@@ -1406,9 +1406,9 @@ separate responder registration ([P26]).
 | #step-16l | Commit composer block; DraftPanel/TugTextarea retire | done | `41688b11d` |
 | #step-16m | Scribe scoped commit-subject style | done | `d5636735a` |
 | #step-16n | M03B integration checkpoint | done | N/A (verification) |
-| #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
-| #step-18 | .tug/worktrees home + migration | pending | — |
-| #step-19 | Join engine v2 | pending | — |
+| #step-17 | tugdash-core + tugdash CLI extraction | done | `849af2cca` |
+| #step-18 | .tug/worktrees home + migration | done | `903e76cc3` |
+| #step-19 | Join engine v2 | done | `5e527b8b5` |
 | #step-20 | Skill + packaging cutover | pending | — |
 | #step-21 | Card dash integration + AI conflict assist | pending | — |
 | #step-22 | M04 / phase exit checkpoint | pending | — |

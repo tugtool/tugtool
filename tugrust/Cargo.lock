@@ -2344,6 +2344,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugdash"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "tugdash-core",
+ "tugutil-core",
+]
+
+[[package]]
+name = "tugdash-core"
+version = "0.8.0"
+dependencies = [
+ "dirs",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tugcore",
+ "tugutil-core",
+]
+
+[[package]]
 name = "tugexec"
 version = "0.8.0"
 dependencies = [
