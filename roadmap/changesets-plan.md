@@ -751,9 +751,13 @@ block's badge and embedded body read the same per-entry snapshot; the badge is s
 until the diff loads. Dash entries (files share one range diff, [P19]) get the same file-block
 treatment, per-file bodies sourced from the range payload.
 
-**Implications:** Per-file collapse is plain local `useState` in the entry body — NO transcript
-persistence contexts. The chevron is disabled for untracked files with no HEAD side
-(`hasHeadDiff` stays). `TugDiffDocument` is retained for the `/diff` sheet and the Diff card;
+**Implications:** Per-file collapse is entry-body-local `useState` (`expandedFiles`) surfaced to
+each file block through a card-local `ToolBlockCollapseContext.Provider` — this is what makes
+`BlockChrome` render the chevron and unmount the collapsed body (a standalone `BlockChrome` with
+no provider has no chevron and always mounts its body); NO transcript persistence contexts
+(`ToolBlockExpansionContext`), no `A9` key. Expand All / Collapse All is a set mutation. The
+chevron is disabled for untracked files with no HEAD side (`hasHeadDiff` stays).
+`TugDiffDocument` is retained for the `/diff` sheet and the Diff card;
 M03B restyles its header onto the block grammar (one non-wrapping quiet line; monochrome
 counts) rather than deleting it.
 
@@ -1215,7 +1219,7 @@ commit message only — the summary kind is gone):
 | Persisted draft text (M03A) | server-owned | rides the aggregate snapshot (Spec S10); persisted in sessions.db, never client storage | [L02] |
 | Text-card diff mode descriptor (M03A) | structure | card initial-content channel (the open-file seeding path) + descriptor-keyed open registry | — |
 | Commit-message field text + pristine/pin flag (M03B) | local-data (ephemeral UI) | `useState` mirroring the `TugMessageEditor` CM6 doc out via `updateListener`; `restoreState()` re-seeds only while pristine ([P24], [P26], [P28]) | [L11] |
-| Per-file / per-block collapse in an entry (M03B) | local-data (ephemeral UI) | `useState` in the entry body (`expandedFiles` set); NO transcript persistence contexts ([P29]) | — |
+| Per-file / per-block collapse in an entry (M03B) | local-data (ephemeral UI) | entry-body `useState` (`expandedFiles` set) fed to a card-local `ToolBlockCollapseContext.Provider` per file block (gives the chevron + collapse-by-unmount); NOT `ToolBlockExpansionContext`, no persistence ([P29]) | [L24], [L26] |
 | Block-header lifecycle dot phase (draft/commit state) (M03B) | local-data (external, derived) | mapped from the `changeset-draft-store.ts` overlay + `useChangesetCommit` phase to `BlockChrome`'s `phase` prop; the dot paints via CSS/DOM inside the indicator ([L06]) | [L02] |
 
 No new persistent UI state; nothing touches localStorage. Read-only file lists render no
@@ -2620,7 +2624,11 @@ top-level structure is untouched.
 
 **Tests:**
 - [ ] `cd tugdeck && bun test` — the component compiles and type-checks; no jsdom render test
-      (banned). It is exercised end-to-end when #step-16l lands it on the card.
+      (banned). It is exercised end-to-end when #step-16l lands it on the card. An
+      exported-but-unconsumed component is warning-free (TS does not flag exports; vite
+      tree-shakes it) so this step compiles clean standalone; OPTIONALLY mount it in the
+      gallery (`cards/gallery-text-editor.tsx` sits alongside) for a live consumer at commit
+      time.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
@@ -2629,7 +2637,9 @@ top-level structure is untouched.
 
 #### Step 16j: TugDiffDocument header restyle onto the block grammar {#step-16j}
 
-**Depends on:** #step-16h
+**Depends on:** #step-16h (documentary/soft — 16j references the [P27] monochrome doctrine 16h
+writes down, but the CSS color-removal + one-line layout need nothing from 16h's code; 16j can
+land independently if 16h slips)
 
 **Commit:** `feat(tugdeck): TugDiffDocument — one quiet-line header, monochrome +/− counts`
 
@@ -2643,6 +2653,10 @@ top-level structure is untouched.
   flex row today with `.tug-diff-document-header-text` as a wrapping column and
   `.tug-diff-document-header-actions` pushed right). The per-file accordion trigger
   (`FileTrigger`, `.tug-diff-document-file-trigger`) adopts the block-header line treatment.
+  The optional `label` prop (e.g. the sheet's "Uncommitted changes (git diff HEAD)") **leads
+  the quiet line** as its first pipe-delimited section (`label │ summary │ view toggle │
+  Expand/Collapse │ host actions`) — it is not dropped; when absent the line simply starts at
+  the summary. The label is the section that ellipsizes first when narrow.
 - Monochrome counts ([P27]): `.tug-diff-document-stat-add` / `.tug-diff-document-stat-remove`
   (both the summary-line totals and the per-file trigger's `+N −M`) drop their
   `--tug7-element-tone-text-normal-success-rest` / `-danger-rest` colors and render as ghost
@@ -2693,19 +2707,54 @@ top-level structure is untouched.
     gotcha).
   - the header **summary** slot carries the monochrome `+N −M` badge via
     `resultSummary={{kind:"diff", added, removed}}`, sourced from the entry's per-entry
-    `GitDiffStore` snapshot (`useEntryDiff` / `getEntryDiffStore`, unchanged) — the badge is
-    simply absent until the diff loads (`resultSummary` omitted while the snapshot has no file
-    match).
+    `GitDiffStore` snapshot (`useEntryDiff` / `getEntryDiffStore`; `GitDiffFile` already carries
+    `added`/`removed`/`binary`/`unified`). The badge is omitted (no `resultSummary`) until the
+    snapshot has a matching file. **Fetch timing (decided):** to show the badge at rest — before
+    any file is expanded — the entry body calls `ensureRequested()` **eagerly when its accordion
+    section is open**, not only from the expand toggles (today `ensureRequested` fires solely
+    from `toggleFileDiff`/`toggleDocDiff`). Eager fetch is gated to **expanded accordion
+    sections** (the `TugAccordion` is `type="multiple"`; only open sections request), so the cost
+    is one `git diff` per *open* entry, not per TOC row — negligible at the "handful of open
+    entries" scale, and the per-entry store is disposed when the entry leaves the snapshot
+    (existing module-map sweep). A collapsed accordion section fires nothing.
   - provenance (the current `changeset-file-provenance` `op · origin` text) and the
     `ambiguous` / `shared` badges move into pipe-delimited header sections.
   - the disclosure **chevron** (the header's built-in fold cue) REPLACES the
-    `GitCompareArrows` `FileDiffButton`; expanding mounts the file's `DiffBlock` `embedded`
-    (`suppressHeader`, the entry-payload's matching file's `unified` text) as the block body,
-    whose view-toggle / fold affordances portal into the header actions slot
-    (`ChromeActionsTargetContext`). The chevron is DISABLED for untracked files with no HEAD
-    side (`hasHeadDiff` stays the gate).
+    `GitCompareArrows` `FileDiffButton`; expanding mounts the file's `DiffBlock` with
+    **`embedded={true}`** as the block body (source = the entry-payload's matching file's
+    `unified` text). Use `embedded`, NOT `suppressHeader`: in `body-kinds/diff-block.tsx`
+    these are distinct contracts — `embedded={true}` is the under-a-chrome mode that portals
+    the view-toggle / fold affordances into the chrome's actions slot
+    (`ChromeActionsTargetContext`) AND drops the identity header
+    (`headerHidden = embedded || suppressHeader`); `suppressHeader` alone is the
+    accordion-host mode (`TugDiffDocument` / the old `InlineFileDiff`) that hides the header
+    but does NOT portal. Passing `suppressHeader` here would silently render the diff with no
+    portaled affordances — tsc + the at0228 marker assertion both still pass, so nothing
+    catches the mistake. The chevron is DISABLED for untracked files with no HEAD side — pass
+    `children={null}` so `BlockChrome`'s `!hasExpandableContent` auto-disables the cue
+    (`hasHeadDiff` stays the gate; no separate disabled prop needed).
   - the `OPEN_DIFF` pop-out (`PopOutDiffButton`, dispatching `TUG_ACTIONS.OPEN_DIFF` with
     `fileDiffDescriptor(item, file)`) becomes a header action (`headerActions`).
+- **Collapse wiring (load-bearing — the chevron does not exist without it).** A standalone
+  `BlockChrome` with NO `ToolBlockCollapseContext` renders **no disclosure chevron and always
+  mounts its body** (`block-chrome.tsx`: `disclosure = blockCollapse !== null ? {…} :
+  undefined`; `collapse-context.tsx` docstring — "null means this block does not participate").
+  `forceExpanded` only pins-open-and-disables, so it is NOT a toggle. To get the chevron +
+  collapse-by-unmount, each file block is wrapped in a `ToolBlockCollapseContext.Provider`
+  (the `ToolBlockCollapseHandle` shape from `blocks/collapse-context.tsx`) whose
+  `{collapsed, toggle, toolUseId}` is driven by the entry body's local `expandedFiles`
+  `useState`: `collapsed = !expandedFiles.has(path)`, `toggle(next)` mutates the set,
+  `toolUseId = <entry.id>|<path>` (a synthetic stable id — no real tool call). This is plain
+  local state — NOT `ToolBlockExpansionContext`, no persistence, no `A9` key. **Expand All /
+  Collapse All** fall out for free: the set becomes all-paths / empty. (The commit-composer
+  block in #step-16l does NOT wrap in a provider — it wants the always-expanded standalone
+  default; only the file blocks are foldable.)
+- **File-block identity for tests + per-file selectors.** `BlockChrome` forwards only
+  `data-slot` (via `rootSlot`), `data-variant`, `data-tool-use-id` (from the collapse handle's
+  `toolUseId`), and `className` — NOT an arbitrary `data-path`. So the file block's outer host
+  (the collapse-provider element is the natural one) stamps `data-path="<repo-relative path>"`
+  and a `data-testid` so at0228's `[data-testid=…][data-path="committed.txt"]` selectors and
+  the badge/pop-out/disclosure all resolve per-file.
 - Entry-level affordance ([P29]): DELETE `entryActionsRow` (the "Diff N files" / "Hide diff"
   toggle, `data-testid="changeset-entry-diff"`) and `entryDocInline` (the in-card
   `TugDiffDocument` expansion + `docExpanded` state). Replace with **Expand All / Collapse
@@ -2721,18 +2770,22 @@ top-level structure is untouched.
   range payload (the dash's shared `entryDiffDescriptor` `kind:"range"` snapshot). The M03A
   dash affordances (both per-file and whole-entry) are preserved through the new blocks.
 - at0228 (`tests/app-test/at0228-changeset-aggregate.test.ts`): the diff leg adapts
-  mechanically — `changeset-file-diff` (the old icon button) becomes the file block's
-  disclosure chevron. Keep the `data-testid="changeset-file-diff"` on the block's disclosure
-  control (or update the test's selector to the block's disclosure `data-slot`), and keep
-  `changeset-inline-diff`'s marker assertion pointed at the embedded `DiffBlock` under the
-  expanded block. The untracked-file "no diff affordance" assertion becomes "the chevron is
-  disabled" (or absent) for the untracked path. No new legs.
+  mechanically. The per-file block wrapper carries `data-path` (see the identity artifact), so
+  the test scopes to the file's block via `[data-testid="changeset-file-block"][data-path="…"]`
+  and clicks its disclosure fold cue (`[data-slot="tool-call-header-disclosure"]`) to reveal
+  the diff. The marker assertion points at the embedded `DiffBlock` mounted in the block body
+  (replacing the `changeset-inline-diff` container assertion). The untracked-file "no diff
+  affordance" assertion becomes "the disclosure is disabled" (`aria-disabled` / the
+  `BlockFoldCue` disabled state) for the untracked path. No new legs.
 
 **Tasks:**
-- [ ] Per-file / per-block collapse is plain local `useState` (`expandedFiles`) in the entry
-      body — NO transcript persistence contexts (`ToolBlockCollapseContext` is optional; the
-      card provides none, so each block manages its own view via `forceExpanded`/local state
-      as the entry body drives it) ([P29]).
+- [ ] Per-file collapse is a card-local `ToolBlockCollapseContext.Provider` per file block over
+      the entry body's `expandedFiles` `useState` (see the Collapse-wiring artifact) — NOT
+      `forceExpanded` (which only pins-open) and NOT `ToolBlockExpansionContext` (that is the
+      transcript's persisted overrides). The collapse boolean is local-data ([L24]); the
+      provider wrapper keeps stable mount identity across collapse↔expand so the body subtree
+      appears/disappears without tearing the block down ([L26]). Name [L24]/[L26]/[L20] in the
+      commit.
 - [ ] Dispose per-entry stores when entries leave the snapshot (the existing module-map sweep
       in `changeset-diff-store.ts`, unchanged).
 - [ ] Pop-out buttons keep `data-tug-focus="refuse"` + mousedown preventDefault.
@@ -2796,10 +2849,16 @@ Spec S10, Milestone M03B, (#state-zone-mapping)
 - [ ] Substrate responders come with `TugMessageEditor` — no extra wiring ([P26]).
 
 **Tests:**
-- [ ] at0228's commit leg re-verified: `app.type` targets `changeset-commit-message` (now the
-      CM6 editor) and `changeset-commit-button` commits; the numstat receipt names exactly the
-      selected file (assertions unchanged — the testids moved onto the block, the flow is the
-      same). Per Test Plan policy the maintained-draft LOOP is human-tested, not app-tested;
+- [ ] at0228's commit leg re-verified — but typing changes: `app.type(selector, text)` sets a
+      `<textarea>`'s `.value`, which a CM6 editor has no notion of. The leg must adopt the
+      house CM6-typing pattern used by every text-editor app-test (`at0209`/`at0210`/`at0212`
+      `typeIntoEditor`, `at0223`/`at0224` find-bar): `el.focus()` +
+      `document.execCommand("insertText", false, text)` against the field's `.cm-content`
+      element (scoped under the composer block's `changeset-commit-message`), NOT `app.type` on
+      the testid. The commit itself stays a `changeset-commit-button` click (do not rely on an
+      editor-leaf ⌘-key: per the app-test chain-first-responder gotcha, a headless sweep can't
+      reliably make an editor the chain LEAF for a keybinding dispatch). The numstat-receipt
+      assertion is unchanged. Per Test Plan policy the maintained-draft LOOP stays human-tested;
       no new legs.
 - [ ] `cd tugdeck && bun test` — existing suites green after the deletions.
 
