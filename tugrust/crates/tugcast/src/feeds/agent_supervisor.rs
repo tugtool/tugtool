@@ -1066,6 +1066,11 @@ pub struct AgentSupervisor {
     /// that don't exercise the shell restore path — the read yields an empty
     /// array. Set via [`AgentSupervisor::set_shell_ledger`] in `main.rs`.
     pub shell_ledger: Option<Arc<crate::shell_ledger::ShellLedger>>,
+    /// The changeset scribe ([P11]) — spawner + model resolver behind the
+    /// `changeset_summarize` CONTROL op. `None` (tests, or a boot without
+    /// wiring) makes the verb reply `changeset_summarize_err`. Set via
+    /// [`AgentSupervisor::set_scribe`] in `main.rs`.
+    pub scribe: Option<ScribeContext>,
     /// Per-spawn factory for the backing subprocess. Swapped for a mock in
     /// tests so unit tests do not need a real tugcode binary.
     pub spawner_factory: SpawnerFactory,
@@ -1313,6 +1318,113 @@ fn parse_project_dir_payload(payload: &[u8]) -> Result<String, ControlError> {
         })?
         .to_string();
     Ok(pd)
+}
+
+/// The changeset scribe's runtime wiring ([P11]): the spawner (production:
+/// `ClaudeScribeSpawner`; tests: a fake) plus the model resolver (tugbank
+/// default `dev.tugtool.changeset`/`scribe_model`, fallback `haiku` —
+/// resolved per request so a settings change applies immediately).
+#[derive(Clone)]
+pub struct ScribeContext {
+    pub spawner: Arc<dyn crate::scribe::ScribeSpawner>,
+    pub model: Arc<dyn Fn() -> String + Send + Sync>,
+}
+
+/// Parsed `changeset_summarize` request (Spec S03): which project, which
+/// owner (for ledger context), which files (the diff scope), and what to
+/// produce.
+struct ChangesetSummarizePayload {
+    project_dir: String,
+    owner_kind: String,
+    owner_id: String,
+    files: Vec<String>,
+    kind: crate::scribe::ScribeKind,
+}
+
+fn parse_changeset_summarize_payload(
+    payload: &[u8],
+) -> Result<ChangesetSummarizePayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let owner_kind = value
+        .get("owner_kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let owner_id = value
+        .get("owner_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let files = value
+        .get("files")
+        .and_then(|v| v.as_array())
+        .ok_or(ControlError::Malformed)?
+        .iter()
+        .map(|v| v.as_str().map(str::to_string).ok_or(ControlError::Malformed))
+        .collect::<Result<Vec<String>, ControlError>>()?;
+    let kind = value
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .and_then(crate::scribe::ScribeKind::parse)
+        .ok_or(ControlError::Malformed)?;
+    Ok(ChangesetSummarizePayload {
+        project_dir,
+        owner_kind,
+        owner_id,
+        files,
+        kind,
+    })
+}
+
+/// Parsed `changeset_commit` request: project dir, repo-relative file list,
+/// commit message (Spec S03). The file list may parse empty — the handler
+/// refuses it with a `changeset_commit_err` the card can render, rather than
+/// a protocol error.
+struct ChangesetCommitPayload {
+    project_dir: String,
+    files: Vec<String>,
+    message: String,
+}
+
+fn parse_changeset_commit_payload(
+    payload: &[u8],
+) -> Result<ChangesetCommitPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let files = value
+        .get("files")
+        .and_then(|v| v.as_array())
+        .ok_or(ControlError::Malformed)?
+        .iter()
+        .map(|v| v.as_str().map(str::to_string).ok_or(ControlError::Malformed))
+        .collect::<Result<Vec<String>, ControlError>>()?;
+    let message = value
+        .get("message")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(ChangesetCommitPayload {
+        project_dir,
+        files,
+        message,
+    })
 }
 
 fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
@@ -1833,6 +1945,7 @@ impl AgentSupervisor {
             sessions_recorder,
             session_ledger,
             shell_ledger: None,
+            scribe: None,
             spawner_factory,
             merger_register_tx,
             config,
@@ -1979,6 +2092,20 @@ impl AgentSupervisor {
             "changeset_git_init" => match parse_project_dir_payload(payload) {
                 Ok(project_dir) => {
                     self.do_changeset_git_init(&project_dir).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_commit" => match parse_changeset_commit_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_commit(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_summarize" => match parse_changeset_summarize_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_summarize(parsed).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3070,6 +3197,194 @@ impl AgentSupervisor {
         }
     }
 
+    /// Handle a `changeset_commit` CONTROL request (Spec S03, [P15]):
+    /// commit exactly the listed files in an open project's checkout.
+    ///
+    /// Guards, in order: `project_dir` must match a current
+    /// `WorkspaceRegistry` entry (never run git against an arbitrary path
+    /// off the wire) and must lie inside a git working tree. The git work —
+    /// pathspec-exact staging + commit, empty-list/blank-message refusal —
+    /// lives in `run_changeset_commit`. On success the process-global
+    /// aggregate bump fires so the card's entries drop the committed files
+    /// on the next recompute, and `changeset_commit_ok {sha, receipt}` goes
+    /// out; failures broadcast `changeset_commit_err {detail}`.
+    async fn do_changeset_commit(&self, request: &ChangesetCommitPayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_commit_err(&self.control_tx, project_dir, "not an open project");
+            return;
+        }
+        if !crate::feeds::git::is_within_git_worktree(dir).await {
+            Self::send_changeset_commit_err(&self.control_tx, project_dir, "not a git repository");
+            return;
+        }
+
+        match crate::feeds::changeset::run_changeset_commit(dir, &request.files, &request.message)
+            .await
+        {
+            Ok(receipt) => {
+                self.registry.changeset_all_bump().notify_one();
+                let body = serde_json::json!({
+                    "action": "changeset_commit_ok",
+                    "project_dir": project_dir,
+                    "sha": receipt.sha,
+                    "receipt": receipt.receipt,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("changeset_commit_ok serializes"),
+                ));
+            }
+            Err(detail) => {
+                Self::send_changeset_commit_err(&self.control_tx, project_dir, &detail);
+            }
+        }
+    }
+
+    /// Handle a `changeset_summarize` CONTROL request (Spec S03, [P11]):
+    /// generate a summary or a drafted commit message for one entry's files
+    /// via the headless scribe.
+    ///
+    /// Guards mirror `changeset_commit` (open project, inside a git working
+    /// tree), plus the scribe must be wired. Prompt composition happens
+    /// inline (a ledger read + one `git diff`, both quick); the scribe run
+    /// itself — up to 60s — moves to its own task so the control loop never
+    /// blocks behind a generation. Owner context: a session owner
+    /// contributes its ledger name and last user prompt; other owners get
+    /// the file list only. Responses echo `{project_dir, owner_id, kind}`
+    /// so the deck can correlate per entry: `changeset_summarize_ok {text}`
+    /// / `changeset_summarize_err {detail}`.
+    async fn do_changeset_summarize(&self, request: ChangesetSummarizePayload) {
+        let project_dir = request.project_dir.clone();
+        let send_err = |detail: &str| {
+            Self::send_changeset_summarize_err(
+                &self.control_tx,
+                &project_dir,
+                &request.owner_id,
+                request.kind,
+                detail,
+            );
+        };
+
+        let Some(scribe) = self.scribe.clone() else {
+            send_err("scribe unavailable");
+            return;
+        };
+        let dir = std::path::Path::new(&request.project_dir);
+        if self.registry.find_entry_by_path(dir).is_none() {
+            send_err("not an open project");
+            return;
+        }
+        if !crate::feeds::git::is_within_git_worktree(dir).await {
+            send_err("not a git repository");
+            return;
+        }
+
+        // Owner context from the ledger: the session's display name and its
+        // last user prompt, when the owner is a session we know.
+        let mut context_lines: Vec<String> = Vec::new();
+        if request.owner_kind == "session" {
+            if let Some(ledger) = self.session_ledger.as_ref() {
+                if let Ok(Some(row)) = ledger.get(&request.owner_id) {
+                    if let Some(name) = row.name.as_deref().map(str::trim).filter(|n| !n.is_empty())
+                    {
+                        context_lines.push(format!("session: {name}"));
+                    }
+                    if let Some(prompt) = row
+                        .last_user_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|p| !p.is_empty())
+                    {
+                        context_lines.push(format!("last user prompt: {prompt}"));
+                    }
+                }
+            }
+        }
+        if !request.files.is_empty() {
+            context_lines.push(format!("files: {}", request.files.join(", ")));
+        }
+
+        let diff = crate::feeds::git::fetch_git_diff(dir, &request.files)
+            .await
+            .unwrap_or_default();
+        let diff_body = if diff.trim().is_empty() {
+            "(no textual diff — the selection is new/untracked files)".to_string()
+        } else {
+            diff
+        };
+        let prompt = crate::scribe::compose_scribe_prompt(request.kind, &context_lines, &diff_body);
+
+        // The generation runs off the control loop; the response broadcast
+        // needs only the channel and the echo fields.
+        let control_tx = self.control_tx.clone();
+        let model = (scribe.model)();
+        tokio::spawn(async move {
+            match crate::scribe::summarize_with(&scribe.spawner, model, prompt).await {
+                Ok(text) => {
+                    let body = serde_json::json!({
+                        "action": "changeset_summarize_ok",
+                        "project_dir": request.project_dir,
+                        "owner_id": request.owner_id,
+                        "kind": request.kind.as_str(),
+                        "text": text,
+                    });
+                    let _ = control_tx.send(Frame::new(
+                        FeedId::CONTROL,
+                        serde_json::to_vec(&body).expect("changeset_summarize_ok serializes"),
+                    ));
+                }
+                Err(detail) => {
+                    Self::send_changeset_summarize_err(
+                        &control_tx,
+                        &request.project_dir,
+                        &request.owner_id,
+                        request.kind,
+                        &detail,
+                    );
+                }
+            }
+        });
+    }
+
+    fn send_changeset_summarize_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        owner_id: &str,
+        kind: crate::scribe::ScribeKind,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_summarize_err",
+            "project_dir": project_dir,
+            "owner_id": owner_id,
+            "kind": kind.as_str(),
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_summarize_err serializes"),
+        ));
+    }
+
+    fn send_changeset_commit_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_commit_err",
+            "project_dir": project_dir,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_commit_err serializes"),
+        ));
+    }
+
     fn send_changeset_git_init_ok(control_tx: &broadcast::Sender<Frame>, project_dir: &str) {
         let body = serde_json::json!({
             "action": "changeset_git_init_ok",
@@ -3661,6 +3976,12 @@ impl AgentSupervisor {
     /// supervisor is shared.
     pub fn set_shell_ledger(&mut self, ledger: Arc<crate::shell_ledger::ShellLedger>) {
         self.shell_ledger = Some(ledger);
+    }
+
+    /// Attach the changeset scribe (the `changeset_summarize` backend).
+    /// Called once in `main.rs` before the supervisor is shared.
+    pub fn set_scribe(&mut self, scribe: ScribeContext) {
+        self.scribe = Some(scribe);
     }
 
     /// Handle a `list_shell_exchanges { tug_session_id }` CONTROL request — the
@@ -10387,5 +10708,169 @@ mod tests {
             .handle_control("list_session_state_changes", b"not json", 10)
             .await;
         assert!(matches!(outcome, ControlOutcome::Error(_)));
+    }
+
+    // ---- changeset_summarize ([P11]) ----
+
+    /// Fake scribe: records every (model, prompt) request, replies canned.
+    struct FakeScribe {
+        result: Result<String, String>,
+        seen: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl crate::scribe::ScribeSpawner for FakeScribe {
+        fn run(
+            &self,
+            model: String,
+            prompt: String,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<String, String>> + Send>,
+        > {
+            self.seen.lock().unwrap().push((model, prompt));
+            let result = self.result.clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    /// A supervisor with a registered temp git repo (one dirty tracked file)
+    /// and a fake scribe. Returns the repo dir, the fake (for prompt
+    /// assertions), and the CONTROL receiver.
+    fn make_summarize_harness(
+        result: Result<String, String>,
+    ) -> (
+        Arc<AgentSupervisor>,
+        Arc<FakeScribe>,
+        tempfile::TempDir,
+        std::path::PathBuf,
+        broadcast::Receiver<Frame>,
+    ) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().canonicalize().expect("canonicalize");
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        };
+        run(&["init", "-q", "-b", "main"]);
+        run(&["config", "user.email", "t@t"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(repo.join("noted.txt"), "base\n").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "base"]);
+        std::fs::write(repo.join("noted.txt"), "base\nsummarize-marker-line\n").unwrap();
+
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let cancel = CancellationToken::new();
+        registry
+            .get_or_create(&repo, cancel.clone())
+            .expect("register repo workspace");
+        let (mut sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(ledger),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            cancel,
+        );
+        let fake = Arc::new(FakeScribe {
+            result,
+            seen: std::sync::Mutex::new(Vec::new()),
+        });
+        sup.set_scribe(ScribeContext {
+            spawner: Arc::clone(&fake) as Arc<dyn crate::scribe::ScribeSpawner>,
+            model: Arc::new(|| "fake-model".to_string()),
+        });
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+        (Arc::new(sup), fake, temp, repo, rx)
+    }
+
+    /// Await a CONTROL frame with `action`, tolerating unrelated frames.
+    async fn recv_until_action(
+        rx: &mut broadcast::Receiver<Frame>,
+        action: &str,
+    ) -> serde_json::Value {
+        for _ in 0..64 {
+            let frame =
+                match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                    Ok(Ok(f)) => f,
+                    _ => break,
+                };
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&frame.payload) {
+                if v.get("action").and_then(|a| a.as_str()) == Some(action) {
+                    return v;
+                }
+            }
+        }
+        panic!("CONTROL frame with action `{action}` not observed");
+    }
+
+    #[tokio::test]
+    async fn changeset_summarize_round_trips_with_scoped_diff_in_the_prompt() {
+        let (sup, fake, _temp, repo, mut rx) =
+            make_summarize_harness(Ok("draft: adjust noted.txt".to_string()));
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_summarize",
+            "project_dir": repo.to_string_lossy(),
+            "owner_kind": "unattributed",
+            "owner_id": "",
+            "files": ["noted.txt"],
+            "kind": "commit_message",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_summarize", &payload, 10)
+            .await
+            .expect_handled();
+
+        let ok = recv_until_action(&mut rx, "changeset_summarize_ok").await;
+        assert_eq!(ok["text"], "draft: adjust noted.txt");
+        assert_eq!(ok["kind"], "commit_message");
+        assert_eq!(ok["project_dir"].as_str(), repo.to_str());
+
+        let seen = fake.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        let (model, prompt) = &seen[0];
+        assert_eq!(model, "fake-model");
+        assert!(prompt.contains("summarize-marker-line"), "prompt carries the scoped diff");
+        assert!(prompt.contains("files: noted.txt"), "prompt names the selection");
+        assert!(prompt.contains("commit message"), "prompt carries the ask");
+    }
+
+    #[tokio::test]
+    async fn changeset_summarize_error_reaches_the_client() {
+        let (sup, _fake, _temp, repo, mut rx) =
+            make_summarize_harness(Err("scribe timed out".to_string()));
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_summarize",
+            "project_dir": repo.to_string_lossy(),
+            "owner_kind": "session",
+            "owner_id": "nope",
+            "files": ["noted.txt"],
+            "kind": "summary",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_summarize", &payload, 10)
+            .await
+            .expect_handled();
+        let err = recv_until_action(&mut rx, "changeset_summarize_err").await;
+        assert_eq!(err["detail"], "scribe timed out");
+        assert_eq!(err["kind"], "summary");
     }
 }

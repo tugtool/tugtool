@@ -160,6 +160,25 @@ export function parseGitDiffPayload(payload: unknown): GitDiffPayload | null {
 
 // ── GitDiffStore ────────────────────────────────────────────────────────────
 
+/**
+ * Scope for a diff request. `paths` narrows the diff to a repo-relative
+ * pathspec (`git diff HEAD -- <paths…>`); `root` overrides the store's
+ * construction-time project dir (the changeset card serves many projects
+ * through one store). Both absent = the whole-tree diff.
+ */
+export interface GitDiffScope {
+  paths?: string[];
+  root?: string;
+}
+
+/**
+ * Store-instance counter baked into every `requestId` so concurrent
+ * requests from different stores (a dev card's `/diff` and the changeset
+ * card's scoped diff) can never correlate to each other's responses —
+ * the GIT_DIFF response is a broadcast every client sees.
+ */
+let nextStoreId = 0;
+
 export class GitDiffStore {
   private _snapshot: GitDiffSnapshot = EMPTY_SNAPSHOT;
   private _listeners = new Set<() => void>();
@@ -168,12 +187,15 @@ export class GitDiffStore {
   private readonly _feedStore: FeedStore;
   private readonly _feedId: FeedIdValue;
   private readonly _projectDir: string | undefined;
+  private readonly _storeId: number;
+  private _scope: GitDiffScope = {};
   private _seq = 0;
 
   constructor(feedStore: FeedStore, feedId: FeedIdValue, projectDir?: string) {
     this._feedStore = feedStore;
     this._feedId = feedId;
     this._projectDir = projectDir;
+    this._storeId = ++nextStoreId;
     this._unsubscribeFeed = feedStore.subscribe(() => this._onFeedUpdate());
     // No initial check: a `/diff` response only matters once we've sent a
     // request (`requestId` is null until then, so nothing would match).
@@ -200,11 +222,14 @@ export class GitDiffStore {
   }
 
   /**
-   * Fire a fresh `git diff HEAD` request for this card's project dir. Moves
-   * the store to `loading` under a new `requestId`; the matching `GIT_DIFF`
-   * response resolves it to `ready`. Re-callable for the refresh control.
+   * Fire a fresh `git diff HEAD` request. Moves the store to `loading` under
+   * a new `requestId`; the matching `GIT_DIFF` response resolves it to
+   * `ready`. Passing a `scope` adopts it (a scoped open from the changeset
+   * card, or `{}` for the whole tree); omitting it repeats the last scope —
+   * the in-sheet Refresh re-runs whatever the sheet is showing.
    */
-  requestDiff(): void {
+  requestDiff(scope?: GitDiffScope): void {
+    if (scope !== undefined) this._scope = scope;
     const conn = getConnection();
     if (!conn) {
       this._set({
@@ -216,10 +241,14 @@ export class GitDiffStore {
       return;
     }
     this._seq += 1;
-    const requestId = `gd-${this._seq}`;
-    const query: Record<string, string> = { requestId };
-    if (this._projectDir !== undefined && this._projectDir.length > 0) {
-      query.root = this._projectDir;
+    const requestId = `gd-${this._storeId}-${this._seq}`;
+    const query: Record<string, unknown> = { requestId };
+    const root = this._scope.root ?? this._projectDir;
+    if (root !== undefined && root.length > 0) {
+      query.root = root;
+    }
+    if (this._scope.paths !== undefined && this._scope.paths.length > 0) {
+      query.paths = this._scope.paths;
     }
     this._set({ phase: "loading", requestId, payload: null, error: null });
     const bytes = new TextEncoder().encode(JSON.stringify(query));

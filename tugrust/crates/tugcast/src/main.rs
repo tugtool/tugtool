@@ -18,6 +18,7 @@ mod path_resolver;
 mod permissions;
 mod resources;
 mod router;
+mod scribe;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
@@ -543,6 +544,10 @@ async fn main() {
             root: Option<String>,
             #[serde(rename = "requestId")]
             request_id: Option<String>,
+            /// Optional repo-relative pathspec — the changeset card scopes
+            /// its diff to one file or one changeset. Absent/empty keeps
+            /// the whole-tree diff (dev card `/diff`).
+            paths: Option<Vec<String>>,
         }
         while let Some(frame) = gd_input_rx.recv().await {
             let raw = match serde_json::from_slice::<RawDiffQuery>(&frame.payload) {
@@ -559,12 +564,14 @@ async fn main() {
             let root_pb = raw.root.map(PathBuf::from);
             let entry = gd_registry.resolve_diff_target(root_pb.as_deref(), &gd_bootstrap);
             let request_id = raw.request_id.unwrap_or_default();
+            let paths = raw.paths.unwrap_or_default();
             let response_tx = gd_response_tx_loop.clone();
             tokio::spawn(async move {
                 let snapshot = crate::feeds::git::build_git_diff_snapshot(
                     &entry.project_dir,
                     request_id,
                     entry.workspace_key.as_ref(),
+                    &paths,
                 )
                 .await;
                 match serde_json::to_vec(&snapshot) {
@@ -832,6 +839,27 @@ async fn main() {
     if let Some(sl) = shell_ledger.as_ref() {
         supervisor.set_shell_ledger(Arc::clone(sl));
     }
+
+    // The changeset scribe ([P11]): `changeset_summarize` runs a headless
+    // `claude -p` with the model from the tugbank default
+    // `dev.tugtool.changeset`/`scribe_model` (resolved per request, so a
+    // settings change applies immediately), falling back to `haiku`.
+    let scribe_model: Arc<dyn Fn() -> String + Send + Sync> = {
+        let bank = bank_client.clone();
+        Arc::new(move || {
+            bank.as_ref()
+                .and_then(|b| b.get("dev.tugtool.changeset", "scribe_model").ok().flatten())
+                .and_then(|v| match v {
+                    tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "haiku".to_string())
+        })
+    };
+    supervisor.set_scribe(feeds::agent_supervisor::ScribeContext {
+        spawner: Arc::new(scribe::ClaudeScribeSpawner),
+        model: scribe_model,
+    });
 
     // PULSE — app-wide color commentary. One bridge per process: it
     // taps the shared CODE_OUTPUT broadcast for the allowlisted frame

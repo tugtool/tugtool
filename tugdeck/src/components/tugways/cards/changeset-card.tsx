@@ -11,9 +11,11 @@
  * dash worktree and an "Unattributed" entry per project with unclaimed dirty
  * files. A fixed table of contents (a bordered `TugListView`, one row per
  * entry) sits over a scrollable accordion of the same entries; file rows
- * carry a git-status glyph, op/origin provenance, and ambiguous/shared
- * badges. A session in a non-git directory hosts the "Initialize git"
- * affordance. Read-only rows render no tabindex.
+ * carry a commit-selection checkbox, a git-status glyph, op/origin
+ * provenance, ambiguous/shared badges, and a scoped-diff affordance.
+ * Session and unattributed entries host the commit flow ([P15]) — message
+ * field, width-stabilized commit button, numstat receipt — and a session in
+ * a non-git directory hosts the "Initialize git" affordance instead.
  *
  * Data arrives via `useChangesetAll()` — an app-level singleton store
  * (`FeedStore` over CHANGESET_ALL, no workspace filter), NOT `useCardData`:
@@ -45,7 +47,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CircleCheck, CircleDashed } from "lucide-react";
+import { CircleCheck, CircleDashed, GitCompareArrows } from "lucide-react";
 
 import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
@@ -62,8 +64,19 @@ import {
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useTugSheet } from "@/components/tugways/tug-sheet";
+import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import { TugInput } from "@/components/tugways/tug-input";
+import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
+import { useDiffSheet } from "./diff-sheet";
 import { useChangesetAll } from "@/lib/changeset-all-store";
-import { useChangesetGitInit } from "@/lib/changeset-verb-store";
+import {
+  useChangesetCommit,
+  useChangesetGitInit,
+  useChangesetSummarize,
+} from "@/lib/changeset-verb-store";
+import { getChangesetDiffStore } from "@/lib/changeset-diff-store";
+import type { GitDiffScope } from "@/lib/git-diff-store";
 import {
   cardSessionBindingStore,
   type CardSessionBinding,
@@ -380,9 +393,89 @@ function FilePathLink({
   );
 }
 
-function FileRow({ file, projectRoot }: { file: ChangesetFile; projectRoot: string }) {
+/**
+ * Whether a file has a `git diff HEAD` to show. Untracked files (`??`)
+ * have no HEAD-side content, so a scoped diff would come back empty — the
+ * path link (which opens the file itself) is the whole story for them.
+ */
+function hasHeadDiff(gitStatus: string): boolean {
+  return !gitStatus.startsWith("??");
+}
+
+/** The per-file diff affordance — opens the diff sheet scoped to one path. */
+function FileDiffButton({ path, onDiff }: { path: string; onDiff: () => void }) {
+  return (
+    <TugPushButton
+      subtype="icon"
+      icon={<GitCompareArrows size={12} />}
+      size="2xs"
+      emphasis="ghost"
+      role="action"
+      title="Show diff"
+      aria-label={`Show diff for ${path}`}
+      data-testid="changeset-file-diff"
+      data-path={path}
+      onClick={onDiff}
+    />
+  );
+}
+
+/**
+ * The row's commit-selection checkbox ([P15]): a chain control whose
+ * `toggle` lands in the entry's responder form ([L11]).
+ */
+function FileSelectCheckbox({
+  path,
+  senderId,
+  selected,
+  disabled,
+}: {
+  path: string;
+  senderId: string;
+  selected: boolean;
+  disabled: boolean;
+}) {
+  return (
+    <TugCheckbox
+      size="sm"
+      checked={selected}
+      senderId={senderId}
+      disabled={disabled}
+      aria-label={`Include ${path} in the commit`}
+      data-testid="changeset-file-select"
+      data-path={path}
+    />
+  );
+}
+
+/** Per-row selection wiring handed down from the entry's commit state. */
+interface RowSelection {
+  senderId: string;
+  selected: boolean;
+  disabled: boolean;
+}
+
+function FileRow({
+  file,
+  projectRoot,
+  onDiff,
+  selection,
+}: {
+  file: ChangesetFile;
+  projectRoot: string;
+  onDiff?: () => void;
+  selection?: RowSelection;
+}) {
   return (
     <div className="changeset-file-row" data-testid="changeset-file">
+      {selection !== undefined && (
+        <FileSelectCheckbox
+          path={file.path}
+          senderId={selection.senderId}
+          selected={selection.selected}
+          disabled={selection.disabled}
+        />
+      )}
       <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
         {statusGlyph(file.git_status)}
       </span>
@@ -399,6 +492,7 @@ function FileRow({ file, projectRoot }: { file: ChangesetFile; projectRoot: stri
       <span className="changeset-file-provenance">
         {file.origin === "dash" ? file.op : `${file.op} · ${file.origin}`}
       </span>
+      {onDiff !== undefined && <FileDiffButton path={file.path} onDiff={onDiff} />}
     </div>
   );
 }
@@ -455,32 +549,291 @@ function NonRepoBody({ projectDir }: { projectDir: string }) {
   );
 }
 
-/** The expanded body of one entry — its file list (or clean/init state). */
-function EntryBody({ item }: { item: ChangesetItem }) {
+/** A file the entry can commit: its path plus its default selection. */
+interface SelectableFile {
+  path: string;
+  /** Ambiguous and shared rows start deselected — explicit opt-in ([P15]). */
+  defaultSelected: boolean;
+}
+
+/**
+ * The expanded body of one entry — its file list (or clean/init state) plus
+ * the commit flow ([P15]).
+ *
+ * `onDiff` opens the shared diff sheet scoped to a pathspec within the
+ * entry's project. It applies to session and unattributed entries (working
+ * tree vs HEAD) — a dash entry's files are commits past its base, which a
+ * `git diff HEAD` in the project dir cannot show, so dashes get no diff
+ * affordance. Untracked files likewise (no HEAD side).
+ *
+ * The same entries get the commit flow: per-file checkboxes (ambiguous /
+ * shared rows deselected by default — explicit opt-in), a message field
+ * (TugInput carries the substrate responders), and a width-stabilized
+ * commit button. Selection is kept as per-path *overrides* over the
+ * defaults, so a snapshot that removes files (committed elsewhere)
+ * reconciles by construction — vanished paths simply stop contributing.
+ * Errors surface through `onError` (the card's TugAlert sheet).
+ */
+function EntryBody({
+  item,
+  onDiff,
+  onError,
+  onInfo,
+}: {
+  item: ChangesetItem;
+  onDiff?: (scope: GitDiffScope) => void;
+  onError?: (title: string, message: string) => void;
+  onInfo?: (title: string, message: string) => void;
+}) {
+  const projectRoot = item.project.project_dir;
+
+  // Commit-flow state. Hooks run for every entry kind (dash bodies just
+  // never render the controls).
+  const selectable: SelectableFile[] = useMemo(() => {
+    if (item.kind === "session" && !item.project.no_repo) {
+      return item.entry.files.map((file) => ({
+        path: file.path,
+        defaultSelected: !file.ambiguous && !file.shared,
+      }));
+    }
+    if (item.kind === "unattributed") {
+      return item.files.map((file) => ({ path: file.path, defaultSelected: true }));
+    }
+    return [];
+  }, [item]);
+
+  const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [message, setMessage] = useState("");
+  const { phase, error, sha, receipt, commit, clear } = useChangesetCommit(item.id);
+
+  // Scribe round trips ([P11]): "Draft message" fills the commit-message
+  // field; "Summarize" presents its text as an info sheet.
+  const draft = useChangesetSummarize(item.id, "commit_message");
+  const summary = useChangesetSummarize(item.id, "summary");
+  const ownerKind = item.kind;
+  const ownerId = item.kind === "unattributed" ? "" : item.entry.owner_id;
+
+  const selectSender = (path: string): string => `${item.id}|${path}`;
+  const { ResponderScope: CommitScope, responderRef: commitRef } = useResponderForm({
+    toggle: Object.fromEntries(
+      selectable.map((file) => [
+        selectSender(file.path),
+        (checked: boolean) =>
+          setOverrides((prev) => new Map(prev).set(file.path, checked)),
+      ]),
+    ),
+  });
+
+  const isSelected = (file: SelectableFile): boolean =>
+    overrides.get(file.path) ?? file.defaultSelected;
+  const selectedPaths = selectable.filter(isSelected).map((file) => file.path);
+
+  // A failed commit surfaces once through the card's alert sheet, then the
+  // verb state returns to idle so the controls are usable again.
+  useEffect(() => {
+    if (phase !== "error" || error === null) return;
+    onError?.("Couldn't Commit", error);
+    clear();
+  }, [phase, error, onError, clear]);
+
+  // A landed commit clears the drafted message; the receipt panel stays up
+  // until dismissed (or until the next commit round).
+  useEffect(() => {
+    if (phase === "done") setMessage("");
+  }, [phase]);
+
+  // The drafted message lands in the message field; the summary lands in an
+  // info sheet. Both scribe states clear on consumption so the buttons are
+  // immediately reusable; failures surface like commit failures.
+  const draftClear = draft.clear;
+  const summaryClear = summary.clear;
+  useEffect(() => {
+    if (draft.phase === "done" && draft.text !== null) {
+      setMessage(draft.text);
+      draftClear();
+    } else if (draft.phase === "error" && draft.error !== null) {
+      onError?.("Couldn't Draft a Message", draft.error);
+      draftClear();
+    }
+  }, [draft.phase, draft.text, draft.error, draftClear, onError]);
+  useEffect(() => {
+    if (summary.phase === "done" && summary.text !== null) {
+      onInfo?.("Summary", summary.text);
+      summaryClear();
+    } else if (summary.phase === "error" && summary.error !== null) {
+      onError?.("Couldn't Summarize", summary.error);
+      summaryClear();
+    }
+  }, [summary.phase, summary.text, summary.error, summaryClear, onError, onInfo]);
+
   if (item.kind === "session" && item.project.no_repo) {
     return <NonRepoBody projectDir={item.project.project_dir} />;
   }
 
   const files = item.kind === "unattributed" ? null : item.entry.files;
-  const projectRoot = item.project.project_dir;
+  const diffScoped =
+    item.kind === "dash" || onDiff === undefined
+      ? undefined
+      : (paths: string[]) => onDiff({ root: projectRoot, paths });
+
+  // The entry's action row: Summarize (all of the entry's files) plus a
+  // whole-changeset diff when more than one file has a HEAD side.
+  const entryActionsRow = (diffablePaths: string[], allPaths: string[]) => {
+    const summarizeButton =
+      selectable.length === 0 ? null : (
+        <TugPushButton
+          emphasis="ghost"
+          role="action"
+          size="2xs"
+          disabled={summary.phase === "pending"}
+          widthStabilize={{ alternateLabel: "Summarizing…" }}
+          onClick={() =>
+            summary.summarize({ projectDir: projectRoot, ownerKind, ownerId, files: allPaths })
+          }
+          data-testid="changeset-entry-summarize"
+        >
+          {summary.phase === "pending" ? "Summarizing…" : "Summarize"}
+        </TugPushButton>
+      );
+    const diffButton =
+      diffScoped !== undefined && diffablePaths.length > 1 ? (
+        <TugPushButton
+          emphasis="ghost"
+          role="action"
+          size="2xs"
+          onClick={() => diffScoped(diffablePaths)}
+          data-testid="changeset-entry-diff"
+        >
+          Diff {diffablePaths.length} files
+        </TugPushButton>
+      ) : null;
+    if (summarizeButton === null && diffButton === null) return null;
+    return (
+      <div className="changeset-entry-actions">
+        {summarizeButton}
+        {diffButton}
+      </div>
+    );
+  };
+
+  const rowSelection = (path: string): RowSelection => ({
+    senderId: selectSender(path),
+    selected: overrides.get(path) ?? selectable.find((f) => f.path === path)?.defaultSelected ?? true,
+    disabled: phase === "pending",
+  });
+
+  const commitControls =
+    selectable.length === 0 ? null : (
+      <div className="changeset-commit" data-testid="changeset-commit-controls">
+        {phase === "done" && receipt !== null ? (
+          <div className="changeset-commit-receipt" data-testid="changeset-commit-receipt">
+            <div className="changeset-commit-receipt-head">
+              <span className="changeset-commit-receipt-sha">
+                Committed {sha === null ? "" : sha.slice(0, 10)}
+              </span>
+              <TugPushButton
+                size="2xs"
+                emphasis="ghost"
+                role="action"
+                onClick={clear}
+                data-testid="changeset-commit-receipt-dismiss"
+              >
+                Dismiss
+              </TugPushButton>
+            </div>
+            <pre className="changeset-commit-receipt-body">{receipt}</pre>
+          </div>
+        ) : (
+          <div className="changeset-commit-row">
+            <TugInput
+              size="sm"
+              placeholder="Commit message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              disabled={phase === "pending"}
+              aria-label="Commit message"
+              data-testid="changeset-commit-message"
+            />
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              role="action"
+              disabled={draft.phase === "pending" || selectedPaths.length === 0}
+              widthStabilize={{ alternateLabel: "Drafting…" }}
+              onClick={() =>
+                draft.summarize({
+                  projectDir: projectRoot,
+                  ownerKind,
+                  ownerId,
+                  files: selectedPaths,
+                })
+              }
+              data-testid="changeset-draft-message"
+            >
+              {draft.phase === "pending" ? "Drafting…" : "Draft"}
+            </TugPushButton>
+            <TugPushButton
+              size="sm"
+              emphasis="outlined"
+              role="accent"
+              disabled={
+                phase === "pending" ||
+                selectedPaths.length === 0 ||
+                message.trim().length === 0
+              }
+              widthStabilize={{ alternateLabel: "Committing…" }}
+              onClick={() => commit(projectRoot, selectedPaths, message.trim())}
+              data-testid="changeset-commit-button"
+            >
+              {phase === "pending" ? "Committing…" : "Commit"}
+            </TugPushButton>
+          </div>
+        )}
+      </div>
+    );
 
   if (item.kind === "unattributed") {
+    const diffablePaths = item.files
+      .filter((file) => hasHeadDiff(file.git_status))
+      .map((file) => file.path);
     return (
-      <div className="changeset-file-list" data-testid="changeset-unattributed">
-        {item.files.map((file) => (
-          <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
-            <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
-              {statusGlyph(file.git_status)}
-            </span>
-            <FilePathLink
-              path={file.path}
-              op=""
-              gitStatus={file.git_status}
-              projectRoot={projectRoot}
-            />
-          </div>
-        ))}
-      </div>
+      <CommitScope>
+        <div
+          ref={commitRef as (el: HTMLDivElement | null) => void}
+          className="changeset-file-list"
+          data-testid="changeset-unattributed"
+        >
+          {item.files.map((file) => {
+            const selection = rowSelection(file.path);
+            return (
+              <div className="changeset-file-row" data-testid="changeset-file" key={file.path}>
+                <FileSelectCheckbox
+                  path={file.path}
+                  senderId={selection.senderId}
+                  selected={selection.selected}
+                  disabled={selection.disabled}
+                />
+                <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
+                  {statusGlyph(file.git_status)}
+                </span>
+                <FilePathLink
+                  path={file.path}
+                  op=""
+                  gitStatus={file.git_status}
+                  projectRoot={projectRoot}
+                />
+                {diffScoped !== undefined && hasHeadDiff(file.git_status) && (
+                  <span className="changeset-file-trailing">
+                    <FileDiffButton path={file.path} onDiff={() => diffScoped([file.path])} />
+                  </span>
+                )}
+              </div>
+            );
+          })}
+          {entryActionsRow(diffablePaths, item.files.map((file) => file.path))}
+          {commitControls}
+        </div>
+      </CommitScope>
     );
   }
 
@@ -493,12 +846,32 @@ function EntryBody({ item }: { item: ChangesetItem }) {
     );
   }
 
+  const diffablePaths = files
+    .filter((file) => hasHeadDiff(file.git_status))
+    .map((file) => file.path);
   return (
-    <div className="changeset-file-list">
-      {files.map((file) => (
-        <FileRow key={file.path} file={file} projectRoot={projectRoot} />
-      ))}
-    </div>
+    <CommitScope>
+      <div
+        ref={commitRef as (el: HTMLDivElement | null) => void}
+        className="changeset-file-list"
+      >
+        {files.map((file) => (
+          <FileRow
+            key={file.path}
+            file={file}
+            projectRoot={projectRoot}
+            onDiff={
+              diffScoped !== undefined && hasHeadDiff(file.git_status)
+                ? () => diffScoped([file.path])
+                : undefined
+            }
+            selection={item.kind === "session" ? rowSelection(file.path) : undefined}
+          />
+        ))}
+        {entryActionsRow(diffablePaths, files.map((file) => file.path))}
+        {commitControls}
+      </div>
+    </CommitScope>
   );
 }
 
@@ -590,6 +963,24 @@ export function ChangesetCardContent() {
   const data = useChangesetAll();
   const bindings = useOpenBindings();
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // The shared diff sheet, hosted by this card. The store is the app-level
+  // changeset diff singleton (unfiltered — every project flows through it);
+  // each open names its project via the scope's `root`.
+  const { showSheet, renderSheet } = useTugSheet();
+  const { openDiffSheet } = useDiffSheet({
+    gitDiffStore: getChangesetDiffStore(),
+    showSheet,
+  });
+
+  // Verb failures (commit, scribe) and scribe summaries surface as a
+  // pane-modal TugAlert sheet.
+  const presentNotice = useCallback(
+    (title: string, message: string) => {
+      void presentAlertSheet(showSheet, { title, message });
+    },
+    [showSheet],
+  );
 
   const items = useMemo(() => buildItems(data, bindings), [data, bindings]);
 
@@ -738,12 +1129,18 @@ export function ChangesetCardContent() {
                 data-entry-id={item.id}
                 data-project-dir={item.project.project_dir}
               >
-                <EntryBody item={item} />
+                <EntryBody
+                  item={item}
+                  onDiff={openDiffSheet}
+                  onError={presentNotice}
+                  onInfo={presentNotice}
+                />
               </TugAccordionItem>
             ))}
           </TugAccordion>
         </div>
       </AccordionScope>
+      {renderSheet()}
     </div>
   );
 }

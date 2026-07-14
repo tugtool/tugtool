@@ -416,6 +416,77 @@ fn parse_name_status(output: &str) -> Vec<ChangesetFile> {
     files
 }
 
+/// The result of a card-driven commit: the new HEAD sha plus the
+/// `git show --numstat --format= HEAD` receipt (the commit skill's
+/// receipt idiom).
+#[derive(Debug)]
+pub(crate) struct ChangesetCommitReceipt {
+    pub sha: String,
+    pub receipt: String,
+}
+
+/// Commit exactly `files` (repo-relative) in `repo_dir` with `message`
+/// ([P15]).
+///
+/// Staging is by construction, not inference: `git add -- <files…>` makes
+/// untracked selections known to the index, then `git commit -m <message>
+/// -- <files…>` commits **only** those paths — anything else already
+/// staged in the index stays out of the commit. Refuses an empty file
+/// list and a blank message; never falls back to `git add .`.
+///
+/// Errors carry git's stderr (trimmed) so the card can surface the real
+/// reason.
+pub(crate) async fn run_changeset_commit(
+    repo_dir: &Path,
+    files: &[String],
+    message: &str,
+) -> Result<ChangesetCommitReceipt, String> {
+    if files.is_empty() {
+        return Err("no files selected".to_string());
+    }
+    if message.trim().is_empty() {
+        return Err("empty commit message".to_string());
+    }
+
+    let mut add = tokio::process::Command::new("git");
+    add.arg("-C").arg(repo_dir).arg("add").arg("--").args(files);
+    run_git_step(add, "git add failed").await?;
+
+    let mut commit = tokio::process::Command::new("git");
+    commit
+        .arg("-C")
+        .arg(repo_dir)
+        .args(["commit", "-m", message, "--"])
+        .args(files);
+    run_git_step(commit, "git commit failed").await?;
+
+    let sha = git_stdout(repo_dir, &["rev-parse", "HEAD"])
+        .await
+        .ok_or_else(|| "git rev-parse HEAD failed".to_string())?;
+    let receipt = git_stdout(repo_dir, &["show", "--numstat", "--format=", "HEAD"])
+        .await
+        .ok_or_else(|| "git show --numstat failed".to_string())?;
+    Ok(ChangesetCommitReceipt { sha, receipt })
+}
+
+/// Run one git step, mapping a non-zero exit to its stderr detail (or
+/// `fallback` when stderr is empty) and a spawn failure to its io error.
+async fn run_git_step(
+    mut cmd: tokio::process::Command,
+    fallback: &str,
+) -> Result<(), String> {
+    let output = cmd.output().await.map_err(|e| e.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if detail.is_empty() {
+        fallback.to_string()
+    } else {
+        detail
+    })
+}
+
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
 /// on any failure.
 async fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
@@ -724,6 +795,72 @@ mod tests {
         };
         assert_eq!(display_name, "fix the parser bug");
         assert!(*live, "row state overrides the event-derived flag");
+    }
+
+    #[tokio::test]
+    async fn run_changeset_commit_commits_exactly_the_listed_files() {
+        let (_temp, repo) = init_repo();
+        // Three dirty paths — one listed, one pre-staged into the index,
+        // one untracked. The commit must take only the listed file and
+        // leave everything else exactly as it was.
+        std::fs::write(repo.join("a.txt"), "changed-a\n").unwrap();
+        std::fs::write(repo.join("b.txt"), "b\n").unwrap();
+        git(&repo, &["add", "b.txt"]);
+        std::fs::write(repo.join("c.txt"), "c\n").unwrap();
+
+        let receipt = run_changeset_commit(&repo, &["a.txt".to_string()], "commit a")
+            .await
+            .expect("commit succeeds");
+
+        assert_eq!(receipt.sha.len(), 40, "full HEAD sha");
+        let receipt_paths: Vec<&str> = receipt
+            .receipt
+            .lines()
+            .filter_map(|l| l.split('\t').nth(2))
+            .collect();
+        assert_eq!(receipt_paths, ["a.txt"], "numstat lists only the listed file");
+
+        // b.txt stays staged-but-uncommitted; c.txt stays untracked.
+        let status = git_stdout(&repo, &["status", "--porcelain"])
+            .await
+            .expect("status");
+        assert!(status.contains("A  b.txt"), "pre-staged file untouched: {status}");
+        assert!(status.contains("?? c.txt"), "untracked file untouched: {status}");
+    }
+
+    #[tokio::test]
+    async fn run_changeset_commit_stages_untracked_selections() {
+        let (_temp, repo) = init_repo();
+        std::fs::write(repo.join("fresh.txt"), "fresh\n").unwrap();
+        let receipt =
+            run_changeset_commit(&repo, &["fresh.txt".to_string()], "add fresh")
+                .await
+                .expect("untracked selection commits");
+        assert!(receipt.receipt.contains("fresh.txt"));
+    }
+
+    #[tokio::test]
+    async fn run_changeset_commit_refuses_empty_list_and_blank_message() {
+        let (_temp, repo) = init_repo();
+        assert!(run_changeset_commit(&repo, &[], "msg").await.is_err());
+        std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
+        assert!(
+            run_changeset_commit(&repo, &["a.txt".to_string()], "   ")
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn run_changeset_commit_error_carries_git_stderr() {
+        let (_temp, repo) = init_repo();
+        let err = run_changeset_commit(&repo, &["no-such-file.txt".to_string()], "msg")
+            .await
+            .expect_err("missing pathspec fails");
+        assert!(
+            err.contains("no-such-file.txt"),
+            "stderr detail names the bad path: {err}"
+        );
     }
 
     #[test]

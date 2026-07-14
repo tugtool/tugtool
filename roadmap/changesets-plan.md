@@ -844,10 +844,10 @@ tabindex (mousedown-focus default gotcha).
 | #step-12d | Retire the per-workspace feed path | done | bfcc53316 |
 | #step-12e | changeset_git_init verb + Init button | done | 05c65450b |
 | #step-12f | M02A integration checkpoint | done | 877e79d81 |
-| #step-13 | Pathspec diff query | pending | — |
-| #step-14 | changeset_commit verb + card commit flow | pending | — |
-| #step-15 | Scribe sidecar + summarize verb + card UI | pending | — |
-| #step-16 | M03 integration checkpoint | pending | — |
+| #step-13 | Pathspec diff query | done | 02c225d0a |
+| #step-14 | changeset_commit verb + card commit flow | done | d861a0408 |
+| #step-15 | Scribe sidecar + summarize verb + card UI | done | 9e324ce50 |
+| #step-16 | M03 integration checkpoint | done | (verification only) |
 | #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
 | #step-18 | .tug/worktrees home + migration | pending | — |
 | #step-19 | Join engine v2 | pending | — |

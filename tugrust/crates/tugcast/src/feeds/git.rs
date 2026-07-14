@@ -212,10 +212,15 @@ const GIT_DIFF_BASE: &str = "HEAD";
 /// On a git error — most commonly a repository with no commits, where `HEAD`
 /// does not resolve — the snapshot is empty (`file_count = 0`); the sheet
 /// shows its "no changes" state rather than surfacing a raw git failure.
+///
+/// A non-empty `paths` narrows the diff with a `-- <paths…>` pathspec
+/// (repo-relative), so the changeset card can scope the sheet to one file or
+/// one changeset. An empty slice keeps the whole-tree behavior.
 pub async fn build_git_diff_snapshot(
     repo_dir: &Path,
     request_id: String,
     workspace_key: &str,
+    paths: &[String],
 ) -> GitDiffSnapshot {
     // Distinguish "not a git repo" from "clean repo" so the client can say so
     // rather than misreport a clean tree. Cheap, subprocess-free.
@@ -231,7 +236,7 @@ pub async fn build_git_diff_snapshot(
             files: Vec::new(),
         };
     }
-    let files = match fetch_git_diff(repo_dir).await {
+    let files = match fetch_git_diff(repo_dir, paths).await {
         Some(output) => parse_git_diff(&output),
         None => Vec::new(),
     };
@@ -249,22 +254,27 @@ pub async fn build_git_diff_snapshot(
     }
 }
 
-/// Fetch the combined `git diff HEAD` output for the working tree. Returns
-/// `None` (and logs) on a non-zero exit or spawn failure.
-async fn fetch_git_diff(repo_dir: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &repo_dir.to_string_lossy(),
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--no-color",
-            "-M",
-            GIT_DIFF_BASE,
-        ])
-        .output()
-        .await;
+/// Fetch the combined `git diff HEAD` output for the working tree, optionally
+/// narrowed to a `-- <paths…>` pathspec. Returns `None` (and logs) on a
+/// non-zero exit or spawn failure. Crate-visible: the scribe composes its
+/// prompt from the same scoped diff text.
+pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.args([
+        "-C",
+        &repo_dir.to_string_lossy(),
+        "-c",
+        "core.quotepath=false",
+        "diff",
+        "--no-color",
+        "-M",
+        GIT_DIFF_BASE,
+    ]);
+    if !paths.is_empty() {
+        cmd.arg("--");
+        cmd.args(paths);
+    }
+    let output = cmd.output().await;
 
     match output {
         Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
@@ -781,7 +791,7 @@ Binary files a/img.png and b/img.png differ
         fs::write(repo.join("new.txt"), "fresh line\n").unwrap();
         git_in(&repo, &["add", "-A"]).await;
 
-        let snapshot = build_git_diff_snapshot(&repo, "req-42".to_string(), "ws-key").await;
+        let snapshot = build_git_diff_snapshot(&repo, "req-42".to_string(), "ws-key", &[]).await;
 
         assert_eq!(snapshot.request_id, "req-42");
         assert_eq!(snapshot.workspace_key, "ws-key");
@@ -805,9 +815,34 @@ Binary files a/img.png and b/img.png differ
     }
 
     #[tokio::test]
+    async fn test_build_git_diff_snapshot_scoped_paths_narrow_the_diff() {
+        let temp = init_diff_fixture_repo().await;
+        let repo = temp.path().to_path_buf();
+
+        // Two dirty tracked files; the pathspec selects exactly one.
+        fs::write(repo.join("keep.txt"), "v2\n").unwrap();
+        fs::write(repo.join("ren_src.txt"), "also changed\n").unwrap();
+
+        let scoped = build_git_diff_snapshot(
+            &repo,
+            "req-scoped".to_string(),
+            "ws",
+            &["keep.txt".to_string()],
+        )
+        .await;
+        assert_eq!(scoped.file_count, 1, "pathspec narrows to the one file");
+        assert_eq!(scoped.files[0].path, "keep.txt");
+
+        // Totals reflect only the scoped file.
+        let whole = build_git_diff_snapshot(&repo, "req-whole".to_string(), "ws", &[]).await;
+        assert_eq!(whole.file_count, 2, "empty pathspec keeps the whole tree");
+        assert!(scoped.total_added <= whole.total_added);
+    }
+
+    #[tokio::test]
     async fn test_build_git_diff_snapshot_clean_tree_is_empty() {
         let temp = init_diff_fixture_repo().await;
-        let snapshot = build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws").await;
+        let snapshot = build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws", &[]).await;
         assert!(!snapshot.no_repo, "a real repo is not flagged no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
@@ -819,7 +854,7 @@ Binary files a/img.png and b/img.png differ
     async fn test_build_git_diff_snapshot_non_repo_flags_no_repo() {
         // A plain dir (never `git init`ed) is flagged no_repo, not "clean".
         let temp = TempDir::new().unwrap();
-        let snapshot = build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws").await;
+        let snapshot = build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws", &[]).await;
         assert!(snapshot.no_repo, "a non-git dir must set no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());

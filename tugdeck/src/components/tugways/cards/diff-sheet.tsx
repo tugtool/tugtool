@@ -48,6 +48,7 @@ import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import {
   type GitDiffFile,
+  type GitDiffScope,
   type GitDiffStore,
   diffStatusLabel,
   diffStatusLetter,
@@ -60,23 +61,32 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface UseDiffSheetArgs {
-  /** Store that fires `git_diff_request` and resolves the single-shot reply. */
-  gitDiffStore: GitDiffStore;
+  /**
+   * Store that fires `git_diff_request` and resolves the single-shot reply.
+   * `null` (no connection yet — gallery/fixtures) renders the affordance
+   * inert: `openDiffSheet` no-ops.
+   */
+  gitDiffStore: GitDiffStore | null;
   /** The card's shared sheet host (`useTugSheet().showSheet`). */
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
 }
 
 export interface DiffSheetController {
-  /** Present the `/diff` sheet, firing a fresh request for this project. */
-  openDiffSheet: () => void;
+  /**
+   * Present the `/diff` sheet, firing a fresh request. A `scope` narrows the
+   * diff to a pathspec and/or names the project (the changeset card);
+   * omitting it diffs the whole tree of the store's own project (`/diff`).
+   */
+  openDiffSheet: (scope?: GitDiffScope) => void;
 }
 
 export function useDiffSheet({
   gitDiffStore,
   showSheet,
 }: UseDiffSheetArgs): DiffSheetController {
-  const openDiffSheet = useCallback(() => {
-    gitDiffStore.requestDiff();
+  const openDiffSheet = useCallback((scope?: GitDiffScope) => {
+    if (gitDiffStore === null) return;
+    gitDiffStore.requestDiff(scope ?? {});
 
     // Branch on the first resolved response: there's no point opening the
     // (resizable, document-width) diff sheet only to show "nothing here" — a

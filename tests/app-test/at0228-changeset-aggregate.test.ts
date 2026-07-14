@@ -14,6 +14,13 @@
  *      the next recompute.
  *   3. **File click** — a dirty file (in the project's Unattributed entry)
  *      opens in a Text card.
+ *   4. **Diff click** — a modified tracked file's diff affordance opens the
+ *      diff sheet scoped to exactly that file (a second modified file stays
+ *      out — the pathspec flows through the GIT_DIFF_QUERY round trip).
+ *   5. **Card commit** — selecting one file, drafting a message, and
+ *      committing runs the changeset_commit verb: HEAD gains exactly that
+ *      file, the receipt renders its numstat, and the aggregate recompute
+ *      drops the committed row.
  *
  * Two dev cards are opened via real `spawn_session(mode=resume)` (the
  * production binding path): one on a non-repo scratch dir, one on a scratch git
@@ -91,6 +98,8 @@ const DIRTY_FILE = "at0228-dirty.txt";
 // A distinct marker written as the file's CONTENT, so the file-click assertion
 // can confirm the Text card opened on THIS file (the editor shows content).
 const DIRTY_CONTENT = "at0228-dirty-marker-9f3a";
+// The added line in the modified tracked file — the diff sheet must show it.
+const DIFF_MARKER = "at0228-diff-marker-2e7b";
 
 // Two scratch projects, each opened in its own dev card.
 interface Scratch {
@@ -116,11 +125,16 @@ beforeAll(() => {
       git(s.dir, ["config", "user.email", "t@t"]);
       git(s.dir, ["config", "user.name", "t"]);
       writeFileSync(join(s.dir, "committed.txt"), "base\n");
+      writeFileSync(join(s.dir, "other.txt"), "other-base\n");
       git(s.dir, ["add", "."]);
       git(s.dir, ["commit", "-q", "-m", "base"]);
       // One untracked file — it flows into the card as an unattributed,
       // clickable file row.
       writeFileSync(join(s.dir, DIRTY_FILE), `${DIRTY_CONTENT}\n`);
+      // Two modified tracked files — the diff-click assertion scopes the
+      // sheet to one and proves the other stays out.
+      writeFileSync(join(s.dir, "committed.txt"), `base\n${DIFF_MARKER}\n`);
+      writeFileSync(join(s.dir, "other.txt"), "other-base\nother-changed\n");
     }
     s.fixtureDir = join(homedir(), ".claude", "projects", encodeProjectDir(s.dir));
     mkdirSync(s.fixtureDir, { recursive: true });
@@ -208,7 +222,90 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         );
         expect(existsSync(join(NON_REPO.dir, ".git")), "git init created a .git dir").toBe(true);
 
-        // (3) File click: the repo's untracked file lands in the project's
+        // (3) Diff click: the modified tracked file's row carries the diff
+        // affordance (the untracked file's must not — no HEAD side), and
+        // clicking it opens the diff sheet scoped to exactly that file:
+        // other.txt is also modified but excluded by the pathspec. This leg
+        // runs before the file-click leg so no Text card can overlap the
+        // changeset pane, and the sheet is dismissed before that leg clicks
+        // the (otherwise sheet-covered) file link.
+        const UNATTRIBUTED = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
+        const DIFF_BUTTON = `${UNATTRIBUTED} [data-testid="changeset-file-diff"][data-path="committed.txt"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${DIFF_BUTTON}') !== null`,
+          { timeoutMs: 20_000 },
+        );
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector('${UNATTRIBUTED} [data-testid="changeset-file-diff"][data-path="${DIRTY_FILE}"]') === null`,
+          ),
+          "an untracked file gets no diff affordance",
+        ).toBe(true);
+        await app.click(DIFF_BUTTON);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var sheet = document.querySelector('.diff-sheet');
+            if (!sheet) return false;
+            var files = sheet.querySelectorAll('[data-testid="diff-file"]');
+            return files.length === 1 &&
+              (files[0].textContent || "").indexOf("committed.txt") !== -1;
+          })()`,
+          { timeoutMs: 15_000 },
+        );
+        // Expand the one file and confirm the hunk carries the added line.
+        await app.click('.diff-sheet [data-testid="diff-expand-all"]');
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var sheet = document.querySelector('.diff-sheet');
+            return sheet !== null &&
+              (sheet.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        await app.click('[data-testid="diff-done"]');
+        await app.waitForCondition<boolean>(
+          `document.querySelector('.diff-sheet') === null`,
+          { timeoutMs: 8000 },
+        );
+
+        // (4) Card commit: deselect all but other.txt in the Unattributed
+        // entry, draft a message, commit. The verb must commit exactly the
+        // selected file (numstat receipt names it; the other two dirty paths
+        // survive on disk), and the aggregate recompute drops the committed
+        // row from the entry.
+        await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="committed.txt"]`);
+        await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="${DIRTY_FILE}"]`);
+        await app.type(
+          `${UNATTRIBUTED} [data-testid="changeset-commit-message"]`,
+          "at0228 card commit",
+        );
+        await app.click(`${UNATTRIBUTED} [data-testid="changeset-commit-button"]`);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var receipt = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-receipt"]');
+            return receipt !== null && (receipt.textContent || "").indexOf("other.txt") !== -1;
+          })()`,
+          { timeoutMs: 20_000 },
+        );
+        // On disk: HEAD holds exactly other.txt; the deselected files are
+        // still dirty.
+        const show = Bun.spawnSync(["git", "-C", REPO.dir, "show", "--numstat", "--format=", "HEAD"]);
+        const numstatPaths = show.stdout
+          .toString()
+          .trim()
+          .split("\n")
+          .map((l) => l.split("\t")[2]);
+        expect(numstatPaths).toEqual(["other.txt"]);
+        const porcelain = Bun.spawnSync(["git", "-C", REPO.dir, "status", "--porcelain"]).stdout.toString();
+        expect(porcelain).toContain(" M committed.txt");
+        expect(porcelain).toContain(`?? ${DIRTY_FILE}`);
+        // The committed row leaves the entry on the next recompute.
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="other.txt"]') === null`,
+          { timeoutMs: 20_000 },
+        );
+
+        // (5) File click: the repo's untracked file lands in the project's
         // Unattributed entry as a link; clicking it opens the file in a Text
         // card.
         const FILE_LINK = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;

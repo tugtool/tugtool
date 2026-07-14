@@ -222,8 +222,68 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Ambiguous / shared marks: text-tone chips, excluded-from-default-commit
-   semantics land in a later milestone. */
+/* Trailing slot for rows without a provenance column (unattributed) — keeps
+   the diff affordance on the right edge like attributed rows. */
+.changeset-file-trailing {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Per-entry action row (diff-the-changeset; commit controls join it later). */
+.changeset-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+/* ---- Commit flow ([P15]) ---- */
+
+.changeset-commit {
+  padding-top: 6px;
+}
+
+/* Message field + width-stabilized commit button on one line. */
+.changeset-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.changeset-commit-row .tug-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.changeset-commit-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm, 6px);
+}
+
+.changeset-commit-receipt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+.changeset-commit-receipt-body {
+  margin: 0;
+  font-size: 0.75rem;
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Ambiguous / shared marks: text-tone chips whose rows start deselected —
+   the checkbox is the explicit opt-in ([P15]). */
 .changeset-badge {
   flex-shrink: 0;
   font-size: 0.625rem;
