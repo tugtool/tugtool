@@ -1,0 +1,15 @@
+/**
+ * TugMessageEditor — field metrics only. The field IS a `TugTextEditor`
+ * (mounted `borderless`), so its look comes from `tug-text-editor.css`; this
+ * file owns only the resting height floor so an empty message field reserves
+ * the same ≈3-row height the retired `TugTextarea rows={3}` did ([L20]).
+ */
+
+.tug-message-editor {
+  /* Reserve a ≈3-row resting height even when empty (the substrate otherwise
+     opens at one row). `1lh` resolves at the `.cm-scroller` use site, matching
+     the max-height row formula (`N * 1lh + 16px` for `.cm-content`'s padding),
+     so the floor reads as exactly three rows of text. A longer message grows
+     past it up to the `maxRows` cap, then scrolls. */
+  --tug-text-editor-min-height: calc(3 * 1lh + 16px);
+}

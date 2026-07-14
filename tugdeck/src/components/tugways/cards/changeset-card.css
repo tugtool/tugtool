@@ -163,13 +163,30 @@
   padding: 4px 0;
 }
 
-.changeset-file-row {
-  display: flex;
+/* Each changeset file is a BlockChrome ([P25]/[P29]) — the block owns its own
+   chrome/header styling; this wrapper only carries the per-file test hooks
+   (`data-testid` + `data-path`). */
+.changeset-file-block {
+  min-width: 0;
+}
+
+/* The header identity ([P29]): status glyph + path link + provenance section,
+   riding the block header's flexible detail column. */
+.changeset-file-identity {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 0.8125rem;
   font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+}
+
+/* A file block's body notice (loading / error / binary / missing diff). */
+.changeset-file-block-notice {
+  margin: 4px 0;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  opacity: 0.7;
 }
 
 .changeset-file-status {
@@ -214,129 +231,39 @@
   text-decoration: underline;
 }
 
+/* Provenance — `op · origin`, a muted pipe-delimited section trailing the path
+   in the file block's header identity ([P29]). The leading rule reuses the
+   block-header divider convention (a left pipe with breathing room). */
 .changeset-file-provenance {
   flex-shrink: 0;
-  margin-left: auto;
+  padding-left: var(--tug-space-md);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   font-size: 0.6875rem;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Trailing slot for rows without a provenance column (unattributed) — keeps
-   the diff affordance on the right edge like attributed rows. */
-.changeset-file-trailing {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-/* Per-entry action row (diff-the-changeset; commit controls join it later). */
+/* Per-entry action row ([P29]): Expand All / Collapse All over the file blocks
+   plus the whole-entry pop-out. */
 .changeset-entry-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 4px;
   padding-top: 4px;
 }
 
-/* ---- Inline diffs ([P20]) ---- */
+/* ---- Commit composer ([P28]) ---- */
 
-/* One file's diff, revealed under its row. Indented so it reads as belonging
-   to the row above it; the composed DiffBlock owns its own hunk styling. */
-.changeset-inline-diff {
-  margin: 2px 0 6px 22px;
-  min-width: 0;
-}
-
-.changeset-inline-diff-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 2px;
-}
-
-.changeset-inline-diff-notice {
-  margin: 4px 0;
-  font-size: 0.8125rem;
-  opacity: 0.7;
-}
-
-/* The whole-entry diff document, revealed in the entry body. */
-.changeset-entry-diff-doc {
-  margin-top: 6px;
-  min-width: 0;
-}
-
-/* ---- Commit flow ([P15]) ---- */
-
+/* The commit composer is ONE BlockChrome: the lifecycle dot is the drafting
+   indicator, the CM6 `TugMessageEditor` is the body, and the Commit button
+   rides the block footer. This wrapper only spaces it below the file blocks and
+   carries the `changeset-commit-controls` test hook. */
 .changeset-commit {
   padding-top: 6px;
 }
 
-/* Message field (a TugTextarea, pre-filled from the maintained draft) over a
-   trailing action row (Use latest draft + Commit). */
-.changeset-commit-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.changeset-commit-message {
-  width: 100%;
+.changeset-commit-composer {
   min-width: 0;
-}
-
-.changeset-commit-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-/* ---- Maintained draft panel ([P21]/[P24]) ---- */
-
-.changeset-draft {
-  padding-top: 6px;
-}
-
-.changeset-draft-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.changeset-draft-avatar {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  opacity: 0.7;
-}
-
-.changeset-draft-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* A subtle desaturation while the engine is regenerating ([L06] — appearance
-   via a data-attr, never React state). */
-.changeset-draft[data-drafting] .changeset-draft-markdown {
-  opacity: 0.7;
-}
-
-.changeset-draft-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.changeset-draft-freshness {
-  font-size: 0.75rem;
-  opacity: 0.6;
-}
-
-.changeset-draft-error {
-  font-size: 0.75rem;
-  color: var(--tug7-element-tone-text-normal-danger-rest);
 }
 
 .changeset-commit-receipt {

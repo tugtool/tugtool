@@ -89,10 +89,11 @@ export function formatToolResultSummary(summary: ToolResultSummary): string {
 
 /**
  * The `+added` / `−removed` halves of a diff summary, each clamped and
- * signed, for the header's custom diff badge — which colors the added half
- * green and the removed half red against one neutral background. Splitting
- * here keeps the clamping + sign logic in lockstep with
- * {@link formatToolResultSummary} (whose joined form is the copy text).
+ * signed, for the header's diff badge pair — rendered as two ghost badges
+ * that take the header's own text color, no green/red tint (the house
+ * monochrome +N −M doctrine, [P27]). Splitting here keeps the clamping +
+ * sign logic in lockstep with {@link formatToolResultSummary} (whose joined
+ * form is the copy text).
  */
 export function formatDiffSummaryParts(summary: {
   added: number;

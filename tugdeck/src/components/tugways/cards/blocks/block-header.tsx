@@ -167,6 +167,9 @@ import type { CautionFlag } from "./types";
 /** Glyph-box diameter of the lifecycle dot, in CSS px (matches the icon). */
 const DOT_SIZE = 14;
 
+/** Neutral verb-less label for aria strings when a block has no `toolName`. */
+const NEUTRAL_BLOCK_LABEL = "block";
+
 /**
  * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `ghost`
  * in the neutral `inherit` role — no border, no fill, so they read as the
@@ -200,8 +203,21 @@ export interface BlockHeaderProps {
    * compute a phase still renders a sane dot.
    */
   phase?: ToolCallPhase;
-  /** Canonical tool name (e.g. "Bash"). */
-  toolName: string;
+  /**
+   * Canonical tool name (e.g. "Bash"). Optional: a verb-less block (a
+   * changeset file row) omits it, so the `.tool-call-header-name` span is
+   * not rendered and the identity (`target`) leads the row. The aria-labels
+   * that interpolate the name fall back to a neutral "block".
+   */
+  toolName?: string;
+  /**
+   * Leading glyph rendered in the leftmost slot IN PLACE of the lifecycle
+   * dot when provided (a changeset file row puts its commit checkbox here).
+   * When absent, the lifecycle `TugProgressIndicator` dot renders as usual —
+   * the two are mutually exclusive so the identity row's left edge aligns
+   * identically either way.
+   */
+  leading?: React.ReactNode;
   /**
    * The call's target — a path atom-chip (file tools) or the command text
    * (command tools). Chips size themselves; command text wraps to more
@@ -268,6 +284,7 @@ export const BlockHeader = React.forwardRef<
   {
     phase = "idle",
     toolName,
+    leading,
     target,
     summary,
     caution,
@@ -284,6 +301,9 @@ export const BlockHeader = React.forwardRef<
   const hasCopy =
     copyText !== undefined &&
     (typeof copyText === "function" || copyText.length > 0);
+  // The verb the aria-labels name — the tool when present, else a neutral
+  // "block" for a verb-less row (a changeset file block).
+  const ariaSubject = toolName ?? NEUTRAL_BLOCK_LABEL;
 
   return (
     <div
@@ -293,15 +313,34 @@ export const BlockHeader = React.forwardRef<
       data-collapsed={collapsed ? "true" : undefined}
       className={cn("tool-call-header", className)}
     >
-      <TugProgressIndicator
-        variant="pulsing-dot"
-        size={DOT_SIZE}
-        phase={phase}
-        phaseVisual={toolCallPhaseVisual}
-        aria-label={TOOL_CALL_PHASE_LABELS[phase]}
-        className="tool-call-header-dot"
-      />
-      <span className="tool-call-header-name">{toolName}</span>
+      {/* Leftmost slot: a caller-supplied `leading` glyph (a file row's
+          commit checkbox) IN PLACE of the lifecycle dot, or the dot itself.
+          The two are mutually exclusive and share the same box width
+          (`DOT_SIZE`), so the identity row's left edge aligns identically. */}
+      {leading !== undefined ? (
+        <span
+          className="tool-call-header-leading"
+          data-slot="tool-call-header-leading"
+        >
+          {leading}
+        </span>
+      ) : (
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={DOT_SIZE}
+          phase={phase}
+          phaseVisual={toolCallPhaseVisual}
+          aria-label={TOOL_CALL_PHASE_LABELS[phase]}
+          className="tool-call-header-dot"
+        />
+      )}
+      {/* The verb — omitted entirely for a verb-less row (a changeset file
+          block), where the identity leads instead. An empty name would also
+          collapse via CSS, but a verb-less caller passes no `toolName` at
+          all, so the span simply isn't rendered. */}
+      {toolName !== undefined ? (
+        <span className="tool-call-header-name">{toolName}</span>
+      ) : null}
       {/* The detail column is always present — it holds the target (chip
           or wrapping command) and otherwise serves as the flexible spacer
           that pushes the trailing result + actions to the right edge. */}
@@ -317,10 +356,11 @@ export const BlockHeader = React.forwardRef<
       {summary !== undefined ? (
         <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
           {summary.kind === "diff" ? (
-            // Diff stat — two outlined badges with neutral borders and
-            // green/red text on the `+N` / `−M` glyphs alone. See
-            // {@link DiffSummaryBadges}. Each badge copies its own value on
-            // right-click.
+            // Diff stat — two ghost badges (`emphasis="ghost" role="inherit"`)
+            // that take the header's own text color, no green/red tint, so the
+            // pair reads as plain metadata (the house monochrome +N −M
+            // doctrine, [P27]). See {@link DiffSummaryBadges}. Each badge
+            // copies its own value on right-click.
             <DiffSummaryBadges summary={summary} />
           ) : (
             <TugBadge
@@ -370,7 +410,7 @@ export const BlockHeader = React.forwardRef<
             getText={
               typeof copyText === "function" ? copyText : () => copyText ?? ""
             }
-            aria-label={`Copy ${toolName} command and result`}
+            aria-label={`Copy ${ariaSubject} command and result`}
             data-slot="tool-call-header-copy"
           />
         ) : null}
@@ -380,8 +420,8 @@ export const BlockHeader = React.forwardRef<
             onToggle={(next) => disclosure?.onToggle(next)}
             collapsedLabel="Expand"
             expandedLabel="Collapse"
-            ariaLabelExpand={`Expand ${toolName} tool call`}
-            ariaLabelCollapse={`Collapse ${toolName} tool call`}
+            ariaLabelExpand={`Expand ${ariaSubject} tool call`}
+            ariaLabelCollapse={`Collapse ${ariaSubject} tool call`}
             size="xs"
             subtype="icon"
             disabled={disclosure?.disabled === true}

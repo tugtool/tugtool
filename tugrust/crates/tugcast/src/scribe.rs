@@ -198,7 +198,10 @@ fn draft_ask(style_rules: &str) -> String {
         "You are maintaining the commit message for an in-progress changeset. \
          Write ONE conventional commit message — a short imperative subject \
          line, then (only if the change warrants it) a blank line and terse \
-         bullet points. Output only the commit message text, nothing else.\n\n\
+         bullet points. The subject MUST follow the house scoped format \
+         `scope(topic): specific summary` (e.g. `tugdash(changesets-m03b): …`, \
+         `plan(update): …`) — scoped and specific, NEVER a bare one-word subject \
+         like `Fix`. Output only the commit message text, nothing else.\n\n\
          Follow these project style rules:\n{}\n",
         style_rules.trim()
     )
@@ -374,6 +377,9 @@ pub fn fingerprint_dash_entry(branch_head_sha: &str, worktree_status: &str) -> S
 /// read or its expected sections are absent. Mirrors the skill's contract.
 const BAKED_STYLE_RULES: &str = "\
 - First line: imperative mood, no period, under 50 characters.
+- Subject uses the house scoped format `scope(topic): specific summary` (e.g. \
+`tugdash(changesets-m03b): …`, `plan(update): …`) — scoped and specific, never a \
+bare one-word subject like `Fix`.
 - Then, only if warranted, a blank line and terse factual bullet points.
 - No buzzwords, no filler, no \"enhanced\"/\"improved\" without specifics.
 - List only the most significant files if many changed.
@@ -588,8 +594,13 @@ mod tests {
         let prompts = ["fix the parser".to_string()];
         let subjects = ["prior subject".to_string()];
 
+        // The house scoped-subject rule ([P30]) reaches every per-owner-kind
+        // prompt through `draft_ask` — never a bare one-word subject.
+        let scoped_rule = "scope(topic): specific summary";
+
         let session = compose_draft_prompt_session(style, &files, &prompts, &subjects, "DIFF");
         assert!(session.contains("imperative subject"), "style rules present");
+        assert!(session.contains(scoped_rule), "scoped-subject rule in session prompt");
         assert!(session.contains("fix the parser"), "session prompts present");
         assert!(session.contains("a.rs (edit · exact)"));
         assert!(session.contains("prior subject"));
@@ -603,12 +614,14 @@ mod tests {
             "DIFF",
         );
         assert!(dash.contains("squash/join commit message"));
+        assert!(dash.contains(scoped_rule), "scoped-subject rule in dash prompt");
         assert!(dash.contains("round one instruction"), "dash-log lines present");
         assert!(!dash.contains("prompts since this changeset began"));
 
         let unattributed =
             compose_draft_prompt_unattributed(style, &files, &subjects, "DIFF");
         assert!(unattributed.contains("Unattributed changed files"));
+        assert!(unattributed.contains(scoped_rule), "scoped-subject rule in unattributed prompt");
         assert!(!unattributed.contains("prompts since this changeset began"));
     }
 

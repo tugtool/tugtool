@@ -110,6 +110,7 @@ body {
  * line box as the dot / badge — at one font size that is also the same
  * baseline as the detail's first line. */
 .tool-call-header-dot,
+.tool-call-header-leading,
 .tool-call-header-name,
 .tool-call-header-summary,
 .tool-call-header-timing,
@@ -123,6 +124,15 @@ body {
 .tool-call-header-dot {
   justify-content: center;
   color: var(--tugx-block-text-color-muted);
+}
+
+/* The leading slot — a caller-supplied glyph (a file row's commit checkbox)
+ * standing in for the lifecycle dot. Sized to the dot's own box so the
+ * identity row's left edge aligns identically whether a block shows the dot
+ * or a leading glyph. Layout only; the glyph owns its own appearance. */
+.tool-call-header-leading {
+  justify-content: center;
+  min-width: 14px;
 }
 
 /* Optical nudge: the lifecycle dot and the bold sans name center a hair high

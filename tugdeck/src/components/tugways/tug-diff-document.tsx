@@ -241,28 +241,35 @@ export function TugDiffDocument({
         data-slot="tug-diff-document"
         className={`tug-diff-document${className ? ` ${className}` : ""}`}
       >
+        {/* ONE non-wrapping quiet line ([P29], block-grammar): the sections
+            read `label │ summary │ view toggle │ Expand/Collapse │ host
+            actions`, pipe-delimited by the shared block-header divider
+            convention (a left rule with symmetric gap on each section after
+            the first). The summary is the flexible spacer that pushes the
+            controls to the trailing edge; label + summary ellipsize (label
+            first) when narrow while the controls never wrap. */}
         <div className="tug-diff-document-header">
-          <div className="tug-diff-document-header-text">
-            {label !== undefined ? (
+          {label !== undefined ? (
+            <span className="tug-diff-document-header-label" title={label}>
               <TugLabel emphasis="proposal">{label}</TugLabel>
-            ) : null}
-            <span
-              className="tug-diff-document-summary"
-              aria-label={`${payload.file_count} ${
-                payload.file_count === 1 ? "file" : "files"
-              } changed, ${payload.total_added} added, ${payload.total_removed} removed`}
-            >
-              {payload.file_count} {payload.file_count === 1 ? "file" : "files"}{" "}
-              changed{" "}
-              <span className="tug-diff-document-stat-add">
-                +{payload.total_added}
-              </span>{" "}
-              <span className="tug-diff-document-stat-remove">
-                −{payload.total_removed}
-              </span>
             </span>
-          </div>
-          <div className="tug-diff-document-header-actions">
+          ) : null}
+          <span
+            className="tug-diff-document-summary"
+            aria-label={`${payload.file_count} ${
+              payload.file_count === 1 ? "file" : "files"
+            } changed, ${payload.total_added} added, ${payload.total_removed} removed`}
+          >
+            {payload.file_count} {payload.file_count === 1 ? "file" : "files"}{" "}
+            changed{" "}
+            <span className="tug-diff-document-stat-add">
+              +{payload.total_added}
+            </span>{" "}
+            <span className="tug-diff-document-stat-remove">
+              −{payload.total_removed}
+            </span>
+          </span>
+          <span className="tug-diff-document-header-section">
             <TugChoiceGroup
               items={VIEW_TOGGLE_ITEMS}
               value={viewMode}
@@ -272,6 +279,8 @@ export function TugDiffDocument({
               aria-label="Diff view mode"
               data-testid="diff-view-mode"
             />
+          </span>
+          <span className="tug-diff-document-header-section">
             <TugPushButton
               size="sm"
               emphasis="ghost"
@@ -288,8 +297,12 @@ export function TugDiffDocument({
             >
               Collapse All
             </TugPushButton>
-            {headerActions}
-          </div>
+          </span>
+          {headerActions != null && headerActions !== false ? (
+            <span className="tug-diff-document-header-section">
+              {headerActions}
+            </span>
+          ) : null}
         </div>
         <TugAccordion
           type="multiple"

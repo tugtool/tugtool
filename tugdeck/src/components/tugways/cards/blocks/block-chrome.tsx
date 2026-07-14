@@ -165,9 +165,17 @@ export interface BlockChromeProps {
   /**
    * Canonical tool name as it should display in the header (e.g.
    * "Bash"). Wrappers pass the wire-shape `toolName` after any
-   * casing normalization they prefer.
+   * casing normalization they prefer. Optional: a verb-less block (a
+   * changeset file row) omits it, so the header renders no name span and
+   * the identity leads the row.
    */
-  toolName: string;
+  toolName?: string;
+  /**
+   * Leading glyph rendered in the header's leftmost slot IN PLACE of the
+   * lifecycle dot (a changeset file row's commit checkbox). Forwarded to
+   * {@link BlockHeader}; when absent the lifecycle dot renders as usual.
+   */
+  leading?: React.ReactNode;
   /**
    * Visual variant of the frame. `BlockChrome` renders the `tool` (default)
    * and `receipt` shapes — same header structure, restyled via
@@ -281,6 +289,7 @@ export interface BlockChromeProps {
 
 export const BlockChrome: React.FC<BlockChromeProps> = ({
   toolName,
+  leading,
   argsSummary,
   identity,
   command,
@@ -439,6 +448,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
         ref={headerRef}
         phase={phase ?? statusToPhase(status)}
         toolName={toolName}
+        leading={leading}
         target={command ?? identity ?? argsSummary}
         summary={resultSummary}
         caution={caution}

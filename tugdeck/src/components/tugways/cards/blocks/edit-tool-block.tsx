@@ -66,8 +66,9 @@
  *    `data-slot="edit-tool-block"` (delegated via the chrome's
  *    `rootSlot`).
  *  - [L20] reuses the chrome's `--tugx-block-*` and the body's
- *    `--tugx-diff-*`; the change-count badge rides the shared
- *    `--tugx-block-tone-*` add / remove tones. No new tokens.
+ *    `--tugx-diff-*`; the change-count `+N −M` badge pair renders
+ *    monochrome in the header's own text color, no add / remove tint (the
+ *    house monochrome doctrine, [P27]). No new tokens.
  *
  * Decisions:
  *  - [D05] two-layer hybrid — `DiffBlock` owns diff rendering, the

@@ -47,13 +47,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  Bot,
-  CircleCheck,
-  CircleDashed,
-  GitCompareArrows,
-  SquareArrowOutUpRight,
-} from "lucide-react";
+import { CircleCheck, CircleDashed, SquareArrowOutUpRight } from "lucide-react";
 
 import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
@@ -72,13 +66,19 @@ import {
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { TugTextarea } from "@/components/tugways/tug-textarea";
+import {
+  TugMessageEditor,
+  type TugMessageEditorHandle,
+} from "@/components/tugways/tug-message-editor";
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
-import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
-import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
-import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
+import { BlockChrome } from "@/components/tugways/cards/blocks/block-chrome";
+import type { ToolResultSummary } from "@/components/tugways/cards/blocks/tool-result-summary";
+import {
+  ToolBlockCollapseContext,
+  type ToolBlockCollapseHandle,
+} from "@/components/tugways/cards/blocks/collapse-context";
 import { useChangesetAll } from "@/lib/changeset-all-store";
 import {
   useChangesetCommit,
@@ -421,24 +421,6 @@ function hasHeadDiff(gitStatus: string): boolean {
   return !gitStatus.startsWith("??");
 }
 
-/** The per-file diff affordance — toggles the file's diff inline under the row. */
-function FileDiffButton({ path, onToggle }: { path: string; onToggle: () => void }) {
-  return (
-    <TugPushButton
-      subtype="icon"
-      icon={<GitCompareArrows size={12} />}
-      size="2xs"
-      emphasis="ghost"
-      role="action"
-      title="Show diff"
-      aria-label={`Show diff for ${path}`}
-      data-testid="changeset-file-diff"
-      data-path={path}
-      onClick={onToggle}
-    />
-  );
-}
-
 /** Pop a diff descriptor out into its own Diff card ([P20]). */
 function PopOutDiffButton({
   descriptor,
@@ -546,62 +528,58 @@ function useEntryDiff(item: ChangesetItem): {
   return { snapshot, ensureRequested };
 }
 
-/** One file's diff rendered inline under its row, from the entry snapshot. */
-function InlineFileDiff({
-  snapshot,
-  path,
-  popOut,
-}: {
-  snapshot: GitDiffSnapshot;
-  path: string;
-  popOut: DiffDescriptor | null;
-}) {
-  let inner: React.ReactNode;
+/**
+ * One file's diff as the BODY of its file block: the embedded `DiffBlock`
+ * (`embedded={true}` — the under-a-chrome mode that portals the view-toggle /
+ * fold affordances into the chrome's actions slot and drops its own identity
+ * header), or a loading / error / binary / missing note. Returns `null` when
+ * the entry has no HEAD side to diff (an untracked, non-dash file) — the
+ * chrome then auto-disables its disclosure chevron ([P29]).
+ */
+function fileBlockBody(
+  snapshot: GitDiffSnapshot,
+  path: string,
+  canDiff: boolean,
+): React.ReactNode {
+  if (!canDiff) return null;
   if (snapshot.phase === "error") {
-    inner = (
-      <p className="changeset-inline-diff-notice" role="alert">
+    return (
+      <p className="changeset-file-block-notice" role="alert">
         {snapshot.error ?? "Couldn't load the diff."}
       </p>
     );
-  } else if (snapshot.phase === "loading" || snapshot.payload === null) {
-    inner = (
-      <p className="changeset-inline-diff-notice" role="status">
+  }
+  if (snapshot.phase === "loading" || snapshot.payload === null) {
+    return (
+      <p className="changeset-file-block-notice" role="status">
         Loading diff…
       </p>
     );
-  } else {
-    const file = snapshot.payload.files.find((f) => f.path === path);
-    if (file === undefined) {
-      inner = (
-        <p className="changeset-inline-diff-notice" role="status">
-          No diff for this file.
-        </p>
-      );
-    } else if (file.binary) {
-      inner = (
-        <p className="changeset-inline-diff-notice" role="note">
-          Binary file — no textual diff.
-        </p>
-      );
-    } else {
-      inner = (
-        <DiffBlock
-          data={{ source: "unified", text: file.unified, filePath: file.path }}
-          suppressHeader
-          className="changeset-inline-diff-block"
-        />
-      );
-    }
   }
+  const file = snapshot.payload.files.find((f) => f.path === path);
+  if (file === undefined) {
+    return (
+      <p className="changeset-file-block-notice" role="status">
+        No diff for this file.
+      </p>
+    );
+  }
+  if (file.binary) {
+    return (
+      <p className="changeset-file-block-notice" role="note">
+        Binary file — no textual diff.
+      </p>
+    );
+  }
+  // `embedded` (NOT `suppressHeader`): the under-a-chrome contract that portals
+  // the view-toggle / fold affordances into the file block's header actions
+  // slot AND drops DiffBlock's own identity header. `suppressHeader` alone would
+  // render the diff with no portaled affordances.
   return (
-    <div className="changeset-inline-diff" data-testid="changeset-inline-diff" data-path={path}>
-      {popOut !== null ? (
-        <div className="changeset-inline-diff-actions">
-          <PopOutDiffButton descriptor={popOut} label={`Open diff for ${path} in a card`} />
-        </div>
-      ) : null}
-      {inner}
-    </div>
+    <DiffBlock
+      data={{ source: "unified", text: file.unified, filePath: file.path }}
+      embedded
+    />
   );
 }
 
@@ -640,27 +618,66 @@ interface RowSelection {
   disabled: boolean;
 }
 
-function FileRow({
+/**
+ * The normalized shape a file block renders — the common denominator of
+ * `ChangesetFile` (session / dash: op + origin + ambiguous/shared) and
+ * `UnattributedFile` (path + status only). One component renders all three.
+ */
+interface FileBlockData {
+  path: string;
+  git_status: string;
+  /** `""` for unattributed files (no provenance). */
+  op: string;
+  /** `""` for unattributed files (no provenance shown). */
+  origin: string;
+  ambiguous: boolean;
+  shared: boolean;
+}
+
+function changesetFileData(file: ChangesetFile): FileBlockData {
+  return {
+    path: file.path,
+    git_status: file.git_status,
+    op: file.op,
+    origin: file.origin,
+    ambiguous: file.ambiguous === true,
+    shared: file.shared === true,
+  };
+}
+
+function unattributedFileData(file: UnattributedFile): FileBlockData {
+  return {
+    path: file.path,
+    git_status: file.git_status,
+    op: "",
+    origin: "",
+    ambiguous: false,
+    shared: false,
+  };
+}
+
+/**
+ * The file block's identity (the header `target`): status glyph, the
+ * `FilePathLink`, and the provenance + ambiguous/shared metadata as trailing
+ * pipe-delimited sections. `FilePathLink` keeps its `OPEN_FILE` dispatch,
+ * context menu, and `data-tug-focus="refuse"` + mousedown-preventDefault focus
+ * discipline unchanged (the card must not steal first responder).
+ */
+function FileIdentity({
   file,
   projectRoot,
-  onToggleDiff,
-  selection,
 }: {
-  file: ChangesetFile;
+  file: FileBlockData;
   projectRoot: string;
-  onToggleDiff?: () => void;
-  selection?: RowSelection;
 }) {
+  const provenance =
+    file.origin === ""
+      ? null
+      : file.origin === "dash"
+        ? file.op
+        : `${file.op} · ${file.origin}`;
   return (
-    <div className="changeset-file-row" data-testid="changeset-file">
-      {selection !== undefined && (
-        <FileSelectCheckbox
-          path={file.path}
-          senderId={selection.senderId}
-          selected={selection.selected}
-          disabled={selection.disabled}
-        />
-      )}
+    <span className="changeset-file-identity">
       <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
         {statusGlyph(file.git_status)}
       </span>
@@ -670,17 +687,109 @@ function FileRow({
         gitStatus={file.git_status}
         projectRoot={projectRoot}
       />
-      {file.ambiguous && (
+      {file.ambiguous ? (
         <span className="changeset-badge changeset-badge-ambiguous">ambiguous</span>
-      )}
-      {file.shared && <span className="changeset-badge changeset-badge-shared">shared</span>}
-      <span className="changeset-file-provenance">
-        {file.origin === "dash" ? file.op : `${file.op} · ${file.origin}`}
-      </span>
-      {onToggleDiff !== undefined && (
-        <FileDiffButton path={file.path} onToggle={onToggleDiff} />
-      )}
-    </div>
+      ) : null}
+      {file.shared ? (
+        <span className="changeset-badge changeset-badge-shared">shared</span>
+      ) : null}
+      {provenance !== null ? (
+        <span className="changeset-file-provenance">{provenance}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * One changeset file rendered as a verb-less `BlockChrome` ([P25], [P29]):
+ * the commit checkbox in the header `leading` slot (session/unattributed; a
+ * dash row omits it, so the lifecycle dot shows a neutral `idle`), the status
+ * glyph + `FilePathLink` as identity, the monochrome `+N −M` in the header
+ * summary slot (sourced from the entry's per-entry diff snapshot; omitted until
+ * the snapshot carries this file), a pop-out as a header action, and the file's
+ * `DiffBlock` `embedded` as the collapse-by-unmount body.
+ *
+ * The disclosure chevron + collapse come from a card-local
+ * `ToolBlockCollapseContext.Provider` (a standalone `BlockChrome` renders no
+ * chevron and always mounts its body). An untracked, non-dash file has no HEAD
+ * side (`canDiff` false → `children={null}`), so the chrome auto-disables the
+ * chevron.
+ */
+function ChangesetFileBlock({
+  item,
+  file,
+  projectRoot,
+  selection,
+  diffSnapshot,
+  collapsed,
+  onToggle,
+}: {
+  item: ChangesetItem;
+  file: FileBlockData;
+  projectRoot: string;
+  selection?: RowSelection;
+  diffSnapshot: GitDiffSnapshot;
+  collapsed: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  const canDiff = item.kind === "dash" || hasHeadDiff(file.git_status);
+  const diffFile = diffSnapshot.payload?.files.find((f) => f.path === file.path);
+  // The monochrome `+N −M` badge, once the entry snapshot carries this file.
+  const resultSummary: ToolResultSummary | undefined =
+    diffFile !== undefined && !diffFile.binary
+      ? { kind: "diff", added: diffFile.added, removed: diffFile.removed }
+      : undefined;
+  const popOut = fileDiffDescriptor(item, {
+    path: file.path,
+    git_status: file.git_status,
+  });
+  // Card-local collapse handle: the chevron + collapse-by-unmount fall out of a
+  // provider whose `{collapsed, toggle}` is driven by the entry's `expandedFiles`
+  // state ([L24] local-data; [L26] the provider keeps stable mount identity, so
+  // the body subtree appears/disappears without tearing the block down). The
+  // synthetic `toolUseId` is not a real tool call — it just gives the block a
+  // stable id + `data-tool-use-id`.
+  const handle = useMemo<ToolBlockCollapseHandle>(
+    () => ({ collapsed, toggle: onToggle, toolUseId: `${item.id}|${file.path}` }),
+    [collapsed, onToggle, item.id, file.path],
+  );
+  return (
+    <ToolBlockCollapseContext.Provider value={handle}>
+      <div
+        className="changeset-file-block"
+        data-testid="changeset-file-block"
+        data-path={file.path}
+      >
+        <BlockChrome
+          variant="tool"
+          // Verb-less (no `toolName`); a neutral `idle` dot for a dash row that
+          // has no leading checkbox.
+          phase="idle"
+          leading={
+            selection !== undefined ? (
+              <FileSelectCheckbox
+                path={file.path}
+                senderId={selection.senderId}
+                selected={selection.selected}
+                disabled={selection.disabled}
+              />
+            ) : undefined
+          }
+          identity={<FileIdentity file={file} projectRoot={projectRoot} />}
+          resultSummary={resultSummary}
+          headerActions={
+            popOut !== null ? (
+              <PopOutDiffButton
+                descriptor={popOut}
+                label={`Open diff for ${file.path} in a card`}
+              />
+            ) : undefined
+          }
+        >
+          {fileBlockBody(diffSnapshot, file.path, canDiff)}
+        </BlockChrome>
+      </div>
+    </ToolBlockCollapseContext.Provider>
   );
 }
 
@@ -744,64 +853,6 @@ function entryDraft(item: ChangesetItem): ChangesetDraft | undefined {
     : item.entry.draft;
 }
 
-/**
- * The maintained commit-message draft, rendered as a mini-transcript ([P21],
- * [P24]) — a Bot row over the draft as markdown, a thinking indicator while
- * the engine regenerates, a subtle "updating…" freshness state, a copy
- * affordance, and an error hint (a scribe failure never blanks the draft).
- * Borrows the `side-question-overlay.tsx` styling.
- */
-function DraftPanel({ text, drafting, error }: {
-  text: string | null;
-  drafting: boolean;
-  error: string | null;
-}) {
-  if (text === null && !drafting) return null;
-  return (
-    <div className="changeset-draft" data-testid="changeset-draft" data-drafting={drafting ? "" : undefined}>
-      <div className="changeset-draft-row">
-        <span className="changeset-draft-avatar" aria-hidden>
-          <Bot size={14} strokeWidth={2} />
-        </span>
-        <div className="changeset-draft-body">
-          {text !== null ? (
-            <TugMarkdownBlock initialText={text} className="changeset-draft-markdown" />
-          ) : (
-            <TugProgressIndicator
-              variant="wave"
-              state="running"
-              role="inherit"
-              size={12}
-              aria-label="Drafting…"
-            />
-          )}
-          <div className="changeset-draft-foot">
-            {drafting ? (
-              <span className="changeset-draft-freshness" role="status">
-                updating…
-              </span>
-            ) : null}
-            {error !== null ? (
-              <span className="changeset-draft-error" role="alert">
-                {error}
-              </span>
-            ) : null}
-            {text !== null ? (
-              <BlockCopyButton
-                subtype="icon"
-                emphasis="ghost"
-                size="2xs"
-                aria-label="Copy the draft message"
-                getText={() => text}
-              />
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /** A file the entry can commit: its path plus its default selection. */
 interface SelectableFile {
   path: string;
@@ -838,28 +889,31 @@ function EntryBody({
 }) {
   const projectRoot = item.project.project_dir;
 
-  // Inline diff state ([P20]): which file rows are expanded, whether the
-  // whole-entry document is expanded, and the shared per-entry diff source.
+  // Per-file collapse state ([P29]): the set of expanded file paths, surfaced
+  // to each file block through a card-local `ToolBlockCollapseContext.Provider`
+  // (NOT the transcript's persisted `ToolBlockExpansionContext`; plain local
+  // data). `collapsed = !expandedFiles.has(path)`. All file bodies read one
+  // per-entry `GitDiffStore` snapshot.
   const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
-  const [docExpanded, setDocExpanded] = useState(false);
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
   const entryDescriptor = useMemo(() => entryDiffDescriptor(item), [item]);
-  const toggleFileDiff = useCallback(
-    (path: string) => {
-      ensureRequested();
-      setExpandedFiles((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
-        return next;
-      });
-    },
-    [ensureRequested],
-  );
-  const toggleDocDiff = useCallback(() => {
+  // Eager fetch: this body is mounted only while its accordion section is open
+  // (Radix unmounts a collapsed section's content), so requesting on mount
+  // shows the per-file `+N −M` badges at rest — before any file is expanded —
+  // at a cost of one `git diff` per OPEN entry ([P29] fetch timing).
+  useEffect(() => {
     ensureRequested();
-    setDocExpanded((v) => !v);
   }, [ensureRequested]);
+  // The collapse handle's `toggle(next)` carries the NEXT collapsed value:
+  // collapse ⇒ drop the path from the expanded set; expand ⇒ add it.
+  const toggleFile = useCallback((path: string, nextCollapsed: boolean) => {
+    setExpandedFiles((prev) => {
+      const next = new Set(prev);
+      if (nextCollapsed) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   // Commit-flow state. Hooks run for every entry kind (dash bodies just
   // never render the controls).
@@ -920,21 +974,34 @@ function EntryBody({
     clear();
   }, [phase, error, onError, clear]);
 
+  // The CM6 commit field ([P26]/[P28]). New drafts stream in via `restoreState`
+  // (programmatic — does not read as a user edit, so a pristine field follows
+  // the draft without pinning); a user edit pins it; a landed commit clears +
+  // unpins it.
+  const editorRef = useRef<TugMessageEditorHandle | null>(null);
+
   // A landed commit clears the field and unpins it so the next draft flows in;
   // the receipt panel stays up until dismissed (or the next commit round).
   useEffect(() => {
     if (phase === "done") {
+      editorRef.current?.clear();
       setMessage("");
       setPinned(false);
     }
   }, [phase]);
 
-  // While the field is pristine, it follows the maintained draft.
+  // While the field is pristine, it follows the maintained draft — re-seeded
+  // through the CM6 field's programmatic `restoreState` (which does not fire
+  // `onChange`, so this seed never reads as a user edit, [P24]/[P28]).
   useEffect(() => {
-    if (!pinned) setMessage(draftText ?? "");
+    if (!pinned) {
+      editorRef.current?.restoreState(draftText ?? "");
+      setMessage(draftText ?? "");
+    }
   }, [pinned, draftText]);
 
   const useLatestDraft = useCallback(() => {
+    editorRef.current?.restoreState(draftText ?? "");
     setMessage(draftText ?? "");
     setPinned(false);
   }, [draftText]);
@@ -945,83 +1012,52 @@ function EntryBody({
 
   const files = item.kind === "unattributed" ? null : item.entry.files;
 
-  // How many files the whole-entry diff covers (dash: all rows; head: the
-  // files with a HEAD side).
-  const diffFileCount =
-    entryDescriptor === null
-      ? 0
-      : entryDescriptor.kind === "range"
-        ? (files?.length ?? 0)
-        : (entryDescriptor.paths?.length ?? 0);
+  // The entry's diffable file paths — the set Expand All / Collapse All drive.
+  // Dash: every row (they share the range diff); head: the files with a HEAD
+  // side (untracked files have no diff).
+  const allFiles: readonly GitDiffFileRef[] =
+    item.kind === "unattributed" ? item.files : (files ?? []);
+  const diffablePaths = allFiles
+    .filter((f) => item.kind === "dash" || hasHeadDiff(f.git_status))
+    .map((f) => f.path);
 
-  /** Whether a file row shows a per-file diff toggle. */
-  const showFileDiff = (gitStatus: string): boolean =>
-    entryDescriptor !== null && (item.kind === "dash" || hasHeadDiff(gitStatus));
-
-  // The entry's action row: a whole-changeset inline diff toggle when the
-  // entry has anything to diff. (Summarize/Draft retired — the draft is
-  // maintained automatically, [P21].)
-  const entryActionsRow = () => {
-    const diffButton =
-      entryDescriptor !== null && diffFileCount > 1 ? (
-        <TugPushButton
-          emphasis="ghost"
-          role="action"
-          size="2xs"
-          onClick={toggleDocDiff}
-          data-testid="changeset-entry-diff"
-        >
-          {docExpanded ? "Hide diff" : `Diff ${diffFileCount} files`}
-        </TugPushButton>
-      ) : null;
-    if (diffButton === null) return null;
-    return <div className="changeset-entry-actions">{diffButton}</div>;
-  };
-
-  // The whole-entry diff document, rendered inline when toggled on.
-  const entryDocInline =
-    !docExpanded || entryDescriptor === null ? null : diffSnapshot.phase ===
-      "error" ? (
-      <p className="changeset-inline-diff-notice" role="alert">
-        {diffSnapshot.error ?? "Couldn't load the diff."}
-      </p>
-    ) : diffSnapshot.phase === "loading" || diffSnapshot.payload === null ? (
-      <p className="changeset-inline-diff-notice" role="status">
-        Loading diff…
-      </p>
-    ) : diffSnapshot.payload.files.length === 0 ? (
-      <p className="changeset-inline-diff-notice" role="status">
-        No changes to show.
-      </p>
-    ) : (
-      <TugDiffDocument
-        payload={diffSnapshot.payload}
-        className="changeset-entry-diff-doc"
-        headerActions={
-          <PopOutDiffButton
-            descriptor={entryDescriptor}
-            label="Open the whole diff in a card"
-          />
-        }
-        fileTrailing={(file) => {
-          // The document's file is a diff-payload `GitDiffFile` (already
-          // has a HEAD side): head entries pop out that path; a dash pops
-          // out its whole range (no per-file range scoping server-side).
-          const descriptor: DiffDescriptor | null =
-            item.kind === "dash"
-              ? entryDescriptor
-              : item.project.no_repo
-                ? null
-                : { kind: "head", root: projectRoot, paths: [file.path] };
-          return descriptor !== null ? (
-            <PopOutDiffButton
-              descriptor={descriptor}
-              label={`Open diff for ${file.path} in a card`}
-            />
-          ) : null;
-        }}
-      />
+  // The entry-level diff affordance ([P29]): Expand All / Collapse All across
+  // the entry's file blocks plus ONE whole-entry pop-out (`OPEN_DIFF` with the
+  // entry descriptor). (Summarize/Draft retired — the draft is maintained
+  // automatically, [P21]; the in-card `TugDiffDocument` expansion is removed.)
+  const entryDiffActionsRow = () => {
+    if (entryDescriptor === null || diffablePaths.length === 0) return null;
+    return (
+      <div className="changeset-entry-actions">
+        {diffablePaths.length > 1 ? (
+          <>
+            <TugPushButton
+              emphasis="ghost"
+              role="action"
+              size="2xs"
+              onClick={() => setExpandedFiles(new Set(diffablePaths))}
+              data-testid="changeset-entry-expand-all"
+            >
+              Expand All
+            </TugPushButton>
+            <TugPushButton
+              emphasis="ghost"
+              role="action"
+              size="2xs"
+              onClick={() => setExpandedFiles(new Set())}
+              data-testid="changeset-entry-collapse-all"
+            >
+              Collapse All
+            </TugPushButton>
+          </>
+        ) : null}
+        <PopOutDiffButton
+          descriptor={entryDescriptor}
+          label="Open the whole diff in a card"
+        />
+      </div>
     );
+  };
 
   const rowSelection = (path: string): RowSelection => ({
     senderId: selectSender(path),
@@ -1029,43 +1065,49 @@ function EntryBody({
     disabled: phase === "pending",
   });
 
-  const commitControls =
-    selectable.length === 0 ? null : (
+  // The commit composer is ONE BlockChrome ([P28]): the lifecycle dot IS the
+  // drafting indicator (in_flight while the scribe streams, success when the
+  // draft lands, error on scribe failure — the error hint rides the chrome's
+  // notice band so it stays visible WITHOUT blanking the draft). Header actions:
+  // copy-draft + "Use latest draft". Body: the CM6 `TugMessageEditor` ([P26])
+  // pre-filled from the maintained draft while pristine, or the numstat receipt
+  // once a commit lands. Footer: the width-stabilized Commit button. Dash entries
+  // render it read-only — the maintained join-message draft with no commit
+  // controls (committing a dash is M04's join). The block is NOT wrapped in a
+  // `ToolBlockCollapseContext.Provider` — it wants the always-expanded standalone
+  // default. [L02] read-only derivation from the draft overlay + commit phase;
+  // [L06] the dot paints via CSS/DOM inside the indicator.
+  const hasCommit = selectable.length > 0;
+  const showReceipt = phase === "done" && receipt !== null;
+  const commitComposer =
+    !(hasCommit || draftText !== null || drafting) ? null : (
       <div className="changeset-commit" data-testid="changeset-commit-controls">
-        {phase === "done" && receipt !== null ? (
-          <div className="changeset-commit-receipt" data-testid="changeset-commit-receipt">
-            <div className="changeset-commit-receipt-head">
-              <span className="changeset-commit-receipt-sha">
-                Committed {sha === null ? "" : sha.slice(0, 10)}
-              </span>
-              <TugPushButton
-                size="2xs"
-                emphasis="ghost"
-                role="action"
-                onClick={clear}
-                data-testid="changeset-commit-receipt-dismiss"
-              >
-                Dismiss
-              </TugPushButton>
-            </div>
-            <pre className="changeset-commit-receipt-body">{receipt}</pre>
-          </div>
-        ) : (
-          <div className="changeset-commit-row">
-            <TugTextarea
-              placeholder="Commit message"
-              value={message}
-              onChange={(e) => {
-                setMessage(e.target.value);
-                setPinned(true);
-              }}
-              disabled={phase === "pending"}
-              rows={3}
-              aria-label="Commit message"
-              data-testid="changeset-commit-message"
-              className="changeset-commit-message"
-            />
-            <div className="changeset-commit-actions">
+        <BlockChrome
+          variant="tool"
+          toolName={item.kind === "dash" ? "Join message" : "Commit message"}
+          phase={
+            draftError !== null
+              ? "error"
+              : drafting
+                ? "in_flight"
+                : draftText !== null
+                  ? "success"
+                  : "idle"
+          }
+          notice={
+            draftError !== null ? { tone: "error", text: draftError } : undefined
+          }
+          headerActions={
+            <>
+              {draftText !== null ? (
+                <BlockCopyButton
+                  subtype="icon"
+                  emphasis="ghost"
+                  size="2xs"
+                  aria-label="Copy the draft message"
+                  getText={() => draftText}
+                />
+              ) : null}
               {pinned && draftText !== null && draftText !== message ? (
                 <TugPushButton
                   size="sm"
@@ -1077,6 +1119,10 @@ function EntryBody({
                   Use latest draft
                 </TugPushButton>
               ) : null}
+            </>
+          }
+          footerBadges={
+            hasCommit && !showReceipt ? (
               <TugPushButton
                 size="sm"
                 emphasis="outlined"
@@ -1092,15 +1138,57 @@ function EntryBody({
               >
                 {phase === "pending" ? "Committing…" : "Commit"}
               </TugPushButton>
+            ) : undefined
+          }
+          className="changeset-commit-composer"
+        >
+          {showReceipt ? (
+            <div className="changeset-commit-receipt" data-testid="changeset-commit-receipt">
+              <div className="changeset-commit-receipt-head">
+                <span className="changeset-commit-receipt-sha">
+                  Committed {sha === null ? "" : sha.slice(0, 10)}
+                </span>
+                <TugPushButton
+                  size="2xs"
+                  emphasis="ghost"
+                  role="action"
+                  onClick={clear}
+                  data-testid="changeset-commit-receipt-dismiss"
+                >
+                  Dismiss
+                </TugPushButton>
+              </div>
+              <pre className="changeset-commit-receipt-body">{receipt}</pre>
             </div>
-          </div>
-        )}
+          ) : (
+            <TugMessageEditor
+              ref={editorRef}
+              placeholder="Commit message"
+              disabled={!hasCommit || phase === "pending"}
+              onChange={(text) => {
+                setMessage(text);
+                setPinned(true);
+              }}
+              onSubmit={
+                hasCommit
+                  ? () => {
+                      if (
+                        phase !== "pending" &&
+                        selectedPaths.length > 0 &&
+                        message.trim().length > 0
+                      ) {
+                        commit(projectRoot, selectedPaths, message.trim());
+                      }
+                    }
+                  : undefined
+              }
+              aria-label="Commit message"
+              data-testid="changeset-commit-message"
+            />
+          )}
+        </BlockChrome>
       </div>
     );
-
-  const draftPanel = (
-    <DraftPanel text={draftText} drafting={drafting} error={draftError} />
-  );
 
   if (item.kind === "unattributed") {
     return (
@@ -1110,49 +1198,20 @@ function EntryBody({
           className="changeset-file-list"
           data-testid="changeset-unattributed"
         >
-          {item.files.map((file) => {
-            const selection = rowSelection(file.path);
-            return (
-              <React.Fragment key={file.path}>
-                <div className="changeset-file-row" data-testid="changeset-file">
-                  <FileSelectCheckbox
-                    path={file.path}
-                    senderId={selection.senderId}
-                    selected={selection.selected}
-                    disabled={selection.disabled}
-                  />
-                  <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
-                    {statusGlyph(file.git_status)}
-                  </span>
-                  <FilePathLink
-                    path={file.path}
-                    op=""
-                    gitStatus={file.git_status}
-                    projectRoot={projectRoot}
-                  />
-                  {showFileDiff(file.git_status) && (
-                    <span className="changeset-file-trailing">
-                      <FileDiffButton
-                        path={file.path}
-                        onToggle={() => toggleFileDiff(file.path)}
-                      />
-                    </span>
-                  )}
-                </div>
-                {expandedFiles.has(file.path) && (
-                  <InlineFileDiff
-                    snapshot={diffSnapshot}
-                    path={file.path}
-                    popOut={fileDiffDescriptor(item, file)}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
-          {entryActionsRow()}
-          {entryDocInline}
-          {draftPanel}
-          {commitControls}
+          {item.files.map((file) => (
+            <ChangesetFileBlock
+              key={file.path}
+              item={item}
+              file={unattributedFileData(file)}
+              projectRoot={projectRoot}
+              selection={rowSelection(file.path)}
+              diffSnapshot={diffSnapshot}
+              collapsed={!expandedFiles.has(file.path)}
+              onToggle={(next) => toggleFile(file.path, next)}
+            />
+          ))}
+          {entryDiffActionsRow()}
+          {commitComposer}
         </div>
       </CommitScope>
     );
@@ -1174,30 +1233,19 @@ function EntryBody({
         className="changeset-file-list"
       >
         {files.map((file) => (
-          <React.Fragment key={file.path}>
-            <FileRow
-              file={file}
-              projectRoot={projectRoot}
-              onToggleDiff={
-                showFileDiff(file.git_status)
-                  ? () => toggleFileDiff(file.path)
-                  : undefined
-              }
-              selection={item.kind === "session" ? rowSelection(file.path) : undefined}
-            />
-            {expandedFiles.has(file.path) && (
-              <InlineFileDiff
-                snapshot={diffSnapshot}
-                path={file.path}
-                popOut={fileDiffDescriptor(item, file)}
-              />
-            )}
-          </React.Fragment>
+          <ChangesetFileBlock
+            key={file.path}
+            item={item}
+            file={changesetFileData(file)}
+            projectRoot={projectRoot}
+            selection={item.kind === "session" ? rowSelection(file.path) : undefined}
+            diffSnapshot={diffSnapshot}
+            collapsed={!expandedFiles.has(file.path)}
+            onToggle={(next) => toggleFile(file.path, next)}
+          />
         ))}
-        {entryActionsRow()}
-        {entryDocInline}
-        {draftPanel}
-        {commitControls}
+        {entryDiffActionsRow()}
+        {commitComposer}
       </div>
     </CommitScope>
   );

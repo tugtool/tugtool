@@ -1399,13 +1399,13 @@ separate responder registration ([P26]).
 | #step-16e | The maintained-draft engine | done | 8b44c5812 |
 | #step-16f | Card draft UI + Summarize/Draft deletion | done | 47e50ae09 |
 | #step-16g | M03A integration checkpoint | done | (verification only) |
-| #step-16h | BlockHeader leading slot + optional verb; monochrome badge doctrine | pending | — |
-| #step-16i | TugMessageEditor — reusable CM6 message field | pending | — |
-| #step-16j | TugDiffDocument header restyle onto the block grammar | pending | — |
-| #step-16k | Changeset file blocks + whole-entry diff rework | pending | — |
-| #step-16l | Commit composer block; DraftPanel/TugTextarea retire | pending | — |
-| #step-16m | Scribe scoped commit-subject style | pending | — |
-| #step-16n | M03B integration checkpoint | pending | — |
+| #step-16h | BlockHeader leading slot + optional verb; monochrome badge doctrine | done | `11d0e4a2e` |
+| #step-16i | TugMessageEditor — reusable CM6 message field | done | `5f8355277` |
+| #step-16j | TugDiffDocument header restyle onto the block grammar | done | `395684239` |
+| #step-16k | Changeset file blocks + whole-entry diff rework | done | `1ca4e9ba6` |
+| #step-16l | Commit composer block; DraftPanel/TugTextarea retire | done | `41688b11d` |
+| #step-16m | Scribe scoped commit-subject style | done | `d5636735a` |
+| #step-16n | M03B integration checkpoint | done | N/A (verification) |
 | #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
 | #step-18 | .tug/worktrees home + migration | pending | — |
 | #step-19 | Join engine v2 | pending | — |

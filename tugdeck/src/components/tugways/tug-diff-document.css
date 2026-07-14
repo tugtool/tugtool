@@ -1,15 +1,17 @@
 /* @tug-pairings:
-   - --tug7-element-tone-text-normal-success-rest  (added: status "A", +N stat)
-   - --tug7-element-tone-text-normal-danger-rest   (deleted: status "D", −M stat)
-   - --tug7-element-tone-text-normal-caution-rest  (modified: status "M")
-   - --tug7-element-tone-text-normal-accent-rest   (renamed: status "R")
+   - --tug7-element-tone-text-normal-success-rest  (added: status letter "A")
+   - --tug7-element-tone-text-normal-danger-rest   (deleted: status letter "D")
+   - --tug7-element-tone-text-normal-caution-rest  (modified: status letter "M")
+   - --tug7-element-tone-text-normal-accent-rest   (renamed: status letter "R")
+   - --tug7-element-global-border-normal-muted-rest (header pipe dividers)
 
    Text-color-only (no background painting): the document surface and foreground
    come from the composing host (sheet / card / Text card); per-file hunks come
    from the composed DiffBlock; the accordion from TugAccordion; buttons and the
-   view toggle from TugPushButton / TugChoiceGroup. Status letters and the +/−
-   stat tint via the tone *text* tokens above, which layer on the inherited host
-   foreground — so no @tug-renders-on ([L16]). */
+   view toggle from TugPushButton / TugChoiceGroup. Only the status LETTERS tint
+   via the tone *text* tokens above (they carry semantic meaning); the +/− counts
+   render monochrome in the inherited foreground ([P27]) — so no
+   @tug-renders-on ([L16]). */
 
 .tug-diff-document {
   display: flex;
@@ -17,31 +19,69 @@
   min-width: 0;
 }
 
-/* Header: label + "N files changed +X −Y" summary on the left, the view
-   toggle + Expand/Collapse All + host actions (Refresh) on the right. */
+/* Header: ONE non-wrapping quiet line ([P29]) —
+   `label │ summary │ view toggle │ Expand/Collapse │ host actions`.
+   Pipe-delimited by the shared block-header divider convention: every section
+   after the first carries a single left rule with symmetric breathing room
+   (`margin-left = sep-gap − row-gap`, `padding-left = sep-gap`), so any two
+   adjacent sections read as `… │ …` with one line between them. The summary is
+   the flexible spacer that pushes the controls to the trailing edge; the
+   controls never wrap. */
 .tug-diff-document-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--tug-space-sm);
+  min-width: 0;
   margin-bottom: 0.5rem;
 }
 
-.tug-diff-document-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
+/* Every section after the first gets a left pipe. The symmetric gap is two
+   halves: a `sep-gap − row-gap` left margin plus the parent row-gap sum to a
+   full `sep-gap` up to the rule, and `padding-left: sep-gap` matches it from
+   the rule to the section's content. */
+.tug-diff-document-summary,
+.tug-diff-document-header-section {
+  margin-left: calc(var(--tug-space-md) - var(--tug-space-sm));
+  padding-left: var(--tug-space-md);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
 }
 
-.tug-diff-document-header-actions {
-  display: flex;
+/* The first section (label when present, else summary) leads the line with no
+   rule to its left. */
+.tug-diff-document-header > :first-child {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+
+/* Label — leads the quiet line; ellipsizes FIRST when narrow (a steeper
+   shrink than the summary), never wraps. */
+.tug-diff-document-header-label {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* The controls sections hold the view toggle / Expand·Collapse / host actions;
+   they never wrap or shrink so a narrow header ellipsizes the text sections
+   instead. */
+.tug-diff-document-header-section {
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   flex: 0 0 auto;
+  white-space: nowrap;
 }
 
+/* Summary — the flexible spacer that pushes the controls right; ellipsizes
+   after the label when the line is too narrow. */
 .tug-diff-document-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: 0.8125rem;
   opacity: 0.7;
 }
@@ -108,11 +148,14 @@
   align-items: center;
 }
 
-.tug-diff-document-stat-add {
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
+/* Monochrome +N −M ([P27]): the count glyphs — in the summary line AND each
+   file trigger — render in the header's own inherited text color, no green/red
+   tint, so they read as plain metadata. The status LETTERS (A/M/D/R) keep their
+   tone colors above: they carry semantic meaning; only the counts go
+   monochrome. */
+.tug-diff-document-stat-add,
 .tug-diff-document-stat-remove {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
+  color: inherit;
 }
 .tug-diff-document-stat-binary {
   opacity: 0.6;

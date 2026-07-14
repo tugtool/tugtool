@@ -222,36 +222,39 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         );
         expect(existsSync(join(NON_REPO.dir, ".git")), "git init created a .git dir").toBe(true);
 
-        // (3) Diff click: the modified tracked file's row carries the diff
-        // affordance (the untracked file's must not — no HEAD side), and
-        // clicking it reveals that file's diff *inline* under its row ([P20]),
-        // carrying the added line's marker. A second click collapses it so
-        // the later commit leg reads a clean file list.
+        // (3) Diff click: each file is a BlockChrome ([P25]/[P29]); the modified
+        // tracked file's block carries an ENABLED disclosure chevron, the
+        // untracked file's is DISABLED (no HEAD side). Clicking the chevron
+        // mounts the file's embedded `DiffBlock` in the block body carrying the
+        // added line's marker; a second click unmounts it (collapse-by-unmount)
+        // so the later commit leg reads a clean file list.
         const UNATTRIBUTED = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
-        const DIFF_BUTTON = `${UNATTRIBUTED} [data-testid="changeset-file-diff"][data-path="committed.txt"]`;
-        const INLINE_DIFF = `${UNATTRIBUTED} [data-testid="changeset-inline-diff"][data-path="committed.txt"]`;
+        const FILE_BLOCK = `${UNATTRIBUTED} [data-testid="changeset-file-block"][data-path="committed.txt"]`;
+        const DISCLOSURE = `${FILE_BLOCK} [data-slot="tool-call-header-disclosure"]`;
+        const FILE_BODY = `${FILE_BLOCK} [data-slot="tool-block-body"]`;
+        const UNTRACKED_DISCLOSURE = `${UNATTRIBUTED} [data-testid="changeset-file-block"][data-path="${DIRTY_FILE}"] [data-slot="tool-call-header-disclosure"]`;
         await app.waitForCondition<boolean>(
-          `document.querySelector('${DIFF_BUTTON}') !== null`,
+          `document.querySelector('${DISCLOSURE}') !== null`,
           { timeoutMs: 20_000 },
         );
         expect(
           await app.evalJS<boolean>(
-            `document.querySelector('${UNATTRIBUTED} [data-testid="changeset-file-diff"][data-path="${DIRTY_FILE}"]') === null`,
+            `(function(){ var d = document.querySelector('${UNTRACKED_DISCLOSURE}'); return d !== null && d.disabled === true; })()`,
           ),
-          "an untracked file gets no diff affordance",
+          "an untracked file's disclosure chevron is disabled (no HEAD side)",
         ).toBe(true);
-        await app.click(DIFF_BUTTON);
+        await app.click(DISCLOSURE);
         await app.waitForCondition<boolean>(
           `(function(){
-            var d = document.querySelector('${INLINE_DIFF}');
+            var d = document.querySelector('${FILE_BODY}');
             return d !== null &&
               (d.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
           })()`,
           { timeoutMs: 15_000 },
         );
-        await app.click(DIFF_BUTTON);
+        await app.click(DISCLOSURE);
         await app.waitForCondition<boolean>(
-          `document.querySelector('${INLINE_DIFF}') === null`,
+          `document.querySelector('${FILE_BODY}') === null`,
           { timeoutMs: 8000 },
         );
 
@@ -262,9 +265,27 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         // row from the entry.
         await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="committed.txt"]`);
         await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="${DIRTY_FILE}"]`);
-        await app.type(
-          `${UNATTRIBUTED} [data-testid="changeset-commit-message"]`,
-          "at0228 card commit",
+        // The commit field is now the CM6 `TugMessageEditor` ([P26]/[P28]): its
+        // document has no `<textarea>.value`, so `app.type` can't drive it. Use
+        // the house CM6-typing pattern — focus the field's `.cm-content` and
+        // `execCommand("insertText", …)` — scoped under the composer block.
+        await app.evalJS<boolean>(
+          `(function(){
+            var el = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-message"] .cm-content');
+            if (el === null) return false;
+            el.focus();
+            // Replace any pre-filled draft so the message is exactly ours.
+            document.execCommand("selectAll");
+            document.execCommand("insertText", false, "at0228 card commit");
+            return true;
+          })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-message"] .cm-content');
+            return el !== null && (el.textContent || "").indexOf("at0228 card commit") !== -1;
+          })()`,
+          { timeoutMs: 8000 },
         );
         await app.click(`${UNATTRIBUTED} [data-testid="changeset-commit-button"]`);
         await app.waitForCondition<boolean>(
