@@ -55,8 +55,9 @@ host absorbs it later, clean break, no deck migration).
 - Sticky wayfinding reuses the proven agent-transcript clearance-capture CSS pattern
   for the nested pin stack — no new mechanism ([P03]).
 - The baseline for Workstream B is the **as-built** card after M03B *and* M04 step 21
-  (dash Join/Release + join preview + "Resolve with AI"); the first task of the
-  conversion step is an inventory of that card so nothing is dropped ([P06]).
+  (the `DashActions` body flow: Join/Release + join preview + "Resolve with AI"). That
+  flow is body content and stays in the body untouched; the swap only changes entry
+  *structure*, so nothing in it is dropped ([P06]).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -115,16 +116,24 @@ host absorbs it later, clean break, no deck migration).
 
 #### Dependencies / Prerequisites {#dependencies}
 
-- **Milestone M03B** of `roadmap/changesets-plan.md` (steps 16h–16n) complete: the
-  card's entry contents are on the block grammar (file blocks per its #step-16k,
-  composer per #step-16l), `BlockHeader` has the `leading` slot + optional-verb form
-  (#step-16h), `TugMessageEditor` exists (#step-16i).
-- **Milestone M04** of `roadmap/changesets-plan.md` (steps 17–22) complete: the card
-  carries step 21's dash integration (Join/Release actions, join preview pane with the
-  maintained dash draft pre-filled, "Resolve with AI" spawning a session in the dash
-  worktree).
-- `roadmap/markdown-text-styling.md` — complete and merged (already true; relevant
-  only in that `TugTextEditor` substrate patterns are settled).
+- **Milestone M03B** of `roadmap/changesets-plan.md` (steps 16h–16n) — **MET, on main**
+  (commit `81ba28c79`). Verified as-built: file blocks are `ChangesetFileBlock`
+  (`changeset-card.tsx`, a verb-less `BlockChrome` wrapped in a
+  `ToolBlockCollapseContext.Provider` over the entry's `expandedFiles` set, stamped
+  `data-testid="changeset-file-block"`); the composer is one `BlockChrome` over
+  `TugMessageEditor`; `BlockHeader` carries `leading?` (the `tool-call-header-leading`
+  slot) and optional `toolName?`; `TugMessageEditor` lives at
+  `tugways/tug-message-editor.tsx` with a `restoreState(text)` / `clear()` handle.
+- **Milestone M04** of `roadmap/changesets-plan.md` (steps 17–22) — **MET, on main**
+  (commits `5a52fc36b`, `735aea856`). Verified as-built: step 21's dash integration is
+  the `DashActions` flow component (`changeset-card.tsx`) — a body-level state machine
+  (idle → resolving → resolved/partial candidate list → clean/conflict preview →
+  confirm-join / release-confirm / Resolve-with-AI), backed by
+  `lib/changeset-join-store.ts` (`useChangesetJoinResolve`), covered by
+  `tests/app-test/at0229-changeset-dash-join.test.ts`. **This is body content, not
+  header actions** — see [P06].
+- `roadmap/markdown-text-styling.md` — complete and merged (relevant only in that
+  `TugTextEditor` substrate patterns are settled).
 
 #### Constraints {#constraints}
 
@@ -141,16 +150,16 @@ host absorbs it later, clean break, no deck migration).
 
 #### Assumptions {#assumptions}
 
-- This plan is authored **before** M03B/M04 are implemented. M03B symbols cited here
-  (the file-block wrapper and its `data-path` stamp, the composer block,
-  `TugMessageEditor`) are the *planned* names from `roadmap/changesets-plan.md`;
-  where the as-built code drifted from that plan, the as-built code wins and the
-  implementer reconciles during the Workstream B inventory task (#step-2).
+- M03B and M04 are **on main** (see #dependencies); every symbol this plan cites was
+  verified against the as-built card, not against the upstream plan's planned names.
+  The one place the as-built diverged from the earlier proposal — dash affordances are
+  a body-level flow, not header actions — is folded into [P06] and #step-2 rather than
+  left as a reconciliation task.
 - The `@/` import alias resolves to `tugdeck/src/`, so the sweep is a mechanical
   specifier-prefix replacement plus relative-import fixes inside `cards/blocks/`.
 - at0228 (`tests/app-test/at0228-changeset-aggregate.test.ts`) is the primary
-  changeset app-test; M04 may add a dash-join test — both adapt, neither is rewritten
-  from scratch.
+  changeset app-test; `at0229-changeset-dash-join.test.ts` is M04's dash-join leg.
+  Both adapt in place; neither is rewritten from scratch.
 
 ---
 
@@ -200,7 +209,7 @@ selector keyed on `changeset-entry` + `data-entry-id` survives unchanged.
 |------|--------|------------|------------|--------------------|
 | Import sweep breaks the production rollup while dev passes | high | med | `bunx vite build` in the #step-1 checkpoint; sweep is mechanical (Table T01 prefix replace) | any splash-hang report |
 | Stuck entry headers paint transparent over scrolled content on the card surface | med | low | Risk R01 | visual bleed-through in manual pass |
-| Losing M04 step-21 dash affordances in the structure swap | high | low | [P06] inventory-first task; step-21 app-test leg re-run in #step-2 checkpoint | any dash control missing post-swap |
+| Losing M04 step-21 dash affordances in the structure swap | high | low | [P06] `DashActions` stays in the body untouched; `at0229-changeset-dash-join.test.ts` re-run in #step-2 checkpoint | any dash control missing post-swap |
 | Open-once semantics regress (entries re-open on every snapshot) | med | low | keep `seenSectionsRef` verbatim; collapse map is keyed by entry id ([P02]) | entry pops open after user collapsed it |
 
 **Risk R01: Sticky header surface on the card background** {#r01-sticky-surface}
@@ -280,10 +289,19 @@ a user's collapse persists across recomputes because the set is keyed by id. No
   circle); identity (`target`) = the entry title (`itemTitle`), no `toolName`; detail
   slot = `itemSubtitle` (project · branch · ahead/behind, keeping the spelled-out
   `aheadBehindTitle` tooltip); summary slot = `resultSummary={{kind:"text", text:
-  <itemStatusHint>.text}}` ("N files" / "clean" / "not a git repo"); `headerActions`
-  = whole-entry pop-out (`PopOutDiffButton` with `entryDiffDescriptor(item)`), the
-  entry's file Expand All / Collapse All (from M03B #step-16k), and the M04 step-21
-  dash actions ([P06]); disclosure chevron = entry collapse.
+  <itemStatusHint>.text}}` ("N files" / "clean" / "not a git repo"); disclosure
+  chevron = entry collapse. **`headerActions` is empty for entry blocks** (the
+  chevron is the only trailing affordance) — see the body-content rule below.
+- **All of `EntryBody` stays in the body, untouched** ([P06]): the entry-diff cluster
+  (`entryDiffActionsRow` — Expand All / Collapse All + whole-entry pop-out, with its
+  as-built gates `entryDescriptor !== null && diffablePaths.length > 0`, and
+  `> 1` for Expand/Collapse All), the `DashActions` flow, the commit composer, the
+  receipt, the non-repo body, and the clean state all render as `BlockChrome`
+  children exactly as today. This plan converts entry *structure* (accordion →
+  `BlockChrome`), not entry *content* — lifting body content into header slots would
+  mean hoisting `EntryBody`'s local `expandedFiles` / commit / diff state up a level,
+  which is churn this plan explicitly avoids. Header-slot placement of the entry-diff
+  cluster is a deferred polish, not part of this structural conversion.
 - `toolUseId` = the entry id (`item.id`) — synthetic, stable, and it lands on the
   chrome root as `data-tool-use-id` for free.
 - The entry body (`EntryBody` — M03B file blocks, composer block, receipt, non-repo
@@ -375,26 +393,37 @@ No `TugListView`, no follow-bottom, no windowing.
 - Scroll state preservation stays whatever the card has today (none beyond the
   browser's); the Lens plan owns `scrollKey`-grade preservation.
 
-#### [P06] M04 dash affordances migrate by inventory, not by transcription (DECIDED) {#p06-dash-inventory}
+#### [P06] M04 dash affordances stay in the entry body, untouched (DECIDED) {#p06-dash-inventory}
 
-**Decision:** Workstream B's first task is an inventory of the as-built card after
-M03B + M04: every control, testid, and flow step 21 added (Join/Release entry
-actions, the join preview pane with conflict list / clean bill and the pre-filled
-dash draft, confirm-before-join, "Resolve with AI" spawning a worktree session).
-These map into the entry block as follows — Join/Release become `headerActions` on
-dash entry blocks; the preview pane and its confirm flow render in the entry body
-exactly as built (body content is structure-agnostic); width-stabilized buttons and
-confirm-before-join semantics carry over untouched.
+**Decision:** The M04 step-21 dash integration — the `DashActions` component in
+`changeset-card.tsx` — renders in the entry **body** and is carried over **unchanged**
+by this plan. It is not split across header/body slots.
 
 **Rationale:**
-- This plan is authored before step 21 exists; transcribing its planned UI here would
-  create a second source of truth that drifts. The inventory binds to reality.
+- Verified against the as-built card (main, `5a52fc36b` / `735aea856`): `DashActions`
+  is not a pair of discrete buttons but a stateful flow — idle action row (Join /
+  Release) → resolving → resolved / partial candidate list → clean preview
+  (`changeset-dash-preview-clean`) or conflict preview
+  (`changeset-dash-preview-conflicts`) → confirm-join / release-confirm /
+  Resolve-with-AI — driven by `lib/changeset-join-store.ts`
+  (`useChangesetJoinResolve`). It renders in the body for every dash branch,
+  including the clean/no-files branch where there is no file list at all.
+- Prying that state machine apart into a header cluster + body panes would be pure
+  churn with no design benefit; body content is structure-agnostic, so it survives the
+  accordion → `BlockChrome` swap by simply remaining `EntryBody` children.
+- Test alignment falls out for free: `tests/app-test/at0229-changeset-dash-join.test.ts`
+  scopes every dash selector inside the `changeset-entry` body
+  (`changeset-dash-join`, `-preview-clean`, `-preview-conflicts`, `-confirm-join`,
+  `-release`, `-resolve`), so body placement needs **zero** selector changes there —
+  only the entry block keeping its body mounted while open (see #step-2, eager-fetch
+  invariant).
 
 **Implications:**
-- If step 21 lands its actions somewhere that has no direct analog (e.g. inside the
-  accordion trigger), the implementer maps them to the nearest grammar slot
-  (`headerActions` for entry-scoped verbs, body for panes) and records the mapping in
-  the step-2 commit message.
+- #step-2's inventory task is a confirmation pass (dash flow present and functional
+  post-swap), not a relocation task.
+- The commit-message composer's own `toolName` ("Join message" for dash entries) is
+  unrelated to `DashActions` and is untouched (it is the composer `BlockChrome`, not
+  the entry `BlockChrome`).
 
 ---
 
@@ -494,7 +523,7 @@ No new persistent state; no storage; no new stores; no feed changes.
 | import specifiers for T01 modules | modify | repo-wide (see #import-sweep) | mechanical sweep, #step-1 |
 | `ChangesetEntryBlock` (or equiv.) | component (new) | `tugways/cards/changeset-card.tsx` | the `BlockChrome` + collapse-provider + identity-attr wrapper per [P02]/[P04]; exact name implementer's choice |
 | `collapsedEntries` | state (new) | `ChangesetCardContent` | replaces `openKeys`; [P02] |
-| `TugAccordion` / `TugAccordionItem` usage | delete | `changeset-card.tsx` | entry structure only — M03B's card-internal accordion uses, if any remain, are inventoried in #step-2 |
+| `TugAccordion` / `TugAccordionItem` usage + import | delete | `changeset-card.tsx` | verified as-built: the top-level entry structure is the only accordion use in the card (M03B put file collapse on `ToolBlockCollapseContext`, not a nested accordion) |
 | `ChangesetTocDataSource`, `ChangesetTocCell`, `CHANGESET_TOC_CELL_RENDERERS`, `tocDataSource`, `tocDelegate`, `revealEntry`, `pendingRevealRef` + reveal effect | delete | `changeset-card.tsx` | [P04] |
 | `EntryTrigger` | delete | `changeset-card.tsx` | its content redistributes into the header slots per [P02] |
 | accordion `useResponderForm` binding (`toggleSectionMulti`) | delete | `ChangesetCardContent` | [P02] |
@@ -583,23 +612,24 @@ No new persistent state; no storage; no new stores; no feed changes.
 **Commit:** `feat(tugdeck): changeset entries become BlockChrome sections; TOC + accordion retired`
 
 **References:** [P02] Entry blocks, [P04] TOC retirement, [P05] Plain scroller,
-[P06] Dash inventory, [Q02] Session enumeration, (#collapse-contract,
+[P06] Dash affordances in body, [Q02] Session enumeration, (#collapse-contract,
 #state-zone-mapping, #symbols)
 
 **Artifacts:**
-- **Inventory first** ([P06]): a written pass over the as-built `changeset-card.tsx`
-  (post-M03B + M04): every entry-level control, testid, and flow — especially step
-  21's Join/Release, join preview, confirm, Resolve-with-AI — mapped to its
-  destination slot (headerActions vs body) before code changes.
+- **Confirm the dash flow first** ([P06]): a pass over the as-built `DashActions` +
+  `lib/changeset-join-store.ts` to confirm its every branch/testid, so the swap can
+  be shown to preserve it. `DashActions` stays in the entry body unchanged — this is
+  a confirmation pass, not a relocation.
 - The entry-block wrapper component per [P02]: `ToolBlockCollapseContext.Provider`
   (handle `{collapsed: collapsedEntries.has(id), toggle, toolUseId: id}`) around a
   `BlockChrome` (optional-verb; `leading` = `ItemGlyph`; identity = `itemTitle`;
   detail = `itemSubtitle` + tooltip; summary = `itemStatusHint` text; `headerActions`
-  = whole-entry pop-out + entry file Expand/Collapse All + dash actions;
-  `className="changeset-entry-block"`), on a wrapper element stamped
-  `data-testid="changeset-entry"`, `data-entry-id`, `data-project-dir`,
-  `data-session-id` (session entries) per [P04]/[Q02]. `EntryBody` mounts unchanged
-  as children.
+  omitted — the chevron is the only trailing affordance; `className="changeset-entry-block"`),
+  on a wrapper element stamped `data-testid="changeset-entry"`, `data-entry-id`,
+  `data-project-dir`, `data-session-id` (session entries) per [P04]/[Q02]. `EntryBody`
+  mounts **unchanged** as children — the entry-diff cluster (`entryDiffActionsRow`),
+  `DashActions`, the commit composer, receipt, non-repo body, and clean state all
+  stay in the body exactly as today ([P06]).
 - `ChangesetCardContent` reworked: `collapsedEntries` set state (open-once via the
   verbatim `seenSectionsRef` pattern — snapshot-new ids are simply never in the set);
   toolbar Expand all / Collapse all drive the set; the accordion `useResponderForm`
@@ -607,9 +637,12 @@ No new persistent state; no storage; no new stores; no feed changes.
   deleted per [P04] / #symbols.
 - `changeset-card.css`: `.changeset-toc*` and `.changeset-entry-trigger*` families
   deleted; `.changeset-head` keeps the toolbar only.
-- at0228 adapted: `SESSION_IDS_JS` per [Q02]; any TOC-interaction leg becomes direct
-  entry-block interaction; M04's dash app-test leg re-run against the new structure
-  (selector updates only — flows unchanged).
+- at0228 adapted: `SESSION_IDS_JS` re-targets `[data-testid="changeset-entry"][data-session-id]`
+  per [Q02] (today it selects `changeset-toc-entry`); every other at0228 selector
+  keys on `changeset-entry` + `data-entry-id` and is unchanged; any TOC-interaction
+  leg becomes direct entry-block interaction (scroll + chevron, honoring stuck-header
+  clearance). `at0229-changeset-dash-join.test.ts` re-runs unmodified (its selectors
+  are body-scoped — see Tests).
 
 **Tasks:**
 - [ ] The collapse boolean is local-data ([L24]); provider wrapper keeps stable mount
@@ -619,16 +652,27 @@ No new persistent state; no storage; no new stores; no feed changes.
       commit.
 - [ ] A user's collapse survives snapshot recomputes (set keyed by entry id; ids are
       stable across snapshots).
+- [ ] **Preserve the eager-fetch-gated-to-open invariant.** A collapsed entry block
+      must NOT mount `EntryBody` — `BlockChrome`'s collapse-by-unmount gives this for
+      free, exactly as `TugAccordion` did (Radix unmounted collapsed content). This is
+      load-bearing: `EntryBody` fires `ensureRequested()` on mount (see the comment at
+      the top of `EntryBody`), so the per-entry `git diff` cost stays "one per OPEN
+      entry, not per row." Do NOT convert to a keep-mounted-and-hide pattern — that
+      would fire a diff for every entry in the snapshot.
 - [ ] Empty state, alert sheet (`useTugSheet` + `presentNotice`), and
       `sweepEntryDiffStores` effect unchanged.
-- [ ] Dash entries: every step-21 affordance present and functional post-swap
-      (checked against the inventory).
+- [ ] Dash entries: `DashActions` renders in the body and every step-21 affordance
+      (`changeset-dash-join`, `-preview-clean`, `-preview-conflicts`, `-confirm-join`,
+      `-release`, `-resolve`) is present and functional post-swap ([P06]).
 - [ ] No stray `TugAccordion` / `TugListView` / `TugListRow` imports remain in
       `changeset-card.tsx`.
 
 **Tests:**
-- [ ] `just app-test at0228-changeset-aggregate.test.ts` (adapted) + the M04 dash
-      test if present.
+- [ ] `just app-test at0228-changeset-aggregate.test.ts` (adapted per [Q02]).
+- [ ] `just app-test at0229-changeset-dash-join.test.ts` — expected to pass with
+      **no selector changes** (all its selectors are body-scoped under
+      `changeset-entry`, and the entry block keeps its body mounted while open); a
+      failure here means the swap dropped body content or changed open-once defaults.
 - [ ] Existing bun suites green (no store changes expected).
 
 **Checkpoint:**
@@ -713,14 +757,13 @@ loss of M03B content quality or M04 dash function.
       reveal logic deleted; open-once + toolbar semantics preserved (#step-2).
 - [ ] Two-level sticky telescoping works inside `.changeset-scroll` on shipped
       themes (#step-3).
-- [ ] M04 dash affordances fully functional in the new structure (inventory check +
-      dash app-test leg).
+- [ ] M04 dash affordances fully functional in the new structure
+      (`at0229-changeset-dash-join.test.ts` green, no selector changes).
 - [ ] `bun test`, `bunx tsc --noEmit`, `bunx vite build`, `just app-test` all green.
 
 **Acceptance tests:**
 - [ ] Adapted `tests/app-test/at0228-changeset-aggregate.test.ts`
-- [ ] The M04 dash-join app-test leg (as named by `roadmap/changesets-plan.md`
-      step 21), re-run unmodified in flow
+- [ ] `tests/app-test/at0229-changeset-dash-join.test.ts`, re-run unmodified in flow
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
