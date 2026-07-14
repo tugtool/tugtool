@@ -34,7 +34,7 @@
  *    (`--tug7-element-tone-text-normal-active-rest` for the
  *    interactive accent on the summary label).
  *
- * @module components/tugways/cards/blocks/block-bits/block-disclosure
+ * @module components/tugways/blocks/block-bits/block-disclosure
  */
 
 import "./block-disclosure.css";

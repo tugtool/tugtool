@@ -90,10 +90,10 @@ import {
   type CommitData,
 } from "@/components/tugways/body-kinds/commit-block";
 
-import { BlockChrome } from "./block-chrome";
-import type { BlockNotice } from "./block-notice";
-import type { ToolResultSummary } from "./tool-result-summary";
-import type { ToolBlockProps } from "./types";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { BlockNotice } from "../../blocks/block-notice";
+import type { ToolResultSummary } from "../../blocks/tool-result-summary";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings — the structured_result for Bash carries

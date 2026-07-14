@@ -85,7 +85,7 @@ import {
 import { TugCue } from "@/components/tugways/tug-cue";
 import { TugChoiceGroup, type TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { useScroller } from "@/components/tugways/internal/scroller-context";
 import { useOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";

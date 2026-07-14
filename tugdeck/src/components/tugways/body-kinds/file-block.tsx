@@ -109,16 +109,16 @@ import type { EditorView } from "@codemirror/view";
 
 import {
   useFindTargetRegistration,
-} from "@/components/tugways/cards/blocks/find-target-registry";
+} from "@/components/tugways/blocks/find-target-registry";
 import {
   ToolBlockCollapseContext,
   ToolUseIdContext,
-} from "@/components/tugways/cards/blocks/collapse-context";
+} from "@/components/tugways/blocks/collapse-context";
 import {
   TugCodeView,
   type TugCodeViewDelegate,
 } from "@/components/tugways/tug-code-view";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { attachOuterScrollOnModifierWheel } from "@/components/tugways/internal/use-outer-scroll-on-modifier-wheel";
 import { useSavedRegionScroll } from "@/components/tugways/use-component-state-preservation";

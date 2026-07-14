@@ -74,7 +74,7 @@ import "./todo-list-block.css";
 import React from "react";
 import { createPortal } from "react-dom";
 
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import {
   TugProgressIndicator,

@@ -77,10 +77,10 @@ import { NotebookPen } from "lucide-react";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
-import { BlockChrome } from "./block-chrome";
-import { ToolFileRef } from "./tool-file-ref";
-import type { ToolResultSummary } from "./tool-result-summary";
-import type { ToolBlockProps } from "./types";
+import { BlockChrome } from "../../blocks/block-chrome";
+import { ToolFileRef } from "../../blocks/tool-file-ref";
+import type { ToolResultSummary } from "../../blocks/tool-result-summary";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

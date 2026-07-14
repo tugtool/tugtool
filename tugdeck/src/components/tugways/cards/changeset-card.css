@@ -4,9 +4,10 @@
    - --tug7-element-tone-text-normal-caution-rest  (modified status, ambiguous badge)
    - --tug7-element-tone-text-normal-accent-rest   (renamed status, shared badge)
 
-   Text-color-only on the card's inherited surface: sections come from the
-   composed TugAccordion, which keeps its own tokens ([L20]). Status glyphs
-   and badges tint via tone *text* tokens, so no @tug-renders-on ([L16]). */
+   Text-color-only on the card's inherited surface: entry sections come from
+   the composed BlockChrome, which keeps its own tokens ([L20]). Status
+   glyphs and badges tint via tone *text* tokens, so no @tug-renders-on
+   ([L16]). */
 
 .changeset-card {
   display: flex;
@@ -25,7 +26,7 @@
   font-size: 0.875rem;
 }
 
-/* ---- Fixed head: toolbar + table of contents (always visible) ---- */
+/* ---- Fixed head: the toolbar (always visible) ---- */
 
 .changeset-head {
   flex: 0 0 auto;
@@ -52,36 +53,7 @@
   flex: 1 1 auto;
 }
 
-/* ---- Table of contents — a TugListView of the entries ----
-   A bordered list with hairline dividers (the `flush` row layout supplies
-   the dividers; the list view clips its rows to the border radius). Rows are
-   two lines (title + project · branch · id subtitle), pinned to a uniform
-   height so the 4-row cap is exact; the list scrolls only beyond that. Fewer
-   entries ⇒ the list is exactly that tall, no empty space, no scrollbar. */
-
-.changeset-toc-list.tug-list-view {
-  --tugx-list-row-min-height: 3.25rem;
-  --tugx-list-view-padding-block: 0;
-  --tugx-list-view-padding-inline: 0;
-  flex: 0 0 auto;
-  height: auto;
-  max-height: calc(4 * 3.25rem + 2px);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm, 6px);
-}
-
-/* Trailing status hint. Muted for clean / not-a-repo; caution when dirty. */
-.changeset-toc-hint {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.changeset-toc-hint-changes {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
-}
-
-/* ---- Scrollable accordion body ---- */
+/* ---- Scrollable entry sections ---- */
 
 .changeset-scroll {
   flex: 1 1 auto;
@@ -90,10 +62,47 @@
   padding: 8px 14px 12px;
 }
 
-/* ---- Entry triggers (one accordion section per entry) ---- */
-
-.changeset-entry-trigger {
+.changeset-sections {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---- Entry blocks (one BlockChrome section per entry) ----
+   The block owns its own chrome/header styling; the wrapper carries the
+   entry's test hooks (`data-entry-id` / `data-project-dir` /
+   `data-session-id`). */
+
+.changeset-entry {
+  min-width: 0;
+}
+
+/* Telescoping pin stack ([P03]): entry headers stick at the top of
+   `.changeset-scroll` (the chrome header pins at `--tugx-pin-stack-top`,
+   which is unset in the card, i.e. 0); file-block headers inside the entry
+   body stack BELOW the stuck entry header. Mirrors the `.tugx-agent` /
+   `.tugx-agent-entries` clearance-capture pair: the clearance is computed
+   on the entry-block root — a non-cyclic read of the inherited pin offset
+   plus the chrome's measured `--tugx-block-header-height` — and republished
+   on the body wrapper AS the subtree's `--tugx-pin-stack-top`. Two elements
+   on purpose: folding into `--tugx-pin-stack-top` on one element is a
+   dependency cycle (guaranteed-invalid, nested headers would pin at 0 and
+   collide with the entry header). */
+.changeset-entry-block {
+  --changeset-entry-pin-clearance: calc(
+    var(--tugx-pin-stack-top, 0px) + var(--tugx-block-header-height, 0px)
+  );
+}
+
+.changeset-entry-block > [data-slot="tool-block-body"] {
+  --tugx-pin-stack-top: var(--changeset-entry-pin-clearance);
+}
+
+/* The header identity: title + trailing project · branch context, riding
+   the block header's flexible target column. */
+.changeset-entry-identity {
+  display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -111,13 +120,11 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* Trailing project · branch context on the trigger line. The right margin
-   keeps it off the accordion chevron (the trigger's content span stretches
-   flush against it). */
+/* Trailing project · branch context on the header line, pushed toward the
+   status-hint summary at the header's trailing edge. */
 .changeset-entry-context {
   flex-shrink: 0;
   margin-left: auto;
-  margin-right: 0.625rem;
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;

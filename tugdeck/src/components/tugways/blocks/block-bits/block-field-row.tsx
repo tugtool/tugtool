@@ -41,7 +41,7 @@
  *    today; layout values use the shared `--tug-space-*` family;
  *    the label's color rides `TugLabel`'s tokens).
  *
- * @module components/tugways/cards/blocks/block-bits/block-field-row
+ * @module components/tugways/blocks/block-bits/block-field-row
  */
 
 import "./block-field-row.css";

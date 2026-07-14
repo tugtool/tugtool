@@ -91,9 +91,9 @@ import {
 import type { ToolUseMessage } from "@/lib/code-session-store";
 import { useJobForToolUse } from "@/lib/code-session-store/hooks/use-job-for-tool-use";
 
-import { BlockChrome } from "./block-chrome";
-import type { ToolResultSummary } from "./tool-result-summary";
-import type { ToolBlockProps } from "./types";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolResultSummary } from "../../blocks/tool-result-summary";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

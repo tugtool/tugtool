@@ -96,7 +96,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 import type { PropertyStore } from "@/components/tugways/property-store";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TUG_ACTIONS, type TugAction } from "@/components/tugways/action-vocabulary";
@@ -108,11 +108,11 @@ import {
   BlockFoldCue,
   useBlockFoldState,
 } from "./affordances";
-import { useFindTargetRegistration } from "@/components/tugways/cards/blocks/find-target-registry";
+import { useFindTargetRegistration } from "@/components/tugways/blocks/find-target-registry";
 import {
   ToolBlockCollapseContext,
   ToolUseIdContext,
-} from "@/components/tugways/cards/blocks/collapse-context";
+} from "@/components/tugways/blocks/collapse-context";
 
 // ---------------------------------------------------------------------------
 // Public types

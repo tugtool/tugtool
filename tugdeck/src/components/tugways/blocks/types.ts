@@ -14,7 +14,7 @@
  *       types owns its own scoped tokens; this types module declares
  *       no tokens.
  *
- * @module components/tugways/cards/blocks/types
+ * @module components/tugways/blocks/types
  */
 
 import type React from "react";

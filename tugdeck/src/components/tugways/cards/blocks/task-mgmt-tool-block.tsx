@@ -97,9 +97,9 @@ import {
   BlockDisclosure,
   BlockFieldRow,
   BlockPre,
-} from "./block-bits";
-import { BlockChrome } from "./block-chrome";
-import type { ToolBlockProps } from "./types";
+} from "../../blocks/block-bits";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowing — the four tools have different input shapes; the

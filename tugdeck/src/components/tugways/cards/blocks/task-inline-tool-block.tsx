@@ -110,7 +110,7 @@ import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-s
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
 
-import type { ToolBlockProps } from "./types";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Verb derivation

@@ -23,7 +23,7 @@
  *  - [L20] owns only the `--tugx-block-body-*` slots (none today;
  *    layout values use the shared `--tug-space-*` family).
  *
- * @module components/tugways/cards/blocks/block-bits/block-body
+ * @module components/tugways/blocks/block-bits/block-body
  */
 
 import "./block-body.css";

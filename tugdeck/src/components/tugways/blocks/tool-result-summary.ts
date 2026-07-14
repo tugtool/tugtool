@@ -10,7 +10,7 @@
  *
  * Pure + tiny so the formatting is unit-testable without a DOM.
  *
- * @module components/tugways/cards/blocks/tool-result-summary
+ * @module components/tugways/blocks/tool-result-summary
  */
 
 /** A tool call's one-line result, as data. */

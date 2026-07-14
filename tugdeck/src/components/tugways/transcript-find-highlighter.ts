@@ -54,7 +54,7 @@ import {
   type FindOptions,
   type SegmentedFindMatch,
 } from "@/lib/transcript-search";
-import type { FindTargetRegistry } from "@/components/tugways/cards/blocks/find-target-registry";
+import type { FindTargetRegistry } from "@/components/tugways/blocks/find-target-registry";
 import { placeFindFlash, type FindFlashHandle } from "@/components/tugways/find-flash";
 
 /** The opt-in searchable-content marker attribute (present/absent, no value). */

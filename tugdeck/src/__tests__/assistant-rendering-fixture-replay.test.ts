@@ -57,7 +57,7 @@ import { GlobToolBlock } from "@/components/tugways/cards/blocks/glob-tool-block
 import { GrepToolBlock } from "@/components/tugways/cards/blocks/grep-tool-block";
 import { TaskToolBlock } from "@/components/tugways/cards/blocks/task-tool-block";
 import { DefaultToolBlock } from "@/components/tugways/cards/blocks/default-tool-block";
-import type { ToolBlockFactory } from "@/components/tugways/cards/blocks/types";
+import type { ToolBlockFactory } from "@/components/tugways/blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------

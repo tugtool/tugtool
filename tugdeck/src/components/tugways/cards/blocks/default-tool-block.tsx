@@ -72,8 +72,8 @@ import { JsonTreeBlock } from "@/components/tugways/body-kinds/json-tree-block";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
-import { BlockChrome } from "./block-chrome";
-import type { ToolBlockProps } from "./types";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Output smart-pick — pure helper (exported because tests pin it)

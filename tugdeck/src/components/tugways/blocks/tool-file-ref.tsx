@@ -28,7 +28,7 @@
  *    owns the state the action mutates.
  *  - [L19] file pair (`.tsx` + `.css`), exported props, `data-slot`.
  *
- * @module components/tugways/cards/blocks/tool-file-ref
+ * @module components/tugways/blocks/tool-file-ref
  */
 
 import "./tool-file-ref.css";

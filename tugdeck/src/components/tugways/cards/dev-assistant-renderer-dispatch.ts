@@ -100,7 +100,7 @@ import type {
   CautionFlag,
   ChildToolCallsMap,
   ToolBlockFactory,
-} from "./blocks/types";
+} from "../blocks/types";
 
 // ---------------------------------------------------------------------------
 // RenderInput — discriminated union the dispatch routes.

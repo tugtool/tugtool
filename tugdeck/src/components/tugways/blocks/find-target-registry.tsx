@@ -19,7 +19,7 @@
  * the registry instance is card-owned (the transcript host provides it) and
  * reference-stable [L07].
  *
- * @module components/tugways/cards/blocks/find-target-registry
+ * @module components/tugways/blocks/find-target-registry
  */
 
 import * as React from "react";

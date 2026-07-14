@@ -22,7 +22,7 @@ import {
 } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
 import { BashToolBlock } from "@/components/tugways/cards/blocks/bash-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/blocks/read-tool-block";
-import { ToolBlockExpansionState } from "@/components/tugways/cards/blocks/expansion-state";
+import { ToolBlockExpansionState } from "@/components/tugways/blocks/expansion-state";
 import type { DevTranscriptDataSource, DevRowDescriptor } from "@/lib/dev-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
 

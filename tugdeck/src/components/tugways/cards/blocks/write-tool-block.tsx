@@ -76,10 +76,10 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
-import { ToolFileRef } from "./tool-file-ref";
-import { BlockChrome } from "./block-chrome";
-import type { ToolResultSummary } from "./tool-result-summary";
-import type { ToolBlockProps } from "./types";
+import { ToolFileRef } from "../../blocks/tool-file-ref";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolResultSummary } from "../../blocks/tool-result-summary";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

@@ -75,8 +75,8 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import { MiddleEllipsisPath } from "@/components/tugways/cards/blocks/middle-ellipsis-path";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import {
   TugListView,
   type TugListViewCellProps,

@@ -81,9 +81,9 @@ import { TugLink } from "@/components/tugways/tug-link";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 
-import { BlockBody, BlockFieldRow } from "./block-bits";
-import { BlockChrome } from "./block-chrome";
-import type { ToolBlockProps } from "./types";
+import { BlockBody, BlockFieldRow } from "../../blocks/block-bits";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

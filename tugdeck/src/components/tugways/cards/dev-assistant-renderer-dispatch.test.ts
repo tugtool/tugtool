@@ -47,7 +47,7 @@ import {
 import { DefaultToolBlock } from "./blocks/default-tool-block";
 import { TaskInlineToolBlock } from "./blocks/task-inline-tool-block";
 import { defaultIntentToolNames } from "./dev-tool-visibility-policy";
-import type { ToolBlockProps } from "./blocks/types";
+import type { ToolBlockProps } from "../blocks/types";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------

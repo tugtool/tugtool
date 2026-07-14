@@ -41,7 +41,7 @@ import { TerminalBlock, type TerminalData } from "@/components/tugways/body-kind
 import type { DiffData } from "@/lib/diff/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
-import { BlockChrome } from "./blocks/block-chrome";
+import { BlockChrome } from "../blocks/block-chrome";
 
 // ---------------------------------------------------------------------------
 // Synthesized fixtures

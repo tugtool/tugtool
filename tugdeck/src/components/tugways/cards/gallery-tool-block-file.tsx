@@ -58,7 +58,7 @@ import { ReadToolBlock } from "./blocks/read-tool-block";
 import { EditToolBlock } from "./blocks/edit-tool-block";
 import { WriteToolBlock } from "./blocks/write-tool-block";
 import { NotebookEditToolBlock } from "./blocks/notebook-edit-tool-block";
-import type { ToolBlockProps } from "./blocks/types";
+import type { ToolBlockProps } from "../blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 
 // ---------------------------------------------------------------------------

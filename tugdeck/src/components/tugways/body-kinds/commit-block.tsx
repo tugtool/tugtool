@@ -46,8 +46,8 @@ import { GitBranch } from "lucide-react";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
-import { MiddleEllipsisPath } from "@/components/tugways/cards/blocks/middle-ellipsis-path";
-import { BlockDisclosure } from "@/components/tugways/cards/blocks/block-bits/block-disclosure";
+import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
+import { BlockDisclosure } from "@/components/tugways/blocks/block-bits/block-disclosure";
 
 // ---------------------------------------------------------------------------
 // Data shape

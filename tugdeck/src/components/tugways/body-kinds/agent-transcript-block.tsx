@@ -74,14 +74,14 @@ import React from "react";
 import { createPortal } from "react-dom";
 
 import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import {
   ToolBlockHistoryCollapse,
   ToolCallMetaProvider,
   ToolUseIdContext,
-} from "@/components/tugways/cards/blocks/collapse-context";
+} from "@/components/tugways/blocks/collapse-context";
 import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
-import type { ChildToolCallsMap } from "@/components/tugways/cards/blocks/types";
+import type { ChildToolCallsMap } from "@/components/tugways/blocks/types";
 import { toolCallToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import type { ToolUseMessage } from "@/lib/code-session-store";

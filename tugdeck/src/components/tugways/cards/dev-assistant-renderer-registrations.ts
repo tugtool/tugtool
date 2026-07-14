@@ -44,7 +44,7 @@ import {
   TOOL_ALIASES,
   registerToolBlock,
 } from "./dev-assistant-renderer-dispatch";
-import type { ToolBlockFactory } from "./blocks/types";
+import type { ToolBlockFactory } from "../blocks/types";
 
 /**
  * Single source of truth for the bespoke wrappers — the (name,

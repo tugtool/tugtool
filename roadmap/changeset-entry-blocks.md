@@ -564,10 +564,10 @@ No new persistent state; no storage; no new stores; no feed changes.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Re-home the block grammar to `tugways/blocks/` | pending | — |
-| #step-2 | Entries become BlockChrome; accordion + TOC retired | pending | — |
-| #step-3 | Sticky pin-stack wayfinding | pending | — |
-| #step-4 | Integration checkpoint | pending | — |
+| #step-1 | Re-home the block grammar to `tugways/blocks/` | done | `2f0b6a52a` |
+| #step-2 | Entries become BlockChrome; accordion + TOC retired | done | `8bad106c0` |
+| #step-3 | Sticky pin-stack wayfinding | done | `f8cf0d4d0` |
+| #step-4 | Integration checkpoint | done | — (verification only) |
 
 #### Step 1: Re-home the block grammar to `tugways/blocks/` {#step-1}
 

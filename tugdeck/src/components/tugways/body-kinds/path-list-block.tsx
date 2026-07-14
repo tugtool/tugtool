@@ -80,8 +80,8 @@ import {
   ListOrdered,
 } from "lucide-react";
 
-import { MiddleEllipsisPath } from "@/components/tugways/cards/blocks/middle-ellipsis-path";
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   TugListView,

@@ -32,7 +32,7 @@
  *  - [L20] no `--tugx-block-pre-*` tokens; mono font and size
  *    use the shared `--tug-font-family-mono` / `--tug-font-size-sm`.
  *
- * @module components/tugways/cards/blocks/block-bits/block-pre
+ * @module components/tugways/blocks/block-bits/block-pre
  */
 
 import "./block-pre.css";

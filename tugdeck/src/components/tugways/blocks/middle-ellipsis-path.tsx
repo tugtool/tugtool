@@ -28,7 +28,7 @@
  *  - [L20] consumes only `--tugx-block-*` (inherited from the
  *    composing chrome) and introduces no tokens.
  *
- * @module components/tugways/cards/blocks/middle-ellipsis-path
+ * @module components/tugways/blocks/middle-ellipsis-path
  */
 
 import "./middle-ellipsis-path.css";

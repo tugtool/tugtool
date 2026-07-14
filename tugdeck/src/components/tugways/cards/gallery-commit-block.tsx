@@ -28,7 +28,7 @@ import {
   parseGitCommit,
   type CommitData,
 } from "@/components/tugways/body-kinds/commit-block";
-import { BlockChrome } from "./blocks/block-chrome";
+import { BlockChrome } from "../blocks/block-chrome";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 

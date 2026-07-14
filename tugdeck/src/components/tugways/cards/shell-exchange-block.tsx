@@ -33,7 +33,7 @@ import {
 } from "@/components/tugways/tug-sprite-icon";
 import type { ToolCallPhase } from "@/lib/code-session-store/tool-call-phase-visual";
 import type { ShellExchangeMessage } from "@/lib/code-session-store/types";
-import { BlockChrome } from "./blocks/block-chrome";
+import { BlockChrome } from "../blocks/block-chrome";
 import { deriveShellExchangeView } from "./shell-exchange-view";
 import "./shell-exchange-block.css";
 

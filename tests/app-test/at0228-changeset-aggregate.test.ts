@@ -170,7 +170,7 @@ function deckShape() {
   };
 }
 
-const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-toc-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
+const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
 
 function nonRepoProbe(sid: string): string {
   return `(function(){

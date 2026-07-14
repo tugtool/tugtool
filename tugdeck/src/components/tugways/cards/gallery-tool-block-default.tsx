@@ -44,7 +44,7 @@ import "./gallery-tool-block-default.css";
 import React from "react";
 
 import { DefaultToolBlock } from "./blocks/default-tool-block";
-import type { ToolBlockProps } from "./blocks/types";
+import type { ToolBlockProps } from "../blocks/types";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 

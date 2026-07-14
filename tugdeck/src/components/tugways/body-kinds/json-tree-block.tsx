@@ -76,7 +76,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, Copy, FoldVertical, UnfoldVertical } from "lucide-react";
 
-import { useChromeActionsTarget } from "@/components/tugways/cards/blocks/block-chrome";
+import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
   useComponentStatePreservation,

@@ -88,7 +88,7 @@
  *    keep their own `--tugx-{kind}-*` tokens; chrome rules never
  *    reach into them.
  *
- * @module components/tugways/cards/blocks/block-chrome
+ * @module components/tugways/blocks/block-chrome
  */
 
 import "./block-chrome.css";

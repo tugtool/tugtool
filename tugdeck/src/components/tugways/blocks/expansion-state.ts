@@ -22,7 +22,7 @@
  *
  * Pure module — no DOM, no React.
  *
- * @module components/tugways/cards/blocks/expansion-state
+ * @module components/tugways/blocks/expansion-state
  */
 
 /** Serialized shape on the [A9] axis: only the overrides. */

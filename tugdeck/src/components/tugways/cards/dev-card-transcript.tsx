@@ -130,12 +130,12 @@ import {
   ToolBlockHistoryCollapse,
   ToolUseIdContext,
   ToolCallMetaProvider,
-} from "@/components/tugways/cards/blocks/collapse-context";
+} from "@/components/tugways/blocks/collapse-context";
 import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
 import {
   ToolBlockExpansionState,
   type PersistedExpansionState,
-} from "@/components/tugways/cards/blocks/expansion-state";
+} from "@/components/tugways/blocks/expansion-state";
 import type { FindSession } from "@/lib/find-session";
 import { TranscriptFindEngine } from "@/lib/transcript-find-engine";
 import { buildTranscriptSearchSegments } from "@/lib/transcript-search-index";
@@ -143,7 +143,7 @@ import { TranscriptFindHighlighter } from "@/components/tugways/transcript-find-
 import {
   FindTargetRegistry,
   FindTargetRegistryContext,
-} from "@/components/tugways/cards/blocks/find-target-registry";
+} from "@/components/tugways/blocks/find-target-registry";
 import "@/components/tugways/transcript-find.css";
 import {
   useComponentStatePreservation,

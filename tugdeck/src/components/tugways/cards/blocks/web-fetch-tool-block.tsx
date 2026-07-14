@@ -82,10 +82,10 @@ import { Zap } from "lucide-react";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 
-import { MiddleEllipsisPath } from "./middle-ellipsis-path";
-import { BlockBody, BlockFieldRow, BlockPre } from "./block-bits";
-import { BlockChrome } from "./block-chrome";
-import type { ToolBlockProps } from "./types";
+import { MiddleEllipsisPath } from "../../blocks/middle-ellipsis-path";
+import { BlockBody, BlockFieldRow, BlockPre } from "../../blocks/block-bits";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

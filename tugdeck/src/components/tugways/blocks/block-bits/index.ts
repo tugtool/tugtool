@@ -28,7 +28,7 @@
  * the variability" shape the affordance library uses, and
  * re-export below. The downstream wrappers compose them as needed.
  *
- * @module components/tugways/cards/blocks/block-bits
+ * @module components/tugways/blocks/block-bits
  */
 
 export { BlockBody } from "./block-body";

@@ -33,7 +33,7 @@
  * untouched (no store subscription, no appearance-by-React-state —
  * the boolean changes WHICH subtree exists, not how it looks).
  *
- * @module components/tugways/cards/blocks/collapse-context
+ * @module components/tugways/blocks/collapse-context
  */
 
 import React from "react";

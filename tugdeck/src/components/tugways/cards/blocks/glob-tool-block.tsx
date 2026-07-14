@@ -60,9 +60,9 @@ import {
   type PathListData,
 } from "@/components/tugways/body-kinds/path-list-block";
 
-import { BlockChrome } from "./block-chrome";
-import type { ToolResultSummary } from "./tool-result-summary";
-import type { ToolBlockProps } from "./types";
+import { BlockChrome } from "../../blocks/block-chrome";
+import type { ToolResultSummary } from "../../blocks/tool-result-summary";
+import type { ToolBlockProps } from "../../blocks/types";
 
 // ---------------------------------------------------------------------------
 // Wire-shape narrowings

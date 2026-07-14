@@ -25,8 +25,8 @@ import {
   type ToolCallPhase,
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
-import { BlockHeader } from "./blocks/block-header";
-import { ToolCallMetaProvider } from "./blocks/collapse-context";
+import { BlockHeader } from "../blocks/block-header";
+import { ToolCallMetaProvider } from "../blocks/collapse-context";
 
 const PHASES: ReadonlyArray<ToolCallPhase> = [
   "idle",

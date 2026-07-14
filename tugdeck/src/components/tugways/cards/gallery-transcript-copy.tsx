@@ -30,8 +30,8 @@ import React from "react";
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
-import { BlockChrome } from "@/components/tugways/cards/blocks/block-chrome";
-import { ToolUseIdContext } from "@/components/tugways/cards/blocks/collapse-context";
+import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import { ToolUseIdContext } from "@/components/tugways/blocks/collapse-context";
 import {
   type CopyMarkdownResolver,
   useTranscriptCellMenu,

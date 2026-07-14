@@ -35,7 +35,7 @@ import "./dev-caution-badge.css";
 
 import React from "react";
 
-import type { CautionFlag } from "@/components/tugways/cards/blocks/types";
+import type { CautionFlag } from "@/components/tugways/blocks/types";
 
 /** Short human label per caution reason. */
 const CAUTION_LABELS: Readonly<Record<CautionFlag["reason"], string>> = {

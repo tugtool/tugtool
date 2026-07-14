@@ -9,10 +9,10 @@
  * live session, titled by the chooser's rule (name → prompt snippet → id
  * prefix) — or a session with attributed dirty files, plus one entry per
  * dash worktree and an "Unattributed" entry per project with unclaimed dirty
- * files. A fixed table of contents (a bordered `TugListView`, one row per
- * entry) sits over a scrollable accordion of the same entries; file rows
- * carry a commit-selection checkbox, a git-status glyph, op/origin
- * provenance, ambiguous/shared badges, and a scoped-diff affordance.
+ * files. Each entry is a `BlockChrome` section in one plain scroll — sticky
+ * headers are the wayfinding; file rows carry a commit-selection checkbox, a
+ * git-status glyph, op/origin provenance, ambiguous/shared badges, and a
+ * scoped-diff affordance.
  * Session and unattributed entries host the commit flow ([P15]) — message
  * field, width-stabilized commit button, numstat receipt — and a session in
  * a non-git directory hosts the "Initialize git" affordance instead.
@@ -23,11 +23,11 @@
  * feed id, so aggregation is server-side. Clickable links use each project's
  * own `project_dir` as the absolute-path base.
  *
- * Entry sections are a controlled `TugAccordion type="multiple"`. Sections a
- * snapshot introduces open themselves once, so a user's collapse sticks
- * across recomputes. A TOC click expands the entry and scrolls it into view
- * only when its trigger is outside the scroller's viewport — an in-view
- * section never hops.
+ * Entry collapse is card-local state: a set of collapsed entry ids feeding
+ * per-entry `ToolBlockCollapseContext` providers around each entry's
+ * `BlockChrome`. An entry a snapshot introduces renders open (a new id is
+ * never in the collapsed set), and a user's collapse sticks across
+ * recomputes because the set is keyed by id.
  *
  * Laws: [L02] external state via useSyncExternalStore, [L06] appearance via
  *       CSS, [L11] controls emit actions, [L20] composed children keep
@@ -41,7 +41,6 @@ import "./changeset-card.css";
 import React, {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -53,16 +52,7 @@ import { registerCard } from "@/card-registry";
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
-import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugListRow } from "@/components/tugways/tug-list-row";
-import {
-  TugListView,
-  type TugListViewCellProps,
-  type TugListViewCellRenderer,
-  type TugListViewDataSource,
-  type TugListViewDelegate,
-} from "@/components/tugways/tug-list-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
@@ -73,12 +63,12 @@ import {
 import { presentAlertSheet } from "@/components/tugways/tug-alert-sheet";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
-import { BlockChrome } from "@/components/tugways/cards/blocks/block-chrome";
-import type { ToolResultSummary } from "@/components/tugways/cards/blocks/tool-result-summary";
+import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import type { ToolResultSummary } from "@/components/tugways/blocks/tool-result-summary";
 import {
   ToolBlockCollapseContext,
   type ToolBlockCollapseHandle,
-} from "@/components/tugways/cards/blocks/collapse-context";
+} from "@/components/tugways/blocks/collapse-context";
 import { useChangesetAll } from "@/lib/changeset-all-store";
 import {
   useChangesetCommit,
@@ -797,14 +787,16 @@ function ChangesetFileBlock({
 }
 
 // ---------------------------------------------------------------------------
-// Entry trigger + body
+// Entry block + body
 // ---------------------------------------------------------------------------
 
-/** The collapsed trigger for one entry. */
-function EntryTrigger({ item }: { item: ChangesetItem }) {
+/**
+ * The entry's header identity (the `target` slot): title over the
+ * project · branch · id context, with the spelled-out ahead/behind tooltip.
+ */
+function EntryIdentity({ item }: { item: ChangesetItem }) {
   return (
-    <span className="changeset-entry-trigger">
-      <ItemGlyph item={item} />
+    <span className="changeset-entry-identity">
       <span
         className={`changeset-entry-title${
           item.kind === "unattributed" ? " changeset-entry-title-muted" : ""
@@ -819,6 +811,63 @@ function EntryTrigger({ item }: { item: ChangesetItem }) {
         {itemSubtitle(item)}
       </span>
     </span>
+  );
+}
+
+/**
+ * One changeset entry rendered as a top-level verb-less `BlockChrome`
+ * section: the entry glyph in the header `leading` slot, title + context as
+ * identity, the status hint ("N files" / "clean" / "not a git repo") as the
+ * trailing summary, and the whole `EntryBody` as the collapse-by-unmount
+ * body. No `headerActions` — the disclosure chevron is the only trailing
+ * affordance; every entry affordance (diff cluster, dash actions, composer)
+ * lives in the body.
+ *
+ * The chevron + collapse come from a card-local
+ * `ToolBlockCollapseContext.Provider` driven by the card's collapsed-ids
+ * set ([L24] local data; [L26] the provider keeps stable mount identity —
+ * only the body subtree unmounts across the toggle). Collapse-by-unmount is
+ * load-bearing: `EntryBody` fires its diff fetch on mount, so a collapsed
+ * entry costs nothing. The wrapper carries the entry's test identity
+ * (`data-entry-id` / `data-project-dir` / `data-session-id`).
+ */
+function ChangesetEntryBlock({
+  item,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  item: ChangesetItem;
+  collapsed: boolean;
+  onToggle: (next: boolean) => void;
+  children: React.ReactNode;
+}) {
+  const hint = itemStatusHint(item);
+  const handle = useMemo<ToolBlockCollapseHandle>(
+    () => ({ collapsed, toggle: onToggle, toolUseId: item.id }),
+    [collapsed, onToggle, item.id],
+  );
+  return (
+    <ToolBlockCollapseContext.Provider value={handle}>
+      <div
+        className="changeset-entry"
+        data-testid="changeset-entry"
+        data-entry-id={item.id}
+        data-project-dir={item.project.project_dir}
+        data-session-id={item.kind === "session" ? item.entry.owner_id : undefined}
+      >
+        <BlockChrome
+          variant="tool"
+          phase="idle"
+          leading={<ItemGlyph item={item} />}
+          identity={<EntryIdentity item={item} />}
+          resultSummary={{ kind: "text", text: hint.text }}
+          className="changeset-entry-block"
+        >
+          {children}
+        </BlockChrome>
+      </div>
+    </ToolBlockCollapseContext.Provider>
   );
 }
 
@@ -1193,10 +1242,11 @@ function EntryBody({
   const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
   const entryDescriptor = useMemo(() => entryDiffDescriptor(item), [item]);
-  // Eager fetch: this body is mounted only while its accordion section is open
-  // (Radix unmounts a collapsed section's content), so requesting on mount
-  // shows the per-file `+N −M` badges at rest — before any file is expanded —
-  // at a cost of one `git diff` per OPEN entry ([P29] fetch timing).
+  // Eager fetch: this body is mounted only while its entry block is expanded
+  // (the chrome's collapse-by-unmount withholds a collapsed body), so
+  // requesting on mount shows the per-file `+N −M` badges at rest — before
+  // any file is expanded — at a cost of one `git diff` per OPEN entry
+  // ([P29] fetch timing).
   useEffect(() => {
     ensureRequested();
   }, [ensureRequested]);
@@ -1552,93 +1602,12 @@ function EntryBody({
 }
 
 // ---------------------------------------------------------------------------
-// Table of contents — a TugListView of the entries
-// ---------------------------------------------------------------------------
-
-/**
- * Single-section data source over the visible entry list. Recreated whenever
- * the list changes; `subscribe` is therefore a no-op and `getVersion` returns
- * the array identity (a fresh instance ⇒ TugListView re-reads).
- */
-class ChangesetTocDataSource implements TugListViewDataSource {
-  constructor(private readonly items: readonly ChangesetItem[]) {}
-  numberOfItems(): number {
-    return this.items.length;
-  }
-  idForIndex(index: number): string {
-    return this.items[index].id;
-  }
-  kindForIndex(index: number): string {
-    return this.items[index].kind;
-  }
-  itemAt(index: number): ChangesetItem {
-    return this.items[index];
-  }
-  subscribe(): () => void {
-    return () => {};
-  }
-  getVersion(): unknown {
-    return this.items;
-  }
-}
-
-/**
- * One entry row: leading glyph, the entry title over its project · branch ·
- * id subtitle, and a trailing status hint (file count / "clean" / "not a git
- * repo"). Clicking reveals the entry's accordion (via the delegate).
- */
-const ChangesetTocCell: TugListViewCellRenderer<ChangesetTocDataSource> =
-  function ChangesetTocCell({
-    index,
-    dataSource,
-  }: TugListViewCellProps<ChangesetTocDataSource>): React.ReactElement {
-    const item = dataSource.itemAt(index);
-    const hint = itemStatusHint(item);
-    return (
-      <TugListRow
-        leading={<ItemGlyph item={item} />}
-        title={itemTitle(item)}
-        titleSize="sm"
-        subtitle={
-          // A node (not a string) so the ↑/↓ glyphs can carry their
-          // spelled-out tooltip; `.tug-list-row-subtitle` keeps the muted
-          // truncating treatment.
-          <span title={item.kind === "dash" ? undefined : aheadBehindTitle(item.project)}>
-            {itemSubtitle(item)}
-          </span>
-        }
-        trailing={
-          <span
-            className={`changeset-toc-hint${hint.caution ? " changeset-toc-hint-changes" : ""}`}
-          >
-            {hint.text}
-          </span>
-        }
-        data-testid="changeset-toc-entry"
-        data-entry-id={item.id}
-        data-project-dir={item.project.project_dir}
-        data-session-id={item.kind === "session" ? item.entry.owner_id : undefined}
-      />
-    );
-  };
-
-const CHANGESET_TOC_CELL_RENDERERS: Record<
-  string,
-  TugListViewCellRenderer<ChangesetTocDataSource>
-> = {
-  session: ChangesetTocCell,
-  dash: ChangesetTocCell,
-  unattributed: ChangesetTocCell,
-};
-
-// ---------------------------------------------------------------------------
 // ChangesetCardContent
 // ---------------------------------------------------------------------------
 
 export function ChangesetCardContent() {
   const data = useChangesetAll();
   const bindings = useOpenBindings();
-  const cardRef = useRef<HTMLDivElement | null>(null);
 
   // Verb failures (commit, scribe) and scribe summaries surface as a
   // pane-modal TugAlert sheet. Diffs render inline in the entries ([P20]),
@@ -1658,78 +1627,43 @@ export function ChangesetCardContent() {
     sweepEntryDiffStores(new Set(items.map((item) => item.id)));
   }, [items]);
 
-  // Controlled accordion ([L11]): the control dispatches toggleSection; the
-  // form binding lands it in state. Entries open themselves the first time
-  // a snapshot introduces them (tracked by id, so a user's collapse sticks
-  // across recomputes).
-  const accordionSenderId = useId();
-  const [openKeys, setOpenKeys] = useState<string[]>([]);
-  const { ResponderScope: AccordionScope, responderRef: accordionRef } = useResponderForm({
-    toggleSectionMulti: {
-      [accordionSenderId]: (v: string[]) => setOpenKeys(v),
-    },
-  });
+  // Per-entry collapse ([L24]): the set of COLLAPSED entry ids, fed to each
+  // entry block's collapse provider. Inverted from an open-list so open-once
+  // is the default: an id a snapshot introduces is simply never in the set,
+  // and a user's collapse persists across recomputes because the set is
+  // keyed by (stable) entry id.
+  const [collapsedEntries, setCollapsedEntries] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   const entryIds = useMemo(() => items.map((item) => item.id), [items]);
 
+  // Every id the card has seen. "Collapse all" covers the whole seen set —
+  // not just the current snapshot — so an entry that is absent when the user
+  // collapses everything comes back collapsed rather than popping open.
   const seenSectionsRef = useRef<Set<string>>(new Set());
-  const openNewSections = useCallback((ids: string[]) => {
-    const fresh = ids.filter((id) => !seenSectionsRef.current.has(id));
-    if (fresh.length === 0) return;
-    fresh.forEach((id) => seenSectionsRef.current.add(id));
-    setOpenKeys((prev) => [...prev, ...fresh]);
-  }, []);
   useEffect(() => {
-    openNewSections(entryIds);
-  }, [entryIds, openNewSections]);
+    entryIds.forEach((id) => seenSectionsRef.current.add(id));
+  }, [entryIds]);
 
-  // TOC reveal: after the expand commits, make the revealed entry's trigger
-  // visible in the accordion scroller. An already-visible trigger is left
-  // alone — the section expands in place with no hop; an out-of-view trigger
-  // scrolls to the top so the expanding body has room. Scroller-relative
-  // math, so the fixed TOC + toolbar never move. Appearance-only DOM op
-  // ([L06]).
-  const pendingRevealRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (pendingRevealRef.current === null) return;
-    const idx = pendingRevealRef.current;
-    pendingRevealRef.current = null;
-    const scroller = cardRef.current?.querySelector(".changeset-scroll");
-    const trigger = scroller?.querySelector(
-      `[data-entry-index="${idx}"] .tug-accordion-trigger`,
-    );
-    if (!scroller || !trigger) return;
-    const scrollerRect = scroller.getBoundingClientRect();
-    const triggerRect = trigger.getBoundingClientRect();
-    if (triggerRect.top >= scrollerRect.top && triggerRect.bottom <= scrollerRect.bottom) {
-      return;
-    }
-    scroller.scrollBy({ top: triggerRect.top - scrollerRect.top, behavior: "smooth" });
-  }, [openKeys]);
+  // The collapse handle's `toggle(next)` carries the NEXT collapsed value.
+  const toggleEntry = useCallback((id: string, nextCollapsed: boolean) => {
+    setCollapsedEntries((prev) => {
+      const next = new Set(prev);
+      if (nextCollapsed) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
 
   const expandAll = useCallback(() => {
     entryIds.forEach((id) => seenSectionsRef.current.add(id));
-    setOpenKeys(entryIds);
+    setCollapsedEntries(new Set());
   }, [entryIds]);
-  const collapseAll = useCallback(() => setOpenKeys([]), []);
-
-  const revealEntry = useCallback((item: ChangesetItem, index: number) => {
-    seenSectionsRef.current.add(item.id);
-    pendingRevealRef.current = index;
-    // Adding when absent, or a fresh array when already open, so the reveal
-    // effect (keyed on `openKeys` identity) always fires and re-checks.
-    setOpenKeys((prev) => (prev.includes(item.id) ? [...prev] : [...prev, item.id]));
-  }, []);
-
-  // TOC list: a TugListView over the visible entries. Recreated when the
-  // list changes; clicking a row reveals that entry's accordion.
-  const tocDataSource = useMemo(() => new ChangesetTocDataSource(items), [items]);
-  const tocDelegate = useMemo<TugListViewDelegate>(
-    () => ({
-      onSelect: (index) => revealEntry(items[index], index),
-    }),
-    [items, revealEntry],
-  );
+  const collapseAll = useCallback(() => {
+    entryIds.forEach((id) => seenSectionsRef.current.add(id));
+    setCollapsedEntries(new Set(seenSectionsRef.current));
+  }, [entryIds]);
 
   const sessionCount = useMemo(
     () => items.filter((item) => item.kind === "session").length,
@@ -1745,7 +1679,7 @@ export function ChangesetCardContent() {
   }
 
   return (
-    <div ref={cardRef} data-slot="changeset-card" className="changeset-card">
+    <div data-slot="changeset-card" className="changeset-card">
       <div className="changeset-head">
         <div className="changeset-toolbar">
           <span className="changeset-toolbar-title">
@@ -1771,44 +1705,21 @@ export function ChangesetCardContent() {
             Collapse all
           </TugPushButton>
         </div>
-        <TugListView<ChangesetTocDataSource>
-          dataSource={tocDataSource}
-          delegate={tocDelegate}
-          cellRenderers={CHANGESET_TOC_CELL_RENDERERS}
-          rowLayout="flush"
-          inline
-          scrollKey="changeset-toc"
-          className="changeset-toc-list"
-        />
       </div>
-      <AccordionScope>
-        <div
-          ref={accordionRef as (el: HTMLDivElement | null) => void}
-          className="changeset-scroll"
-        >
-          <TugAccordion
-            type="multiple"
-            variant="separator"
-            value={openKeys}
-            senderId={accordionSenderId}
-            className="changeset-sections"
-          >
-            {items.map((item, i) => (
-              <TugAccordionItem
-                key={item.id}
-                value={item.id}
-                trigger={<EntryTrigger item={item} />}
-                data-testid="changeset-entry"
-                data-entry-index={i}
-                data-entry-id={item.id}
-                data-project-dir={item.project.project_dir}
-              >
-                <EntryBody item={item} onError={presentNotice} />
-              </TugAccordionItem>
-            ))}
-          </TugAccordion>
+      <div className="changeset-scroll">
+        <div className="changeset-sections">
+          {items.map((item) => (
+            <ChangesetEntryBlock
+              key={item.id}
+              item={item}
+              collapsed={collapsedEntries.has(item.id)}
+              onToggle={(next) => toggleEntry(item.id, next)}
+            >
+              <EntryBody item={item} onError={presentNotice} />
+            </ChangesetEntryBlock>
+          ))}
         </div>
-      </AccordionScope>
+      </div>
       {renderSheet()}
     </div>
   );

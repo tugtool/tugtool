@@ -28,7 +28,7 @@
  *    `--tugx-block-*` strip surface/text tones and the `--tug7-*` tone
  *    colors for the icon.
  *
- * @module components/tugways/cards/blocks/block-notice
+ * @module components/tugways/blocks/block-notice
  */
 
 import "./block-notice.css";

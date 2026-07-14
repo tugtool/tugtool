@@ -67,7 +67,7 @@ import {
 } from "@/components/tugways/cards/blocks/default-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/blocks/read-tool-block";
 import { collapseDefaultForMessage } from "@/components/tugways/cards/blocks/tool-collapse-defaults";
-import type { ToolBlockExpansionState } from "@/components/tugways/cards/blocks/expansion-state";
+import type { ToolBlockExpansionState } from "@/components/tugways/blocks/expansion-state";
 import type { ToolUseMessage } from "@/lib/code-session-store/types";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import type {

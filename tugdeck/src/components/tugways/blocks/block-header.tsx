@@ -40,7 +40,7 @@
  *  - [L20] owns the `--tugx-toolheader-*` token family; reuses the shared
  *    `--tugx-block-*` surface/text tones for chrome-consistent framing.
  *
- * @module components/tugways/cards/blocks/block-header
+ * @module components/tugways/blocks/block-header
  */
 
 import "./block-header.css";
