@@ -16,7 +16,7 @@ join engine that actually works. Brief: `roadmap/changesets.md`.
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main (or a dash worktree per milestone) |
-| Last updated | 2026-07-13 |
+| Last updated | 2026-07-14 |
 
 ---
 
@@ -632,6 +632,150 @@ the `/btw` overlay); silently overwriting a hand-edited commit message would be 
 scripts deltas in tests. The card needs a tiny CONTROL-overlay store
 (`changeset-draft-store.ts`) keyed `(project_dir, owner_kind, owner_id)`.
 
+#### [P25] The Changeset card adopts the tool-call block grammar for its entry contents (DECIDED) {#p25-block-grammar-adoption}
+
+**Decision:** M03A shipped bespoke display idioms (`FileRow`, `FileDiffButton`, `InlineFileDiff`,
+`DraftPanel`, a `TugTextarea` commit field) where the honed house **tool-call block grammar**
+already exists. M03B re-expresses the card's *entry contents* on that grammar: `BlockChrome` /
+`BlockHeader` (`tugdeck/src/components/tugways/cards/blocks/block-chrome.tsx`,
+`block-header.tsx`) — the "one Quiet Line" header, the `ChromeActionsTargetContext` actions
+portal (`useChromeActionsTarget`), collapse-by-unmount (the body subtree is not mounted while
+collapsed), telescoping sticky-pin headers, `DiffBlock`'s `embedded`/`suppressHeader` mode
+(`body-kinds/diff-block.tsx`), and the monochrome `+N −M` ghost badges the header already
+renders via `resultSummary={{kind:"diff"}}` → `DiffSummaryBadges`. The grammar is
+transcript-agnostic (it is already mounted standalone by the gallery and the permission
+dialog); its only couplings are three OPTIONAL ambient contexts — `ToolBlockCollapseContext` /
+`ToolUseIdContext` (`blocks/collapse-context.tsx`) and the `useToolCallMeta` timing context —
+each of which the header degrades to null gracefully for a standalone caller.
+
+**Rationale:** User decision — the M03A card "invented new display idioms where honed house
+designs already exist." Re-using the block grammar is exactly what the component doctrine
+([L20], `tuglaws/component-authoring.md`) mandates; every hand-rolled row/diff/draft idiom the
+card carries is a divergence from the one calm transcript surface the user already reads.
+
+**Implications:** Bounded to the *entry contents*: the card's top-level structure — the
+`TugAccordion type="multiple"` entry sections and the fixed TOC `TugListView` — stays exactly as
+it is (see #non-goals-m03b). Re-homing the chrome modules OUT of `cards/blocks/` and
+re-expressing entries themselves as `BlockChrome` are deferred to the follow-on Lens plans.
+
+#### [P26] TugMessageEditor — one reusable CM6 message field over TugTextEditor (DECIDED) {#p26-message-editor}
+
+**Decision:** A small reusable component, `TugMessageEditor`
+(`tugdeck/src/components/tugways/tug-message-editor.tsx` + `.css`), composes the existing
+`TugTextEditor` CM6 substrate following the `text-card-find-bar.tsx` pattern: `borderless`,
+`maxRows` + `--tug-text-editor-min-height` (≈ the old `rows={3}`), `placeholder`,
+`preserveState={false}`, an `EditorView.updateListener` extension mirroring `doc.toString()`
+out (search-as-you-type mirror, no controlled-input round-trip), `returnAction="newline"` with
+Cmd-Enter → `onSubmit` (Cmd-Enter fires `onSubmit` regardless of `returnAction`, per the
+substrate contract), and the delegate seam (`TugTextEditorDelegate`) exposing `restoreState()`
+for programmatic prefill and `clear()`. `markdownTextStyling` is OFF (its default). The
+commit-message field becomes this component (retiring the `TugTextarea`).
+
+**Rationale:** The markdown-text-styling plan is complete and merged (commit `56d1462de`), so the
+substrate-capability house patterns are settled; `text-card-find-bar.tsx` is the proven minimal
+borderless-field template. A CM6 field brings the substrate responders for free.
+
+**Implications:** Substrate responders (`CUT`/`COPY`/`PASTE`/`SELECT_ALL`/`UNDO`/`REDO`) come
+free — `TugTextEditor` registers them through its own `useOptionalResponder`
+(`tug-text-editor.tsx`), so no separate responder wiring is needed on the field ([L11]; the
+substrate-responder gotcha — editing surfaces must cover CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO or
+Cmd-A/C/X/V/Z go dead — is satisfied by construction). The QuestionDialog
+textareas (`chrome/dev-question-dialog.tsx`) are future consumers — OUT of scope here.
+
+#### [P27] Monochrome +N −M is the house diff-badge doctrine; fix the stale coloring comments (DECIDED) {#p27-monochrome-badges}
+
+**Decision:** The `+N −M` diff stat is rendered as two `TugBadge`s with `emphasis="ghost"` and
+`role="inherit"` — no border, no fill, no green/red tint — so the pair reads as the header's
+own text (`DiffSummaryBadges` in `block-header.tsx` already does this; the code is correct).
+Three comments still *describe* the retired green/red coloring and are now stale:
+`tool-result-summary.ts`'s `formatDiffSummaryParts` docstring ("colors the added half green and
+the removed half red"), the inline comment in `block-header.tsx` around the
+`DiffSummaryBadges` call site ("green/red text on the `+N` / `−M` glyphs alone"), and
+`edit-tool-block.tsx`'s `[L20]` docstring ("the change-count badge rides the shared
+`--tugx-block-tone-*` add / remove tones"). M03B corrects all three to state the monochrome
+doctrine. `TugDiffDocument`'s per-file `+/−` counts adopt the same monochrome treatment
+([P29]).
+
+**Rationale:** The doctrine is already live in the transcript; only the prose lies. Writing it
+down (and fixing the lie) is the enabler for the card's file blocks and the `TugDiffDocument`
+restyle to reference one settled rule rather than re-deriving it. Artifact hygiene: a comment
+must state what the code does, not a retired behavior.
+
+**Implications:** The status *letters* (A/M/D/R) may keep their tone colors (they carry
+semantic meaning); only the `+/−` count glyphs go monochrome.
+
+#### [P28] The commit composer is ONE block; its lifecycle dot is the drafting indicator (DECIDED) {#p28-commit-composer-block}
+
+**Decision:** The `DraftPanel` + `TugTextarea` stack collapses into ONE `BlockChrome`. The
+chrome's lifecycle dot IS the drafting indicator: `in_flight` while
+`changeset_draft_state`/`changeset_draft_delta` stream, `success` when the draft is ready,
+`error` on scribe failure (the error hint stays visible without blanking the draft). Copy-draft
+and "Use latest draft" become header actions. The body is a `TugMessageEditor` ([P26]): a new
+draft streams into a pristine editor via `restoreState()`; the field pins on first user edit; a
+landed commit clears + unpins. The width-stabilized Commit button moves into the block footer.
+The existing pinned / `draftText` / receipt semantics ([P24]) are preserved exactly. Deleted:
+`DraftPanel`, the `Bot` avatar, the `TugMarkdownBlock` draft rendering, the
+`TugProgressIndicator` wave, and the "updating…" freshness text.
+
+**Rationale:** User decision. The mini-transcript `DraftPanel` (a bespoke `side-question-overlay`
+borrow) and a separate `TugTextarea` are two idioms doing what one block header + one CM6 body
+already express; the lifecycle dot is the house "still working" signal, so a bespoke wave is
+redundant.
+
+**Implications:** Dash entries render the composer block **read-only** (no commit controls;
+committing a dash is M04's join) — the block header still shows the maintained join-message
+draft. Supersedes [P24]'s `TugTextarea` mention (the pinning semantics survive verbatim;
+only the widget changes). `changeset-draft-store.ts` and `useChangesetCommit` are unchanged.
+
+#### [P29] Entry-level diff = expand-all/collapse-all over file blocks + one pop-out; in-card TugDiffDocument expansion is deleted (DECIDED) {#p29-entry-diff}
+
+**Decision:** The "Diff N files" toggle (`entryActionsRow`) and the in-card `TugDiffDocument`
+expansion (`entryDocInline`) are DELETED. Each changeset file row becomes a `BlockChrome`
+(leading commit checkbox in the header's `leading` slot, status glyph + path chip, monochrome
+`+N −M` in the header summary slot, provenance + ambiguous/shared badges in pipe-delimited
+header sections, a disclosure chevron replacing the `GitCompareArrows` `FileDiffButton`, an
+`OPEN_DIFF` pop-out as a header action); the expanded body is a `DiffBlock` `embedded` whose
+view-toggle/fold affordances portal into the header actions slot. The entry-level affordance
+becomes **expand-all / collapse-all** across the file blocks plus one **whole-entry pop-out**
+(`OPEN_DIFF` with the entry descriptor). The dedicated **Diff card** pop-out target
+(`cards/diff-card.tsx`, the as-built deviation recorded at #step-16c) is unchanged. Deleted:
+`FileRow`, `FileDiffButton`, `InlineFileDiff`, and the `.changeset-file-row` /
+`.changeset-inline-diff*` CSS families; the unattributed branch's hand-inlined duplicate row
+(the `<div className="changeset-file-row">` block inside `EntryBody`'s unattributed return)
+collapses into the same component.
+
+**Rationale:** User decision — diffs belong inline at the change, exactly as the transcript's
+tool-call diff blocks read; a per-entry document expansion is a second, divergent diff idiom.
+The per-entry `GitDiffStore` sourcing ([P20], `getEntryDiffStore`) is unchanged — the file
+block's badge and embedded body read the same per-entry snapshot; the badge is simply absent
+until the diff loads. Dash entries (files share one range diff, [P19]) get the same file-block
+treatment, per-file bodies sourced from the range payload.
+
+**Implications:** Per-file collapse is plain local `useState` in the entry body — NO transcript
+persistence contexts. The chevron is disabled for untracked files with no HEAD side
+(`hasHeadDiff` stays). `TugDiffDocument` is retained for the `/diff` sheet and the Diff card;
+M03B restyles its header onto the block grammar (one non-wrapping quiet line; monochrome
+counts) rather than deleting it.
+
+#### [P30] Scribe drafts carry the house scoped commit-subject format (DECIDED) {#p30-scribe-subject-style}
+
+**Decision:** `draft_ask` / `BAKED_STYLE_RULES` in `tugcast/src/scribe.rs` are tightened so
+every draft's subject follows the house format — `scope(topic): specific summary` (e.g.
+`tugdash(changesets-m03b): …`, `plan(update): …`) — scoped and specific, NEVER a bare one-word
+subject like "Fix". The rule is added to the prompt-opening ask (so it holds even when the
+packaged skill extraction succeeds) and to the baked fallback const. The existing
+`draft_prompt_composers_carry_the_right_sections_per_owner_kind` test asserts the new rule text
+reaches each per-owner-kind prompt.
+
+**Rationale:** M03A's `BAKED_STYLE_RULES` only mandates "imperative mood, no period, under 50
+characters" — it permits a bare `Fix`. The repo's own commit log is uniformly scoped
+(`tugdash(...)`, `plan(...)`), so the maintained draft must match that voice to be
+commit-ready without hand-editing.
+
+**Implications:** Rust-only step; verified by the fake-`ScribeSpawner` composer tests (never by
+asserting model prose). Pairs with the `push_voice_section` recent-subjects hint that already
+seeds voice from real `git log` subjects.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -1070,9 +1214,14 @@ commit message only — the summary kind is gone):
 | Draft message field + user-edit pin (M03A) | local-data (ephemeral UI) | `useState` (`TugTextarea` value + pristine flag; re-seeds from a newer draft only while pristine, [P24]) | — |
 | Persisted draft text (M03A) | server-owned | rides the aggregate snapshot (Spec S10); persisted in sessions.db, never client storage | [L02] |
 | Text-card diff mode descriptor (M03A) | structure | card initial-content channel (the open-file seeding path) + descriptor-keyed open registry | — |
+| Commit-message field text + pristine/pin flag (M03B) | local-data (ephemeral UI) | `useState` mirroring the `TugMessageEditor` CM6 doc out via `updateListener`; `restoreState()` re-seeds only while pristine ([P24], [P26], [P28]) | [L11] |
+| Per-file / per-block collapse in an entry (M03B) | local-data (ephemeral UI) | `useState` in the entry body (`expandedFiles` set); NO transcript persistence contexts ([P29]) | — |
+| Block-header lifecycle dot phase (draft/commit state) (M03B) | local-data (external, derived) | mapped from the `changeset-draft-store.ts` overlay + `useChangesetCommit` phase to `BlockChrome`'s `phase` prop; the dot paints via CSS/DOM inside the indicator ([L06]) | [L02] |
 
 No new persistent UI state; nothing touches localStorage. Read-only file lists render no
-tabindex (mousedown-focus default gotcha).
+tabindex (mousedown-focus default gotcha). The `TugMessageEditor` CM6 field brings substrate
+responders (`CUT`/`COPY`/`PASTE`/`SELECT_ALL`/`UNDO`/`REDO`) with it via `TugTextEditor` — no
+separate responder registration ([P26]).
 
 ---
 
@@ -1125,6 +1274,7 @@ tabindex (mousedown-focus default gotcha).
 | `tugrust/crates/tugcast/src/feeds/draft_engine.rs` | M03A maintained-draft engine: snapshot tap, change keys, quiet timers, fingerprint gate, scribe runs, persistence (#draft-engine) |
 | `tugdeck/src/lib/changeset-draft-store.ts` | M03A CONTROL overlay store for `changeset_draft_state`/`changeset_draft_delta` (Spec S10) |
 | `tugdeck/src/lib/open-diff-in-card.ts` | M03A `OPEN_DIFF` implementation: descriptor-keyed Text-card diff-mode open/reuse ([P20]) |
+| `tugdeck/src/components/tugways/tug-message-editor.tsx` (+`.css`) | M03B reusable CM6 message field over `TugTextEditor` (the `text-card-find-bar.tsx` pattern); the commit-composer body ([P26]) |
 
 #### Symbols to add / modify {#symbols}
 
@@ -1155,6 +1305,13 @@ tabindex (mousedown-focus default gotcha).
 | `AgentSupervisor::start_draft_engine` + session resolver | code | `tugcast/src/feeds/agent_supervisor.rs`, `tugcast/src/main.rs` (cloned aggregate watch receiver) | #draft-engine, #step-16e |
 | `draft` / `unattributed_draft` snapshot fields | structs | `tugcast-core/src/types.rs` + `tugdeck/src/lib/changeset-types.ts` + both golden fixtures | Spec S10, #step-16e |
 | `changeset_summarize` deletion (verb, store paths, card buttons) | code | `tugcast/src/feeds/agent_supervisor.rs`, `tugdeck/src/lib/changeset-verb-store.ts`, `cards/changeset-card.tsx` | [P21], #step-16f |
+| `BlockHeader` `leading` slot + optional-verb (`toolName?`) form | code | `tugdeck/src/components/tugways/cards/blocks/block-header.tsx` (+`.css`), `block-chrome.tsx` | [P25], #step-16h |
+| Monochrome `+N −M` comment fixes | comments | `blocks/tool-result-summary.ts` (`formatDiffSummaryParts` doc), `blocks/block-header.tsx` (DiffSummaryBadges call-site comment), `blocks/edit-tool-block.tsx` ([L20] doc) | [P27], #step-16h |
+| `TugMessageEditor` | component | `tugdeck/src/components/tugways/tug-message-editor.tsx` (+`.css`) | [P26], #step-16i |
+| `TugDiffDocument` header restyle + monochrome counts | code | `tugdeck/src/components/tugways/tug-diff-document.tsx` (+`.css`; `.tug-diff-document-stat-add/-remove`, `-header`, `-summary`) | [P27], [P29], #step-16j |
+| Changeset file blocks (BlockChrome rows) + FileRow/FileDiffButton/InlineFileDiff deletion | code | `tugdeck/src/components/tugways/cards/changeset-card.tsx` (+`.css`; delete `.changeset-file-row`, `.changeset-inline-diff*`) | [P25], [P29], #step-16k |
+| Commit composer block + DraftPanel deletion | code | `tugdeck/src/components/tugways/cards/changeset-card.tsx` (+`.css`; delete `DraftPanel`, `.changeset-draft*`, the `TugTextarea`) | [P26], [P28], #step-16l |
+| Scribe scoped-subject style rules | code | `tugcast/src/scribe.rs` (`draft_ask`, `BAKED_STYLE_RULES`, the composer test) | [P30], #step-16m |
 
 ---
 
@@ -1238,6 +1395,13 @@ tabindex (mousedown-focus default gotcha).
 | #step-16e | The maintained-draft engine | done | 8b44c5812 |
 | #step-16f | Card draft UI + Summarize/Draft deletion | done | 47e50ae09 |
 | #step-16g | M03A integration checkpoint | done | (verification only) |
+| #step-16h | BlockHeader leading slot + optional verb; monochrome badge doctrine | pending | — |
+| #step-16i | TugMessageEditor — reusable CM6 message field | pending | — |
+| #step-16j | TugDiffDocument header restyle onto the block grammar | pending | — |
+| #step-16k | Changeset file blocks + whole-entry diff rework | pending | — |
+| #step-16l | Commit composer block; DraftPanel/TugTextarea retire | pending | — |
+| #step-16m | Scribe scoped commit-subject style | pending | — |
+| #step-16n | M03B integration checkpoint | pending | — |
 | #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
 | #step-18 | .tug/worktrees home + migration | pending | — |
 | #step-19 | Join engine v2 | pending | — |
@@ -1250,6 +1414,7 @@ tabindex (mousedown-focus default gotcha).
 **Milestone M02A: All-projects aggregate changeset** {#m02a-aggregate} — steps 12a–12f.
 **Milestone M03: Card actions** {#m03-actions} — steps 13–16.
 **Milestone M03A: The AI-driven Changeset card** {#m03a-ai-card} — steps 16a–16g.
+**Milestone M03B: Block-grammar quality pass on the Changeset card** {#m03b-block-grammar} — steps 16h–16n.
 **Milestone M04: tugdash** {#m04-tugdash} — steps 17–22.
 
 ---
@@ -2347,6 +2512,375 @@ Milestone M03A, (#draft-engine)
 
 ---
 
+### Milestone M03B — Block-grammar quality pass {#milestone-m03b}
+
+M03A stood the AI-driven Changeset card up on bespoke display idioms. M03B re-expresses its
+*entry contents* on the house tool-call block grammar ([P25]) and makes the commit-message
+field CM6-backed ([P26]), so the card reads as one system with the transcript. The card's
+top-level structure is untouched.
+
+**Explicitly OUT of scope for M03B (deferred to the follow-on Lens plans)** {#non-goals-m03b}:
+
+- Re-homing the chrome modules out of `cards/blocks/` (a later `git mv` + import sweep). M03B
+  imports them from their current path.
+- Any change to the card's top-level structure: the `TugAccordion` entry sections and the
+  fixed TOC `TugListView` (`changeset-card.tsx`) stay exactly as they are.
+- Re-expressing the *entries themselves* as `BlockChrome`, the Lens card, and the section
+  registry.
+
+---
+
+#### Step 16h: BlockHeader leading slot + optional verb; monochrome badge doctrine {#step-16h}
+
+**Depends on:** #step-16g
+
+**Commit:** `feat(tugdeck): BlockHeader leading slot + optional verb; write down the monochrome +N −M doctrine`
+
+**References:** [P25] Block-grammar adoption, [P27] Monochrome badges, Milestone M03B,
+(#state-zone-mapping)
+
+**Artifacts:**
+- `blocks/block-header.tsx` gains two generalizations, both purely additive (no visual change
+  to any existing transcript block):
+  - a `leading?: React.ReactNode` prop rendered in the leftmost slot IN PLACE of the
+    lifecycle-dot `TugProgressIndicator` when provided (a changeset file row puts its commit
+    checkbox there); when absent, the dot renders exactly as today. `BlockChrome`
+    (`block-chrome.tsx`) forwards a matching `leading` prop through to the header.
+  - an **optional-verb** form: `toolName` becomes `toolName?: string` (a file row has no
+    verb). When omitted, the `.tool-call-header-name` span is not rendered and the identity
+    (`target`) leads the row. The `aria-label`s that interpolate `toolName` (Copy, the fold
+    cue's Expand/Collapse) fall back to a neutral label (e.g. "block") when it is absent.
+    `BlockChrome`'s `toolName` becomes optional in lockstep.
+- `block-header.css`: layout for the `leading` slot (same box the dot occupies — `DOT_SIZE`
+  width so identity alignment is unchanged) and the no-name row (no left gap where the name
+  would sit).
+- **Comment corrections** ([P27]): rewrite the three stale coloring comments to state the
+  monochrome doctrine — `formatDiffSummaryParts`'s docstring in `blocks/tool-result-summary.ts`
+  (drop "colors the added half green and the removed half red"), the inline comment at the
+  `DiffSummaryBadges` call site in `block-header.tsx` (drop "green/red text on the `+N` / `−M`
+  glyphs alone"), and the `[L20]` docstring line in `blocks/edit-tool-block.tsx` ("the
+  change-count badge rides the shared `--tugx-block-tone-*` add / remove tones"). The rendered
+  code (`DiffSummaryBadges` = `emphasis="ghost" role="inherit"`, no tint) is already correct
+  and does not change.
+
+**Tasks:**
+- [ ] `leading` and the dot are mutually exclusive — the header renders one leftmost glyph, so
+      alignment of the identity row is invariant across dot-vs-leading.
+- [ ] Optional verb keeps `data-slot`s and the actions cluster (Copy + chevron) intact; a
+      no-name block is still fully collapsible.
+- [ ] No new tokens ([L20]); reuse `--tugx-toolheader-*`.
+
+**Tests:**
+- [ ] Existing block-grammar bun tests (gallery / `blocks/__tests__`) stay green; a small unit
+      test asserting the header renders `leading` in place of the dot and omits the name span
+      when `toolName` is undefined (pure prop-shape, no jsdom render assertion beyond what the
+      existing block tests already do).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+- [ ] `just app-test` (the transcript's existing tool blocks are visually unchanged — the
+      curated sweep covers the gallery + a real transcript)
+
+---
+
+#### Step 16i: TugMessageEditor — reusable CM6 message field {#step-16i}
+
+**Depends on:** #step-16g
+
+**Commit:** `feat(tugdeck): TugMessageEditor — a reusable CM6 message field over TugTextEditor`
+
+**References:** [P26] Message editor, Milestone M03B, (#state-zone-mapping)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-message-editor.tsx` (+`.css`), composing `TugTextEditor`
+  exactly as `cards/text-card-find-bar.tsx` composes it. Props (a minimal surface):
+  `value`/`onChange` mirror the CM6 doc out via an `EditorView.updateListener.of` extension
+  reading `update.state.doc.toString()` (the find-bar's query-mirror technique — no controlled
+  round-trip); `placeholder`; `maxRows` (default ≈ the old `rows={3}`) with
+  `--tug-text-editor-min-height` set so the empty field reserves the same height; `onSubmit`
+  fired on Cmd-Enter (the substrate fires `onSubmit` on Cmd-Enter regardless of
+  `returnAction`); `disabled`; `data-testid` pass-through. The substrate is mounted
+  `borderless`, `preserveState={false}`, `returnAction="newline"` (Enter inserts a newline;
+  this is a multi-line message field, not a submit-on-Enter input), `markdownTextStyling`
+  omitted (its default is OFF).
+- An imperative handle (`React.forwardRef` → a small `TugMessageEditorHandle`) exposing
+  `restoreState(text)` (prefill via the substrate delegate's `restoreState()` /
+  `captureState()` shape) and `clear()` (delegate `clear()`), so a consumer can seed a new
+  draft into a pristine field and clear it on commit ([P28] wiring).
+- `.css`: borderless field metrics mirroring `text-card-find-bar.css`.
+
+**Tasks:**
+- [ ] Substrate responders (`CUT`/`COPY`/`PASTE`/`SELECT_ALL`/`UNDO`/`REDO`) come free from
+      `TugTextEditor` — do NOT register a second responder form on the field ([P26], [L11]).
+- [ ] The doc-mirror `updateListener` is captured once (a `useMemo` over the stable submit/
+      change refs), matching the find-bar's `findBarExtensions` pattern — the `extensions`
+      contract is read at mount.
+- [ ] No borrowed CSS; compose the real `TugTextEditor` (never hand-roll or borrow its CSS
+      classes/DOM — compose the component) ([L20]).
+
+**Tests:**
+- [ ] `cd tugdeck && bun test` — the component compiles and type-checks; no jsdom render test
+      (banned). It is exercised end-to-end when #step-16l lands it on the card.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+
+---
+
+#### Step 16j: TugDiffDocument header restyle onto the block grammar {#step-16j}
+
+**Depends on:** #step-16h
+
+**Commit:** `feat(tugdeck): TugDiffDocument — one quiet-line header, monochrome +/− counts`
+
+**References:** [P27] Monochrome badges, [P29] Entry diff, [P18] TugDiffDocument, Milestone M03B
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-diff-document.tsx` (+`.css`): the summary header becomes
+  ONE non-wrapping quiet line — `summary text │ view toggle │ Expand All / Collapse All │
+  host actions` — pipe-delimited per the `block-header.css` section conventions, replacing the
+  current two-column `justify-content: space-between` layout (`.tug-diff-document-header` is a
+  flex row today with `.tug-diff-document-header-text` as a wrapping column and
+  `.tug-diff-document-header-actions` pushed right). The per-file accordion trigger
+  (`FileTrigger`, `.tug-diff-document-file-trigger`) adopts the block-header line treatment.
+- Monochrome counts ([P27]): `.tug-diff-document-stat-add` / `.tug-diff-document-stat-remove`
+  (both the summary-line totals and the per-file trigger's `+N −M`) drop their
+  `--tug7-element-tone-text-normal-success-rest` / `-danger-rest` colors and render as ghost
+  badges in the header's own text color. The status *letters*
+  (`.tug-diff-document-file-status[data-status="…"]`) keep their tone colors — they carry
+  semantic meaning; only the `+/−` counts go monochrome.
+
+**Tasks:**
+- [ ] The three current hosts render unchanged in behavior: the `/diff` sheet
+      (`cards/diff-sheet.tsx`), the Diff card (`cards/diff-card.tsx`), and the changeset
+      entry-doc expansion — the last of which #step-16k then removes, but this step must not
+      break it mid-series.
+- [ ] The one-line header must ellipsize the summary text (not the controls) when narrow; the
+      view toggle + Expand/Collapse never wrap.
+- [ ] No borrowed CSS; the pipe separators reuse the `block-header.css` convention rather than
+      re-inventing dividers ([L20]).
+
+**Tests:**
+- [ ] at0104 (`tests/app-test/at0104-diff-sheet.test.ts`) stays green: `diff-file`,
+      `diff-expand-all`, `diff-collapse-all`, `diff-refresh`, `diff-done` testids are unmoved;
+      the header restyle is CSS/structure only.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+- [ ] `just app-test at0104-diff-sheet.test.ts` then the curated sweep
+
+---
+
+#### Step 16k: Changeset file blocks + whole-entry diff rework {#step-16k}
+
+**Depends on:** #step-16h, #step-16j
+
+**Commit:** `feat(tugdeck): changeset file rows become BlockChrome; entry diff = expand-all + pop-out`
+
+**References:** [P25] Block-grammar adoption, [P29] Entry diff, [P27] Monochrome badges,
+[P20] Inline diff, Spec S08, Milestone M03B, (#state-zone-mapping)
+
+**Artifacts:**
+- Each changeset file row in `cards/changeset-card.tsx` becomes a `BlockChrome` (variant
+  `tool`, optional-verb form — a file row has no verb, [P25]):
+  - the header `leading` slot holds the commit checkbox (`FileSelectCheckbox`, unchanged) for
+    session/unattributed entries; dash rows have no checkbox (`leading` omitted → the dot
+    renders, showing lifecycle-neutral `idle`).
+  - identity (`target`) = the status glyph + `FilePathLink` (preserve the existing
+    `TUG_ACTIONS.OPEN_FILE` dispatch, the context-menu action, and the
+    `data-tug-focus="refuse"` + mousedown-preventDefault focus discipline the current
+    `FilePathLink` carries — the card must not steal first responder, per the mousedown-focus
+    gotcha).
+  - the header **summary** slot carries the monochrome `+N −M` badge via
+    `resultSummary={{kind:"diff", added, removed}}`, sourced from the entry's per-entry
+    `GitDiffStore` snapshot (`useEntryDiff` / `getEntryDiffStore`, unchanged) — the badge is
+    simply absent until the diff loads (`resultSummary` omitted while the snapshot has no file
+    match).
+  - provenance (the current `changeset-file-provenance` `op · origin` text) and the
+    `ambiguous` / `shared` badges move into pipe-delimited header sections.
+  - the disclosure **chevron** (the header's built-in fold cue) REPLACES the
+    `GitCompareArrows` `FileDiffButton`; expanding mounts the file's `DiffBlock` `embedded`
+    (`suppressHeader`, the entry-payload's matching file's `unified` text) as the block body,
+    whose view-toggle / fold affordances portal into the header actions slot
+    (`ChromeActionsTargetContext`). The chevron is DISABLED for untracked files with no HEAD
+    side (`hasHeadDiff` stays the gate).
+  - the `OPEN_DIFF` pop-out (`PopOutDiffButton`, dispatching `TUG_ACTIONS.OPEN_DIFF` with
+    `fileDiffDescriptor(item, file)`) becomes a header action (`headerActions`).
+- Entry-level affordance ([P29]): DELETE `entryActionsRow` (the "Diff N files" / "Hide diff"
+  toggle, `data-testid="changeset-entry-diff"`) and `entryDocInline` (the in-card
+  `TugDiffDocument` expansion + `docExpanded` state). Replace with **Expand All / Collapse
+  All** over the entry's file blocks (drive each block's collapse) plus ONE whole-entry
+  pop-out (`PopOutDiffButton` with `entryDiffDescriptor(item)`).
+- **Deletions:** `FileRow`, `FileDiffButton`, `InlineFileDiff`, and the `.changeset-file-row`
+  / `.changeset-inline-diff*` CSS families (`changeset-card.css`). The unattributed branch's
+  hand-inlined duplicate row (the `<div className="changeset-file-row">` block inside
+  `EntryBody`'s unattributed return, ~`changeset-card.tsx` lines around the
+  `data-testid="changeset-unattributed"` map) collapses into the same file-block component —
+  one component for session, unattributed, and dash rows.
+- Dash entries ([P19], [P29]): same file-block treatment; per-file bodies source from the
+  range payload (the dash's shared `entryDiffDescriptor` `kind:"range"` snapshot). The M03A
+  dash affordances (both per-file and whole-entry) are preserved through the new blocks.
+- at0228 (`tests/app-test/at0228-changeset-aggregate.test.ts`): the diff leg adapts
+  mechanically — `changeset-file-diff` (the old icon button) becomes the file block's
+  disclosure chevron. Keep the `data-testid="changeset-file-diff"` on the block's disclosure
+  control (or update the test's selector to the block's disclosure `data-slot`), and keep
+  `changeset-inline-diff`'s marker assertion pointed at the embedded `DiffBlock` under the
+  expanded block. The untracked-file "no diff affordance" assertion becomes "the chevron is
+  disabled" (or absent) for the untracked path. No new legs.
+
+**Tasks:**
+- [ ] Per-file / per-block collapse is plain local `useState` (`expandedFiles`) in the entry
+      body — NO transcript persistence contexts (`ToolBlockCollapseContext` is optional; the
+      card provides none, so each block manages its own view via `forceExpanded`/local state
+      as the entry body drives it) ([P29]).
+- [ ] Dispose per-entry stores when entries leave the snapshot (the existing module-map sweep
+      in `changeset-diff-store.ts`, unchanged).
+- [ ] Pop-out buttons keep `data-tug-focus="refuse"` + mousedown preventDefault.
+- [ ] Compose real components — `BlockChrome`, `DiffBlock`, `TugBadge`, `TugCheckbox` — no
+      borrowed CSS ([L20]).
+
+**Tests:**
+- [ ] App-test: adapted at0228 diff leg (after `just app-test-build` is unnecessary — no Rust
+      changed; a plain `just app-test at0228-changeset-aggregate.test.ts`).
+- [ ] bun: existing `changeset-diff-store` / `open-diff-in-card` unit tests stay green.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+- [ ] `just app-test at0228-changeset-aggregate.test.ts` then the curated sweep
+
+---
+
+#### Step 16l: Commit composer block; DraftPanel + TugTextarea retire {#step-16l}
+
+**Depends on:** #step-16i, #step-16k
+
+**Commit:** `feat(tugdeck): the commit composer becomes one block over TugMessageEditor`
+
+**References:** [P28] Commit composer block, [P26] Message editor, [P24] Streaming/pinning,
+Spec S10, Milestone M03B, (#state-zone-mapping)
+
+**Artifacts:**
+- ONE `BlockChrome` in `EntryBody` (`cards/changeset-card.tsx`) replacing the `DraftPanel` +
+  `TugTextarea` stack:
+  - the chrome's lifecycle **dot** is the drafting indicator ([P28]): `phase="in_flight"`
+    while the `changeset-draft-store.ts` overlay reads `drafting`, `phase="success"` when the
+    draft is ready, `phase="error"` on scribe failure. The error hint renders as the chrome's
+    `notice` band (tone `error`) so it stays visible WITHOUT blanking the draft
+    (`draftText`/`draftError` from the existing `useChangesetDraft` overlay, unchanged).
+  - header actions: copy-draft (`BlockCopyButton`, the current draft copy) and "Use latest
+    draft" (`data-testid="changeset-use-latest-draft"`, shown only when
+    `pinned && draftText !== null && draftText !== message`, unchanged predicate).
+  - body: `TugMessageEditor` ([P26]) — `data-testid="changeset-commit-message"` moves onto the
+    editor. A new draft streams into a pristine editor via `restoreState()`; the field pins on
+    first user edit (`setPinned(true)` on change); a landed commit clears + unpins
+    (`clear()` + `setPinned(false)` on `phase === "done"`). The existing pinned / `draftText`
+    / receipt semantics ([P24]) are preserved EXACTLY — only the widget changes from
+    `TugTextarea` to `TugMessageEditor`, and the `useEffect`s that follow `draftText` while
+    pristine now call the editor's `restoreState()` instead of `setMessage`.
+  - footer: the width-stabilized Commit button (`widthStabilize={{alternateLabel:
+    "Committing…"}}`, `data-testid="changeset-commit-button"`) moves into the block's
+    `footerBadges` slot; the receipt panel (`data-testid="changeset-commit-receipt"`) renders
+    in the body when `phase === "done"`, as today.
+  - dash entries render this block **read-only** — no commit controls (no checkbox `leading`,
+    no footer button); the header still shows the maintained join-message draft ([P28]).
+- **Deletions:** `DraftPanel`, the `Bot` avatar import + `.changeset-draft*` CSS, the
+  `TugMarkdownBlock` draft rendering, the `TugProgressIndicator` "wave", the "updating…"
+  freshness text, and the `TugTextarea` import/usage. `useChangesetCommit`,
+  `useChangesetDraft`, and `changeset-draft-store.ts` are UNCHANGED.
+
+**Tasks:**
+- [ ] The lifecycle-dot mapping is derived read-only from the draft overlay + commit phase
+      ([L02] read, [L06] the dot paints via CSS/DOM inside the indicator) — no new store.
+- [ ] The pristine-follows-draft effect re-seeds the CM6 field via `restoreState()` only while
+      `!pinned` ([P24] semantics verbatim); a user edit pins; commit unpins.
+- [ ] Substrate responders come with `TugMessageEditor` — no extra wiring ([P26]).
+
+**Tests:**
+- [ ] at0228's commit leg re-verified: `app.type` targets `changeset-commit-message` (now the
+      CM6 editor) and `changeset-commit-button` commits; the numstat receipt names exactly the
+      selected file (assertions unchanged — the testids moved onto the block, the flow is the
+      same). Per Test Plan policy the maintained-draft LOOP is human-tested, not app-tested;
+      no new legs.
+- [ ] `cd tugdeck && bun test` — existing suites green after the deletions.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+- [ ] `just app-test at0228-changeset-aggregate.test.ts` then the curated sweep
+
+---
+
+#### Step 16m: Scribe scoped commit-subject style {#step-16m}
+
+**Depends on:** #step-16g
+
+**Commit:** `feat(tugcast): scribe drafts carry the house scoped commit-subject format`
+
+**References:** [P30] Scribe subject style, Spec S11, Milestone M03B, (#draft-engine)
+
+**Artifacts:**
+- `tugcast/src/scribe.rs`: tighten the subject contract so a draft never emits a bare one-word
+  subject like `Fix`. Add the scoped-subject rule (`scope(topic): specific summary` — the
+  repo's uniform commit voice, e.g. `tugdash(changesets-m03b): …`, `plan(update): …`) to
+  `draft_ask` (so it holds even when the packaged-skill extraction succeeds) AND to the
+  `BAKED_STYLE_RULES` const fallback. `compose_draft_prompt_session/dash/unattributed` are
+  unchanged in structure — they inherit the rule through `draft_ask`.
+- The tightened rule text flows into every per-owner-kind prompt (`draft_ask` opens all three
+  composers).
+
+**Tasks:**
+- [ ] Keep the existing rules intact (imperative, no period, ≤50-char subject, terse bullets,
+      NEVER any AI/agent attribution — no Co-Authored-By, ever); ADD the scoped-subject
+      requirement, do not replace them.
+- [ ] Warnings are errors — no dead consts; if `BAKED_STYLE_RULES` grows, keep it referenced by
+      `commit_style_rules`'s fallback path.
+
+**Tests:**
+- [ ] Extend `draft_prompt_composers_carry_the_right_sections_per_owner_kind` (the existing
+      fake-`ScribeSpawner` composer test): assert the scoped-subject rule text appears in each
+      of the session / dash / unattributed prompts (never assert model prose). The baked
+      fallback is covered by `commit_style_rules_extracts_from_the_packaged_skill_or_falls_back`.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+
+---
+
+#### Step 16n: M03B integration checkpoint {#step-16n}
+
+**Depends on:** #step-16k, #step-16l, #step-16m
+
+**Commit:** `N/A (verification only)`
+
+**References:** Milestone M03B, (#success-criteria)
+
+**Tasks:**
+- [ ] The transcript's existing tool blocks are visually unchanged (the BlockHeader
+      generalization is purely additive — no `leading`/no-name block in the transcript).
+- [ ] Changeset card: file rows render as blocks — leading checkbox (session/unattributed),
+      status + path chip, monochrome `+N −M` in the header once the diff loads, provenance +
+      ambiguous/shared in header sections, disclosure chevron opens the embedded `DiffBlock`,
+      pop-out opens the Diff card (descriptor reuse: popping the same file twice activates the
+      existing card); Expand All / Collapse All drive the entry's blocks; the whole-entry
+      pop-out opens the range/head diff.
+- [ ] Commit composer: one block; the lifecycle dot shows drafting → ready → error; a new
+      draft streams into a pristine CM6 field; editing pins it, "Use latest draft" adopts a
+      newer one, Commit produces the numstat receipt and clears + unpins the field; the error
+      hint survives a scribe failure without blanking the draft. Cmd-Enter submits.
+- [ ] Dash entry renders the composer block read-only with its maintained join-message draft.
+- [ ] `/diff` sheet + Diff card render `TugDiffDocument`'s one-line header with monochrome
+      counts; the status letters keep their tone colors.
+- [ ] Live scribe: a fresh draft carries a scoped, specific subject (never a bare "Fix").
+
+**Tests:**
+- [ ] Full-suite pass.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run`
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build && bun test`
+- [ ] `just app-test`
+
+---
+
 #### Step 17: tugdash-core + tugdash CLI extraction {#step-17}
 
 **Commit:** `feat(tugdash): extract dash into tugdash-core + tugdash CLI`
@@ -2549,13 +3083,17 @@ tears down atomically.
 - [ ] Every changeset entry with changes maintains its own ready-to-commit message —
       fingerprint-gated, ledger-persisted, streaming to a visible card — and dash entries
       diff inline like everything else (M03A: Rust suite + #step-16g live dogfood).
+- [ ] The Changeset card's entry contents render on the house tool-call block grammar — file
+      rows as `BlockChrome`, diffs as embedded `DiffBlock`s, the commit message as a CM6
+      `TugMessageEditor`, all diff `+/−` counts monochrome — and drafts carry a scoped
+      commit-subject (M03B: bun/tsc/vite + at0104/at0228 + #step-16n live dogfood).
 - [ ] `tugdash` replaces `tugutil dash` everywhere; join preview/strategies/preflight/journal
       all demonstrated by the Step-19 test matrix.
 - [ ] All suites green: `cargo nextest run`, `bun test` (tugcode), `bunx tsc --noEmit`,
       `bunx vite build`, `just app-test`.
 
 **Acceptance tests:**
-- [ ] Step 7, 12, 12f, 16, 16g, 22 integration checkpoints.
+- [ ] Step 7, 12, 12f, 16, 16g, 16n, 22 integration checkpoints.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -2573,4 +3111,5 @@ tears down atomically.
 | M02A aggregate card | #step-12f |
 | M03 card actions | #step-16 |
 | M03A AI-driven card | #step-16g |
+| M03B block-grammar card | #step-16n |
 | M04 tugdash + exit | #step-22 |
