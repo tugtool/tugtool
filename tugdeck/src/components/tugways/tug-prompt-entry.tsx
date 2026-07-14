@@ -2947,6 +2947,11 @@ export const TugPromptEntry = React.forwardRef<
               lineWrap={lineWrap}
               lineNumbers={lineNumbers}
               highlightActiveLineGutter={highlightActiveLineGutter}
+              // Light markdown styling on the prose routes only. `❯` (Code)
+              // and `?` (btw) are prose to Claude; `$` (Shell) is a command
+              // (`# comment` is not a heading, `*.rs` is not emphasis) and
+              // `⌕` (Find) is a literal query — both stay plain text.
+              markdownTextStyling={route !== ROUTE_SHELL && route !== ROUTE_FIND}
               onSubmit={performSubmit}
               extensions={editorExtensions}
               /* State preservation is owned by TugPromptEntry. Disable

@@ -128,9 +128,9 @@ import {
 } from "@/lib/text-card-settings";
 import type { EditorStats } from "@/lib/editor-stats-store";
 import { countWords, wordCountDelta } from "@/lib/word-count";
-import { languageForExtension, tugTextCardHighlightStyle } from "@/lib/language-registry";
+import { languageForExtension, tugEditingHighlightStyle } from "@/lib/language-registry";
 
-import { mdListHangingIndent } from "./tug-text-card-editor/list-hanging-indent";
+import { mdListHangingIndent } from "./tug-text-editor/list-hanging-indent";
 import { anchorLinkExtension } from "./tug-text-card-editor/anchor-links";
 import { useOptionalResponder } from "./use-responder";
 import { useCardId } from "./use-card-state-preservation";
@@ -818,7 +818,7 @@ export const TugTextCardEditor = React.forwardRef<
       if (live === null) return;
       live.dispatch({
         effects: languageCompartment.reconfigure(
-          language !== null ? [language, tugTextCardHighlightStyle] : [],
+          language !== null ? [language, tugEditingHighlightStyle] : [],
         ),
       });
     });

@@ -526,12 +526,12 @@ the entry's responder, per `keybinding-map.ts`) and assert the styled spans are 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Generalize the shared pieces (rename + move) | pending | — |
-| #step-2 | markdown-text-styling module + substrate prop + gallery toggle | pending | — |
-| #step-3 | Prompt entry adopts, route-gated | pending | — |
-| #step-4 | Unify the soft-wrap label | pending | — |
-| #step-5 | App-test: prompt-entry markdown styling | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | Generalize the shared pieces (rename + move) | done | d7245c799 |
+| #step-2 | markdown-text-styling module + substrate prop + gallery toggle | done | 29b11be55 |
+| #step-3 | Prompt entry adopts, route-gated | done | d71a5e252 |
+| #step-4 | Unify the soft-wrap label | done | e5a659aa1 |
+| #step-5 | App-test: prompt-entry markdown styling | done | c002e7091 |
+| #step-6 | Integration checkpoint | done | — (verification only) |
 
 #### Step 1: Generalize the shared pieces (rename + move) {#step-1}
 

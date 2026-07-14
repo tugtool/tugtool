@@ -270,7 +270,7 @@ export function SettingsGeneralBody() {
 
           <div className="settings-general-switches">
             <TugSwitch
-              label="Line wrap"
+              label="Soft wrap text"
               checked={editorSettings.lineWrap}
               senderId={lineWrapId}
               size="md"

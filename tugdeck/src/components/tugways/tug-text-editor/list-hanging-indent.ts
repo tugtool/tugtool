@@ -1,5 +1,5 @@
 /**
- * tug-text-card-editor/list-hanging-indent.ts — soft-wrap hanging indent
+ * tug-text-editor/list-hanging-indent.ts — soft-wrap hanging indent
  * for markdown list items.
  *
  * When soft wrap is on, a long list item wraps its continuation lines
@@ -12,17 +12,23 @@
  * Mechanism ([L06] — appearance through the DOM, via decorations): a
  * `Decoration.line` sets `padding-left: N ch` (indents the whole block,
  * so wrapped lines start at N) and `text-indent: -N ch` (pulls the FIRST
- * visual line back by N, cancelling the padding for it). The marker
- * glyphs occupy exactly those N monospace cells, so the first line reads
- * flush and only the wrap hangs. N is measured in `ch` — reliable
- * because the editor is monospace.
+ * visual line back by N, cancelling the padding for it). N is measured in
+ * `ch`. On a monospace surface (the Text card) the marker glyphs occupy
+ * exactly those N cells, so the first line reads flush and only the wrap
+ * hangs. On a proportional surface (e.g. the prompt entry under IBM Plex
+ * Sans) `1ch` is the width of `0`, so the indent approximates rather than
+ * exactly matches the marker width — accepted by design: a wrapped
+ * continuation still lands under the content rather than the margin, which
+ * is the whole point, and per-font marker measurement is complexity this
+ * effect doesn't earn.
  *
  * Scope: list lines are identified from the markdown syntax tree
  * (`ListMark` nodes), so this only fires in markdown documents and never
- * misreads a `-`/`1.` at the head of a wrapped code line. Bundled into
- * the soft-wrap compartment, so it is live exactly when soft wrap is.
+ * misreads a `-`/`1.` at the head of a wrapped code line. Bundled with the
+ * markdown grammar wherever it is installed, so it is live exactly when
+ * markdown styling + soft wrap are both on.
  *
- * @module components/tugways/tug-text-card-editor/list-hanging-indent
+ * @module components/tugways/tug-text-editor/list-hanging-indent
  */
 
 import { RangeSetBuilder } from "@codemirror/state";

@@ -110,6 +110,7 @@ import { dispatchAction } from "@/action-dispatch";
 import { quoteMarkdown, stripMarkdown } from "@/lib/paste-transforms";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
+import { loadMarkdownTextStyling } from "./tug-text-editor/markdown-text-styling";
 import { subscribeThemeChange, unsubscribeThemeChange } from "@/theme-tokens";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
@@ -272,6 +273,16 @@ const activeLineGutterCompartment = new Compartment();
 
 /** Reconfigurable read-only state (`EditorState.readOnly.of(true|false)`). */
 const readOnlyCompartment = new Compartment();
+
+/**
+ * Reconfigurable markdown text styling (the lazily-loaded
+ * `loadMarkdownTextStyling()` bundle, or empty). Unlike the other view
+ * compartments this one carries NO synchronous `initial` seed — its enable
+ * is async (the grammar chunk loads on demand), so it always starts empty
+ * (`.of([])`) and a single post-mount effect fills or clears it. See the
+ * `markdownTextStyling` prop and its effect below.
+ */
+const markdownStylingCompartment = new Compartment();
 
 /**
  * Reconfigurable geometry-revision marker.
@@ -747,6 +758,19 @@ export interface TugTextEditorProps
    */
   highlightActiveLineGutter?: boolean;
   /**
+   * Light markdown formatting: subtly style markdown tokens (heading /
+   * emphasis / strong / inline code / link colors and weights) and
+   * hang-indent wrapped list-item continuations, WITHOUT ever removing or
+   * hiding the raw markdown syntax. Backed by a lazily-loaded, styling-only
+   * grammar bundle (`loadMarkdownTextStyling`) — no markdown editing keymap,
+   * no URL-paste rewriting.
+   *
+   * Reactive: flipping it reconfigures the live view (the grammar chunk
+   * loads on first enable). Off by default; a plain-text editor stays plain.
+   * @default false
+   */
+  markdownTextStyling?: boolean;
+  /**
    * CSS `font-family` for the editor surface. Sets the
    * `--tug-font-family-editor` custom property on the host wrapper;
    * the theme reads it via `var(--tug-font-family-editor, …)` so
@@ -973,6 +997,11 @@ function buildExtensions(
       EditorState.readOnly.of(initial.disabled),
       EditorView.editable.of(!initial.disabled),
     ]),
+    // Markdown text styling starts empty and is filled by its post-mount
+    // effect once the grammar chunk loads (no synchronous seed — the enable
+    // is async). Placed with the compartments so it sits below the keymap /
+    // theme precedence; it never contributes a keymap of its own by design.
+    markdownStylingCompartment.of([]),
     // Initial revision marker. Each `EditorView.theme({})` mints
     // a fresh style-module prefix; subsequent reconfigures
     // produce a new prefix → the `theme` facet's value differs
@@ -1148,6 +1177,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
       highlightActiveLineGutter: highlightActiveLineGutterProp = false,
+      markdownTextStyling = false,
       fontFamily,
       fontSize,
       lineHeight,
@@ -1473,6 +1503,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     const lineWrapRef = useRef(lineWrap);
     const lineNumbersRef = useRef(lineNumbersProp);
     const highlightActiveLineGutterRef = useRef(highlightActiveLineGutterProp);
+    // Read at async-load fire time so a grammar load that resolves after the
+    // prop has flipped back off doesn't strand styling on (the flip-during-
+    // load race — e.g. the prompt entry switching to the `$` route while the
+    // markdown chunk is still downloading) [L07].
+    const markdownTextStylingRef = useRef(markdownTextStyling);
     const disabledRef = useRef(disabled);
     useLayoutEffect(() => {
       placeholderRef.current = placeholder;
@@ -1486,6 +1521,9 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       highlightActiveLineGutterRef.current = highlightActiveLineGutterProp;
     }, [highlightActiveLineGutterProp]);
+    useLayoutEffect(() => {
+      markdownTextStylingRef.current = markdownTextStyling;
+    }, [markdownTextStyling]);
     useLayoutEffect(() => {
       disabledRef.current = disabled;
     }, [disabled]);
@@ -2450,6 +2488,43 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         setView(null);
       };
     }, []);
+
+    // Markdown text styling — one effect owns every transition (mount
+    // included), declared AFTER the mount effect so `viewRef.current` is
+    // already live on its first run. There is deliberately no separate
+    // mount-kick path: two async paths would race, and a load resolving
+    // after the prop flipped off would strand styling on.
+    //
+    // Enable is async (the grammar chunk lazy-loads), so the `.then`
+    // guards against three ways the request can be stale by the time it
+    // resolves: the effect was cleaned up (`alive`), the view is gone
+    // (`viewRef.current`), or the prop already flipped back off
+    // (`markdownTextStylingRef.current` — the flip-during-load race, read
+    // live per [L07]). Disable is synchronous. [L06] appearance via a
+    // compartment swap — no React state, no document/selection loss.
+    useLayoutEffect(() => {
+      const view = viewRef.current;
+      if (view === null) return;
+      if (!markdownTextStyling) {
+        view.dispatch({
+          effects: markdownStylingCompartment.reconfigure([]),
+        });
+        return;
+      }
+      let alive = true;
+      void loadMarkdownTextStyling().then((bundle) => {
+        if (!alive) return;
+        const live = viewRef.current;
+        if (live === null) return;
+        if (!markdownTextStylingRef.current) return;
+        live.dispatch({
+          effects: markdownStylingCompartment.reconfigure(bundle),
+        });
+      });
+      return () => {
+        alive = false;
+      };
+    }, [markdownTextStyling]);
 
     // Host inline style: caller-supplied `style` flows through first,
     // then we layer the substrate-managed CSS variables on top so prop

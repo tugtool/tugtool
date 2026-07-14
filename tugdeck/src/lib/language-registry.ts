@@ -85,20 +85,22 @@ export const tugHighlightStyleInner = HighlightStyle.define([
 /** Editor-extension form of {@link tugHighlightStyleInner}. */
 export const tugHighlightStyle: Extension = syntaxHighlighting(tugHighlightStyleInner);
 
-// Text-card write-surface variant: markdown links carry NO default
-// underline. There the underline is reserved as the ⌘-hover "linkify"
-// affordance (see `tug-text-card-editor/anchor-links.ts`) — an always-on
-// underline would blunt that signal. Color is retained so a reference still
-// reads as distinct. Only the editable text card uses this; the read-only
-// code view and diff snippets keep {@link tugHighlightStyle}.
-const tugTextCardHighlightStyleInner = HighlightStyle.define([
+// Editable write-surface variant: markdown links carry NO default
+// underline. Shared by the Text card editor and the TugTextEditor markdown
+// styling bundle. In the Text card the underline is reserved as the ⌘-hover
+// "linkify" affordance (see `tug-text-card-editor/anchor-links.ts`) — an
+// always-on underline would blunt that signal; on other write surfaces it is
+// simply visual noise on a composer. Color is retained so a reference still
+// reads as distinct. The read-only code view and diff snippets keep
+// {@link tugHighlightStyle} (underlined links).
+const tugEditingHighlightStyleInner = HighlightStyle.define([
   ...tugHighlightSpecsBase,
   { tag: [tags.link, tags.url], color: "var(--tug-syntax-string)" },
 ]);
 
-/** Editor-extension form for the text card (no default link underline). */
-export const tugTextCardHighlightStyle: Extension = syntaxHighlighting(
-  tugTextCardHighlightStyleInner,
+/** Editor-extension form for editable write surfaces (no default link underline). */
+export const tugEditingHighlightStyle: Extension = syntaxHighlighting(
+  tugEditingHighlightStyleInner,
 );
 
 // ---------------------------------------------------------------------------

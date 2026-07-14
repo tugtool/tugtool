@@ -343,6 +343,9 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   const savedActiveLineGutter = useSavedComponentState<{ checked: boolean }>(
     "highlightActiveLineGutter",
   );
+  const savedMarkdownStyling = useSavedComponentState<{ checked: boolean }>(
+    "markdownTextStyling",
+  );
 
   const [maxRows, setMaxRows] = useState<number>(15);
   const [growDirection, setGrowDirection] = useState<"up" | "down">("down");
@@ -404,6 +407,11 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
         ? savedActiveLineGutter.checked
         : false,
     );
+  const [markdownTextStyling, setMarkdownTextStyling] = useState<boolean>(() =>
+    typeof savedMarkdownStyling?.checked === "boolean"
+      ? savedMarkdownStyling.checked
+      : false,
+  );
 
   // ---- Submit counter (display only) ----
   const [submitCount, setSubmitCount] = useState<number>(0);
@@ -582,6 +590,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
   const lineWrapId = React.useId();
   const lineNumbersId = React.useId();
   const activeLineGutterId = React.useId();
+  const markdownStylingId = React.useId();
   const fontFamilyId = React.useId();
   const fontSizeId = React.useId();
   const lineHeightId = React.useId();
@@ -601,6 +610,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
       [lineWrapId]: (v: boolean) => setLineWrap(v),
       [lineNumbersId]: (v: boolean) => setLineNumbers(v),
       [activeLineGutterId]: (v: boolean) => setHighlightActiveLineGutter(v),
+      [markdownStylingId]: (v: boolean) => setMarkdownTextStyling(v),
     },
     setValueNumber: {
       [maxRowsId]: (v: number) => setMaxRows(Math.max(1, Math.min(20, Math.round(v)))),
@@ -691,6 +701,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 lineWrap={lineWrap}
                 lineNumbers={lineNumbers}
                 highlightActiveLineGutter={highlightActiveLineGutter}
+                markdownTextStyling={markdownTextStyling}
                 fontFamily={fontFamily}
                 fontSize={fontSize === undefined ? undefined : `${fontSize}px`}
                 lineHeight={lineHeight}
@@ -737,7 +748,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
           <TugLabel className="cg-section-title">View</TugLabel>
           <div className="gallery-text-editor-row">
             <div className="gallery-text-editor-row-cell">
-              <span className="gallery-text-editor-row-label">Line wrap</span>
+              <span className="gallery-text-editor-row-label">Soft wrap text</span>
               <TugSwitch
                 checked={lineWrap}
                 senderId={lineWrapId}
@@ -760,6 +771,15 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
                 checked={highlightActiveLineGutter}
                 senderId={activeLineGutterId}
                 componentStatePreservationKey="highlightActiveLineGutter"
+                size="sm"
+              />
+            </div>
+            <div className="gallery-text-editor-row-cell">
+              <span className="gallery-text-editor-row-label">Markdown styling</span>
+              <TugSwitch
+                checked={markdownTextStyling}
+                senderId={markdownStylingId}
+                componentStatePreservationKey="markdownTextStyling"
                 size="sm"
               />
             </div>
