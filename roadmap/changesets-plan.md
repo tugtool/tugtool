@@ -69,6 +69,14 @@ attribution data.
 - `tugdash join --preview` reports conflicts without touching the working tree;
   `tugdash join` succeeds when base dirt is disjoint from the dash's changed files (today's
   code refuses).
+- (M03A) Every changeset entry with changes carries a maintained, convention-correct commit
+  message that is current within the quiet period + one generation of the last change
+  landing; an unchanged entry never re-spends a scribe call (fingerprint gate, verified by
+  Rust tests with a fake `ScribeSpawner`); restarts/reopens render the persisted draft with
+  zero regeneration.
+- (M03A) Dash entries show real diffs (merge-base…branch plus worktree dirt) inline in the
+  card; per-file and whole-changeset diffs render inline and pop out to a Text card in diff
+  mode.
 - `cd tugrust && cargo nextest run` green; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
   green; `just app-test` green at every milestone close.
 
@@ -84,6 +92,12 @@ attribution data.
 6. `tugdash` binary + `tugdash-core` crate; `.tug/worktrees/` migration; join engine v2
    (strategies, preview, intersection preflight, journaled teardown); tugplug skill cutover.
 7. Git card + `GitFeed` retirement.
+8. (M03A) One diff capability, three surfaces: `TugDiffDocument` over the shared `DiffBlock`
+   engine (card-inline, the dev card's `/diff` sheet, a Text-card diff mode via a new
+   `OPEN_DIFF` action) driven by a two-flavor diff descriptor; plus the maintained draft
+   engine — a continuously current, convention-correct commit message per changeset entry
+   (streaming scribe, fingerprint gating, ledger persistence) replacing the on-demand
+   Summarize/Draft actions.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -171,6 +185,10 @@ snapshot already carries `workspace_key`). Revisit after M02 dogfooding.
 
 **Resolution:** DEFERRED — default to `haiku` via `--model`, overridable through a tugbank
 default (`dev.tugtool.changeset` / `scribe_model`), read at spawn. No UI for it this phase.
+
+**Superseded at M03A:** [P21] retires the on-demand scribe actions entirely and [P22] flips
+the default model to `sonnet` (cost is bounded by fingerprint gating, not by picking the
+smallest model). The tugbank override stays the knob; still no UI for it.
 
 ---
 
@@ -458,6 +476,162 @@ path gains a process-global `Notify` alongside the per-workspace one until #step
 the latter. Cost is ~2 git subprocesses per open project per recompute, gated per dir by the
 subprocess-free `is_within_git_worktree` — negligible at "handful of open cards" scale.
 
+#### [P18] TugDiffDocument: one document-level diff component, three surfaces (DECIDED) {#p18-diff-document}
+
+**Decision:** Extract a document-level diff component, `TugDiffDocument`
+(`tugdeck/src/components/tugways/tug-diff-document.tsx` + `.css`): summary header
+(`N files changed +X −Y`), one collapsible `DiffBlock` per file, Expand All / Collapse All,
+and a host-level inline ↔ side-by-side toggle. `DiffBlock`
+(`tugdeck/src/components/tugways/body-kinds/diff-block.tsx`) is already the shared
+per-file engine — it is NOT rebuilt; the document layer composes it (`suppressHeader`, the
+accordion trigger owns file identity, exactly as `diff-sheet.tsx` does today). The `/diff`
+sheet (`tugdeck/src/components/tugways/cards/diff-sheet.tsx`) is rebased onto it: the sheet
+keeps its chrome (`TugSheetScaffold`, pre-open alert branching, Done) and its body becomes a
+`TugDiffDocument`. The per-file trigger/body/accordion/expand-all logic currently inside
+`diff-sheet.tsx` moves into the new component.
+
+**Rationale:** User decision — one diff capability, shared across the sheet, the changeset
+card's inline expansion, and the Text-card diff mode. Duplicating the accordion layer three
+times is exactly the hand-rolling the component doctrine bans.
+
+**Implications:** `TugDiffDocument` takes the parsed `GitDiffPayload` (files + totals from
+`git-diff-store.ts`), not a raw store — each host owns its own store/refresh wiring. The
+view-mode toggle drives `DiffBlock`'s `viewMode` prop; persistence rides the existing
+`diff-view-pref.ts` tugbank hook when the host passes a `cardId`.
+
+#### [P19] Two-flavor diff descriptor, designed in from day one (DECIDED) {#p19-diff-descriptor}
+
+**Decision:** Diff requests carry a discriminated **diff descriptor** with two flavors
+(Spec S08): `{kind: "head", root, paths?}` → `git diff HEAD [-- <paths…>]`
+(sessions/unattributed — today's behavior), and `{kind: "range", worktree, base, branch}` →
+the dash view: everything the dash has done past its base, committed rounds **plus**
+worktree dirt, resolved as one `git -C <worktree> diff <merge-base(base, branch)>`
+(#diff-descriptor-resolution). `GIT_DIFF_QUERY` (0x22) and `TugDiffDocument`'s hosts both
+speak the descriptor; dash entries get real diffs, fixing the M03 asymmetry where dash rows
+had no diff affordance at all.
+
+**Rationale:** User decision. A dash's changeset is `base..branch` + dirt — `git diff HEAD`
+in the project dir cannot show it, which is why Step 13 explicitly skipped dashes. Designing
+the second flavor in now means every diff surface (inline, pop-out, sheet) handles both
+owner kinds from birth, and M04's join preview reuses the same descriptor.
+
+**Implications:** The `RawDiffQuery` adapter in `tugcast/src/main.rs` gains optional
+`worktree`/`base`/`branch` fields (presence of `branch` selects the range flavor);
+`feeds/git.rs` gains `fetch_dash_diff`. Client side, `GitDiffScope` in
+`tugdeck/src/lib/git-diff-store.ts` grows into the descriptor union (the bare `{}` /
+`{root, paths}` forms remain valid — the dev card's `/diff` is untouched).
+
+#### [P20] Diffs render inline in the changeset card; OPEN_DIFF opens a Text-card diff mode (DECIDED) {#p20-inline-diff}
+
+**Decision:** The changeset card stops using the diff sheet. A file row's diff affordance
+expands that file's `DiffBlock` **inline under its row**; an entry-level action expands the
+whole `TugDiffDocument` **inline in the entry body**. Both carry a pop-out affordance
+dispatching a new `OPEN_DIFF` action (`TUG_ACTIONS.OPEN_DIFF`, registered in
+`tugdeck/src/action-dispatch.ts`) that opens a **Text card in diff mode**: the card carries
+a diff descriptor instead of a file path and renders `TugDiffDocument` standalone with a
+Refresh button. Reuse is descriptor-keyed, mirroring `open-file`'s path-keyed reuse
+(`tugdeck/src/lib/open-file-in-card.ts` / `text-card-open-registry.ts`): re-dispatching the
+same descriptor activates the existing card.
+
+**Rationale:** User decision — diffs belong where the change is, like the transcript's
+tool-call diff blocks, with a pop-out for sustained reading. The sheet survives only as the
+dev card's `/diff` surface (now sharing `TugDiffDocument` per [P18]).
+
+**Implications:** One `GitDiffStore` instance per expanded entry (module-level map keyed by
+entry id over the unfiltered changeset `FeedStore` from `changeset-diff-store.ts` — the
+store-unique `gd-<storeId>-<seq>` request ids already prevent cross-talk). A per-file
+expansion renders its file's slice of the entry-scoped payload — no per-file request. The
+card's `useTugSheet` host stays (alerts still use it); `useDiffSheet` drops out of the card.
+at0228's diff-click leg adapts mechanically to assert on the inline `DiffBlock` instead of
+the sheet — it does not grow.
+
+#### [P21] One maintained artifact per entry replaces on-demand Summarize/Draft (DECIDED) {#p21-maintained-draft}
+
+**Decision:** Every changeset entry with changes carries exactly one AI artifact: a
+continuously maintained, convention-correct **commit message** (short imperative subject +
+terse bullets) whose body doubles as the summary. tugcast keeps it current in the background
+so it is ready the moment the last change lands; Commit is always one click. The Summarize
+button, the Draft button, and the summary alert sheet are **deleted**, along with the
+`changeset_summarize` CONTROL verb and its client store paths. Triggers: session and
+unattributed entries regenerate when their slice of the aggregate snapshot changes and then
+goes quiet for ~10s (the change signal is the existing attribution bump → CHANGESET_ALL
+recompute — no new intercept); dash entries regenerate when a round lands or the worktree
+dirt changes, same quiet period. Clean entries honestly say "no changes" (fileless
+sessions); a dash with rounds > 0 always has a draft — its future join message ([P23]).
+
+**Rationale:** User decision (three rounds of design, settled): the card is a place where
+work is *already understood* — not live narration, not a button you remember to press. The
+ideal is a fully written commit message the instant work stops. One artifact, not two: a
+good commit message *is* the summary.
+
+**Implications:** A new engine module (`tugcast/src/feeds/draft_engine.rs`,
+#draft-engine) drives generation; drafts persist in the session ledger (Spec S09) and ship
+inside the aggregate snapshot (Spec S10) so a fresh deck renders them with zero
+regeneration. The card renders the draft as markdown above an editable `TugTextarea`
+pre-filled with it; Commit sends the field's text ([P24]).
+
+#### [P22] Fingerprint gating, ledger persistence, sonnet default (DECIDED) {#p22-fingerprint}
+
+**Decision:** Every generation is gated by a **fingerprint** of the entry's actual content
+(Spec S11): sessions/unattributed hash the scoped diff text plus the file list (untracked
+files contribute path + size + mtime — `git diff HEAD` cannot see their content); dashes
+hash the branch head sha + a worktree-dirt hash. Fingerprint unchanged → no scribe call.
+Superseded runs cancel and coalesce: a new fingerprint while a run is in flight aborts it
+(task abort; `kill_on_drop` reaps the child) and starts fresh. A commit shrinks the
+changeset → new fingerprint → a fresh draft for the remainder. Drafts persist in
+`sessions.db` as `changeset_drafts` rows `{owner_kind, owner_id, project_dir, fingerprint,
+message, updated_at}` (Spec S09) so restarts/reopens never burn a regeneration. The default
+`scribe_model` becomes `sonnet` (tugbank override `dev.tugtool.changeset`/`scribe_model`
+stays; supersedes [Q02]'s `haiku`).
+
+**Rationale:** The gate — not the model size — is the cost control: one call per
+changed-then-quiet episode, roughly one per working turn that touched files. Sonnet is
+comfortably up to a commit message and the quality gap matters because the artifact is
+read constantly.
+
+**Implications:** A result is persisted only if its fingerprint is still current at
+completion (a stale result is dropped, the newer run owns the entry). The engine fires the
+global aggregate bump after persisting so the card refreshes immediately.
+
+#### [P23] Dash drafts ARE the future join message (DECIDED) {#p23-dash-draft}
+
+**Decision:** A dash entry's maintained draft is composed as the dash's eventual
+**squash/join commit message**: from `git log <base>..<branch>` (round subjects/bodies), the
+dash-log's per-round instruction/summary metadata, and the merge-base…branch diff. M04's
+join engine v2 (#step-19, #step-21) will consume the maintained draft as the default squash
+message — this forward dependency is load-bearing; do not shape the dash prompt as a mere
+status summary. Dash-log access reads the well-known path directly for now:
+`project_state_dir(repo_root)/dash-log.md` (`tugutil-core/src/paths.rs`; line format
+`<iso8601>  <dash>  <short-hash|released>  <instruction>` per
+`tugutil-core/src/dash.rs::append_dash_log`), filtered by the dash name field; it swaps to
+`tugdash-core` when #step-17 extracts it.
+
+**Rationale:** User decision — leaving dashes out is "a non-starter". The dash draft is the
+one artifact whose consumer is already scheduled (join), so it must be join-shaped from
+day one.
+
+**Implications:** #step-19 gains a task: default squash message = the maintained dash draft
+when present. The dash fingerprint (head sha + dirt hash) means a `tugutil dash commit`
+round automatically invalidates and regenerates.
+
+#### [P24] Streaming is a nicety; user edits pin the field (DECIDED) {#p24-streaming-pinning}
+
+**Decision:** The scribe upgrades to `claude -p --output-format stream-json
+--include-partial-messages --verbose` on the existing `ScribeSpawner` seam; text deltas are
+forwarded over CONTROL (`changeset_draft_delta`, Spec S10) so a visible card fills in live.
+This is a nicety, not the point — the draft is usually done before you look; the persisted
+message in the snapshot is the source of truth and the deltas are a presentation overlay.
+On the card, the editable `TugTextarea` follows the latest draft only while **pristine**;
+once the user edits it, the field is pinned and a newer draft surfaces as a subtle "Use
+latest draft" affordance instead of clobbering their text. A landed commit unpins.
+
+**Rationale:** Live fill-in makes the regeneration state legible (mini-transcript feel per
+the `/btw` overlay); silently overwriting a hand-edited commit message would be hostile.
+
+**Implications:** `ScribeSpawner::run` gains an optional delta channel; the fake spawner
+scripts deltas in tests. The card needs a tiny CONTROL-overlay store
+(`changeset-draft-store.ts`) keyed `(project_dir, owner_kind, owner_id)`.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -570,6 +744,106 @@ Client-side, aggregation must stay **server-side**: tugdeck's `FeedStore` keeps 
 feed id, so per-project frames on one id would clobber each other; the account-global client
 precedents are `UsageStore` (`new FeedStore(conn, [FeedId.USAGE])`, no workspace filter) and
 `PulseStore` — **not** the filtered `useCardData` → `useCardWorkspaceKey` path.
+
+#### Diff descriptor resolution {#diff-descriptor-resolution}
+
+The two flavors resolve to git invocations as follows (all in `feeds/git.rs`):
+
+- **head** `{root, paths?}`: exactly today's `build_git_diff_snapshot` — `git diff HEAD
+  [-- <paths…>]` in the workspace resolved from `root` (the `resolve_diff_target` fallback
+  chain in `main.rs` stays). Untracked files never appear (no HEAD side) — the card's
+  `hasHeadDiff()` guard stays for this flavor.
+- **range** `{worktree, base, branch}`: the honest "everything this dash has done" view is
+  committed rounds **plus** uncommitted worktree dirt in one diff. Three-dot syntax can't
+  include a dirty working tree, so resolve in two steps: `git -C <worktree> merge-base
+  <base> <branch>` → `MB`, then `git -C <worktree> diff <MB>` (working tree vs. merge base
+  = rounds + dirt, and upstream drift on `base` stays out — the same semantics as
+  `base...branch` for the committed part). When the worktree path does not exist (a dash
+  branch without a checked-out worktree), fall back to `git diff <base>...<branch>` in the
+  repo root — committed rounds only, which is then the whole truth. The snapshot's `base`
+  field carries the human-readable range (e.g. `main...tugdash/fix-join`) so the document
+  header reads correctly.
+
+The `GitDiffPayload` wire shape is unchanged (files + totals + unified chunks); only the
+query grows. One store instance per consumer (the M03 `gd-<storeId>-<seq>` request-id
+scheme) keeps concurrent scoped queries from cross-correlating.
+
+#### The maintained draft engine {#draft-engine}
+
+```
+attribution write / dash commit / hand edit
+  ─▶ ChangesetBumper.bump ─▶ CHANGESET_ALL recompute (feeds/changeset_all.rs)
+  ─▶ diff-suppressed frame on the aggregate watch channel
+       └─▶ DraftEngine (feeds/draft_engine.rs) taps a CLONED watch::Receiver
+             per-entry change key changed?  ──no──▶ ignore
+               │ yes: arm/reset that entry's ~10s quiet timer
+               ▼ timer fires
+             compute fingerprint (Spec S11)  ──unchanged──▶ done (no call)
+               │ changed: abort any in-flight run for this entry (coalesce)
+               ▼
+             broadcast changeset_draft_state{drafting} ─▶ CONTROL
+             streaming scribe run (deltas ─▶ changeset_draft_delta ─▶ CONTROL)
+               │ success AND fingerprint still current
+               ▼
+             persist changeset_drafts row (Spec S09) ─▶ fire global bump
+             ─▶ next aggregate frame carries the draft (Spec S10) ─▶ card
+```
+
+Load-bearing wiring facts:
+
+- **Do NOT share the bump `Notify`.** `registry.changeset_all_bump()` uses
+  `notify_one` permit semantics with the `ChangesetAllFeed` loop as the sole waiter — a
+  second waiter would steal permits and starve the feed. The engine instead **clones the
+  aggregate `watch::Receiver<Frame>`** that `spawn_snapshot_feed` yields in `main.rs`
+  (`watch::Receiver` is `Clone`; the router keeps its copy for `add_snapshot_watches`) and
+  deserializes each frame back to `WorkspacesChangesetSnapshot`. Frames are diff-suppressed
+  upstream, so every wake is a real change.
+- **Change key, not the whole entry.** Persisted drafts ride inside the snapshot (Spec S10),
+  so a draft landing changes the frame; keying the quiet timer on the raw entry would
+  re-arm on every draft land. The engine derives a per-entry change key that EXCLUDES draft
+  fields: sessions/unattributed → sorted `(path, git_status)` pairs + max `last_touched`;
+  dashes → `(rounds, worktree_dirty, sorted file paths)`. Entry identity =
+  `(project_dir, owner_kind, owner_id)` with `owner_id = ""` for unattributed.
+- **Turn-end is subsumed.** File writes bump the aggregate as they land (the attribution
+  intercept), so "turn-end + fs quiet" ≈ "10s of quiet after the last write" — no
+  `turn_complete` plumbing is needed. A turn that writes early then thinks for minutes
+  regenerates mid-turn; that is the desired "maintained as work proceeds" behavior, and the
+  fingerprint gate bounds cost. Dash rounds land as branch/worktree changes the 2s poll or
+  bump picks up.
+- **Eligibility.** Sessions/unattributed with ≥1 file; dashes with `rounds > 0` or a dirty
+  worktree. Fileless clean entries get no draft and no scribe call; `compose_snapshot`
+  attaches a persisted draft to an entry only while the entry is eligible (a stale row for
+  a since-committed changeset stays in the table, harmlessly superseded by the next cycle).
+- **Ownership/lifecycle.** The engine is spawned via
+  `AgentSupervisor::start_draft_engine(watch_rx)` (the `set_scribe` idiom) so it can clone
+  the supervisor's `control_tx`, `session_ledger`, `registry`, `ScribeContext`, and a
+  **session resolver** `Arc<dyn Fn(&str) -> Option<String>>` mapping `tug_session_id →
+  claude_session_id` — that mapping lives only in the supervisor's in-memory
+  `LedgerEntry.claude_session_id` (`feeds/agent_supervisor.rs`), populated from
+  `session_init`; it is not a `sessions` table column.
+- **Prompt context** (Spec S11) for a session entry includes the owning session's user
+  prompts since the changeset began, read from the **session JSONL** — the ledger's
+  `last_user_prompt` is one line and too thin. Path:
+  `ledger.claude_projects_root() / encode_claude_project_name(project_dir) /
+  <claude_session_id>.jsonl` (both helpers in `session_ledger.rs`). Reuse
+  `external_sessions.rs`'s pure line classifiers (`user_submission_opens_turn`,
+  `submission_text`, `parse_timestamp_millis`) to keep only genuine submissions. "Since the
+  changeset began" = the minimum `at` across the entry's `file_events` rows for
+  currently-dirty paths (`file_events_for_session`); when that can't be resolved (no
+  claude id — resolver returns `None` for a non-live session; missing JSONL), degrade to
+  diff + conventions, never fail the draft.
+- **Style rules** come from the packaged commit skill:
+  `crate::resources::source_tree().join("tugplug/skills/commit/SKILL.md")` — in a bundle
+  `TUGCAST_RESOURCE_ROOT` points at `Contents/Resources/` (which contains `tugplug/`), and
+  the debug fallback resolves to the tugtool source root (which also contains `tugplug/`),
+  so one join works everywhere. Extract the message-format contract: the section between
+  the `3. **Compose the Commit Message**` and `4. **Stage and Commit**` headings plus the
+  two "Examples of …" sections. A baked-in const of those rules (subject ≤50 chars
+  imperative no-period, terse factual bullets, no filler/buzzwords, NEVER any AI/agent
+  attribution) is the fallback when the file read or extraction fails.
+- **Errors** broadcast `changeset_draft_state{state:"error", detail}` and log via
+  `tracing::warn` server-side; the card shows the stale draft with a subtle error hint —
+  a scribe failure must never blank an existing message.
 
 ---
 
@@ -692,6 +966,91 @@ Handled in `AgentSupervisor::handle_control` alongside the Spec S03 verbs:
   no client-side state transition needed. Ships in M02A per decision D4 in
   `roadmap/workspace-tracking-plan.md` ([P17]).
 
+**Spec S08: Diff descriptor + GIT_DIFF_QUERY extension** {#s08-diff-descriptor}
+
+Client type (`tugdeck/src/lib/git-diff-store.ts`; supersedes-and-extends `GitDiffScope`):
+
+```ts
+type DiffDescriptor =
+  | { kind: "head"; root?: string; paths?: string[] }   // git diff HEAD [-- paths]
+  | { kind: "range"; worktree: string; base: string; branch: string };
+```
+
+`GIT_DIFF_QUERY` (0x22) JSON payload gains optional `worktree`, `base`, `branch` beside the
+existing `root`/`requestId`/`paths`; a present `branch` selects the range flavor
+(#diff-descriptor-resolution). The `GIT_DIFF` (0x21) response shape (`GitDiffPayload`) is
+unchanged; for the range flavor `base` carries the display range (`<base>...<branch>`).
+`GitDiffStore.requestDiff(descriptor)` keeps its remember-last-scope Refresh semantics and
+its store-unique request ids. Descriptor **identity key** (for `OPEN_DIFF` card reuse):
+`head:<root>:<sorted paths joined by \n>` / `range:<worktree>:<base>:<branch>`.
+
+**Spec S09: `changeset_drafts` schema + ledger API** {#s09-changeset-drafts}
+
+```sql
+CREATE TABLE IF NOT EXISTS changeset_drafts (
+    owner_kind  TEXT NOT NULL,      -- session | dash | unattributed
+    owner_id    TEXT NOT NULL,      -- tug_session_id | tugdash/<name> | '' (unattributed)
+    project_dir TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,      -- Spec S11
+    message     TEXT NOT NULL,      -- the maintained commit message (subject + bullets)
+    updated_at  INTEGER NOT NULL,   -- epoch ms
+    PRIMARY KEY (owner_kind, owner_id, project_dir)
+);
+```
+
+Added in `bootstrap_schema` (`tugcast/src/session_ledger.rs`) with the self-healing drifted-
+table guard (the `file_events` idiom). NO cascade trigger on `sessions` — dash and
+unattributed owners are not session rows; rows are advisory and superseded in place. Ledger
+API: `upsert_changeset_draft(&ChangesetDraftRow)`, `changeset_draft(owner_kind, owner_id,
+project_dir) -> Option<ChangesetDraftRow>`, `changeset_drafts_for_project(project_dir)`
+(the compose-time bulk read).
+
+**Spec S10: Draft wire — snapshot fields + CONTROL frames** {#s10-draft-wire}
+
+Snapshot (Rust `tugcast-core/src/types.rs`, TS mirror `tugdeck/src/lib/changeset-types.ts`,
+both golden fixtures updated per [P10]):
+
+```jsonc
+// ChangesetEntry::Session and ::Dash gain (skipped when absent):
+"draft": { "fingerprint": "…", "message": "subject line\n\n- bullet", "updated_at": 0 }
+// ProjectChangeset gains, for the unattributed bucket:
+"unattributed_draft": { /* same shape */ }
+```
+
+CONTROL broadcast frames (the `changeset_commit_*` idiom — JSON with an `action` field, no
+request correlation needed since drafts are server-initiated):
+
+- `changeset_draft_state {project_dir, owner_kind, owner_id, state: "drafting"|"ready"|"error", detail?}`
+- `changeset_draft_delta {project_dir, owner_kind, owner_id, text}` — `text` is the
+  **accumulated** generation so far (idempotent against a dropped frame), sent at most ~4/s.
+
+The persisted snapshot message is the source of truth; the CONTROL frames are a live overlay
+the client store (`changeset-draft-store.ts`) clears when a snapshot with a newer
+`updated_at` arrives.
+
+**Spec S11: Fingerprint + draft prompt composition** {#s11-fingerprint-prompt}
+
+Fingerprint = hex SHA-256 (`sha2` is already a tugcast dependency) over a canonical byte
+string:
+
+- **session / unattributed:** the sorted `(path, git_status)` list, then the scoped
+  `git diff HEAD -- <paths…>` text, then per **untracked** file `(path, size, mtime-ms)`
+  from fs metadata (untracked content is invisible to `git diff HEAD`).
+- **dash:** `git rev-parse <branch>`, then the worktree's `git status --porcelain` output
+  (empty when no worktree).
+
+Prompt composition (pure fns in `tugcast/src/scribe.rs`, one per owner kind; asks for a
+commit message only — the summary kind is gone):
+
+- **session:** the ask (style rules per #draft-engine) + scoped diff (truncated to 150,000
+  chars with a `[diff truncated]` marker) + file list with op/origin provenance + the
+  owning session's user prompts since the changeset began (JSONL, newest-last, cap 20
+  prompts / 2,000 chars each) + the last 10 `git log --format=%s` subjects for voice.
+- **dash:** the ask (this is the future squash message, [P23]) + `git log <base>..<branch>
+  --format=%s%n%b` + the dash's dash-log lines (instruction metadata) + the merge-base
+  diff (same truncation) + the same git-log voice subjects.
+- **unattributed:** the ask + diff + file list + voice subjects only (no session context).
+
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
@@ -705,6 +1064,12 @@ Handled in `AgentSupervisor::handle_control` alongside the Spec S03 verbs:
 | WorkspacesChangesetSnapshot (aggregate feed data, M02A) | local-data (external) | app-level singleton store (`FeedStore` on CHANGESET_ALL, the UsageStore pattern, no workspace filter) + context hook via `useSyncExternalStore` | [L02] |
 | Per-project section expand/collapse (M02A) | local-data (ephemeral UI) | `useState` in the card component | — |
 | git-init in-flight/result (M02A) | local-data (external, async verb round-trip) | verb round-trip store + `useSyncExternalStore` | [L02] |
+| Per-entry inline diff payload (M03A) | local-data (external) | per-entry `GitDiffStore` instances over the shared changeset FeedStore, read via `useSyncExternalStore` | [L02] |
+| Inline diff expansion (per file / per entry) (M03A) | local-data (ephemeral UI) | `useState` in the entry body | — |
+| Draft live overlay: state + streaming text (M03A) | local-data (external) | `changeset-draft-store.ts` (CONTROL frames) + `useSyncExternalStore` | [L02] |
+| Draft message field + user-edit pin (M03A) | local-data (ephemeral UI) | `useState` (`TugTextarea` value + pristine flag; re-seeds from a newer draft only while pristine, [P24]) | — |
+| Persisted draft text (M03A) | server-owned | rides the aggregate snapshot (Spec S10); persisted in sessions.db, never client storage | [L02] |
+| Text-card diff mode descriptor (M03A) | structure | card initial-content channel (the open-file seeding path) + descriptor-keyed open registry | — |
 
 No new persistent UI state; nothing touches localStorage. Read-only file lists render no
 tabindex (mousedown-focus default gotcha).
@@ -756,6 +1121,10 @@ tabindex (mousedown-focus default gotcha).
 | `tugrust/crates/tugcast/src/feeds/changeset_all.rs` | M02A aggregate `CHANGESET_ALL` feed: enumerates `WorkspaceRegistry` entries, composes per-project snapshots via `compose_snapshot`, emits `WorkspacesChangesetSnapshot` ([P17]) |
 | `tugdeck/src/lib/changeset-all-store.ts` | M02A app-level singleton store for the aggregate snapshot (UsageStore pattern) + context/hook |
 | `tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json` | M02A golden contract fixture for the aggregate wire shape (Spec S06) |
+| `tugdeck/src/components/tugways/tug-diff-document.tsx` (+`.css`) | M03A document-level diff component over `DiffBlock` ([P18]) |
+| `tugrust/crates/tugcast/src/feeds/draft_engine.rs` | M03A maintained-draft engine: snapshot tap, change keys, quiet timers, fingerprint gate, scribe runs, persistence (#draft-engine) |
+| `tugdeck/src/lib/changeset-draft-store.ts` | M03A CONTROL overlay store for `changeset_draft_state`/`changeset_draft_delta` (Spec S10) |
+| `tugdeck/src/lib/open-diff-in-card.ts` | M03A `OPEN_DIFF` implementation: descriptor-keyed Text-card diff-mode open/reuse ([P20]) |
 
 #### Symbols to add / modify {#symbols}
 
@@ -778,6 +1147,14 @@ tabindex (mousedown-focus default gotcha).
 | `changeset_git_init` | verb | `tugcast/src/feeds/agent_supervisor.rs` `handle_control` | Spec S07 |
 | per-workspace `ChangesetFeed` retirement | code | `feeds/changeset.rs` (struct + `SnapshotFeed` impl deleted) + `workspace_registry.rs` (`WorkspaceEntry` changeset fields) + `main.rs` (`add_snapshot_watches`) | [P17]/#step-12d; `compose_snapshot` + `ChangesetBumper` stay |
 | changeset card rewrite (account-global) | code | `tugdeck/src/components/tugways/cards/changeset-card.tsx` + `tugdeck/src/main.tsx` | #step-12c; per-project sections over the M02 internals |
+| `DiffDescriptor` + range-flavor query | code | `tugdeck/src/lib/git-diff-store.ts`, `tugcast/src/main.rs` (`RawDiffQuery`), `tugcast/src/feeds/git.rs` (`fetch_dash_diff`) | Spec S08, [P19], #step-16b |
+| `diff-sheet.tsx` rebase onto `TugDiffDocument` | code | `tugdeck/src/components/tugways/cards/diff-sheet.tsx` | [P18], #step-16a |
+| `TUG_ACTIONS.OPEN_DIFF` + Text-card diff mode | code | `tugdeck/src/components/tugways/action-vocabulary.ts`, `action-dispatch.ts`, `cards/text-card.tsx` + `text-card-registration.tsx`, `lib/text-card-open-registry.ts` | [P20], #step-16c |
+| `changeset_drafts` table + draft ledger API | sql + fns | `tugcast/src/session_ledger.rs` | Spec S09, #step-16d |
+| `ScribeSpawner` streaming + draft prompt composers + style-rules loader | code | `tugcast/src/scribe.rs` (+ `resources::source_tree` for the skill file) | [P24], Spec S11, #step-16d |
+| `AgentSupervisor::start_draft_engine` + session resolver | code | `tugcast/src/feeds/agent_supervisor.rs`, `tugcast/src/main.rs` (cloned aggregate watch receiver) | #draft-engine, #step-16e |
+| `draft` / `unattributed_draft` snapshot fields | structs | `tugcast-core/src/types.rs` + `tugdeck/src/lib/changeset-types.ts` + both golden fixtures | Spec S10, #step-16e |
+| `changeset_summarize` deletion (verb, store paths, card buttons) | code | `tugcast/src/feeds/agent_supervisor.rs`, `tugdeck/src/lib/changeset-verb-store.ts`, `cards/changeset-card.tsx` | [P21], #step-16f |
 
 ---
 
@@ -811,6 +1188,12 @@ tabindex (mousedown-focus default gotcha).
   never assert on model prose; real-claude runs are on-demand only.
 - Migration against every historical `.tugtree` shape — covered for the current layout only;
   the fallback path (warn + continue on old path) is the safety net.
+- **App-tests for the maintained draft engine (M03A)** — user decision: the trigger loop
+  (quiet periods, regeneration timing, streaming fill-in) is human-tested until the design
+  settles. Rust covers the engine via the fake `ScribeSpawner`
+  (trigger→fingerprint→persist round trips, prompt composition per owner kind, coalescing).
+  at0228 stays green by mechanically adapting its diff-click leg to the inline surface —
+  it does not grow.
 
 ---
 
@@ -848,6 +1231,13 @@ tabindex (mousedown-focus default gotcha).
 | #step-14 | changeset_commit verb + card commit flow | done | d861a0408 |
 | #step-15 | Scribe sidecar + summarize verb + card UI | done | 9e324ce50 |
 | #step-16 | M03 integration checkpoint | done | (verification only) |
+| #step-16a | TugDiffDocument + diff-sheet rebase | pending | — |
+| #step-16b | Diff descriptor + dash range diffs | pending | — |
+| #step-16c | Inline card diffs + OPEN_DIFF Text-card diff mode | pending | — |
+| #step-16d | Drafts ledger + streaming scribe + prompt composers | pending | — |
+| #step-16e | The maintained-draft engine | pending | — |
+| #step-16f | Card draft UI + Summarize/Draft deletion | pending | — |
+| #step-16g | M03A integration checkpoint | pending | — |
 | #step-17 | tugdash-core + tugdash CLI extraction | pending | — |
 | #step-18 | .tug/worktrees home + migration | pending | — |
 | #step-19 | Join engine v2 | pending | — |
@@ -859,6 +1249,7 @@ tabindex (mousedown-focus default gotcha).
 **Milestone M02: Changeset feed + read-only card** {#m02-card} — steps 8–12.
 **Milestone M02A: All-projects aggregate changeset** {#m02a-aggregate} — steps 12a–12f.
 **Milestone M03: Card actions** {#m03-actions} — steps 13–16.
+**Milestone M03A: The AI-driven Changeset card** {#m03a-ai-card} — steps 16a–16g.
 **Milestone M04: tugdash** {#m04-tugdash} — steps 17–22.
 
 ---
@@ -1610,6 +2001,342 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 
 ---
 
+#### Step 16a: TugDiffDocument + diff-sheet rebase {#step-16a}
+
+**Depends on:** #step-16
+
+**Commit:** `feat(tugdeck): TugDiffDocument — the shared document-level diff surface`
+
+**References:** [P18] TugDiffDocument, Milestone M03A, (#state-zone-mapping)
+
+**Artifacts:**
+- `tugdeck/src/components/tugways/tug-diff-document.tsx` + `.css`: props take a parsed
+  `GitDiffPayload` (from `lib/git-diff-store.ts`) plus optional `cardId` (view-mode
+  persistence via `diff-view-pref.ts`) and optional per-file trailing-affordance render
+  hook (the card's pop-out button rides here in #step-16c). Renders: summary header
+  (`N files changed +X −Y`, the `diffSummaryLine` helper), Expand All / Collapse All, a
+  host-level inline ↔ side-by-side toggle driving each `DiffBlock`'s `viewMode`, and one
+  `TugAccordionItem` per file — trigger = status letter + path (rename `old → new`) +
+  `+N −M` stat, body = `DiffBlock` with `suppressHeader` (binary files render the
+  no-textual-diff note). This is a **move**, not a rewrite: `FileTrigger`, `FileBody`,
+  the controlled accordion + `useResponderForm({toggleSectionMulti})` wiring, and the
+  expand/collapse-all logic migrate out of `diff-sheet.tsx`.
+- `tugdeck/src/components/tugways/cards/diff-sheet.tsx` rebased: keeps `useDiffSheet`
+  (request-then-branch alert logic), `TugSheetScaffold` chrome, Refresh, and Done; the
+  files region becomes `<TugDiffDocument …/>`. Existing `data-testid`s
+  (`diff-file`, `diff-expand-all`, `diff-collapse-all`, `diff-refresh`, `diff-done`) move
+  with their elements so existing app-tests keep passing unchanged.
+
+**Tasks:**
+- [ ] Component doctrine: compose `TugAccordion`/`TugPushButton`/`TugChoiceGroup` (the
+      view toggle mirrors DiffBlock's own segmented control); no borrowed CSS classes;
+      file pair + `data-slot` per [L19]-style conventions.
+- [ ] The view-mode toggle without `cardId` stays ephemeral `useState` (the DiffBlock
+      local-fallback rule).
+
+**Tests:**
+- [ ] Existing bun tests for the git-diff-store helpers keep passing; no jsdom render
+      tests (banned).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test` (the curated sweep covers the dev card's `/diff` sheet)
+
+---
+
+#### Step 16b: Diff descriptor + dash range diffs {#step-16b}
+
+**Depends on:** #step-16a
+
+**Commit:** `feat(tugcast,tugdeck): two-flavor diff descriptor — dash entries get real diffs`
+
+**References:** [P19] Diff descriptor, Spec S08, Milestone M03A,
+(#diff-descriptor-resolution)
+
+**Artifacts:**
+- `tugcast/src/main.rs` `RawDiffQuery` gains optional `worktree`/`base`/`branch`; a present
+  `branch` routes to the range flavor. `tugcast/src/feeds/git.rs` gains
+  `fetch_dash_diff(repo_root, worktree, base, branch)` implementing
+  #diff-descriptor-resolution (merge-base then `git -C <worktree> diff <MB>`; no-worktree
+  fallback `git diff <base>...<branch>` in the repo root) and a
+  `build_git_diff_snapshot` path (or sibling fn) that reuses `parse_git_diff` and sets the
+  payload `base` field to `<base>...<branch>`.
+- `tugdeck/src/lib/git-diff-store.ts`: `DiffDescriptor` union per Spec S08;
+  `requestDiff(descriptor)` serializes the new fields; the legacy `{root, paths}` scope
+  form maps to the head flavor so the dev card's `/diff` call sites compile unchanged.
+  Export `diffDescriptorKey(descriptor)` (the Spec S08 identity key) for #step-16c reuse.
+
+**Tasks:**
+- [ ] Range flavor resolves `worktree` relative paths against the workspace's repo root
+      (dash snapshot entries carry `worktree` as a repo-relative path like
+      `.tugtree/tugdash__demo`).
+- [ ] Keep the whole-tree head flavor byte-identical for an absent `paths` (dev card
+      regression guard).
+
+**Tests:**
+- [ ] Rust integration (temp repo, the `init_repo` idiom in `feeds/changeset.rs` tests):
+      a dash branch with one committed round + worktree dirt yields a range snapshot
+      containing BOTH the round's file and the dirty file; the no-worktree fallback yields
+      the round's file only; upstream drift on `base` stays out (merge-base semantics).
+- [ ] bun: descriptor serialization + `diffDescriptorKey` unit tests.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast` ; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+
+---
+
+#### Step 16c: Inline card diffs + OPEN_DIFF Text-card diff mode {#step-16c}
+
+**Depends on:** #step-16a, #step-16b
+
+**Commit:** `feat(tugdeck): inline changeset diffs; OPEN_DIFF opens a Text card in diff mode`
+
+**References:** [P20] Inline diff, Spec S08, Milestone M03A, (#state-zone-mapping)
+
+**Artifacts:**
+- Changeset card (`cards/changeset-card.tsx`): a per-entry `GitDiffStore` — rework
+  `changeset-diff-store.ts` from a single-`GitDiffStore` singleton into a module that
+  keeps ONE unfiltered `FeedStore(conn, [FeedId.GIT_DIFF])` and hands out per-entry
+  `GitDiffStore` instances keyed by entry id (`getEntryDiffStore(entryId)` +
+  `releaseEntryDiffStore(entryId)`); created lazily on first expand, request fired with
+  the entry's descriptor — head flavor with the entry's diffable paths for
+  sessions/unattributed, range flavor for dashes. The per-file
+  diff button (`data-testid="changeset-file-diff"`) now toggles that file's `DiffBlock`
+  inline under its row (rendered from the entry payload's matching file); the entry-level
+  action toggles a full `TugDiffDocument` inline in the entry body. Dash entries gain both
+  affordances (the M03 "no diff for dashes" carve-out is deleted); untracked files keep
+  none on head-flavor entries (`hasHeadDiff` stays). The card stops importing
+  `useDiffSheet`; `useTugSheet` remains for alerts.
+- `TUG_ACTIONS.OPEN_DIFF` in `action-vocabulary.ts`; handler in `action-dispatch.ts`
+  (payload = a `DiffDescriptor`); `tugdeck/src/lib/open-diff-in-card.ts` mirrors
+  `open-file-in-card.ts`: descriptor-keyed reuse via a `text-card-open-registry.ts`
+  extension (`findTextCardByDiffKey(diffDescriptorKey(d))`), else a new Text card seeded
+  through the initial-content channel with the descriptor.
+- Text card diff mode: when the initial content carries a `diffDescriptor`, the card
+  (`cards/text-card.tsx` / `text-card-registration.tsx`) renders `TugDiffDocument`
+  standalone — its own `GitDiffStore`, a Refresh button, title `Diff — <basename or dash
+  name>` — instead of mounting the editor. No editor substrate responders are needed in
+  this mode (read-only surface, no tabindex on rows).
+- Pop-out affordances: the inline per-file expansion and the entry-level document each
+  carry an "open as card" button dispatching `OPEN_DIFF` (per-file → head descriptor with
+  the single path; entry-level → the entry's full descriptor).
+- at0228 (`tests/app-test/at0228-changeset-aggregate.test.ts`): the diff leg adapts
+  mechanically — click `changeset-file-diff`, assert the inline `DiffBlock` under the row
+  contains `at0228-diff-marker-2e7b` (the sheet assertions are removed). No new legs.
+
+**Tasks:**
+- [ ] Inline expansion state is `useState` in the entry body; collapse on snapshot removal
+      of the file reconciles by construction (render only rows present in the snapshot).
+- [ ] Dispose per-entry stores when their entries leave the snapshot (module map sweep).
+- [ ] Pop-out buttons carry `data-tug-focus="refuse"` + mousedown preventDefault like
+      `FilePathLink` (the card must not steal first responder).
+
+**Tests:**
+- [ ] App-test: adapted at0228 diff leg (after `just app-test-build` — Rust changed in
+      #step-16b).
+- [ ] bun: `open-diff-in-card` reuse-key logic (the `open-file-in-card.reuse.test.ts`
+      idiom).
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test at0228-changeset-aggregate.test.ts` then the curated sweep
+
+---
+
+#### Step 16d: Drafts ledger + streaming scribe + prompt composers {#step-16d}
+
+**Depends on:** #step-16
+
+**Commit:** `feat(tugcast): draft persistence, streaming scribe, per-owner prompt composition`
+
+**References:** [P22] Fingerprint, [P23] Dash draft, [P24] Streaming, Spec S09, Spec S11,
+Milestone M03A, (#draft-engine)
+
+**Artifacts:**
+- `changeset_drafts` table + `ChangesetDraftRow` + the three ledger methods per Spec S09
+  in `tugcast/src/session_ledger.rs` (self-healing guard included).
+- `tugcast/src/scribe.rs`: `ScribeSpawner::run` gains an optional delta channel
+  (`Option<tokio::sync::mpsc::UnboundedSender<String>>` carrying the accumulated text);
+  `ClaudeScribeSpawner` switches to `claude -p --output-format stream-json
+  --include-partial-messages --verbose --model <m>` (prompt still over stdin, env still
+  scrubbed via `claude_command`, `kill_on_drop` kept), parsing `stream_event` text deltas
+  for the channel and the terminal `{"type":"result","result":…}` line as the canonical
+  full text; timeout raised to 120s (sonnet on a large diff). The existing fake-spawner
+  tests extend to scripted deltas.
+- Prompt composition per Spec S11: `compose_draft_prompt_session/dash/unattributed` pure
+  fns; `commit_style_rules()` reading
+  `resources::source_tree().join("tugplug/skills/commit/SKILL.md")` and extracting the
+  message-format sections (markers per #draft-engine) with the baked-in const fallback;
+  `session_prompts_since(...)` reading the session JSONL via
+  `claude_projects_root`/`encode_claude_project_name` and the `external_sessions.rs`
+  classifiers (`user_submission_opens_turn` is already `pub(crate)`; promote
+  `submission_text` and `parse_timestamp_millis` from private to `pub(crate)`); fingerprint
+  helpers (`fingerprint_head_entry`, `fingerprint_dash_entry`).
+- `main.rs`: the scribe-model closure fallback flips `"haiku"` → `"sonnet"` ([P22]).
+
+**Tasks:**
+- [ ] `ScribeKind` slims to the commit-message ask only if the summary variant loses its
+      last consumer here; otherwise it goes with #step-16f (warnings-are-errors decides —
+      never leave a dead variant).
+- [ ] Diff/prompt truncation caps per Spec S11.
+
+**Tests:**
+- [ ] Ledger: upsert/read round trip; drifted-table self-heal (the `file_events` drift-test
+      idiom).
+- [ ] Scribe: streaming fake emits deltas then the final text; timeout/error paths; the
+      composer tests pin per-owner-kind prompt structure (style rules present, prompts
+      section only for sessions, dash-log lines only for dashes) without asserting prose.
+- [ ] JSONL prompt extraction over a temp fixture (the `tui_shaped_jsonl` idiom in
+      `external_sessions.rs` tests): submissions in, tool-results/interrupts out,
+      `since_ms` filter honored.
+- [ ] Fingerprint: same tree twice → equal; touch an untracked file's content → differs;
+      dash commit → differs.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast`
+
+---
+
+#### Step 16e: The maintained-draft engine {#step-16e}
+
+**Depends on:** #step-16d
+
+**Commit:** `feat(tugcast): the maintained-draft engine — drafts ride the aggregate snapshot`
+
+**References:** [P21] Maintained draft, [P22] Fingerprint, Spec S09, Spec S10, Spec S11,
+Milestone M03A, (#draft-engine)
+
+**Artifacts:**
+- `tugcast/src/feeds/draft_engine.rs` implementing #draft-engine end to end: cloned
+  aggregate `watch::Receiver<Frame>` tap (never the bump `Notify`), per-entry change keys
+  (draft fields excluded), ~10s quiet timers (a `Duration` field so tests shrink it),
+  fingerprint gate, in-flight cancel/coalesce (task abort per entry key), streaming runs
+  broadcasting `changeset_draft_state` / `changeset_draft_delta` on `control_tx`
+  (Spec S10), persist-if-still-current, global bump on persist, error posture per
+  #draft-engine (stale draft survives, `tracing::warn`).
+- `AgentSupervisor::start_draft_engine(watch_rx)` (the `set_scribe` idiom) handing the
+  engine `control_tx`, `session_ledger`, `registry`, the `ScribeContext`, and the
+  `tug_session_id → claude_session_id` resolver over the supervisor's in-memory entries;
+  `main.rs` wires it right after the CHANGESET_ALL `spawn_snapshot_feed` call (clone the
+  receiver before pushing it into `add_snapshot_watches`).
+- Snapshot draft fields per Spec S10: `draft` on `ChangesetEntry::Session`/`::Dash`,
+  `unattributed_draft` on `ProjectChangeset` (`tugcast-core/src/types.rs`,
+  `#[serde(skip_serializing_if = "Option::is_none")]`); `compose_snapshot` /
+  `compose_aggregate` attach them via `changeset_drafts_for_project`, only on eligible
+  entries; TS mirror + both golden fixtures updated (add a drafted session entry and a
+  drafted dash to the aggregate fixture).
+
+**Tasks:**
+- [ ] Eligibility rule per #draft-engine (sessions/unattributed ≥1 file; dash rounds > 0 or
+      dirty worktree).
+- [ ] Delta broadcast throttled to ~4/s, always the accumulated text.
+- [ ] Engine ignores snapshot frames older than its last-processed (watch semantics make
+      this automatic — document it).
+
+**Tests:**
+- [ ] Rust integration (temp repo + in-memory ledger + fake streaming spawner + a hand-fed
+      watch channel, short quiet period): change → quiet → exactly one run → row persisted
+      → a second identical snapshot triggers NO second run (fingerprint gate); a change
+      mid-run aborts and re-runs (coalescing — the fake spawner blocks on a signal);
+      committing the changeset's files (shrinking it) produces a new fingerprint and a
+      fresh draft; dash entry composes the dash prompt (log + rounds), session entry the
+      session prompt.
+- [ ] `compose_snapshot` attaches persisted drafts only to eligible entries; fixture
+      round-trip tests updated on both sides ([P10]).
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast -p tugcast-core`
+- [ ] `cd tugdeck && bun test changeset && bunx tsc --noEmit`
+
+---
+
+#### Step 16f: Card draft UI + Summarize/Draft deletion {#step-16f}
+
+**Depends on:** #step-16c, #step-16e
+
+**Commit:** `feat(tugdeck,tugcast): the maintained draft on the card; Summarize and Draft retire`
+
+**References:** [P21] Maintained draft, [P24] Streaming/pinning, Spec S10, Milestone M03A,
+(#state-zone-mapping)
+
+**Artifacts:**
+- `tugdeck/src/lib/changeset-draft-store.ts`: app-level singleton on the
+  `changeset-verb-store.ts` pattern (CONTROL frame listener, `attach…` at boot,
+  `useSyncExternalStore` hook) overlaying `changeset_draft_state`/`changeset_draft_delta`
+  keyed `(project_dir, owner_kind, owner_id)`; a snapshot draft with newer `updated_at`
+  clears the overlay.
+- Entry body draft panel (`cards/changeset-card.tsx` + `.css`), above the commit controls:
+  a Bot-avatar row (the `side-question-overlay.tsx` mini-transcript styling — `Bot` icon,
+  `TugMarkdownBlock` for the rendered draft, `TugProgressIndicator` wave while the overlay
+  reads `drafting`, `BlockCopyButton`), a subtle "updating…" freshness treatment via
+  `data-state` + CSS ([L06]), and an error hint when the overlay reads `error` (stale
+  draft stays rendered). Below it, the commit message field becomes a **`TugTextarea`**
+  (substrate responders come with the component) pre-filled from the draft, with the
+  pristine/pinned rule and "Use latest draft" affordance per [P24]; Commit sends the
+  field. Clean fileless entries keep "No changes from this session"; a dash with rounds
+  shows its join-message draft (dash entries render the draft panel read-only — no commit
+  controls; committing a dash is M04's join).
+- **Deletions:** the Summarize button, the Draft button, and the summary info-sheet path in
+  `changeset-card.tsx`; `useChangesetSummarize` + summarize state/inflight maps in
+  `changeset-verb-store.ts`; the `changeset_summarize` verb, payload parser, sender, and
+  `do_changeset_summarize` in `agent_supervisor.rs` with their round-trip tests
+  (`make_summarize_harness` retargets to the engine tests or is deleted);
+  `ScribeKind::Summary` if it survived #step-16d. Warnings-are-errors sweeps any orphan.
+- at0228's commit leg re-verified against the `TugTextarea`
+  (`data-testid="changeset-commit-message"` moves with the control; `app.type` targets it
+  unchanged).
+
+**Tasks:**
+- [ ] `ScribeContext` ownership moves to the engine wiring; the supervisor keeps only
+      `start_draft_engine` (delete the `scribe: Option<ScribeContext>` field if the verb
+      was its last consumer).
+- [ ] No new app-tests for the draft loop (Test Plan policy); the panel's presence with a
+      seeded persisted draft MAY be asserted opportunistically in at0228 only if it adds
+      zero new legs — otherwise skip.
+
+**Tests:**
+- [ ] `cd tugdeck && bun test` (draft-store overlay unit tests: state/delta ingestion,
+      snapshot supersession) ; existing suites green after the deletions.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run` ; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test-build at0228-changeset-aggregate.test.ts`
+
+---
+
+#### Step 16g: M03A integration checkpoint {#step-16g}
+
+**Depends on:** #step-16c, #step-16f
+
+**Commit:** `N/A (verification only)`
+
+**References:** Milestone M03A, (#success-criteria)
+
+**Tasks:**
+- [ ] Live (human-tested per the Test Plan policy): a session writes files → the entry's
+      draft appears within quiet period + one generation, streaming visibly if watched;
+      further edits update it; an untouched entry never regenerates (watch the TugDevPanel
+      / process logs for scribe spawns); Commit with the maintained message → receipt →
+      the shrunken changeset drafts afresh; edit the field → a newer draft pins, "Use
+      latest draft" adopts it.
+- [ ] Live dash loop: `tugutil dash commit` a round → the dash entry's join-message draft
+      regenerates; the dash entry shows real inline diffs (round + dirt).
+- [ ] Restart tugcast / reopen the deck → drafts render from persistence with zero scribe
+      spawns.
+- [ ] Diff surfaces: inline per-file, inline whole-entry, pop-out Text-card diff mode
+      (descriptor reuse: popping the same diff twice activates the existing card), dev
+      card `/diff` sheet — all rendering through `TugDiffDocument`.
+
+**Tests:**
+- [ ] Full-suite pass.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run`
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test`
+
+---
+
 #### Step 17: tugdash-core + tugdash CLI extraction {#step-17}
 
 **Commit:** `feat(tugdash): extract dash into tugdash-core + tugdash CLI`
@@ -1695,6 +2422,9 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 **Tasks:**
 - [ ] Conflict path: on real (non-preview) conflict, leave a clean abort (restore pre-join
       state) plus the structured conflict list — never today's mid-merge dead end.
+- [ ] Default squash message = the dash's maintained draft when present ([P23], Spec S09 —
+      read via the ledger's `changeset_draft("dash", "tugdash/<name>", project_dir)`);
+      `--message` still overrides.
 
 **Tests:**
 - [ ] Scratch-repo matrix: each strategy lands the expected history; preview reports a
@@ -1748,7 +2478,8 @@ Milestone M01, (#attribution-pipeline, #replay-idempotency)
 - `changeset_join` verb (Spec S03) calling `tugdash-core`: preview and execute forms;
   responses carry the structured conflict list; workspace bump on completion.
 - Card dash sections gain Join/Release actions: Join opens a preview pane (conflict list or
-  clean bill) → confirm executes; on conflicts, a "Resolve with AI" affordance spawns a
+  clean bill, with the maintained dash draft pre-filled as the join message per [P23]) →
+  confirm executes; on conflicts, a "Resolve with AI" affordance spawns a
   session in the dash worktree via the existing `spawn_session` CONTROL verb with an initial
   prompt naming the conflicted files and the join intent (the session opens as a normal Dev
   card bound to the worktree).
@@ -1805,13 +2536,16 @@ tears down atomically.
 - [ ] Changeset card is the only git surface (git card gone), grouped by owner, sub-second
       on tool-driven changes (app-test + live).
 - [ ] Card can diff, draft a message, and commit exactly one changeset's files (app-test).
+- [ ] Every changeset entry with changes maintains its own ready-to-commit message —
+      fingerprint-gated, ledger-persisted, streaming to a visible card — and dash entries
+      diff inline like everything else (M03A: Rust suite + #step-16g live dogfood).
 - [ ] `tugdash` replaces `tugutil dash` everywhere; join preview/strategies/preflight/journal
       all demonstrated by the Step-19 test matrix.
 - [ ] All suites green: `cargo nextest run`, `bun test` (tugcode), `bunx tsc --noEmit`,
       `bunx vite build`, `just app-test`.
 
 **Acceptance tests:**
-- [ ] Step 7, 12, 12f, 16, 22 integration checkpoints.
+- [ ] Step 7, 12, 12f, 16, 16g, 22 integration checkpoints.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -1828,4 +2562,5 @@ tears down atomically.
 | M02 card read path | #step-12 |
 | M02A aggregate card | #step-12f |
 | M03 card actions | #step-16 |
+| M03A AI-driven card | #step-16g |
 | M04 tugdash + exit | #step-22 |
