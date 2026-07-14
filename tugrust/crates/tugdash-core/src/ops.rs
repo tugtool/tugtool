@@ -110,6 +110,10 @@ pub struct JoinOptions {
     pub preview: bool,
     /// Resume an interrupted join's teardown from the journal.
     pub continue_join: bool,
+    /// Land a pre-built candidate commit from the resolution ladder ([P31])
+    /// instead of integrating per `strategy`: fast-forward the base onto it
+    /// (staleness-guarded), then run the normal journaled teardown.
+    pub candidate: Option<String>,
 }
 
 /// Outcome of [`join`].
@@ -140,7 +144,7 @@ pub struct ReleaseOutcome {
 // --- git helpers -----------------------------------------------------------
 
 /// Run a git command in `dir`, returning its raw output.
-fn git_output(dir: &Path, args: &[&str]) -> Result<std::process::Output, String> {
+pub(crate) fn git_output(dir: &Path, args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -150,7 +154,7 @@ fn git_output(dir: &Path, args: &[&str]) -> Result<std::process::Output, String>
 }
 
 /// Run a git command in `dir`, returning trimmed stdout on success.
-fn git_stdout(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_stdout(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = git_output(dir, args)?;
     if !out.status.success() {
         return Err(format!(
@@ -163,7 +167,7 @@ fn git_stdout(dir: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 /// Read a single git config value, if present and non-empty.
-fn config_get(repo: &Path, key: &str) -> Option<String> {
+pub(crate) fn config_get(repo: &Path, key: &str) -> Option<String> {
     let out = git_output(repo, &["config", "--get", key]).ok()?;
     if !out.status.success() {
         return None;
@@ -172,7 +176,7 @@ fn config_get(repo: &Path, key: &str) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn branch_name(name: &str) -> String {
+pub(crate) fn branch_name(name: &str) -> String {
     format!("tugdash/{}", name)
 }
 
@@ -194,7 +198,7 @@ fn old_worktree_path(repo: &Path, name: &str) -> PathBuf {
 /// it exists (created there, or migrated), else the legacy `.tugtree/` path when
 /// that still holds it, else the new home (the creation target). So every verb
 /// operates on wherever the worktree actually is, migrated or not.
-fn worktree_path(repo: &Path, name: &str) -> PathBuf {
+pub(crate) fn worktree_path(repo: &Path, name: &str) -> PathBuf {
     let new = new_worktree_path(repo, name);
     if new.exists() {
         return new;
@@ -296,7 +300,7 @@ fn dash_instance_live(branch: &str) -> bool {
         .any(|profile| tugcore::instance::instance_tmux_live(&format!("{profile}-{slug}")))
 }
 
-fn branch_exists(repo: &Path, branch: &str) -> bool {
+pub(crate) fn branch_exists(repo: &Path, branch: &str) -> bool {
     git_stdout(repo, &["branch", "--list", branch])
         .map(|s| !s.is_empty())
         .unwrap_or(false)
@@ -384,7 +388,7 @@ fn remove_dash_worktree(repo: &Path, branch: &str, worktree: &Path, warnings: &m
 }
 
 /// Resolve a dash's base branch: git config first ([P03]), else detection.
-fn dash_base(repo: &Path, name: &str) -> Result<String, String> {
+pub(crate) fn dash_base(repo: &Path, name: &str) -> Result<String, String> {
     if let Some(base) = config_get(repo, &format!("branch.tugdash/{}.tugbase", name)) {
         return Ok(base);
     }
@@ -484,6 +488,9 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
+
+    // Enable rerere so recorded conflict resolutions replay on join ([P31]).
+    crate::resolve::ensure_rerere_config(&repo_root);
 
     // Record the base branch and description in git config.
     let _ = git_output(
@@ -738,7 +745,7 @@ fn clear_join_journal(repo: &Path, name: &str) {
 }
 
 /// Whether `git` here supports `git merge-tree --write-tree` (git ≥ 2.38).
-fn git_supports_merge_tree(repo: &Path) -> bool {
+pub(crate) fn git_supports_merge_tree(repo: &Path) -> bool {
     let out = git_stdout(repo, &["--version"]).unwrap_or_default();
     let ver = out.split_whitespace().nth(2).unwrap_or("");
     let mut parts = ver.split('.');
@@ -795,7 +802,7 @@ fn merge_tree_conflicts(repo: &Path, base: &str, branch: &str) -> Result<Vec<Str
 /// The dash's maintained draft ([P23], Spec S09) — the default join message
 /// when the caller supplies none. Read-only from `sessions.db`; any absence
 /// (no db, no table, no row) falls through to `None`.
-fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
+pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
     let db = tugcore::instance::sessions_db_path().or_else(|| {
         let base = dirs::data_dir()?;
         #[cfg(target_os = "macos")]
@@ -823,6 +830,53 @@ fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
     .filter(|m| !m.trim().is_empty())
 }
 
+/// The scoped integrate/join commit message: explicit override → maintained
+/// dash draft ([P23]) → the dash description → a bare fallback, always wrapped
+/// as `tugdash(<name>): …`. Shared by the strategy integrate and the resolution
+/// ladder's candidate commit so both speak the same voice.
+pub(crate) fn integrate_message(
+    repo: &Path,
+    name: &str,
+    branch: &str,
+    override_msg: Option<String>,
+) -> String {
+    let description = config_get(repo, &format!("branch.{}.description", branch));
+    let body = override_msg
+        .or_else(|| dash_draft_message(repo, branch))
+        .or(description)
+        .unwrap_or_else(|| "Dash work".to_string());
+    format!("tugdash({}): {}", name, body)
+}
+
+/// Auto-commit any outstanding changes in the dash worktree — FATAL on error
+/// ([P14]). A no-op when the worktree is absent or clean. Shared by `join_in`
+/// (before integrating) and the resolution ladder (before computing a candidate
+/// against the branch tip) so the tip always reflects the dash's real state.
+pub(crate) fn commit_worktree_dirt(worktree: &Path) -> Result<(), String> {
+    if !worktree.exists() {
+        return Ok(());
+    }
+    let dash_status = git_stdout(worktree, &["status", "--porcelain"])?;
+    if dash_status.is_empty() {
+        return Ok(());
+    }
+    let add = git_output(worktree, &["add", "-A"])?;
+    if !add.status.success() {
+        return Err(format!(
+            "join: git add in the dash worktree failed: {}",
+            String::from_utf8_lossy(&add.stderr).trim()
+        ));
+    }
+    let c = git_output(worktree, &["commit", "-m", "join: commit outstanding changes"])?;
+    if !c.status.success() {
+        return Err(format!(
+            "join: auto-commit in the dash worktree failed: {}",
+            String::from_utf8_lossy(&c.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 /// Join a dash into its base branch ([P14]): `--strategy squash|merge|rebase`,
 /// a `--preview` (in-memory `git merge-tree`, nothing touched), an
 /// intersection-aware preflight (base dirt blocks only when it overlaps the
@@ -830,10 +884,20 @@ fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
 /// list, and a journaled teardown resumable via `--continue`. The default
 /// squash/merge message is the maintained dash draft, else the description.
 pub fn join(name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
-    let mut warnings = Vec::new();
-
     let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+    join_in(&repo_root, name, opts)
+}
+
+/// Like [`join`], but against an explicit repo root instead of discovering it
+/// from the process cwd — for callers such as tugcast that serve many projects
+/// and must never depend on `current_dir`.
+pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
+    let repo_root = repo_root.to_path_buf();
+    let mut warnings = Vec::new();
     migrate_worktrees(&repo_root, &mut warnings);
+    // Pre-feature dashes get rerere enabled here so a recorded resolution
+    // replays on this and future joins ([P31]).
+    crate::resolve::ensure_rerere_config(&repo_root);
     let branch = branch_name(name);
     let worktree = worktree_path(&repo_root, name);
 
@@ -841,7 +905,6 @@ pub fn join(name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
         return Err(format!("Dash not found: {}", name));
     }
     let base_branch = dash_base(&repo_root, name)?;
-    let description = config_get(&repo_root, &format!("branch.{}.description", branch));
 
     // --continue: resume an interrupted teardown from the journal.
     if opts.continue_join {
@@ -928,28 +991,7 @@ pub fn join(name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
     }
 
     // Auto-commit outstanding dash-worktree changes — FATAL on error now ([P14]).
-    if worktree.exists() {
-        let dash_status = git_stdout(&worktree, &["status", "--porcelain"])?;
-        if !dash_status.is_empty() {
-            let add = git_output(&worktree, &["add", "-A"])?;
-            if !add.status.success() {
-                return Err(format!(
-                    "join: git add in the dash worktree failed: {}",
-                    String::from_utf8_lossy(&add.stderr).trim()
-                ));
-            }
-            let c = git_output(
-                &worktree,
-                &["commit", "-m", "join: commit outstanding changes"],
-            )?;
-            if !c.status.success() {
-                return Err(format!(
-                    "join: auto-commit in the dash worktree failed: {}",
-                    String::from_utf8_lossy(&c.stderr).trim()
-                ));
-            }
-        }
-    }
+    commit_worktree_dirt(&worktree)?;
 
     // Nothing to integrate (no commits past base) — release, don't join.
     let ahead = git_stdout(
@@ -966,14 +1008,32 @@ pub fn join(name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
         ));
     }
 
-    // The integrate message: explicit override → maintained draft → description.
-    let integrate_message = opts
-        .message
-        .clone()
-        .or_else(|| dash_draft_message(&repo_root, &branch))
-        .or(description)
-        .unwrap_or_else(|| "Dash work".to_string());
-    let final_msg = format!("tugdash({}): {}", name, integrate_message);
+    // Land a pre-built candidate from the resolution ladder ([P31]) instead of
+    // integrating per strategy: fast-forward the base onto it (git's `--ff-only`
+    // IS the staleness guard — a base that advanced past the candidate's base
+    // refuses to fast-forward), then run the same journaled teardown.
+    if let Some(candidate) = opts.candidate.clone() {
+        let ff = git_output(&repo_root, &["merge", "--ff-only", &candidate])?;
+        if !ff.status.success() {
+            return Err(format!(
+                "stale candidate: base '{}' advanced since the conflicts were resolved; re-resolve and try again ({})",
+                base_branch,
+                String::from_utf8_lossy(&ff.stderr).trim()
+            ));
+        }
+        let commit_hash = git_stdout(&repo_root, &["rev-parse", "HEAD"])?;
+        let journal = JoinJournal {
+            name: name.to_string(),
+            base_branch: base_branch.clone(),
+            strategy: opts.strategy.as_str().to_string(),
+            commit_hash,
+            phase: JoinPhase::Integrated,
+        };
+        write_join_journal(&repo_root, &journal)?;
+        return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
+    }
+
+    let final_msg = integrate_message(&repo_root, name, &branch, opts.message.clone());
 
     // Integrate per strategy. A conflict cleanly aborts (pre-join state
     // restored) and returns the structured conflict list — never a dead end.
@@ -1103,9 +1163,15 @@ fn finish_join_teardown(
 
 /// Release a dash: tear down its worktree + branch without merging.
 pub fn release(name: &str) -> Result<ReleaseOutcome, String> {
-    let mut warnings = Vec::new();
-
     let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+    release_in(&repo_root, name)
+}
+
+/// Like [`release`], but against an explicit repo root instead of the process
+/// cwd — for callers such as tugcast.
+pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String> {
+    let repo_root = repo_root.to_path_buf();
+    let mut warnings = Vec::new();
     migrate_worktrees(&repo_root, &mut warnings);
     let branch = branch_name(name);
     let worktree = worktree_path(&repo_root, name);
@@ -1262,6 +1328,17 @@ mod tests {
             .output()
             .unwrap();
         !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    }
+
+    fn run_git(repo: &Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
     }
 
     #[serial]
@@ -1537,6 +1614,103 @@ mod tests {
             dlog.contains("joined"),
             "dash-log should record join: {dlog}"
         );
+    }
+
+    /// The resolution ladder builds a candidate off to the side; `join_in` with
+    /// `candidate` fast-forwards the base onto it and tears the dash down
+    /// ([P31]). Uses the replay scenario: base advanced to the dash's first
+    /// round, so the squash conflicts but replay is clean.
+    #[serial]
+    #[test]
+    fn test_dash_join_lands_resolved_candidate() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+        // Baseline file the dash and main both evolve.
+        fs::write(repo.join("f.txt"), "A\n").unwrap();
+        run_git(repo, &["add", "-A"]);
+        run_git(repo, &["commit", "-m", "seed f"]);
+
+        create("cand", None).unwrap();
+        let worktree = repo.join(".tug/worktrees/cand");
+        fs::write(worktree.join("f.txt"), "B\n").unwrap();
+        commit("cand", "r1", None).unwrap();
+        fs::write(worktree.join("f.txt"), "C\n").unwrap();
+        commit("cand", "r2", None).unwrap();
+
+        // Main independently advances to the dash's first-round state.
+        fs::write(repo.join("f.txt"), "B\n").unwrap();
+        run_git(repo, &["commit", "-am", "main advances to B"]);
+
+        let outcome = crate::resolve::resolve_conflicts(repo, "cand", None).unwrap();
+        assert_eq!(outcome.shape, crate::resolve::JoinShape::Replay);
+        let candidate = outcome.candidate_commit.clone().expect("candidate");
+
+        let landed = join(
+            "cand",
+            JoinOptions {
+                candidate: Some(candidate),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(landed.commit_hash.is_some());
+        assert_eq!(fs::read_to_string(repo.join("f.txt")).unwrap(), "C\n");
+        assert!(!worktree.exists(), "worktree torn down");
+        assert!(!branch_present(repo, "tugdash/cand"), "branch deleted");
+        let dlog = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
+        assert!(dlog.contains("joined"));
+    }
+
+    /// A candidate built against a base head that has since moved must refuse to
+    /// land — git's own `--ff-only` is the staleness guard ([P31]).
+    #[serial]
+    #[test]
+    fn test_dash_join_stale_candidate_refused() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+        fs::write(repo.join("f.txt"), "A\n").unwrap();
+        run_git(repo, &["add", "-A"]);
+        run_git(repo, &["commit", "-m", "seed f"]);
+
+        create("cand", None).unwrap();
+        let worktree = repo.join(".tug/worktrees/cand");
+        fs::write(worktree.join("f.txt"), "B\n").unwrap();
+        commit("cand", "r1", None).unwrap();
+        fs::write(worktree.join("f.txt"), "C\n").unwrap();
+        commit("cand", "r2", None).unwrap();
+        fs::write(repo.join("f.txt"), "B\n").unwrap();
+        run_git(repo, &["commit", "-am", "main to B"]);
+
+        let candidate = crate::resolve::resolve_conflicts(repo, "cand", None)
+            .unwrap()
+            .candidate_commit
+            .expect("candidate");
+
+        // Base moves after the candidate was built.
+        fs::write(repo.join("other.txt"), "z\n").unwrap();
+        run_git(repo, &["add", "-A"]);
+        run_git(repo, &["commit", "-m", "base advances again"]);
+
+        let err = join(
+            "cand",
+            JoinOptions {
+                candidate: Some(candidate),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("stale candidate"), "got: {err}");
+        // Nothing torn down — the dash survives for a re-resolve.
+        assert!(worktree.exists(), "worktree intact after refusal");
+        assert!(branch_present(repo, "tugdash/cand"));
     }
 
     /// Regression: when git's own `worktree remove` refuses (in production, a

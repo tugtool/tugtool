@@ -322,6 +322,61 @@ pub fn compose_draft_prompt_unattributed(
 }
 
 // ---------------------------------------------------------------------------
+// AI file-merge prompt ([P32])
+// ---------------------------------------------------------------------------
+
+/// A conflicted file's three versions each truncate here — a giant file still
+/// fits the model context.
+const MERGE_VERSION_TRUNCATE_CHARS: usize = 60_000;
+
+fn merge_version(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    if text.chars().count() <= MERGE_VERSION_TRUNCATE_CHARS {
+        return text.into_owned();
+    }
+    let mut out: String = text.chars().take(MERGE_VERSION_TRUNCATE_CHARS).collect();
+    out.push_str("\n[truncated]");
+    out
+}
+
+/// Compose the AI file-merge prompt ([P32]): the three versions of one
+/// conflicted file (BASE ancestor / OURS target branch / THEIRS incoming dash)
+/// plus the dash's intent, asking for the merged body with **no conflict
+/// markers** and no surrounding prose or fences. The ladder validates the reply
+/// is marker-free before accepting it — a bad reply just leaves the file
+/// unresolved.
+pub fn compose_file_merge_prompt(
+    path: &str,
+    base: Option<&[u8]>,
+    ours: &[u8],
+    theirs: &[u8],
+    intent: &str,
+) -> String {
+    let mut p = format!(
+        "You are resolving a git merge conflict in the file `{path}`. Below are \
+         three versions: the common ancestor (BASE), the target branch's version \
+         (OURS), and the incoming dash's version (THEIRS). Produce the correctly \
+         merged file that preserves BOTH sides' intent.\n\n\
+         Output ONLY the full merged file content — no explanation, no markdown \
+         code fences, and ABSOLUTELY NO conflict markers (`<<<<<<<`, `=======`, \
+         `|||||||`, `>>>>>>>`). If you cannot merge the two safely, output nothing.\n"
+    );
+    if !intent.trim().is_empty() {
+        p.push_str("\nWhat the dash was doing (intent):\n");
+        p.push_str(intent.trim());
+        p.push('\n');
+    }
+    p.push_str("\n===== BASE =====\n");
+    p.push_str(&merge_version(base.unwrap_or(b"(file did not exist in the ancestor)")));
+    p.push_str("\n===== OURS =====\n");
+    p.push_str(&merge_version(ours));
+    p.push_str("\n===== THEIRS =====\n");
+    p.push_str(&merge_version(theirs));
+    p.push('\n');
+    p
+}
+
+// ---------------------------------------------------------------------------
 // Fingerprints (Spec S11 / [P22])
 // ---------------------------------------------------------------------------
 
@@ -623,6 +678,27 @@ mod tests {
         assert!(unattributed.contains("Unattributed changed files"));
         assert!(unattributed.contains(scoped_rule), "scoped-subject rule in unattributed prompt");
         assert!(!unattributed.contains("prompts since this changeset began"));
+    }
+
+    #[test]
+    fn file_merge_prompt_carries_versions_intent_and_no_marker_rule() {
+        let p = compose_file_merge_prompt(
+            "src/parser.rs",
+            Some(b"BASE-BODY"),
+            b"OURS-BODY",
+            b"THEIRS-BODY",
+            "rewrite the tokenizer",
+        );
+        assert!(p.contains("src/parser.rs"), "names the file");
+        assert!(p.contains("BASE-BODY") && p.contains("OURS-BODY") && p.contains("THEIRS-BODY"));
+        assert!(p.contains("rewrite the tokenizer"), "carries intent");
+        // The instruction enumerates the markers to avoid.
+        assert!(p.contains("<<<<<<<") && p.contains(">>>>>>>"));
+        assert!(p.contains("NO conflict markers"));
+
+        // An add/add conflict (no ancestor) still composes.
+        let no_base = compose_file_merge_prompt("f", None, b"O", b"T", "");
+        assert!(no_base.contains("did not exist"));
     }
 
     #[test]

@@ -83,8 +83,11 @@ import { useChangesetAll } from "@/lib/changeset-all-store";
 import {
   useChangesetCommit,
   useChangesetGitInit,
+  useChangesetJoin,
+  useChangesetRelease,
 } from "@/lib/changeset-verb-store";
 import { useChangesetDraft } from "@/lib/changeset-draft-store";
+import { useChangesetJoinResolve } from "@/lib/changeset-join-store";
 import {
   getEntryDiffStore,
   sweepEntryDiffStores,
@@ -880,6 +883,299 @@ interface SelectableFile {
  * reconciles by construction — vanished paths simply stop contributing.
  * Errors surface through `onError` (the card's TugAlert sheet).
  */
+/**
+ * Dash entry actions ([P14]/[P31]/[P32]): Join (preview → confirm, or conflict
+ * list → Resolve conflicts) and Release (with a discard confirm). The resolve
+ * flow runs the ladder and streams a `/btw`-style progress overlay
+ * (`useChangesetJoinResolve`); on full resolution it shows the resolved files
+ * badged by rung and a Join that lands the pre-built candidate; partial
+ * resolutions keep the honest conflict list. Join preview/execute are
+ * near-instant (only the AI rung is slow), so a `pending` shows a compact
+ * working line rather than swapping panes. Confirm-before-join is the preview
+ * gate; Release confirms inline. [L02] all state via the verb/join stores'
+ * `useSyncExternalStore` hooks; [L06] no appearance state in React.
+ */
+function DashActions({ item }: { item: DashItem }) {
+  const entryKey = item.id;
+  const projectRoot = item.project.project_dir;
+  const dashName = item.entry.display_name;
+  const base = item.entry.base;
+
+  const join = useChangesetJoin(entryKey);
+  const resolve = useChangesetJoinResolve(projectRoot, dashName);
+  const release = useChangesetRelease(entryKey);
+  const [confirmingRelease, setConfirmingRelease] = useState(false);
+
+  // A landed join drops the entry on the next aggregate bump; clear the overlay
+  // so a stale resolve pane never lingers if the drop lags.
+  useEffect(() => {
+    if (join.phase === "done") resolve.clear();
+  }, [join.phase, resolve]);
+
+  // ---- Resolve overlay (takes precedence while a resolve is in flight) ----
+  if (resolve.phase === "resolving") {
+    return (
+      <div className="changeset-dash-resolve" data-testid="changeset-dash-resolving">
+        <div className="changeset-dash-resolve-head">Resolving conflicts…</div>
+        {resolve.progress.map((p) => (
+          <div key={p.path} className="changeset-dash-resolve-file">
+            <span className="changeset-dash-resolve-path">{p.path}</span>
+            <span className="changeset-dash-resolve-rung">
+              {p.rung} · {p.status}
+            </span>
+            {p.text.length > 0 ? (
+              <pre className="changeset-dash-resolve-stream">{p.text}</pre>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (resolve.phase === "resolved") {
+    return (
+      <div className="changeset-dash-actions" data-testid="changeset-dash-resolved">
+        <div className="changeset-dash-resolve-summary">
+          Resolved {resolve.resolved.length} file
+          {resolve.resolved.length === 1 ? "" : "s"}
+          {resolve.shape === "replay" ? " (replayed rounds)" : ""}:
+        </div>
+        <ul className="changeset-dash-resolved-list">
+          {resolve.resolved.map((r) => (
+            <li key={r.path}>
+              <span className="changeset-dash-resolve-path">{r.path}</span>
+              <span className="changeset-dash-rung-badge">{r.resolvedBy}</span>
+            </li>
+          ))}
+        </ul>
+        {join.phase === "pending" ? (
+          <div className="changeset-dash-working">Joining…</div>
+        ) : (
+          <div className="changeset-dash-action-row">
+            <TugPushButton
+              size="sm"
+              emphasis="outlined"
+              role="accent"
+              disabled={resolve.candidateCommit === null}
+              widthStabilize={{ alternateLabel: "Joining…" }}
+              onClick={() =>
+                resolve.candidateCommit !== null &&
+                join.join(projectRoot, dashName, {
+                  preview: false,
+                  candidate: resolve.candidateCommit,
+                })
+              }
+              data-testid="changeset-dash-join-candidate"
+            >
+              Join
+            </TugPushButton>
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              role="action"
+              onClick={() => resolve.clear()}
+            >
+              Cancel
+            </TugPushButton>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (resolve.phase === "partial") {
+    return (
+      <div className="changeset-dash-actions" data-testid="changeset-dash-partial">
+        <div className="changeset-dash-resolve-summary">
+          Resolved {resolve.resolved.length}; {resolve.unresolved.length} still
+          conflicting:
+        </div>
+        <ul className="changeset-dash-conflict-list">
+          {resolve.unresolved.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+        <div className="changeset-dash-hint">
+          Resolve the rest in the dash worktree, then Join again.
+        </div>
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          role="action"
+          onClick={() => resolve.clear()}
+        >
+          Dismiss
+        </TugPushButton>
+      </div>
+    );
+  }
+  if (resolve.phase === "error") {
+    return (
+      <div className="changeset-dash-actions">
+        <div className="changeset-dash-error">Resolve failed: {resolve.error}</div>
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          role="action"
+          onClick={() => resolve.clear()}
+        >
+          Dismiss
+        </TugPushButton>
+      </div>
+    );
+  }
+
+  // ---- Join preview / execute ----
+  if (join.phase === "pending") {
+    return <div className="changeset-dash-working">Working…</div>;
+  }
+  if (join.phase === "preview" && join.conflicts.length === 0) {
+    return (
+      <div
+        className="changeset-dash-actions"
+        data-testid="changeset-dash-preview-clean"
+      >
+        <div className="changeset-dash-preview-msg">
+          Joins cleanly into {base}.
+        </div>
+        <div className="changeset-dash-action-row">
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            role="accent"
+            widthStabilize={{ alternateLabel: "Joining…" }}
+            onClick={() => join.join(projectRoot, dashName, { preview: false })}
+            data-testid="changeset-dash-confirm-join"
+          >
+            Confirm join
+          </TugPushButton>
+          <TugPushButton
+            size="sm"
+            emphasis="ghost"
+            role="action"
+            onClick={() => join.clear()}
+          >
+            Cancel
+          </TugPushButton>
+        </div>
+      </div>
+    );
+  }
+  if (
+    (join.phase === "preview" || join.phase === "conflict") &&
+    join.conflicts.length > 0
+  ) {
+    return (
+      <div
+        className="changeset-dash-actions"
+        data-testid="changeset-dash-preview-conflicts"
+      >
+        <div className="changeset-dash-preview-msg">
+          Conflicts in {join.conflicts.length} file
+          {join.conflicts.length === 1 ? "" : "s"}:
+        </div>
+        <ul className="changeset-dash-conflict-list">
+          {join.conflicts.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+        <div className="changeset-dash-action-row">
+          <TugPushButton
+            size="sm"
+            emphasis="outlined"
+            role="accent"
+            onClick={() => resolve.resolve()}
+            data-testid="changeset-dash-resolve"
+          >
+            Resolve conflicts
+          </TugPushButton>
+          <TugPushButton
+            size="sm"
+            emphasis="ghost"
+            role="action"
+            onClick={() => join.clear()}
+          >
+            Cancel
+          </TugPushButton>
+        </div>
+      </div>
+    );
+  }
+  if (join.phase === "error") {
+    return (
+      <div className="changeset-dash-actions">
+        <div className="changeset-dash-error">Join failed: {join.error}</div>
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          role="action"
+          onClick={() => join.clear()}
+        >
+          Dismiss
+        </TugPushButton>
+      </div>
+    );
+  }
+  if (join.phase === "done") {
+    // The entry drops on the next aggregate bump.
+    return null;
+  }
+
+  // ---- Idle: Join / Release ----
+  return (
+    <div className="changeset-dash-actions" data-testid="changeset-dash-idle">
+      <div className="changeset-dash-action-row">
+        <TugPushButton
+          size="sm"
+          emphasis="outlined"
+          role="accent"
+          onClick={() => join.join(projectRoot, dashName, { preview: true })}
+          data-testid="changeset-dash-join"
+        >
+          Join
+        </TugPushButton>
+        {confirmingRelease ? (
+          <>
+            <TugPushButton
+              size="sm"
+              emphasis="outlined"
+              role="danger"
+              disabled={release.phase === "pending"}
+              widthStabilize={{ alternateLabel: "Discarding…" }}
+              onClick={() => {
+                release.release(projectRoot, dashName);
+                setConfirmingRelease(false);
+              }}
+              data-testid="changeset-dash-release-confirm"
+            >
+              Discard dash
+            </TugPushButton>
+            <TugPushButton
+              size="sm"
+              emphasis="ghost"
+              role="action"
+              onClick={() => setConfirmingRelease(false)}
+            >
+              Keep
+            </TugPushButton>
+          </>
+        ) : (
+          <TugPushButton
+            size="sm"
+            emphasis="ghost"
+            role="action"
+            onClick={() => setConfirmingRelease(true)}
+            data-testid="changeset-dash-release"
+          >
+            Release
+          </TugPushButton>
+        )}
+      </div>
+      {release.phase === "error" ? (
+        <div className="changeset-dash-error">Release failed: {release.error}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function EntryBody({
   item,
   onError,
@@ -1219,10 +1515,13 @@ function EntryBody({
 
   if (files === null || files.length === 0) {
     return (
-      <div className="changeset-clean" role="status">
-        <CircleCheck size={14} />
-        {item.kind === "dash" ? "No files past base" : "No changes from this session"}
-      </div>
+      <>
+        <div className="changeset-clean" role="status">
+          <CircleCheck size={14} />
+          {item.kind === "dash" ? "No files past base" : "No changes from this session"}
+        </div>
+        {item.kind === "dash" ? <DashActions item={item} /> : null}
+      </>
     );
   }
 
@@ -1246,6 +1545,7 @@ function EntryBody({
         ))}
         {entryDiffActionsRow()}
         {commitComposer}
+        {item.kind === "dash" ? <DashActions item={item} /> : null}
       </div>
     </CommitScope>
   );

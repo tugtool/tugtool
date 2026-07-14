@@ -345,3 +345,105 @@
   font-size: 0.75rem;
   color: var(--tug7-element-tone-text-normal-danger-rest);
 }
+
+/* ---- Dash entry actions: Join / Release / resolve ([P14]/[P31]/[P32]) ---- */
+
+.changeset-dash-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0 2px;
+}
+
+.changeset-dash-action-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.changeset-dash-working {
+  padding: 8px 0 2px;
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-dash-preview-msg,
+.changeset-dash-resolve-summary {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+
+.changeset-dash-hint {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-dash-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+.changeset-dash-conflict-list,
+.changeset-dash-resolved-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+
+.changeset-dash-resolve-path {
+  font-family: var(--tug-font-mono, monospace);
+}
+
+.changeset-dash-rung-badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.12));
+}
+
+/* The /btw-style resolve progress overlay. */
+.changeset-dash-resolve {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 2px;
+}
+
+.changeset-dash-resolve-head {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+
+.changeset-dash-resolve-file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.changeset-dash-resolve-rung {
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.changeset-dash-resolve-stream {
+  margin: 2px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}

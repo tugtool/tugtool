@@ -22,6 +22,7 @@ import { attachSessionActivityStore } from "./lib/session-activity-store";
 import { attachChangesetAllStore } from "./lib/changeset-all-store";
 import { attachChangesetVerbStore } from "./lib/changeset-verb-store";
 import { attachChangesetDraftStore } from "./lib/changeset-draft-store";
+import { attachChangesetJoinStore } from "./lib/changeset-join-store";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { transportStateStore } from "./lib/transport-state-store";
 import {
@@ -438,6 +439,9 @@ if (!container) {
   // Wire the maintained-draft overlay store ([P24]): live streaming text +
   // freshness for the changeset card's draft panel, read via `useChangesetDraft`.
   attachChangesetDraftStore(connection);
+  // Wire the dash-join resolve overlay store (Spec S12, [P31]/[P32]): the
+  // /btw-style resolution progress + result, read via `useChangesetJoinResolve`.
+  attachChangesetJoinStore(connection);
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;

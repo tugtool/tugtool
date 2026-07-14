@@ -259,7 +259,7 @@ pub async fn build_git_diff_snapshot(
 /// uncommitted worktree dirt ([P19], #diff-descriptor-resolution).
 ///
 /// `repo_dir` is the checkout root (the workspace); `worktree_rel` is the
-/// dash worktree path relative to it (e.g. `.tugtree/tugdash__demo`). The diff
+/// dash worktree path relative to it (e.g. `.tug/worktrees/demo`). The diff
 /// itself is resolved by [`fetch_dash_diff`]: working tree vs. merge-base when
 /// the worktree exists (rounds + dirt), else committed rounds only. The
 /// snapshot's `base` field carries the human-readable range `<base>...<branch>`
@@ -987,7 +987,7 @@ Binary files a/img.png and b/img.png differ
     }
 
     /// A repo on `main` with a base commit, a `tugdash/demo` branch that adds
-    /// `round.txt` in a checked-out worktree under `.tugtree/`, tracked worktree
+    /// `round.txt` in a checked-out worktree under `.tug/worktrees/`, tracked worktree
     /// dirt on `keep.txt`, and a later main-only commit that must stay out of
     /// the dash range (merge-base semantics).
     async fn init_dash_fixture_repo() -> (TempDir, String) {
@@ -1000,10 +1000,10 @@ Binary files a/img.png and b/img.png differ
         git_in(&repo, &["add", "-A"]).await;
         git_in(&repo, &["commit", "-m", "base"]).await;
 
-        // The dash branch + its worktree under `.tugtree/`.
+        // The dash branch + its worktree under `.tug/worktrees/`.
         git_in(&repo, &["branch", "tugdash/demo"]).await;
         git_in(&repo, &["config", "branch.tugdash/demo.tugbase", "main"]).await;
-        let worktree_rel = ".tugtree/tugdash__demo";
+        let worktree_rel = ".tug/worktrees/demo";
         git_in(&repo, &["worktree", "add", worktree_rel, "tugdash/demo"]).await;
         let worktree_abs = repo.join(worktree_rel);
 

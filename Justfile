@@ -483,7 +483,7 @@ tail-replay:
 
 # Remedial resource cleanup — diagnose and release resources leaked by
 # crashed runs or out-of-band worktree deletion (`git worktree remove` /
-# `rm -rf` instead of `tugutil dash join|release` / `instance remove`).
+# `rm -rf` instead of `tugdash join|release` / `instance remove`).
 #
 # Everything released is cross-referenced against the LIVE instance
 # registry (a tmux server/session is kept iff one of its `cc-<id>`

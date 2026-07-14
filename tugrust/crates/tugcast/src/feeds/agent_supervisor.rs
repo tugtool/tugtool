@@ -1373,6 +1373,125 @@ fn parse_changeset_commit_payload(
     })
 }
 
+/// Parsed `changeset_join` request (Spec S03): the project checkout, the dash
+/// name, an optional strategy (`squash`|`merge`|`rebase`, default squash), an
+/// optional override message, and whether this is an in-memory `--preview`.
+struct ChangesetJoinPayload {
+    project_dir: String,
+    dash: String,
+    strategy: tugdash_core::JoinStrategy,
+    message: Option<String>,
+    preview: bool,
+    /// A pre-resolved candidate commit to land ([P31]/[P32], Spec S12): when
+    /// present the join fast-forwards the base onto it (staleness-guarded)
+    /// instead of integrating per strategy.
+    candidate: Option<String>,
+}
+
+fn parse_changeset_join_payload(payload: &[u8]) -> Result<ChangesetJoinPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let dash = value
+        .get("dash")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let strategy = match value.get("strategy").and_then(|v| v.as_str()) {
+        None | Some("squash") => tugdash_core::JoinStrategy::Squash,
+        Some("merge") => tugdash_core::JoinStrategy::Merge,
+        Some("rebase") => tugdash_core::JoinStrategy::Rebase,
+        Some(_) => return Err(ControlError::Malformed),
+    };
+    let message = value
+        .get("message")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+    let preview = value
+        .get("preview")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let candidate = value
+        .get("candidate")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+    Ok(ChangesetJoinPayload {
+        project_dir,
+        dash,
+        strategy,
+        message,
+        preview,
+        candidate,
+    })
+}
+
+/// Parsed `changeset_join_resolve` request (Spec S12): the project checkout and
+/// the dash name.
+struct ChangesetJoinResolvePayload {
+    project_dir: String,
+    dash: String,
+}
+
+fn parse_changeset_join_resolve_payload(
+    payload: &[u8],
+) -> Result<ChangesetJoinResolvePayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let dash = value
+        .get("dash")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(ChangesetJoinResolvePayload { project_dir, dash })
+}
+
+/// Parsed `changeset_release` request: the project checkout and the dash name.
+struct ChangesetReleasePayload {
+    project_dir: String,
+    dash: String,
+}
+
+fn parse_changeset_release_payload(
+    payload: &[u8],
+) -> Result<ChangesetReleasePayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let dash = value
+        .get("dash")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(ChangesetReleasePayload { project_dir, dash })
+}
+
 fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
@@ -2045,6 +2164,27 @@ impl AgentSupervisor {
             "changeset_commit" => match parse_changeset_commit_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_commit(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_join" => match parse_changeset_join_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_join(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_join_resolve" => match parse_changeset_join_resolve_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_join_resolve(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_release" => match parse_changeset_release_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_release(&parsed).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3195,6 +3335,302 @@ impl AgentSupervisor {
         let _ = control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("changeset_commit_err serializes"),
+        ));
+    }
+
+    /// Handle a `changeset_join` CONTROL request (Spec S03, [P14]): preview or
+    /// execute a dash join via `tugdash-core`.
+    ///
+    /// Guards match the other changeset verbs: `project_dir` must be a current
+    /// `WorkspaceRegistry` entry (never touch an arbitrary path off the wire)
+    /// and must be a git working tree. The join itself runs on a blocking
+    /// thread (synchronous git subprocesses). A `--preview` mutates nothing and
+    /// reports conflicts in memory; a real join that lands a commit fires the
+    /// process-global aggregate bump so the dash entry drops from the card on
+    /// the next recompute. Broadcasts `changeset_join_ok {…JoinOutcome}` /
+    /// `changeset_join_err {detail}`.
+    async fn do_changeset_join(&self, request: &ChangesetJoinPayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_join_err(&self.control_tx, project_dir, &request.dash, "not an open project");
+            return;
+        }
+        if !crate::feeds::git::is_within_git_worktree(dir).await {
+            Self::send_changeset_join_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not a git repository",
+            );
+            return;
+        }
+
+        let dir_owned = dir.to_path_buf();
+        let dash = request.dash.clone();
+        let opts = tugdash_core::JoinOptions {
+            strategy: request.strategy,
+            message: request.message.clone(),
+            preview: request.preview,
+            continue_join: false,
+            candidate: request.candidate.clone(),
+        };
+        let result =
+            tokio::task::spawn_blocking(move || tugdash_core::join_in(&dir_owned, &dash, opts))
+                .await;
+
+        match result {
+            Ok(Ok(outcome)) => {
+                // A real join that landed a commit shrinks the changeset set —
+                // refresh the card. A preview (or a conflict-aborted join)
+                // mutated nothing, so no bump.
+                if !outcome.previewed && outcome.commit_hash.is_some() {
+                    self.registry.changeset_all_bump().notify_one();
+                }
+                let body = serde_json::json!({
+                    "action": "changeset_join_ok",
+                    "project_dir": project_dir,
+                    "dash": request.dash,
+                    "name": outcome.name,
+                    "base_branch": outcome.base_branch,
+                    "strategy": outcome.strategy,
+                    "commit_hash": outcome.commit_hash,
+                    "conflicts": outcome.conflicts,
+                    "previewed": outcome.previewed,
+                    "warnings": outcome.warnings,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("changeset_join_ok serializes"),
+                ));
+            }
+            Ok(Err(detail)) => {
+                Self::send_changeset_join_err(&self.control_tx, project_dir, &request.dash, &detail);
+            }
+            Err(join_err) => {
+                Self::send_changeset_join_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &format!("join task failed: {join_err}"),
+                );
+            }
+        }
+    }
+
+    fn send_changeset_join_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        dash: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_join_err",
+            "project_dir": project_dir,
+            "dash": dash,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_join_err serializes"),
+        ));
+    }
+
+    /// Handle a `changeset_join_resolve` CONTROL request (Spec S12, [P31]/[P32]):
+    /// run the tugdash-core resolution ladder with the scribe AI rung injected,
+    /// streaming per-file progress. The ladder builds a candidate commit off to
+    /// the side; the card reviews it and lands it via a follow-up
+    /// `changeset_join {candidate}`. Broadcasts the terminal
+    /// `changeset_join_resolve_ok {…ResolveOutcome}` /
+    /// `changeset_join_resolve_err {detail}`.
+    async fn do_changeset_join_resolve(&self, request: &ChangesetJoinResolvePayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_join_resolve_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not an open project",
+            );
+            return;
+        }
+        if !crate::feeds::git::is_within_git_worktree(dir).await {
+            Self::send_changeset_join_resolve_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not a git repository",
+            );
+            return;
+        }
+
+        // Build the AI rung from the scribe context when one is configured;
+        // without it the ladder runs its algorithmic rungs only.
+        let merger = self.scribe.as_ref().map(|scribe| {
+            crate::feeds::join_resolve::ScribeFileMerger {
+                spawner: scribe.spawner.clone(),
+                model: scribe.model.clone(),
+                handle: tokio::runtime::Handle::current(),
+                control_tx: self.control_tx.clone(),
+                project_dir: project_dir.to_string(),
+                dash: request.dash.clone(),
+            }
+        });
+
+        let dir_owned = dir.to_path_buf();
+        let dash = request.dash.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let merger_ref = merger
+                .as_ref()
+                .map(|m| m as &dyn tugdash_core::FileMerger);
+            tugdash_core::resolve_conflicts(&dir_owned, &dash, merger_ref)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(outcome)) => {
+                let mut body = serde_json::to_value(&outcome)
+                    .unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(map) = body.as_object_mut() {
+                    map.insert(
+                        "action".into(),
+                        serde_json::Value::String("changeset_join_resolve_ok".into()),
+                    );
+                    map.insert(
+                        "project_dir".into(),
+                        serde_json::Value::String(project_dir.to_string()),
+                    );
+                    map.insert(
+                        "dash".into(),
+                        serde_json::Value::String(request.dash.clone()),
+                    );
+                }
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("changeset_join_resolve_ok serializes"),
+                ));
+            }
+            Ok(Err(detail)) => {
+                Self::send_changeset_join_resolve_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &detail,
+                );
+            }
+            Err(join_err) => {
+                Self::send_changeset_join_resolve_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &format!("resolve task failed: {join_err}"),
+                );
+            }
+        }
+    }
+
+    fn send_changeset_join_resolve_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        dash: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_join_resolve_err",
+            "project_dir": project_dir,
+            "dash": dash,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_join_resolve_err serializes"),
+        ));
+    }
+
+    /// Handle a `changeset_release` CONTROL request: discard a dash (worktree +
+    /// branch) without merging, via `tugdash-core`. Same guards as the join
+    /// verb; fires the aggregate bump so the dash entry disappears from the
+    /// card. Broadcasts `changeset_release_ok {…}` / `changeset_release_err`.
+    async fn do_changeset_release(&self, request: &ChangesetReleasePayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_release_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not an open project",
+            );
+            return;
+        }
+        if !crate::feeds::git::is_within_git_worktree(dir).await {
+            Self::send_changeset_release_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not a git repository",
+            );
+            return;
+        }
+
+        let dir_owned = dir.to_path_buf();
+        let dash = request.dash.clone();
+        let result =
+            tokio::task::spawn_blocking(move || tugdash_core::release_in(&dir_owned, &dash)).await;
+
+        match result {
+            Ok(Ok(outcome)) => {
+                self.registry.changeset_all_bump().notify_one();
+                let body = serde_json::json!({
+                    "action": "changeset_release_ok",
+                    "project_dir": project_dir,
+                    "dash": request.dash,
+                    "name": outcome.name,
+                    "warnings": outcome.warnings,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("changeset_release_ok serializes"),
+                ));
+            }
+            Ok(Err(detail)) => {
+                Self::send_changeset_release_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &detail,
+                );
+            }
+            Err(join_err) => {
+                Self::send_changeset_release_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &format!("release task failed: {join_err}"),
+                );
+            }
+        }
+    }
+
+    fn send_changeset_release_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        dash: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_release_err",
+            "project_dir": project_dir,
+            "dash": dash,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_release_err serializes"),
         ));
     }
 
@@ -5470,6 +5906,302 @@ mod tests {
         let unknown = next_control(&mut control_rx).await;
         assert_eq!(unknown["action"], "changeset_git_init_err");
         assert_eq!(unknown["detail"], "not an open project");
+
+        cancel.cancel();
+    }
+
+    #[tokio::test]
+    async fn changeset_join_previews_and_executes() {
+        use std::process::Command;
+
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            let status = Command::new("git")
+                .current_dir(dir)
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        }
+
+        async fn next_control(rx: &mut broadcast::Receiver<Frame>) -> serde_json::Value {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+                .await
+                .expect("control response within timeout")
+                .expect("sender alive");
+            serde_json::from_slice(&frame.payload).expect("control body is JSON")
+        }
+
+        fn join_payload(project_dir: &str, dash: &str, preview: bool) -> Vec<u8> {
+            serde_json::to_vec(&serde_json::json!({
+                "action": "changeset_join",
+                "project_dir": project_dir,
+                "dash": dash,
+                "preview": preview,
+            }))
+            .unwrap()
+        }
+
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+
+        // Scratch repo on main with a base commit and a `tugdash/demo` dash one
+        // commit ahead, checked out in a `.tug/worktrees/demo` worktree.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git(&root, &["init", "-b", "main"]);
+        git(&root, &["config", "user.name", "t"]);
+        git(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("keep.txt"), "base\n").unwrap();
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-m", "base"]);
+        git(&root, &["branch", "tugdash/demo"]);
+        git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
+        let wt = root.join(".tug/worktrees/demo");
+        git(&root, &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"]);
+        std::fs::write(wt.join("round.txt"), "round\n").unwrap();
+        git(&wt, &["add", "-A"]);
+        git(&wt, &["commit", "-m", "round 1"]);
+
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+
+        // Preview: clean, nothing mutated.
+        sup.handle_control("changeset_join", &join_payload(&root_str, "demo", true), 1)
+            .await;
+        let preview = next_control(&mut control_rx).await;
+        assert_eq!(preview["action"], "changeset_join_ok");
+        assert_eq!(preview["previewed"], true);
+        assert_eq!(
+            preview["conflicts"].as_array().unwrap().len(),
+            0,
+            "clean preview reports no conflicts"
+        );
+        assert!(preview["commit_hash"].is_null(), "preview lands no commit");
+        assert!(wt.exists(), "preview left the dash worktree in place");
+
+        // Execute: squash-lands the dash on main and tears the dash down.
+        sup.handle_control("changeset_join", &join_payload(&root_str, "demo", false), 1)
+            .await;
+        let done = next_control(&mut control_rx).await;
+        assert_eq!(done["action"], "changeset_join_ok");
+        assert_eq!(done["previewed"], false);
+        assert!(done["commit_hash"].is_string(), "real join lands a commit");
+        let tree = Command::new("git")
+            .current_dir(&root)
+            .args(["ls-tree", "--name-only", "HEAD"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&tree.stdout).contains("round.txt"),
+            "squash landed the dash file on main"
+        );
+        let branches = Command::new("git")
+            .current_dir(&root)
+            .args(["branch", "--list", "tugdash/demo"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&branches.stdout).trim().is_empty(),
+            "dash branch removed after join"
+        );
+
+        // Guard: a dir that is not a registered workspace is refused.
+        let other = tempfile::tempdir().unwrap();
+        let other_str = other
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        sup.handle_control("changeset_join", &join_payload(&other_str, "demo", true), 1)
+            .await;
+        let unknown = next_control(&mut control_rx).await;
+        assert_eq!(unknown["action"], "changeset_join_err");
+        assert_eq!(unknown["detail"], "not an open project");
+
+        cancel.cancel();
+    }
+
+    #[tokio::test]
+    async fn changeset_release_discards_dash() {
+        use std::process::Command;
+
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            let status = Command::new("git")
+                .current_dir(dir)
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        }
+
+        async fn next_control(rx: &mut broadcast::Receiver<Frame>) -> serde_json::Value {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+                .await
+                .expect("control response within timeout")
+                .expect("sender alive");
+            serde_json::from_slice(&frame.payload).expect("control body is JSON")
+        }
+
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git(&root, &["init", "-b", "main"]);
+        git(&root, &["config", "user.name", "t"]);
+        git(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("keep.txt"), "base\n").unwrap();
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-m", "base"]);
+        git(&root, &["branch", "tugdash/demo"]);
+        git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
+        let wt = root.join(".tug/worktrees/demo");
+        git(&root, &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"]);
+
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_release",
+            "project_dir": root_str,
+            "dash": "demo",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_release", &payload, 1).await;
+        let done = next_control(&mut control_rx).await;
+        assert_eq!(done["action"], "changeset_release_ok");
+        assert_eq!(done["name"], "demo");
+
+        let branches = Command::new("git")
+            .current_dir(&root)
+            .args(["branch", "--list", "tugdash/demo"])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&branches.stdout).trim().is_empty(),
+            "dash branch discarded"
+        );
+        assert!(!wt.exists(), "dash worktree discarded");
+
+        cancel.cancel();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn changeset_join_resolve_uses_scribe_and_reports_candidate() {
+        use std::process::Command;
+
+        // A fake scribe that returns a fixed clean merge and echoes it as one
+        // streamed delta — no real claude call.
+        struct FixedScribe(String);
+        impl crate::scribe::ScribeSpawner for FixedScribe {
+            fn run(
+                &self,
+                _model: String,
+                _prompt: String,
+                deltas: crate::scribe::ScribeDeltas,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<String, String>> + Send>,
+            > {
+                let s = self.0.clone();
+                Box::pin(async move {
+                    if let Some(tx) = deltas {
+                        let _ = tx.send(s.clone());
+                    }
+                    Ok(s)
+                })
+            }
+        }
+
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            let ok = Command::new("git")
+                .current_dir(dir)
+                .args(args)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?} failed");
+        }
+
+        let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+        sup.set_scribe(ScribeContext {
+            spawner: std::sync::Arc::new(FixedScribe("MERGED\n".to_string())),
+            model: std::sync::Arc::new(|| "haiku".to_string()),
+        });
+
+        // A dash whose one round overlaps the base's change → the algorithmic
+        // rungs can't resolve it, so the scribe AI rung does.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git(&root, &["init", "-b", "main"]);
+        git(&root, &["config", "user.name", "t"]);
+        git(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("f.txt"), "A\n").unwrap();
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-m", "base"]);
+        git(&root, &["branch", "tugdash/demo"]);
+        git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
+        git(&root, &["switch", "-q", "tugdash/demo"]);
+        std::fs::write(root.join("f.txt"), "B\n").unwrap();
+        git(&root, &["commit", "-am", "r1"]);
+        git(&root, &["switch", "-q", "main"]);
+        std::fs::write(root.join("f.txt"), "C\n").unwrap();
+        git(&root, &["commit", "-am", "main to C"]);
+
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_join_resolve",
+            "project_dir": root_str,
+            "dash": "demo",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_join_resolve", &payload, 1).await;
+
+        // Drain frames: at least one AI delta, then the terminal ok.
+        let mut saw_ai_delta = false;
+        let mut terminal: Option<serde_json::Value> = None;
+        for _ in 0..20 {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(10), control_rx.recv())
+                .await
+                .expect("a control frame")
+                .expect("sender alive");
+            let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            match body["action"].as_str() {
+                Some("changeset_join_resolve_delta") => {
+                    if body["rung"] == "ai" {
+                        saw_ai_delta = true;
+                    }
+                }
+                Some("changeset_join_resolve_ok") | Some("changeset_join_resolve_err") => {
+                    terminal = Some(body);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        let ok = terminal.expect("a terminal resolve frame");
+        assert_eq!(ok["action"], "changeset_join_resolve_ok", "resolved: {ok}");
+        assert!(saw_ai_delta, "an AI progress delta streamed");
+        assert!(ok["candidate_commit"].is_string(), "candidate built: {ok}");
+        assert_eq!(ok["shape"], "squash");
+        assert_eq!(ok["resolved"][0]["resolved_by"], "ai");
+        assert!(
+            ok["unresolved"].as_array().unwrap().is_empty(),
+            "nothing left unresolved"
+        );
+
+        // The candidate's f.txt carries the scribe's merged content.
+        let candidate = ok["candidate_commit"].as_str().unwrap();
+        let show = Command::new("git")
+            .current_dir(&root)
+            .args(["show", &format!("{candidate}:f.txt")])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&show.stdout), "MERGED\n");
 
         cancel.cancel();
     }

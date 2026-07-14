@@ -11,7 +11,7 @@ disallowed-tools: Task
 
 `dash` is the lightweight path for a quick task — a bug fix, a spike, a small
 feature, a prototype — that doesn't warrant a full plan. Like `implement`, it
-runs on an isolated `tugutil dash` worktree and **you — the main conversation — do the
+runs on an isolated `tugdash` worktree and **you — the main conversation — do the
 work directly**. No plan, no steps, no drift detection, and **no sub-agent**: you
 execute the user's instruction in-thread, commit each round, and stop before merge.
 
@@ -39,7 +39,7 @@ execute the user's instruction in-thread, commit each round, and stop before mer
 ### Create / continue
 
 ```bash
-tugutil dash create <name> --description "<first ~100 chars of the instruction>" --json
+tugdash create <name> --description "<first ~100 chars of the instruction>" --json
 ```
 Idempotent — returns the existing active dash if `<name>` already exists. **Capture the
 absolute `worktree` path** and `branch` from the response. `create` hydrates the fresh
@@ -58,7 +58,7 @@ pure-logic tests (`bun test <scope>` / `cargo nextest run`), and real-app tests 
 pipeline; `just app-test` ends in a greppable `VERDICT: PASS|FAIL` line). **Warnings
 are errors.** Then commit the round:
 ```bash
-tugutil dash commit <name> --message "<conventional commit>" --json <<'EOF'
+tugdash commit <name> --message "<conventional commit>" --json <<'EOF'
 {"instruction":"<the instruction>","summary":"<what you did + how verified>"}
 EOF
 ```
@@ -78,27 +78,31 @@ don't merge.
 ### Join (only on the user's word)
 
 ```bash
-tugutil dash join <name> [--message "…"]
+tugdash join <name> --preview --json
+tugdash join <name> [--message "…"]
 ```
-Squash-merges `tugdash/<name>` into the base branch and cleans up the worktree +
-branch. Preflight needs the base checkout's tracked files clean.
+Preview first: `--preview` runs the merge in memory and lists any conflicted paths
+without touching a tree. The plain form squash-merges `tugdash/<name>` into the base
+branch and cleans up the worktree + branch. The preflight only blocks on base dirt that
+intersects the dash's changed files; a join interrupted mid-teardown resumes with
+`tugdash join <name> --continue`.
 
 ### Release
 
 ```bash
-tugutil dash release <name>
+tugdash release <name>
 ```
 Discards the dash (worktree + branch) without merging.
 
 ### Status
 
-`tugutil dash show <name> --json` for one dash; `tugutil dash list --json` for all.
+`tugdash show <name> --json` for one dash; `tugdash list --json` for all.
 
 ## Guardrails
 
 - **No sub-agents.** You do the work in-thread.
 - **Never commit to the base branch.** All commits go to the dash worktree via
-  `tugutil dash commit`; `dash join` is the only path back, and only on the user's
+  `tugdash commit`; `dash join` is the only path back, and only on the user's
   say-so.
 - **Verify before every commit.** Warnings are errors.
 - **Right test, never a banned one.** Real-app tests via `just app-test` (never a

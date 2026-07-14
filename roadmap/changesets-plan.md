@@ -69,6 +69,11 @@ attribution data.
 - `tugdash join --preview` reports conflicts without touching the working tree;
   `tugdash join` succeeds when base dirt is disjoint from the dash's changed files (today's
   code refuses).
+- (M04) A conflicted join runs the resolution ladder before any human sees it: the
+  base-cherry-picked-a-round case lands via the replay probe, a previously-resolved
+  conflict replays via rerere, and an AI-resolved file is validated (no markers) and landed
+  only after explicit review-confirm from the card — all verified by the Step-21a/21b
+  scratch-repo + fake-spawner matrices, no checkout ever left half-merged.
 - (M03A) Every changeset entry with changes carries a maintained, convention-correct commit
   message that is current within the quiet period + one generation of the last change
   landing; an unchanged entry never re-spends a scribe call (fingerprint gate, verified by
@@ -90,7 +95,8 @@ attribution data.
 5. Pathspec-capable diff query; `changeset_commit` and `changeset_summarize` control verbs;
    `claude -p` scribe sidecar.
 6. `tugdash` binary + `tugdash-core` crate; `.tug/worktrees/` migration; join engine v2
-   (strategies, preview, intersection preflight, journaled teardown); tugplug skill cutover.
+   (strategies, preview, intersection preflight, journaled teardown); conflict resolution
+   ladder + review-gated AI file-merge ([P31]/[P32]); tugplug skill cutover.
 7. Git card + `GitFeed` retirement.
 8. (M03A) One diff capability, three surfaces: `TugDiffDocument` over the shared `DiffBlock`
    engine (card-inline, the dev card's `/diff` sheet, a Text-card diff mode via a new
@@ -117,8 +123,12 @@ attribution data.
 #### Dependencies / Prerequisites {#dependencies}
 
 - git ≥ 2.38 on the host for `git merge-tree --write-tree` (dev machine has 2.53; `tugdash`
-  must degrade with a clear error below that).
+  must degrade with a clear error below that). The resolution ladder's replay probe
+  additionally needs `merge-tree --merge-base` (git ≥ 2.40) — below that the probe rung is
+  skipped, the rest of the ladder still runs ([P31]).
 - claude CLI on PATH (already a hard Tug dependency) for the scribe sidecar.
+- `mergiraf` on PATH is optional (structured-merge rung, [P31]) — absence skips the rung;
+  never bundled (AGPL).
 - Existing infrastructure: `SessionLedger` (`tugrust/crates/tugcast/src/session_ledger.rs`),
   agent bridge relay loop (`tugrust/crates/tugcast/src/feeds/agent_bridge.rs`),
   `WorkspaceRegistry`/`GitFeed` (`tugrust/crates/tugcast/src/feeds/workspace_registry.rs`,
@@ -418,7 +428,7 @@ loss, dead-end conflicts, "commit or stash first" false positives, and non-atomi
 `run_dash_join`) becomes a hard error.
 
 **Implications:** Conflict output is structured (`--json` lists conflicted paths) so the card
-can render it and offer AI-assisted resolution ([#step-21]).
+can render it and offer ladder + AI-assisted resolution ([P31]/[P32], [#step-21b]/[#step-21c]).
 
 #### [P15] Commit-from-card stages exactly the changeset's files (DECIDED) {#p15-card-commit}
 
@@ -598,7 +608,7 @@ global aggregate bump after persisting so the card refreshes immediately.
 **Decision:** A dash entry's maintained draft is composed as the dash's eventual
 **squash/join commit message**: from `git log <base>..<branch>` (round subjects/bodies), the
 dash-log's per-round instruction/summary metadata, and the merge-base…branch diff. M04's
-join engine v2 (#step-19, #step-21) will consume the maintained draft as the default squash
+join engine v2 (#step-19, #step-21c) will consume the maintained draft as the default squash
 message — this forward dependency is load-bearing; do not shape the dash prompt as a mere
 status summary. Dash-log access reads the well-known path directly for now:
 `project_state_dir(repo_root)/dash-log.md` (`tugutil-core/src/paths.rs`; line format
@@ -779,6 +789,91 @@ commit-ready without hand-editing.
 **Implications:** Rust-only step; verified by the fake-`ScribeSpawner` composer tests (never by
 asserting model prose). Pairs with the `push_voice_section` recent-subjects hint that already
 seeds voice from real `git log` subjects.
+
+#### [P31] Join conflicts resolve through an off-to-the-side escalation ladder (DECIDED) {#p31-resolution-ladder}
+
+**Decision:** A conflicted join is not a dead end and not a hand-off — `tugdash-core` gains a
+**resolution ladder** that works the conflict as hard as possible before any AI or human sees
+it, and the whole thing runs **off to the side**: the join commit is built beside the user's
+checkouts (resolved blobs → `git hash-object -w` → tree patched via `mktree` → `commit-tree`
+with base as parent) and landed by fast-forwarding base onto it. No checkout is ever
+half-merged; abort is free at every rung. The rungs, in order:
+
+1. **Replay probe.** The conflicts `git merge-tree` reports are survivors of a full ORT
+   content-level merge of the *cumulative* diff. Replaying the dash's rounds one at a time
+   gives ORT a precise base per step and frequently auto-resolves what the one-shot squash
+   cannot (the classic case: base already cherry-picked or hand-applied part of the dash's
+   work). The probe is **in-memory per round**: `git merge-tree --write-tree
+   --merge-base=<round^> <tip> <round>` + `commit-tree` builds the replayed chain without
+   touching any checkout (the existing Rebase strategy's base-worktree cherry-pick is NOT
+   reused — it dirties base mid-probe). `--merge-base` needs **git ≥ 2.40** — below that
+   the rung is skipped (same guard style as `git_supports_merge_tree`). If the replay is
+   fully clean, the join lands **as the replayed rounds** — the history-shape change
+   (linear rounds instead of one squash) is accepted silently (user decision; `--strategy`
+   still forces a shape explicitly).
+2. **Recorded resolutions (`rerere`).** `rerere.enabled` + `rerere.autoUpdate` are set to
+   true for dash repos (user decision) — `tugdash create`/`join` set them on the repo.
+   Recordings come from two real sources: manual base-into-dash merges inside dash
+   worktrees (worktrees share `.git`, so the `rr-cache` is shared with the base checkout),
+   and **the ladder recording its own driver/AI resolutions** after validation — so an
+   identical future conflict skips straight past the expensive rungs. Application requires
+   a merge-in-progress state (rerere cannot run on bare blobs), so this rung runs in a
+   **scratch detached worktree**: `git worktree add --detach`, merge, harvest the
+   rerere-resolved files, remove the scratch — the user's checkouts stay untouched.
+3. **Per-file re-merge.** `git merge-file` retries on the three blob stages with
+   `zdiff3`/histogram settings — occasionally shrinks or eliminates conflicts the default
+   xdiff flags.
+4. **Structured merge (shell-out seam, now — user decision).** A per-file merge-driver seam
+   that invokes `mergiraf` (AST-aware structured merge, Rust CLI) on the three stages as
+   temp files **when found on PATH** — resolving the classic false conflicts (two functions
+   added at the same spot, both sides extending an import list). Never bundled (AGPL);
+   absence just skips the rung. The seam is generic (configured command, mergiraf the
+   default) so other drivers can slot in.
+5. **AI file-merge ([P32]).** Whatever survives 1–4 is genuinely overlapping intent.
+
+Every rung's outcome is recorded per file (`resolved_by: replay|rerere|merge-file|driver|ai`)
+so the CLI `--json` and the card can report exactly what happened. **Non-content conflicts**
+(delete/modify, binary, mode) short-circuit past the text rungs (3–5) straight to
+`unresolved` — text tools never guess at structure. A candidate commit is landed only if
+its parent still equals the base head at land time (staleness guard — base moved ⇒
+re-resolve).
+
+**Rationale:** User decision (three-way design discussion, settled): the join engine must
+work *very hard* algorithmically before resorting to AI, and the AI rung must not be a
+hand-off to a full session. `merge-tree --write-tree` already hands us the candidate tree
+and the stage-1/2/3 blobs per conflicted path — building the finished commit off to the
+side is the mechanical insight that makes every rung safe and the journal trivial.
+
+**Implications:** `tugdash join --resolve` runs the ladder from the CLI; the
+`changeset_join_resolve` verb (Spec S12) runs it for the card. Step 19's clean-abort
+conflict path survives as the no-`--resolve` behavior and the ladder's own last resort.
+
+#### [P32] The AI rung is a per-file scribe merge with a /btw-shaped overlay — never a Dev card (DECIDED) {#p32-ai-file-merge}
+
+**Decision:** AI conflict resolution is a **headless, per-file, stateless** task on the
+existing `ScribeSpawner` seam ([P11]): for each file the ladder could not resolve, tugcast
+spawns `claude -p` with the three versions (base/ours/theirs) plus intent context we already
+hold — the dash's maintained join draft ([P23]) and its round subjects — and asks for the
+merged file. The output passes **deterministic validation** (no conflict markers, non-empty;
+cheap parse checks where available) or the file stays honestly unresolved. Progress streams
+over CONTROL (`changeset_join_resolve_delta`, Spec S12) into a small **`/btw`-style overlay**
+on the card's dash entry — mini-transcript feel, overlay-only, no Dev card, no session, no
+transcript ink. The resolved result is **never auto-committed**: the join preview flips to a
+reviewable resolved diff (per-file inline `DiffBlock`s via the range descriptor against the
+candidate commit, each badged with its `resolved_by` rung) and **Join** lands the pre-built
+commit only on explicit confirm. Purely-algorithmic resolutions ride the same review gate.
+
+**Rationale:** User decision — the original Step-21 gesture ("Resolve with AI" spawns a
+session in the dash worktree) put the burden back on the user and required new
+prompt-seeding plumbing through the compiled tugcode binary; the actual problem ("merge
+three versions of one file") is exactly scribe-shaped, and the streaming-overlay UX
+precedent ([P24], the `/btw` overlay) already exists.
+
+**Implications:** Supersedes Step 21's `spawn_session`-based conflict affordance (deleted —
+no session is ever spawned for a join). `ScribeSpawner` gains a file-merge prompt composer
+(tested with the fake spawner, never by asserting model prose); per-file timeout matches the
+draft engine's. The card needs a small join-resolve overlay store
+(`changeset-join-store.ts`) keyed `(project_dir, dash)`.
 
 ---
 
@@ -1199,6 +1294,34 @@ commit message only — the summary kind is gone):
   diff (same truncation) + the same git-log voice subjects.
 - **unattributed:** the ask + diff + file list + voice subjects only (no session context).
 
+**Spec S12: `changeset_join_resolve` verb + progress deltas** {#s12-join-resolve}
+
+Handled in `AgentSupervisor::handle_control` beside the Spec S03 verbs; the ladder itself
+lives in `tugdash-core` ([P31]) with the AI rung injected by tugcast ([P32]):
+
+- `changeset_join_resolve {project_dir, dash}` — run the resolution ladder against the
+  dash's current conflict set. Guards match the other changeset verbs (registered
+  workspace + git worktree). Runs the join engine's auto-commit preamble first
+  (outstanding dash-worktree dirt is committed, as the execute path does) so the conflict
+  set and the candidate are computed against the true branch tip.
+- Progress: `changeset_join_resolve_delta {project_dir, dash, path, rung, status}` per
+  file/rung transition (`status: trying|resolved|unresolved`), the `/btw`-overlay feed.
+- Terminal: `changeset_join_resolve_ok {project_dir, dash, resolved: [{path, resolved_by}],
+  unresolved: [path…], candidate_commit, shape: "squash"|"replay"}` |
+  `changeset_join_resolve_err {project_dir, dash, detail}`. `candidate_commit` is present
+  when every conflict resolved (the pre-built join commit, or the replayed head for the
+  replay shape); absent when any file stayed unresolved.
+- Landing: `changeset_join {…, candidate: <sha>}` — the execute form gains an optional
+  `candidate`; when present the join fast-forwards base onto it **iff** the candidate's
+  parent (or replay base) still equals the base head (staleness guard, [P31]); a stale
+  candidate returns `changeset_join_err {detail: "stale candidate…"}` and the card
+  re-resolves. Candidate landing enters the existing `JoinJournal` →
+  `finish_join_teardown` path (worktree removal, branch delete, dash-log "joined" line,
+  resumable via `--continue`) — a landed candidate always tears the dash down.
+
+CLI mirror: `tugdash join --resolve [--json]` runs ladder + land in one command (same
+staleness guard between build and land, trivially satisfied in-process).
+
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
 | State | Zone | Mechanism | Law |
@@ -1216,6 +1339,8 @@ commit message only — the summary kind is gone):
 | Inline diff expansion (per file / per entry) (M03A) | local-data (ephemeral UI) | `useState` in the entry body | — |
 | Draft live overlay: state + streaming text (M03A) | local-data (external) | `changeset-draft-store.ts` (CONTROL frames) + `useSyncExternalStore` | [L02] |
 | Draft message field + user-edit pin (M03A) | local-data (ephemeral UI) | `useState` (`TugTextarea` value + pristine flag; re-seeds from a newer draft only while pristine, [P24]) | — |
+| Join/Release verb round-trips (M04) | local-data (external, async verb round-trip) | `changeset-verb-store.ts` join/release state + `useSyncExternalStore` | [L02] |
+| Join-resolve progress overlay + resolved result (M04) | local-data (external) | `changeset-join-store.ts` (CONTROL deltas, Spec S12) + `useSyncExternalStore` | [L02] |
 | Persisted draft text (M03A) | server-owned | rides the aggregate snapshot (Spec S10); persisted in sessions.db, never client storage | [L02] |
 | Text-card diff mode descriptor (M03A) | structure | card initial-content channel (the open-file seeding path) + descriptor-keyed open registry | — |
 | Commit-message field text + pristine/pin flag (M03B) | local-data (ephemeral UI) | `useState` mirroring the `TugMessageEditor` CM6 doc out via `updateListener`; `restoreState()` re-seeds only while pristine ([P24], [P26], [P28]) | [L11] |
@@ -1409,9 +1534,11 @@ separate responder registration ([P26]).
 | #step-17 | tugdash-core + tugdash CLI extraction | done | `849af2cca` |
 | #step-18 | .tug/worktrees home + migration | done | `903e76cc3` |
 | #step-19 | Join engine v2 | done | `5e527b8b5` |
-| #step-20 | Skill + packaging cutover | pending | — |
-| #step-21 | Card dash integration + AI conflict assist | pending | — |
-| #step-22 | M04 / phase exit checkpoint | pending | — |
+| #step-20 | Skill + packaging cutover | done | `42b03f023` |
+| #step-21a | Join resolution ladder in tugdash-core | done | (this round) |
+| #step-21b | AI file-merge resolver + changeset_join_resolve verb | done | (this round) |
+| #step-21c | Card dash UX — Join/Release, preview, resolve overlay, review-confirm | done | (this round) |
+| #step-22 | M04 / phase exit checkpoint | done | (this round; docs + verification) |
 
 **Milestone M01: Attribution engine** {#m01-attribution} — steps 1–7.
 **Milestone M02: Changeset feed + read-only card** {#m02-card} — steps 8–12.
@@ -3069,30 +3196,120 @@ Spec S10, Milestone M03B, (#state-zone-mapping)
 
 ---
 
-#### Step 21: Card dash integration + AI conflict assist {#step-21}
+#### Step 21a: Join resolution ladder in tugdash-core {#step-21a}
 
-**Depends on:** #step-14, #step-19, #step-20
+**Depends on:** #step-19
 
-**Commit:** `feat(tugcast,tugdeck): join dashes from the changeset card with preview and AI assist`
+**Commit:** `feat(tugdash): conflict resolution ladder — replay probe, rerere, re-merge, driver seam`
 
-**References:** [P14] Join v2, [P11] Scribe (sidecar precedent), Spec S03, Milestone M04
+**References:** [P31] Resolution ladder, [P14] Join v2, Spec S12, Milestone M04
 
 **Artifacts:**
-- `changeset_join` verb (Spec S03) calling `tugdash-core`: preview and execute forms;
-  responses carry the structured conflict list; workspace bump on completion.
-- Card dash sections gain Join/Release actions: Join opens a preview pane (conflict list or
-  clean bill, with the maintained dash draft pre-filled as the join message per [P23]) →
-  confirm executes; on conflicts, a "Resolve with AI" affordance spawns a
-  session in the dash worktree via the existing `spawn_session` CONTROL verb with an initial
-  prompt naming the conflicted files and the join intent (the session opens as a normal Dev
-  card bound to the worktree).
-
-**Tasks:**
-- [ ] Confirm-before-join (hard-to-reverse action); width-stabilized action buttons.
+- Ladder module in `tugdash-core` over the `merge-tree` stage-1/2/3 blobs (the parser
+  drops today's `--name-only` and reads the `<mode> <oid> <stage>\t<path>` stage lines,
+  `-z`-delimited): replay probe — in-memory per round via `merge-tree
+  --merge-base=<round^>` + `commit-tree`, gated on git ≥ 2.40 (rung skipped below; never
+  the base-worktree cherry-pick), clean replay ⇒ the join lands as the replayed rounds —
+  shape change accepted ([P31]); per-file rungs rerere → `git merge-file`
+  (zdiff3/histogram) → structured-merge driver seam (mergiraf when on PATH, three stages
+  as temp files **carrying the real filename's extension** — its language detection is
+  extension-based; generic configured-command seam, never bundled). Per-file
+  `resolved_by` outcomes.
+- **Non-content conflicts** (delete/modify, binary, mode) short-circuit to `unresolved`
+  before any text rung ([P31]).
+- rerere mechanics per [P31]: `rerere.enabled` + `rerere.autoUpdate` set by
+  `create`/`join`; the rerere rung applies in a scratch detached worktree (add-detach →
+  merge → harvest → remove); validated driver/AI resolutions are recorded into the shared
+  `rr-cache` so identical future conflicts skip the expensive rungs.
+- Candidate-commit builder: resolved blobs `hash-object -w` → `mktree` patch →
+  `commit-tree` with base parent; land = ff base onto candidate with the staleness guard
+  (candidate parent — or replay base — == base head at land time). No checkout is ever
+  half-merged.
+- CLI: `tugdash join --resolve [--json]` runs ladder + land; `--json` reports per-file
+  rung outcomes; unresolved files keep Step 19's clean abort + structured list.
 
 **Tests:**
-- [ ] Rust: verb preview/execute round trips on a scratch repo.
+- [ ] Scratch-repo matrix: base-cherry-picked-a-round conflict resolves via the replay
+      probe (and lands the replay shape); a recorded rerere resolution replays on re-join
+      (and a ladder-recorded resolution replays without re-running the driver); a
+      marker-shrinking case resolves via merge-file retry; the driver rung is exercised
+      via a stub driver command (mergiraf itself skipped when absent); a delete/modify
+      conflict short-circuits to unresolved; an unresolvable overlap still cleanly aborts
+      with the list; a stale candidate refuses to land.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugdash -p tugdash-core`
+
+---
+
+#### Step 21b: AI file-merge resolver + changeset_join_resolve verb {#step-21b}
+
+**Depends on:** #step-21a
+
+**Commit:** `feat(tugcast): scribe file-merge rung + changeset_join_resolve with streamed progress`
+
+**References:** [P32] AI file-merge, [P31] Resolution ladder, [P11] Scribe, Spec S12,
+Milestone M04
+
+**Artifacts:**
+- File-merge prompt composer in `tugcast/src/scribe.rs`: base/ours/theirs + the dash's
+  maintained join draft ([P23]) + round subjects as intent context; deterministic output
+  validation (no conflict markers, non-empty); per-file timeout matching the draft engine.
+- `changeset_join_resolve` verb per Spec S12: runs join's **auto-commit preamble first**
+  (outstanding dash-worktree dirt committed, exactly as the execute path does — else the
+  candidate is stale the moment it's built), then the tugdash-core ladder with the AI
+  rung injected; `changeset_join_resolve_delta` per file/rung transition; terminal
+  ok/err with `resolved`/`unresolved`/`candidate_commit`/`shape`. One in-flight resolve
+  per `(project_dir, dash)`; a newer request supersedes (the draft engine's coalescing
+  posture).
+- `changeset_join` execute form gains the optional `candidate` (ff-land with staleness
+  guard, Spec S12) — landing routes through the existing `JoinJournal` →
+  `finish_join_teardown` path (worktree removal, branch delete, dash-log "joined" line,
+  `--continue` resumability), never a bare ref move.
+
+**Tests:**
+- [ ] Fake-`ScribeSpawner`: composer carries the three versions + intent sections;
+      a marker-bearing or empty scribe reply leaves the file unresolved; delta sequence
+      and terminal shapes assert on a manufactured two-conflict repo (one file resolved by
+      the fake scribe, one left unresolved).
+- [ ] Candidate land round-trip: resolve → `changeset_join {candidate}` lands it; a moved
+      base head refuses with the stale detail.
+
+**Checkpoint:**
+- [ ] `cd tugrust && cargo nextest run -p tugcast -p tugdash-core`
+
+---
+
+#### Step 21c: Card dash UX — Join/Release, preview, resolve overlay, review-confirm {#step-21c}
+
+**Depends on:** #step-14, #step-20, #step-21b
+
+**Commit:** `feat(tugcast,tugdeck): join dashes from the changeset card — preview, ladder resolve, review`
+
+**References:** [P32] AI file-merge, [P31] Resolution ladder, [P14] Join v2, Spec S03,
+Spec S12, Milestone M04
+
+**Artifacts:**
+- `changeset_join` / `changeset_release` verbs (Spec S03) + the client verb-store round
+  trips (substrate landed ahead of this step alongside the Step-20 round).
+- Card dash entries gain Join/Release actions: Join runs the preview → a clean bill shows
+  the maintained dash draft ([P23]) as the join message with a confirm-to-join; conflicts
+  show the structured list with a **Resolve conflicts** affordance.
+- Resolve flow: `changeset_join_resolve` + the `/btw`-style progress overlay
+  (`changeset-join-store.ts` over the Spec S12 deltas); on full resolution the pane flips
+  to the reviewable resolved diff — per-file inline `DiffBlock`s via the range descriptor
+  against the candidate commit, badged with `resolved_by` — and **Join** lands the
+  candidate on explicit confirm. Unresolved files keep the honest conflict list.
+- Confirm-before-join (hard-to-reverse action); width-stabilized action buttons.
+
+**Tasks:**
+- [ ] Release asks for confirmation too (discards work).
+
+**Tests:**
+- [ ] Rust: verb preview/execute round trips on a scratch repo (landed with the substrate).
 - [ ] App-test: card joins a clean dash end-to-end; conflicted preview renders the list.
+      (The resolve flow's scribe rung is covered by the Step-21b fake-spawner tests — the
+      app-test does not spend a real claude call.)
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run` ; `cd tugdeck && bunx tsc --noEmit && bunx vite build`
@@ -3102,7 +3319,7 @@ Spec S10, Milestone M03B, (#state-zone-mapping)
 
 #### Step 22: M04 / phase exit checkpoint {#step-22}
 
-**Depends on:** #step-18, #step-19, #step-20, #step-21
+**Depends on:** #step-18, #step-19, #step-20, #step-21a, #step-21b, #step-21c
 
 **Commit:** `N/A (verification only)`
 
@@ -3147,7 +3364,9 @@ tears down atomically.
       `TugMessageEditor`, all diff `+/−` counts monochrome — and drafts carry a scoped
       commit-subject (M03B: bun/tsc/vite + at0104/at0228 + #step-16n live dogfood).
 - [ ] `tugdash` replaces `tugutil dash` everywhere; join preview/strategies/preflight/journal
-      all demonstrated by the Step-19 test matrix.
+      all demonstrated by the Step-19 test matrix; the conflict resolution ladder and its
+      review-gated AI rung demonstrated by the Step-21a/21b matrices and the card flow
+      ([P31]/[P32]).
 - [ ] All suites green: `cargo nextest run`, `bun test` (tugcode), `bunx tsc --noEmit`,
       `bunx vite build`, `just app-test`.
 

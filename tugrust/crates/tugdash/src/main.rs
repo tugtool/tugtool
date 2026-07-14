@@ -12,13 +12,13 @@ use serde::Serialize;
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
 
-use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, ops};
+use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, ops, resolve};
 
 const SCHEMA_VERSION: &str = "1";
 
 /// The `--json` envelope — identical shape to `tugutil`'s `JsonResponse`, so
 /// the commit/implement skills parse `tugdash --json` exactly as they parsed
-/// `tugutil dash --json`.
+/// `tugdash --json`.
 #[derive(Serialize)]
 struct JsonResponse<T> {
     schema_version: String,
@@ -120,6 +120,10 @@ enum Command {
         /// Resume an interrupted join's teardown from the journal.
         #[arg(long = "continue")]
         continue_join: bool,
+        /// Run the conflict resolution ladder ([P31]) — replay probe, rerere,
+        /// re-merge, and a structured-merge driver — then land the result.
+        #[arg(long)]
+        resolve: bool,
     },
     /// Release a dash: discard its worktree + branch without merging.
     Release {
@@ -149,6 +153,15 @@ fn main() -> ExitCode {
             strategy,
             preview,
             continue_join,
+            resolve,
+        } if resolve => run_join_resolve(&name, message, strategy.into(), json, quiet),
+        Command::Join {
+            name,
+            message,
+            strategy,
+            preview,
+            continue_join,
+            resolve: _,
         } => run_join(
             &name,
             JoinOptions {
@@ -156,6 +169,7 @@ fn main() -> ExitCode {
                 message,
                 preview,
                 continue_join,
+                candidate: None,
             },
             json,
             quiet,
@@ -281,6 +295,76 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
     Ok(())
 }
 
+/// `tugdash join --resolve`: run the resolution ladder, then land the candidate
+/// ([P31]). No AI rung from the CLI (the scribe lives in tugcast) — the ladder's
+/// algorithmic rungs only.
+fn run_join_resolve(
+    name: &str,
+    message: Option<String>,
+    strategy: JoinStrategy,
+    json: bool,
+    quiet: bool,
+) -> Result<(), String> {
+    let outcome = resolve::resolve_conflicts_cwd(name, None)?;
+
+    let Some(candidate) = outcome.candidate_commit.clone() else {
+        // Some files could not be resolved algorithmically.
+        if json {
+            print_json("dash join --resolve", &outcome);
+        } else if !quiet {
+            println!(
+                "Could not fully resolve dash '{}': {} file(s) still conflict:",
+                name,
+                outcome.unresolved.len()
+            );
+            for path in &outcome.unresolved {
+                println!("  {}", path);
+            }
+            for r in &outcome.resolved {
+                println!("  resolved {} ({:?})", r.path, r.resolved_by);
+            }
+        }
+        return Err(format!(
+            "{} file(s) unresolved; run the join from a Dev card for AI assist",
+            outcome.unresolved.len()
+        ));
+    };
+
+    let landed = ops::join(
+        name,
+        JoinOptions {
+            strategy,
+            message,
+            preview: false,
+            continue_join: false,
+            candidate: Some(candidate),
+        },
+    )?;
+
+    if json {
+        // Report the ladder outcome and the landed join together.
+        print_json(
+            "dash join --resolve",
+            &serde_json::json!({ "resolve": outcome, "join": landed }),
+        );
+    } else if !quiet {
+        println!(
+            "Resolved and joined dash '{}' into '{}' ({:?} shape)",
+            landed.name, landed.base_branch, outcome.shape
+        );
+        if let Some(hash) = &landed.commit_hash {
+            println!("  Commit: {}", hash);
+        }
+        for r in &outcome.resolved {
+            println!("  resolved {} ({:?})", r.path, r.resolved_by);
+        }
+        for warning in outcome.warnings.iter().chain(landed.warnings.iter()) {
+            println!("  Warning: {}", warning);
+        }
+    }
+    Ok(())
+}
+
 fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
     let data = ops::release(name)?;
     if json {
@@ -295,7 +379,7 @@ fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
 }
 
 /// The list `--json` payload — `{ "dashes": [...] }`, matching the shape
-/// `tugutil dash list --json` emitted.
+/// `tugdash list --json` emitted.
 #[derive(Serialize)]
 struct ListPayload {
     dashes: Vec<tugdash_core::DashListItem>,

@@ -355,7 +355,7 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
 }
 
 /// Derive one dash entry per `refs/heads/tugdash/` branch, the same way
-/// `tugutil dash list` does (branch config `tugbase`, `rev-list --count`
+/// `tugdash list` does (branch config `tugbase`, `rev-list --count`
 /// rounds, worktree dirt) plus the `base...branch` name-status file list.
 /// Duplicated from the tugutil CLI until the dash core extracts into a
 /// shared crate.
@@ -392,17 +392,32 @@ async fn dash_entries(repo_root: &Path) -> Vec<ChangesetEntry> {
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(0);
 
-        // Worktree home convention: `.tugtree/tugdash__<sanitized-name>`
-        // (same sanitizer as the CLI: path separators → `__`, `:`/space →
-        // `_`, everything else non-alphanumeric dropped).
+        // Worktree home convention (same sanitizer as the CLI: path
+        // separators → `__`, `:`/space → `_`, everything else non-alphanumeric
+        // dropped): the current `.tug/worktrees/<sanitized>` home, falling back
+        // to the legacy `.tugtree/tugdash__<sanitized>` path when a dash hasn't
+        // migrated yet — mirrors tugdash-core's `worktree_path` resolution.
         let sanitized: String = name
             .replace(['/', '\\'], "__")
             .replace([':', ' '], "_")
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
             .collect();
-        let worktree_rel = format!(".tugtree/tugdash__{sanitized}");
-        let worktree_abs = repo_root.join(&worktree_rel);
+        let new_rel = format!(".tug/worktrees/{sanitized}");
+        let legacy_rel = format!(".tugtree/tugdash__{sanitized}");
+        let (worktree_rel, worktree_abs) = {
+            let new_abs = repo_root.join(&new_rel);
+            if new_abs.exists() {
+                (new_rel, new_abs)
+            } else {
+                let legacy_abs = repo_root.join(&legacy_rel);
+                if legacy_abs.exists() {
+                    (legacy_rel, legacy_abs)
+                } else {
+                    (new_rel, new_abs)
+                }
+            }
+        };
         let worktree_dirty = if worktree_abs.exists() {
             git_stdout(&worktree_abs, &["status", "--porcelain"])
                 .await
@@ -728,7 +743,7 @@ mod tests {
         assert_eq!(display_name, "demo");
         assert_eq!(base, "main");
         assert_eq!(*rounds, 1);
-        assert_eq!(worktree, ".tugtree/tugdash__demo");
+        assert_eq!(worktree, ".tug/worktrees/demo");
         assert!(!worktree_dirty);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "dash-work.txt");
@@ -783,7 +798,7 @@ mod tests {
                     display_name: "demo".to_owned(),
                     base: "main".to_owned(),
                     rounds: 1,
-                    worktree: ".tugtree/tugdash__demo".to_owned(),
+                    worktree: ".tug/worktrees/demo".to_owned(),
                     worktree_dirty: false,
                     files: Vec::new(),
                     draft: None,

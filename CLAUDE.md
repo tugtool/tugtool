@@ -11,13 +11,13 @@ Tugtool is a developer tool suite. Its centerpiece is the **Dev card** — a gra
 **Exceptions:**
 - The `/tugplug:commit` skill: when the user invokes it, commit immediately without asking for confirmation.
 - Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/tugplug:commit` skill. Report each commit hash and message.
-- The `implement` and `dash` skills commit on their **`tugutil dash` worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
+- The `implement` and `dash` skills commit on their **`tugdash` worktree** (never on `main`) via `tugdash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugdash join`.
 
 ## Repository Structure
 
 | Directory | Description |
 |-----------|-------------|
-| `tugrust/` | Rust crates (tugcast, tugutil, tugexec, tugbank, tugcore, and supporting libraries) |
+| `tugrust/` | Rust crates (tugcast, tugutil, tugdash, tugexec, tugbank, tugcore, and supporting libraries) |
 | `tugproto/` | Shared protocol / message types (TypeScript) |
 | `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
 | `tugdeck/` | Web frontend (the Dev card lives here) |

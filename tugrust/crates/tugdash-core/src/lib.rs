@@ -14,8 +14,17 @@ pub mod dash;
 /// `list` / `show`, each returning a typed outcome.
 pub mod ops;
 
+/// The join conflict resolution ladder ([P31]): replay probe, rerere, per-file
+/// re-merge / structured-merge driver / AI seam, and the candidate builder.
+pub mod resolve;
+
 pub use dash::{DashRoundMeta, append_dash_log, detect_default_branch, validate_dash_name};
 pub use ops::{
     CommitOutcome, CreateOutcome, DashListItem, JoinOptions, JoinOutcome, JoinStrategy,
-    ReleaseOutcome, RoundItem, ShowOutcome, commit, create, join, list, release, show,
+    ReleaseOutcome, RoundItem, ShowOutcome, commit, create, join, join_in, list, release,
+    release_in, show,
+};
+pub use resolve::{
+    FileMergeRequest, FileMerger, FileResolution, JoinShape, ResolveOutcome, ResolvedBy,
+    resolve_conflicts, resolve_conflicts_cwd,
 };

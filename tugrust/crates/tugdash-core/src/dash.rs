@@ -1,8 +1,8 @@
 //! Dash helpers — git-derived lightweight worktree work units.
 //!
 //! A dash *is* a git branch (`tugdash/<name>`) plus a worktree
-//! (`.tugtree/tugdash__<name>`); its lifecycle and status derive from git, not
-//! a database. This module holds the small shared helpers the `tugutil dash`
+//! (`.tug/worktrees/<name>`); its lifecycle and status derive from git, not
+//! a database. This module holds the small shared helpers the `tugdash`
 //! commands build on: name validation, default-branch detection, and the
 //! append-only visibility log.
 
@@ -15,7 +15,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
-/// Round metadata passed via stdin to `tugutil dash commit`.
+/// Round metadata passed via stdin to `tugdash commit`.
 ///
 /// Git already records the commit; the one datum it lacks is the verbatim
 /// instruction, which lands in the dash-log. `summary` is retained for a richer
