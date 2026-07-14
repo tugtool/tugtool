@@ -37,6 +37,7 @@ git-commit-message.txt
 aside
 
 # Tug worktrees
+.tug/
 .tugtree/
 
 # Tug local runtime artifacts (per-user runtime state now lives out of the
