@@ -141,8 +141,8 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 **Risk R03: Persistence carries a faked cost** {#r03-persistence-faked-cost}
 
 - **Risk:** The reverted hack persisted the faked `TurnCost` to the SessionLedger (`record-telemetry`), so old rows carry `post_tokens` as `inputTokens`.
-- **Mitigation:** The honest window lives in a dedicated field, not `TurnCost`, so new persistence is clean. Old persisted rows are self-healing: on reload the compaction turn is no longer the last turn (post-compaction turns exist), so the window-walk uses the real next turn's window and ignores the stale stamp.
-- **Residual risk:** A session compacted-then-relaunched with *no* post-compaction turn would replay the stale `inputTokens` once; the honest-total recomputation ([P01]) applies on replay too, overriding it.
+- **Mitigation:** The honest window lives in a dedicated field, not `TurnCost`, so new persistence is clean. In practice the faked row is never read back: the fd620588e-era compaction *turn* is scaffolding on reload (the `/compact` bubble is `COMMAND_SCAFFOLDING_PREFIXES`-skipped per fix-compact [P01]), so its persisted telemetry row is not re-materialized into a `TurnEntry` at all. The replay-path honest-total stamp (Spec S03, H1) supplies the correct window on the reconstructed transcript regardless of the old row.
+- **Residual risk:** None material — the stale row has no live read path. The honest total is re-derived on replay from `sessionInitTokens + post_tokens`, independent of any persisted `TurnCost`.
 
 ---
 
@@ -159,7 +159,8 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Implications:**
 - `TurnEntry` gains `compactionPostTotal?: number` (`code-session-store/types.ts`); the scratch entry's `compactionPostTokens` field is renamed/retyped to `compactionPostTotal` and holds the honest total, not raw `post_tokens`.
-- `deriveContextWindows` signature grows an optional `windowOverrides: ReadonlyArray<number | null>` aligned to `usages`; callers (`dev-card-telemetry-renderers.tsx`, `telemetry.ts` `computeTokensSummary`, `end-state.test.ts`) pass `transcript.map(t => t.compactionPostTotal ?? null)`.
+- **Two stamping paths, both required.** *Live* (mid-turn boundary): `handleCompactBoundary` stamps `compactionPostTotal` on the open turn's scratch entry, and `buildTurnEntry` copies it onto the committed `TurnEntry`. *Replay* (no open turn — `reducer.ts` returns only effects): there is no scratch entry and no `buildTurnEntry` call for the boundary, so the honest total is carried **on the effect** and stamped wrapper-side onto the **last surviving committed `TurnEntry`** (the turn the divider seats on — see Spec S03). Without this second path a session compacted-then-relaunched with **no** post-compaction turn replays with the stale pre-compaction peak — the exact lag this plan kills, resurrected on reload. `sessionInitTokens` is available at boundary time on replay: it is restored from the first replayed `turn_complete`'s inlined telemetry, which precedes the boundary frame.
+- `deriveContextWindows` signature grows an optional `windowOverrides: ReadonlyArray<number | null>` aligned to `usages`; **all four** callers pass `transcript.map(t => t.compactionPostTotal ?? null)`: the two CONTEXT-cell walks (`dev-card-telemetry-renderers.tsx`), `computeTokensSummary` (`telemetry.ts`), and the per-turn TOKENS-delta memo `contextWindows()` in `dev-transcript-data-source.ts`. Missing the data-source caller would make the Z1B per-turn deltas disagree with the CONTEXT cell — a new dishonesty introduced by the fix.
 - The `compact_boundary` frame keeps `post_tokens` (still needed as the input addend); it is never rendered raw.
 
 #### [P02] `post_tokens` is dropped from every rendered surface (DECIDED) {#p02-no-raw-post-tokens}
@@ -192,7 +193,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Implications:**
 - New effect kind `keep-recent-turns` (`effects.ts`) + its `code-session-store.ts` handler beside `append-compact-note` / `truncate-transcript`.
-- The boundary handler emits BOTH the divider note (existing) and the truncation, ordered so the note seats on the correct surviving turn. On reload the boundary arrives with no open turn (scaffolding skipped), so `append-compact-note` seats on the last surviving turn after truncation.
+- The boundary handler emits BOTH the divider note (existing) and the truncation, ordered so the note seats on the correct surviving turn. On reload the boundary arrives with no open turn (scaffolding skipped), so `keep-recent-turns` runs first, then `append-compact-note` seats the divider — and stamps the honest `compactionPostTotal` (Spec S03, H1) — on the last surviving turn.
 - Live: the boundary arrives mid the `/compact` turn; the truncation targets the committed turns *before* that turn. `preservedTurns` counts pre-compaction conversation turns, so the live `/compact` bubble turn (not part of the count) is unaffected ([R02] asymmetry).
 
 #### [P05] Live and reload apply the identical truncation to the identical `_transcript` (DECIDED) {#p05-live-reload-identical}
@@ -213,7 +214,8 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Implications:**
 - `DevCompactionCarryForward` stays the summary renderer; its placement is confirmed above the surviving turns (it already renders in the transcript top region, not inline).
-- The banner's "when" comes from the same `createdAtMs`/ledger source the header already uses; the "N shown / M in session" reuses `deriveLoadStatus`'s `firstLoadedTurnIndex`/`totalTurns`, extended to account for compaction-dropped turns (dropped turns are not "collapsed history to load", they are gone — the affordance copy must not imply they can be loaded back).
+- The banner's "when" comes from the same `createdAtMs`/ledger source the header already uses.
+- **"N shown / M in session" — M is defined precisely.** N = `snap.transcript.length` (the post-truncation surviving turns). M = the total turns the session's JSONL history holds (`replayWindow.totalTurns` from `replay_complete`, the load-previous denominator). The two affordances are distinct and must not be conflated: the load-previous affordance counts turns collapsed for windowing (re-loadable); the compaction affordance counts turns *dropped by compaction* (gone from the model's context, NOT re-loadable). The copy must never imply the dropped verbatim turns can be loaded back — they are the summarized-away history the Compaction Summary now represents. If `replayWindow` is null (live, pre-`replay_complete`), M falls back to N (nothing to disclose).
 
 #### [P07] Multiple compactions collapse to the latest (DECIDED) {#p07-latest-wins}
 
@@ -225,11 +227,11 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 #### [P08] `/compact` stays always offered; add a minimal-effect hint (DECIDED) {#p08-always-offered-hint}
 
-**Decision:** `/compact` is never gated or removed. When the conversation is much smaller than the base (`window(latest) − sessionInitTokens` is a small fraction of `sessionInitTokens`), the slash-command entry (`slash-commands.ts`, `compact`) shows a hint that compaction will free little ("Compact — frees little; most context is fixed base").
+**Decision:** `/compact` is never gated or removed. When the conversation is much smaller than the base (`window(latest) − sessionInitTokens` is a small fraction of `sessionInitTokens`), the slash popup's `compact` row shows a hint in its muted description column ("Compact — frees little; most context is fixed base").
 
 **Rationale:** Outcome #4. The real-user case (base ≈ 38K, conversation ≈ 4K, freed ~2K) is honestly "small effect", but the command must remain available and the reason legible.
 
-**Implications:** The hint is derived data (from `deriveContextWindows` + `sessionInitTokens`), computed where the slash popup builds its descriptions; no state zone added.
+**Implications:** The hint is a **dynamic per-query description override**, not a static registry string. `LOCAL_SLASH_COMMANDS[compact].description` (`slash-commands.ts`) is fixed; the rendered popup row's description flows through `localCommandCompletionProvider` (`completion-providers/local-commands.ts`), which builds `CompletionItem`s fresh on every query and already carries a live `isOffered` gate. The hint therefore belongs at the **provider-composition layer** where the dev card assembles/wraps its `/` provider (`use-dev-card-services.ts` / `dev-card.tsx`), overriding the `compact` item's `description` when the conversation≪base predicate holds. `CompletionItem.description` is rendered (the muted second column, wraps to two lines — `tug-text-types.ts`), so the surface already exists. The predicate is derived data (`deriveContextWindows` + `sessionInitTokens` off the live snapshot), read at query time; no state zone added.
 
 ---
 
@@ -284,7 +286,7 @@ The pre-compaction turns to DROP: the 10 earlier fun-fact turns (lines 2–63). 
 
 **Live `/compact`:** user types `/compact` → modal indeterminate sheet (unchanged) → the send opens a turn → stream: `compact_boundary` (carries `pre_tokens`, `post_tokens`, `preserved_turns`) → `handleCompactBoundary` stamps `compactionPostTotal = sessionInit + post_tokens` on the scratch, emits the divider note AND `keep-recent-turns(N)` → the wrapper drops pre-compaction turns except the last `N` → `compact_summary` sets `compactionSeed` → summary hoists, banner renders → `result` commits the turn with the honest window; CONTEXT drops in place, TOKENS shows the honest negative delta.
 
-**Reload of a compacted session:** replay walks the JSONL → `compact_boundary` frame (with `preserved_turns` computed from `compactMetadata`) → no open turn → `append-compact-note` seats the divider on the last surviving turn + `keep-recent-turns(N)` drops the pre-compaction turns → `compact_summary` sets `compactionSeed` → identical banner + hoisted summary + surviving turns. `replay_complete` finalizes. Row set is identical to live (minus the live-only `/compact` bubble).
+**Reload of a compacted session:** replay walks the JSONL → the first replayed `turn_complete` restores `sessionInitTokens` (inlined telemetry) → `compact_boundary` frame (with `preserved_turns` computed from `compactMetadata`) → no open turn → `keep-recent-turns(N)` drops the pre-compaction turns, then `append-compact-note` seats the divider on the last surviving turn **and stamps `compactionPostTotal = sessionInit + post_tokens` on it** (H1, Spec S03) → `compact_summary` sets `compactionSeed` → identical banner + hoisted summary + surviving turns; CONTEXT is honest even with no post-compaction turn. `replay_complete` finalizes. Row set is identical to live (minus the live-only `/compact` bubble).
 
 ---
 
@@ -307,12 +309,14 @@ The pre-compaction turns to DROP: the 10 earlier fun-fact turns (lines 2–63). 
 **Spec S02: honest window override in the walk** {#s02-window-override}
 
 - `deriveContextWindows(usages, sessionInit, windowOverrides?)`: for turn `i`, if `windowOverrides[i]` is a finite number, `window(i) = windowOverrides[i]` and `perTurn(i) = window(i) − window(i−1)`; otherwise the existing zero-usage/real-usage logic runs unchanged.
-- Callers pass `transcript.map(t => t.compactionPostTotal ?? null)`. The identity `sessionInit + Σ perTurn = window(latest)` holds (the override IS `window(i)`).
+- All four callers pass `transcript.map(t => t.compactionPostTotal ?? null)`: `dev-card-telemetry-renderers.tsx` (two walks — the gauge and the cell), `computeTokensSummary` (`telemetry.ts`), and `contextWindows()` in `dev-transcript-data-source.ts` (the per-turn TOKENS-delta memo). The identity `sessionInit + Σ perTurn = window(latest)` holds (the override IS `window(i)`).
 
-**Spec S03: `keep-recent-turns` effect** {#s03-keep-recent-effect}
+**Spec S03: `keep-recent-turns` effect + replay-path honest-total stamp** {#s03-keep-recent-effect}
 
 - Reducer `handleCompactBoundary` emits `{ kind: "keep-recent-turns", preservedTurns: number | null }` alongside the divider (mid-turn note or `append-compact-note`).
 - Wrapper: `preservedTurns === null` ⇒ no-op (live fallback, [Q01]). Otherwise drop every committed `TurnEntry` strictly before the boundary except the last `preservedTurns` conversation turns; copy-on-write; invalidate dropped turns' cached parses by `turn.<turnKey>.` prefix (mirror `truncate-transcript`). Ordering: apply the keep before `append-compact-note` so the note seats on the last *surviving* turn.
+- **Survivors keep their exact `TurnEntry` reference** (as `truncateTranscriptAtAnchor` deliberately does): the drop removes leading entries and reuses the survivors' object identities so React preserves their mounts. The wrapper handler must not rebuild surviving entries — only the last-surviving turn is copy-on-write replaced (to seat the note / stamp the total, below).
+- **Replay-path honest-total stamp (H1).** On the no-open-turn path the boundary event's honest total is carried on the effect: extend `append-compact-note` (the effect already targeting the last committed turn) to `{ kind: "append-compact-note", text, compactionPostTotal?: number }`, where `handleCompactBoundary` computes `compactionPostTotal = state.sessionInitTokens + event.postTokens` (only when both are finite). The wrapper, when seating the note on the last surviving turn (copy-on-write), also writes `compactionPostTotal` onto that same `TurnEntry`. This is the replay analogue of the live scratch stamp — "window after this turn = post-compaction total" is exactly honest because the divider seats on that turn. Apply after `keep-recent-turns` so "last surviving turn" is post-truncation.
 - Idempotent under [P07]: a later boundary trims only turns still present.
 
 **Spec S04: reducer state/entry shape changes** {#s04-shapes}
@@ -352,10 +356,12 @@ No new stores; one per-turn field added, one reducer effect added, one `deriveCo
 | `buildTurnEntry` | fn (modify) | `tugdeck/src/lib/code-session-store/reducer.ts` | delete faked-`TurnCost` branch; copy `compactionPostTotal` |
 | `ScratchEntry.compactionPostTotal` / `TurnEntry.compactionPostTotal` | fields | `tugdeck/src/lib/code-session-store/types.ts` | Spec S04 |
 | `keep-recent-turns` | effect kind + handler | `tugdeck/src/lib/code-session-store/effects.ts`, `code-session-store.ts` | Spec S03 |
-| CONTEXT cell / popover callers | render (modify) | `tugdeck/src/components/tugways/cards/dev-card-telemetry-renderers.tsx` | pass `windowOverrides`; audit no raw `post_tokens` ([P02]) |
+| CONTEXT cell / popover callers | render (modify) | `tugdeck/src/components/tugways/cards/dev-card-telemetry-renderers.tsx` | pass `windowOverrides` (two walks); audit no raw `post_tokens` ([P02]) |
 | `computeTokensSummary` | fn (modify) | `tugdeck/src/lib/code-session-store/telemetry.ts` | pass `windowOverrides` |
+| `contextWindows()` memo | method (modify) | `tugdeck/src/lib/dev-transcript-data-source.ts` | fourth walk caller — pass `windowOverrides` so Z1B per-turn deltas match the CONTEXT cell (H2) |
+| `append-compact-note` effect | effect (modify) | `tugdeck/src/lib/code-session-store/effects.ts`, `code-session-store.ts` | carry + stamp `compactionPostTotal` on last surviving turn (replay honest total, H1) |
 | SESSION COMPACTED banner + affordance | render (add) | `tugdeck/src/components/tugways/cards/dev-load-control-bar.tsx` | [P06] |
-| `/compact` minimal-effect hint | description (modify) | `tugdeck/src/lib/slash-commands.ts` | [P08] |
+| `/compact` minimal-effect hint | provider composition (add) | dev-card `/` provider seam (`use-dev-card-services.ts` / `dev-card.tsx`), overriding the `compact` `CompletionItem.description` from `localCommandCompletionProvider` | [P08] — dynamic per-query override, not the static `slash-commands.ts` string |
 
 #### New files {#new-files}
 
@@ -415,7 +421,7 @@ No new stores; one per-turn field added, one reducer effect added, one `deriveCo
 - [ ] Add `windowOverrides` to `deriveContextWindows` per Spec S02; keep the zero-usage / compaction-reset logic intact for non-overridden turns.
 - [ ] Rename the scratch field to `compactionPostTotal`; in `handleCompactBoundary`, stamp `state.sessionInitTokens + event.postTokens` only when both are finite numbers (else leave unset).
 - [ ] In `buildTurnEntry`, delete the `compactionPostTokens`→faked-`TurnCost` branch; keep the real `telemetry.cost`; copy `compactionPostTotal` onto the committed `TurnEntry`.
-- [ ] Thread `transcript.map(t => t.compactionPostTotal ?? null)` into the CONTEXT-cell and `computeTokensSummary` `deriveContextWindows` calls (`dev-card-telemetry-renderers.tsx`, `telemetry.ts`).
+- [ ] Thread `transcript.map(t => t.compactionPostTotal ?? null)` into **all four** `deriveContextWindows` call sites: the two walks in `dev-card-telemetry-renderers.tsx`, `computeTokensSummary` (`telemetry.ts`), and the `contextWindows()` memo in `dev-transcript-data-source.ts` (H2 — else the Z1B per-turn deltas diverge from the CONTEXT cell).
 - [ ] Grep-audit: `post_tokens`/`postTokens` appears only as the [P01] addend; no standalone render ([P02]).
 - [ ] Update the `reducer.compact-boundary.test.ts` assertion added by `fd620588e` (committed turn's window == `postTokens`) to the honest total (`sessionInit + postTokens`).
 
@@ -463,21 +469,24 @@ No new stores; one per-turn field added, one reducer effect added, one `deriveCo
 
 **Commit:** `tugdeck(compact-truncate): drop pre-compaction verbatim turns, keep preserved segment + post-compaction turns`
 
-**References:** [P04] truncation effect, [P05] live≡reload, [P07] latest-wins, Spec S01, Spec S03, (#flows, #preserved-segment-analysis)
+**References:** [P01] honest window (replay stamp), [P04] truncation effect, [P05] live≡reload, [P07] latest-wins, Spec S01, Spec S03, (#flows, #preserved-segment-analysis)
 
 **Artifacts:**
 - `CompactBoundaryEvent.preservedTurns` + wrapper mapping.
 - `keep-recent-turns` effect kind + wrapper handler (mirror `truncate-transcript` / `append-compact-note`).
-- `handleCompactBoundary` emits `keep-recent-turns` alongside the divider, ordered so the note seats on the last survivor.
+- `append-compact-note` effect extended to carry + stamp `compactionPostTotal` on the last surviving turn (replay honest total, H1 / Spec S03).
+- `handleCompactBoundary` emits `keep-recent-turns` then `append-compact-note` (carrying the honest total) alongside the divider, ordered so the note + stamp seat on the last survivor.
 
 **Tasks:**
 - [ ] Map wire `preserved_turns` → `CompactBoundaryEvent.preservedTurns`; update the stale `postTokens` doc on the event ([P02]).
-- [ ] Add `keep-recent-turns` to `effects.ts`; wrapper handler drops committed turns before the boundary except the last `preservedTurns` (copy-on-write + parse invalidation); `null` ⇒ no-op ([Q01] fallback).
+- [ ] Add `keep-recent-turns` to `effects.ts`; wrapper handler drops committed turns before the boundary except the last `preservedTurns` (copy-on-write + parse invalidation); **survivors keep their exact `TurnEntry` references** (mount stability, mirror `truncateTranscriptAtAnchor`); `null` ⇒ no-op ([Q01] fallback).
+- [ ] Extend `append-compact-note` (effect + wrapper handler) to carry `compactionPostTotal?` and stamp it on the last surviving turn while seating the divider (H1); `handleCompactBoundary`'s no-open-turn path computes `state.sessionInitTokens + event.postTokens` (only when both finite).
 - [ ] `handleCompactBoundary`: emit `keep-recent-turns` before `append-compact-note`; verify the mid-turn (live) path still seats the note on the correct turn and the count targets pre-compaction conversation turns only ([R02]).
 - [ ] Confirm `/rewind` truncation and anchors are unaffected (dropped turns aren't rewind targets).
 
 **Tests:**
-- [ ] Wrapper: feeding the fixture's frames, the committed transcript ends with the preserved turn + post-compaction turns; the 10 dropped turns' `turnKey`s are absent and their parse-cache entries invalidated.
+- [ ] Wrapper: feeding the fixture's frames, the committed transcript ends with the preserved turn + post-compaction turns; the 10 dropped turns' `turnKey`s are absent and their parse-cache entries invalidated; surviving entries keep their object identity (reference-equal before/after).
+- [ ] **Replay honest total (H1):** feeding the fixture's frames with **no** post-compaction turn (boundary is the last content), the last surviving `TurnEntry` carries `compactionPostTotal = sessionInit + post_tokens`, and `deriveContextWindows` over the transcript reports `window(latest) = sessionInit + post_tokens` (≥ base, no stale peak).
 - [ ] `keep-recent-turns` with `preservedTurns: null` is a no-op (live fallback).
 - [ ] Second boundary trims only still-present turns ([P07]).
 - [ ] `reducer.rewind.test.ts` stays green.
@@ -523,16 +532,17 @@ No new stores; one per-turn field added, one reducer effect added, one `deriveCo
 **References:** [P08] always-offered hint, [P02], Spec S02, (#existing-infra)
 
 **Artifacts:**
-- Derived minimal-effect hint on the `compact` slash entry (`slash-commands.ts`), computed from `window(latest) − sessionInitTokens` vs `sessionInitTokens`.
+- Dynamic minimal-effect hint: a pure predicate helper (`window(latest) − sessionInitTokens` vs `sessionInitTokens`) plus a `compact`-row `description` override applied at the dev card's `/` provider-composition seam (`use-dev-card-services.ts` / `dev-card.tsx`), NOT the static `slash-commands.ts` string ([P08] / H3).
 - Confirmation that `computeRichContextBreakdown` reads honestly post-compaction (small `messages` slice).
 
 **Tasks:**
-- [ ] Compute the conversation-vs-base ratio where the slash popup builds descriptions; show the hint when the conversation is a small fraction of the base; never gate the command.
+- [ ] Add the pure conversation≪base predicate helper (reads the live snapshot's `deriveContextWindows` result + `sessionInitTokens`).
+- [ ] At the provider-composition seam, override the `compact` `CompletionItem.description` with the hint when the predicate holds; never gate the command (it stays in `LOCAL_SLASH_COMMANDS` and always offered).
 - [ ] Verify the CONTEXT popover's `messages` slice equals `window(latest) − bootstrap` after compaction (falls out of Step 1's honest window) and `totalUsed` equals the CONTEXT cell — add/adjust a `telemetry` unit test if a gap surfaces.
 
 **Tests:**
 - [ ] `computeRichContextBreakdown` unit: post-compaction window ⇒ `messages` small, `totalUsed == window`, `totalUsed == CONTEXT cell value`.
-- [ ] Hint helper: small conversation ⇒ hint present; large conversation ⇒ absent; command always in `LOCAL_SLASH_COMMANDS`.
+- [ ] Predicate helper unit: small conversation ⇒ hint predicate true; large conversation ⇒ false; command always present in `LOCAL_SLASH_COMMANDS` (never gated).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
