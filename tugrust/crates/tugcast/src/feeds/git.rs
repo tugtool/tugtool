@@ -141,11 +141,19 @@ pub(crate) async fn fetch_head_message(repo_dir: &Path) -> String {
 }
 
 /// Fetch git status output
+///
+/// `--no-optional-locks` keeps this background poll from taking the repo's
+/// `index.lock` to refresh the stat cache. The event-driven git watch fires
+/// this recompute on every `.git`-touching batch, so an optional lock here
+/// races a concurrent user `git commit`/`git add` in the same repo (the commit
+/// fails with `index.lock: File exists`). A read-only status has no need to
+/// write the index, so we opt out of the lock entirely.
 pub(crate) async fn fetch_git_status(repo_dir: &Path) -> Option<String> {
     let output = Command::new("git")
         .args([
             "-C",
             &repo_dir.to_string_lossy(),
+            "--no-optional-locks",
             "status",
             "--porcelain=v2",
             "--branch",

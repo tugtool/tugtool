@@ -11,9 +11,52 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (`ce3ad42c2`) |
 | Target branch | main |
 | Last updated | 2026-07-15 |
+
+---
+
+### Post-implementation addendum (what actually shipped) {#post-impl-addendum}
+
+The implementation went **beyond** the drafted scope in three material ways. This
+section is authoritative where it contradicts the decisions below; the original
+`[P##]` text is kept for lineage but annotated inline.
+
+1. **Live commit-driven refresh shipped — the deferred [P05] follow-on was built.**
+   Rather than refresh only on mount + followed-project change, the code adds an
+   event-driven HEAD watch and a third feed so the section updates the moment a
+   commit lands (from any source), with no polling:
+   - `FeedId::GIT_HEAD` (**0x27**) + `GitHeadSignal { workspace_key, head }` wire type.
+   - `tugcast/src/feeds/git_watch.rs` — `run_git_workspace_watch`, a plain
+     subscriber to the workspace's existing `FileWatcher` (no second OS watch).
+     A `.git`-touching batch re-reads HEAD; a real move broadcasts `GitHeadSignal`.
+     Spawned per workspace by `WorkspaceRegistry`, torn down via the entry's
+     child cancel token on `release` ([L27]).
+   - Client: `parseGitHeadSignal` + `GitLogStore._onHeadSignal` re-request the log
+     when a signal names the shown `workspace_key` and its `head` is past the
+     commit on top. The shared `FeedStore` subscribes to `[GIT_LOG, GIT_HEAD]`.
+   - Live proof: `tugrust/crates/tugcast/tests/git_head_roundtrip.rs`.
+
+2. **[P09] reversed — the GIT_LOG adapter resolves `root` directly, not via
+   `resolve_diff_target`.** A valid `root` is canonicalized through
+   `CanonicalPath::from_raw` and read as-is; only an absent/invalid `root` falls
+   back to bootstrap. This closes the trap the Step 6 note called out (an
+   unregistered followed-card workspace falling through to bootstrap and serving
+   the *wrong* repo's log). The canonical key it produces matches the one the
+   registry/git-watch stamp, so `GitHeadSignal` correlation holds.
+
+3. **`git status` background poll opts out of the index lock.** `fetch_git_status`
+   now passes `--no-optional-locks`. Because the git watch fires the changeset
+   recompute (→ `git status`) on every `.git`-touching batch, an optional lock
+   raced a concurrent user `git commit` in the watched repo (`index.lock: File
+   exists`). Read-only status has no need to write the index.
+
+Minor deltas from the drafted specs: the empty states render **"No project open."**
+(body) / **"No project"** (collapsed summary) rather than the drafted "No dev card
+in focus." / "No card"; `useFollowedProject()` adds a **frontmost bound-card
+fallback** (`useFrontmostProjectBinding`) so the section keeps tracking a project
+when no card is the active key card.
 
 ---
 
@@ -58,7 +101,9 @@ Git History is the next section: a read-only view of the followed project's rece
 - Per-commit click-to-diff / commit detail expansion (the structured wire shape leaves room; see [P01] implications).
 - Rich in-section search / Find affordance (deferred; see [P03]).
 - "Load more" / pagination beyond the fixed limit (the `limit` query field leaves room; see [P04]).
-- Live refresh when a commit lands (deferred; see [P05]).
+- ~~Live refresh when a commit lands (deferred; see [P05]).~~ **SHIPPED** — see the
+  [post-implementation addendum](#post-impl-addendum): the GIT_HEAD (0x27) feed +
+  `git_watch.rs` deliver it event-drively.
 - Any Lens frame changes — no registry, band, or followed-card edits.
 
 #### Dependencies / Prerequisites {#dependencies}
@@ -178,7 +223,14 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Implications:** The builder passes `-n<limit>` to git; the round-trip test asserts a `limit: 2` query returns exactly 2 commits from a 3-commit repo.
 
-#### [P05] Refresh on mount + followed-project change only; commit-driven refresh deferred (DECIDED) {#p05-refresh-cadence}
+#### [P05] Refresh on mount + followed-project change only; commit-driven refresh deferred (SUPERSEDED — commit-driven refresh SHIPPED) {#p05-refresh-cadence}
+
+> **Superseded by the [post-implementation addendum](#post-impl-addendum).** The
+> implementation *did* build commit-driven refresh — not by piggybacking on the
+> `CHANGESET_ALL` bump (the rationale below correctly rejects that), but via a
+> dedicated `GIT_HEAD` (0x27) HEAD-move signal off the event-driven git watch.
+> The "recorded as a follow-on" implication is done. The original text follows.
+
 
 **Decision:** v1 re-requests when the section body mounts and when the followed project's `projectDir` changes (guarded so the same project isn't re-requested on unrelated re-renders). No subscription to `CHANGESET_ALL` bumps.
 
@@ -219,7 +271,15 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Implications:** `run_git_line` (trimmed single line) serves branch resolution; `run_git_capture` serves the multi-line log body.
 
-#### [P09] Reuse `resolve_diff_target` unchanged (DECIDED) {#p09-reuse-resolver}
+#### [P09] Reuse `resolve_diff_target` unchanged (REVERSED — adapter resolves `root` directly) {#p09-reuse-resolver}
+
+> **Reversed by the [post-implementation addendum](#post-impl-addendum).** The
+> GIT_LOG adapter does NOT call `resolve_diff_target`. A valid `root` is
+> canonicalized via `CanonicalPath::from_raw` and read directly; only an
+> absent/invalid `root` falls back to bootstrap. This avoids serving the wrong
+> repo's log for a followed card whose workspace is not yet registered on
+> restore — the hazard the Step 6 note flags. The original text follows.
+
 
 **Decision:** The GIT_LOG_QUERY adapter resolves its workspace with the existing `WorkspaceRegistry::resolve_diff_target(root, &bootstrap)` — no rename, no `resolve_workspace_target` alias. Its doc comment is updated to state it is the generic query-feed workspace resolver (root → registered entry, else bootstrap), now serving both GIT_DIFF and GIT_LOG.
 
@@ -338,6 +398,8 @@ two-space column gaps, an em-dash before the subject, no trailing newline, `""` 
 | File | Purpose |
 |------|---------|
 | `tugrust/crates/tugcast/tests/git_log_roundtrip.rs` | Live round-trip proof (Step 3) |
+| `tugrust/crates/tugcast/src/feeds/git_watch.rs` | Event-driven HEAD watch → GIT_HEAD signal (addendum) |
+| `tugrust/crates/tugcast/tests/git_head_roundtrip.rs` | Live GIT_HEAD signal proof (addendum) |
 | `tugdeck/src/lib/git-log-store.ts` | Client store + wire types + `formatGitLog` (Step 4) |
 | `tugdeck/src/lib/git-log-store.test.ts` | Store/parse/format units (Step 4) |
 | `tugdeck/src/components/lens/sections/git-history-section.tsx` | The section registrant (Step 5) |
@@ -349,6 +411,11 @@ two-space column gaps, an em-dash before the subject, no trailing newline, `""` 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `FeedId::GIT_LOG` / `FeedId::GIT_LOG_QUERY` | const | `tugrust/crates/tugcast-core/src/protocol.rs` | 0x25 / 0x26; three sites (const, `name()`, byte-assert test) |
+| `FeedId::GIT_HEAD` | const | `tugrust/crates/tugcast-core/src/protocol.rs` | 0x27; HEAD-move signal (addendum); three sites |
+| `GitHeadSignal` | struct | `tugrust/crates/tugcast-core/src/types.rs` | `{ workspace_key, head }` (addendum) |
+| `run_git_workspace_watch`, `batch_touches_git` | fn | `tugrust/crates/tugcast/src/feeds/git_watch.rs` | event-driven HEAD watch (addendum) |
+| `parseGitHeadSignal`, `GitLogStore._onHeadSignal` | fn/method | `tugdeck/src/lib/git-log-store.ts` | client live-refresh on GIT_HEAD (addendum) |
+| `fetch_git_status` `--no-optional-locks` | edit | `tugrust/crates/tugcast/src/feeds/git.rs` | index.lock race fix (addendum) |
 | `FeedId.GIT_LOG` / `FeedId.GIT_LOG_QUERY` | const | `tugdeck/src/protocol.ts` | TS mirror, same step |
 | `GitLogCommit`, `GitLogSnapshot` | struct | `tugrust/crates/tugcast-core/src/types.rs` | Spec S01 |
 | `build_git_log_snapshot` | pub async fn | `tugrust/crates/tugcast/src/feeds/git.rs` | gate → branch → log → parse |
@@ -599,7 +666,7 @@ two-space column gaps, an em-dash before the subject, no trailing newline, `""` 
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
-- [ ] Commit-driven refresh (a HEAD-sha watch or commit signal; not the CHANGESET_ALL bump — see [P05]).
+- [x] Commit-driven refresh — **DONE** (GIT_HEAD 0x27 HEAD-sha watch, not the CHANGESET_ALL bump; see the [addendum](#post-impl-addendum) and [P05]).
 - [ ] "Load more" depth beyond 20 (client-only; the wire already carries `limit` — [P04]).
 - [ ] Per-commit click-to-diff riding the full sha on the wire ([P01]).
 - [ ] A Find affordance driving the `TugCodeViewDelegate` ([P03]).
