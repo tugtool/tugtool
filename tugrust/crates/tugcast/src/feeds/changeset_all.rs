@@ -172,7 +172,11 @@ pub(crate) async fn compose_aggregate(
             None
         } else {
             ledger
-                .and_then(|l| l.changeset_draft("unattributed", "", &dir_str).ok().flatten())
+                .and_then(|l| {
+                    l.changeset_draft("unattributed", "", &dir_str)
+                        .ok()
+                        .flatten()
+                })
                 .as_ref()
                 .map(super::changeset::draft_from_row)
         };
@@ -472,7 +476,8 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            owned, ["roadmap/x.md"],
+            owned,
+            ["roadmap/x.md"],
             "the split edit is owned, not unattributed"
         );
         assert!(

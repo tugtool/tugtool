@@ -101,7 +101,12 @@ impl CanonicalPath {
     /// and that result is memoized when it names a directory, so each distinct
     /// project dir is resolved at most once per process.
     pub fn from_raw(path: &Path) -> Self {
-        if let Some(hit) = memo().lock().expect("canonical memo mutex").get(path).cloned() {
+        if let Some(hit) = memo()
+            .lock()
+            .expect("canonical memo mutex")
+            .get(path)
+            .cloned()
+        {
             return hit;
         }
 
@@ -169,7 +174,10 @@ fn memo() -> &'static Mutex<HashMap<PathBuf, CanonicalPath>> {
 /// Test aid: whether the memo currently holds a resolved entry for `path`.
 #[cfg(test)]
 fn memo_contains(path: &Path) -> bool {
-    memo().lock().expect("canonical memo mutex").contains_key(path)
+    memo()
+        .lock()
+        .expect("canonical memo mutex")
+        .contains_key(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +251,11 @@ impl AliasTable {
     fn rewrite(&self, path: &str) -> Option<String> {
         for (from, to) in &self.rewrites {
             if path == from {
-                return Some(if to.is_empty() { "/".to_string() } else { to.clone() });
+                return Some(if to.is_empty() {
+                    "/".to_string()
+                } else {
+                    to.clone()
+                });
             }
             if let Some(rest) = path.strip_prefix(from) {
                 if rest.starts_with('/') {

@@ -127,7 +127,13 @@ pub fn reap_instance_tmux(instance_id: &str) {
 pub fn instance_tmux_live(instance_id: &str) -> bool {
     let label = tmux_socket_label_for(instance_id);
     std::process::Command::new(tmux_bin())
-        .args(["-L", &label, "has-session", "-t", &format!("cc-{instance_id}")])
+        .args([
+            "-L",
+            &label,
+            "has-session",
+            "-t",
+            &format!("cc-{instance_id}"),
+        ])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)

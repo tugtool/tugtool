@@ -301,9 +301,16 @@ fn replay_probe(
     }
     let rounds_out = git_stdout(
         repo,
-        &["rev-list", "--reverse", &format!("{}..{}", base_branch, branch)],
+        &[
+            "rev-list",
+            "--reverse",
+            &format!("{}..{}", base_branch, branch),
+        ],
     )?;
-    let rounds: Vec<&str> = rounds_out.lines().filter(|l| !l.trim().is_empty()).collect();
+    let rounds: Vec<&str> = rounds_out
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
     if rounds.is_empty() {
         return Ok(None);
     }
@@ -547,7 +554,13 @@ impl ScratchWorktree {
         let dir = tempfile::tempdir().map_err(|e| format!("scratch tempdir: {}", e))?;
         let out = git_output(
             repo,
-            &["worktree", "add", "--detach", &dir.path().to_string_lossy(), at],
+            &[
+                "worktree",
+                "add",
+                "--detach",
+                &dir.path().to_string_lossy(),
+                at,
+            ],
         )?;
         if !out.status.success() {
             return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
@@ -567,7 +580,12 @@ impl Drop for ScratchWorktree {
     fn drop(&mut self) {
         let _ = git_output(
             &self.repo,
-            &["worktree", "remove", "--force", &self.dir.path().to_string_lossy()],
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &self.dir.path().to_string_lossy(),
+            ],
         );
     }
 }
@@ -583,12 +601,21 @@ fn merge_file_rung(scratch: &Path, path: &str, loaded: &LoadedStages) -> Option<
     let base = loaded.base.as_ref()?;
     let ours = loaded.ours.as_ref()?;
     let theirs = loaded.theirs.as_ref()?;
-    let ext = Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("txt");
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("txt");
     let ours_f = write_scratch(scratch, "ours", ext, ours)?;
     let base_f = write_scratch(scratch, "base", ext, base)?;
     let theirs_f = write_scratch(scratch, "theirs", ext, theirs)?;
     let out = Command::new("git")
-        .args(["-c", "diff.algorithm=histogram", "merge-file", "-p", "--zdiff3"])
+        .args([
+            "-c",
+            "diff.algorithm=histogram",
+            "merge-file",
+            "-p",
+            "--zdiff3",
+        ])
         .arg(&ours_f)
         .arg(&base_f)
         .arg(&theirs_f)
@@ -616,7 +643,10 @@ fn driver_rung(repo: &Path, scratch: &Path, path: &str, loaded: &LoadedStages) -
     let ours = loaded.ours.as_ref()?;
     let theirs = loaded.theirs.as_ref()?;
     let program = driver_program(repo)?;
-    let ext = Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("txt");
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("txt");
     let base_f = write_scratch(scratch, "d-base", ext, base)?;
     let ours_f = write_scratch(scratch, "d-ours", ext, ours)?;
     let theirs_f = write_scratch(scratch, "d-theirs", ext, theirs)?;
@@ -801,7 +831,11 @@ fn resolve_intent(repo: &Path, base_branch: &str, branch: &str) -> String {
     }
     if let Ok(subjects) = git_stdout(
         repo,
-        &["log", "--format=%s", &format!("{}..{}", base_branch, branch)],
+        &[
+            "log",
+            "--format=%s",
+            &format!("{}..{}", base_branch, branch),
+        ],
     ) {
         if !subjects.trim().is_empty() {
             parts.push(format!("Round subjects:\n{}", subjects.trim()));
@@ -888,7 +922,10 @@ mod tests {
         };
         let merged = merge_file_rung(scratch.path(), "f.txt", &disjoint).expect("disjoint merges");
         let text = String::from_utf8_lossy(&merged);
-        assert!(text.contains("X") && text.contains("Y"), "both edits present: {text}");
+        assert!(
+            text.contains("X") && text.contains("Y"),
+            "both edits present: {text}"
+        );
         assert!(is_clean_merge(&merged));
 
         let overlap = LoadedStages {
@@ -896,7 +933,10 @@ mod tests {
             ours: Some(b"B\n".to_vec()),
             theirs: Some(b"C\n".to_vec()),
         };
-        assert!(merge_file_rung(scratch.path(), "f.txt", &overlap).is_none(), "overlap declines");
+        assert!(
+            merge_file_rung(scratch.path(), "f.txt", &overlap).is_none(),
+            "overlap declines"
+        );
     }
 
     #[test]
@@ -904,7 +944,9 @@ mod tests {
         assert!(is_binary(b"ab\0cd"));
         assert!(!is_binary(b"plain text\n"));
         assert!(is_clean_merge(b"resolved\n"));
-        assert!(!is_clean_merge(b"a\n<<<<<<< ours\nb\n=======\nc\n>>>>>>> theirs\n"));
+        assert!(!is_clean_merge(
+            b"a\n<<<<<<< ours\nb\n=======\nc\n>>>>>>> theirs\n"
+        ));
     }
 
     // ---- ladder end-to-end ----
@@ -928,9 +970,11 @@ mod tests {
         let candidate = outcome.candidate_commit.expect("replay candidate");
         // The candidate's f.txt is the dash's final state, C.
         let show = Command::new("git")
-            .arg("-C").arg(repo)
+            .arg("-C")
+            .arg(repo)
             .args(["show", &format!("{candidate}:f.txt")])
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert_eq!(String::from_utf8_lossy(&show.stdout), "C\n");
     }
 
@@ -976,16 +1020,23 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        git(repo, &["config", "tugdash.mergedriver", &stub.to_string_lossy()]);
+        git(
+            repo,
+            &["config", "tugdash.mergedriver", &stub.to_string_lossy()],
+        );
 
         let outcome = resolve_conflicts(repo, "demo", None).unwrap();
-        let candidate = outcome.candidate_commit.expect("driver produced a candidate");
+        let candidate = outcome
+            .candidate_commit
+            .expect("driver produced a candidate");
         assert_eq!(outcome.resolved.len(), 1);
         assert_eq!(outcome.resolved[0].resolved_by, ResolvedBy::Driver);
         let show = Command::new("git")
-            .arg("-C").arg(repo)
+            .arg("-C")
+            .arg(repo)
             .args(["show", &format!("{candidate}:f.txt")])
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert_eq!(String::from_utf8_lossy(&show.stdout), "DRIVER\n");
     }
 
@@ -1032,12 +1083,25 @@ mod tests {
         set(repo, "f.txt", "C\n");
         git(repo, &["commit", "-am", "main to C"]);
         let main_c = String::from_utf8(
-            Command::new("git").arg("-C").arg(repo).args(["rev-parse", "HEAD"]).output().unwrap().stdout,
-        ).unwrap().trim().to_string();
+            Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string();
 
         // Record: a real merge conflicts, we resolve to R and commit → rerere
         // learns the preimage→resolution. Then reset main back to C.
-        let _ = Command::new("git").arg("-C").arg(repo).args(["merge", "--no-edit", "tugdash/demo"]).status();
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["merge", "--no-edit", "tugdash/demo"])
+            .status();
         set(repo, "f.txt", "R\n");
         git(repo, &["add", "f.txt"]);
         git(repo, &["commit", "--no-edit", "-m", "resolve"]);
@@ -1048,9 +1112,11 @@ mod tests {
         assert_eq!(outcome.resolved[0].resolved_by, ResolvedBy::Rerere);
         let candidate = outcome.candidate_commit.expect("rerere candidate");
         let show = Command::new("git")
-            .arg("-C").arg(repo)
+            .arg("-C")
+            .arg(repo)
             .args(["show", &format!("{candidate}:f.txt")])
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert_eq!(String::from_utf8_lossy(&show.stdout), "R\n");
     }
 }

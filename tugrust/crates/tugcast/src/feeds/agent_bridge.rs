@@ -1917,7 +1917,10 @@ mod tests {
                 .is_none(),
             "non-repo dir resolves no root"
         );
-        assert!(cache.is_none(), "cache stays None so the next event re-probes");
+        assert!(
+            cache.is_none(),
+            "cache stays None so the next event re-probes"
+        );
 
         std::process::Command::new("git")
             .arg("-C")
@@ -1927,7 +1930,10 @@ mod tests {
             .expect("git init");
 
         let root = ensure_repo_root(&mut cache, dir.to_str().unwrap()).await;
-        assert!(root.is_some(), "re-probe finds the repo that appeared mid-session");
+        assert!(
+            root.is_some(),
+            "re-probe finds the repo that appeared mid-session"
+        );
         assert!(cache.is_some(), "cache is now sticky");
     }
 

@@ -72,21 +72,16 @@ pub struct CommitOutcome {
 }
 
 /// How [`join`] integrates a dash into its base branch ([P14]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JoinStrategy {
     /// One squash commit on the base (default — preserves today's behaviour).
+    #[default]
     Squash,
     /// A `--no-ff` merge commit, preserving the dash's individual rounds.
     Merge,
     /// Replay the dash's commits onto the base (fast-forward when possible,
     /// else cherry-pick the range) for a linear history.
     Rebase,
-}
-
-impl Default for JoinStrategy {
-    fn default() -> Self {
-        JoinStrategy::Squash
-    }
 }
 
 impl JoinStrategy {
@@ -586,7 +581,7 @@ pub fn show(name: &str) -> Result<ShowOutcome, String> {
 
     let base = dash_base(&repo_root, name)?;
     let description = config_get(&repo_root, &format!("branch.{}.description", branch));
-    let worktree = worktree_path(&repo_root, &name);
+    let worktree = worktree_path(&repo_root, name);
 
     // Commits ahead of base are this dash's rounds ([P02]).
     let log = git_stdout(
@@ -729,7 +724,10 @@ fn join_journal_path(repo: &Path, name: &str) -> PathBuf {
 fn write_join_journal(repo: &Path, journal: &JoinJournal) -> Result<(), String> {
     let dir = project_state_dir(repo);
     std::fs::create_dir_all(&dir).map_err(|e| format!("failed to write join journal: {}", e))?;
-    let path = dir.join(format!("join-journal-{}.json", sanitize_branch_name(&journal.name)));
+    let path = dir.join(format!(
+        "join-journal-{}.json",
+        sanitize_branch_name(&journal.name)
+    ));
     let body =
         serde_json::to_string_pretty(journal).map_err(|e| format!("join journal encode: {}", e))?;
     std::fs::write(&path, body).map_err(|e| format!("failed to write join journal: {}", e))
@@ -811,11 +809,9 @@ pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
         let dir = base.join("tugcast");
         Some(dir.join("sessions.db"))
     })?;
-    let conn = rusqlite::Connection::open_with_flags(
-        &db,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .ok()?;
+    let conn =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
     let project = std::fs::canonicalize(repo)
         .unwrap_or_else(|_| repo.to_path_buf())
         .to_string_lossy()
@@ -867,7 +863,10 @@ pub(crate) fn commit_worktree_dirt(worktree: &Path) -> Result<(), String> {
             String::from_utf8_lossy(&add.stderr).trim()
         ));
     }
-    let c = git_output(worktree, &["commit", "-m", "join: commit outstanding changes"])?;
+    let c = git_output(
+        worktree,
+        &["commit", "-m", "join: commit outstanding changes"],
+    )?;
     if !c.status.success() {
         return Err(format!(
             "join: auto-commit in the dash worktree failed: {}",
@@ -908,9 +907,8 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
 
     // --continue: resume an interrupted teardown from the journal.
     if opts.continue_join {
-        let journal = read_join_journal(&repo_root, name).ok_or_else(|| {
-            format!("No interrupted join to continue for dash '{}'.", name)
-        })?;
+        let journal = read_join_journal(&repo_root, name)
+            .ok_or_else(|| format!("No interrupted join to continue for dash '{}'.", name))?;
         return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
     }
 
@@ -967,7 +965,11 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     if !base_dirt.is_empty() {
         let mut dash_changed: Vec<String> = git_stdout(
             &repo_root,
-            &["diff", "--name-only", &format!("{}...{}", base_branch, branch)],
+            &[
+                "diff",
+                "--name-only",
+                &format!("{}...{}", base_branch, branch),
+            ],
         )
         .unwrap_or_default()
         .lines()
@@ -996,7 +998,11 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     // Nothing to integrate (no commits past base) — release, don't join.
     let ahead = git_stdout(
         &repo_root,
-        &["rev-list", "--count", &format!("{}..{}", base_branch, branch)],
+        &[
+            "rev-list",
+            "--count",
+            &format!("{}..{}", base_branch, branch),
+        ],
     )
     .ok()
     .and_then(|s| s.parse::<i64>().ok())
@@ -1441,8 +1447,7 @@ mod tests {
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string()))
-        .unwrap();
+        create("test-dash", Some("Test".to_string())).unwrap();
 
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "content\n").unwrap();
@@ -1476,8 +1481,7 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string()))
-        .unwrap();
+        create("test-dash", Some("Test".to_string())).unwrap();
 
         let result = commit("test-dash", "No changes", None);
         assert!(!result.unwrap().committed);
@@ -1808,8 +1812,7 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string()))
-        .unwrap();
+        create("test-dash", Some("Test".to_string())).unwrap();
         Command::new("git")
             .arg("-C")
             .arg(repo)
@@ -1835,8 +1838,7 @@ mod tests {
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string()))
-        .unwrap();
+        create("test-dash", Some("Test".to_string())).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
 
@@ -1876,8 +1878,7 @@ mod tests {
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string()))
-        .unwrap();
+        create("test-dash", Some("Test".to_string())).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
         commit("test-dash", "Add test", None).unwrap();
@@ -1908,13 +1909,24 @@ mod tests {
             assert!(
                 git_output(
                     repo,
-                    &["worktree", "add", &old.to_string_lossy(), "-b", &branch, "main"]
+                    &[
+                        "worktree",
+                        "add",
+                        &old.to_string_lossy(),
+                        "-b",
+                        &branch,
+                        "main"
+                    ]
                 )
                 .unwrap()
                 .status
                 .success()
             );
-            git_output(repo, &["config", &format!("branch.{branch}.tugbase"), "main"]).unwrap();
+            git_output(
+                repo,
+                &["config", &format!("branch.{branch}.tugbase"), "main"],
+            )
+            .unwrap();
         }
         fs::write(repo.join(".tugtree/tugdash__dirty/scratch.txt"), "wip\n").unwrap();
 
@@ -1922,8 +1934,14 @@ mod tests {
         list().unwrap();
 
         // Clean legacy dash moved to the new home; dirty one stayed at .tugtree.
-        assert!(repo.join(".tug/worktrees/clean").exists(), "clean dash migrated");
-        assert!(!repo.join(".tugtree/tugdash__clean").exists(), "old clean path gone");
+        assert!(
+            repo.join(".tug/worktrees/clean").exists(),
+            "clean dash migrated"
+        );
+        assert!(
+            !repo.join(".tugtree/tugdash__clean").exists(),
+            "old clean path gone"
+        );
         assert!(
             repo.join(".tugtree/tugdash__dirty").exists(),
             "dirty dash stays at .tugtree"

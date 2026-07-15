@@ -681,14 +681,7 @@ mod tests {
     #[test]
     fn into_row_carries_origin_and_at() {
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let row = call("/proj/a.rs").into_row(
-            "tug-1",
-            "tu-1",
-            &project_dir,
-            None,
-            "replay",
-            42,
-        );
+        let row = call("/proj/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "replay", 42);
         assert_eq!(row.tug_session_id, "tug-1");
         assert_eq!(row.tool_use_id, "tu-1");
         // No repo root → the canonical absolute path is stored.
@@ -723,8 +716,7 @@ mod tests {
     #[test]
     fn into_row_no_repo_root_keeps_absolute_canonical() {
         let project_dir = CanonicalPath::from_test_str("/nonrepo");
-        let row =
-            call("/nonrepo/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "exact", 1);
+        let row = call("/nonrepo/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "exact", 1);
         assert_eq!(row.file_path, "/nonrepo/a.rs");
     }
 

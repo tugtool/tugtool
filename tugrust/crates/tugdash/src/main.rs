@@ -253,7 +253,10 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
     } else if !quiet {
         if data.previewed {
             if data.conflicts.is_empty() {
-                println!("Preview: dash '{}' joins cleanly into '{}'.", data.name, data.base_branch);
+                println!(
+                    "Preview: dash '{}' joins cleanly into '{}'.",
+                    data.name, data.base_branch
+                );
             } else {
                 println!(
                     "Preview: joining dash '{}' into '{}' conflicts in {} file(s):",
@@ -266,7 +269,10 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
                 }
             }
         } else if data.conflicts.is_empty() {
-            println!("Joined dash '{}' to branch '{}'", data.name, data.base_branch);
+            println!(
+                "Joined dash '{}' to branch '{}'",
+                data.name, data.base_branch
+            );
             if let Some(hash) = &data.commit_hash {
                 println!("  Commit: {}", hash);
             }
@@ -345,7 +351,7 @@ fn run_join_resolve(
         // Report the ladder outcome and the landed join together.
         print_json(
             "dash join --resolve",
-            &serde_json::json!({ "resolve": outcome, "join": landed }),
+            serde_json::json!({ "resolve": outcome, "join": landed }),
         );
     } else if !quiet {
         println!(

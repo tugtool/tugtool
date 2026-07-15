@@ -1330,7 +1330,6 @@ pub struct ScribeContext {
     pub model: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
-
 /// Parsed `changeset_commit` request: project dir, repo-relative file list,
 /// commit message (Spec S03). The file list may parse empty — the handler
 /// refuses it with a `changeset_commit_err` the card can render, rather than
@@ -1341,9 +1340,7 @@ struct ChangesetCommitPayload {
     message: String,
 }
 
-fn parse_changeset_commit_payload(
-    payload: &[u8],
-) -> Result<ChangesetCommitPayload, ControlError> {
+fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPayload, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
     let project_dir = value
@@ -1359,7 +1356,11 @@ fn parse_changeset_commit_payload(
         .and_then(|v| v.as_array())
         .ok_or(ControlError::Malformed)?
         .iter()
-        .map(|v| v.as_str().map(str::to_string).ok_or(ControlError::Malformed))
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or(ControlError::Malformed)
+        })
         .collect::<Result<Vec<String>, ControlError>>()?;
     let message = value
         .get("message")
@@ -3230,11 +3231,7 @@ impl AgentSupervisor {
 
         // Guard 1: only an open workspace may be initialized.
         if self.registry.find_entry_by_path(dir).is_none() {
-            Self::send_changeset_git_init_err(
-                &self.control_tx,
-                project_dir,
-                "not an open project",
-            );
+            Self::send_changeset_git_init_err(&self.control_tx, project_dir, "not an open project");
             return;
         }
 
@@ -3267,7 +3264,11 @@ impl AgentSupervisor {
                 Self::send_changeset_git_init_err(
                     &self.control_tx,
                     project_dir,
-                    if detail.is_empty() { "git init failed" } else { &detail },
+                    if detail.is_empty() {
+                        "git init failed"
+                    } else {
+                        &detail
+                    },
                 );
             }
             Err(e) => {
@@ -3354,7 +3355,12 @@ impl AgentSupervisor {
         let dir = std::path::Path::new(project_dir);
 
         if self.registry.find_entry_by_path(dir).is_none() {
-            Self::send_changeset_join_err(&self.control_tx, project_dir, &request.dash, "not an open project");
+            Self::send_changeset_join_err(
+                &self.control_tx,
+                project_dir,
+                &request.dash,
+                "not an open project",
+            );
             return;
         }
         if !crate::feeds::git::is_within_git_worktree(dir).await {
@@ -3406,7 +3412,12 @@ impl AgentSupervisor {
                 ));
             }
             Ok(Err(detail)) => {
-                Self::send_changeset_join_err(&self.control_tx, project_dir, &request.dash, &detail);
+                Self::send_changeset_join_err(
+                    &self.control_tx,
+                    project_dir,
+                    &request.dash,
+                    &detail,
+                );
             }
             Err(join_err) => {
                 Self::send_changeset_join_err(
@@ -3469,31 +3480,30 @@ impl AgentSupervisor {
 
         // Build the AI rung from the scribe context when one is configured;
         // without it the ladder runs its algorithmic rungs only.
-        let merger = self.scribe.as_ref().map(|scribe| {
-            crate::feeds::join_resolve::ScribeFileMerger {
-                spawner: scribe.spawner.clone(),
-                model: scribe.model.clone(),
-                handle: tokio::runtime::Handle::current(),
-                control_tx: self.control_tx.clone(),
-                project_dir: project_dir.to_string(),
-                dash: request.dash.clone(),
-            }
-        });
+        let merger =
+            self.scribe
+                .as_ref()
+                .map(|scribe| crate::feeds::join_resolve::ScribeFileMerger {
+                    spawner: scribe.spawner.clone(),
+                    model: scribe.model.clone(),
+                    handle: tokio::runtime::Handle::current(),
+                    control_tx: self.control_tx.clone(),
+                    project_dir: project_dir.to_string(),
+                    dash: request.dash.clone(),
+                });
 
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let merger_ref = merger
-                .as_ref()
-                .map(|m| m as &dyn tugdash_core::FileMerger);
+            let merger_ref = merger.as_ref().map(|m| m as &dyn tugdash_core::FileMerger);
             tugdash_core::resolve_conflicts(&dir_owned, &dash, merger_ref)
         })
         .await;
 
         match result {
             Ok(Ok(outcome)) => {
-                let mut body = serde_json::to_value(&outcome)
-                    .unwrap_or_else(|_| serde_json::json!({}));
+                let mut body =
+                    serde_json::to_value(&outcome).unwrap_or_else(|_| serde_json::json!({}));
                 if let Some(map) = body.as_object_mut() {
                     map.insert(
                         "action".into(),
@@ -4254,12 +4264,13 @@ impl AgentSupervisor {
         // Sync resolver over the tokio async mutex: `try_lock` never blocks —
         // under the rare lock contention it degrades to "no claude id" (the
         // draft prompt then drops the session-prompt context, never fails).
-        let resolver: crate::feeds::draft_engine::SessionResolver = Arc::new(move |tug_id: &str| {
-            let map = inmem.try_lock().ok()?;
-            let entry = map.get(&TugSessionId(tug_id.to_string()))?;
-            let entry = entry.try_lock().ok()?;
-            entry.claude_session_id.clone()
-        });
+        let resolver: crate::feeds::draft_engine::SessionResolver =
+            Arc::new(move |tug_id: &str| {
+                let map = inmem.try_lock().ok()?;
+                let entry = map.get(&TugSessionId(tug_id.to_string()))?;
+                let entry = entry.try_lock().ok()?;
+                entry.claude_session_id.clone()
+            });
         let engine = crate::feeds::draft_engine::DraftEngine::new(
             watch_rx,
             self.control_tx.clone(),
@@ -5900,7 +5911,12 @@ mod tests {
 
         // A dir that is not a registered workspace → err "not an open project".
         let other = tempfile::tempdir().unwrap();
-        let other_str = other.path().canonicalize().unwrap().to_string_lossy().to_string();
+        let other_str = other
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         sup.handle_control("changeset_git_init", &init_payload(&other_str), 1)
             .await;
         let unknown = next_control(&mut control_rx).await;
@@ -5956,7 +5972,10 @@ mod tests {
         git(&root, &["branch", "tugdash/demo"]);
         git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
         let wt = root.join(".tug/worktrees/demo");
-        git(&root, &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"]);
+        git(
+            &root,
+            &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"],
+        );
         std::fs::write(wt.join("round.txt"), "round\n").unwrap();
         git(&wt, &["add", "-A"]);
         git(&wt, &["commit", "-m", "round 1"]);
@@ -6056,7 +6075,10 @@ mod tests {
         git(&root, &["branch", "tugdash/demo"]);
         git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
         let wt = root.join(".tug/worktrees/demo");
-        git(&root, &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"]);
+        git(
+            &root,
+            &["worktree", "add", wt.to_str().unwrap(), "tugdash/demo"],
+        );
 
         let cancel = CancellationToken::new();
         let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
@@ -6100,9 +6122,8 @@ mod tests {
                 _model: String,
                 _prompt: String,
                 deltas: crate::scribe::ScribeDeltas,
-            ) -> std::pin::Pin<
-                Box<dyn std::future::Future<Output = Result<String, String>> + Send>,
-            > {
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>
+            {
                 let s = self.0.clone();
                 Box::pin(async move {
                     if let Some(tx) = deltas {
@@ -6158,7 +6179,8 @@ mod tests {
             "dash": "demo",
         }))
         .unwrap();
-        sup.handle_control("changeset_join_resolve", &payload, 1).await;
+        sup.handle_control("changeset_join_resolve", &payload, 1)
+            .await;
 
         // Drain frames: at least one AI delta, then the terminal ok.
         let mut saw_ai_delta = false;

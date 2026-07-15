@@ -170,9 +170,7 @@ impl DraftEngine {
         handles.retain(|key, _| present.contains(key));
 
         for entry in pending {
-            if handles
-                .get(&entry.key)
-                .map(|h| h.change_key.as_str())
+            if handles.get(&entry.key).map(|h| h.change_key.as_str())
                 == Some(entry.change_key.as_str())
             {
                 continue; // content unchanged since the last (re)arm
@@ -322,7 +320,17 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
             base,
             branch,
             worktree,
-        } => gather_dash(&repo_dir, base, branch, worktree, &style_rules, &git_subjects).await,
+        } => {
+            gather_dash(
+                &repo_dir,
+                base,
+                branch,
+                worktree,
+                &style_rules,
+                &git_subjects,
+            )
+            .await
+        }
     };
 
     // Fingerprint gate: an unchanged fingerprint means the persisted draft is
@@ -431,7 +439,12 @@ async fn gather_head(
             &diff,
         )
     } else {
-        scribe::compose_draft_prompt_unattributed(style_rules, &file_provenance, git_subjects, &diff)
+        scribe::compose_draft_prompt_unattributed(
+            style_rules,
+            &file_provenance,
+            git_subjects,
+            &diff,
+        )
     };
     (fingerprint, prompt)
 }
@@ -619,8 +632,8 @@ mod tests {
     use super::*;
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use tugcast_core::types::{
         ChangesetEntry, ChangesetFile, ChangesetSnapshot, ProjectChangeset,
@@ -670,7 +683,11 @@ mod tests {
             .args(args)
             .output()
             .expect("git runs");
-        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     /// A repo with one committed file and one tracked modification.
@@ -727,7 +744,10 @@ mod tests {
         Frame::new(FeedId::CHANGESET_ALL, serde_json::to_vec(snapshot).unwrap())
     }
 
-    fn make_deps(fake: Arc<FakeScribe>, ledger: Arc<SessionLedger>) -> (EngineDeps, broadcast::Receiver<Frame>) {
+    fn make_deps(
+        fake: Arc<FakeScribe>,
+        ledger: Arc<SessionLedger>,
+    ) -> (EngineDeps, broadcast::Receiver<Frame>) {
         let (control_tx, control_rx) = broadcast::channel(64);
         let scribe = ScribeContext {
             spawner: fake,
@@ -764,23 +784,30 @@ mod tests {
 
         let (watch_tx, watch_rx) = watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
         let cancel = CancellationToken::new();
-        let engine = DraftEngine {
-            watch_rx,
-            deps,
-        };
+        let engine = DraftEngine { watch_rx, deps };
         let handle = tokio::spawn(engine.run(cancel.clone()));
 
         // A session entry with a dirty file → one generation, one persisted row.
-        watch_tx.send(frame_of(&session_snapshot(&project, "M"))).unwrap();
-        let row = wait_for_draft(&ledger, &project).await.expect("draft persisted");
+        watch_tx
+            .send(frame_of(&session_snapshot(&project, "M")))
+            .unwrap();
+        let row = wait_for_draft(&ledger, &project)
+            .await
+            .expect("draft persisted");
         assert_eq!(row.message, "Change a.txt\n\n- edit the file");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
 
         // An identical snapshot: the change key is unchanged, so no re-arm; and
         // even if it re-armed, the fingerprint matches → still one call.
-        watch_tx.send(frame_of(&session_snapshot(&project, "M"))).unwrap();
+        watch_tx
+            .send(frame_of(&session_snapshot(&project, "M")))
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(120)).await;
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "fingerprint gate holds");
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            1,
+            "fingerprint gate holds"
+        );
 
         cancel.cancel();
         let _ = handle.await;
@@ -801,11 +828,17 @@ mod tests {
 
         // Two changes within the quiet window: the first debounce is superseded
         // by the second (different change key), so only one generation runs.
-        watch_tx.send(frame_of(&session_snapshot(&project, "M"))).unwrap();
+        watch_tx
+            .send(frame_of(&session_snapshot(&project, "M")))
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(10)).await;
-        watch_tx.send(frame_of(&session_snapshot(&project, "MM"))).unwrap();
+        watch_tx
+            .send(frame_of(&session_snapshot(&project, "MM")))
+            .unwrap();
 
-        let _ = wait_for_draft(&ledger, &project).await.expect("draft persisted");
+        let _ = wait_for_draft(&ledger, &project)
+            .await
+            .expect("draft persisted");
         tokio::time::sleep(Duration::from_millis(80)).await;
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "coalesced to one run");
 

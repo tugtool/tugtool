@@ -163,7 +163,6 @@ impl ScribeSpawner for ClaudeScribeSpawner {
     }
 }
 
-
 /// Run one scribe request through `spawner`, normalizing the result: output
 /// is trimmed, and an empty generation is an error (the card should never
 /// paste an empty draft). When `deltas` is `Some`, live text is streamed as
@@ -367,7 +366,9 @@ pub fn compose_file_merge_prompt(
         p.push('\n');
     }
     p.push_str("\n===== BASE =====\n");
-    p.push_str(&merge_version(base.unwrap_or(b"(file did not exist in the ancestor)")));
+    p.push_str(&merge_version(
+        base.unwrap_or(b"(file did not exist in the ancestor)"),
+    ));
     p.push_str("\n===== OURS =====\n");
     p.push_str(&merge_version(ours));
     p.push_str("\n===== THEIRS =====\n");
@@ -509,7 +510,10 @@ pub fn session_prompts_since(
                 continue;
             }
         }
-        let is_meta = value.get("isMeta").and_then(|b| b.as_bool()).unwrap_or(false);
+        let is_meta = value
+            .get("isMeta")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(false);
         let is_compact = value
             .get("isCompactSummary")
             .and_then(|b| b.as_bool())
@@ -600,14 +604,21 @@ mod tests {
             .expect("success");
         assert_eq!(text, "a tidy summary");
         let seen = fake.seen.lock().unwrap();
-        assert_eq!(seen.as_slice(), [("sonnet".to_string(), "the prompt".to_string())]);
+        assert_eq!(
+            seen.as_slice(),
+            [("sonnet".to_string(), "the prompt".to_string())]
+        );
     }
 
     #[tokio::test]
     async fn summarize_with_streams_accumulated_deltas_then_final_text() {
         let fake = FakeSpawner::with_deltas(
             Ok("Add the widget".to_string()),
-            vec!["Add".to_string(), "Add the".to_string(), "Add the widget".to_string()],
+            vec![
+                "Add".to_string(),
+                "Add the".to_string(),
+                "Add the widget".to_string(),
+            ],
         );
         let spawner: Arc<dyn ScribeSpawner> = fake;
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
@@ -654,9 +665,18 @@ mod tests {
         let scoped_rule = "scope(topic): specific summary";
 
         let session = compose_draft_prompt_session(style, &files, &prompts, &subjects, "DIFF");
-        assert!(session.contains("imperative subject"), "style rules present");
-        assert!(session.contains(scoped_rule), "scoped-subject rule in session prompt");
-        assert!(session.contains("fix the parser"), "session prompts present");
+        assert!(
+            session.contains("imperative subject"),
+            "style rules present"
+        );
+        assert!(
+            session.contains(scoped_rule),
+            "scoped-subject rule in session prompt"
+        );
+        assert!(
+            session.contains("fix the parser"),
+            "session prompts present"
+        );
         assert!(session.contains("a.rs (edit · exact)"));
         assert!(session.contains("prior subject"));
         assert!(session.trim_end().ends_with("DIFF"));
@@ -669,14 +689,22 @@ mod tests {
             "DIFF",
         );
         assert!(dash.contains("squash/join commit message"));
-        assert!(dash.contains(scoped_rule), "scoped-subject rule in dash prompt");
-        assert!(dash.contains("round one instruction"), "dash-log lines present");
+        assert!(
+            dash.contains(scoped_rule),
+            "scoped-subject rule in dash prompt"
+        );
+        assert!(
+            dash.contains("round one instruction"),
+            "dash-log lines present"
+        );
         assert!(!dash.contains("prompts since this changeset began"));
 
-        let unattributed =
-            compose_draft_prompt_unattributed(style, &files, &subjects, "DIFF");
+        let unattributed = compose_draft_prompt_unattributed(style, &files, &subjects, "DIFF");
         assert!(unattributed.contains("Unattributed changed files"));
-        assert!(unattributed.contains(scoped_rule), "scoped-subject rule in unattributed prompt");
+        assert!(
+            unattributed.contains(scoped_rule),
+            "scoped-subject rule in unattributed prompt"
+        );
         assert!(!unattributed.contains("prompts since this changeset began"));
     }
 
@@ -706,7 +734,11 @@ mod tests {
         let files = [("a.rs".to_string(), "M".to_string())];
         let untracked = [("new.txt".to_string(), 10u64, 1_700i64)];
         let fp = fingerprint_head_entry(&files, "DIFF", &untracked);
-        assert_eq!(fp, fingerprint_head_entry(&files, "DIFF", &untracked), "stable");
+        assert_eq!(
+            fp,
+            fingerprint_head_entry(&files, "DIFF", &untracked),
+            "stable"
+        );
         // Order of the input files must not matter (sorted internally).
         let files_rev = [
             ("b.rs".to_string(), "M".to_string()),

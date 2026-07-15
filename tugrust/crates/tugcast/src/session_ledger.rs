@@ -2155,8 +2155,7 @@ impl SessionLedger {
                 Some((surv_ambiguous, surv_at)) => {
                     // Target PK exists (replay duplicate): merge into it and drop
                     // the legacy row.
-                    let merged_ambiguous =
-                        i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
+                    let merged_ambiguous = i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
                     tx.execute(
                         "UPDATE file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
                          WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
@@ -2748,9 +2747,7 @@ fn file_event_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileEv
     })
 }
 
-fn changeset_draft_row_from_query(
-    row: &rusqlite::Row<'_>,
-) -> rusqlite::Result<ChangesetDraftRow> {
+fn changeset_draft_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChangesetDraftRow> {
     Ok(ChangesetDraftRow {
         owner_kind: row.get(0)?,
         owner_id: row.get(1)?,
@@ -4805,13 +4802,20 @@ mod tests {
             l.changeset_draft("session", "s1", "/proj").unwrap(),
             Some(newer.clone())
         );
-        assert_eq!(l.changeset_drafts_for_project("/proj").unwrap(), vec![newer]);
+        assert_eq!(
+            l.changeset_drafts_for_project("/proj").unwrap(),
+            vec![newer]
+        );
 
         // A different owner kind on the same id/project is a distinct row.
         let dash = sample_draft("dash", "tugdash/x", "/proj", "fp-d", "Dash join message");
         l.upsert_changeset_draft(&dash).unwrap();
         assert_eq!(l.changeset_drafts_for_project("/proj").unwrap().len(), 2);
-        assert!(l.changeset_draft("session", "missing", "/proj").unwrap().is_none());
+        assert!(
+            l.changeset_draft("session", "missing", "/proj")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -4846,7 +4850,11 @@ mod tests {
         l.upsert_changeset_draft(&sample_draft("session", "s1", "/p", "fp", "msg"))
             .unwrap();
         assert_eq!(l.changeset_drafts_for_project("/p").unwrap().len(), 1);
-        assert!(l.changeset_draft("session", "stale", "/p").unwrap().is_none());
+        assert!(
+            l.changeset_draft("session", "stale", "/p")
+                .unwrap()
+                .is_none()
+        );
     }
 
     // ---- session_metadata table ----------------------------------------

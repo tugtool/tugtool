@@ -878,7 +878,11 @@ async fn main() {
         let bank = bank_client.clone();
         Arc::new(move || {
             bank.as_ref()
-                .and_then(|b| b.get("dev.tugtool.changeset", "scribe_model").ok().flatten())
+                .and_then(|b| {
+                    b.get("dev.tugtool.changeset", "scribe_model")
+                        .ok()
+                        .flatten()
+                })
                 .and_then(|v| match v {
                     tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
                     _ => None,

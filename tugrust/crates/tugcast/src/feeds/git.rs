@@ -322,11 +322,7 @@ pub(crate) async fn fetch_dash_diff(
 ) -> Option<String> {
     let worktree_abs = repo_dir.join(worktree_rel);
     if worktree_abs.is_dir() {
-        let merge_base = run_git_line(
-            &worktree_abs,
-            &["merge-base", base, branch],
-        )
-        .await?;
+        let merge_base = run_git_line(&worktree_abs, &["merge-base", base, branch]).await?;
         run_git_diff_against(&worktree_abs, &merge_base).await
     } else {
         run_git_diff_against(repo_dir, &format!("{base}...{branch}")).await
@@ -370,11 +366,7 @@ async fn run_git_line(dir: &Path, args: &[&str]) -> Option<String> {
     let output = cmd.output().await.ok()?;
     if output.status.success() {
         let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if line.is_empty() {
-            None
-        } else {
-            Some(line)
-        }
+        if line.is_empty() { None } else { Some(line) }
     } else {
         None
     }
@@ -968,7 +960,8 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_diff_snapshot_clean_tree_is_empty() {
         let temp = init_diff_fixture_repo().await;
-        let snapshot = build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws", &[]).await;
+        let snapshot =
+            build_git_diff_snapshot(temp.path(), "req-clean".to_string(), "ws", &[]).await;
         assert!(!snapshot.no_repo, "a real repo is not flagged no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
@@ -980,7 +973,8 @@ Binary files a/img.png and b/img.png differ
     async fn test_build_git_diff_snapshot_non_repo_flags_no_repo() {
         // A plain dir (never `git init`ed) is flagged no_repo, not "clean".
         let temp = TempDir::new().unwrap();
-        let snapshot = build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws", &[]).await;
+        let snapshot =
+            build_git_diff_snapshot(temp.path(), "req-norepo".to_string(), "ws", &[]).await;
         assert!(snapshot.no_repo, "a non-git dir must set no_repo");
         assert_eq!(snapshot.file_count, 0);
         assert!(snapshot.files.is_empty());
@@ -1038,7 +1032,10 @@ Binary files a/img.png and b/img.png differ
 
         assert!(!snapshot.no_repo);
         assert_eq!(snapshot.request_id, "req-dash");
-        assert_eq!(snapshot.base, "main...tugdash/demo", "header carries the range");
+        assert_eq!(
+            snapshot.base, "main...tugdash/demo",
+            "header carries the range"
+        );
         let paths: Vec<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
         assert!(paths.contains(&"round.txt"), "committed round: {paths:?}");
         assert!(paths.contains(&"keep.txt"), "worktree dirt: {paths:?}");
@@ -1063,6 +1060,10 @@ Binary files a/img.png and b/img.png differ
         .await;
 
         let paths: Vec<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
-        assert_eq!(paths, ["round.txt"], "committed round only, no dirt: {paths:?}");
+        assert_eq!(
+            paths,
+            ["round.txt"],
+            "committed round only, no dirt: {paths:?}"
+        );
     }
 }

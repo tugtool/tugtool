@@ -328,7 +328,9 @@ pub(crate) fn apply_session_rows(snapshot: &mut ChangesetSnapshot, rows: &[Sessi
         });
     }
 
-    snapshot.changesets.sort_by(|a, b| entry_sort_key(a).cmp(&entry_sort_key(b)));
+    snapshot
+        .changesets
+        .sort_by(|a, b| entry_sort_key(a).cmp(&entry_sort_key(b)));
 }
 
 /// Deterministic entry order: sessions (by id) before dashes (by ref).
@@ -386,9 +388,7 @@ fn session_display_name(pfe: &ProjectFileEvent) -> String {
 }
 
 /// Project a persisted draft row onto its wire shape (Spec S10).
-pub(crate) fn draft_from_row(
-    row: &crate::session_ledger::ChangesetDraftRow,
-) -> ChangesetDraft {
+pub(crate) fn draft_from_row(row: &crate::session_ledger::ChangesetDraftRow) -> ChangesetDraft {
     ChangesetDraft {
         fingerprint: row.fingerprint.clone(),
         message: row.message.clone(),
@@ -424,7 +424,10 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
     // split (repo_root and file_path spelled differently) collapses here.
     let canonical_root = CanonicalPath::from_raw(repo_root);
     let canonical_file = CanonicalPath::from_raw(Path::new(file_path));
-    if let Ok(rel) = canonical_file.as_path().strip_prefix(canonical_root.as_path()) {
+    if let Ok(rel) = canonical_file
+        .as_path()
+        .strip_prefix(canonical_root.as_path())
+    {
         return rel.to_string_lossy().into_owned();
     }
 
@@ -628,10 +631,7 @@ pub(crate) async fn run_changeset_commit(
 
 /// Run one git step, mapping a non-zero exit to its stderr detail (or
 /// `fallback` when stderr is empty) and a spawn failure to its io error.
-async fn run_git_step(
-    mut cmd: tokio::process::Command,
-    fallback: &str,
-) -> Result<(), String> {
+async fn run_git_step(mut cmd: tokio::process::Command, fallback: &str) -> Result<(), String> {
     let output = cmd.output().await.map_err(|e| e.to_string())?;
     if output.status.success() {
         return Ok(());
@@ -848,7 +848,6 @@ mod tests {
         }
     }
 
-
     fn session_row(
         id: &str,
         name: Option<&str>,
@@ -980,24 +979,33 @@ mod tests {
             .lines()
             .filter_map(|l| l.split('\t').nth(2))
             .collect();
-        assert_eq!(receipt_paths, ["a.txt"], "numstat lists only the listed file");
+        assert_eq!(
+            receipt_paths,
+            ["a.txt"],
+            "numstat lists only the listed file"
+        );
 
         // b.txt stays staged-but-uncommitted; c.txt stays untracked.
         let status = git_stdout(&repo, &["status", "--porcelain"])
             .await
             .expect("status");
-        assert!(status.contains("A  b.txt"), "pre-staged file untouched: {status}");
-        assert!(status.contains("?? c.txt"), "untracked file untouched: {status}");
+        assert!(
+            status.contains("A  b.txt"),
+            "pre-staged file untouched: {status}"
+        );
+        assert!(
+            status.contains("?? c.txt"),
+            "untracked file untouched: {status}"
+        );
     }
 
     #[tokio::test]
     async fn run_changeset_commit_stages_untracked_selections() {
         let (_temp, repo) = init_repo();
         std::fs::write(repo.join("fresh.txt"), "fresh\n").unwrap();
-        let receipt =
-            run_changeset_commit(&repo, &["fresh.txt".to_string()], "add fresh")
-                .await
-                .expect("untracked selection commits");
+        let receipt = run_changeset_commit(&repo, &["fresh.txt".to_string()], "add fresh")
+            .await
+            .expect("untracked selection commits");
         assert!(receipt.receipt.contains("fresh.txt"));
     }
 
@@ -1071,12 +1079,26 @@ mod tests {
         // the same canonical bucket.
         let pd_a = CanonicalPath::from_raw(&root);
         let pd_b = CanonicalPath::from_raw(&link);
-        assert_eq!(pd_a.as_str(), pd_b.as_str(), "both spellings canonicalize alike");
+        assert_eq!(
+            pd_a.as_str(),
+            pd_b.as_str(),
+            "both spellings canonicalize alike"
+        );
         ledger
-            .record_file_event(&event("sess-a", "tu-1", &root.join("a.txt"), pd_a.as_path()))
+            .record_file_event(&event(
+                "sess-a",
+                "tu-1",
+                &root.join("a.txt"),
+                pd_a.as_path(),
+            ))
             .unwrap();
         ledger
-            .record_file_event(&event("sess-b", "tu-2", &root.join("b.txt"), pd_b.as_path()))
+            .record_file_event(&event(
+                "sess-b",
+                "tu-2",
+                &root.join("b.txt"),
+                pd_b.as_path(),
+            ))
             .unwrap();
 
         let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
@@ -1088,7 +1110,10 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(owners.contains(&"sess-a"), "session A attributed: {owners:?}");
+        assert!(
+            owners.contains(&"sess-a"),
+            "session A attributed: {owners:?}"
+        );
         assert!(
             owners.contains(&"sess-b"),
             "session B (other spelling) attributed: {owners:?}"
@@ -1113,10 +1138,16 @@ mod tests {
         let raw = link.to_string_lossy().to_string();
 
         let ledger = SessionLedger::open_in_memory().unwrap();
-        ledger.record_spawn("sess-a", "ws", &raw, "card-1", 0).unwrap();
+        ledger
+            .record_spawn("sess-a", "ws", &raw, "card-1", 0)
+            .unwrap();
 
         let rows = ledger.list_for_project_dir(&raw).unwrap();
-        assert_eq!(rows.len(), 1, "picker finds the session by its raw typed path");
+        assert_eq!(
+            rows.len(),
+            1,
+            "picker finds the session by its raw typed path"
+        );
         assert_eq!(
             rows[0].project_dir, raw,
             "sessions.project_dir stays the raw spelling"
@@ -1152,13 +1183,17 @@ mod tests {
             .changesets
             .iter()
             .filter_map(|e| match e {
-                ChangesetEntry::Session { owner_id, files, .. } if !files.is_empty() => {
-                    Some(owner_id.as_str())
-                }
+                ChangesetEntry::Session {
+                    owner_id, files, ..
+                } if !files.is_empty() => Some(owner_id.as_str()),
                 _ => None,
             })
             .collect();
-        assert_eq!(owners, ["sess"], "the split row is attributed to its session");
+        assert_eq!(
+            owners,
+            ["sess"],
+            "the split row is attributed to its session"
+        );
         assert!(
             snapshot.unattributed.is_empty(),
             "nothing falls to unattributed: {:?}",
@@ -1177,7 +1212,9 @@ mod tests {
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         let pd = CanonicalPath::from_raw(&root);
-        ledger.record_spawn("sess", "ws", pd.as_str(), "card-1", 0).unwrap();
+        ledger
+            .record_spawn("sess", "ws", pd.as_str(), "card-1", 0)
+            .unwrap();
         // New capture-time form: repo-relative file_path, op deleted.
         let mut ev = event("sess", "tu-1", Path::new("committed.txt"), pd.as_path());
         ev.op = "deleted".to_owned();
@@ -1195,7 +1232,8 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            owned, ["committed.txt"],
+            owned,
+            ["committed.txt"],
             "the deleted file reconciles via its repo-relative key"
         );
         assert!(snapshot.unattributed.is_empty());
@@ -1283,7 +1321,9 @@ mod tests {
         let x_before = ledger.file_events_for_session("sess-x").unwrap();
 
         // Compose only Y.
-        compose_snapshot(&root_y, Some(&ledger)).await.expect("repo");
+        compose_snapshot(&root_y, Some(&ledger))
+            .await
+            .expect("repo");
 
         let x_after = ledger.file_events_for_session("sess-x").unwrap();
         assert_eq!(x_before, x_after, "unopened project X's rows are untouched");
