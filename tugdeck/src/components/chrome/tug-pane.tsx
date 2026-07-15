@@ -555,13 +555,22 @@ function CardTitleBar({
               onConfirm={handleCloseConfirm}
               onCancel={handleCloseCancel}
               side="bottom"
+              // The X sits at the card's trailing edge; anchor the popover's
+              // end edge to it so it hangs back into the card interior rather
+              // than centering under the X and spilling past the card's right
+              // side. The arrow then points up at the X, naming the control
+              // that opened it.
+              align="end"
+              arrow
               sideOffset={6}
-              // A card may be dragged so its right side (and this X button)
-              // sits off the deck edge. `sticky="always"` drops Radix's
+              // Pin the popover inside the card it is confirming so it can
+              // never overlap a neighboring card — an overlap makes the
+              // targeted card ambiguous. Radix shifts/flips within this
+              // boundary instead of the viewport. `sticky="always"` drops the
               // attach-to-anchor shift limiter so the popover slides fully
-              // into view rather than trailing the off-screen X; the padding
-              // keeps it off the viewport edge. Without this, Cmd-W on an
-              // off-deck card opens the confirm popover where it can't be seen.
+              // inside the card even when the X is dragged toward the edge;
+              // the padding keeps it off the card's border.
+              collisionBoundary={closeAnchorEl?.closest(".tug-pane-chrome") ?? null}
               sticky="always"
               collisionPadding={8}
               message={

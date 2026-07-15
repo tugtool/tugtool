@@ -657,6 +657,15 @@ export interface TugPopoverContentProps {
    */
   collisionPadding?: number;
   /**
+   * Element(s) the popover must stay inside when shifting/flipping to
+   * avoid overflow. Forwarded verbatim to Radix's `Popover.Content` as
+   * `collisionBoundary`. Defaults (`undefined`) to the viewport. Pass a
+   * specific element to pin the popover within that element's bounds —
+   * e.g. a card's close-confirm popover constrained to the card so it can
+   * never spill over a neighboring card and make the target ambiguous.
+   */
+  collisionBoundary?: Element | null | Array<Element | null>;
+  /**
    * Show the arrow pointer.
    * @default false
    */
@@ -714,6 +723,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
       sideOffset = 6,
       sticky = "partial",
       collisionPadding = 0,
+      collisionBoundary,
       arrow = false,
       onOpenAutoFocus,
       spaceDismisses,
@@ -764,6 +774,7 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           sideOffset={sideOffset}
           sticky={sticky}
           collisionPadding={collisionPadding}
+          collisionBoundary={collisionBoundary}
           onOpenAutoFocus={onOpenAutoFocus}
           // The engine focus trap is the single close-focus writer: at FocusScope
           // teardown (the only moment focus won't be yanked back into the closing
@@ -805,7 +816,9 @@ export const TugPopoverContent = React.forwardRef<HTMLDivElement, TugPopoverCont
           <TugPopoverContentShell FocusModeScope={FocusModeScope}>
             {children}
           </TugPopoverContentShell>
-          {arrow && <Popover.Arrow className="tug-popover-arrow" />}
+          {arrow && (
+            <Popover.Arrow className="tug-popover-arrow" width={14} height={7} />
+          )}
         </Popover.Content>
       </Popover.Portal>
     );

@@ -156,6 +156,15 @@ export interface TugConfirmPopoverProps {
    */
   side?: "top" | "bottom" | "left" | "right";
   /**
+   * Alignment along the side axis (forwarded to `TugPopoverContent`).
+   * Use `"end"` when the anchor sits at the trailing edge of its
+   * container — e.g. a card's close X — so the popover hangs back toward
+   * the container's interior instead of centering under the anchor and
+   * spilling past the edge.
+   * @default "center"
+   */
+  align?: "start" | "center" | "end";
+  /**
    * Distance from trigger / anchor in px.
    * @default 6
    */
@@ -176,6 +185,21 @@ export interface TugConfirmPopoverProps {
    * @default 0
    */
   collisionPadding?: number;
+  /**
+   * Element(s) the popover must stay inside when shifting/flipping
+   * (forwarded to `TugPopoverContent` as `collisionBoundary`). Defaults
+   * to the viewport. Pass the confirmed object's own element — e.g. the
+   * card behind a close-confirm — so the popover can never overlap a
+   * sibling and leave the target ambiguous.
+   */
+  collisionBoundary?: Element | null | Array<Element | null>;
+  /**
+   * Show the arrow pointer aimed back at the anchor (forwarded to
+   * `TugPopoverContent`). Use it so the popover visibly names which
+   * control opened it.
+   * @default false
+   */
+  arrow?: boolean;
   /**
    * Stable opaque sender id for chain dispatches. Auto-derived via
    * `useId()` if omitted. Parent responders disambiguate multi-popover
@@ -253,9 +277,12 @@ export const TugConfirmPopover = React.forwardRef<
     confirmRole = "danger",
     cancelLabel = "Cancel",
     side = "bottom",
+    align = "center",
     sideOffset = 6,
     sticky = "partial",
     collisionPadding = 0,
+    collisionBoundary,
+    arrow = false,
     senderId: senderIdProp,
     open: openProp,
     anchorEl,
@@ -578,9 +605,12 @@ export const TugConfirmPopover = React.forwardRef<
       )}
       <TugPopoverContent
         side={side}
+        align={align}
         sideOffset={sideOffset}
         sticky={sticky}
         collisionPadding={collisionPadding}
+        collisionBoundary={collisionBoundary}
+        arrow={arrow}
         onOpenAutoFocus={handleOpenAutoFocus}
       >
         <div
