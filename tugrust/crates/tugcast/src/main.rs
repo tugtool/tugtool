@@ -458,6 +458,19 @@ async fn main() {
     // buffer suffices — `/diff` is a user-initiated, infrequent action.
     let (gd_response_tx, _) = broadcast::channel::<Frame>(16);
 
+    // Shared GIT_LOG-response broadcast channel. The GIT_LOG_QUERY adapter
+    // (below) publishes one single-shot `GitLogSnapshot` here per Git History
+    // request; the router fans it out to every client and JS filters by
+    // `request_id`. A small buffer suffices — history is refreshed on mount and
+    // followed-project change, not per keystroke.
+    let (gl_response_tx, _) = broadcast::channel::<Frame>(16);
+
+    // Shared GIT_HEAD-signal broadcast channel. Each workspace's event-driven
+    // git watch broadcasts a `GitHeadSignal` here when that workspace's HEAD
+    // moves (commit/checkout/reset, from any source); the router fans it out and
+    // the git-history client re-requests its log. Cloned into the registry.
+    let (gh_response_tx, _) = broadcast::channel::<Frame>(16);
+
     // Shared USAGE-response broadcast channel. The USAGE_QUERY adapter (below)
     // publishes one single-shot `UsageSnapshot` here per `/usage` request; the
     // router fans it out and JS filters by `request_id`. Account-global (one
@@ -477,9 +490,16 @@ async fn main() {
     // open project recomputes the aggregate.
     let changeset_all_bump = Arc::new(tokio::sync::Notify::new());
 
+    // The ledger is the source of truth for sessions; wire it to publish a
+    // "sessions changed" signal on the recompute bump so the account-global
+    // changeset aggregate — a delegate — reflects every session-lifecycle write
+    // event-drively (the source-side twin of the registry's project bump).
+    ledger.set_change_signal(Arc::clone(&changeset_all_bump));
+
     let registry = Arc::new(WorkspaceRegistry::new(
         ft_response_tx.clone(),
         Arc::clone(&changeset_all_bump),
+        gh_response_tx.clone(),
     ));
     let bootstrap = registry
         .get_or_create(&watch_dir, cancel.clone())
@@ -608,6 +628,83 @@ async fn main() {
                     }
                     Err(e) => {
                         warn!(error = %e, "GIT_DIFF: failed to serialize response");
+                    }
+                }
+            });
+        }
+    });
+
+    // Adapter: router sends raw Frames on GIT_LOG_QUERY. Parse `{root,
+    // requestId, limit}`, then run one `git log` there and broadcast the
+    // `GitLogSnapshot` on GIT_LOG. Each request runs in its own task so a slow
+    // git invocation never head-of-line-blocks another card's history; the
+    // response is a broadcast every client sees, so correlation is entirely
+    // client-side by `request_id`.
+    //
+    // Unlike GIT_DIFF, an explicit valid `root` is read DIRECTLY — no bootstrap
+    // fallback. A read-only log needs only the path, and a followed card's
+    // workspace may not be registered yet on restore (the resume spawn lands
+    // after the binding); falling back to bootstrap would show the wrong repo.
+    // The `workspace_key` is the canonical path (the same key a registered
+    // workspace carries), so a later GIT_HEAD from that workspace's watch
+    // correlates. Only an absent/invalid `root` (the dev-loop) uses bootstrap.
+    let (gl_input_tx, mut gl_input_rx) = mpsc::channel::<Frame>(16);
+    let gl_bootstrap = Arc::clone(&bootstrap);
+    let gl_response_tx_loop = gl_response_tx.clone();
+    tokio::spawn(async move {
+        #[derive(serde::Deserialize)]
+        struct RawLogQuery {
+            root: Option<String>,
+            #[serde(rename = "requestId")]
+            request_id: Option<String>,
+            limit: Option<u32>,
+        }
+        while let Some(frame) = gl_input_rx.recv().await {
+            let raw = match serde_json::from_slice::<RawLogQuery>(&frame.payload) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        payload_len = frame.payload.len(),
+                        "GIT_LOG_QUERY: malformed JSON payload"
+                    );
+                    continue;
+                }
+            };
+            let root_pb = raw.root.map(PathBuf::from);
+            let (project_dir, workspace_key) = match root_pb {
+                Some(root) if root.is_dir() => {
+                    // Canonical identity through the one gateway ([canonical-path
+                    // -identity]) — the same key a registered workspace and its
+                    // git watch carry, so a later GIT_HEAD correlates, and never a
+                    // second ad-hoc canonicalization that could drift from it.
+                    let key = crate::path_resolver::CanonicalPath::from_raw(&root)
+                        .as_str()
+                        .to_string();
+                    (root, key)
+                }
+                _ => (
+                    gl_bootstrap.project_dir.clone(),
+                    gl_bootstrap.workspace_key.as_ref().to_string(),
+                ),
+            };
+            let request_id = raw.request_id.unwrap_or_default();
+            let limit = raw.limit.unwrap_or(20).clamp(1, 200);
+            let response_tx = gl_response_tx_loop.clone();
+            tokio::spawn(async move {
+                let snapshot = crate::feeds::git::build_git_log_snapshot(
+                    &project_dir,
+                    request_id,
+                    &workspace_key,
+                    limit,
+                )
+                .await;
+                match serde_json::to_vec(&snapshot) {
+                    Ok(json) => {
+                        let _ = response_tx.send(Frame::new(FeedId::GIT_LOG, json));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "GIT_LOG: failed to serialize response");
                     }
                 }
             });
@@ -1031,6 +1128,7 @@ async fn main() {
     feed_router.register_input(FeedId::SHELL_INPUT, shell_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
+    feed_router.register_input(FeedId::GIT_LOG_QUERY, gl_input_tx);
     feed_router.register_input(FeedId::USAGE_QUERY, usage_input_tx);
 
     // Attach the supervisor to the router so `handle_client` can intercept
@@ -1100,7 +1198,13 @@ async fn main() {
     // `ClientState::Live` and forwards every frame to the socket. JS
     // filters by `workspace_key` to dispatch responses to the right
     // card. Per `roadmap/dev-atoms.md#step-pre-4`.
-    feed_router.add_broadcast_senders(vec![ft_response_tx, gd_response_tx, usage_response_tx]);
+    feed_router.add_broadcast_senders(vec![
+        ft_response_tx,
+        gd_response_tx,
+        gl_response_tx,
+        gh_response_tx,
+        usage_response_tx,
+    ]);
 
     // Filesystem, filetree, and git feed tasks are owned by the
     // WorkspaceRegistry's bootstrap entry — spawned inside

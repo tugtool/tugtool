@@ -152,6 +152,61 @@ pub struct GitDiffSnapshot {
     pub files: Vec<GitDiffFile>,
 }
 
+/// A single commit in a [`GitLogSnapshot`]. The wire carries structured fields
+/// so the client can format them and later hang per-commit affordances off the
+/// full `sha` without a wire change.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GitLogCommit {
+    /// Full 40-char commit hash. Clients shorten for display.
+    pub sha: String,
+    /// The commit subject line (`%s`).
+    pub subject: String,
+    /// Author name (`%an`).
+    pub author: String,
+    /// Author date, `--date=short` (`YYYY-MM-DD`).
+    pub date: String,
+}
+
+/// A HEAD-moved signal, broadcast on the GIT_HEAD feed (0x27) whenever a
+/// workspace's HEAD changes (a commit, checkout, reset, merge, rebase — from
+/// any source, detected by watching the git dir). It carries no log payload:
+/// a git-log consumer scoped to `workspace_key` re-requests the log on receipt.
+/// `head` is the new HEAD sha (or `""` for an unborn/`no_repo` state) so a
+/// consumer can dedup redundant signals.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GitHeadSignal {
+    /// Canonical key of the workspace whose HEAD moved.
+    pub workspace_key: String,
+    /// The new HEAD sha, or `""` when unborn / not a repo.
+    pub head: String,
+}
+
+/// A single-shot recent-commits payload, delivered on the GIT_LOG feed (0x25)
+/// in response to a GIT_LOG_QUERY (0x26).
+///
+/// `request_id` echoes the query's correlation id and `workspace_key`
+/// identifies the project dir the log was read in, so the client can match the
+/// broadcast response to the request that asked. `branch` is the current
+/// branch (`git branch --show-current`), `"(detached)"` when detached, and
+/// `""` when `no_repo`. `commits` is most-recent-first, capped at the request's
+/// `limit`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GitLogSnapshot {
+    /// Correlation id echoed from the request.
+    pub request_id: String,
+    /// Canonical key of the workspace the log was read in.
+    pub workspace_key: String,
+    /// Current branch (`git branch --show-current`), `"(detached)"` when
+    /// detached, `""` when `no_repo`.
+    pub branch: String,
+    /// True when the project dir is **not** inside a git working tree — so the
+    /// client can say "not a git repository". `commits` is empty in that case.
+    #[serde(default)]
+    pub no_repo: bool,
+    /// Most-recent-first commits, at most the request's `limit`.
+    pub commits: Vec<GitLogCommit>,
+}
+
 /// One file inside a changeset entry on the CHANGESET feed (0x23).
 ///
 /// `git_status` is the porcelain-v2 XY pair for working-tree files, or the
@@ -530,6 +585,53 @@ mod tests {
         let json = serde_json::to_string(&snapshot).unwrap();
         let decoded: GitDiffSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(snapshot, decoded);
+    }
+
+    #[test]
+    fn test_git_log_snapshot_round_trip() {
+        let snapshot = GitLogSnapshot {
+            request_id: "gl-1".to_string(),
+            workspace_key: "/work/repo".to_string(),
+            branch: "main".to_string(),
+            no_repo: false,
+            commits: vec![
+                GitLogCommit {
+                    sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                    subject: "add feature".to_string(),
+                    author: "Ada Lovelace".to_string(),
+                    date: "2026-07-15".to_string(),
+                },
+                GitLogCommit {
+                    sha: "89abcdef0123456789abcdef0123456789abcdef".to_string(),
+                    subject: "initial".to_string(),
+                    author: "Grace Hopper".to_string(),
+                    date: "2026-07-14".to_string(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let decoded: GitLogSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, decoded);
+    }
+
+    #[test]
+    fn test_git_head_signal_round_trip() {
+        let sig = GitHeadSignal {
+            workspace_key: "/work/repo".to_string(),
+            head: "0123456789abcdef0123456789abcdef01234567".to_string(),
+        };
+        let json = serde_json::to_string(&sig).unwrap();
+        let decoded: GitHeadSignal = serde_json::from_str(&json).unwrap();
+        assert_eq!(sig, decoded);
+    }
+
+    #[test]
+    fn test_git_log_snapshot_no_repo_defaults() {
+        // A payload with no `no_repo` field decodes to `false`.
+        let json = r#"{"request_id":"gl-2","workspace_key":"ws","branch":"","commits":[]}"#;
+        let decoded: GitLogSnapshot = serde_json::from_str(json).unwrap();
+        assert!(!decoded.no_repo);
+        assert!(decoded.commits.is_empty());
     }
 
     #[test]

@@ -552,6 +552,62 @@ impl TestWs {
         Ok(self.buffer.remove(idx).payload)
     }
 
+    pub async fn send_git_log_query(
+        &mut self,
+        root: Option<&Path>,
+        request_id: &str,
+        limit: Option<u32>,
+    ) {
+        let mut payload = serde_json::json!({ "requestId": request_id });
+        if let Some(root) = root {
+            payload["root"] = serde_json::Value::String(root.to_string_lossy().into_owned());
+        }
+        if let Some(limit) = limit {
+            payload["limit"] = serde_json::Value::from(limit);
+        }
+        let bytes = serde_json::to_vec(&payload).expect("git_log_query json");
+        let frame = Frame::new(FeedId::GIT_LOG_QUERY, bytes);
+        self.sink
+            .lock()
+            .await
+            .send(Message::Binary(frame.encode().into()))
+            .await
+            .expect("send git_log_query frame");
+    }
+
+    /// Wait for the single-shot GIT_LOG response whose `request_id` matches,
+    /// returning its payload and removing it from the buffer.
+    pub async fn await_git_log(
+        &mut self,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + timeout;
+        let idx = self
+            .pump_until(deadline, |f| {
+                f.feed_id == FeedId::GIT_LOG && f.payload["request_id"] == request_id
+            })
+            .await?;
+        Ok(self.buffer.remove(idx).payload)
+    }
+
+    /// Wait for a GIT_HEAD signal for `workspace_key`, returning its payload and
+    /// removing it from the buffer. The signal is server-initiated (no request),
+    /// so it correlates by workspace, not request_id.
+    pub async fn await_git_head(
+        &mut self,
+        workspace_key: &str,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let deadline = Instant::now() + timeout;
+        let idx = self
+            .pump_until(deadline, |f| {
+                f.feed_id == FeedId::GIT_HEAD && f.payload["workspace_key"] == workspace_key
+            })
+            .await?;
+        Ok(self.buffer.remove(idx).payload)
+    }
+
     pub async fn send_reset_session(&mut self, card_id: &str, tug_session_id: &str) {
         self.send_control_action("reset_session", card_id, tug_session_id)
             .await;

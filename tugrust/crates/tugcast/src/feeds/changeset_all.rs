@@ -17,12 +17,10 @@
 //! catches hand edits. Emission is diff-suppressed.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::Notify;
 use tokio::sync::watch;
-use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -34,9 +32,6 @@ use super::git::is_within_git_worktree;
 use super::workspace_registry::WorkspaceRegistry;
 use crate::session_ledger::SessionLedger;
 
-/// Poll fallback interval — catches hand edits the bump channel can't see.
-const POLL_INTERVAL_SECS: u64 = 2;
-
 /// The account-global CHANGESET_ALL feed.
 pub struct ChangesetAllFeed {
     /// The set of open projects to enumerate each recompute.
@@ -45,10 +40,11 @@ pub struct ChangesetAllFeed {
     /// `None` in harnesses without a ledger — every dirty file then lands
     /// unattributed.
     ledger: Option<Arc<SessionLedger>>,
-    /// Process-global recompute signal — shared with `ChangesetBumper` and
-    /// the registry's open/close hooks. Permit semantics: bursts coalesce.
+    /// Process-global recompute signal — shared with `ChangesetBumper`, the
+    /// registry's open/close hooks, and every workspace's event-driven git
+    /// watch (`feeds/git_watch.rs`). Permit semantics: bursts coalesce. This is
+    /// the *only* recompute trigger — there is no poll.
     bump: Arc<Notify>,
-    poll_interval: Duration,
 }
 
 impl ChangesetAllFeed {
@@ -61,16 +57,7 @@ impl ChangesetAllFeed {
             registry,
             ledger,
             bump,
-            poll_interval: Duration::from_secs(POLL_INTERVAL_SECS),
         }
-    }
-
-    /// Test hook: stretch the poll so a recompute inside the test window can
-    /// only have come from the bump channel.
-    #[cfg(test)]
-    pub fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
-        self.poll_interval = poll_interval;
-        self
     }
 }
 
@@ -87,19 +74,12 @@ impl SnapshotFeed for ChangesetAllFeed {
     async fn run(self: Box<Self>, tx: watch::Sender<Frame>, cancel: CancellationToken) {
         info!("aggregate changeset feed started");
 
-        let mut interval = time::interval(self.poll_interval);
         let mut previous: Option<WorkspacesChangesetSnapshot> = None;
 
+        // Compose the initial snapshot immediately, then recompute only when the
+        // bump fires — every recompute is driven by a real event (an attributed
+        // write, an open/close, or a workspace's event-driven git watch). No poll.
         loop {
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    info!("aggregate changeset feed shutting down");
-                    break;
-                }
-                _ = interval.tick() => {}
-                _ = self.bump.notified() => {}
-            }
-
             let snapshot = compose_aggregate(&self.registry, self.ledger.as_deref()).await;
 
             if previous.as_ref() != Some(&snapshot) {
@@ -110,6 +90,14 @@ impl SnapshotFeed for ChangesetAllFeed {
                     "aggregate changeset snapshot updated"
                 );
                 previous = Some(snapshot);
+            }
+
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    info!("aggregate changeset feed shutting down");
+                    break;
+                }
+                _ = self.bump.notified() => {}
             }
         }
     }
@@ -211,6 +199,7 @@ fn empty_snapshot(workspace_key: String) -> ChangesetSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use crate::session_ledger::FileEventRow;
     use std::path::Path;
     use tugcast_core::spawn_snapshot_feed;
@@ -296,14 +285,13 @@ mod tests {
             .unwrap();
 
         let bump = Arc::new(Notify::new());
-        // Poll stretched to 60s: any emission after the first tick must come
-        // from the bump.
+        // There is no poll: the initial snapshot emits at once, and every later
+        // emission must come from the bump.
         let feed = ChangesetAllFeed::new(
             Arc::clone(&registry),
             Some(Arc::clone(&ledger)),
             Arc::clone(&bump),
-        )
-        .with_poll_interval(Duration::from_secs(60));
+        );
 
         let (tx, mut rx) = watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
         let feed_cancel = CancellationToken::new();

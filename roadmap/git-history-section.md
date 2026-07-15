@@ -390,13 +390,13 @@ two-space column gaps, an em-dash before the subject, no trailing newline, `""` 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | FeedId pair + wire types (Rust three sites + TS mirror) | pending | — |
-| #step-2 | `build_git_log_snapshot` + unit tests | pending | — |
-| #step-3 | `main.rs` GIT_LOG adapter + round-trip test | pending | — |
-| #step-4 | `git-log-store.ts` + units | pending | — |
-| #step-5 | Git History section + registration | pending | — |
-| #step-6 | App-test at0238 | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | FeedId pair + wire types (Rust three sites + TS mirror) | done | 9575302ee |
+| #step-2 | `build_git_log_snapshot` + unit tests | done | 122101842 |
+| #step-3 | `main.rs` GIT_LOG adapter + round-trip test | done | 122101842 |
+| #step-4 | `git-log-store.ts` + units | done | 7d83e5642 |
+| #step-5 | Git History section + registration | done | c33b603c2 |
+| #step-6 | App-test at0238 | done | 0feabef2e |
+| #step-7 | Integration checkpoint | done | 7a5c69eac |
 
 #### Step 1: FeedId pair + wire types (Rust three sites + TS mirror, atomic) {#step-1}
 

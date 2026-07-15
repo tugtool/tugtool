@@ -13,6 +13,8 @@
  * @module lib/frontmost-project
  */
 
+import { useCallback, useSyncExternalStore } from "react";
+
 import { getDeckStore } from "./deck-store-registry";
 import {
   cardSessionBindingStore,
@@ -39,4 +41,27 @@ export function frontmostProjectBinding(): CardSessionBinding | null {
     }
   }
   return null;
+}
+
+/**
+ * Reactive {@link frontmostProjectBinding}: re-reads whenever the deck reorders
+ * or a binding lands/clears, so a consumer tracks the topmost bound project
+ * live. Returns the same binding reference while unchanged, so it does not churn
+ * `useSyncExternalStore`. `null` when no card is bound.
+ */
+export function useFrontmostProjectBinding(): CardSessionBinding | null {
+  const subscribe = useCallback((onChange: () => void): (() => void) => {
+    const deck = getDeckStore();
+    const unDeck = deck ? deck.subscribe(onChange) : () => {};
+    const unBind = cardSessionBindingStore.subscribe(onChange);
+    return () => {
+      unDeck();
+      unBind();
+    };
+  }, []);
+  return useSyncExternalStore(
+    subscribe,
+    frontmostProjectBinding,
+    frontmostProjectBinding,
+  );
 }

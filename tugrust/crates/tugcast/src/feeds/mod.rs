@@ -19,6 +19,7 @@ pub mod filesystem;
 pub mod filetree;
 pub mod fuzzy_scorer;
 pub mod git;
+pub mod git_watch;
 pub mod join_resolve;
 pub mod payload_inspector;
 pub mod pulse;

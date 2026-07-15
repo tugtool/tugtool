@@ -135,6 +135,11 @@ pub struct WorkspaceEntry {
     pub filesystem_task: JoinHandle<()>,
     #[allow(dead_code)]
     pub filetree_task: JoinHandle<()>,
+    /// Event-driven git watch (FSEvents) — drives the changeset recompute and
+    /// the GIT_HEAD signal off real filesystem events, replacing the aggregate
+    /// feed's poll for this workspace.
+    #[allow(dead_code)]
+    pub git_watch_task: JoinHandle<()>,
     /// Cancellation token owned by this entry. Cloned into each spawned
     /// task at construction; `release` fires it when the refcount hits
     /// zero so the tasks exit cleanly. Retained on the struct
@@ -166,11 +171,14 @@ impl WorkspaceEntry {
     /// strips empty-payload frames from the LIVE-state initial snapshot send
     /// (see `router.rs`). Changeset state is no longer per-workspace: the
     /// account-global `ChangesetAllFeed` composes every open project.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         project_dir: PathBuf,
         workspace_key: WorkspaceKey,
         parent_cancel: CancellationToken,
         ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
+        changeset_all_bump: Arc<tokio::sync::Notify>,
+        gh_response_tx: tokio::sync::broadcast::Sender<Frame>,
     ) -> Arc<Self> {
         // Derive a per-entry child cancel token. Firing this child tears
         // down just this workspace's tasks; the parent (process-wide)
@@ -210,6 +218,11 @@ impl WorkspaceEntry {
             ft_response_tx,
         );
 
+        // The git watch is a plain subscriber to this workspace's one
+        // FileWatcher stream (not a second OS watch) — take its receiver before
+        // the sender moves into the watcher task.
+        let git_fs_rx = fs_broadcast_tx.subscribe();
+
         // Spawn the watcher task directly (it is an event source, not a
         // router feed) and the snapshot feeds through the trait helper —
         // the one way a SnapshotFeed gets its task.
@@ -221,6 +234,21 @@ impl WorkspaceEntry {
         let filesystem_task = spawn_snapshot_feed(Box::new(fs_feed), fs_watch_tx, cancel.clone());
         let filetree_task = spawn_snapshot_feed(Box::new(ft_feed), ft_watch_tx, cancel.clone());
 
+        // Event-driven git reactions: ride the FileWatcher batches to drive the
+        // changeset recompute (`bump`) and the GIT_HEAD signal on HEAD moves —
+        // no poll, no extra watcher.
+        let gw_cancel = cancel.clone();
+        let gw_dir = project_dir.clone();
+        let gw_key = workspace_key.arc().to_string();
+        let git_watch_task = tokio::spawn(crate::feeds::git_watch::run_git_workspace_watch(
+            gw_dir,
+            gw_key,
+            changeset_all_bump,
+            gh_response_tx,
+            git_fs_rx,
+            gw_cancel,
+        ));
+
         Arc::new(Self {
             workspace_key,
             project_dir,
@@ -230,6 +258,7 @@ impl WorkspaceEntry {
             file_watcher_task,
             filesystem_task,
             filetree_task,
+            git_watch_task,
             cancel,
             ref_count: AtomicUsize::new(1),
         })
@@ -264,6 +293,10 @@ pub struct WorkspaceRegistry {
     /// aggregate feed's poll backstop. Shared (cloned) with the feed and the
     /// `ChangesetBumper`.
     changeset_all_bump: Arc<tokio::sync::Notify>,
+    /// Shared GIT_HEAD-signal broadcast channel. Cloned into each workspace's
+    /// git watch, which broadcasts a `GitHeadSignal` when that workspace's HEAD
+    /// moves. The router subscribes once at the process level (see `main.rs`).
+    gh_response_tx: tokio::sync::broadcast::Sender<Frame>,
 }
 
 impl WorkspaceRegistry {
@@ -272,14 +305,18 @@ impl WorkspaceRegistry {
     /// its responses; the router subscribes once at the process level
     /// (see `main.rs`). `changeset_all_bump` is the process-global recompute
     /// signal the registry pings when the open-project set changes.
+    /// `gh_response_tx` is the shared GIT_HEAD signal channel each workspace's
+    /// git watch broadcasts HEAD moves on.
     pub fn new(
         ft_response_tx: tokio::sync::broadcast::Sender<Frame>,
         changeset_all_bump: Arc<tokio::sync::Notify>,
+        gh_response_tx: tokio::sync::broadcast::Sender<Frame>,
     ) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
             ft_response_tx,
             changeset_all_bump,
+            gh_response_tx,
         }
     }
 
@@ -297,7 +334,12 @@ impl WorkspaceRegistry {
     #[cfg(test)]
     pub fn new_for_test() -> Self {
         let (ft_response_tx, _) = tokio::sync::broadcast::channel(16);
-        Self::new(ft_response_tx, Arc::new(tokio::sync::Notify::new()))
+        let (gh_response_tx, _) = tokio::sync::broadcast::channel(16);
+        Self::new(
+            ft_response_tx,
+            Arc::new(tokio::sync::Notify::new()),
+            gh_response_tx,
+        )
     }
 
     /// Look up or construct the workspace entry for `project_dir`.
@@ -357,6 +399,8 @@ impl WorkspaceRegistry {
             workspace_key.clone(),
             cancel,
             self.ft_response_tx.clone(),
+            Arc::clone(&self.changeset_all_bump),
+            self.gh_response_tx.clone(),
         );
         map.insert(workspace_key, Arc::clone(&entry));
         drop(map);
@@ -465,15 +509,16 @@ impl WorkspaceRegistry {
         let _ = bootstrap_tx.send(ftq).await;
     }
 
-    /// Resolve the workspace a `/diff` request targets ([#step-10a]).
+    /// Resolve the workspace a query feed targets — the generic root → entry,
+    /// else bootstrap resolver shared by GIT_DIFF and GIT_LOG.
     ///
     /// Returns the entry whose canonical key matches `root`, or `bootstrap`
     /// when `root` is `None` or matches no registered workspace — the same
     /// fall-back policy as [`route_filetree_query`], so a card bound to a
-    /// per-session project diffs that project while the dev-loop / unbound
-    /// case diffs the bootstrap `--source-tree`. Unlike the FILETREE path,
-    /// a diff has no per-workspace channel; the caller runs the diff against
-    /// the returned entry's `project_dir` directly.
+    /// per-session project reads that project while the dev-loop / unbound
+    /// case reads the bootstrap `--source-tree`. Unlike the FILETREE path,
+    /// these query feeds have no per-workspace channel; the caller runs the
+    /// command against the returned entry's `project_dir` directly.
     pub fn resolve_diff_target(
         &self,
         root: Option<&Path>,

@@ -41,6 +41,7 @@ import {
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerChangesetSection } from "./components/lens/sections/changeset-section";
+import { registerGitHistorySection } from "./components/lens/sections/git-history-section";
 import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
@@ -266,6 +267,7 @@ if (!container) {
   registerLogSection();
   registerTelemetrySection();
   registerChangesetSection();
+  registerGitHistorySection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();

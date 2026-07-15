@@ -261,6 +261,20 @@ pub struct LedgerEntry {
     pub permission_mode: Option<String>,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
+    /// Whether this entry currently owns a `WorkspaceRegistry` refcount for its
+    /// `workspace_key`. Exactly one refcount belongs to a live entry for its
+    /// lifetime; this flag is the single authority for who releases it.
+    ///
+    /// A fresh spawn (or the first spawn of an entry rebound from the ledger)
+    /// adopts the `get_or_create` refcount and sets this `true`; a genuine
+    /// reconnect of an entry that already owns one releases the excess and
+    /// leaves this `true`; `do_close_session` releases iff this is `true`.
+    ///
+    /// Critically, an entry rebound by `rebind_from_ledger` starts `false` — the
+    /// rebind registers no workspace (lazy, to avoid a boot-time canonicalize /
+    /// TCC storm) — so `!inserted` alone must NOT be read as "a refcount is
+    /// held." That mis-read tore down a resumed project's workspace on restore.
+    pub holds_workspace_refcount: bool,
     /// Per-session crash budget (3 crashes / 60s by convention).
     pub crash_budget: CrashBudget,
     /// CODE_INPUT buffer used during the `Spawning` window.
@@ -363,6 +377,7 @@ impl LedgerEntry {
             session_mode,
             permission_mode: None,
             spawn_state: SpawnState::Idle,
+            holds_workspace_refcount: false,
             crash_budget,
             queue: BoundedQueue::new(),
             latest_metadata: None,
@@ -2624,10 +2639,28 @@ impl AgentSupervisor {
                 session_mode != effective_session_mode && !inserted,
         );
 
-        if !inserted {
-            // Reconnect: the existing ledger entry already holds a refcount
-            // on whatever workspace it was bound to; drop the one we just
-            // acquired.
+        // Workspace refcount ownership. Phase 0's `get_or_create` bumped the
+        // workspace refcount; exactly one refcount belongs to this ledger entry
+        // for its lifetime (`do_close_session` releases it). Decide who owns the
+        // one we just acquired — keyed on the entry's OWN record of ownership,
+        // never on `inserted`:
+        //   - the entry already owns one (a genuine reconnect of a live entry)
+        //     → the Phase-0 refcount is excess, release it;
+        //   - the entry owns none (a fresh insert, OR an entry rebound from the
+        //     ledger making its first real spawn) → the entry adopts it.
+        // A rebind entry is present in the ledger (`inserted == false`) yet holds
+        // no refcount, so `!inserted` must NOT drive the release — reading it as
+        // "a refcount is held" tore down a resumed project's workspace on restore.
+        let phase0_refcount_is_excess = {
+            let mut entry = entry_arc.lock().await;
+            if entry.holds_workspace_refcount {
+                true
+            } else {
+                entry.holds_workspace_refcount = true;
+                false
+            }
+        };
+        if phase0_refcount_is_excess {
             if let Err(e) = self.registry.release(&workspace_key) {
                 warn!(
                     card_id,
@@ -2636,6 +2669,9 @@ impl AgentSupervisor {
                     "spawn_session: reconnect release returned error (ignored)"
                 );
             }
+        }
+
+        if !inserted {
             // Reject a `resume` only when a live client connection is
             // genuinely holding this session on a *different* card.
             //
@@ -2985,30 +3021,42 @@ impl AgentSupervisor {
         // Also snapshot the `workspace_key` and `claude_session_id` under
         // this same lock so Phase 3 can call `registry.release` and Phase 5
         // can mark the ledger row closed without re-acquiring it.
-        let (workspace_key, claude_session_id) = {
+        let (workspace_key, claude_session_id, held_refcount) = {
             let mut entry = entry_arc.lock().await;
             entry.cancel.cancel();
             // Bare assignment (not `try_transition`) because the entry is
             // about to be dropped; we only care that any Arc-clone holder
             // observes `Closed` on its next lock acquire.
             entry.spawn_state = SpawnState::Closed;
+            // Take the refcount ownership: release it below iff this entry
+            // adopted one. A rebind entry closed before it ever spawned holds
+            // none — releasing then would decrement another card's refcount for
+            // the same workspace, or error on `UnknownKey`.
+            let held = entry.holds_workspace_refcount;
+            entry.holds_workspace_refcount = false;
             // `card_id` is preserved across close so the persisted
             // ledger row retains the binding for client-side restore;
             // liveness is encoded in `spawn_state`.
-            (entry.workspace_key.clone(), entry.claude_session_id.clone())
+            (
+                entry.workspace_key.clone(),
+                entry.claude_session_id.clone(),
+                held,
+            )
         };
 
-        // Phase 3: release the workspace refcount. Errors on this path
-        // (e.g. `UnknownKey` from a double-close race) are logged and
-        // swallowed — they indicate a caller-side logic error, not a
-        // condition worth propagating to the wire.
-        if let Err(e) = self.registry.release(&workspace_key) {
-            warn!(
-                card_id,
-                session = %tug_session_id,
-                error = %e,
-                "close_session: workspace release failed, continuing"
-            );
+        // Phase 3: release the workspace refcount this entry owned. Errors on
+        // this path (e.g. `UnknownKey` from a double-close race) are logged and
+        // swallowed — they indicate a caller-side logic error, not a condition
+        // worth propagating to the wire.
+        if held_refcount {
+            if let Err(e) = self.registry.release(&workspace_key) {
+                warn!(
+                    card_id,
+                    session = %tug_session_id,
+                    error = %e,
+                    "close_session: workspace release failed, continuing"
+                );
+            }
         }
 
         // The persisted ledger row is preserved across close — a
@@ -5701,6 +5749,7 @@ pub(crate) async fn install_live_session_for_tests(
 mod tests {
     use super::*;
     use std::future::pending;
+    use tokio::sync::Notify;
 
     use super::super::agent_bridge::{RelayOutcome, SessionChild, SpawnFuture, relay_session_io};
 
@@ -9111,6 +9160,72 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_spawn_resume_of_rebound_entry_keeps_workspace() {
+        // The restore bug: an entry rebound from the ledger holds NO workspace
+        // refcount (rebind registers no workspace, by design). Its first resume
+        // spawn hits `inserted == false`; the old code read that as "a refcount
+        // is already held" and released the one Phase 0 just acquired — dropping
+        // the fresh workspace's ONLY refcount and tearing it down. The resumed
+        // project then vanished from the registry (and the changeset aggregate /
+        // git-log resolution). With per-entry refcount ownership, the rebound
+        // entry ADOPTS the Phase-0 refcount on its first spawn, so it survives.
+        use std::sync::atomic::Ordering;
+        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+
+        // Simulate `rebind_from_ledger`: an Idle, Resume entry present in the
+        // in-memory ledger, bound to a card, holding no workspace refcount.
+        let sid = TugSessionId::new("reb-sess");
+        let mut entry = LedgerEntry::new(
+            sid.clone(),
+            WorkspaceKey::from_canonical(test_project_dir()),
+            PathBuf::from(test_project_dir()),
+            SessionMode::Resume,
+            CrashBudget::new(3, Duration::from_secs(60)),
+        );
+        entry.card_id = Some("card-r".to_string());
+        entry.claude_session_id = Some("reb-sess".to_string());
+        assert!(
+            !entry.holds_workspace_refcount,
+            "a rebound entry starts holding no workspace refcount"
+        );
+        sup.ledger
+            .lock()
+            .await
+            .insert(sid.clone(), Arc::new(Mutex::new(entry)));
+
+        // Registry is empty until the first real spawn registers the workspace.
+        assert_eq!(registry_map_len(&sup), 0);
+
+        // First resume spawn of the rebound entry.
+        sup.handle_control("spawn_session", &resume_payload("card-r", "reb-sess"), 10)
+            .await
+            .expect_handled();
+        let _ = control_rx.try_recv();
+
+        // The workspace is registered and SURVIVES (was torn down before the fix).
+        assert_eq!(
+            registry_map_len(&sup),
+            1,
+            "the rebound resume must keep its workspace registered"
+        );
+        let map = sup.registry.inner_for_test();
+        let (_key, ws) = map.iter().next().expect("one workspace");
+        assert_eq!(
+            ws.ref_count.load(Ordering::Relaxed),
+            1,
+            "the entry adopts exactly one workspace refcount"
+        );
+        drop(map);
+
+        // The entry now records ownership of that refcount.
+        let e = sup.ledger.lock().await.get(&sid).unwrap().clone();
+        assert!(
+            e.lock().await.holds_workspace_refcount,
+            "the entry adopted the Phase-0 refcount"
+        );
+    }
+
     // ── LedgerSessionsRecorder lifecycle ─────────────────────────────────────
     //
     // These tests exercise the recorder against a real in-memory
@@ -9142,6 +9257,39 @@ mod tests {
         assert_eq!(row.card_id.as_deref(), Some("card-1"));
         assert_eq!(row.state, LedgerState::Live);
         assert_eq!(row.turn_count, 0);
+    }
+
+    /// The ledger (the source of truth for sessions) publishes a "sessions
+    /// changed" signal on every session-lifecycle write, so a delegate — the
+    /// CHANGESET_ALL aggregate — recomputes on a spawn / turn / close with no
+    /// poll. Driven through the recorder (the production write path) to prove
+    /// the whole chain: recorder → ledger write → published signal.
+    #[tokio::test]
+    async fn ledger_publishes_change_on_session_lifecycle() {
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let signal = Arc::new(Notify::new());
+        ledger.set_change_signal(Arc::clone(&signal));
+        let recorder = LedgerSessionsRecorder::new(Arc::clone(&ledger));
+
+        let expect_ping = |signal: Arc<Notify>, what: &'static str| async move {
+            tokio::time::timeout(std::time::Duration::from_millis(200), signal.notified())
+                .await
+                .unwrap_or_else(|_| panic!("{what} must publish a sessions-changed signal"));
+        };
+
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+        });
+        expect_ping(Arc::clone(&signal), "record (spawn)").await;
+
+        recorder.record_turn("claude-abc");
+        expect_ping(Arc::clone(&signal), "record_turn").await;
+
+        recorder.mark_closed("claude-abc");
+        expect_ping(Arc::clone(&signal), "mark_closed").await;
     }
 
     #[test]

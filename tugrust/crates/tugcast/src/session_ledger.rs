@@ -72,8 +72,10 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use tokio::sync::Notify;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -558,6 +560,14 @@ pub struct SessionLedger {
     /// to `~/.claude/projects/`; tests inject a tempdir so trash mechanics
     /// don't touch the real filesystem.
     claude_projects_root: PathBuf,
+    /// "Sessions changed" signal — the ledger is the source of truth for
+    /// sessions, so it publishes a change from its own lifecycle writes and any
+    /// delegate (the account-global changeset aggregate) subscribes. Set once at
+    /// startup via [`set_change_signal`], after the process-global signal
+    /// exists; `None` in tests that don't observe the aggregate. Fired
+    /// generically (the ledger names no consumer) at the end of every
+    /// session-row mutation — see [`notify_sessions_changed`].
+    sessions_changed: OnceLock<Arc<Notify>>,
 }
 
 impl SessionLedger {
@@ -579,6 +589,7 @@ impl SessionLedger {
         Ok(Self {
             db: Mutex::new(conn),
             claude_projects_root,
+            sessions_changed: OnceLock::new(),
         })
     }
 
@@ -592,6 +603,7 @@ impl SessionLedger {
         Ok(Self {
             db: Mutex::new(conn),
             claude_projects_root: PathBuf::from("/tmp/tugcast-tests-no-trash"),
+            sessions_changed: OnceLock::new(),
         })
     }
 
@@ -623,6 +635,24 @@ impl SessionLedger {
     /// trash sweep can iterate `<root>/*/.tug-trash/` without re-resolving.
     pub fn claude_projects_root(&self) -> &Path {
         &self.claude_projects_root
+    }
+
+    /// Wire the "sessions changed" signal the ledger publishes on. Called once
+    /// at startup (after the process-global recompute signal is created), so a
+    /// delegate — the account-global changeset aggregate — recomputes whenever
+    /// a session row is written. Idempotent; a second call is ignored.
+    pub fn set_change_signal(&self, signal: Arc<Notify>) {
+        let _ = self.sessions_changed.set(signal);
+    }
+
+    /// Publish "the session set changed." Called at the end of every
+    /// session-row mutation below, so the changeset aggregate reflects the
+    /// ledger event-drively — the source-side twin of the registry's
+    /// project-lifecycle bump. A no-op until `set_change_signal` is wired.
+    fn notify_sessions_changed(&self) {
+        if let Some(signal) = self.sessions_changed.get() {
+            signal.notify_one();
+        }
     }
 
     fn configure(conn: &Connection) -> Result<(), LedgerError> {
@@ -1403,6 +1433,7 @@ impl SessionLedger {
             ],
         )?;
         tx.commit()?;
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1422,6 +1453,7 @@ impl SessionLedger {
         if affected == 0 {
             return Err(LedgerError::NotFound(session_id.to_owned()));
         }
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1443,6 +1475,7 @@ impl SessionLedger {
         if affected == 0 {
             return Err(LedgerError::NotFound(session_id.to_owned()));
         }
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1463,6 +1496,7 @@ impl SessionLedger {
             // Row may be absent (forgotten under us) or non-live (closed/failed
             // out from under a late turn). Both are acceptable no-ops.
         }
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1508,6 +1542,7 @@ impl SessionLedger {
              WHERE session_id = ?1 AND state = 'live'",
             params![session_id, count, now],
         )?;
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1522,6 +1557,7 @@ impl SessionLedger {
              WHERE session_id = ?1",
             params![session_id],
         )?;
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1536,6 +1572,7 @@ impl SessionLedger {
              WHERE session_id = ?1",
             params![session_id],
         )?;
+        self.notify_sessions_changed();
         Ok(())
     }
 
@@ -1581,6 +1618,7 @@ impl SessionLedger {
             session_id,
             now_millis(),
         );
+        self.notify_sessions_changed();
         Ok(TrashOutcome {
             session_id: session_id.to_owned(),
             jsonl_moved_to: trash_path,
@@ -1615,6 +1653,9 @@ impl SessionLedger {
         let now = now_millis();
         for id in &doomed {
             move_jsonl_to_trash(&self.claude_projects_root, project_dir, id, now);
+        }
+        if !doomed.is_empty() {
+            self.notify_sessions_changed();
         }
         Ok(doomed)
     }
@@ -1728,6 +1769,9 @@ impl SessionLedger {
              WHERE state = 'live'",
             [],
         )?;
+        if count > 0 {
+            self.notify_sessions_changed();
+        }
         Ok(count)
     }
 
@@ -1750,6 +1794,9 @@ impl SessionLedger {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
         }
         tx.commit()?;
+        if !doomed.is_empty() {
+            self.notify_sessions_changed();
+        }
         Ok(doomed)
     }
 
@@ -3965,6 +4012,7 @@ mod tests {
         SessionLedger {
             db: Mutex::new(conn),
             claude_projects_root: root.to_path_buf(),
+            sessions_changed: OnceLock::new(),
         }
     }
 

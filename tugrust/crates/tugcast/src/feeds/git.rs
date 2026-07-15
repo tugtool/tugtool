@@ -11,7 +11,10 @@ use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, warn};
 
-use tugcast_core::types::{FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitStatus};
+use tugcast_core::types::{
+    FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitLogCommit, GitLogSnapshot,
+    GitStatus,
+};
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus
 pub(crate) fn parse_porcelain_v2(output: &str) -> GitStatus {
@@ -254,6 +257,94 @@ pub async fn build_git_diff_snapshot(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Recent-commits (`git log`) sourcing for the Git History Lens section.
+// ---------------------------------------------------------------------------
+
+/// The unit-separator byte git emits for `%x1f` — used to delimit the log
+/// record fields. It cannot appear in an author name or a single-line subject
+/// (`%s` strips newlines), so a naive per-line split is unambiguous.
+const LOG_FIELD_SEP: char = '\u{1f}';
+
+/// Assemble a single-shot [`GitLogSnapshot`] of the `limit` most-recent commits
+/// in `repo_dir`.
+///
+/// Gated on [`is_within_git_worktree`] — a non-git dir short-circuits to
+/// `no_repo: true` before any git fork. The branch comes from
+/// `git branch --show-current` (empty/`None` → `"(detached)"`, which also
+/// covers an unborn HEAD spelled empty). The commit body is one `%x1f`-delimited
+/// record per line; a malformed line (fewer than four fields) is skipped with a
+/// `warn!`. A failed `git log` — most commonly an unborn HEAD in a fresh
+/// `git init` — yields empty `commits` with `no_repo: false`, mirroring how
+/// [`build_git_diff_snapshot`] treats a `HEAD`-less repo as empty, not an error.
+pub async fn build_git_log_snapshot(
+    repo_dir: &Path,
+    request_id: String,
+    workspace_key: &str,
+    limit: u32,
+) -> GitLogSnapshot {
+    if !is_within_git_worktree(repo_dir).await {
+        return GitLogSnapshot {
+            request_id,
+            workspace_key: workspace_key.to_string(),
+            branch: String::new(),
+            no_repo: true,
+            commits: Vec::new(),
+        };
+    }
+    let branch = run_git_line(repo_dir, &["branch", "--show-current"])
+        .await
+        .unwrap_or_else(|| "(detached)".to_string());
+    let limit_arg = format!("-n{limit}");
+    let commits = match run_git_capture(
+        repo_dir,
+        &[
+            "-c",
+            "core.quotepath=false",
+            "log",
+            &limit_arg,
+            "--format=%H%x1f%an%x1f%ad%x1f%s",
+            "--date=short",
+        ],
+    )
+    .await
+    {
+        Some(output) => parse_git_log(&output),
+        None => Vec::new(),
+    };
+    GitLogSnapshot {
+        request_id,
+        workspace_key: workspace_key.to_string(),
+        branch,
+        no_repo: false,
+        commits,
+    }
+}
+
+/// Parse `%H%x1f%an%x1f%ad%x1f%s` records — one commit per line — into
+/// [`GitLogCommit`]s. Lines with fewer than four fields are skipped with a
+/// `warn!`.
+fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
+    let mut commits = Vec::new();
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.splitn(4, LOG_FIELD_SEP).collect();
+        if fields.len() < 4 {
+            warn!(line, "skipping malformed git log record");
+            continue;
+        }
+        commits.push(GitLogCommit {
+            sha: fields[0].to_string(),
+            author: fields[1].to_string(),
+            date: fields[2].to_string(),
+            subject: fields[3].to_string(),
+        });
+    }
+    commits
+}
+
 /// Assemble a single-shot [`GitDiffSnapshot`] for a **dash range** diff — the
 /// "everything this dash has done past its base" view: committed rounds plus
 /// uncommitted worktree dirt ([P19], #diff-descriptor-resolution).
@@ -358,9 +449,9 @@ async fn run_git_diff_against(dir: &Path, target: &str) -> Option<String> {
     }
 }
 
-/// Run a git command expected to print a single line (e.g. `merge-base`),
-/// returning the trimmed stdout on success, `None` otherwise.
-async fn run_git_line(dir: &Path, args: &[&str]) -> Option<String> {
+/// Run a git command expected to print a single line (e.g. `merge-base`,
+/// `rev-parse HEAD`), returning the trimmed stdout on success, `None` otherwise.
+pub(crate) async fn run_git_line(dir: &Path, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(dir).args(args);
     let output = cmd.output().await.ok()?;
@@ -369,6 +460,27 @@ async fn run_git_line(dir: &Path, args: &[&str]) -> Option<String> {
         if line.is_empty() { None } else { Some(line) }
     } else {
         None
+    }
+}
+
+/// Run a git command that may print many lines (e.g. `log`), returning the
+/// full stdout on success, `None` (with a `warn!`) otherwise. The multi-line
+/// counterpart to [`run_git_line`]; serves the `git log` body.
+async fn run_git_capture(dir: &Path, args: &[&str]) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    let output = cmd.output().await;
+    match output {
+        Ok(o) if o.status.success() => Some(String::from_utf8_lossy(&o.stdout).into_owned()),
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            warn!(stderr = %stderr.trim_end(), ?args, "git command failed");
+            None
+        }
+        Err(e) => {
+            warn!(error = %e, ?args, "failed to execute git command");
+            None
+        }
     }
 }
 
@@ -1065,5 +1177,117 @@ Binary files a/img.png and b/img.png differ
             ["round.txt"],
             "committed round only, no dirt: {paths:?}"
         );
+    }
+
+    // -- git log sourcing (Git History Lens section) --
+
+    /// A committed repo on `main` with three commits whose subjects are, oldest
+    /// to newest, `first`/`second`/`third`.
+    async fn init_log_fixture_repo() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init", "-b", "main"]).await;
+        git_in(&repo, &["config", "user.name", "Test Author"]).await;
+        git_in(&repo, &["config", "user.email", "test@test.com"]).await;
+        for subject in ["first", "second", "third"] {
+            fs::write(repo.join(format!("{subject}.txt")), "x\n").unwrap();
+            git_in(&repo, &["add", "-A"]).await;
+            git_in(&repo, &["commit", "-m", subject]).await;
+        }
+        temp
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_recent_commits_most_recent_first() {
+        let temp = init_log_fixture_repo().await;
+        let snapshot =
+            build_git_log_snapshot(temp.path(), "gl-1".to_string(), "ws-key", 20).await;
+
+        assert!(!snapshot.no_repo);
+        assert_eq!(snapshot.request_id, "gl-1");
+        assert_eq!(snapshot.workspace_key, "ws-key");
+        assert_eq!(snapshot.branch, "main");
+        let subjects: Vec<&str> = snapshot.commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, ["third", "second", "first"], "most-recent-first");
+
+        let head = &snapshot.commits[0];
+        assert_eq!(head.sha.len(), 40, "full 40-char sha on the wire");
+        assert!(head.sha.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(head.author, "Test Author");
+        // `--date=short` → fixed-width YYYY-MM-DD.
+        assert_eq!(head.date.len(), 10);
+        assert_eq!(head.date.as_bytes()[4], b'-');
+        assert_eq!(head.date.as_bytes()[7], b'-');
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_honors_limit() {
+        let temp = init_log_fixture_repo().await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-2".to_string(), "ws", 2).await;
+        let subjects: Vec<&str> = snapshot.commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, ["third", "second"], "the newest two only");
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_empty_repo_is_not_no_repo() {
+        // Fresh `git init` (unborn HEAD): a real repo with no commits.
+        let temp = TempDir::new().unwrap();
+        git_in(temp.path(), &["init", "-b", "trunk"]).await;
+        let snapshot =
+            build_git_log_snapshot(temp.path(), "gl-3".to_string(), "ws", 20).await;
+        assert!(!snapshot.no_repo, "an initialized repo is not flagged no_repo");
+        assert!(snapshot.commits.is_empty(), "no commits yet");
+        assert_eq!(snapshot.branch, "trunk", "unborn branch name still resolves");
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_non_repo_flags_no_repo() {
+        let temp = TempDir::new().unwrap();
+        let snapshot =
+            build_git_log_snapshot(temp.path(), "gl-4".to_string(), "ws", 20).await;
+        assert!(snapshot.no_repo);
+        assert!(snapshot.commits.is_empty());
+        assert_eq!(snapshot.branch, "");
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_detached_head() {
+        let temp = init_log_fixture_repo().await;
+        let repo = temp.path();
+        let head = run_git_line(repo, &["rev-parse", "HEAD"]).await.unwrap();
+        git_in(repo, &["checkout", &head]).await;
+        let snapshot = build_git_log_snapshot(repo, "gl-5".to_string(), "ws", 20).await;
+        assert_eq!(snapshot.branch, "(detached)");
+        assert_eq!(snapshot.commits.len(), 3, "commits still resolve when detached");
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_unicode_author_and_empty_subject() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init", "-b", "main"]).await;
+        git_in(&repo, &["config", "user.email", "u@x.com"]).await;
+        // A unicode author name and an empty subject must parse without a
+        // column shift (the `%x1f` separator keeps fields aligned).
+        fs::write(repo.join("a.txt"), "x\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(
+            &repo,
+            &[
+                "-c",
+                "user.name=Ünïcode Nàme",
+                "commit",
+                "--allow-empty-message",
+                "-m",
+                "",
+            ],
+        )
+        .await;
+
+        let snapshot = build_git_log_snapshot(&repo, "gl-6".to_string(), "ws", 20).await;
+        assert_eq!(snapshot.commits.len(), 1);
+        assert_eq!(snapshot.commits[0].author, "Ünïcode Nàme");
+        assert_eq!(snapshot.commits[0].subject, "", "empty subject stays empty");
+        assert_eq!(snapshot.commits[0].sha.len(), 40);
     }
 }

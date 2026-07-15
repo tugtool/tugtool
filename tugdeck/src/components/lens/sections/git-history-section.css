@@ -1,0 +1,17 @@
+/*
+ * git-history-section.css — the Lens Git History section body chrome ([L06]).
+ *
+ * No `overflow` here: the `.lens-content` scroll owns scrolling (M3b [P08]);
+ * `TugCodeView` is sized-to-content, so an inner scroll would break nested
+ * sticky offsets.
+ */
+
+.lens-git-history {
+  display: flex;
+  flex-direction: column;
+}
+
+.lens-git-history-empty {
+  opacity: 0.6;
+  padding: var(--tug-space-sm) 0;
+}

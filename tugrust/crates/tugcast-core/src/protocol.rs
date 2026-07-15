@@ -62,6 +62,13 @@ impl FeedId {
     /// Account-global aggregate changeset snapshot — every open project in
     /// one frame, delivered process-level like USAGE/PULSE (tugcast → tugdeck)
     pub const CHANGESET_ALL: Self = Self(0x24);
+    /// Git log response — single-shot per request (tugcast → tugdeck)
+    pub const GIT_LOG: Self = Self(0x25);
+    /// Git log request — recent commits over the followed card's project dir (tugdeck → tugcast)
+    pub const GIT_LOG_QUERY: Self = Self(0x26);
+    /// Git HEAD-moved signal — a workspace's HEAD changed (commit/checkout/reset
+    /// from any source), so a git-log consumer should re-request (tugcast → tugdeck)
+    pub const GIT_HEAD: Self = Self(0x27);
 
     // -- Stats --
     /// Aggregate stats snapshot (tugcast → tugdeck)
@@ -155,6 +162,9 @@ impl FeedId {
             Self::GIT_DIFF_QUERY => Some("GitDiffQuery"),
             Self::CHANGESET => Some("Changeset"),
             Self::CHANGESET_ALL => Some("ChangesetAll"),
+            Self::GIT_LOG => Some("GitLog"),
+            Self::GIT_LOG_QUERY => Some("GitLogQuery"),
+            Self::GIT_HEAD => Some("GitHead"),
             Self::STATS => Some("Stats"),
             Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
             Self::STATS_TOKEN_USAGE => Some("StatsTokenUsage"),
@@ -442,6 +452,12 @@ mod tests {
         assert_eq!(FeedId::CHANGESET.as_byte(), 0x23);
         assert_eq!(FeedId::CHANGESET_ALL.as_byte(), 0x24);
         assert_eq!(FeedId::CHANGESET.name(), Some("Changeset"));
+        assert_eq!(FeedId::GIT_LOG.as_byte(), 0x25);
+        assert_eq!(FeedId::GIT_LOG_QUERY.as_byte(), 0x26);
+        assert_eq!(FeedId::GIT_LOG.name(), Some("GitLog"));
+        assert_eq!(FeedId::GIT_LOG_QUERY.name(), Some("GitLogQuery"));
+        assert_eq!(FeedId::GIT_HEAD.as_byte(), 0x27);
+        assert_eq!(FeedId::GIT_HEAD.name(), Some("GitHead"));
         assert_eq!(FeedId::STATS.as_byte(), 0x30);
         assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);
         assert_eq!(FeedId::STATS_TOKEN_USAGE.as_byte(), 0x32);
