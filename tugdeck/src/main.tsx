@@ -40,7 +40,7 @@ import {
 } from "./contexts/theme-provider";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
-import { registerChangesetCard } from "./components/tugways/cards/changeset-card";
+import { registerChangesetSection } from "./components/lens/sections/changeset-section";
 import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
@@ -256,7 +256,6 @@ if (!container) {
   // Register card types before DeckManager construction so addCard("hello") works
   // from the first render.
   registerHelloWorldCard();
-  registerChangesetCard();
   registerDevCard();
   registerAboutCard();
   registerSettingsCard();
@@ -266,6 +265,7 @@ if (!container) {
   registerLensCard();
   registerLogSection();
   registerTelemetrySection();
+  registerChangesetSection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();

@@ -43,15 +43,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class ChangesetDraftStore {
+  private readonly _connection: TugConnection;
   private readonly _unsubscribe: () => void;
   private readonly _listeners = new Set<() => void>();
   private _overlays = new Map<string, DraftOverlay>();
   private readonly _decoder = new TextDecoder();
 
   constructor(connection: TugConnection) {
+    this._connection = connection;
     this._unsubscribe = connection.onFrame(FeedId.CONTROL, (payload) =>
       this._onControl(payload),
     );
+  }
+
+  /**
+   * Request an on-demand draft for one entry ([P05], Spec S01). Fires the
+   * `changeset_draft_request` CONTROL verb; the reply rides the existing
+   * `changeset_draft_state`/`changeset_draft_delta` stream this store already
+   * consumes. Generation always regenerates (no fingerprint gate).
+   */
+  requestDraft(projectDir: string, ownerKind: string, ownerId: string): void {
+    this._connection.sendControlFrame("changeset_draft_request", {
+      project_dir: projectDir,
+      owner_kind: ownerKind,
+      owner_id: ownerId,
+    });
   }
 
   private _onControl(payload: Uint8Array): void {
@@ -133,15 +149,16 @@ export function _ingestDraftFrameForTest(body: unknown): void {
 }
 
 /**
- * React hook: the live draft overlay for one entry. Returns the idle overlay
- * when no store is attached (gallery / fixtures).
+ * React hook: the live draft overlay for one entry plus its bound on-demand
+ * trigger ([P05]). Returns the idle overlay + a no-op `requestDraft` when no
+ * store is attached (gallery / fixtures).
  */
 export function useChangesetDraft(
   projectDir: string,
   ownerKind: string,
   ownerId: string,
-): DraftOverlay {
-  return useSyncExternalStore(
+): DraftOverlay & { requestDraft: () => void } {
+  const overlay = useSyncExternalStore(
     (listener) => {
       const store = _activeStore;
       if (store === null) return () => {};
@@ -150,4 +167,8 @@ export function useChangesetDraft(
     () => _activeStore?.overlay(projectDir, ownerKind, ownerId) ?? IDLE,
     () => IDLE,
   );
+  const requestDraft = (): void => {
+    _activeStore?.requestDraft(projectDir, ownerKind, ownerId);
+  };
+  return { ...overlay, requestDraft };
 }

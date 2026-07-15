@@ -130,25 +130,30 @@ afterAll(() => {
   }
 });
 
-const CARD = '[data-card-id="A"]';
+// The changeset content lives in the Lens `kind: "changeset"` section now.
+const SECTION = '.lens-section[data-lens-section="changeset"]';
+
+async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: string): Promise<void> {
+  await app.evalJS<void>(
+    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
+  );
+}
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "changeset", title: "Changeset", closable: true },
       { id: "B", componentId: "dev", title: "Dev B", closable: true },
     ],
     panes: [
-      { id: "p1", position: { x: 40, y: 40 }, size: { width: 720, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
       { id: "p2", position: { x: 780, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
     ],
-    activePaneId: "p1",
+    activePaneId: "p2",
     hasFocus: true,
   };
 }
 
 const dashEntry = (name: string) =>
-  `${CARD} [data-testid="changeset-entry"][data-entry-id="dash:${REPO.dir}:tugdash/${name}"]`;
+  `${SECTION} [data-testid="changeset-entry"][data-entry-id="dash:${REPO.dir}:tugdash/${name}"]`;
 
 function branchExists(name: string): boolean {
   const r = Bun.spawnSync(["git", "-C", REPO.dir, "branch", "--list", `tugdash/${name}`]);
@@ -161,8 +166,19 @@ describe.skipIf(!SHOULD_RUN)("AT0229: changeset card — dash Join preview + cle
     async () => {
       const app = await launchTugApp({ testName: "at0229-changeset-dash-join" });
       try {
-        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
         await app.spawnSessionResume("B", { tugSessionId: SID, projectDir: REPO.dir });
+
+        // Open + focus the Lens so the Changeset section (and its dash
+        // Join/Confirm responders) mount in the active chain.
+        await dispatch(app, "focus-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SECTION)}) !== null &&
+           document.querySelector(${JSON.stringify(
+             `${SECTION} [data-testid="lens-section-body"]`,
+           )}) !== null`,
+          { timeoutMs: 10_000 },
+        );
 
         // Both dash entries appear (the project is open via the dev card).
         await app.waitForCondition<boolean>(

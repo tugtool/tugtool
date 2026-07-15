@@ -151,30 +151,38 @@ afterAll(() => {
   }
 });
 
-const CARD = '[data-card-id="A"]';
+// The changeset content now lives in the Lens `kind: "changeset"` section
+// (the standalone card is retired). We seed just the two dev cards, open +
+// focus the Lens (`focus-lens`, the same path Swift's menu takes), and scope
+// every selector under the section band.
+const SECTION = '.lens-section[data-lens-section="changeset"]';
+
+async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: string): Promise<void> {
+  await app.evalJS<void>(
+    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
+  );
+}
 
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "changeset", title: "Changeset", closable: true },
       { id: "B", componentId: "dev", title: "Dev B", closable: true },
       { id: "C", componentId: "dev", title: "Dev C", closable: true },
     ],
     panes: [
-      { id: "p1", position: { x: 40, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
       { id: "p2", position: { x: 740, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
       { id: "p3", position: { x: 740, y: 620 }, size: { width: 680, height: 560 }, cardIds: ["C"], activeCardId: "C", title: "", acceptsFamilies: ["maker"] },
     ],
-    activePaneId: "p1",
+    activePaneId: "p2",
     hasFocus: true,
   };
 }
 
-const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${CARD} [data-testid="changeset-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
+const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${SECTION} [data-testid="changeset-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
 
 function nonRepoProbe(sid: string): string {
   return `(function(){
-    var entry = document.querySelector('${CARD} [data-testid="changeset-entry"][data-entry-id="session:${sid}"]');
+    var entry = document.querySelector('${SECTION} [data-testid="changeset-entry"][data-entry-id="session:${sid}"]');
     if (!entry) return { present: false, nonRepo: false };
     return { present: true, nonRepo: entry.querySelector('[data-testid="changeset-non-repo"]') !== null };
   })()`;
@@ -186,12 +194,24 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
     async () => {
       const app = await launchTugApp({ testName: "at0228-changeset-aggregate" });
       try {
-        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
         for (const s of SCRATCH) {
           await app.spawnSessionResume(s.cardId, { tugSessionId: s.sid, projectDir: s.dir });
         }
 
-        // (1) Filter: the card settles on EXACTLY the two open dev cards'
+        // Open + focus the Lens so the Changeset section mounts and its
+        // commit-flow responders are in the active chain (R01). The section
+        // defaults to shown + expanded, so its body renders straight away.
+        await dispatch(app, "focus-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SECTION)}) !== null &&
+           document.querySelector(${JSON.stringify(
+             `${SECTION} [data-testid="lens-section-body"]`,
+           )}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // (1) Filter: the section settles on EXACTLY the two open dev cards'
         // sessions (one row each). The bootstrap source-tree is registered but
         // unbound to any dev card here, so none of its sessions appear.
         await app.waitForCondition<boolean>(
@@ -214,7 +234,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
           "the non-repo session entry shows the Init affordance",
         ).toBe(true);
         await app.click(
-          `${CARD} [data-testid="changeset-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="changeset-git-init"]`,
+          `${SECTION} [data-testid="changeset-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="changeset-git-init"]`,
         );
         await app.waitForCondition<boolean>(
           `(function(){ var p = ${nonRepoProbe(NON_REPO.sid)}; return p.present && !p.nonRepo; })()`,
@@ -228,7 +248,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         // mounts the file's embedded `DiffBlock` in the block body carrying the
         // added line's marker; a second click unmounts it (collapse-by-unmount)
         // so the later commit leg reads a clean file list.
-        const UNATTRIBUTED = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
+        const UNATTRIBUTED = `${SECTION} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
         const FILE_BLOCK = `${UNATTRIBUTED} [data-testid="changeset-file-block"][data-path="committed.txt"]`;
         const DISCLOSURE = `${FILE_BLOCK} [data-slot="tool-call-header-disclosure"]`;
         const FILE_BODY = `${FILE_BLOCK} [data-slot="tool-block-body"]`;
@@ -316,7 +336,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         // (5) File click: the repo's untracked file lands in the project's
         // Unattributed entry as a link; clicking it opens the file in a Text
         // card.
-        const FILE_LINK = `${CARD} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
+        const FILE_LINK = `${SECTION} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
         await app.waitForCondition<boolean>(
           `document.querySelector('${FILE_LINK}') !== null`,
           { timeoutMs: 20_000 },
@@ -333,6 +353,37 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
           })()`,
           { timeoutMs: 8000 },
         );
+
+        // (6) Nested sticky ([P08]): with the section body scrolled, the
+        // section band stays pinned at the top of the Lens scroll and the
+        // first entry header pins BENEATH it (never slips under the band).
+        const stick = await app.evalJS<{
+          bandTop: number;
+          bandBottom: number;
+          headerTop: number;
+          scrolled: number;
+        } | null>(
+          `(function(){
+            var content = document.querySelector('.lens-content');
+            var band = document.querySelector(${JSON.stringify(
+              `${SECTION} [data-testid="lens-section-band"]`,
+            )});
+            var header = document.querySelector(${JSON.stringify(
+              `${SECTION} [data-testid="changeset-entry"] .tool-call-header`,
+            )});
+            if (!content || !band || !header) return null;
+            content.scrollTop = content.scrollHeight;
+            var b = band.getBoundingClientRect();
+            var h = header.getBoundingClientRect();
+            return { bandTop: b.top, bandBottom: b.bottom, headerTop: h.top, scrolled: content.scrollTop };
+          })()`,
+        );
+        expect(stick, "band + entry header measurable").not.toBeNull();
+        if (stick !== null) {
+          // The entry header's top is at or below the band's bottom — it never
+          // strands under the stuck band (allow 1px for subpixel rounding).
+          expect(stick.headerTop).toBeGreaterThanOrEqual(stick.bandBottom - 1);
+        }
       } finally {
         await app.close();
       }

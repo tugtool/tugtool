@@ -90,6 +90,16 @@ export interface TugMessageEditorProps {
   placeholder?: string;
   /** Maximum visible rows before the field scrolls. @default 12 */
   maxRows?: number;
+  /**
+   * Soft-wrap long lines instead of scrolling horizontally. Forwarded to the
+   * substrate (`EditorView.lineWrapping` + `data-wrap`). @default false
+   */
+  lineWrap?: boolean;
+  /**
+   * Editor font size (a CSS length; drives `--tug-font-size-editor` on the
+   * substrate). Omit to keep the substrate default.
+   */
+  fontSize?: string;
   /** Read-only + non-editable when true. */
   disabled?: boolean;
   /** Forwarded to the host wrapper. */
@@ -110,6 +120,8 @@ export const TugMessageEditor = React.forwardRef<
     onSubmit,
     placeholder,
     maxRows = DEFAULT_MAX_ROWS,
+    lineWrap,
+    fontSize,
     disabled = false,
     className,
     "data-testid": dataTestid,
@@ -184,6 +196,8 @@ export const TugMessageEditor = React.forwardRef<
       preserveState={false}
       returnAction="newline"
       maxRows={maxRows}
+      lineWrap={lineWrap}
+      fontSize={fontSize}
       placeholder={placeholder}
       disabled={disabled}
       onSubmit={onSubmit}

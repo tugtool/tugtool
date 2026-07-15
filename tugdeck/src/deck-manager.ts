@@ -199,6 +199,81 @@ function spliceCardFromStack(
 }
 
 /**
+ * Drop cards whose `componentId` is not registered, and any stack left with no
+ * surviving cards; rewrite each surviving stack's `cardIds` + `activeCardId`.
+ *
+ * Pure over `(state, isRegistered)` — the DeckManager passes `getRegistration`.
+ * This is the graceful-degrade path for a retired card: a persisted blob that
+ * names, e.g., the old `"changeset"` card (now a Lens section) drops that card
+ * with a warn, and a stack that held only it drops too — no boot crash.
+ * Returns `state` unchanged (same reference) when nothing was dropped.
+ */
+export function filterDeckStateByRegistration(
+  state: DeckState,
+  isRegistered: (componentId: string) => boolean,
+): DeckState {
+  let changed = false;
+
+  const keptCards: CardState[] = [];
+  const droppedCardIds = new Set<string>();
+  for (const card of state.cards) {
+    if (!card.componentId || !isRegistered(card.componentId)) {
+      console.warn(
+        `[DeckManager] filterRegisteredCards: dropping card "${card.id}" — ` +
+          `unregistered componentId "${card.componentId ?? "(none)"}".`,
+      );
+      droppedCardIds.add(card.id);
+      changed = true;
+      continue;
+    }
+    keptCards.push(card);
+  }
+
+  const keptStacks: TugPaneState[] = [];
+  for (const win of state.panes) {
+    const survivingCardIds = win.cardIds.filter((id) => !droppedCardIds.has(id));
+    if (survivingCardIds.length === 0) {
+      console.warn(
+        `[DeckManager] filterRegisteredCards: dropping stack "${win.id}" — ` +
+          `all cards had unregistered componentIds.`,
+      );
+      changed = true;
+      continue;
+    }
+    let activeCardId = win.activeCardId;
+    if (!survivingCardIds.includes(activeCardId)) {
+      activeCardId = survivingCardIds[0];
+      changed = true;
+    }
+    if (
+      survivingCardIds.length !== win.cardIds.length ||
+      activeCardId !== win.activeCardId
+    ) {
+      keptStacks.push({ ...win, cardIds: survivingCardIds, activeCardId });
+    } else {
+      keptStacks.push(win);
+    }
+  }
+
+  if (!changed) return state;
+
+  const keptPaneIds = new Set(keptStacks.map((s) => s.id));
+  const activePaneId =
+    state.activePaneId !== undefined && keptPaneIds.has(state.activePaneId)
+      ? state.activePaneId
+      : undefined;
+
+  return {
+    ...state,
+    cards: keptCards,
+    panes: keptStacks,
+    ...(activePaneId !== undefined
+      ? { activePaneId }
+      : { activePaneId: undefined }),
+  };
+}
+
+/**
  * Read the DEBUG-only `__tugPersistInTestMode` flag. When `true` AND
  * `__tugTestMode` is also `true`, the test-mode persistence bypass
  * in the `put*Guarded` wrappers is skipped — writes go through.
@@ -2668,67 +2743,10 @@ export class DeckManager implements IDeckManagerStore {
    * fall `activeCardId` back to the first surviving card id.
    */
   private filterRegisteredCards(state: DeckState): DeckState {
-    let changed = false;
-
-    const keptCards: CardState[] = [];
-    const droppedCardIds = new Set<string>();
-    for (const card of state.cards) {
-      if (!card.componentId || !getRegistration(card.componentId)) {
-        console.warn(
-          `[DeckManager] filterRegisteredCards: dropping card "${card.id}" — ` +
-            `unregistered componentId "${card.componentId ?? "(none)"}".`,
-        );
-        droppedCardIds.add(card.id);
-        changed = true;
-        continue;
-      }
-      keptCards.push(card);
-    }
-
-    const keptStacks: TugPaneState[] = [];
-    for (const win of state.panes) {
-      const survivingCardIds = win.cardIds.filter(
-        (id) => !droppedCardIds.has(id),
-      );
-      if (survivingCardIds.length === 0) {
-        console.warn(
-          `[DeckManager] filterRegisteredCards: dropping stack "${win.id}" — ` +
-            `all cards had unregistered componentIds.`,
-        );
-        changed = true;
-        continue;
-      }
-      let activeCardId = win.activeCardId;
-      if (!survivingCardIds.includes(activeCardId)) {
-        activeCardId = survivingCardIds[0];
-        changed = true;
-      }
-      if (
-        survivingCardIds.length !== win.cardIds.length ||
-        activeCardId !== win.activeCardId
-      ) {
-        keptStacks.push({ ...win, cardIds: survivingCardIds, activeCardId });
-      } else {
-        keptStacks.push(win);
-      }
-    }
-
-    if (!changed) return state;
-
-    const keptPaneIds = new Set(keptStacks.map((s) => s.id));
-    const activePaneId =
-      state.activePaneId !== undefined && keptPaneIds.has(state.activePaneId)
-        ? state.activePaneId
-        : undefined;
-
-    return {
-      ...state,
-      cards: keptCards,
-      panes: keptStacks,
-      ...(activePaneId !== undefined
-        ? { activePaneId }
-        : { activePaneId: undefined }),
-    };
+    return filterDeckStateByRegistration(
+      state,
+      (componentId) => getRegistration(componentId) !== undefined,
+    );
   }
 
   destroy(): void {

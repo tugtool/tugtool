@@ -1,31 +1,24 @@
-//! The maintained-draft engine ([P21]/[P22], #draft-engine).
+//! The on-demand draft engine (#draft-engine).
 //!
-//! One process-level task keeps every changeset entry's commit-message draft
-//! current so Commit is one click. It taps a **clone of the CHANGESET_ALL
-//! aggregate watch receiver** (never the bump `Notify` — that has a single
-//! waiter) and, for each eligible entry, debounces a quiet period after its
-//! content changes, then regenerates through the headless scribe — but only
-//! when a content **fingerprint** (Spec S11) differs from the persisted
-//! draft's, so an unchanged entry never spends a scribe call.
+//! A changeset entry's commit-message draft is generated on an explicit
+//! request: [`spawn_on_demand_draft`] resolves the request against the latest
+//! CHANGESET_ALL aggregate snapshot, derives the entry's generation target via
+//! [`eligible_entries`], and — when a matching entry exists — spawns a detached
+//! task that regenerates through the headless scribe. It regenerates
+//! unconditionally: an explicit request always spends a scribe call (the
+//! content **fingerprint**, Spec S11, is still computed and persisted, but no
+//! longer gates generation).
 //!
-//! Coalescing is by cancel-and-respawn: a fresh content change for an entry
-//! aborts its pending debounce (and any in-flight generation — `kill_on_drop`
-//! reaps the child) and starts over. Results persist to `changeset_drafts`
-//! (Spec S09) and fire the global aggregate bump so the next frame carries the
-//! draft. Live text deltas ride CONTROL frames (Spec S10, [P24]).
-//!
-//! The per-entry **change key** deliberately excludes draft fields: a draft
-//! landing changes the snapshot frame, so keying the timer on the raw entry
-//! would re-arm on every draft land and never converge.
+//! Results persist to `changeset_drafts` (Spec S09) and fire the global
+//! aggregate bump so the next frame carries the draft. Live text deltas ride
+//! CONTROL frames (Spec S10, [P24]). Generation runs on a detached task so the
+//! caller — the router's per-client socket loop — never parks awaiting it.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::sync::{broadcast, mpsc, watch};
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
 use tugcast_core::types::{ChangesetEntry, WorkspacesChangesetSnapshot};
@@ -35,9 +28,6 @@ use super::agent_supervisor::ScribeContext;
 use super::workspace_registry::WorkspaceRegistry;
 use crate::scribe;
 use crate::session_ledger::{ChangesetDraftRow, SessionLedger};
-
-/// Quiet period after an entry's last content change before regenerating.
-const QUIET_PERIOD: Duration = Duration::from_secs(10);
 
 /// Resolves a `tug_session_id` to its `claude_session_id` (for the session
 /// JSONL path) — backed by the supervisor's in-memory ledger entries.
@@ -74,27 +64,14 @@ enum DraftTarget {
     },
 }
 
-/// One eligible entry pulled from a snapshot: its identity, its debounce
-/// change key (draft-excluding), and its generation target.
+/// One eligible entry pulled from a snapshot: its identity and its generation
+/// target.
 struct PendingEntry {
     key: EntryKey,
-    change_key: String,
     target: DraftTarget,
 }
 
-/// A live debounce/generation task for one entry.
-struct EntryHandle {
-    change_key: String,
-    task: JoinHandle<()>,
-}
-
-impl Drop for EntryHandle {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-/// The engine's shared dependencies, cloned into each generation task.
+/// The engine's shared dependencies, moved into the generation task.
 #[derive(Clone)]
 struct EngineDeps {
     control_tx: broadcast::Sender<Frame>,
@@ -102,97 +79,50 @@ struct EngineDeps {
     registry: Arc<WorkspaceRegistry>,
     scribe: ScribeContext,
     resolver: SessionResolver,
-    quiet_period: Duration,
 }
 
-/// The maintained-draft engine.
-pub struct DraftEngine {
-    watch_rx: watch::Receiver<Frame>,
-    deps: EngineDeps,
+/// Resolve a draft request against the latest aggregate snapshot and, if an
+/// eligible entry matches, spawn its generation on a detached task
+/// (regenerating unconditionally — no fingerprint gate). Returns IMMEDIATELY:
+/// `true` when a generation was spawned, `false` when no eligible entry matched
+/// (nothing to draft). Does NOT await the scribe run — the caller is the
+/// router's per-client socket loop, which must not park (R02, [P03]).
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_on_demand_draft(
+    control_tx: broadcast::Sender<Frame>,
+    ledger: Arc<SessionLedger>,
+    registry: Arc<WorkspaceRegistry>,
+    scribe: ScribeContext,
+    resolver: SessionResolver,
+    snapshot: WorkspacesChangesetSnapshot,
+    project_dir: &str,
+    owner_kind: &str,
+    owner_id: &str,
+) -> bool {
+    let deps = EngineDeps {
+        control_tx,
+        ledger,
+        registry,
+        scribe,
+        resolver,
+    };
+    let Some(entry) = eligible_entries(snapshot).into_iter().find(|p| {
+        p.key.project_dir == project_dir
+            && p.key.owner_kind == owner_kind
+            && p.key.owner_id == owner_id
+    }) else {
+        return false;
+    };
+    let key = entry.key;
+    let target = entry.target;
+    tokio::spawn(async move {
+        generate_for_entry(&deps, &key, &target).await;
+    });
+    true
 }
 
-impl DraftEngine {
-    pub fn new(
-        watch_rx: watch::Receiver<Frame>,
-        control_tx: broadcast::Sender<Frame>,
-        ledger: Arc<SessionLedger>,
-        registry: Arc<WorkspaceRegistry>,
-        scribe: ScribeContext,
-        resolver: SessionResolver,
-    ) -> Self {
-        Self {
-            watch_rx,
-            deps: EngineDeps {
-                control_tx,
-                ledger,
-                registry,
-                scribe,
-                resolver,
-                quiet_period: QUIET_PERIOD,
-            },
-        }
-    }
-
-    /// Run the engine until `cancel`. Each aggregate frame recomputes the set
-    /// of eligible entries; entries whose change key moved (re)arm a debounce,
-    /// entries that vanished are dropped (aborting their tasks).
-    pub async fn run(mut self, cancel: CancellationToken) {
-        let mut handles: HashMap<EntryKey, EntryHandle> = HashMap::new();
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => break,
-                changed = self.watch_rx.changed() => {
-                    if changed.is_err() {
-                        break; // sender dropped
-                    }
-                    let frame = self.watch_rx.borrow_and_update().clone();
-                    let Ok(snapshot) =
-                        serde_json::from_slice::<WorkspacesChangesetSnapshot>(&frame.payload)
-                    else {
-                        continue; // the initial empty frame, or a decode miss
-                    };
-                    self.reconcile(&mut handles, snapshot);
-                }
-            }
-        }
-    }
-
-    fn reconcile(
-        &self,
-        handles: &mut HashMap<EntryKey, EntryHandle>,
-        snapshot: WorkspacesChangesetSnapshot,
-    ) {
-        let pending = eligible_entries(snapshot);
-        let present: std::collections::HashSet<EntryKey> =
-            pending.iter().map(|p| p.key.clone()).collect();
-
-        // Drop entries no longer eligible (their handle's Drop aborts).
-        handles.retain(|key, _| present.contains(key));
-
-        for entry in pending {
-            if handles.get(&entry.key).map(|h| h.change_key.as_str())
-                == Some(entry.change_key.as_str())
-            {
-                continue; // content unchanged since the last (re)arm
-            }
-            // Changed (or new): supersede any in-flight debounce/generation.
-            handles.remove(&entry.key);
-            let deps = self.deps.clone();
-            let key = entry.key.clone();
-            let change_key = entry.change_key.clone();
-            let target = entry.target.clone();
-            let task = tokio::spawn(async move {
-                tokio::time::sleep(deps.quiet_period).await;
-                generate_for_entry(&deps, &key, &target).await;
-            });
-            handles.insert(entry.key.clone(), EntryHandle { change_key, task });
-        }
-    }
-}
-
-/// Pull the eligible entries out of a snapshot with their change keys and
-/// generation targets. Sessions/unattributed need ≥1 file; dashes need rounds
-/// or worktree dirt.
+/// Pull the eligible entries out of a snapshot with their generation targets.
+/// Sessions/unattributed need ≥1 file; dashes need rounds or worktree dirt.
 fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> {
     let mut out = Vec::new();
     for project in snapshot.projects {
@@ -223,7 +153,6 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                             owner_kind: "session".to_string(),
                             owner_id,
                         },
-                        change_key: head_change_key(&metas, &files),
                         target: DraftTarget::Head { files: metas },
                     });
                 }
@@ -233,15 +162,11 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                     rounds,
                     worktree,
                     worktree_dirty,
-                    files,
                     ..
                 } => {
                     if rounds == 0 && !worktree_dirty {
                         continue;
                     }
-                    let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-                    paths.sort_unstable();
-                    let change_key = format!("{rounds}|{worktree_dirty}|{}", paths.join("\n"));
                     // The dash branch ref is the owner id.
                     let branch = owner_id.clone();
                     out.push(PendingEntry {
@@ -250,7 +175,6 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                             owner_kind: "dash".to_string(),
                             owner_id,
                         },
-                        change_key,
                         target: DraftTarget::Dash {
                             base,
                             branch,
@@ -272,14 +196,12 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                     origin: String::new(),
                 })
                 .collect();
-            let change_key = unattributed_change_key(&metas);
             out.push(PendingEntry {
                 key: EntryKey {
                     project_dir: project_dir.clone(),
                     owner_kind: "unattributed".to_string(),
                     owner_id: String::new(),
                 },
-                change_key,
                 target: DraftTarget::Head { files: metas },
             });
         }
@@ -287,26 +209,7 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
     out
 }
 
-fn head_change_key(metas: &[FileMeta], files: &[tugcast_core::types::ChangesetFile]) -> String {
-    let mut pairs: Vec<String> = metas
-        .iter()
-        .map(|m| format!("{}\u{0}{}", m.path, m.git_status))
-        .collect();
-    pairs.sort();
-    let max_touched = files.iter().map(|f| f.last_touched).max().unwrap_or(0);
-    format!("{}|{max_touched}", pairs.join("\n"))
-}
-
-fn unattributed_change_key(metas: &[FileMeta]) -> String {
-    let mut pairs: Vec<String> = metas
-        .iter()
-        .map(|m| format!("{}\u{0}{}", m.path, m.git_status))
-        .collect();
-    pairs.sort();
-    pairs.join("\n")
-}
-
-/// Generate (or skip, per the fingerprint gate) the draft for one entry.
+/// Generate the draft for one entry (regenerating unconditionally, [P02]).
 async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTarget) {
     let repo_dir = PathBuf::from(&key.project_dir);
     let style_rules = scribe::commit_style_rules();
@@ -332,17 +235,6 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
             .await
         }
     };
-
-    // Fingerprint gate: an unchanged fingerprint means the persisted draft is
-    // still current — no scribe call.
-    if let Ok(Some(existing)) =
-        deps.ledger
-            .changeset_draft(&key.owner_kind, &key.owner_id, &key.project_dir)
-    {
-        if existing.fingerprint == fingerprint {
-            return;
-        }
-    }
 
     send_state(deps, key, "drafting", None);
 
@@ -474,24 +366,26 @@ async fn session_user_prompts(
     let since_ms = deps
         .ledger
         .file_events_for_session(&key.owner_id)
-        .map(|events| {
-            events
-                .iter()
-                .filter(|e| {
-                    Path::new(&e.file_path)
-                        .strip_prefix(&key.project_dir)
-                        .ok()
-                        .and_then(|p| p.to_str())
-                        .map(|rel| dirty.contains(rel))
-                        .unwrap_or(false)
-                })
-                .map(|e| e.at)
-                .min()
-                .unwrap_or(0)
-        })
+        .map(|events| earliest_dirty_touch(&events, &dirty))
         .unwrap_or(0);
 
     scribe::session_prompts_since(&jsonl, since_ms, 20, 2_000)
+}
+
+/// The earliest touch time across the entry's dirty paths, or 0 when none
+/// match. `file_events.file_path` is repo-relative at capture (canonical-path
+/// identity, c6d7b806), matching the dirty set's repo-relative `path` directly
+/// — no prefix strip ([P09]).
+fn earliest_dirty_touch(
+    events: &[crate::session_ledger::FileEventRow],
+    dirty: &std::collections::HashSet<&str>,
+) -> i64 {
+    events
+        .iter()
+        .filter(|e| dirty.contains(e.file_path.as_str()))
+        .map(|e| e.at)
+        .min()
+        .unwrap_or(0)
 }
 
 /// Gather the fingerprint + prompt for a dash entry ([P23]).
@@ -634,6 +528,9 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Mutex as StdMutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use crate::session_ledger::FileEventRow;
 
     use tugcast_core::types::{
         ChangesetEntry, ChangesetFile, ChangesetSnapshot, ProjectChangeset,
@@ -740,28 +637,78 @@ mod tests {
         }
     }
 
-    fn frame_of(snapshot: &WorkspacesChangesetSnapshot) -> Frame {
-        Frame::new(FeedId::CHANGESET_ALL, serde_json::to_vec(snapshot).unwrap())
+    fn fileless_session_snapshot(project_dir: &str) -> WorkspacesChangesetSnapshot {
+        let entry = ChangesetEntry::Session {
+            owner_id: "s1".to_string(),
+            display_name: "s1".to_string(),
+            live: true,
+            files: vec![],
+            draft: None,
+        };
+        WorkspacesChangesetSnapshot {
+            projects: vec![ProjectChangeset {
+                project_dir: project_dir.to_string(),
+                display_name: "proj".to_string(),
+                no_repo: false,
+                snapshot: ChangesetSnapshot {
+                    workspace_key: "ws".to_string(),
+                    branch: "main".to_string(),
+                    ahead: 0,
+                    behind: 0,
+                    head_sha: String::new(),
+                    head_message: String::new(),
+                    changesets: vec![entry],
+                    unattributed: vec![],
+                },
+                unattributed_draft: None,
+            }],
+        }
     }
 
-    fn make_deps(
-        fake: Arc<FakeScribe>,
-        ledger: Arc<SessionLedger>,
-    ) -> (EngineDeps, broadcast::Receiver<Frame>) {
-        let (control_tx, control_rx) = broadcast::channel(64);
-        let scribe = ScribeContext {
+    fn file_event(path: &str, at: i64) -> FileEventRow {
+        FileEventRow {
+            tug_session_id: "s1".to_string(),
+            tool_use_id: "t".to_string(),
+            file_path: path.to_string(),
+            tool_name: "Edit".to_string(),
+            op: "edit".to_string(),
+            origin: "exact".to_string(),
+            ambiguous: false,
+            parent_tool_use_id: None,
+            project_dir: "/proj".to_string(),
+            at,
+        }
+    }
+
+    fn scribe_ctx(fake: Arc<FakeScribe>) -> ScribeContext {
+        ScribeContext {
             spawner: fake,
             model: Arc::new(|| "sonnet".to_string()),
-        };
-        let deps = EngineDeps {
+        }
+    }
+
+    /// Issue an on-demand draft request for a `session` entry, returning the
+    /// synchronous matched/no-match bool. Generation (if any) runs on a
+    /// detached task.
+    fn request(
+        fake: Arc<FakeScribe>,
+        ledger: Arc<SessionLedger>,
+        snapshot: WorkspacesChangesetSnapshot,
+        owner_id: &str,
+        project: &str,
+    ) -> bool {
+        let (control_tx, _rx) = broadcast::channel(64);
+        spawn_on_demand_draft(
             control_tx,
             ledger,
-            registry: Arc::new(WorkspaceRegistry::new_for_test()),
-            scribe,
-            resolver: Arc::new(|_| None),
-            quiet_period: Duration::from_millis(40),
-        };
-        (deps, control_rx)
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            scribe_ctx(fake),
+            Arc::new(|_| None),
+            snapshot,
+            project,
+            "session",
+            owner_id,
+        )
     }
 
     async fn wait_for_draft(ledger: &SessionLedger, project: &str) -> Option<ChangesetDraftRow> {
@@ -774,75 +721,93 @@ mod tests {
         None
     }
 
+    async fn wait_for_calls(fake: &FakeScribe, n: usize) {
+        for _ in 0..50 {
+            if fake.calls.load(Ordering::SeqCst) >= n {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("scribe calls did not reach {n}");
+    }
+
     #[tokio::test]
-    async fn persists_a_draft_then_gates_on_fingerprint() {
+    async fn on_demand_regenerates_ignoring_fingerprint() {
         let (_dir, root) = init_repo();
         let project = root.to_string_lossy().to_string();
         let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
         let fake = FakeScribe::new("Change a.txt\n\n- edit the file");
-        let (deps, _rx) = make_deps(fake.clone(), ledger.clone());
+        let snap = session_snapshot(&project, "M");
 
-        let (watch_tx, watch_rx) = watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
-        let cancel = CancellationToken::new();
-        let engine = DraftEngine { watch_rx, deps };
-        let handle = tokio::spawn(engine.run(cancel.clone()));
-
-        // A session entry with a dirty file → one generation, one persisted row.
-        watch_tx
-            .send(frame_of(&session_snapshot(&project, "M")))
-            .unwrap();
+        // First request generates and persists a row (storing its fingerprint).
+        assert!(request(
+            fake.clone(),
+            ledger.clone(),
+            snap.clone(),
+            "s1",
+            &project
+        ));
         let row = wait_for_draft(&ledger, &project)
             .await
             .expect("draft persisted");
         assert_eq!(row.message, "Change a.txt\n\n- edit the file");
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        wait_for_calls(&fake, 1).await;
 
-        // An identical snapshot: the change key is unchanged, so no re-arm; and
-        // even if it re-armed, the fingerprint matches → still one call.
-        watch_tx
-            .send(frame_of(&session_snapshot(&project, "M")))
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(120)).await;
+        // The repo is unchanged, so a second request computes the SAME
+        // fingerprint. The old gate would skip; on-demand regenerates.
+        assert!(request(fake.clone(), ledger.clone(), snap, "s1", &project));
+        wait_for_calls(&fake, 2).await;
         assert_eq!(
             fake.calls.load(Ordering::SeqCst),
-            1,
-            "fingerprint gate holds"
+            2,
+            "regenerates despite a matching fingerprint"
         );
-
-        cancel.cancel();
-        let _ = handle.await;
+        assert!(
+            ledger
+                .changeset_draft("session", "s1", &project)
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]
-    async fn a_superseding_change_coalesces_to_one_generation() {
+    async fn on_demand_no_entry_returns_false() {
         let (_dir, root) = init_repo();
         let project = root.to_string_lossy().to_string();
         let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
         let fake = FakeScribe::new("msg");
-        let (deps, _rx) = make_deps(fake.clone(), ledger.clone());
 
-        let (watch_tx, watch_rx) = watch::channel(Frame::new(FeedId::CHANGESET_ALL, vec![]));
-        let cancel = CancellationToken::new();
-        let engine = DraftEngine { watch_rx, deps };
-        let handle = tokio::spawn(engine.run(cancel.clone()));
+        // A fileless session is not eligible → no match, synchronous `false`.
+        let matched = request(
+            fake.clone(),
+            ledger.clone(),
+            fileless_session_snapshot(&project),
+            "s1",
+            &project,
+        );
+        assert!(!matched, "no eligible entry");
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "no scribe call");
+        assert!(
+            ledger
+                .changeset_draft("session", "s1", &project)
+                .unwrap()
+                .is_none()
+        );
+    }
 
-        // Two changes within the quiet window: the first debounce is superseded
-        // by the second (different change key), so only one generation runs.
-        watch_tx
-            .send(frame_of(&session_snapshot(&project, "M")))
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        watch_tx
-            .send(frame_of(&session_snapshot(&project, "MM")))
-            .unwrap();
-
-        let _ = wait_for_draft(&ledger, &project)
-            .await
-            .expect("draft persisted");
-        tokio::time::sleep(Duration::from_millis(80)).await;
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "coalesced to one run");
-
-        cancel.cancel();
-        let _ = handle.await;
+    #[test]
+    fn session_prompts_since_uses_repo_relative_paths() {
+        let dirty: std::collections::HashSet<&str> =
+            ["a.txt", "sub/b.txt"].into_iter().collect();
+        let events = vec![
+            file_event("a.txt", 500),
+            file_event("sub/b.txt", 200),
+            // An unrelated (earlier) path must not lower the floor.
+            file_event("unrelated.txt", 10),
+        ];
+        // The min touch across the dirty repo-relative paths — never 0, as the
+        // broken absolute-prefix strip produced.
+        assert_eq!(earliest_dirty_touch(&events, &dirty), 200);
     }
 }

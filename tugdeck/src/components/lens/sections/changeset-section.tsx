@@ -1,7 +1,10 @@
 /**
- * Changeset card — the account-global view of every open session's dirty
- * state: one entry per session, plus per-project dash and unattributed
- * pseudo-entries.
+ * Changeset section — the Lens `kind: "changeset"` registrant ([P07]): the
+ * account-global view of every open session's dirty state as a reorderable/
+ * collapsible Lens section, one entry per session plus per-project dash and
+ * unattributed pseudo-entries. Supersedes the retired standalone changeset
+ * card; the entry subtree (`EntryBody` and its blocks, the commit composer)
+ * moved here verbatim.
  *
  * Renders the aggregate CHANGESET_ALL feed (0x24) joined against the open
  * dev cards (the card-session binding store). Each entry is a session bound
@@ -33,10 +36,10 @@
  *       CSS, [L11] controls emit actions, [L20] composed children keep
  *       their own tokens.
  *
- * @module components/tugways/cards/changeset-card
+ * @module components/lens/sections/changeset-section
  */
 
-import "./changeset-card.css";
+import "./changeset-section.css";
 
 import React, {
   useCallback,
@@ -46,9 +49,9 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CircleCheck, CircleDashed, SquareArrowOutUpRight } from "lucide-react";
+import { CircleCheck, CircleDashed, GitBranch, SquareArrowOutUpRight } from "lucide-react";
 
-import { registerCard } from "@/card-registry";
+import { registerLensSection } from "@/components/lens/lens-section-registry";
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
@@ -1297,6 +1300,17 @@ function EntryBody({
   const drafting = draftOverlay.phase === "drafting";
   const draftError = draftOverlay.phase === "error" ? draftOverlay.detail : null;
 
+  // Whether this entry can back an on-demand draft ([P04]): a session or
+  // unattributed entry with ≥1 file, or a dash with rounds / a dirty worktree.
+  // The composer renders for a draftable entry even before a draft exists, so
+  // the Generate affordance is reachable on a fresh entry.
+  const isDraftable =
+    item.kind === "dash"
+      ? item.entry.rounds > 0 || item.entry.worktree_dirty
+      : item.kind === "session"
+        ? !item.project.no_repo && item.entry.files.length > 0
+        : item.files.length > 0;
+
   const selectSender = (path: string): string => `${item.id}|${path}`;
   const { ResponderScope: CommitScope, responderRef: commitRef } = useResponderForm({
     toggle: Object.fromEntries(
@@ -1369,8 +1383,8 @@ function EntryBody({
 
   // The entry-level diff affordance ([P29]): Expand All / Collapse All across
   // the entry's file blocks plus ONE whole-entry pop-out (`OPEN_DIFF` with the
-  // entry descriptor). (Summarize/Draft retired — the draft is maintained
-  // automatically, [P21]; the in-card `TugDiffDocument` expansion is removed.)
+  // entry descriptor). The draft is generated on demand from the composer's
+  // Generate button ([P04]); the in-card `TugDiffDocument` expansion is removed.
   const entryDiffActionsRow = () => {
     if (entryDescriptor === null || diffablePaths.length === 0) return null;
     return (
@@ -1426,7 +1440,7 @@ function EntryBody({
   const hasCommit = selectable.length > 0;
   const showReceipt = phase === "done" && receipt !== null;
   const commitComposer =
-    !(hasCommit || draftText !== null || drafting) ? null : (
+    !(hasCommit || draftText !== null || drafting || isDraftable) ? null : (
       <div className="changeset-commit" data-testid="changeset-commit-controls">
         <BlockChrome
           variant="tool"
@@ -1445,6 +1459,24 @@ function EntryBody({
           }
           headerActions={
             <>
+              {isDraftable ? (
+                <TugPushButton
+                  size="sm"
+                  emphasis="ghost"
+                  role="action"
+                  disabled={drafting}
+                  onClick={() => {
+                    // Generate is an explicit "replace with a fresh draft" act:
+                    // unpin first so the pristine-follow effect lets the streamed
+                    // deltas flow into the field ([Q03]/[P04]).
+                    setPinned(false);
+                    draftOverlay.requestDraft();
+                  }}
+                  data-testid="changeset-generate-draft"
+                >
+                  Generate message
+                </TugPushButton>
+              ) : null}
               {draftText !== null ? (
                 <BlockCopyButton
                   subtype="icon"
@@ -1510,6 +1542,8 @@ function EntryBody({
             <TugMessageEditor
               ref={editorRef}
               placeholder="Commit message"
+              lineWrap
+              fontSize="var(--tug-font-size-sm)"
               disabled={!hasCommit || phase === "pending"}
               onChange={(text) => {
                 setMessage(text);
@@ -1602,12 +1636,42 @@ function EntryBody({
 }
 
 // ---------------------------------------------------------------------------
-// ChangesetCardContent
+// Changeset section — body + collapsed summary
 // ---------------------------------------------------------------------------
 
-export function ChangesetCardContent() {
+/** The joined item list, from the same app-level singletons the section reads
+ *  ([L02]). Shared by the body and the collapsed summary so they agree. */
+function useChangesetItems(): ChangesetItem[] {
   const data = useChangesetAll();
   const bindings = useOpenBindings();
+  return useMemo(() => buildItems(data, bindings), [data, bindings]);
+}
+
+/** Total dirty files across the shown entries: session/unattributed file
+ *  lists, plus a dash's range files. */
+function countDirtyFiles(items: readonly ChangesetItem[]): number {
+  let n = 0;
+  for (const item of items) {
+    n += item.kind === "unattributed" ? item.files.length : item.entry.files.length;
+  }
+  return n;
+}
+
+/** The Lens band's live collapsed summary ([P07]): "N sessions · M dirty
+ *  files" — the count that lets the collapsed section beat a dead title. */
+function ChangesetCollapsedSummary(): React.ReactElement {
+  const items = useChangesetItems();
+  const sessions = items.filter((item) => item.kind === "session").length;
+  const dirty = countDirtyFiles(items);
+  return (
+    <>{`${sessions} session${sessions === 1 ? "" : "s"} · ${dirty} dirty file${
+      dirty === 1 ? "" : "s"
+    }`}</>
+  );
+}
+
+function ChangesetSectionBody(): React.ReactElement {
+  const items = useChangesetItems();
 
   // Verb failures (commit, scribe) and scribe summaries surface as a
   // pane-modal TugAlert sheet. Diffs render inline in the entries ([P20]),
@@ -1619,8 +1683,6 @@ export function ChangesetCardContent() {
     },
     [showSheet],
   );
-
-  const items = useMemo(() => buildItems(data, bindings), [data, bindings]);
 
   // Drop per-entry inline-diff stores whose entries have left the snapshot.
   useEffect(() => {
@@ -1665,11 +1727,6 @@ export function ChangesetCardContent() {
     setCollapsedEntries(new Set(seenSectionsRef.current));
   }, [entryIds]);
 
-  const sessionCount = useMemo(
-    () => items.filter((item) => item.kind === "session").length,
-    [items],
-  );
-
   if (items.length === 0) {
     return (
       <div data-slot="changeset-card" className="changeset-card changeset-card-empty">
@@ -1678,13 +1735,12 @@ export function ChangesetCardContent() {
     );
   }
 
+  // The band supplies the title + the live "N sessions · M dirty files"
+  // summary ([Q04]); the body opens with the bulk-collapse buttons only.
   return (
     <div data-slot="changeset-card" className="changeset-card">
       <div className="changeset-head">
         <div className="changeset-toolbar">
-          <span className="changeset-toolbar-title">
-            {sessionCount} session{sessionCount === 1 ? "" : "s"}
-          </span>
           <span className="changeset-toolbar-spacer" />
           <TugPushButton
             emphasis="ghost"
@@ -1726,29 +1782,22 @@ export function ChangesetCardContent() {
 }
 
 // ---------------------------------------------------------------------------
-// registerChangesetCard
+// registerChangesetSection
 // ---------------------------------------------------------------------------
 
 /**
- * Register the Changeset card in the global card registry. Call from
- * `main.tsx` before any `DeckManager.addCard("changeset")`.
+ * Register the Changeset Lens section ([P07]). Called once at boot from
+ * `main.tsx`, beside `registerLogSection` / `registerTelemetrySection`. The
+ * body reads the app-level `useChangesetAll` singleton directly (no host feed
+ * wiring), so it is host-agnostic — nothing imported from `lens/` beyond the
+ * registry entry point.
  */
-export function registerChangesetCard(): void {
-  registerCard({
-    componentId: "changeset",
-    contentFactory: () => <ChangesetCardContent />,
-    defaultMeta: { title: "Changeset", icon: "GitBranch", closable: true },
-    // No per-card feed: the card reads the account-global aggregate via the
-    // app-level `useChangesetAll` singleton, not `useCardData`. Declaring
-    // CHANGESET_ALL here would route it through the host's per-card,
-    // workspace-key-filtered FeedStore — which drops the aggregate frame (it
-    // carries no top-level workspace_key), so the host's `feedsReady` gate
-    // would hang on "Loading..." forever. An empty list makes the card ready
-    // immediately; the singleton store handles delivery.
-    cardFeedIds: [],
-    sizePolicy: {
-      min: { width: 360, height: 280 },
-      preferred: { width: 560, height: 480 },
-    },
+export function registerChangesetSection(): void {
+  registerLensSection({
+    kind: "changeset",
+    title: "Changeset",
+    glyph: <GitBranch size={14} />,
+    collapsedSummary: () => <ChangesetCollapsedSummary />,
+    body: () => <ChangesetSectionBody />,
   });
 }

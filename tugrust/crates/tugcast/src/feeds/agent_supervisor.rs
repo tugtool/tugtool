@@ -1105,6 +1105,12 @@ pub struct AgentSupervisor {
     /// (rather than per-relay) precisely so relays for *different* sessions
     /// share one view of who's mid-command on a repo.
     pub bracket_registry: crate::feeds::attribution::BracketRegistry,
+    /// Latest CHANGESET_ALL aggregate watch receiver, stored at boot by
+    /// [`AgentSupervisor::start_draft_engine`]. `do_changeset_draft_request`
+    /// borrows its current frame to resolve an on-demand draft against the
+    /// latest snapshot ([P03]). `None` (its unset state) when the draft path
+    /// isn't wired (tests, or a boot without the aggregate feed).
+    pub changeset_watch: std::sync::OnceLock<watch::Receiver<Frame>>,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -1371,6 +1377,45 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
         project_dir,
         files,
         message,
+    })
+}
+
+/// Parsed `changeset_draft_request` (Spec S01): the entry identity an on-demand
+/// draft is requested for. `owner_id` may be empty (the unattributed pseudo-
+/// entry), so it is not filtered non-empty.
+struct ChangesetDraftRequestPayload {
+    project_dir: String,
+    owner_kind: String,
+    owner_id: String,
+}
+
+fn parse_changeset_draft_request_payload(
+    payload: &[u8],
+) -> Result<ChangesetDraftRequestPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let owner_kind = value
+        .get("owner_kind")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let owner_id = value
+        .get("owner_id")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(ChangesetDraftRequestPayload {
+        project_dir,
+        owner_kind,
+        owner_id,
     })
 }
 
@@ -2019,6 +2064,7 @@ impl AgentSupervisor {
             cancel,
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
             bracket_registry: crate::feeds::attribution::BracketRegistry::new(),
+            changeset_watch: std::sync::OnceLock::new(),
         };
         (sup, merger_register_rx)
     }
@@ -2165,6 +2211,13 @@ impl AgentSupervisor {
             "changeset_commit" => match parse_changeset_commit_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_commit(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_draft_request" => match parse_changeset_draft_request_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_draft_request(&parsed);
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3277,6 +3330,84 @@ impl AgentSupervisor {
         }
     }
 
+    /// Handle a `changeset_draft_request` CONTROL request ([P03], Spec S01): an
+    /// explicit, on-demand commit-message draft for one changeset entry.
+    ///
+    /// Resolves the entry against the latest CHANGESET_ALL aggregate frame (the
+    /// stored watch receiver) and spawns its generation on a detached task —
+    /// this method NEVER awaits the scribe run, so the router's per-client
+    /// socket loop stays live to deliver the streamed deltas (R02). No-op when
+    /// the scribe, the read-side ledger, or the aggregate watch isn't wired
+    /// (tests without the draft path). When no eligible entry matches, replies
+    /// `changeset_draft_state { state: "error", detail: "nothing to generate" }`
+    /// ([Q02]).
+    fn do_changeset_draft_request(&self, request: &ChangesetDraftRequestPayload) {
+        let Some(scribe) = self.scribe.clone() else {
+            return;
+        };
+        let Some(ledger) = self.session_ledger.clone() else {
+            return;
+        };
+        let Some(watch_rx) = self.changeset_watch.get() else {
+            return;
+        };
+        let frame = watch_rx.borrow().clone();
+        let Ok(snapshot) = serde_json::from_slice::<
+            tugcast_core::types::WorkspacesChangesetSnapshot,
+        >(&frame.payload) else {
+            return; // the initial empty frame, or a decode miss
+        };
+
+        // Sync resolver over the tokio async mutex: `try_lock` never blocks —
+        // under rare contention it degrades to "no claude id" (the draft prompt
+        // then drops the session-prompt context, never fails).
+        let inmem = Arc::clone(&self.ledger);
+        let resolver: crate::feeds::draft_engine::SessionResolver =
+            Arc::new(move |tug_id: &str| {
+                let map = inmem.try_lock().ok()?;
+                let entry = map.get(&TugSessionId(tug_id.to_string()))?;
+                let entry = entry.try_lock().ok()?;
+                entry.claude_session_id.clone()
+            });
+
+        let matched = crate::feeds::draft_engine::spawn_on_demand_draft(
+            self.control_tx.clone(),
+            ledger,
+            Arc::clone(&self.registry),
+            scribe,
+            resolver,
+            snapshot,
+            &request.project_dir,
+            &request.owner_kind,
+            &request.owner_id,
+        );
+        if !matched {
+            Self::send_changeset_draft_error(&self.control_tx, request, "nothing to generate");
+        }
+    }
+
+    /// Broadcast a `changeset_draft_state` error for a request that matched no
+    /// eligible entry ([Q02]) — the same wire shape the generation task's
+    /// `send_state` emits, so the client overlay renders it identically.
+    fn send_changeset_draft_error(
+        control_tx: &broadcast::Sender<Frame>,
+        request: &ChangesetDraftRequestPayload,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_draft_state",
+            "project_dir": request.project_dir,
+            "owner_kind": request.owner_kind,
+            "owner_id": request.owner_id,
+            "state": "error",
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_draft_state serializes"),
+        ));
+    }
+
     /// Handle a `changeset_commit` CONTROL request (Spec S03, [P15]):
     /// commit exactly the listed files in an open project's checkout.
     ///
@@ -4243,43 +4374,18 @@ impl AgentSupervisor {
         self.scribe = Some(scribe);
     }
 
-    /// Spawn the maintained-draft engine (#draft-engine, [P21]) over a clone
-    /// of the aggregate CHANGESET_ALL watch receiver. No-op when the scribe or
-    /// the read-side session ledger isn't wired (tests, or a boot without
-    /// either). The engine resolves `tug_session_id → claude_session_id` from
-    /// this supervisor's in-memory ledger entries — the only place that
-    /// mapping lives (populated on `session_init`).
+    /// Store the aggregate CHANGESET_ALL watch receiver for the on-demand draft
+    /// path (#draft-engine, [P03]). No background loop is spawned — generation
+    /// runs only on an explicit `changeset_draft_request`, off the latest frame
+    /// this receiver holds. `do_changeset_draft_request` reads it back and
+    /// resolves `tug_session_id → claude_session_id` from this supervisor's
+    /// in-memory ledger entries at request time.
     pub fn start_draft_engine(
         self: &Arc<Self>,
         watch_rx: watch::Receiver<Frame>,
-        cancel: CancellationToken,
+        _cancel: CancellationToken,
     ) {
-        let Some(scribe) = self.scribe.clone() else {
-            return;
-        };
-        let Some(ledger) = self.session_ledger.clone() else {
-            return;
-        };
-        let inmem = Arc::clone(&self.ledger);
-        // Sync resolver over the tokio async mutex: `try_lock` never blocks —
-        // under the rare lock contention it degrades to "no claude id" (the
-        // draft prompt then drops the session-prompt context, never fails).
-        let resolver: crate::feeds::draft_engine::SessionResolver =
-            Arc::new(move |tug_id: &str| {
-                let map = inmem.try_lock().ok()?;
-                let entry = map.get(&TugSessionId(tug_id.to_string()))?;
-                let entry = entry.try_lock().ok()?;
-                entry.claude_session_id.clone()
-            });
-        let engine = crate::feeds::draft_engine::DraftEngine::new(
-            watch_rx,
-            self.control_tx.clone(),
-            ledger,
-            Arc::clone(&self.registry),
-            scribe,
-            resolver,
-        );
-        tokio::spawn(engine.run(cancel));
+        let _ = self.changeset_watch.set(watch_rx);
     }
 
     /// Handle a `list_shell_exchanges { tug_session_id }` CONTROL request — the
@@ -6226,6 +6332,199 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&show.stdout), "MERGED\n");
 
         cancel.cancel();
+    }
+
+    /// A fake scribe that streams one delta and returns a fixed message.
+    struct DraftScribe(String);
+    impl crate::scribe::ScribeSpawner for DraftScribe {
+        fn run(
+            &self,
+            _model: String,
+            _prompt: String,
+            deltas: crate::scribe::ScribeDeltas,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>
+        {
+            let s = self.0.clone();
+            Box::pin(async move {
+                if let Some(tx) = deltas {
+                    let _ = tx.send(s.clone());
+                }
+                Ok(s)
+            })
+        }
+    }
+
+    fn draft_session_snapshot(
+        project_dir: &str,
+    ) -> tugcast_core::types::WorkspacesChangesetSnapshot {
+        use tugcast_core::types::{
+            ChangesetEntry, ChangesetFile, ChangesetSnapshot, ProjectChangeset,
+            WorkspacesChangesetSnapshot,
+        };
+        let entry = ChangesetEntry::Session {
+            owner_id: "s1".to_string(),
+            display_name: "s1".to_string(),
+            live: true,
+            files: vec![ChangesetFile {
+                path: "a.txt".to_string(),
+                git_status: "M".to_string(),
+                op: "edit".to_string(),
+                origin: "exact".to_string(),
+                ambiguous: false,
+                shared: false,
+                last_touched: 1,
+            }],
+            draft: None,
+        };
+        WorkspacesChangesetSnapshot {
+            projects: vec![ProjectChangeset {
+                project_dir: project_dir.to_string(),
+                display_name: "proj".to_string(),
+                no_repo: false,
+                snapshot: ChangesetSnapshot {
+                    workspace_key: "ws".to_string(),
+                    branch: "main".to_string(),
+                    ahead: 0,
+                    behind: 0,
+                    head_sha: String::new(),
+                    head_message: String::new(),
+                    changesets: vec![entry],
+                    unattributed: vec![],
+                },
+                unattributed_draft: None,
+            }],
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn changeset_draft_request_spawns_generation_over_snapshot() {
+        use std::process::Command;
+
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            let ok = Command::new("git")
+                .current_dir(dir)
+                .args(args)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?} failed");
+        }
+
+        let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        sup.set_scribe(ScribeContext {
+            spawner: Arc::new(DraftScribe("Draft message\n".to_string())),
+            model: Arc::new(|| "haiku".to_string()),
+        });
+
+        // A repo with a committed file and one tracked modification.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git(&root, &["init", "-b", "main"]);
+        git(&root, &["config", "user.name", "t"]);
+        git(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("a.txt"), "base\n").unwrap();
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-m", "base"]);
+        std::fs::write(root.join("a.txt"), "changed\n").unwrap();
+
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let root_str = root.to_string_lossy().to_string();
+
+        // Store the aggregate watch frame the request resolves against.
+        let (_wtx, wrx) = watch::channel(Frame::new(
+            FeedId::CHANGESET_ALL,
+            serde_json::to_vec(&draft_session_snapshot(&root_str)).unwrap(),
+        ));
+        sup.changeset_watch.set(wrx).ok();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_draft_request",
+            "project_dir": root_str,
+            "owner_kind": "session",
+            "owner_id": "s1",
+        }))
+        .unwrap();
+        // Generation is detached: handle_control returns before it runs, so we
+        // poll the CONTROL broadcast for the drafting→ready sequence.
+        sup.handle_control("changeset_draft_request", &payload, 1)
+            .await;
+
+        let mut saw_drafting = false;
+        let mut saw_ready = false;
+        for _ in 0..40 {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(10), control_rx.recv())
+                .await
+                .expect("a control frame")
+                .expect("sender alive");
+            let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            if body["action"] == "changeset_draft_state" {
+                match body["state"].as_str() {
+                    Some("drafting") => saw_drafting = true,
+                    Some("ready") => {
+                        saw_ready = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(saw_drafting, "a drafting state streamed");
+        assert!(saw_ready, "a ready state landed");
+
+        let row = sup
+            .session_ledger
+            .as_ref()
+            .unwrap()
+            .changeset_draft("session", "s1", &root_str)
+            .unwrap()
+            .expect("draft row persisted");
+        assert_eq!(row.message, "Draft message");
+
+        cancel.cancel();
+    }
+
+    #[tokio::test]
+    async fn changeset_draft_request_nothing_to_generate_replies_error() {
+        let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        sup.set_scribe(ScribeContext {
+            spawner: Arc::new(DraftScribe("unused".to_string())),
+            model: Arc::new(|| "haiku".to_string()),
+        });
+
+        // An empty snapshot surfaces no eligible entry for the requested owner.
+        let empty = tugcast_core::types::WorkspacesChangesetSnapshot { projects: vec![] };
+        let (_wtx, wrx) = watch::channel(Frame::new(
+            FeedId::CHANGESET_ALL,
+            serde_json::to_vec(&empty).unwrap(),
+        ));
+        sup.changeset_watch.set(wrx).ok();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_draft_request",
+            "project_dir": "/nope",
+            "owner_kind": "session",
+            "owner_id": "s1",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_request", &payload, 1)
+            .await;
+
+        // The error reply is synchronous — readable right after the call.
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), control_rx.recv())
+            .await
+            .expect("a control frame")
+            .expect("sender alive");
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+        assert_eq!(body["action"], "changeset_draft_state");
+        assert_eq!(body["state"], "error");
+        assert_eq!(body["detail"], "nothing to generate");
     }
 
     #[tokio::test]

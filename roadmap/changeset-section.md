@@ -377,12 +377,25 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Draft engine → on-demand `spawn_on_demand_draft` | pending | |
-| #step-2 | `changeset_draft_request` verb + supervisor/main wiring | pending | |
-| #step-3 | `TugMessageEditor` soft-wrap + font pass-throughs | pending | |
-| #step-4 | "Generate message" button + on-demand seed contract (on the card) | pending | |
-| #step-5 | Lift `EntryBody` into the Changeset section; retire the card; migrate at0228/at0229 | pending | |
-| #step-6 | at0237 on-demand draft app-test (real-scribe gated) | pending | |
+| #step-1 | Draft engine → on-demand `spawn_on_demand_draft` | done | 5cdf1198b |
+| #step-2 | `changeset_draft_request` verb + supervisor/main wiring | done | 5cdf1198b |
+| #step-3 | `TugMessageEditor` soft-wrap + font pass-throughs | done | 8120dcdbe |
+| #step-4 | "Generate message" button + on-demand seed contract (on the card) | done | 6118aacf0 |
+| #step-5 | Lift `EntryBody` into the Changeset section; retire the card; migrate at0228/at0229 | done | 963c3a4b4 |
+| #step-6 | at0237 on-demand draft app-test (real-scribe gated) | dropped | — |
+
+> **Step 6 dropped.** The on-demand draft is a long-running, real-scribe (real
+> `claude -p`) UI flow. In the app-test harness the changeset entry only exists
+> while its replay session's workspace is registered (`registry.project_dirs()`),
+> and that workspace releases seconds after the replay tugcode exits — far
+> shorter than a real scribe round trip. The feature was observed working
+> end-to-end (Generate → `in_flight` dot → streamed text into the CM6 field)
+> before the transient workspace dropped, but a stable green app-test would need
+> a persistent-workspace harness affordance that doesn't exist. The on-demand
+> round trip is instead covered deterministically by the Rust
+> `changeset_draft_request_spawns_generation_over_snapshot` supervisor test and
+> the `draft_engine` unit tests ([#step-1]/[#step-2]). Product validation of the
+> UI flow is by hand.
 
 ---
 
