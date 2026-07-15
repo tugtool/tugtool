@@ -1,9 +1,9 @@
 /**
  * compaction-progress-sheet.css — layout for the `/compact` progress sheet.
  *
- * A full-width determinate bar with its own percentage readout, and (while
- * summarizing) the standard sheet actions row carrying Cancel. Compact: the
- * bar + readout carry the progress, so there is no caption. Appearance is
+ * A full-width indeterminate bar and the standard sheet actions row carrying
+ * Cancel while the run is in flight (the sheet title names the operation). The
+ * run is opaque, so the bar is honestly indeterminate. Appearance is
  * token-driven [L06]; the bar and button keep their own tokens [L20].
  */
 
@@ -16,12 +16,9 @@
 }
 
 /* This sheet owns only the bar's VERTICAL placement. The bar's own layout —
-   full-width / left-anchored track, indeterminate barber-pole when there's no
-   positive value, trailing percentage that shrinks the track from the right —
+   full-width / left-anchored track, indeterminate barber-pole with no value —
    is the TugProgressIndicator's standard `variant="bar"` behavior, not the
-   sheet's concern. Center it between the header and Cancel: the header sits
-   `--tugx-sheet-space-b` above the body (its `margin-bottom`), so a matching
-   `margin-bottom` on the bar (with no top margin) balances the gaps. */
+   sheet's concern. */
 .compaction-progress-sheet-bar {
   margin-top: 0;
   margin-bottom: var(--tugx-sheet-space-b);

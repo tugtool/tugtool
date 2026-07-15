@@ -902,16 +902,14 @@ export interface CodeSessionSnapshot {
    */
   unknownEvent: UnknownEventState | null;
   /**
-   * Set once on a fresh session born from `/compact`: the transcript
-   * renders a carry-forward summary block (`summary` body, `preTokens`
-   * label). `seedPending` is `true` until the recap rides the user's
-   * first message on the wire, then `false`. `null` for ordinary
-   * sessions.
+   * The latest compaction's summary: the transcript renders a carry-forward
+   * summary block (`summary` body, `preTokens` label when latched). Set by a
+   * native `compact_summary` frame or the legacy seed-block replay path;
+   * latest-wins. `null` for uncompacted sessions.
    */
   compactionSeed: {
-    summary: string | null;
+    summary: string;
     preTokens: number | null;
-    seedPending: boolean;
   } | null;
   /**
    * Tool calls denied during this session — by a permission rule or the

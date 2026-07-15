@@ -179,9 +179,7 @@ import {
   useTugPaneBulletin,
   type TugPaneBulletinApi,
 } from "../tug-pane-bulletin";
-import { assistantProseFromMessages, lastAssistantCopyText } from "./turn-entry-markdown";
-import { buildSummarizationPrompt } from "@/lib/compaction-request";
-import { pendingCompactionStore } from "@/lib/pending-compaction-store";
+import { lastAssistantCopyText } from "./turn-entry-markdown";
 import { compactionProgressStore } from "@/lib/compaction-progress-store";
 import { CompactionProgressSheet } from "./compaction-progress-sheet";
 import {
@@ -214,12 +212,18 @@ import "./dev-card.css";
 const SHEET_EXIT_ANIMATION_MS = 220;
 
 /**
- * Backstop for `/compact`'s respawn phase: the summarization finished but
- * the fresh session must still spawn, bind, and seed. That handshake is
- * normally milliseconds; if it never lands, fail the run after this long so
- * the progress sheet can't hang (the phase has no Cancel).
+ * True when the in-flight turn carries a compaction divider — a `system_note`
+ * whose `source` is `"compact"`. The `/compact` run watcher uses it as the
+ * belt-and-suspenders "compaction landed" signal for a summary-less (fail-
+ * closed) compaction, alongside the primary `compactionSeed` reference check.
  */
-const COMPACTION_RESPAWN_TIMEOUT_MS = 15_000;
+function activeTurnHasCompactNote(
+  activeTurn: NonNullable<CodeSessionSnapshot["activeTurn"]>,
+): boolean {
+  return activeTurn.messages.some(
+    (m) => m.kind === "system_note" && m.source === "compact",
+  );
+}
 
 /**
  * Placeholder copy for the prompt entry, keyed by the active route
@@ -2856,9 +2860,11 @@ export function DevCardBody({
 
   // Close out a `/compact` run: when the progress store reaches a terminal
   // outcome, clear the store — which dismisses the progress sheet (it watches
-  // the same store). Success is self-evident (the fresh session swaps in with
-  // its Compaction Summary), so it raises no bulletin; cancel / failure DO,
-  // since nothing visible changed. [L02] store state via `useSyncExternalStore`.
+  // the same store). Success is self-evident (the Compaction Summary block +
+  // boundary divider land in place), so it raises no bulletin; cancel / failure
+  // DO, since nothing visible changed. Native compaction happens in place —
+  // there is no session swap to mask, so every outcome dismisses immediately.
+  // [L02] store state via `useSyncExternalStore`.
   const compactionProgress = useSyncExternalStore(
     compactionProgressStore.subscribe,
     compactionProgressStore.getSnapshot,
@@ -2872,27 +2878,12 @@ export function DevCardBody({
       return;
     }
     const notify = paneBulletinRef.current;
-    if (compactionProgress.outcome === "succeeded") {
-      // The fresh session has already swapped in behind the (still-steady)
-      // scrim. Hold the sheet for a couple of frames so the new transcript
-      // paints and settles before we dismiss — otherwise the scrim lifts in
-      // the same beat the session swaps, and the swap reads as a flash.
-      let raf2 = 0;
-      const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => compactionProgressStore.clear());
-      });
-      return () => {
-        cancelAnimationFrame(raf1);
-        if (raf2 !== 0) cancelAnimationFrame(raf2);
-      };
-    }
     if (compactionProgress.outcome === "canceled") {
       notify?.caution("Compaction canceled — session left intact");
-    } else {
+    } else if (compactionProgress.outcome === "failed") {
       notify?.danger(compactionProgress.failureReason ?? "Compaction failed");
     }
-    // Cancel / failure leave the session unchanged — no swap to mask, so
-    // dismiss immediately.
+    // "succeeded" → the divider + summary block speak for themselves.
     compactionProgressStore.clear();
   }, [compactionProgress, cardId]);
 
@@ -3023,150 +3014,86 @@ export function DevCardBody({
       );
       sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
     },
-    // `/compact [focus]` — real compaction over the bridge (claude exposes
-    // no native trigger). Summarize the current session, then continue in
-    // a *fresh* session seeded with the summary (spike-verified). A
-    // pane-modal progress sheet covers the card for the duration, with a
-    // Cancel button that interrupts the summarization.
+    // `/compact [focus]` — native compaction over the stream-json bridge
+    // ([P01]). Dispatch the literal `/compact` (plus focus args) as a normal,
+    // visible submission: Claude Code compacts in place under the SAME session
+    // id and JSONL, streaming a `compact_boundary` (divider) and a summary
+    // event (the carry-forward). A pane-modal, indeterminate "Compacting…"
+    // sheet ([P07]) covers the card for the ~20 s opaque run; Cancel maps to
+    // the turn interrupt.
     //
-    // The summarization turn is sent *suppressed*: it never enters the
-    // transcript, so the user never sees a raw recap streaming and a
-    // Cancel / failure leaves the session pristine (nothing committed).
-    // The summary is captured from the in-flight `ActiveTurnSnapshot`'s
-    // live messages instead of a committed turn. On success the fresh
-    // session is spawned (the `/clear` path); the `dev-session-restore`
-    // live-hook delivers the summary as a suppressed seed, sets the
-    // compaction divider, and calls `compactionProgressStore.succeed()`.
+    // The run settles off `codeSessionStore` snapshots, no timers ([P07]): the
+    // `/compact` turn opens, and when it settles we succeed if compaction ink
+    // was observed since dispatch (the summary re-marked `compactionSeed`, or a
+    // `source: "compact"` note attached to the turn), else cancel (interrupted)
+    // or fail (refused / errored — e.g. "Not enough messages to compact").
     // Reads live ([L07]).
     compact: (args) => {
       const notify = paneBulletinRef.current;
-      const binding = cardSessionBindingStore.getBinding(cardId);
-      const connection = getConnection();
-      if (binding === undefined || connection === null) return;
       const snap0 = codeSessionStore.getSnapshot();
       if (!snap0.canSubmit) {
         notify?.caution("Can't compact while a turn is in flight");
         return;
       }
       const focus = args.trim();
-      const oldTugSessionId = binding.tugSessionId;
-      const projectDir = binding.projectDir;
 
-      // Run-local state shared by the turn watcher, the Cancel button, and
-      // the sheet's close-on-Escape path.
+      // Baseline for detecting compaction ink: a `compact_summary` mints a new
+      // `compactionSeed` object, so a reference change since dispatch proves a
+      // compaction landed. A boundary note on the in-flight turn is the belt-
+      // and-suspenders signal for a summary-less (fail-closed) compaction.
+      const seedAtDispatch = snap0.compactionSeed;
       let sawActive = false;
-      let canceled = false;
-      let failed = false;
+      let sawInk = false;
       let interrupted = false;
-      let latestProse = "";
+      let canceled = false;
 
       const onCancel = (): void => {
         if (canceled) return;
         canceled = true;
-        // Stop the suppressed summarization turn. Nothing was committed, so
-        // the session is intact; the watcher just unsubscribes when the
-        // turn ends. The card raises the "canceled" bulletin off the store.
+        // Interrupt the compaction turn — Claude Code's own supported abort
+        // path ([Q01]); the session stays intact. The watcher unsubscribes at
+        // the active → null transition; the store is already settled here.
         codeSessionStore.interrupt();
         compactionProgressStore.cancel();
       };
 
-      // Watch the in-flight summarization turn. While it streams, tick the
-      // progress bar off the assistant prose so far (a streamed-volume
-      // proxy — there is no true total to report) and keep the latest prose
-      // as the captured summary. When the turn ends, decide success vs.
-      // abort. A suppressed turn commits nothing, so the end is detected by
-      // the `activeTurn` non-null → null transition, not transcript growth.
       const unsubscribe = codeSessionStore.subscribe(() => {
         const snap = codeSessionStore.getSnapshot();
         const active = snap.activeTurn;
+        // Compaction ink: the summary re-marked `compactionSeed`, or a compact
+        // divider attached to the in-flight turn.
+        if (snap.compactionSeed !== seedAtDispatch) sawInk = true;
+        if (active !== null && activeTurnHasCompactNote(active)) sawInk = true;
         if (active !== null) {
-          // The summarization turn was interrupted by *some* path — the
-          // Cancel button, the menu's Stop, or Escape's interrupt ladder.
-          // Whatever the trigger, treat it as a cancel: never spawn a fresh
-          // session from a half-finished summary. Latched here (the turn is
-          // still in-flight during the interrupt round-trip) and acted on at
-          // the active → null transition below.
+          // Latched during the interrupt round-trip (the turn is still
+          // in-flight); acted on at the active → null transition below.
           if (snap.interruptInFlight) interrupted = true;
-          // The summarization turn runs suppressed, so an approval/question
-          // prompt it draws has no surface to answer — that would deadlock
-          // the card. Fail safe instead: interrupt and leave the session
-          // intact. The `failed` flag settles the run once so the ensuing
-          // active → null transition doesn't also take the success path.
-          if (snap.phase === "awaiting_approval") {
-            if (failed || canceled) return;
-            failed = true;
-            unsubscribe();
-            codeSessionStore.interrupt();
-            compactionProgressStore.fail(
-              "Compaction failed — session left intact",
-            );
-            return;
-          }
           sawActive = true;
-          const prose = assistantProseFromMessages(active.messages);
-          if (prose.length > 0) latestProse = prose;
-          compactionProgressStore.setProgress(
-            "summarizing",
-            Math.min(0.9, prose.length / (prose.length + 1800)),
-          );
           return;
         }
-        if (!sawActive) return; // turn hasn't started yet
+        if (!sawActive) return; // turn hasn't opened yet
         unsubscribe();
-        if (canceled) return; // user stopped it — store already settled
+        if (canceled) return; // Cancel button already settled the store
+        if (sawInk) {
+          compactionProgressStore.succeed();
+          return;
+        }
         if (interrupted) {
-          // Interrupted by Escape/Stop (not the Cancel button, which already
-          // settled the store): treat it exactly like Cancel — settle the run
-          // canceled and leave the session intact. NEVER spawn from the
-          // partial summary.
+          // Interrupted by Escape / Stop (not the Cancel button): settle
+          // canceled, session intact.
           compactionProgressStore.cancel();
           return;
         }
-        if (snap.lastError !== null || snap.phase === "errored") {
-          compactionProgressStore.fail(
-            "Compaction failed — session left intact",
-          );
-          return;
-        }
-        if (latestProse.length === 0) {
-          compactionProgressStore.fail(
-            "Compaction failed — no summary produced",
-          );
-          return;
-        }
-        compactionProgressStore.setProgress("respawning", 0.95);
-        const newSessionId = crypto.randomUUID();
-        pendingCompactionStore.set(newSessionId, {
-          summary: latestProse,
-          preTokens: null,
-        });
-        sendSpawnSession(connection, cardId, newSessionId, projectDir, "new");
-        sendCloseSessionKeepingBinding(connection, cardId, oldTugSessionId);
-        // Watchdog: the fresh session must still spawn, bind, and seed
-        // (the `dev-session-restore` hook calls `succeed()`). This phase
-        // can't be canceled, so if that handshake never lands, fail rather
-        // than leave the sheet spinning forever. Cleared the instant this
-        // run settles.
-        const watchdog = setTimeout(() => {
-          if (compactionProgressStore.getSnapshot()?.outcome === null) {
-            compactionProgressStore.fail(
-              "Compaction failed — could not start a fresh session",
-            );
-          }
-        }, COMPACTION_RESPAWN_TIMEOUT_MS);
-        const unsubWatchdog = compactionProgressStore.subscribe(() => {
-          const st = compactionProgressStore.getSnapshot();
-          if (st === null || st.outcome !== null) {
-            clearTimeout(watchdog);
-            unsubWatchdog();
-          }
-        });
+        // Turn settled with no compaction — refused (too-short session) or
+        // errored. Surface the reason; the refusal text is already in the turn.
+        compactionProgressStore.fail(
+          snap.lastError?.message ?? "Compaction didn't run — session left intact",
+        );
       });
 
-      // Open the run, present the modal sheet, then send the suppressed
-      // turn. If the sheet is dismissed (Escape / Cmd-.) while still
-      // *summarizing*, treat that as Cancel. Once respawning there is
-      // nothing to cancel — let the run finish and surface its own bulletin.
+      // Open the run, present the modal sheet, then send the visible `/compact`
+      // turn. If the sheet is dismissed (Escape / Cmd-.) while still in flight,
+      // treat that as Cancel.
       compactionProgressStore.begin(cardId);
       void cardPickerSheet
         .showSheet({
@@ -3178,14 +3105,11 @@ export function DevCardBody({
         })
         .then(() => {
           const st = compactionProgressStore.getSnapshot();
-          if (st !== null && st.outcome === null && st.phase === "summarizing") {
-            onCancel();
-          }
+          if (st !== null && st.outcome === null) onCancel();
         });
       codeSessionStore.send(
-        buildSummarizationPrompt(focus.length > 0 ? focus : undefined),
+        focus.length > 0 ? `/compact ${focus}` : "/compact",
         [],
-        { suppress: true },
       );
     },
     // Export the committed transcript ([#step-13c]). The content (both

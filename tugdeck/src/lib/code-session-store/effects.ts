@@ -197,6 +197,22 @@ export interface TruncateTranscriptEffect {
   promptUuid: string;
 }
 
+/**
+ * Append a compaction `system_note` divider to the LAST committed turn ([P04]).
+ * Emitted by `handleCompactBoundary` on the replay path when the boundary
+ * arrives with no open turn (the `/compact` scaffolding records are skipped, so
+ * it lands right after the prior turn closed). Like {@link
+ * TruncateTranscriptEffect}, the store wrapper applies it to its `_transcript`
+ * array (which does not live in reducer state — [D04]): it mints the note's
+ * `messageKey` from the last turn's `turnKey` + `messages.length` (a committed
+ * turn carries no `systemNoteSeq`; `messages.length` is deterministic and
+ * collision-safe) and appends copy-on-write. A no-op on an empty transcript.
+ */
+export interface AppendCompactNoteEffect {
+  kind: "append-compact-note";
+  text: string;
+}
+
 export type Effect =
   | WriteInflightEffect
   | ClearInflightEffect
@@ -209,7 +225,8 @@ export type Effect =
   | CancelTimerEffect
   | RecordTelemetryEffect
   | RecordContextBreakdownEffect
-  | TruncateTranscriptEffect;
+  | TruncateTranscriptEffect
+  | AppendCompactNoteEffect;
 
 export function isWriteInflight(e: Effect): e is WriteInflightEffect {
   return e.kind === "write-inflight";

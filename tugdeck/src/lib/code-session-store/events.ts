@@ -102,23 +102,6 @@ export interface SendActionEvent {
   suppress?: boolean;
 }
 
-/**
- * `mark_compaction_seed` — flags this (fresh, `/compact`-born) session so
- * the transcript renders a carry-forward summary block. Carries the
- * captured `summary` (rendered as the block body), the pre-compaction
- * context size for the label, and `seedPending` — whether the recap
- * still has to ride the user's first message on the wire (`true` on a
- * live bind, `false` when reconstructed from JSONL where it already
- * rode). Dispatched by the `dev-session-restore` live-hook (live) and
- * the replay user-message seam (reload).
- */
-export interface MarkCompactionSeedActionEvent {
-  type: "mark_compaction_seed";
-  summary: string | null;
-  preTokens: number | null;
-  seedPending: boolean;
-}
-
 /** `session_init` frame — carries Claude's `session_id` (for `--resume`). */
 export interface SessionInitEvent {
   type: "session_init";
@@ -609,16 +592,32 @@ export interface GoalFeedbackEvent {
 }
 
 /**
- * `compact_boundary` — claude compacted its context (in practice:
- * auto-compaction at capacity; a typed `/compact` is client-dispatched
- * and never reaches the bridge). Display-only: the reducer appends a
- * `system_note` (`source: "compact"`) to the active turn, rendered as a
- * soft divider. `preTokens` is normalized from the wire's `pre_tokens`.
+ * `compact_boundary` — claude compacted its context (auto-compaction at
+ * capacity, or a native `/compact` dispatched as a stream-json user message).
+ * Display-only for the divider: the reducer appends a `system_note`
+ * (`source: "compact"`) to the active turn — or, on replay with no open turn,
+ * to the last committed turn — rendered as a soft divider. `preTokens` /
+ * `postTokens` are normalized from the wire's `pre_tokens` / `post_tokens`;
+ * `postTokens` (the resident context after compaction) is stamped onto the
+ * compaction turn's committed window so the CONTEXT readout drops in place.
  */
 export interface CompactBoundaryEvent {
   type: "compact_boundary";
   trigger?: string;
   preTokens?: number;
+  postTokens?: number;
+}
+
+/**
+ * `compact_summary` — the compaction summary text, emitted right after
+ * `compact_boundary` on both paths (live capture and JSONL replay). The
+ * reducer folds it into `compactionSeed` so the carry-forward block restores;
+ * no phase change, no transcript ink. Latest-wins: a later compaction's
+ * summary overwrites an earlier one.
+ */
+export interface CompactSummaryEvent {
+  type: "compact_summary";
+  summary: string;
 }
 
 /**
@@ -822,12 +821,13 @@ export interface AddUserMessageEvent {
    */
   promptUuid?: string;
   /**
-   * Recovered compaction recap, set only on the replay path when this
-   * user message's leading content block was a `/compact` seed block (the
-   * store wrapper split it off with `splitCompactionSeed`). The reducer
-   * re-marks `compactionSeed` (with `seedPending: false` — the recap
-   * already rode the wire) so the carry-forward summary renders on reload
-   * exactly as it did live. Absent for ordinary messages.
+   * Legacy fake-compaction replay recognition ([P06]). Set only on the replay
+   * path of an *old* JSONL whose first opener carried a `<!-- tug:compact-seed
+   * -->` block from Tug's former summarize/respawn/seed flow (the store wrapper
+   * split it off with `splitCompactionSeed`). The reducer re-marks
+   * `compactionSeed` so those historical transcripts keep restoring their
+   * carry-forward summary. Native `/compact` (this plan) carries the summary on
+   * a dedicated `compact_summary` frame instead; absent for ordinary messages.
    */
   compactionSummary?: string;
   /**
@@ -1194,7 +1194,6 @@ export interface TickPreflightDoneEvent {
 /** Discriminated union of events the reducer accepts. */
 export type CodeSessionEvent =
   | SendActionEvent
-  | MarkCompactionSeedActionEvent
   | SessionInitEvent
   | AssistantTextEvent
   | ThinkingTextEvent
@@ -1223,6 +1222,7 @@ export type CodeSessionEvent =
   | OutputTruncatedEvent
   | GoalFeedbackEvent
   | CompactBoundaryEvent
+  | CompactSummaryEvent
   | UnknownEventEvent
   | WireErrorEvent
   | SessionStateErroredEvent

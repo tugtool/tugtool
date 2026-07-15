@@ -1,58 +1,46 @@
 /**
- * Unit tests for the pure `/compact` helpers — the summarization prompt
- * builder and the fresh-session seed framing.
+ * Unit tests for the legacy fake-compaction replay recognition helpers ([P06]).
+ * The producers that once wrote these markers are gone (native `/compact`
+ * compacts in place); these tests pin that OLD JSONLs carrying the markers
+ * still reconstruct — the seed block splits back to its summary and the
+ * canceled-summarize marker is recognized. Seed / summarize strings are inlined
+ * literals (the builders are deleted), matching the exact bytes legacy JSONLs
+ * hold.
  */
 
 import { describe, it, expect } from "bun:test";
 
 import {
-  buildSummarizationPrompt,
-  buildCompactionSeed,
   splitCompactionSeed,
   isCompactionSummarizeText,
 } from "@/lib/compaction-request";
 
-describe("buildSummarizationPrompt", () => {
-  it("asks for a thorough, self-contained recap with no focus", () => {
-    const p = buildSummarizationPrompt();
-    expect(p).toContain("self-contained");
-    expect(p).toContain("continue");
-    expect(p).not.toContain("particular attention");
+const SEED_MARKER = "<!-- tug:compact-seed -->";
+const SEED_FRAMING =
+  "The earlier conversation was compacted to save context. Here is the " +
+  "summary of everything so far — treat it as established context and " +
+  "continue seamlessly:";
+
+/** A legacy seed block exactly as an old JSONL persisted it. */
+const legacySeedBlock = (summary: string): string =>
+  `${SEED_MARKER}\n${SEED_FRAMING}\n\n${summary}`;
+
+describe("isCompactionSummarizeText", () => {
+  it("recognizes a legacy canceled-summarize turn by its marker", () => {
+    expect(
+      isCompactionSummarizeText("<!-- tug:compact-summarize -->\nplease summarize"),
+    ).toBe(true);
   });
 
-  it("appends the focus steer when given", () => {
-    const p = buildSummarizationPrompt("the database schema");
-    expect(p).toContain("particular attention to: the database schema");
-  });
-
-  it("ignores blank/whitespace focus", () => {
-    expect(buildSummarizationPrompt("   ")).toBe(buildSummarizationPrompt());
-  });
-
-  it("is detectable as a summarization prompt (for the cancel/reload drop)", () => {
-    expect(isCompactionSummarizeText(buildSummarizationPrompt())).toBe(true);
-    expect(isCompactionSummarizeText(buildSummarizationPrompt("focus"))).toBe(true);
+  it("returns false for ordinary user text", () => {
     expect(isCompactionSummarizeText("an ordinary message")).toBe(false);
   });
 });
 
-describe("buildCompactionSeed", () => {
-  it("frames the summary as established prior context", () => {
-    const seed = buildCompactionSeed("- chose SQLite\n- binary is tlist");
-    expect(seed).toContain("compacted to save context");
-    expect(seed).toContain("chose SQLite");
-    expect(seed).toContain("binary is tlist");
-  });
-
-  it("leads with the comment marker so claude ignores it", () => {
-    expect(buildCompactionSeed("recap")).toStartWith("<!-- tug:compact-seed -->");
-  });
-});
-
 describe("splitCompactionSeed", () => {
-  it("round-trips a built seed block back to the raw summary", () => {
+  it("round-trips a legacy seed block back to the raw summary", () => {
     const summary = "# Recap\n\n- chose SQLite\n- binary is `tlist`";
-    expect(splitCompactionSeed(buildCompactionSeed(summary))).toBe(summary);
+    expect(splitCompactionSeed(legacySeedBlock(summary))).toBe(summary);
   });
 
   it("returns null for ordinary user text (no marker)", () => {
@@ -61,8 +49,6 @@ describe("splitCompactionSeed", () => {
   });
 
   it("recovers the body even if the framing is absent after the marker", () => {
-    expect(splitCompactionSeed("<!-- tug:compact-seed -->\njust a body")).toBe(
-      "just a body",
-    );
+    expect(splitCompactionSeed(`${SEED_MARKER}\njust a body`)).toBe("just a body");
   });
 });

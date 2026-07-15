@@ -2,23 +2,22 @@
  * compaction-progress-sheet.tsx — the pane-modal progress surface for
  * `/compact`.
  *
- * `/compact` summarizes the conversation (a suppressed turn the user never
- * sees) and then continues in a fresh session seeded with that summary.
- * This sheet covers the card for the duration: a determinate bar driven by
- * {@link compactionProgressStore} plus a Cancel button that interrupts the
- * summarization and leaves the session intact. Because the summarization
- * turn is suppressed, Cancel / failure commit nothing — the transcript is
- * untouched.
+ * Native `/compact` compacts the conversation in place (same session, same
+ * JSONL). It is a ~20 s opaque run — nothing streams between dispatch and the
+ * `compact_boundary`, so there is no honest determinate signal. This sheet
+ * covers the card for the duration with an **indeterminate** "Compacting…"
+ * indicator plus a Cancel button that interrupts the run (the turn interrupt,
+ * the same path Stop / Escape take).
  *
  * The run owns the sheet's lifetime, not the user: the store transitions
- * (begin → setProgress → succeed/cancel/fail → clear) decide what shows and
- * when it dismisses. The card raises the closing bulletin off the terminal
- * `outcome`, then `clear`s the store; this component watches for that and
- * dismisses the host sheet.
+ * (begin → succeed/cancel/fail → clear) decide what shows and when it
+ * dismisses. The card raises the closing bulletin off the terminal `outcome`,
+ * then `clear`s the store; this component watches for that and dismisses the
+ * host sheet.
  *
  * Laws: [L02] store state via `useSyncExternalStore`; [L06] appearance via
  *       CSS / the TugProgressIndicator's own DOM attributes; [L20] composed
- *       children (bar, button) keep their own tokens.
+ *       children (indicator, button) keep their own tokens.
  *
  * @module components/tugways/cards/compaction-progress-sheet
  */
@@ -36,8 +35,8 @@ export interface CompactionProgressSheetProps {
   /** Dismiss the host sheet (from `useTugSheet`'s content callback). */
   close: () => void;
   /**
-   * User asked to stop — interrupt the summarization and abandon the run.
-   * The session is left intact (the summarization turn never committed).
+   * User asked to stop — interrupt the compaction. Cancel maps to the turn
+   * interrupt; [Q01] verifies Claude Code aborts it cleanly (session intact).
    */
   onCancel: () => void;
 }
@@ -58,12 +57,9 @@ export function CompactionProgressSheet({
   }, [progress, close]);
 
   const cancelFocusGroup = React.useId();
-  // Cancel only during summarizing: once the fresh session is spawning
-  // (respawning) there is nothing left to interrupt.
-  const cancelable =
-    progress !== null &&
-    progress.outcome === null &&
-    progress.phase === "summarizing";
+  // Cancel only while the run is in flight — once it settles there is nothing
+  // left to interrupt (the sheet is about to dismiss).
+  const cancelable = progress !== null && progress.outcome === null;
   // Seed Cancel as the sheet's live default (filled + double ring) so Return
   // triggers it — only while it is actually shown.
   useSeedKeyView(cancelable ? `${cancelFocusGroup}:0` : null);
@@ -74,26 +70,24 @@ export function CompactionProgressSheet({
 
   return (
     <div className="compaction-progress-sheet" data-slot="compaction-progress">
-      {/* The determinate bar + its percentage readout carry the progress on
-          their own — no phase caption needed. */}
+      {/* Indeterminate bar — the run is opaque (nothing streams until the
+          boundary), so there is no determinate fraction to honor. Omitting
+          `value` runs the variant's indeterminate motion. The sheet title
+          ("Compacting") already names the operation. */}
       <TugProgressIndicator
         variant="bar"
-        value={progress.value}
-        max={1}
         size={8}
-        showValue
         state={settled ? "completed" : "running"}
         className="compaction-progress-sheet-bar"
-        aria-label="Compaction progress"
+        aria-label="Compacting"
       />
       {cancelable ? (
         <div className="tug-sheet-actions">
           {/* The sheet's live default: seeded (see useSeedKeyView above) and
               opted into `persistentDefaultRing` so it wears the filled +
-              double-ring default treatment (via `data-default-ring`) the whole
-              time it is shown — not only while the seeded key view happens to be
-              projecting `data-key-view-kbd` — and Return triggers it. Cancel is
-              the only action a running compaction offers. */}
+              double-ring default treatment the whole time it is shown, and
+              Return triggers it. Cancel is the only action a running
+              compaction offers. */}
           <TugPushButton
             size="sm"
             emphasis="primary"

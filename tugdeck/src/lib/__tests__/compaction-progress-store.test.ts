@@ -1,6 +1,8 @@
 /**
- * Unit tests for `compactionProgressStore` — the state machine behind the
- * `/compact` progress sheet and closing bulletin.
+ * Unit tests for `compactionProgressStore` — the lean state machine behind the
+ * `/compact` progress sheet and closing bulletin ([P07]). Native compaction is
+ * opaque, so the run is just in-flight or settled: `{ cardId, outcome }` with a
+ * failure reason — no phase ladder, no numeric progress.
  */
 
 import { describe, it, expect, beforeEach } from "bun:test";
@@ -16,31 +18,19 @@ describe("compactionProgressStore", () => {
     expect(compactionProgressStore.getSnapshot()).toBeNull();
   });
 
-  it("begins at summarizing, value 0, no outcome", () => {
+  it("begins in flight for its card, no outcome", () => {
     compactionProgressStore.begin("A");
     expect(compactionProgressStore.getSnapshot()).toEqual({
       cardId: "A",
-      phase: "summarizing",
-      value: 0,
       outcome: null,
       failureReason: null,
     });
   });
 
-  it("ticks phase + value while running", () => {
-    compactionProgressStore.begin("A");
-    compactionProgressStore.setProgress("summarizing", 0.4);
-    expect(compactionProgressStore.getSnapshot()?.value).toBe(0.4);
-    compactionProgressStore.setProgress("respawning", 0.95);
-    expect(compactionProgressStore.getSnapshot()?.phase).toBe("respawning");
-  });
-
-  it("succeed settles outcome and pins value to 1", () => {
+  it("succeed settles the outcome", () => {
     compactionProgressStore.begin("A");
     compactionProgressStore.succeed();
-    const s = compactionProgressStore.getSnapshot();
-    expect(s?.outcome).toBe("succeeded");
-    expect(s?.value).toBe(1);
+    expect(compactionProgressStore.getSnapshot()?.outcome).toBe("succeeded");
   });
 
   it("cancel and fail carry their outcome (fail keeps the reason)", () => {
@@ -63,20 +53,6 @@ describe("compactionProgressStore", () => {
     expect(compactionProgressStore.getSnapshot()?.outcome).toBe("succeeded");
   });
 
-  it("setProgress is ignored after settling (late tick can't reopen)", () => {
-    compactionProgressStore.begin("A");
-    compactionProgressStore.cancel();
-    compactionProgressStore.setProgress("summarizing", 0.2);
-    const s = compactionProgressStore.getSnapshot();
-    expect(s?.outcome).toBe("canceled");
-    expect(s?.value).toBe(1);
-  });
-
-  it("setProgress is a no-op when idle", () => {
-    compactionProgressStore.setProgress("summarizing", 0.5);
-    expect(compactionProgressStore.getSnapshot()).toBeNull();
-  });
-
   it("clear resets to idle", () => {
     compactionProgressStore.begin("A");
     compactionProgressStore.succeed();
@@ -90,10 +66,10 @@ describe("compactionProgressStore", () => {
       n += 1;
     });
     compactionProgressStore.begin("A");
-    compactionProgressStore.setProgress("summarizing", 0.3);
+    compactionProgressStore.succeed();
     expect(n).toBe(2);
     unsub();
-    compactionProgressStore.succeed();
+    compactionProgressStore.clear();
     expect(n).toBe(2);
   });
 

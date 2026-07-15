@@ -616,10 +616,11 @@ export interface ActivityDelta {
 
 /**
  * Compact context boundary marker. Emitted when claude's live stream
- * reports a `system`/`compact_boundary` (in practice: auto-compaction at
- * capacity — a typed `/compact` is client-dispatched and never reaches the
- * bridge). `trigger` / `pre_tokens` carry claude's `compactMetadata` when
- * present so the dev-card divider can show the pre-compaction context size.
+ * reports a `system`/`compact_boundary` — both auto-compaction at capacity
+ * and a typed `/compact`, which dispatches over the stream-json bridge as a
+ * plain user message and compacts in place under the same session id.
+ * `trigger` / `pre_tokens` carry claude's `compactMetadata` when present so
+ * the dev-card divider can show the pre-compaction context size.
  */
 export interface CompactBoundary {
   type: "compact_boundary";
@@ -627,6 +628,27 @@ export interface CompactBoundary {
   trigger?: string;
   /** Context token count just before compaction, when claude reports it. */
   pre_tokens?: number;
+  /**
+   * Resident context token count just AFTER compaction (the summary + preserved
+   * tail), when claude reports it. This is the authoritative post-compaction
+   * window; tugdeck stamps it onto the compaction turn so the CONTEXT readout
+   * drops in place immediately rather than lagging until the next turn.
+   */
+  post_tokens?: number;
+  ipc_version: number;
+}
+
+/**
+ * The compaction summary text. Emitted right after `compact_boundary` on both
+ * paths: live from the ordering-armed capture of the post-boundary synthetic
+ * user event, and on replay from the JSONL's `isCompactSummary` user record.
+ * The frontend feeds it into the carry-forward block. At most one per
+ * compaction, always ordered after that compaction's boundary frame.
+ */
+export interface CompactSummary {
+  type: "compact_summary";
+  /** Verbatim summary string (claude's own framing text included; no Tug markers). */
+  summary: string;
   ipc_version: number;
 }
 
@@ -1375,6 +1397,7 @@ export type OutboundMessage =
   | StreamingUsage
   | ActivityDelta
   | CompactBoundary
+  | CompactSummary
   | ContextBreakdown
   | ApiRetry
   | ModelRefusalFallback

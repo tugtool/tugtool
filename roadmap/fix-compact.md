@@ -95,7 +95,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Plan to resolve:** Spike during Step 5 verification: start a compaction on a throwaway session (`claude -p --resume <id> "/compact"` on a scratch project, or in-app), interrupt mid-run, then resume and confirm the session still loads and a later `/compact` succeeds.
 
-**Resolution:** OPEN — resolve at Step 5; the mitigation regardless is that interrupt is Claude Code's own supported path (the TUI offers esc during compaction).
+**Resolution:** RESOLVED (Step 5 spike, 2.1.207) — **the session stays healthy.** An 8-turn scratch session had `/compact` dispatched over the stream-json transport, then the claude process was hard-killed (SIGINT then SIGKILL) ~3 s into the ~19 s run. Afterward the session **resumed cleanly** (a follow-up prompt answered normally) and a **fresh `/compact` succeeded** (a real `compact_boundary`, `pre_tokens 28031`, `compact_result: success`). No partial `compact_boundary` was persisted by the interrupted run. A hard kill is strictly worse than the graceful `codeSessionStore.interrupt()` Cancel maps to, so the modal-sheet Cancel is safe: the session is left intact and a later `/compact` works.
 
 #### [Q02] What does a too-short session return over stream-json? (OPEN) {#q02-not-enough-messages}
 
@@ -105,7 +105,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Plan to resolve:** Spike during Step 5: send `/compact` to a 1-turn in-app session and observe. The existing `<local-command-stdout>` synthesis in `tugcode/src/session.ts` (the §13c slash-command stdout path) most likely renders it as turn text already.
 
-**Resolution:** OPEN — resolve at Step 5; no design fork hangs on it (all candidate shapes already flow through existing paths).
+**Resolution:** RESOLVED (Step 5 spike, 2.1.207) — a 1-turn session sent `/compact` over stream-json returns: `system/status { compact_result: "failed", compact_error: "Not enough messages to compact." }`, then a **synthetic assistant message** (`model: "<synthetic>"`, `stop_reason: "stop_sequence"`) whose text is `"Not enough messages to compact."`, then `result { subtype: "success", num_turns: 0 }`. **No `compact_boundary`, no summary.** So it flows through the existing assistant-text path (renders as the turn's visible text — the user sees the refusal), the turn settles idle cleanly (result success ⇒ no stuck `submitting`), and the dev-card watcher sees "settled without compaction ink" ⇒ `fail("Compaction didn't run — session left intact")` (an informational bulletin, since `lastError` is null on a `success` result). No design fork was needed.
 
 ---
 
@@ -393,11 +393,11 @@ No new state zones; no new stores — one store is reshaped smaller.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | tugcode replay: emit boundary + summary from JSONL | pending | — |
-| #step-2 | tugcode live: armed summary capture | pending | — |
-| #step-3 | tugdeck intake + reducer: compact_summary and divider fallback | pending | — |
-| #step-4 | tugdeck dispatch swap + fake-compaction removal | pending | — |
-| #step-5 | Integration checkpoint: end-to-end native compact | pending | — |
+| #step-1 | tugcode replay: emit boundary + summary from JSONL | done | 82e668f10 |
+| #step-2 | tugcode live: armed summary capture | done | 4d1400fee |
+| #step-3 | tugdeck intake + reducer: compact_summary and divider fallback | done | b15b962fa |
+| #step-4 | tugdeck dispatch swap + fake-compaction removal | done | 1ed42a933 |
+| #step-5 | Integration checkpoint: end-to-end native compact | done | 46722a9e6 |
 
 #### Step 1: tugcode replay — emit boundary + summary from JSONL {#step-1}
 

@@ -63,6 +63,7 @@ import {
   truncateTranscriptAtAnchor,
   upsertShellTurn,
   appendTurnInterleavingShell,
+  systemNoteKey,
   type CodeSessionState,
 } from "./code-session-store/reducer";
 import { logSessionLifecycle } from "./session-lifecycle-log";
@@ -79,6 +80,7 @@ import type {
   CardSessionMode,
   CodeSessionSnapshot,
   TurnEntry,
+  SystemNote,
 } from "./code-session-store/types";
 
 export type {
@@ -234,9 +236,14 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // condition unmet mid-cycle. The reducer folds it into `goal` (round
   // count + latest reason); no phase change, no transcript ink.
   "goal_feedback",
-  // Claude compacted its context (auto-compaction at capacity). The
-  // reducer appends a compaction `system_note` to the active turn.
+  // Claude compacted its context (auto-compaction at capacity, or a native
+  // `/compact`). The reducer appends a compaction `system_note` divider to the
+  // active turn (or the last committed turn on replay).
   "compact_boundary",
+  // The compaction summary text, emitted right after `compact_boundary` on both
+  // the live and replay paths. The reducer folds it into `compactionSeed` so
+  // the carry-forward block restores; no phase change, no transcript ink.
+  "compact_summary",
   // tugcode's forward-compat catch-all: claude streamed a top-level event
   // type this build doesn't translate. The reducer folds it into
   // `unknownEvent`, driving a soft warn banner; no phase change.
@@ -857,29 +864,6 @@ export class CodeSessionStore {
         settledAtMs: event.settledAtMs,
       });
     }
-  }
-
-  /**
-   * Flag this fresh, `/compact`-born session so the transcript renders the
-   * carry-forward summary block (`summary` body, `preTokens` label).
-   * `seedPending` says whether the recap still has to ride the user's
-   * first message on the wire (`true` on a live bind; `false` when
-   * reconstructed from JSONL, where it already rode). Public because the
-   * dispatch source lives outside this class — same precedent as
-   * {@link notifyTransportSettled}.
-   */
-  markCompactionSeed(
-    summary: string | null,
-    preTokens: number | null,
-    seedPending: boolean,
-  ): void {
-    if (this._disposed) return;
-    this.dispatch({
-      type: "mark_compaction_seed",
-      summary,
-      preTokens,
-      seedPending,
-    });
   }
 
   /**
@@ -1690,6 +1674,17 @@ export class CodeSessionStore {
           ...(typeof ev.pre_tokens === "number"
             ? { preTokens: ev.pre_tokens }
             : {}),
+          ...(typeof ev.post_tokens === "number"
+            ? { postTokens: ev.post_tokens }
+            : {}),
+        } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "compact_summary") {
+        // The compaction summary string — folded into `compactionSeed` so
+        // the carry-forward block restores (live and on reload).
+        return {
+          type: "compact_summary",
+          summary: typeof ev.summary === "string" ? ev.summary : "",
         } as unknown as CodeSessionEvent;
       }
       if (
@@ -2081,6 +2076,32 @@ export class CodeSessionStore {
                 );
               }
             }
+          }
+          break;
+        }
+        case "append-compact-note": {
+          // [P04] replay fallback: the `compact_boundary` arrived with no open
+          // turn, so seat the divider on the last committed turn (the
+          // transcript lives here, not in reducer state — [D04]). Copy-on-write
+          // so old snapshot refs stay valid; the note's key is minted from the
+          // last turn's `turnKey` + `messages.length` (deterministic, pure,
+          // collision-safe). Empty transcript ⇒ no-op.
+          if (this._transcript.length > 0) {
+            const lastIndex = this._transcript.length - 1;
+            const turn = this._transcript[lastIndex];
+            const note: SystemNote = {
+              kind: "system_note",
+              messageKey: systemNoteKey(turn.turnKey, turn.messages.length),
+              createdAt: Date.now(),
+              text: effect.text,
+              source: "compact",
+            };
+            const nextTranscript = [...this._transcript];
+            nextTranscript[lastIndex] = {
+              ...turn,
+              messages: [...turn.messages, note],
+            };
+            this._transcript = nextTranscript;
           }
           break;
         }

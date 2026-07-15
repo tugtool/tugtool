@@ -1,30 +1,26 @@
 /**
  * `compactionProgressStore` — drives the `/compact` progress sheet.
  *
- * `/compact` runs in two halves that live in different modules: the
- * `dev-card` handler watches the (suppressed) summarization turn, then the
- * `dev-session-restore` live-hook seeds the fresh session once it binds.
- * Neither half can present a sheet on its own. This singleton is the seam:
- * the handler `begin`s a run and ticks `setProgress` as the summary streams;
- * the live-hook calls `succeed` once the fresh session is seeded; Cancel /
- * failure call `cancel` / `fail`. A pane-modal progress sheet renders off
- * this store (via `useSyncExternalStore`), and the card watches the terminal
- * `outcome` to raise the closing bulletin and `clear`.
+ * Native `/compact` dispatches as a stream-json user message and compacts in
+ * place (same session, same JSONL). It is a ~20 s opaque run with no streamed
+ * volume to meter, so the sheet is pane-modal and **indeterminate**: the run is
+ * either in flight or settled. This singleton is the seam between the dev-card
+ * handler that opens the run (`begin`) and drives it off `codeSessionStore`
+ * snapshots (`succeed` / `cancel` / `fail`), and the sheet that renders off the
+ * same store. The card watches the terminal `outcome` to raise the closing
+ * bulletin and `clear`.
  *
  * `null` snapshot = idle (no compaction, no sheet). A non-null snapshot with
  * `outcome === null` is a run in flight; a non-null snapshot with a terminal
  * `outcome` is a just-settled run awaiting the card's bulletin + `clear`.
  *
- * Only a manual `/compact` touches this store — native auto-compaction never
- * does, so the progress sheet and closing bulletin are scoped to the manual
- * command.
+ * Both manual `/compact` and native auto-compaction stream a `compact_boundary`,
+ * but only a manual `/compact` opens this run — the progress sheet and closing
+ * bulletin are scoped to the explicit command.
  *
  * Module-level singleton, matching the other per-session helper stores
  * ([L02] external state reaches React through `useSyncExternalStore`).
  */
-
-/** The active half of a manual compaction run. */
-export type CompactionRunPhase = "summarizing" | "respawning";
 
 /** How a compaction run settled. */
 export type CompactionOutcome = "succeeded" | "canceled" | "failed";
@@ -36,14 +32,6 @@ export interface CompactionProgress {
    * the same state but only the initiator reacts.
    */
   readonly cardId: string;
-  /** Which half of the run is active. */
-  readonly phase: CompactionRunPhase;
-  /**
-   * Determinate fraction 0..1 for the progress bar. A leading 0 renders
-   * as the barber pole — `TugProgressIndicator` shows indeterminate motion
-   * for a determinate variant until there is positive progress.
-   */
-  readonly value: number;
   /** Terminal outcome, or `null` while the run is still in flight. */
   readonly outcome: CompactionOutcome | null;
   /** Human-readable reason when `outcome === "failed"`, else `null`. */
@@ -64,35 +52,18 @@ class CompactionProgressStore {
   /** Stable between notifications — safe for `useSyncExternalStore`. */
   getSnapshot = (): CompactionProgress | null => this.state;
 
-  /** Open a run for `cardId` at the summarizing phase, value 0. */
+  /** Open an in-flight run for `cardId`. */
   begin(cardId: string): void {
-    this.state = {
-      cardId,
-      phase: "summarizing",
-      value: 0,
-      outcome: null,
-      failureReason: null,
-    };
+    this.state = { cardId, outcome: null, failureReason: null };
     this.emit();
   }
 
-  /**
-   * Update the in-flight phase + bar value. No-op once the run has
-   * settled (a late streaming tick after Cancel must not reopen the bar)
-   * or when idle.
-   */
-  setProgress(phase: CompactionRunPhase, value: number): void {
-    if (this.state === null || this.state.outcome !== null) return;
-    this.state = { ...this.state, phase, value };
-    this.emit();
-  }
-
-  /** Mark the run succeeded (fresh session seeded). */
+  /** Mark the run succeeded (compaction ink observed in place). */
   succeed(): void {
     this.settle("succeeded", null);
   }
 
-  /** Mark the run canceled (user interrupted the summarization). */
+  /** Mark the run canceled (user interrupted the compaction). */
   cancel(): void {
     this.settle("canceled", null);
   }
@@ -111,9 +82,9 @@ class CompactionProgressStore {
 
   private settle(outcome: CompactionOutcome, failureReason: string | null): void {
     // Settle only an in-flight run; a second terminal call is a no-op so
-    // racing paths (Cancel button vs. the turn ending) can't double-fire.
+    // racing paths (Cancel button vs. the turn settling) can't double-fire.
     if (this.state === null || this.state.outcome !== null) return;
-    this.state = { ...this.state, value: 1, outcome, failureReason };
+    this.state = { ...this.state, outcome, failureReason };
     this.emit();
   }
 

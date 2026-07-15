@@ -31,7 +31,6 @@
 
 import type { AtomSegment } from "../tug-atom-img";
 import type { ContentBlock } from "../../protocol";
-import { buildCompactionSeed } from "../compaction-request";
 import type { Effect } from "./effects";
 import type {
   AddUserMessageEvent,
@@ -39,8 +38,8 @@ import type {
   ModelRefusalFallbackEvent,
   OutputTruncatedEvent,
   CompactBoundaryEvent,
+  CompactSummaryEvent,
   UnknownEventEvent,
-  MarkCompactionSeedActionEvent,
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
   InsertCommandDraftActionEvent,
@@ -102,6 +101,7 @@ import type {
   SystemNote,
   ToolUseMessage,
   TransportState,
+  TurnCost,
   TurnEndReason,
   TurnEntry,
   TurnOrigin,
@@ -190,6 +190,14 @@ export interface ScratchEntry {
   blockIndex: Map<string, number>;
   toolCallIndex: Map<string, number>;
   systemNoteSeq: number;
+  /**
+   * Resident context after an in-turn compaction (`compact_boundary.postTokens`),
+   * when this turn compacted. `buildTurnEntry` stamps it as the committed turn's
+   * window so the CONTEXT readout drops in place immediately instead of carrying
+   * the pre-compaction peak forward until the next turn. Absent for ordinary
+   * turns. Per-turn scoped: discarded with the scratch entry at commit.
+   */
+  compactionPostTokens?: number;
 }
 
 /**
@@ -230,8 +238,12 @@ function userMessageKey(turnKey: string): string {
   return `${turnKey}-user`;
 }
 
-/** Derive a system_note's `messageKey` from its turn + monotonic seq. */
-function systemNoteKey(turnKey: string, seq: number): string {
+/**
+ * Derive a system_note's `messageKey` from its turn + monotonic seq. Exported
+ * so the store wrapper mints an identical key when it applies the
+ * `append-compact-note` effect to a committed turn ([P04]).
+ */
+export function systemNoteKey(turnKey: string, seq: number): string {
   return `${turnKey}-sys${seq}`;
 }
 
@@ -507,18 +519,15 @@ export interface CodeSessionState {
    */
   unknownEvent: UnknownEventState | null;
   /**
-   * Set once on a fresh session born from `/compact` (via
-   * `mark_compaction_seed`): the transcript renders a carry-forward
-   * summary block (the `summary` body, labelled by `preTokens`). The
-   * single source of truth for the deferred seed — `seedPending` is
-   * `true` until the recap rides the user's first message on the wire,
-   * then `false`. `null` for ordinary sessions. Session-lived (the
-   * summary/label persist; only `seedPending` flips).
+   * The latest compaction's summary, set by a `compact_summary` frame (native
+   * live / replay) or the legacy `add_user_message.compactionSummary` replay
+   * path: the transcript renders a carry-forward summary block (the `summary`
+   * body, labelled by `preTokens` when a boundary latched it). Latest-wins;
+   * `null` for uncompacted sessions. Session-lived.
    */
   compactionSeed: {
-    summary: string | null;
+    summary: string;
     preTokens: number | null;
-    seedPending: boolean;
   } | null;
   /**
    * Tool calls denied this session, accumulated from each `cost_update`'s
@@ -942,24 +951,6 @@ function handleSend(
 
   if (state.phase === "idle" || state.phase === "errored") {
     const submitAt = Date.now();
-    // Deferred compaction seed: on the first real send after a `/compact`
-    // (compactionSeed.seedPending), the captured recap rides this message
-    // on the wire as a leading content block — never its own turn. The
-    // display substrate (text/atoms) stays the user's typed message, so
-    // the transcript bubble shows only what they typed; only the wire
-    // content carries the seed. A suppressed/programmatic send never
-    // flushes it. Flipping seedPending → false keeps the recap off the
-    // *second* message; the summary stays for the carry-forward render.
-    const seed = state.compactionSeed;
-    const seedBlock: ContentBlock | null =
-      event.suppress !== true &&
-      seed !== null &&
-      seed.seedPending &&
-      seed.summary !== null
-        ? { type: "text", text: buildCompactionSeed(seed.summary) }
-        : null;
-    const wireContent: ContentBlock[] =
-      seedBlock !== null ? [seedBlock, ...event.content] : event.content;
     const userMessage: UserMessage = {
       kind: "user_message",
       messageKey: userMessageKey(event.turnKey),
@@ -971,13 +962,6 @@ function handleSend(
     const next: CodeSessionState = {
       ...state,
       phase: "submitting",
-      // The deferred seed has now ridden the wire — clear seedPending so
-      // it never rides a later message; keep summary/preTokens for the
-      // carry-forward render.
-      compactionSeed:
-        seedBlock !== null && seed !== null
-          ? { ...seed, seedPending: false }
-          : state.compactionSeed,
       pendingTurn: {
         turnKey: event.turnKey,
         submitAt,
@@ -1060,9 +1044,8 @@ function handleSend(
             // dispatch. The substrate's `UserMessage` retains the
             // synthesized `(text, atoms)` pair so the transcript chip
             // renderer can paint chips at the original positions.
-            // Per [Step 5c]. `wireContent` prepends the deferred
-            // compaction seed block on the first post-compact send.
-            content: wireContent,
+            // Per [Step 5c].
+            content: event.content,
           },
         },
       ],
@@ -2666,6 +2649,26 @@ function buildTurnEntry(
   // `mergeTurnTelemetry` for the contract.
   const derivedTelemetry = deriveTurnTelemetry(state, submitAt, endedAt);
   const telemetry = mergeTurnTelemetry(inlineTelemetry, derivedTelemetry);
+  // Compaction turn: the summarization turn's own `cost_update` reports the
+  // pre-compaction context it read (or nothing), so the window-walk would carry
+  // the stale peak forward until the next turn. Stamp the authoritative
+  // post-compaction resident window (`compact_boundary.postTokens`, latched on
+  // the scratch entry) as this turn's cost so CONTEXT drops in place and the
+  // per-turn TOKENS delta shows the real negative drop. Persistence rides the
+  // same `entry.cost` (see `buildRecordTelemetryEffect`), so the two agree.
+  const compactionPostTokens = entry?.compactionPostTokens;
+  const cost: TurnCost =
+    typeof compactionPostTokens === "number"
+      ? {
+          inputTokens: compactionPostTokens,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          // Preserve the turn's actual dollar cost; only the resident window is
+          // overridden (the token fields feed `turnWindowTokens`).
+          totalCostUsd: telemetry.cost.totalCostUsd,
+        }
+      : telemetry.cost;
   // The terminal reason is recovered from the persisted telemetry
   // block on the replay path — `mergeTurnTelemetry` adopted the inline
   // block wholesale, so `telemetry.turnEndReason` is the value the
@@ -2711,7 +2714,7 @@ function buildTurnEntry(
     reconnectCount: telemetry.reconnectCount,
     maxStreamGapMs: telemetry.maxStreamGapMs,
     turnEndReason: effectiveReason,
-    cost: telemetry.cost,
+    cost,
   };
 }
 
@@ -3726,35 +3729,17 @@ function handleUnknownEvent(
 }
 
 /**
- * `mark_compaction_seed` — flag a fresh `/compact`-born session so the
- * transcript renders a compaction divider header. Set once; never
- * cleared (session-lived).
- */
-function handleMarkCompactionSeed(
-  state: CodeSessionState,
-  event: MarkCompactionSeedActionEvent,
-): { state: CodeSessionState; effects: Effect[] } {
-  return {
-    state: {
-      ...state,
-      compactionSeed: {
-        summary: event.summary,
-        preTokens: event.preTokens,
-        seedPending: event.seedPending,
-      },
-    },
-    effects: [],
-  };
-}
-
-/**
  * `compact_boundary` reducer handler — appends a compaction `system_note`
- * (`source: "compact"`) to the active turn's scratch, rendered as a soft
- * divider. Auto-compaction fires mid-turn, so a turn is in flight; with
- * no active turn (idle) there is nothing to attach the divider to, so the
- * boundary is dropped (a typed `/compact` is client-dispatched and never
- * reaches the bridge anyway). The note uses the per-turn `systemNoteSeq`
- * for its `messageKey`, mirroring the wire-message mint discipline.
+ * (`source: "compact"`) rendered as a soft divider. Live (mid-turn: a native
+ * `/compact` send opens a turn, auto-compaction fires inside one) the note
+ * attaches to the active turn's scratch. On replay the `/compact` scaffolding
+ * records are skipped, so the boundary usually arrives with no open turn ([P04]):
+ * fall back to an `append-compact-note` effect the store wrapper applies to the
+ * LAST committed turn (the committed transcript lives in the wrapper, not
+ * reducer state — [D04]), so the divider lands where compaction happened in
+ * reading order; an empty transcript makes it a no-op. The mid-turn note keys
+ * off the per-turn `systemNoteSeq`; the committed-turn fallback keys off the
+ * last turn's `messages.length` (minted wrapper-side).
  */
 function handleCompactBoundary(
   state: CodeSessionState,
@@ -3762,7 +3747,14 @@ function handleCompactBoundary(
 ): { state: CodeSessionState; effects: Effect[] } {
   const turnKey = state.pendingTurn?.turnKey;
   if (turnKey === undefined) {
-    return { state, effects: [] };
+    // No open turn (replay path) — hand the wrapper an effect that appends the
+    // divider to the last committed turn, where the transcript actually lives.
+    return {
+      state,
+      effects: [
+        { kind: "append-compact-note", text: compactionNoteText(event.preTokens) },
+      ],
+    };
   }
   const entry = state.scratch.get(turnKey);
   if (entry === undefined) {
@@ -3779,11 +3771,39 @@ function handleCompactBoundary(
     ...entry,
     messages: [...entry.messages, note],
     systemNoteSeq: entry.systemNoteSeq + 1,
+    // Stamp the post-compaction resident window so this turn commits with the
+    // reduced context, dropping the CONTEXT readout in place.
+    ...(typeof event.postTokens === "number"
+      ? { compactionPostTokens: event.postTokens }
+      : {}),
   };
   return {
     state: {
       ...state,
       scratch: withScratchEntry(state.scratch, turnKey, nextEntry),
+    },
+    effects: [],
+  };
+}
+
+/**
+ * `compact_summary` reducer handler — folds the compaction summary into
+ * `compactionSeed` so the carry-forward block renders (live and on reload),
+ * latest-wins ([P05]). Preserves a `preTokens` a preceding `compact_boundary`
+ * may have latched, else `null`. Phase-tolerant: live it arrives mid-turn, on
+ * replay during `replaying`. No transcript ink, no phase change.
+ */
+function handleCompactSummary(
+  state: CodeSessionState,
+  event: CompactSummaryEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: {
+      ...state,
+      compactionSeed: {
+        summary: event.summary,
+        preTokens: state.compactionSeed?.preTokens ?? null,
+      },
     },
     effects: [],
   };
@@ -4573,11 +4593,10 @@ function handleAddUserMessage(
     submitAt: now,
   };
 
-  // A `/compact` seed block split off this opener (replay path) re-marks
-  // the carry-forward summary — `seedPending: false`, since the recap
-  // already rode the wire — so reload renders the summary exactly as it
-  // did live. Applied before placement so both the mid-bracket-append and
-  // new-turn branches carry it.
+  // Legacy fake-compaction replay ([P06]): a `/compact` seed block split off
+  // this opener re-marks the carry-forward summary so an OLD JSONL renders it
+  // exactly as it did live. Applied before placement so both the
+  // mid-bracket-append and new-turn branches carry it.
   const base: CodeSessionState =
     typeof event.compactionSummary === "string"
       ? {
@@ -4585,7 +4604,6 @@ function handleAddUserMessage(
           compactionSeed: {
             summary: event.compactionSummary,
             preTokens: null,
-            seedPending: false,
           },
         }
       : state;
@@ -5347,8 +5365,6 @@ export function reduce(
     case "shell_exchange_started":
     case "shell_exchange_complete":
       return handleShellExchange(state, event);
-    case "mark_compaction_seed":
-      return handleMarkCompactionSeed(state, event);
     case "session_init":
       return handleSessionInit(state, event);
     case "content_block_start":
@@ -5428,6 +5444,8 @@ export function reduce(
       return handleOutputTruncated(state, event);
     case "compact_boundary":
       return handleCompactBoundary(state, event);
+    case "compact_summary":
+      return handleCompactSummary(state, event);
     case "unknown_event":
       return handleUnknownEvent(state, event);
     case "streaming_usage":

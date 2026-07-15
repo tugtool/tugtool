@@ -4,12 +4,13 @@
  *
  * ## Why this exists
  *
- * Claude auto-compacts its context at capacity and emits a
- * `system`/`compact_boundary` (a typed `/compact` is client-dispatched
- * and never reaches the bridge). The dev card mirrors it as a soft
- * divider — matching the terminal's compaction indicator, NOT the raw
- * summary block (which Claude Code's own UI and tugcode's replay
- * translator hide). The pure halves (`compactionNoteText`, the reducer's
+ * Claude compacts its context — at capacity (auto) or on a native
+ * `/compact` dispatched over the stream-json bridge — and emits a
+ * `system`/`compact_boundary`. The dev card mirrors it as a soft
+ * divider — matching the terminal's compaction indicator. The summary
+ * itself now rides a dedicated `compact_summary` frame into the
+ * carry-forward block (see at0193); this test covers the divider live.
+ * The pure halves (`compactionNoteText`, the reducer's
  * `handleCompactBoundary`) are unit-tested; the tugcode emit is covered
  * in `tugcode/src/__tests__/session.test.ts`. This drives the **live
  * render**: open a turn, inject a synthetic `compact_boundary` through the

@@ -913,6 +913,15 @@ export interface EventMappingContext {
   msgId: string;
   seq: number;
   rev: number;
+  /**
+   * Whether a preceding `compact_boundary` this turn has armed the summary
+   * capture ([P08]). The next synthetic `user` event carrying a plain-string
+   * summary is captured as a `compact_summary` frame while this is true.
+   * `routeTopLevelEvent` reads this and returns the updated state on
+   * {@link TopLevelRoutingResult.pendingCompactSummary}; the caller latches it
+   * back onto {@link ActiveTurn.pendingCompactSummary} across events.
+   */
+  pendingCompactSummary?: boolean;
 }
 
 /**
@@ -1266,6 +1275,14 @@ export interface TopLevelRoutingResult {
    * on tool-result `user` events and on echoes carrying no `uuid`.
    */
   promptUuid?: string;
+  /**
+   * Updated armed state for the ordering-armed summary capture ([P08]).
+   * `true` after a `compact_boundary` arms it, `false` after the summary is
+   * captured or a `result` disarms it, `undefined` when this event leaves the
+   * armed state unchanged. `dispatchEventToTurn` writes any non-`undefined`
+   * value back onto {@link ActiveTurn.pendingCompactSummary}.
+   */
+  pendingCompactSummary?: boolean;
 }
 
 /**
@@ -1322,6 +1339,9 @@ export function routeTopLevelEvent(
   let systemMetadata: Record<string, unknown> | undefined;
   let messageId: string | undefined;
   let promptUuid: string | undefined;
+  // Undefined = this event leaves the armed summary-capture state unchanged;
+  // true/false = it arms/disarms it ([P08]).
+  let pendingCompactSummary: boolean | undefined;
 
   // parent_tool_use_id is present on all 5 message types per PN-8.
   const rawParentId = event.parent_tool_use_id;
@@ -1395,6 +1415,8 @@ export function routeTopLevelEvent(
           trigger?: unknown;
           pre_tokens?: unknown;
           preTokens?: unknown;
+          post_tokens?: unknown;
+          postTokens?: unknown;
         };
         const preTokens =
           typeof meta.pre_tokens === "number"
@@ -1402,13 +1424,25 @@ export function routeTopLevelEvent(
             : typeof meta.preTokens === "number"
               ? meta.preTokens
               : undefined;
+        const postTokens =
+          typeof meta.post_tokens === "number"
+            ? meta.post_tokens
+            : typeof meta.postTokens === "number"
+              ? meta.postTokens
+              : undefined;
         const marker: CompactBoundary = {
           type: "compact_boundary",
           ...(typeof meta.trigger === "string" ? { trigger: meta.trigger } : {}),
           ...(preTokens !== undefined ? { pre_tokens: preTokens } : {}),
+          ...(postTokens !== undefined ? { post_tokens: postTokens } : {}),
           ipc_version: 2,
         };
         messages.push(marker);
+        // Arm the ordering-armed summary capture ([P08]): the next synthetic
+        // `user` event carrying a plain-string summary is the compaction
+        // summary (no `isCompactSummary` flag on the live wire — ordering
+        // after the boundary is the reliable discriminator).
+        pendingCompactSummary = true;
       } else if (subtype === "api_retry") {
         messages.push({
           type: "api_retry",
@@ -1621,6 +1655,21 @@ export function routeTopLevelEvent(
             reason: feedback.reason,
             ipc_version: 2,
           });
+        } else if (
+          ctx.pendingCompactSummary === true &&
+          typeof rawContent === "string" &&
+          !rawContent.startsWith("<local-command-stdout>")
+        ) {
+          // The post-boundary summary event ([P08]): capture it as a
+          // `compact_summary` frame and disarm. Goal feedback is parsed and
+          // consumed first (above); `<local-command-stdout>` echoes are
+          // excluded by prefix; disarm ensures one-shot capture per compaction.
+          messages.push({
+            type: "compact_summary",
+            summary: rawContent,
+            ipc_version: 2,
+          });
+          pendingCompactSummary = false;
         }
         break;
       }
@@ -1783,6 +1832,9 @@ export function routeTopLevelEvent(
 
     case "result": {
       gotResult = true;
+      // Disarm the summary capture ([P08]) so a summary-less compaction can't
+      // leak the armed state into the next turn.
+      pendingCompactSummary = false;
       const subtype = (event.subtype as string) || "error";
       const resultText = event.result as string | undefined;
 
@@ -1931,6 +1983,7 @@ export function routeTopLevelEvent(
     systemMetadata,
     messageId,
     promptUuid,
+    pendingCompactSummary,
   };
 }
 
@@ -2482,6 +2535,13 @@ export class ActiveTurn {
    * the mid-turn snapshot's `add_user_message.promptUuid`.
    */
   promptUuid: string | null = null;
+  /**
+   * Armed-capture flag for the live compaction summary ([P08]). A
+   * `compact_boundary` this turn sets it `true`; the next synthetic
+   * plain-string `user` event is then captured as a `compact_summary` frame
+   * and it flips back to `false` (also disarmed at the turn's `result`).
+   */
+  pendingCompactSummary = false;
   /** The MAIN lane's streaming-text revision counter (see {@link LaneState.rev}). */
   get rev(): number {
     return this.laneFor(MAIN_LANE).rev;
@@ -5458,6 +5518,7 @@ export class SessionManager {
       msgId: lane.msgId ?? "",
       seq: turn.seq,
       rev: lane.rev,
+      pendingCompactSummary: turn.pendingCompactSummary,
     };
 
     // Tier 1: route the top-level message type. The turn's last
@@ -5477,6 +5538,13 @@ export class SessionManager {
     if (routeResult.messageId !== undefined) {
       lane.msgId = routeResult.messageId;
       ctx.msgId = lane.msgId;
+    }
+
+    // Latch the updated armed-capture state across events ([P08]): a boundary
+    // arms it, the captured summary or a `result` disarms it, other events
+    // leave it unchanged (`undefined`).
+    if (routeResult.pendingCompactSummary !== undefined) {
+      turn.pendingCompactSummary = routeResult.pendingCompactSummary;
     }
 
     // `/rewind` anchor ([#step-7-1]). The live user-echo reveals the

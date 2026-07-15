@@ -79,6 +79,7 @@ import type {
   SystemMetadata,
   CostUpdate,
   CompactBoundary,
+  CompactSummary,
   ApiRetry,
   ControlRequestCancel,
   ResumeFailed,
@@ -124,6 +125,7 @@ export type TranscriptOutboundMessage =
   | SystemMetadata
   | CostUpdate
   | CompactBoundary
+  | CompactSummary
   | ApiRetry
   | ToolUseStructured
   | ControlRequestCancel

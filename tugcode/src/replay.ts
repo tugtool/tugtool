@@ -279,6 +279,20 @@ export interface JsonlEntry {
    * so the reducer/wrappers see the same shape on replay as on live.
    */
   toolUseResult?: Record<string, unknown>;
+  /**
+   * Present on `type: "system"` + `subtype: "compact_boundary"` entries —
+   * Claude Code's compaction metadata. The JSONL persists it **camelCase**
+   * (`compactMetadata.preTokens`), whereas the live stream carries the same
+   * payload **snake_case** (`compact_metadata.pre_tokens`, parsed separately
+   * in `session.ts`). The two parsers stay separate for exactly this reason.
+   * {@link translateJsonlEntry} reads `preTokens` to carry the pre-compaction
+   * context size onto the emitted `compact_boundary` frame.
+   */
+  compactMetadata?: {
+    trigger?: string;
+    preTokens?: number;
+    postTokens?: number;
+  };
 }
 
 /**
@@ -1160,6 +1174,22 @@ export function translateJsonlEntry(
   if (topType === "attachment" && entry.attachment?.type === "queued_command") {
     return handleQueuedCommandEntry(entry);
   }
+  // A `compact_boundary` system record marks a compaction point. `system` is
+  // skipped wholesale below, so intercept the boundary first and emit the
+  // divider frame carrying the pre-compaction context size. Purely emissive:
+  // it never opens a turn, latches `openTurnMsgId`, or triggers orphan
+  // synthesis — the summary that follows (`isCompactSummary`) does the same.
+  if (topType === "system" && entry.subtype === "compact_boundary") {
+    return [
+      {
+        type: "compact_boundary",
+        trigger: entry.compactMetadata?.trigger,
+        pre_tokens: entry.compactMetadata?.preTokens,
+        post_tokens: entry.compactMetadata?.postTokens,
+        ipc_version: IPC_VERSION,
+      },
+    ];
+  }
   if (SKIPPED_TOP_LEVEL_TYPES.has(topType)) {
     return [];
   }
@@ -1304,7 +1334,18 @@ function handleUserEntry(
   // `<task-notification>` wake envelope (emit `wake_started`), or a
   // plain-text submission (fall through to the block-walk below).
   if (typeof rawContent === "string") {
-    if (entry.isCompactSummary === true) return out;
+    // The compaction summary record — emit it as a `compact_summary` frame so
+    // reload restores the carry-forward block. Ordered right after the
+    // `compact_boundary` frame (the boundary record precedes it in the JSONL).
+    // No opener, no orphan synthesis, no turn-state change.
+    if (entry.isCompactSummary === true) {
+      out.push({
+        type: "compact_summary",
+        summary: rawContent,
+        ipc_version: IPC_VERSION,
+      });
+      return out;
+    }
     const trimmed = rawContent.trimStart();
     if (
       COMMAND_SCAFFOLDING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
