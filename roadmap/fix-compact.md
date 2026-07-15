@@ -114,7 +114,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 |------|--------|------------|------------|--------------------|
 | Anthropic changes the live summary event shape | med | low | Ordering-armed capture fails closed (no summary block, never wrong ink); JSONL `isCompactSummary` replay path is independent and unaffected | Summary block missing live but present after reload |
 | Interrupted compaction leaves session wedged | med | low | [Q01] spike; rewind chop guard already refuses to cross boundaries | Q01 spike fails |
-| Old fake-compaction JSONLs stop restoring | high | low | Legacy replay paths explicitly retained ([P06]); `reducer.suppressed-turn.test.ts` and the `splitCompactionSeed` wrapper path stay green | Any legacy replay test breaks |
+| Old fake-compaction JSONLs stop restoring | high | low | Legacy replay paths explicitly retained ([P06]); the suppressed-turn/`compactionSummary` tests and the `splitCompactionSeed` wrapper path stay green (the `mark_compaction_seed` test sections die with the machinery, per [P06]) | Any legacy replay test breaks |
 | `/compact` turn confuses turn accounting | low | low | `turn_engine.rs` rule epoch 2 already classifies `/compact` continuations; JSONL scaffolding records are already skipped by replay | Picker turn counts jump after a compact |
 
 **Risk R01: Live capture arms on the wrong user event** {#r01-armed-capture}
@@ -177,6 +177,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Implications:**
 - The fallback mutates a committed entry purely (copy-on-write of the transcript array + entry), consistent with reducer discipline.
+- The fallback note's `messageKey` is minted as `systemNoteKey(turn.turnKey, turn.messages.length)` — a committed `TurnEntry` carries no `systemNoteSeq` (that counter lives on the scratch entry), and `messages.length` is deterministic and collision-safe: existing note seqs are always strictly less than the count of notes, which is ≤ `messages.length`. No `randomUUID` — the reducer stays pure.
 - `compactionNoteText` in `code-session-store/compaction.ts` is unchanged.
 
 #### [P05] Reducer: `compact_summary` re-marks `compactionSeed`; `seedPending` dies (DECIDED) {#p05-compaction-seed-state}
@@ -201,7 +202,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 **Implications:**
 - `compaction-request.ts`'s module doc is rewritten to say it now holds **legacy replay recognition** only.
-- `reducer.suppressed-turn.test.ts` and the wrapper seed-split tests remain green untouched.
+- `reducer.suppressed-turn.test.ts` is **split, not kept whole**: its suppressed-turn and `compactionSummary` coverage survives as the legacy proof, but its `markSeed()` helper and the `describe("reducer — mark_compaction_seed")` block assert the exact event/field this plan deletes and are removed with the machinery. The wrapper seed-split tests remain green untouched.
 
 #### [P07] The compaction progress sheet and its stores are deleted (DECIDED) {#p07-drop-progress-sheet}
 
@@ -307,7 +308,7 @@ Other verified facts: the same JSONL file grows in place across multiple compact
 
 **Spec S03: reducer behavior** {#s03-reducer}
 
-- `handleCompactBoundary`: existing mid-turn note append; new fallback per [P04] (last committed `TurnEntry`, else drop). Continues to latch nothing else.
+- `handleCompactBoundary`: existing mid-turn note append; new fallback per [P04] (last committed `TurnEntry`, else drop), minting the fallback note's key as `systemNoteKey(turn.turnKey, turn.messages.length)` per [P04]. Continues to latch nothing else.
 - New `handleCompactSummary`: `compactionSeed = { summary: event.summary, preTokens: state.compactionSeed?.preTokens ?? null }`. Note: the boundary frame carries `preTokens` but the reducer currently only uses it for the note text; if boundary handling is extended to latch `preTokens` onto `compactionSeed`, the summary handler must preserve it — hence the `?? null` merge shape.
 - `compactionSeed` type: `{ summary: string; preTokens: number | null } | null` (field `seedPending` removed).
 
@@ -367,7 +368,7 @@ No new state zones; no new stores.
 
 - Mock-store assertion tests and fake-DOM render tests — banned pattern; the reducer tests exercise the real reducer, the app-tests drive the real app.
 - Automated live-compaction in CI — a real `/compact` costs a real model run; it is an on-demand test, per the repo's real-claude policy.
-- The legacy fake-compaction replay paths — already covered by existing tests (`reducer.suppressed-turn.test.ts`, wrapper seed-split coverage); this plan must not break them, which their staying green proves.
+- The legacy fake-compaction replay paths — already covered by existing tests (the suppressed-turn/`compactionSummary` sections of `reducer.suppressed-turn.test.ts`, wrapper seed-split coverage); this plan must not break those sections, which their staying green proves. (The same file's `mark_compaction_seed` sections are deleted with the machinery — see Step 4.)
 
 ---
 
@@ -398,6 +399,7 @@ No new state zones; no new stores.
 
 **Tasks:**
 - [ ] Add the `CompactSummary` interface (Spec S01) to `types.ts` and the stub-replay union.
+- [ ] While in `types.ts`: fix the stale `CompactBoundary` doc claim that "a typed `/compact` is client-dispatched and never reaches the bridge" — after this plan it does reach the bridge.
 - [ ] Add `compactMetadata` to `JsonlEntry`; document the camelCase-vs-snake_case split against the live stream.
 - [ ] In `translateEntry`, before the `SKIPPED_TOP_LEVEL_TYPES` check: `system`/`compact_boundary` → emit `compact_boundary` frame with `trigger`/`pre_tokens` from `compactMetadata` (Spec S02); all other `system` entries keep skipping.
 - [ ] In `handleUserEntry`, replace the `isCompactSummary` bare return with a `compact_summary` emission (Spec S02); confirm no turn-state side effects.
@@ -425,7 +427,7 @@ No new state zones; no new stores.
 - `pendingCompactSummary` arming in `session.ts`'s `system`/`compact_boundary` translation; capture + emission + disarm in the `case "user"` handler; disarm at `result`.
 
 **Tasks:**
-- [ ] Arm on live `compact_boundary`; in `case "user"`, after the existing goal-feedback branch: if armed and `isSynthetic === true` and content is a string not starting with `<local-command-stdout>`, emit `compact_summary` and disarm ([P08]).
+- [ ] Arm on live `compact_boundary`. The capture check goes **inside** the existing `isSynthetic === true` branch of `case "user"` — that branch `break`s unconditionally after `parseGoalFeedbackText`, so code placed after the if-block never runs for the summary event. Shape: goal feedback parsed (`feedback !== null`) → existing `goal_feedback` push wins; else if armed and content is a string not starting with `<local-command-stdout>` → emit `compact_summary` and disarm ([P08]); then the existing `break`.
 - [ ] Disarm on `result` so a summary-less compaction cannot leak the armed state into the next turn.
 
 **Tests:**
@@ -455,6 +457,7 @@ No new state zones; no new stores.
 - [ ] Add `handleCompactSummary` per Spec S03.
 - [ ] Add the [P04] fallback to `handleCompactBoundary` (no pending turn → append note to last committed `TurnEntry`; empty transcript → drop).
 - [ ] Reshape `compactionSeed` to `{ summary, preTokens } | null`; update `handleAddUserMessage`'s legacy path and `DevCompactionCarryForward` accordingly (drop `seedPending` writes/reads only — behavior unchanged).
+- [ ] Update the `AddUserMessageEvent.compactionSummary` doc in `events.ts`: it describes the old seed-ride semantics ("the recap already rode the wire"); reword as the legacy-JSONL replay path.
 
 **Tests:**
 - [ ] Reducer: `compact_summary` in `replaying` and in a live mid-turn phase both set `compactionSeed.summary`; a second `compact_summary` overwrites (latest wins).
@@ -484,11 +487,12 @@ No new state zones; no new stores.
 **Tasks:**
 - [ ] Rewrite the `compact:` handler; keep `takesArgs` routing (`/compact <focus>` passes focus through verbatim).
 - [ ] Execute every deletion in the inventory; chase imports (`dev-card.tsx`, `dev-session-restore.ts`) until `bunx tsc --noEmit`-clean via the vite build.
+- [ ] Split `reducer.suppressed-turn.test.ts` per [P06]: delete its `markSeed()` helper and the `describe("reducer — mark_compaction_seed")` block (they assert the deleted event/field); keep the suppressed-turn and `compactionSummary` coverage intact.
 - [ ] Verify the legacy keeps ([P06]) are untouched: `splitCompactionSeed` wrapper path, `suppressedTurn`, `send()` `suppress` option.
 - [ ] Sweep for dangling references: `grep -rn "pendingCompactionStore\|compactionProgressStore\|CompactionProgressSheet\|buildSummarizationPrompt\|buildCompactionSeed\|markCompactionSeed\|mark_compaction_seed\|seedPending" tugdeck/src` → only legacy-test/comment hits that are deliberately retained, ideally zero.
 
 **Tests:**
-- [ ] `reducer.suppressed-turn.test.ts` green unchanged (legacy compat proof).
+- [ ] The surviving suppressed-turn + `compactionSummary` sections of `reducer.suppressed-turn.test.ts` green (legacy compat proof); the `mark_compaction_seed` sections removed, file compiles.
 - [ ] Reducer test: `handleSend` no longer prepends any seed block to wire content (assert wire content === event content for a state with a populated `compactionSeed`).
 
 **Checkpoint:**
@@ -507,7 +511,7 @@ No new state zones; no new stores.
 
 **Tasks:**
 - [ ] `just build` (fresh tugcode binary + Rust bins), launch the debug app.
-- [ ] App-test: extend `at0106-compact-boundary-divider.test.ts` or add a sibling that cold-loads a **real natively-compacted fixture JSONL** (model on `at0192-z2-cold-replay.test.ts`) and asserts the divider note AND the Compaction Summary block render after replay — this is the relaunch-restore regression test for the original bug.
+- [ ] App-test: extend `at0106-compact-boundary-divider.test.ts` or add a sibling that cold-loads a **real natively-compacted fixture JSONL** (model on `at0192-z2-cold-replay.test.ts`) and asserts the divider note AND the Compaction Summary block render after replay — this is the relaunch-restore regression test for the original bug. While there, fix `at0106`'s stale header comment ("a typed `/compact` is client-dispatched and never reaches the bridge").
 - [ ] On-demand real-claude verification: in a scratch project card, run `/compact` on a several-turn session; verify same `SESSION` chip id, divider + summary block appear; quit and relaunch the app; verify both restore.
 - [ ] Resolve [Q01]: interrupt a live `/compact`, confirm the session resumes and a later `/compact` succeeds.
 - [ ] Resolve [Q02]: `/compact` a 1-turn session, confirm the refusal renders and the turn settles idle.
@@ -532,7 +536,7 @@ No new state zones; no new stores.
 - [ ] `/compact` completes with an unchanged session id and no new JSONL (manual verification per [#success-criteria](#success-criteria)).
 - [ ] Compacted-session relaunch restores divider + summary block (app-test).
 - [ ] Fake-compaction machinery gone; sweep grep returns no production hits (Step 4 sweep).
-- [ ] Legacy fake-compacted JSONLs still replay correctly (`reducer.suppressed-turn.test.ts` + wrapper seed-split tests green).
+- [ ] Legacy fake-compacted JSONLs still replay correctly (the surviving suppressed-turn/`compactionSummary` tests + wrapper seed-split tests green).
 - [ ] [Q01] and [Q02] resolved and recorded in this plan.
 
 **Acceptance tests:**
@@ -550,4 +554,4 @@ No new state zones; no new stores.
 | Native dispatch works | `/compact` in-app; same SESSION chip id |
 | Summary survives relaunch | app-test on compacted fixture |
 | Machinery removed | Step 4 sweep grep |
-| Legacy compat | existing suppressed-turn + seed-split tests green |
+| Legacy compat | surviving suppressed-turn/`compactionSummary` + seed-split tests green |
