@@ -46,6 +46,7 @@ const PATH_THINK = `turn.${TURN_KEY}.message.mThink.text`;
 const PATH_B = `turn.${TURN_KEY}.message.mB.text`;
 const PATH_MULTI = `turn.${TURN_KEY}.message.mMulti.text`;
 const PATH_RICH = `turn.${TURN_KEY}.message.mRich.text`;
+const PATH_CMD = `turn.${TURN_KEY}.message.mCmd.text`;
 
 const SOURCE_A =
   "First paragraph with **bold**, `inline code`, and a [link](https://example.com) all on one line.";
@@ -77,6 +78,23 @@ const SOURCE_RICH = [
   "const y = 1;",
   "```",
 ].join("\n");
+// Command-bearing message ([enhance-commands]): inline `<code>` spans that
+// `enhanceCommands` tags as clickable commands — two project shell commands
+// (`just` / `tugdash`) and one known slash command (`/diff`). Cell D passes
+// `isKnownSlashCommand` so the enhancer actually runs, giving at0237 real
+// `.tugx-md-cmd` spans to right-click.
+const SOURCE_CMD =
+  "Run `just launch-debug` to start, `tugdash join --preview` to preview, and `/diff HEAD` to inspect.";
+
+/**
+ * Known-command predicate for cell D — only `diff` among the slash
+ * commands (so `/diff HEAD` tags and an arbitrary `/whatever` would not).
+ * Shell commands (`just` / `tugutil` / `tugdash`) need no predicate; the
+ * leading tool name is their whole gate.
+ */
+function isKnownSlashCommandForFixture(name: string): boolean {
+  return name === "diff";
+}
 
 /**
  * GalleryTranscriptCopy — mounts the real transcript COPY wiring over a
@@ -92,6 +110,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
           { path: PATH_B, type: "string", label: "b" },
           { path: PATH_MULTI, type: "string", label: "multi" },
           { path: PATH_RICH, type: "string", label: "rich" },
+          { path: PATH_CMD, type: "string", label: "cmd" },
         ],
         initialValues: {
           [PATH_A]: SOURCE_A,
@@ -99,6 +118,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
           [PATH_B]: SOURCE_B,
           [PATH_MULTI]: SOURCE_MULTI,
           [PATH_RICH]: SOURCE_RICH,
+          [PATH_CMD]: SOURCE_CMD,
         },
       }),
     [],
@@ -114,6 +134,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
   const cellA = useTranscriptCellMenu(resolveCopyMarkdown);
   const cellB = useTranscriptCellMenu(resolveCopyMarkdown);
   const cellC = useTranscriptCellMenu(resolveCopyMarkdown);
+  const cellD = useTranscriptCellMenu(resolveCopyMarkdown);
 
   // App-test probe: run the production serializer over the *current*
   // selection deterministically (no native ⌘C / selection-sync concern),
@@ -211,6 +232,29 @@ export function GalleryTranscriptCopy(): React.ReactElement {
         </div>
         {cellC.menu}
       </cellC.ResponderScope>
+
+      {/* Cell D — command spans (`enhance-commands`) for the command
+          right-click Copy / Copy as Plain Text path (at0237). Passes
+          `isKnownSlashCommand` so the enhancer tags the inline `<code>`
+          commands with `.tugx-md-cmd` + their datasets. */}
+      <cellD.ResponderScope>
+        <div {...cellD.cellProps}>
+          <div
+            data-testid="gallery-transcript-copy-cell-d"
+            ref={(el) => {
+              cellD.bodyRef.current = el;
+            }}
+          >
+            <TugMarkdownBlock
+              streamingStore={streamingStore}
+              streamingPath={PATH_CMD}
+              className="dev-card-transcript-code-body"
+              isKnownSlashCommand={isKnownSlashCommandForFixture}
+            />
+          </div>
+        </div>
+        {cellD.menu}
+      </cellD.ResponderScope>
     </div>
   );
 }

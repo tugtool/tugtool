@@ -409,16 +409,17 @@ body {
   border-radius: var(--tugx-md-inline-code-radius);
 }
 
-/* Clickable slash command — an inline `<code>` span that parsed as a
-   *known* slash command (`enhance-slash-commands` tags it with this class
-   plus `data-slash-command` / `data-slash-args`). The transcript's
-   delegated click listener turns a click into a ready-to-run command
-   draft. Resting appearance is the ordinary inline-code chip; only hover
-   reveals interactivity (pointer + link-colored underline). */
-.tugx-md-block code.tugx-md-slashcmd {
+/* Clickable command — an inline `<code>` span that parsed as a *known*
+   slash command or a project shell command (`enhance-commands` tags it
+   with this class plus `data-slash-command`/`data-slash-args` or
+   `data-shell-command`). The transcript's delegated click listener turns a
+   click into a ready-to-run draft, and a right-click offers Copy / Copy as
+   Plain Text. Resting appearance is the ordinary inline-code chip; only
+   hover reveals interactivity (pointer + link-colored underline). */
+.tugx-md-block code.tugx-md-cmd {
   cursor: pointer;
 }
-.tugx-md-block code.tugx-md-slashcmd:hover {
+.tugx-md-block code.tugx-md-cmd:hover {
   color: var(--tugx-md-link-color-hover);
   text-decoration: var(--tugx-md-link-decoration);
 }

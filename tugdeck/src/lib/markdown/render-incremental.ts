@@ -67,7 +67,7 @@ import { enhanceImg } from "./enhance-img";
 import { enhanceLinks } from "./enhance-links";
 import { enhanceMath } from "./enhance-math";
 import { enhanceMermaid } from "./enhance-mermaid";
-import { enhanceSlashCommands } from "./enhance-slash-commands";
+import { enhanceCommands } from "./enhance-commands";
 import { enhanceTable } from "./enhance-table";
 import {
   parseMarkdownToSanitizedBlocks,
@@ -124,7 +124,7 @@ export interface ReconcilePlan {
  * the optional slash-command clickability predicate. When
  * `isKnownSlashCommand` is set, inline `<code>` spans that parse as a
  * known slash command are tagged for the transcript's click-to-run
- * gesture (see `enhance-slash-commands`); omitting it — every
+ * gesture (see `enhance-commands`); omitting it — every
  * non-transcript consumer — skips command enhancement entirely.
  */
 export interface RenderIncrementalOptions extends ParseMarkdownOptions {
@@ -214,7 +214,7 @@ function buildBlockElement(
   void enhanceMath(el);
   void enhanceMermaid(el);
   if (isKnownSlashCommand !== undefined) {
-    enhanceSlashCommands(el, isKnownSlashCommand);
+    enhanceCommands(el, isKnownSlashCommand);
   }
   return el;
 }
@@ -234,7 +234,7 @@ function updateBlockElement(
   void enhanceMath(el);
   void enhanceMermaid(el);
   if (isKnownSlashCommand !== undefined) {
-    enhanceSlashCommands(el, isKnownSlashCommand);
+    enhanceCommands(el, isKnownSlashCommand);
   }
 }
 

@@ -142,6 +142,17 @@ export interface UseTextSurfaceContextMenuOptions {
    * landed on a path-bearing file atom. Return `[]` for no extras.
    */
   extraEntries?: (event: MouseEvent) => TugEditorContextMenuEntry[];
+
+  /**
+   * Optional per-open predicate: when it returns `true`, the standard
+   * editing block (Cut / Copy / Paste / … / Select All) is omitted and
+   * the menu shows ONLY the {@link extraEntries}. Sampled from the same
+   * `contextmenu` event. The transcript uses this so a right-click on a
+   * command span shows a single, unambiguous command Copy / Copy as Plain
+   * Text — never a second, selection-scoped Copy that would copy WebKit's
+   * smart-selected sub-word instead of the whole command.
+   */
+  hideStandardItems?: (event: MouseEvent) => boolean;
 }
 
 export interface UseTextSurfaceContextMenuResult {
@@ -188,13 +199,20 @@ interface MenuState {
   hasSelection: boolean;
   /** Target-dependent entries sampled at open time (may be empty). */
   extra: TugEditorContextMenuEntry[];
+  /** When true, show only `extra` — omit the standard editing block. */
+  hideStandard: boolean;
 }
 
 export function useTextSurfaceContextMenu(
   options: UseTextSurfaceContextMenuOptions,
 ): UseTextSurfaceContextMenuResult {
-  const { adapterRef, capabilities, hasSelectionOverride, extraEntries } =
-    options;
+  const {
+    adapterRef,
+    capabilities,
+    hasSelectionOverride,
+    extraEntries,
+    hideStandardItems,
+  } = options;
 
   // The single piece of React state the hook owns: open/closed +
   // anchor + hasSelection sample. `null` means closed. Open is
@@ -240,9 +258,10 @@ export function useTextSurfaceContextMenu(
         y: event.clientY,
         hasSelection,
         extra: extraEntries?.(event) ?? [],
+        hideStandard: hideStandardItems?.(event) ?? false,
       });
     },
-    [adapterRef, hasSelectionOverride, extraEntries],
+    [adapterRef, hasSelectionOverride, extraEntries, hideStandardItems],
   );
 
   // Build the menu items via the shared builder so every surface
@@ -250,15 +269,23 @@ export function useTextSurfaceContextMenu(
   // follows from capabilities + hasSelection. Target-dependent
   // extras (sampled at open time) sit above the standard block.
   const items = useMemo<TugEditorContextMenuEntry[]>(() => {
+    const extra = menuState?.extra ?? [];
+    // Command right-click ([hideStandard]): show only the target-dependent
+    // entries, never the standard editing block.
+    if (menuState?.hideStandard === true) return extra;
     const standard = buildTextEditingMenuItems({
       hasSelection: menuState?.hasSelection ?? false,
       canEdit: capabilities.canEdit,
     }) as TugEditorContextMenuEntry[];
-    const extra = menuState?.extra ?? [];
     return extra.length > 0
       ? [...extra, { type: "separator" }, ...standard]
       : standard;
-  }, [menuState?.hasSelection, menuState?.extra, capabilities.canEdit]);
+  }, [
+    menuState?.hasSelection,
+    menuState?.extra,
+    menuState?.hideStandard,
+    capabilities.canEdit,
+  ]);
 
   // Only mount the menu component when there's an open state.
   // `TugEditorContextMenu` calls `useRequiredResponderChain` at the

@@ -4,7 +4,7 @@
  *
  * A backticked slash command in assistant prose (e.g.
  * `` `/tugplug:implement roadmap/find-route.md` ``) whose name is in the
- * live command catalog is tagged `.tugx-md-slashcmd`; a click seeds the
+ * live command catalog is tagged `.tugx-md-cmd`; a click seeds the
  * composer with a ready-to-run, atomized draft.
  *
  * This drives the actual render/interaction (no fake DOM):
@@ -133,7 +133,7 @@ const spanStateJS = (needle: string) => `JSON.stringify((function(){
   if (!el) return { found: false };
   return {
     found: true,
-    tagged: el.classList.contains('tugx-md-slashcmd'),
+    tagged: el.classList.contains('tugx-md-cmd'),
     cmd: el.getAttribute('data-slash-command'),
     args: el.getAttribute('data-slash-args'),
   };
@@ -208,7 +208,7 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
 
         // --- 3. Click the tagged span → the composer seeds --------------
         await app.click(
-          `[data-card-id="A"] code.tugx-md-slashcmd[data-slash-command="${KNOWN_CMD}"]`,
+          `[data-card-id="A"] code.tugx-md-cmd[data-slash-command="${KNOWN_CMD}"]`,
         );
 
         // The editor holds the argument text and a command chip (an <img>

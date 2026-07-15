@@ -154,7 +154,7 @@ import {
   turnEntryToMarkdown,
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
-import { SLASH_COMMAND_CLASS } from "@/lib/markdown/enhance-slash-commands";
+import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
 import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { DevJumpToBottomButton } from "@/components/tugways/cards/dev-jump-to-bottom-button";
 import {
@@ -1799,30 +1799,36 @@ export const DevTranscriptHost = forwardRef<
     return () => responseStore.unbind();
   }, [responseStore]);
 
-  // Clickable slash commands ([P03]/[P06]). A click on a `.tugx-md-slashcmd`
-  // span — tagged by `enhance-slash-commands` when its inline `<code>`
-  // parsed as a *known* command — activates this card and parks the command
-  // on the code-session store; the prompt entry seeds it as a ready-to-run
-  // draft. Delegated on the transcript root so it covers every rendered
-  // markdown block with a single listener. [L03] — the listener must be
-  // live before any click it services.
+  // Clickable commands ([P03]/[P06]). A click on a `.tugx-md-cmd` span —
+  // tagged by `enhance-commands` when its inline `<code>` parsed as a
+  // *known* slash command or a project shell command — activates this card
+  // and parks a ready-to-run draft on the code-session store. A slash
+  // command (`data-slash-command`) seeds itself; a shell command
+  // (`data-shell-command`, e.g. `just launch-debug`) seeds into the Code
+  // route as a one-shot `/shell <command>`. Delegated on the transcript
+  // root so it covers every rendered markdown block with a single listener.
+  // [L03] — the listener must be live before any click it services.
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (root === null) return;
     const onClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const span = target.closest<HTMLElement>(`.${SLASH_COMMAND_CLASS}`);
+      const span = target.closest<HTMLElement>(`.${COMMAND_CLASS}`);
       if (span === null) return;
       // Ignore a click that is the tail of a text drag-selection over the
       // span — only a plain, collapsed-selection click seeds the command.
       const selection = window.getSelection();
       if (selection !== null && !selection.isCollapsed) return;
-      const name = span.dataset.slashCommand;
-      if (name === undefined) return;
-      const args = span.dataset.slashArgs ?? "";
-      deck.activateCard(cardId);
-      codeSessionStore.insertCommandDraft(name, args);
+      const slashName = span.dataset.slashCommand;
+      const shellCommand = span.dataset.shellCommand;
+      if (slashName !== undefined) {
+        deck.activateCard(cardId);
+        codeSessionStore.insertCommandDraft(slashName, span.dataset.slashArgs ?? "");
+      } else if (shellCommand !== undefined) {
+        deck.activateCard(cardId);
+        codeSessionStore.insertCommandDraft("shell", shellCommand);
+      }
     };
     root.addEventListener("click", onClick);
     return () => root.removeEventListener("click", onClick);

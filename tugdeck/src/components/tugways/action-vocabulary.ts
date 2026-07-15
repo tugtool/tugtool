@@ -119,9 +119,23 @@ export const TUG_ACTIONS = {
   //              selection. NOTE: no responder currently registers a
   //              handler for this — dispatching is a silent no-op
   //              until a control wires it up.
+  // COPY_COMMAND: payload — none. Copy the command span the right-click
+  //              landed on (a `.tugx-md-cmd` in a transcript cell — see
+  //              `enhance-commands`), preserving its code formatting:
+  //              `text/plain` = the command in Markdown backticks,
+  //              `text/html` = a `<code>` element. Menu-only (no keyboard
+  //              binding); the handler reads the span text sampled at
+  //              menu-open time, so it copies the WHOLE command regardless
+  //              of any sub-word the browser smart-selected. Distinct from
+  //              COPY, which copies the live selection.
+  // COPY_COMMAND_AS_PLAIN_TEXT: payload — none. Like COPY_COMMAND but the
+  //              bare command text only (`text/plain`, no backticks, no
+  //              `text/html`) — the terminal-paste-friendly variant.
   CUT:                 "cut",
   COPY:                "copy",
   COPY_AS_PLAIN_TEXT:  "copy-as-plain-text",
+  COPY_COMMAND:        "copy-command",
+  COPY_COMMAND_AS_PLAIN_TEXT: "copy-command-as-plain-text",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
   PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",

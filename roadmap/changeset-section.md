@@ -32,8 +32,8 @@ A third, quieter force: the **canonical-path-identity** work (`c6d7b806`) made `
 #### Strategy {#strategy}
 
 - **On-demand first, on the card.** Land the backend verb + engine rewrite ([#step-1], [#step-2]) and the composer changes ([#step-3], [#step-4]) while the standalone card still exists, so the lift moves already-final behavior. This honors the independence of the backend and the editor changes.
-- **Rewrite the engine to a callable, delete the loop.** Replace `DraftEngine::run`/`reconcile`/`EntryHandle`/`QUIET_PERIOD` (the watch-tap debounce machinery) with a public `generate_on_demand(...)` that reuses `eligible_entries` to derive one entry's `DraftTarget` from the latest aggregate snapshot and calls the retained `generate_for_entry` — **without** the fingerprint early-return (an explicit request always regenerates). Keep `generate_for_entry`, `gather_head`/`gather_dash`, `send_state`/`send_delta`, and the target types.
-- **New CONTROL verb, house pattern.** `changeset_draft_request { project_dir, owner_kind, owner_id }` dispatches in `agent_supervisor::handle_control` alongside `changeset_commit`/`changeset_git_init`; a new `do_changeset_draft_request` borrows the latest aggregate frame (a stored clone of `changeset_all_rx`), decodes it, and calls `generate_on_demand`. Client side: `sendControlFrame("changeset_draft_request", …)` from a new "Generate message" affordance.
+- **Rewrite the engine to a callable, delete the loop.** Replace `DraftEngine::run`/`reconcile`/`EntryHandle`/`QUIET_PERIOD` (the watch-tap debounce machinery) with a public `spawn_on_demand_draft(...)` that reuses `eligible_entries` to derive one entry's `DraftTarget` from the latest aggregate snapshot and **spawns** a detached task calling the retained `generate_for_entry` — **without** the fingerprint early-return (an explicit request always regenerates). It returns immediately with a matched/no-match bool; it does **not** await the scribe run ([P03] — the caller is the router's per-client loop). Keep `generate_for_entry`, `gather_head`/`gather_dash`, `send_state`/`send_delta`, and the target types.
+- **New CONTROL verb, house pattern.** `changeset_draft_request { project_dir, owner_kind, owner_id }` dispatches in `agent_supervisor::handle_control` alongside `changeset_commit`/`changeset_git_init`; a new `do_changeset_draft_request` borrows the latest aggregate frame (a stored clone of `changeset_all_rx`), decodes it, and calls `spawn_on_demand_draft` (which returns at once — generation runs on a detached task, so `handle_control` never parks the socket loop). Client side: `sendControlFrame("changeset_draft_request", …)` from a new "Generate message" affordance.
 - **Keep the streaming contract untouched.** `changeset_draft_state`/`changeset_draft_delta` and `changeset-draft-store.ts` are unchanged; the field still fills live. The frontend keeps the pristine-follow effect (so a persisted draft seeds the field and a live stream flows in), and the Generate button unpins the field so a fresh draft replaces stale text.
 - **Editor pass-throughs, not a rewrite.** `TugTextEditor` already exposes `lineWrap`/`fontSize`; `TugMessageEditor` does not forward them — add the two props and set them in the composer.
 - **Lift, then delete, atomically.** One commit moves `EntryBody` + the entry/file blocks + `DashActions` + `NonRepoBody` + the composer into `lens/sections/changeset-section.tsx` (a registrant), deletes `registerChangesetCard` + its `main.tsx` call, and retargets `at0228`/`at0229` at the Lens section — so the app-test suite stays green across the boundary.
@@ -41,16 +41,16 @@ A third, quieter force: the **canonical-path-identity** work (`c6d7b806`) made `
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- Clicking "Generate message" on a session/unattributed changeset entry sends `changeset_draft_request`, the composer's lifecycle dot enters `in_flight`, streamed deltas fill the field live, and the dot lands `success` when the draft is ready — verified end-to-end by a real-scribe app-test ([#step-6]) and, deterministically, by a `draft_engine` Rust unit test that `generate_on_demand` regenerates **even when the fingerprint is unchanged** ([#step-1]).
+- Clicking "Generate message" on a session/unattributed changeset entry sends `changeset_draft_request`, the composer's lifecycle dot enters `in_flight`, streamed deltas fill the field live, and the dot lands `success` when the draft is ready — verified end-to-end by a real-scribe app-test ([#step-6]) and, deterministically, by a `draft_engine` Rust unit test that `spawn_on_demand_draft` regenerates **even when the fingerprint is unchanged** ([#step-1]).
 - No draft is generated without an explicit request: after content changes with no click, no scribe call fires and `entry.draft` does not appear — asserted by a `draft_engine` unit test that the removed watch loop is gone (no `DraftEngine::run`) and by the absence of the auto path in code review ([#step-1]).
 - The commit-message field soft-wraps long lines at the reduced font size — asserted by an app-test reading the CM6 field's `data-wrap`/computed font ([#step-3]).
-- The Changeset card is gone: `registerChangesetCard` and its `main.tsx` call are deleted, no `addCard("changeset")` remains, and a persisted deck blob naming a `"changeset"` card degrades gracefully (dropped by `filterRegisteredCards` with a warn, no crash) — grep + an app-test seeding such a blob ([#step-5]).
+- The Changeset card is gone: `registerChangesetCard` and its `main.tsx` call are deleted, no `addCard("changeset")` remains, and a persisted deck blob naming a `"changeset"` card degrades gracefully (dropped by `filterRegisteredCards` with a warn, no crash) — grep + a `bun test` over `filterRegisteredCards`/`loadLayout` (not an app-test — test-mode `DeckManager` ignores the persisted layout, per at0230) ([#step-5]).
 - The Changeset **section** renders under the Lens with a live collapsed-summary ("N sessions · M dirty files"), and `at0228`/`at0229`'s assertions pass against `.lens-section[data-lens-section="changeset"]` ([#step-5]).
 - `bunx tsc --noEmit && bunx vite build && bun test` green at every tugdeck step; `cd tugrust && cargo nextest run` green + `cargo build` warning-clean at every Rust step.
 
 #### Scope {#scope}
 
-1. `draft_engine.rs`: delete the watch-tap/debounce loop; add `generate_on_demand`; drop the fingerprint early-return (keep computing + persisting the fingerprint); fix the now-broken repo-relative strip in `session_user_prompts`.
+1. `draft_engine.rs`: delete the watch-tap/debounce loop; add `spawn_on_demand_draft` (spawns generation, never awaits it); drop the fingerprint early-return (keep computing + persisting the fingerprint); fix the now-broken repo-relative strip in `session_user_prompts`.
 2. `agent_supervisor.rs` + `main.rs`: the `changeset_draft_request` verb + `do_changeset_draft_request`; store the aggregate watch receiver; retire `start_draft_engine`'s engine spawn.
 3. `changeset-draft-store.ts`: a `requestDraft` trigger (`sendControlFrame`).
 4. `tug-message-editor.tsx`: `lineWrap` + `fontSize` pass-throughs; the composer sets soft-wrap + a smaller font.
@@ -119,7 +119,7 @@ Explicit `{#anchor}` headings; plan-local decisions `[P01]`… (never `[D01]`); 
 
 **Why it matters:** The client overlay store (`changeset-draft-store.ts`) understands only `drafting`/`ready`/`error`; a silent no-op would leave the dot spinning.
 
-**Resolution:** DECIDED — `do_changeset_draft_request` sends `changeset_draft_state` with `state: "error"`, `detail: "nothing to generate"` when `generate_on_demand` finds no eligible entry. The overlay renders it in the composer's notice band (`draftError`) without blanking the field. Because the Generate button only shows for a draftable entry ([P04]), this is an edge case, not the common path. See [P03].
+**Resolution:** DECIDED — `do_changeset_draft_request` sends `changeset_draft_state` with `state: "error"`, `detail: "nothing to generate"` when `spawn_on_demand_draft` finds no eligible entry (a synchronous `false` return, before any task is spawned). The overlay renders it in the composer's notice band (`draftError`) without blanking the field. Because the Generate button only shows for a draftable entry ([P04]), this is an edge case, not the common path. See [P03].
 
 #### [Q03] Does the Generate button clobber a user's typed text? (DECIDED — Generate unpins and replaces) {#q03-generate-clobber}
 
@@ -143,9 +143,10 @@ Explicit `{#anchor}` headings; plan-local decisions `[P01]`… (never `[D01]`); 
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
+| Awaiting the scribe run inside `handle_control` parks the router's per-client socket loop → the requesting client can't receive the live deltas until generation ends, and its other CONTROL messages queue behind it | high | high | `spawn_on_demand_draft` does the cheap eligibility work synchronously and `tokio::spawn`s the generation, returning at once ([P03], R02); `do_changeset_draft_request` never awaits `generate_for_entry` | any inline `.await` of generation in `handle_control` |
 | Deleting the engine loop leaves dead code → `-D warnings` build break | med | high | Delete `run`/`reconcile`/`EntryHandle`/`QUIET_PERIOD`/`change_key` fns + `PendingEntry.change_key` together; `cargo build` per step ([#step-1]) | any `unused` warning |
 | The lift changes sticky behavior: entry headers stop pinning under the band | high | med | Section body has no inner `overflow`; verify band `--tugx-pin-stack-top` offsets the entry header and the entry's own pin-clearance pair offsets the file header ([P08]); app-test scrolls and asserts a pinned entry header clears the band ([#step-5]) | entry header hides under the band on scroll |
-| Retiring the card breaks a persisted deck blob that names a `"changeset"` card | med | med | `filterRegisteredCards` already drops unregistered cards; app-test seeds such a blob and asserts a clean boot ([#step-5]) | boot crash / blank pane on a stale layout |
+| Retiring the card breaks a persisted deck blob that names a `"changeset"` card | med | med | `filterRegisteredCards` already drops unregistered cards + drops a stack whose cards all dropped; a `bun test` over `filterRegisteredCards`/`loadLayout` asserts a `componentId:"changeset"` card is dropped once the registrant is gone ([#step-5]). Not app-testable — test-mode `DeckManager` ignores the persisted layout and starts empty (per at0230's docstring) | boot crash / blank pane on a stale layout |
 | On-demand snapshot is stale (borrowed frame predates the click) | low | med | The aggregate feed bumps on every recompute, so the borrowed frame is current to the last compose; `eligible_entries` tolerates a just-cleaned entry via the [Q02] reply | draft targets the wrong file set |
 | `session_user_prompts` strip fix changes prompt content unexpectedly | low | low | Compare `dirty` (repo-relative `f.path`) against the now-repo-relative `e.file_path` directly; a `draft_engine` unit test asserts `since_ms` is the min touch time, not 0 ([#step-1]) | draft prompts regress in a real session |
 
@@ -155,20 +156,28 @@ Explicit `{#anchor}` headings; plan-local decisions `[P01]`… (never `[D01]`); 
 - **Mitigation:** Move `EntryBody` **verbatim** (scope + `commitRef` intact); the section body renders `EntryBody` per entry exactly as `ChangesetEntryBlock` does today. The `at0228` commit assertion (select file → type → Commit) exercises the responder path end-to-end.
 - **Residual risk:** None beyond the app-test's coverage.
 
+**Risk R02: Inline `.await` of generation stalls the client's socket loop** {#r02-socket-stall}
+
+- **Risk:** `router.rs`'s `handle_client` awaits `intercept_session_control(...) → handle_control(...)` **inside** its per-client `select!` read arm (the `socket.recv()` branch). While that await is in flight, no other arm of that client's select runs — including outbound frame delivery. `generate_for_entry` runs the scribe for seconds and streams `changeset_draft_delta` frames the whole time. Awaiting it inline (the shape `do_changeset_join_resolve` uses) would delay every streamed delta to the requesting client until generation *finishes* — defeating "the field fills live" — and would queue that client's other CONTROL messages behind the draft. The old `DraftEngine` never had this problem because generation always ran on a spawned task.
+- **Mitigation:** `spawn_on_demand_draft` resolves eligibility synchronously (decode already done by the caller, `eligible_entries`, match), sends the [Q02] `"nothing to generate"` reply and returns `false` on no match, otherwise `tokio::spawn`s the `generate_for_entry` future (owning a cloned `EngineDeps`) and returns `true` — **without awaiting generation**. `do_changeset_draft_request` therefore returns to the router loop immediately; the deltas the spawned task broadcasts reach the now-unblocked client live.
+- **Residual risk:** None — the spawned task streams over the same `control_tx` broadcast every client already reads; ordering of `drafting`→deltas→`ready` is preserved because a single task emits them in sequence.
+
 ---
 
 ### Design Decisions {#design-decisions}
 
-#### [P01] On-demand replaces the watch-tap engine; `generate_on_demand` reuses `eligible_entries` (DECIDED) {#p01-on-demand}
+#### [P01] On-demand replaces the watch-tap engine; `spawn_on_demand_draft` reuses `eligible_entries` and detaches generation (DECIDED) {#p01-on-demand}
 
 **Decision:** Delete the debounce/watch machinery in `draft_engine.rs` — `DraftEngine::run`, `reconcile`, `EntryHandle` (+ its `Drop`), `QUIET_PERIOD`, `PendingEntry.change_key`, and the `head_change_key`/`unattributed_change_key`/dash-change-key computations. Simplify `PendingEntry` to `{ key, target }`. Keep `eligible_entries` (now returning `{ key, target }`), `generate_for_entry`, `gather_head`, `gather_dash`, `send_state`, `send_delta`, `git_output`, `read_dash_log`, `session_user_prompts`, and the `DraftTarget`/`EntryKey`/`FileMeta` types. Add:
 
 ```rust
-/// Generate the draft for one entry on demand. Reuses `eligible_entries` to
-/// derive the target from the latest aggregate snapshot; regenerates
-/// unconditionally (no fingerprint gate). Returns false when no eligible
-/// entry matches the request (nothing to draft).
-pub async fn generate_on_demand(
+/// Resolve a draft request against the latest aggregate snapshot and, if an
+/// eligible entry matches, spawn its generation on a detached task
+/// (regenerating unconditionally — no fingerprint gate). Returns IMMEDIATELY:
+/// `true` when a generation was spawned, `false` when no eligible entry matched
+/// (nothing to draft). Does NOT await the scribe run — the caller is the
+/// router's per-client socket loop, which must not park (R02, [P03]).
+pub fn spawn_on_demand_draft(
     control_tx: broadcast::Sender<Frame>,
     ledger: Arc<SessionLedger>,
     registry: Arc<WorkspaceRegistry>,
@@ -181,11 +190,11 @@ pub async fn generate_on_demand(
 ) -> bool
 ```
 
-It builds the private `EngineDeps` (as `DraftEngine::new` does), runs `eligible_entries(snapshot)`, finds the `PendingEntry` whose `key` matches `(project_dir, owner_kind, owner_id)`, and awaits `generate_for_entry(&deps, &key, &target)`; returns `false` if none matched.
+It builds an owned private `EngineDeps` (as `DraftEngine::new` does), runs `eligible_entries(snapshot)` synchronously, finds the `PendingEntry` whose `key` matches `(project_dir, owner_kind, owner_id)`; on no match returns `false`. On a match it moves the owned `deps`/`key`/`target` into `tokio::spawn(async move { generate_for_entry(&deps, &key, &target).await })` and returns `true` at once — the detached task streams and persists exactly as before. It is a **synchronous** fn (all its own work — decode is the caller's, `eligible_entries` and the match are sync) that spawns; being called from within `handle_control`'s runtime context, `tokio::spawn` is available.
 
-**Rationale:** Target derivation (head files / dash range / unattributed set + the change-excluding identity) already lives in `eligible_entries`; reusing it keeps one source of truth and avoids re-deriving `DraftTarget` in the supervisor. Keeping `generate_for_entry` and the `gather_*`/`send_*` helpers means the streaming + persistence contract is byte-identical to today.
+**Rationale:** Target derivation (head files / dash range / unattributed set + the change-excluding identity) already lives in `eligible_entries`; reusing it keeps one source of truth and avoids re-deriving `DraftTarget` in the supervisor. Keeping `generate_for_entry` and the `gather_*`/`send_*` helpers means the streaming + persistence contract is byte-identical to today. Detaching the generation (rather than awaiting it) is mandatory — the router awaits `handle_control` inside the per-client read loop (R02).
 
-**Implications:** `EngineDeps` stays private (constructed inside `generate_on_demand`); `SessionResolver` and `ScribeContext` stay `pub`. `DraftEngine` the struct is deleted (or reduced to nothing) — remove `use` of `watch`, `CancellationToken`, `JoinHandle`, `HashMap`, `mpsc` if they fall unused (audit for `-D warnings`). The `#[cfg(test)]` module's `persists_a_draft_then_gates_on_fingerprint` / `a_superseding_change_coalesces_to_one_generation` tests (which drive `engine.run`) are replaced by on-demand tests ([#step-1] Tests).
+**Implications:** `EngineDeps` stays private (constructed inside `spawn_on_demand_draft`) and must be `Clone`/owned so the spawned task can take it; `SessionResolver` and `ScribeContext` stay `pub`. `DraftEngine` the struct is deleted (or reduced to nothing) — remove `use` of `watch`, `CancellationToken`, `JoinHandle`, `HashMap` if they fall unused (audit for `-D warnings`); `mpsc` **stays** (`generate_for_entry`'s delta forwarder uses it). The `#[cfg(test)]` module's `persists_a_draft_then_gates_on_fingerprint` / `a_superseding_change_coalesces_to_one_generation` tests (which drive `engine.run`) are replaced by on-demand tests that poll the ledger for the spawned task's result via the existing `wait_for_draft` helper ([#step-1] Tests).
 
 #### [P02] Drop the fingerprint early-return; keep the fingerprint stored (DECIDED) {#p02-fingerprint-gate}
 
@@ -197,7 +206,9 @@ It builds the private `EngineDeps` (as `DraftEngine::new` does), runs `eligible_
 
 #### [P03] The `changeset_draft_request` verb (DECIDED) {#p03-verb}
 
-**Decision:** A new client→tugcast CONTROL verb `changeset_draft_request { project_dir, owner_kind, owner_id }`, dispatched in `agent_supervisor::handle_control` beside the other `changeset_*` arms, calling `do_changeset_draft_request(&parsed)`. That method: clones the stored aggregate watch receiver, `borrow()`s the latest `Frame`, decodes `WorkspacesChangesetSnapshot`, and — when the scribe + read-side ledger are wired (the `start_draft_engine` guard) — awaits `draft_engine::generate_on_demand(self.control_tx.clone(), ledger, Arc::clone(&self.registry), scribe, resolver, snapshot, …)`. When `generate_on_demand` returns `false`, send `changeset_draft_state { state: "error", detail: "nothing to generate" }` ([Q02]). Add `parse_changeset_draft_request_payload` mirroring `parse_changeset_commit_payload`.
+**Decision:** A new client→tugcast CONTROL verb `changeset_draft_request { project_dir, owner_kind, owner_id }`, dispatched in `agent_supervisor::handle_control` beside the other `changeset_*` arms, calling `do_changeset_draft_request(&parsed)`. That method: clones the stored aggregate watch receiver, `borrow()`s the latest `Frame`, decodes `WorkspacesChangesetSnapshot`, and — when the scribe + read-side ledger are wired (the `start_draft_engine` guard) — calls `draft_engine::spawn_on_demand_draft(self.control_tx.clone(), ledger, Arc::clone(&self.registry), scribe, resolver, snapshot, …)`, which **returns immediately** (generation runs on a detached task, R02). When `spawn_on_demand_draft` returns `false`, send `changeset_draft_state { state: "error", detail: "nothing to generate" }` ([Q02]). `handle_control` then returns `Ok(())` at once — it never awaits the scribe. Add `parse_changeset_draft_request_payload` mirroring `parse_changeset_commit_payload`.
+
+**Why detached (R02):** `router.rs`'s `handle_client` awaits `intercept_session_control → handle_control` inside its per-client `select!` `socket.recv()` arm. Any inline `.await` of `generate_for_entry` there would freeze that client's frame delivery for the whole scribe run — the streamed `changeset_draft_delta`s could not reach the requesting client until generation finished, and the client's other CONTROL messages would queue behind it. Spawning is the only correct shape; do **not** copy `do_changeset_join_resolve`'s inline-await pattern here.
 
 **Rationale:** Matches the established changeset-verb round-trip shape (parse → `do_*` → broadcast on `control_tx`). Reusing the stored watch receiver gives a current snapshot with no recompute.
 
@@ -259,7 +270,7 @@ It builds the private `EngineDeps` (as `DraftEngine::new` does), runs `eligible_
 
 **Before:** `main.rs` creates `changeset_all_tx/rx` and calls `supervisor.start_draft_engine(changeset_all_rx.clone(), cancel)`, which spawns `DraftEngine::run`. `run` selects on the watch; each frame → `reconcile` → `eligible_entries` → per-entry: if the change key moved, spawn a task that sleeps `QUIET_PERIOD` then `generate_for_entry`, whose first act is the fingerprint gate.
 
-**After:** `main.rs` still creates `changeset_all_tx/rx`; `start_draft_engine` (or its renamed successor) stores `changeset_all_rx.clone()` on the supervisor and spawns nothing. A `changeset_draft_request` verb → `do_changeset_draft_request` borrows the latest frame → `generate_on_demand` → `eligible_entries` (target derivation only) → `generate_for_entry` (no gate). The streaming (`send_state`/`send_delta`) and persistence (`upsert_changeset_draft` + `changeset_all_bump`) are unchanged, so the client overlay and the `entry.draft` snapshot field behave exactly as before — just triggered by a click.
+**After:** `main.rs` still creates `changeset_all_tx/rx`; `start_draft_engine` (or its renamed successor) stores `changeset_all_rx.clone()` on the supervisor and spawns no loop. A `changeset_draft_request` verb → `do_changeset_draft_request` borrows the latest frame → `spawn_on_demand_draft` → `eligible_entries` (target derivation only, synchronous) → `tokio::spawn(generate_for_entry)` (no gate, detached — R02) → returns to the router loop at once. The streaming (`send_state`/`send_delta`) and persistence (`upsert_changeset_draft` + `changeset_all_bump`) are unchanged and run on the detached task, so the client overlay and the `entry.draft` snapshot field behave exactly as before — just triggered by a click, and delivered while the socket loop stays live.
 
 #### The composer, before and after {#composer-before-after}
 
@@ -278,7 +289,7 @@ Client → tugcast, `FeedId::CONTROL`:
   "owner_kind": "session" | "unattributed" | "dash",
   "owner_id": "<session id | '' | dash branch>" }
 ```
-Server replies ride the **existing** `changeset_draft_state` / `changeset_draft_delta` stream (`send_state`/`send_delta`). The only new reply is the [Q02] `changeset_draft_state { state: "error", detail: "nothing to generate" }` when no eligible entry matches. `owner_kind`/`owner_id` match the card's `EntryBody` derivation: session → `item.entry.owner_id`; unattributed → `""`; dash → the entry's branch (`owner_id`).
+Server replies ride the **existing** `changeset_draft_state` / `changeset_draft_delta` stream (`send_state`/`send_delta`), emitted from the detached generation task (R02). The `"nothing to generate"` error reply is sent synchronously by `do_changeset_draft_request` before it returns; the `drafting`/deltas/`ready` sequence arrives asynchronously as the spawned task runs. The only new reply is the [Q02] `changeset_draft_state { state: "error", detail: "nothing to generate" }` when no eligible entry matches. `owner_kind`/`owner_id` match the card's `EntryBody` derivation: session → `item.entry.owner_id`; unattributed → `""`; dash → the entry's branch (`owner_id`).
 
 **Spec S02: `TugMessageEditor` new props** {#s02-editor}
 
@@ -318,13 +329,13 @@ Both optional, forwarded verbatim; defaults preserve current behavior (no wrap, 
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `generate_on_demand` | pub async fn | `feeds/draft_engine.rs` | reuse `eligible_entries`; no gate ([P01]) |
+| `spawn_on_demand_draft` | pub fn (spawns) | `feeds/draft_engine.rs` | sync eligibility; `tokio::spawn`s `generate_for_entry`; no gate; returns at once ([P01], R02) |
 | `DraftEngine`/`run`/`reconcile`/`EntryHandle`/`QUIET_PERIOD` | delete | `feeds/draft_engine.rs` | watch-tap machinery removed ([P01]) |
 | `PendingEntry` | struct (shrink) | `feeds/draft_engine.rs` | `{ key, target }` — drop `change_key` + its computations |
 | fingerprint early-return | delete | `feeds/draft_engine.rs` `generate_for_entry` | keep fingerprint compute/persist ([P02]) |
 | `session_user_prompts` strip | fix | `feeds/draft_engine.rs` | compare repo-relative `file_path` to `dirty` directly ([P09]) |
 | `changeset_draft_request` arm | match arm | `feeds/agent_supervisor.rs` `handle_control` | beside `changeset_commit` ([P03]) |
-| `do_changeset_draft_request` | async fn | `feeds/agent_supervisor.rs` | borrow watch frame → `generate_on_demand`; nothing-to-draft reply ([P03], [Q02]) |
+| `do_changeset_draft_request` | async fn | `feeds/agent_supervisor.rs` | borrow watch frame → `spawn_on_demand_draft` (returns at once); nothing-to-draft reply; never awaits generation ([P03], [Q02], R02) |
 | `parse_changeset_draft_request_payload` | fn | `feeds/agent_supervisor.rs` | mirror `parse_changeset_commit_payload` |
 | stored aggregate watch receiver | field + setter | `feeds/agent_supervisor.rs` | `changeset_watch: Option<watch::Receiver<Frame>>` |
 | `start_draft_engine` | fn (rewrite) | `feeds/agent_supervisor.rs` + `main.rs` call | store the watch rx; spawn no loop ([P03]) |
@@ -346,8 +357,9 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 | Category | Purpose |
 |----------|---------|
-| Unit (`cargo nextest`) | `generate_on_demand` regenerates ignoring the fingerprint; nothing-to-draft returns false; `session_user_prompts`/`since_ms` picks the min touch time for a repo-relative row; no `DraftEngine::run` remains |
-| Integration (`just app-test`, default) | `at0228`/`at0229` retargeted at `.lens-section[data-lens-section="changeset"]`; a pinned entry header clears the band on scroll ([P08]); a persisted `"changeset"` deck blob boots clean; the composer field soft-wraps at the reduced font |
+| Unit (`cargo nextest`) | `spawn_on_demand_draft` regenerates ignoring the fingerprint; nothing-to-draft returns false; `session_user_prompts`/`since_ms` picks the min touch time for a repo-relative row; no `DraftEngine::run` remains |
+| Unit (`bun test`) | `filterRegisteredCards`/`loadLayout` drops a `componentId:"changeset"` card once the registrant is gone, keeping the stack (the graceful-degrade path — not app-testable, per at0230) |
+| Integration (`just app-test`, default) | `at0228`/`at0229` retargeted at `.lens-section[data-lens-section="changeset"]`; a pinned entry header clears the band on scroll ([P08]); the composer field soft-wraps at the reduced font |
 | Integration (`just app-test`, real-claude gated) | `at0237`: Generate → `in_flight` dot → streamed delta fills the field → `success` |
 
 #### What stays out of tests {#test-non-goals}
@@ -365,7 +377,7 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Draft engine → on-demand `generate_on_demand` | pending | |
+| #step-1 | Draft engine → on-demand `spawn_on_demand_draft` | pending | |
 | #step-2 | `changeset_draft_request` verb + supervisor/main wiring | pending | |
 | #step-3 | `TugMessageEditor` soft-wrap + font pass-throughs | pending | |
 | #step-4 | "Generate message" button + on-demand seed contract (on the card) | pending | |
@@ -374,24 +386,24 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 ---
 
-#### Step 1: Draft engine → on-demand `generate_on_demand` {#step-1}
+#### Step 1: Draft engine → on-demand `spawn_on_demand_draft` {#step-1}
 
-**Commit:** `tugcast(draft-engine): on-demand generate_on_demand; drop the watch-tap debounce loop [P01][P02]`
+**Commit:** `tugcast(draft-engine): on-demand spawn_on_demand_draft; drop the watch-tap debounce loop [P01][P02]`
 
-**References:** [P01] ([#p01-on-demand]), [P02] ([#p02-fingerprint-gate]), [P09] ([#p09-dash-strip-followon]), [Q01] ([#q01-fingerprint]), (#draft-engine-before-after)
+**References:** [P01] ([#p01-on-demand]), [P02] ([#p02-fingerprint-gate]), [P09] ([#p09-dash-strip-followon]), [Q01] ([#q01-fingerprint]), R02 ([#r02-socket-stall]), (#draft-engine-before-after)
 
 **Artifacts:** `feeds/draft_engine.rs`.
 
 **Tasks:**
 - [ ] Delete `DraftEngine::run`, `reconcile`, `EntryHandle` (+ `Drop`), `QUIET_PERIOD`, `PendingEntry.change_key`, `head_change_key`, `unattributed_change_key`, and the dash change-key format. Shrink `PendingEntry` to `{ key, target }`; update `eligible_entries` accordingly.
-- [ ] Add `pub async fn generate_on_demand(...)` per [P01]: build `EngineDeps`, run `eligible_entries(snapshot)`, match `(project_dir, owner_kind, owner_id)`, await `generate_for_entry`, return the match bool.
+- [ ] Add `pub fn spawn_on_demand_draft(...) -> bool` per [P01]: build an owned `EngineDeps`, run `eligible_entries(snapshot)`, match `(project_dir, owner_kind, owner_id)`; on no match return `false`; on a match `tokio::spawn(async move { generate_for_entry(&deps, &key, &target).await })` (owned deps/key/target moved in) and return `true`. It does **not** await generation (R02).
 - [ ] Remove the fingerprint early-return in `generate_for_entry`; keep `fingerprint_*` compute + `ChangesetDraftRow.fingerprint` persist ([P02]).
 - [ ] Fix `session_user_prompts`: compare the repo-relative `e.file_path` to the repo-relative `dirty` set directly (drop `strip_prefix(&key.project_dir)`), so `since_ms` is the min touch time ([P09]).
-- [ ] Audit unused `use`s (`watch`, `CancellationToken`, `JoinHandle`, `HashMap`, `mpsc`) and remove any that fall dead (`-D warnings`). Note: `generate_for_entry` still uses `mpsc` for the delta forwarder — keep that.
+- [ ] Audit unused `use`s (`watch`, `CancellationToken`, `JoinHandle`, `HashMap`) and remove any that fall dead (`-D warnings`). `mpsc` **stays** — `generate_for_entry`'s delta forwarder uses it.
 
 **Tests (`cargo nextest`):**
-- [ ] `on_demand_regenerates_ignoring_fingerprint` — seed a persisted draft with the matching fingerprint (via the existing `init_repo` + `FakeScribe`), call `generate_on_demand`, assert `FakeScribe.calls == 1` and the row is re-persisted.
-- [ ] `on_demand_no_entry_returns_false` — a snapshot with a clean/fileless entry returns `false` and makes no scribe call.
+- [ ] `on_demand_regenerates_ignoring_fingerprint` — seed a persisted draft with the matching fingerprint (via the existing `init_repo` + `FakeScribe`), call `spawn_on_demand_draft`, poll with the existing `wait_for_draft` helper (the generation is on a spawned task), assert `FakeScribe.calls == 1` and the row is re-persisted.
+- [ ] `on_demand_no_entry_returns_false` — a snapshot with a clean/fileless entry returns `false` synchronously and makes no scribe call.
 - [ ] `session_prompts_since_uses_repo_relative_paths` — a `file_events` row with a repo-relative `file_path` folds into `since_ms` as its touch time, not 0.
 - [ ] Replace the two `engine.run`-driven tests.
 
@@ -405,7 +417,7 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 **Commit:** `tugcast(changeset): changeset_draft_request CONTROL verb over the aggregate snapshot [P03]`
 
-**References:** [P03] ([#p03-verb]), Spec S01 ([#s01-verb]), [Q02] ([#q02-nothing-to-draft]), (#draft-engine-before-after)
+**References:** [P03] ([#p03-verb]), Spec S01 ([#s01-verb]), [Q02] ([#q02-nothing-to-draft]), R02 ([#r02-socket-stall]), (#draft-engine-before-after)
 
 **Artifacts:** `feeds/agent_supervisor.rs`, `main.rs`.
 
@@ -413,11 +425,11 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 - [ ] Store the aggregate watch receiver on the supervisor (`changeset_watch: Option<watch::Receiver<Frame>>`); rewrite `start_draft_engine` to store `changeset_all_rx.clone()` and spawn no loop (rename to `set_changeset_watch` if clearer — cite it in the commit). Update the `main.rs:1081` call site.
 - [ ] Add `parse_changeset_draft_request_payload` (mirror `parse_changeset_commit_payload`): `{ project_dir, owner_kind, owner_id }`.
 - [ ] Add the `"changeset_draft_request"` arm in `handle_control` → `do_changeset_draft_request(&parsed)`.
-- [ ] `do_changeset_draft_request`: guard on scribe + `session_ledger` (as `start_draft_engine` did); rebuild the `resolver` closure; `borrow()` the stored watch frame → decode `WorkspacesChangesetSnapshot`; await `generate_on_demand(...)`; on `false`, `control_tx.send` a `changeset_draft_state { state:"error", detail:"nothing to generate" }` ([Q02]).
+- [ ] `do_changeset_draft_request`: guard on scribe + `session_ledger` (as `start_draft_engine` did); rebuild the `resolver` closure; `borrow()` the stored watch frame → decode `WorkspacesChangesetSnapshot`; call `spawn_on_demand_draft(...)` (returns at once — do **not** await generation, R02); on `false`, `control_tx.send` a `changeset_draft_state { state:"error", detail:"nothing to generate" }` ([Q02]). `handle_control` returns `Ok(())` immediately.
 
 **Tests (`cargo nextest`):**
-- [ ] A supervisor test (mirroring the `changeset_git_init` test at `agent_supervisor.rs` ~5873): seed a `ScribeContext` (`FakeScribe`) + in-memory + read-side ledger + an aggregate watch frame with one dirty session entry; `handle_control("changeset_draft_request", …)`; assert a `changeset_draft_state "drafting"` then a `"ready"` frame arrive on the control receiver, and the draft row is persisted.
-- [ ] Nothing-to-draft: a clean snapshot yields `changeset_draft_state "error"` detail "nothing to generate".
+- [ ] A supervisor test seeded like the `changeset_git_init` test (`agent_supervisor.rs` ~5873) — `ScribeContext` (`FakeScribe`) + in-memory + read-side ledger + an aggregate watch frame with one dirty session entry. Call `handle_control("changeset_draft_request", …)`; because generation is detached, **poll the CONTROL broadcast receiver in a bounded loop** (the pattern the `changeset_join_resolve` test at `agent_supervisor.rs` ~6156 already uses) for `changeset_draft_state "drafting"` then `"ready"`, and assert the draft row is persisted — do NOT assert on `handle_control`'s return, which precedes generation.
+- [ ] Nothing-to-draft: a clean snapshot yields a synchronous `changeset_draft_state "error"` detail "nothing to generate" (readable on the receiver right after the call).
 
 **Checkpoint:** `cd tugrust && cargo nextest run -p tugcast agent_supervisor draft_engine` + `cargo build` warning-clean.
 
@@ -474,17 +486,18 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 **References:** [P07] ([#p07-section]), [P08] ([#p08-sticky]), [Q04] ([#q04-toolbar]), R01 ([#r01-responder]), (#files-deleted)
 
-**Artifacts:** `lens/sections/changeset-section.tsx` (+ `.css`), `main.tsx`, `tests/app-test/at0228-*.test.ts`, `tests/app-test/at0229-changeset-dash-join.test.ts`.
+**Artifacts:** `lens/sections/changeset-section.tsx` (+ `.css`), `main.tsx`, `tests/app-test/at0228-*.test.ts`, `tests/app-test/at0229-changeset-dash-join.test.ts`, a `bun test` over `filterRegisteredCards`/`loadLayout` (deck-manager or serialization test module).
 
 **Tasks:**
 - [ ] `git mv` `changeset-card.tsx` → `lens/sections/changeset-section.tsx` and `changeset-card.css` → `changeset-section.css` (keep CSS class names). Move `EntryBody` + `ChangesetEntryBlock` + `ChangesetFileBlock` + `DashActions` + `NonRepoBody` + the composer **verbatim** (responder scope intact, R01).
 - [ ] Replace the exported `ChangesetCardContent` + `registerChangesetCard` with `ChangesetSectionBody` + `ChangesetCollapsedSummary` + `registerChangesetSection()` ([P07]). Keep Expand/Collapse-all as the body's first row; drop the "N sessions" toolbar label ([Q04]). Host `useTugSheet` inside the body.
 - [ ] `changeset-section.css`: remove the scroll container's `overflow`/`height` so the Lens content scroll owns scrolling; keep the `.changeset-entry-block` pin-clearance pair ([P08]).
 - [ ] `main.tsx`: remove the `registerChangesetCard` import + call; add `registerChangesetSection()` beside `registerLogSection`/`registerTelemetrySection`.
-- [ ] Grep for `addCard("changeset")` / any menu/action opening the changeset card; remove or repoint to the Lens. Confirm `filterRegisteredCards` drops a persisted `"changeset"` card.
-- [ ] Retarget `at0228` + `at0229`: open the Lens (`dispatchControlAction("toggle-lens")`, per at0235), scope selectors under `.lens-section[data-lens-section="changeset"]`, keep every existing assertion (open-card filter, git-init self-heal, file click, diff scope, commit; dash conflict preview + clean squash-join). Add a scroll-and-assert that a pinned entry header clears the band ([P08]) and a boot-with-stale-`"changeset"`-blob assertion.
+- [ ] Grep for `addCard("changeset")` / any menu/action opening the changeset card; remove or repoint to the Lens.
+- [ ] Retarget `at0228` + `at0229`: **replace the `seedDeckState` of a `{ componentId: "changeset" }` card** (at0228 seeds one at `id: "A"`, scoping selectors under a `CARD` prefix; at0229 similarly) with `app.seedDeckState` of a Lens pane + `dispatchControlAction("toggle-lens")` (per at0235), then expand the changeset section. Rewrite the `CARD` selector prefix to `.lens-section[data-lens-section="changeset"]`. Keep every existing assertion (open-card filter, git-init self-heal, file click, diff scope, commit; dash conflict preview + clean squash-join). Add a scroll-and-assert that a pinned entry header clears the band ([P08]).
+- [ ] Add a `bun test` (fixup for the graceful-degrade, which is NOT app-testable — test-mode `DeckManager` ignores the persisted layout, per at0230's docstring): feed `filterRegisteredCards` (via `loadLayout`'s parse path) a deck state carrying a `componentId: "changeset"` card after the registrant is removed; assert the card is dropped (and, if it was a stack's only card, the stack is dropped) with the rest of the layout intact.
 
-**Tests:** `bun test` + `just app-test` (at0228, at0229).
+**Tests:** `bun test` (incl. the `filterRegisteredCards` unit) + `just app-test` (at0228, at0229).
 
 **Checkpoint:** `bunx tsc --noEmit && bunx vite build && bun test`; `just app-test`; `grep -rn "registerChangesetCard\|changeset-card\|addCard(\"changeset\")" tugdeck/src tests/app-test` → no matches.
 
@@ -511,14 +524,14 @@ Real tests only. New at-number: **at0237** (max used is `at0236`; `at0229` is an
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The commit-message draft is generated **on demand** (a "Generate message" button → `changeset_draft_request` → a gate-free `generate_on_demand`), the composer soft-wraps at a smaller font, and the whole changeset surface lives as a Lens **section** (`kind: "changeset"`, live collapsed-summary) — the standalone card is deleted, and `at0228`/`at0229` pass against the section.
+**Deliverable:** The commit-message draft is generated **on demand** (a "Generate message" button → `changeset_draft_request` → a gate-free `spawn_on_demand_draft` whose detached task streams the draft in), the composer soft-wraps at a smaller font, and the whole changeset surface lives as a Lens **section** (`kind: "changeset"`, live collapsed-summary) — the standalone card is deleted, and `at0228`/`at0229` pass against the section.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Generate → `in_flight` → streamed delta → `success`, on a real session (at0237, real-claude); `generate_on_demand` regenerates ignoring the fingerprint (unit). ([#step-1], [#step-6])
+- [ ] Generate → `in_flight` → streamed delta → `success`, on a real session (at0237, real-claude); `spawn_on_demand_draft` regenerates ignoring the fingerprint (unit). ([#step-1], [#step-6])
 - [ ] No draft without an explicit request; the watch-tap loop is gone (code review + unit). ([#step-1])
 - [ ] The commit-message field soft-wraps at the reduced font. ([#step-3], [#step-5])
-- [ ] The changeset card is deleted; a persisted `"changeset"` blob boots clean; no `addCard("changeset")` remains. ([#step-5])
+- [ ] The changeset card is deleted; a `filterRegisteredCards` `bun test` proves a persisted `"changeset"` card is dropped cleanly; no `addCard("changeset")` remains. ([#step-5])
 - [ ] The Changeset section renders under the Lens with a live "N sessions · M dirty files" summary; at0228/at0229 pass against it. ([#step-5])
 - [ ] `session_user_prompts` selects the min touch time on repo-relative rows (unit). ([#step-1])
 - [ ] `bunx tsc --noEmit && bunx vite build && bun test && (cd tugrust && cargo nextest run)` green; `cargo build` warning-clean.

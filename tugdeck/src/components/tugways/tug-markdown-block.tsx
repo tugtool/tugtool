@@ -84,7 +84,7 @@ import React from "react";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { ensureParsed } from "@/lib/markdown/parse-cache";
 import { recordRowParse } from "@/lib/markdown/parse-counters";
-import { enhanceSlashCommands } from "@/lib/markdown/enhance-slash-commands";
+import { enhanceCommands } from "@/lib/markdown/enhance-commands";
 import {
   renderIncremental,
   renderIncrementalFromBlocks,
@@ -143,11 +143,12 @@ export interface TugMarkdownBlockProps {
   findable?: boolean;
 
   /**
-   * Clickability gate for inline slash-command `<code>` spans. When set,
-   * a code span that parses as a known slash command (this predicate
-   * returns `true` for its bare name) is tagged for the transcript's
-   * click-to-run gesture (`enhance-slash-commands`). Omit — every
-   * non-transcript host — and no command enhancement runs.
+   * Clickability gate for inline command `<code>` spans. When set, a code
+   * span that parses as a known slash command (this predicate returns
+   * `true` for its bare name) or as a project shell command
+   * (`just`/`tugutil`/`tugdash`) is tagged for the transcript's command
+   * gestures (`enhance-commands`). Omit — every non-transcript host — and
+   * no command enhancement runs.
    *
    * Delivered to the imperative render closures via a ref, NOT closed
    * over directly: the streaming render effect's deps are
@@ -295,19 +296,19 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     };
   }, [streamingStore, streamingPath]);
 
-  // Re-tag clickable slash commands when the known-command predicate
-  // changes identity — the on-resume catalog race. The render effects
-  // above tag at block *build* time; a finalized block is hash-stable and
-  // never rebuilt, so if the transcript replayed from JSONL before the
-  // handshake catalog landed, its command spans were built untagged. This
-  // effect re-runs `enhanceSlashCommands` over the already-rendered DOM
-  // once the catalog (and thus the predicate) arrives — an idempotent
-  // add/remove sync, no DOM rebuild (scroll anchor preserved). Runs after
-  // the render effects so the container is populated. [L06] DOM-only.
+  // Re-tag clickable commands when the known-command predicate changes
+  // identity — the on-resume catalog race. The render effects above tag at
+  // block *build* time; a finalized block is hash-stable and never
+  // rebuilt, so if the transcript replayed from JSONL before the handshake
+  // catalog landed, its slash-command spans were built untagged. This
+  // effect re-runs `enhanceCommands` over the already-rendered DOM once the
+  // catalog (and thus the predicate) arrives — an idempotent add/remove
+  // sync, no DOM rebuild (scroll anchor preserved). Runs after the render
+  // effects so the container is populated. [L06] DOM-only.
   React.useLayoutEffect(() => {
     const el = containerRef.current;
     if (el === null || isKnownSlashCommand === undefined) return;
-    enhanceSlashCommands(el, isKnownSlashCommand);
+    enhanceCommands(el, isKnownSlashCommand);
   }, [isKnownSlashCommand]);
 
   return (

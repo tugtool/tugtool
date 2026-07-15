@@ -26,9 +26,11 @@ import {
   type TextSelectionAdapter,
 } from "@/components/tugways/text-selection-adapter";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
+import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
 import type { ActionHandlerResult } from "@/components/tugways/responder-chain";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
+import type { TugEditorContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 
@@ -54,7 +56,7 @@ export function useSessionModelName(
  * catalog (`SessionMetadataStore.slashCommands`) unioned with the dev
  * card's locally-handled commands (`LOCAL_SLASH_COMMANDS`). The transcript
  * passes this to `TugMarkdownBlock` to gate which inline `<code>` command
- * spans become clickable (`enhance-slash-commands`) — the strict known-list
+ * spans become clickable (`enhance-commands`) — the strict known-list
  * gate, not a loose regex.
  *
  * [L02] — the catalog is read through `useSyncExternalStore`. The predicate
@@ -191,6 +193,20 @@ function writeCopyClipboard(plain: string, html: string | null): void {
   void clip.writeText?.(plain);
 }
 
+/**
+ * Escape the five HTML metacharacters so a command string can be embedded
+ * in the `text/html` clipboard flavor as `<code>…</code>` without a stray
+ * `<` or `&` in the command corrupting the markup.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Exported for the copy-wiring app-test fixture (`gallery-transcript-copy`),
 // which mounts this exact hook over a static body so `just app-test` drives
 // the real ⌘C / menu-Copy path. Not part of the card's public API otherwise.
@@ -207,6 +223,16 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
   // the current messages / store).
   const resolveCopyRef = useRef(resolveCopyMarkdown);
   resolveCopyRef.current = resolveCopyMarkdown;
+
+  // The full text of the `.tugx-md-cmd` command span the current
+  // right-click landed on, sampled by `extraEntries` at menu-open time and
+  // read by the command-copy handlers when the user picks Copy / Copy as
+  // Plain Text. `null` when the right-click was not on a command span.
+  // Reading the span text (not the DOM selection) is what makes the copy
+  // the WHOLE command regardless of any sub-word WebKit smart-selected on
+  // the right-click. Menu-only: no keyboard path reads it, and every menu
+  // open refreshes it, so there is no stale-value risk.
+  const contextCommandRef = useRef<string | null>(null);
 
   // Build the adapter once the body element is available. Re-runs
   // whenever the body element identity changes (rare for inline-rendered
@@ -294,14 +320,73 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
     };
   }, []);
 
+  // Copy the right-clicked command span, code formatting preserved: the
+  // `text/plain` flavor is the command wrapped in Markdown backticks and
+  // the `text/html` flavor is a `<code>` element — mirroring how a copied
+  // transcript selection carries markdown + rendered HTML ([P05]). Reads
+  // the whole command from `contextCommandRef` (sampled at menu-open time),
+  // so it never narrows to a smart-selected sub-word. Synchronous (no
+  // continuation) so the clipboard write stays inside the activation
+  // gesture, like `handleCopy`.
+  const handleCopyCommand = useCallback((): ActionHandlerResult => {
+    const cmd = contextCommandRef.current;
+    if (cmd === null || cmd === "") return;
+    writeCopyClipboard("`" + cmd + "`", `<code>${escapeHtml(cmd)}</code>`);
+  }, []);
+
+  // Copy the right-clicked command as bare text — no backticks, no
+  // `text/html` flavor — the terminal-paste-friendly variant.
+  const handleCopyCommandPlain = useCallback((): ActionHandlerResult => {
+    const cmd = contextCommandRef.current;
+    if (cmd === null || cmd === "") return;
+    writeCopyClipboard(cmd, null);
+  }, []);
+
   const responderId = useId();
   const { ResponderScope, responderRef } = useResponder({
     id: responderId,
     actions: {
       [TUG_ACTIONS.COPY]: handleCopy,
+      [TUG_ACTIONS.COPY_COMMAND]: handleCopyCommand,
+      [TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT]: handleCopyCommandPlain,
       [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
     },
   });
+
+  // A right-click on a command span (`.tugx-md-cmd`) resolves the whole
+  // command into `contextCommandRef` and offers Copy / Copy as Plain Text
+  // for it; `hideStandardItems` (below) drops the standard block so those
+  // two are the ONLY items — no second, selection-scoped Copy that would
+  // copy a smart-selected sub-word instead of the full command.
+  const commandFromEvent = useCallback((event: MouseEvent): string | null => {
+    const target = event.target;
+    if (!(target instanceof Element)) return null;
+    const span = target.closest<HTMLElement>(`.${COMMAND_CLASS}`);
+    if (span === null) return null;
+    const cmd = span.textContent?.trim() ?? "";
+    return cmd === "" ? null : cmd;
+  }, []);
+
+  const extraEntries = useCallback(
+    (event: MouseEvent): TugEditorContextMenuEntry[] => {
+      const cmd = commandFromEvent(event);
+      contextCommandRef.current = cmd;
+      if (cmd === null) return [];
+      return [
+        { action: TUG_ACTIONS.COPY_COMMAND, label: "Copy" },
+        {
+          action: TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT,
+          label: "Copy as Plain Text",
+        },
+      ];
+    },
+    [commandFromEvent],
+  );
+
+  const hideStandardItems = useCallback(
+    (event: MouseEvent): boolean => commandFromEvent(event) !== null,
+    [commandFromEvent],
+  );
 
   // The shared hook owns menuState, the contextmenu pipeline, and
   // the menu render. We feed it the adapter (read live from the ref
@@ -311,9 +396,10 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
   // cell's `<ResponderScope>`, which we render the menu inside
   // below. The cell may never have been promoted to first responder
   // (the editor often holds it across the right-click), but targeted
-  // dispatch via `parentId` doesn't care: COPY and SELECT_ALL always
-  // land on this cell's handlers regardless of first-responder
-  // state. Same canonical L11 shape every other tugway control uses.
+  // dispatch via `parentId` doesn't care: COPY, the command-copy actions,
+  // and SELECT_ALL always land on this cell's handlers regardless of
+  // first-responder state. Same canonical L11 shape every other tugway
+  // control uses.
   const {
     onMouseDown: hookMouseDown,
     onContextMenu: hookContextMenu,
@@ -321,6 +407,8 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
   } = useTextSurfaceContextMenu({
     adapterRef,
     capabilities: { canEdit: false },
+    extraEntries,
+    hideStandardItems,
   });
 
   // The hook returns native-event handlers; the cell wires them
