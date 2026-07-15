@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tugcast_core::types::{
     ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, UnattributedFile,
@@ -20,7 +20,10 @@ use tugcast_core::types::{
 use super::attribution::{parse_worktree_states, repo_root_for};
 use super::git::{fetch_git_status, fetch_head_message, parse_porcelain_v2};
 use super::workspace_registry::WorkspaceRegistry;
-use crate::session_ledger::{ProjectFileEvent, SessionLedger, SessionRow, SessionState};
+use crate::path_resolver::{CanonicalPath, same_file};
+use crate::session_ledger::{
+    FileEventRewrite, ProjectFileEvent, SessionLedger, SessionRow, SessionState,
+};
 
 /// Fires the account-global changeset recompute after a file-event write.
 ///
@@ -100,12 +103,58 @@ pub(crate) async fn compose_snapshot(
     // oldest-first, so the latest event for a path wins op/origin while
     // ambiguity ORs across all of them (same rule as `tugutil changes`).
     // Events whose file is no longer dirty (committed / reverted) drop out.
+    // The `file_events` bucket key is canonical (the relay writes it through the
+    // gateway), so query the canonical spelling of `project_dir`. Legacy rows
+    // written before canonicalization carry the raw spelling; union them in
+    // (when it differs) so pre-upgrade attribution still scopes in until the
+    // backfill converts them.
     let events = match ledger {
-        Some(ledger) => ledger
-            .file_events_for_project(&project_dir.to_string_lossy())
-            .unwrap_or_default(),
+        Some(ledger) => {
+            let raw = project_dir.to_string_lossy();
+            let canonical = CanonicalPath::from_raw(project_dir);
+            let mut events = ledger
+                .file_events_for_project(canonical.as_str())
+                .unwrap_or_default();
+            if canonical.as_str() != raw {
+                events.extend(ledger.file_events_for_project(&raw).unwrap_or_default());
+            }
+            events
+        }
         None => Vec::new(),
     };
+
+    // Opportunistic lazy backfill: collapse this project's legacy absolute rows
+    // to canonical project_dir + repo-relative file_path, once per project per
+    // process. Correctness never depends on it — the bridge already reconciles
+    // legacy rows at read time (`events` above was read pre-backfill and this
+    // snapshot is composed from it); the backfill just makes later reads direct.
+    // It runs only for open projects (never a boot walk), preserving the
+    // no-TCC-prompt-on-boot property.
+    if let Some(ledger) = ledger {
+        let canonical = CanonicalPath::from_raw(project_dir);
+        let fresh = backfill_marker()
+            .lock()
+            .expect("backfill marker mutex")
+            .insert(canonical.as_str().to_owned());
+        if fresh {
+            let rewrites: Vec<FileEventRewrite> = events
+                .iter()
+                .filter(|pfe| pfe.event.file_path.starts_with('/'))
+                .filter_map(|pfe| {
+                    let rel = repo_relative(&repo_root, &pfe.event.file_path);
+                    (rel != pfe.event.file_path).then(|| FileEventRewrite {
+                        tug_session_id: pfe.event.tug_session_id.clone(),
+                        tool_use_id: pfe.event.tool_use_id.clone(),
+                        old_file_path: pfe.event.file_path.clone(),
+                        new_file_path: rel,
+                    })
+                })
+                .collect();
+            if !rewrites.is_empty() {
+                let _ = ledger.backfill_file_events_repo_relative(canonical.as_str(), &rewrites);
+            }
+        }
+    }
     let mut owners: BTreeMap<String, OwnerAgg> = BTreeMap::new();
     for pfe in &events {
         let rel = repo_relative(&repo_root, &pfe.event.file_path);
@@ -347,11 +396,49 @@ pub(crate) fn draft_from_row(
     }
 }
 
+/// Canonical project dirs whose legacy `file_events` rows have already been
+/// backfilled this process — the once-per-project guard for the opportunistic
+/// lazy backfill in [`compose_snapshot`].
+fn backfill_marker() -> &'static Mutex<HashSet<String>> {
+    static MARKER: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    MARKER.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Project a recorded `file_path` to the repo-relative key `git status`
+/// speaks, reconciling every storage form ([#l01-bridge-cases]):
+///
+/// - **Already relative** (new capture-time rows) — returned unchanged.
+/// - **Absolute** (legacy rows) — both `repo_root` and `file_path` are routed
+///   through the canonical gateway and stripped, so a firmlink/synthetic
+///   spelling of the repo root collapses to the file's space before the strip.
+/// - **Residual mismatch** — walk `file_path`'s ancestors for one that is the
+///   same live directory as `repo_root` (`same_file`) and strip that; failing
+///   all of it, return the input (falls to unattributed, never a wrong match).
 fn repo_relative(repo_root: &Path, file_path: &str) -> String {
-    match Path::new(file_path).strip_prefix(repo_root) {
-        Ok(rel) => rel.to_string_lossy().into_owned(),
-        Err(_) => file_path.to_owned(),
+    // New capture-time rows are already repo-relative.
+    if !file_path.starts_with('/') {
+        return file_path.to_owned();
     }
+
+    // Legacy absolute row: canonicalize both sides, then strip. The firmlink
+    // split (repo_root and file_path spelled differently) collapses here.
+    let canonical_root = CanonicalPath::from_raw(repo_root);
+    let canonical_file = CanonicalPath::from_raw(Path::new(file_path));
+    if let Ok(rel) = canonical_file.as_path().strip_prefix(canonical_root.as_path()) {
+        return rel.to_string_lossy().into_owned();
+    }
+
+    // Residual mismatch: find the ancestor of `file_path` that is the same live
+    // directory as `repo_root` by `(dev, ino)`, then strip lexically.
+    let file = Path::new(file_path);
+    for ancestor in file.ancestors() {
+        if same_file(ancestor, repo_root) {
+            if let Ok(rel) = file.strip_prefix(ancestor) {
+                return rel.to_string_lossy().into_owned();
+            }
+        }
+    }
+    file_path.to_owned()
 }
 
 /// Derive one dash entry per `refs/heads/tugdash/` branch, the same way
@@ -954,6 +1041,255 @@ mod tests {
                 ("gone.txt", "D", "deleted"),
                 ("new.txt", "R", "renamed"),
             ]
+        );
+    }
+
+    /// Two sessions open one project via two different spellings (real path and
+    /// a symlink to it). The relay canonicalizes `project_dir` at write, so both
+    /// land in one canonical `file_events` bucket and compose attributes both —
+    /// closing the multi-spelling dedup gap.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn two_spellings_one_project_attribute_to_one_bucket() {
+        let (_dir, root) = init_repo();
+        let link_home = tempfile::tempdir().unwrap();
+        let link = link_home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+        std::fs::write(root.join("b.txt"), "x").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess-a", "ws", &root.to_string_lossy(), "card-1", 0)
+            .unwrap();
+        ledger
+            .record_spawn("sess-b", "ws", &link.to_string_lossy(), "card-2", 0)
+            .unwrap();
+
+        // Each session's write canonicalizes its own spelling; both resolve to
+        // the same canonical bucket.
+        let pd_a = CanonicalPath::from_raw(&root);
+        let pd_b = CanonicalPath::from_raw(&link);
+        assert_eq!(pd_a.as_str(), pd_b.as_str(), "both spellings canonicalize alike");
+        ledger
+            .record_file_event(&event("sess-a", "tu-1", &root.join("a.txt"), pd_a.as_path()))
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess-b", "tu-2", &root.join("b.txt"), pd_b.as_path()))
+            .unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let owners: Vec<&str> = snapshot
+            .changesets
+            .iter()
+            .filter_map(|e| match e {
+                ChangesetEntry::Session { owner_id, .. } => Some(owner_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(owners.contains(&"sess-a"), "session A attributed: {owners:?}");
+        assert!(
+            owners.contains(&"sess-b"),
+            "session B (other spelling) attributed: {owners:?}"
+        );
+        assert!(
+            snapshot.unattributed.is_empty(),
+            "no file falls to unattributed: {:?}",
+            snapshot.unattributed
+        );
+    }
+
+    /// `sessions.project_dir` stays the raw typed path so the picker's
+    /// `list_for_project_dir` (raw-path lookup) keeps working — only
+    /// `file_events.project_dir` is canonicalized ([P05]).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sessions_project_dir_stays_raw() {
+        let (_dir, root) = init_repo();
+        let link_home = tempfile::tempdir().unwrap();
+        let link = link_home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        let raw = link.to_string_lossy().to_string();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger.record_spawn("sess-a", "ws", &raw, "card-1", 0).unwrap();
+
+        let rows = ledger.list_for_project_dir(&raw).unwrap();
+        assert_eq!(rows.len(), 1, "picker finds the session by its raw typed path");
+        assert_eq!(
+            rows[0].project_dir, raw,
+            "sessions.project_dir stays the raw spelling"
+        );
+    }
+
+    /// The `ee31685b` shape: a legacy absolute `file_path` under one spelling of
+    /// a directory, `project_dir` under another (a symlink standing in for the
+    /// `/u` firmlink). The reconciler bridge collapses both to the same
+    /// repo-relative key, so the file is attributed — not Unattributed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn firmlink_split_row_is_attributed() {
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("lens-frame.md"), "edit").unwrap();
+        let link_home = tempfile::tempdir().unwrap();
+        let link = link_home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &link.to_string_lossy(), "card-1", 0)
+            .unwrap();
+        // Legacy row: absolute file_path under the real path, project_dir the
+        // symlink spelling — the two disagree, exactly the live bug.
+        ledger
+            .record_file_event(&event("sess", "tu-1", &root.join("lens-frame.md"), &link))
+            .unwrap();
+
+        // Compose against the symlink spelling (repo_root_for returns it verbatim).
+        let snapshot = compose_snapshot(&link, Some(&ledger)).await.expect("repo");
+        let owners: Vec<&str> = snapshot
+            .changesets
+            .iter()
+            .filter_map(|e| match e {
+                ChangesetEntry::Session { owner_id, files, .. } if !files.is_empty() => {
+                    Some(owner_id.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(owners, ["sess"], "the split row is attributed to its session");
+        assert!(
+            snapshot.unattributed.is_empty(),
+            "nothing falls to unattributed: {:?}",
+            snapshot.unattributed
+        );
+    }
+
+    /// A deleted file has no inode, but both sides speak git's repo-relative
+    /// language, so a new capture-time (repo-relative) row reconciles against
+    /// git's `D` entry.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn deleted_file_reconciles_repo_relative() {
+        let (_dir, root) = init_repo();
+        std::fs::remove_file(root.join("committed.txt")).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        let pd = CanonicalPath::from_raw(&root);
+        ledger.record_spawn("sess", "ws", pd.as_str(), "card-1", 0).unwrap();
+        // New capture-time form: repo-relative file_path, op deleted.
+        let mut ev = event("sess", "tu-1", Path::new("committed.txt"), pd.as_path());
+        ev.op = "deleted".to_owned();
+        ledger.record_file_event(&ev).unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let owned: Vec<&str> = snapshot
+            .changesets
+            .iter()
+            .flat_map(|e| match e {
+                ChangesetEntry::Session { files, .. } => {
+                    files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>()
+                }
+                _ => Vec::new(),
+            })
+            .collect();
+        assert_eq!(
+            owned, ["committed.txt"],
+            "the deleted file reconciles via its repo-relative key"
+        );
+        assert!(snapshot.unattributed.is_empty());
+    }
+
+    /// Unit coverage of the bridge decision table: relative passes through,
+    /// absolute strips, and a firmlink-split (repo_root via a symlink) collapses
+    /// through the gateway before the strip.
+    #[cfg(unix)]
+    #[test]
+    fn bridge_passes_through_relative_and_strips_absolute() {
+        assert_eq!(
+            repo_relative(Path::new("/any/repo"), "roadmap/x.md"),
+            "roadmap/x.md"
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+        assert_eq!(
+            repo_relative(&root, root.join("a.txt").to_str().unwrap()),
+            "a.txt"
+        );
+
+        let link_home = tempfile::tempdir().unwrap();
+        let link = link_home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        assert_eq!(
+            repo_relative(&link, root.join("a.txt").to_str().unwrap()),
+            "a.txt",
+            "firmlink-split repo_root collapses through the gateway"
+        );
+    }
+
+    /// A first compose converts a project's legacy absolute rows to canonical
+    /// project_dir + repo-relative file_path; a second compose (marker set)
+    /// does no further writes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backfill_converts_absolute_rows_only_once() {
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card", 0)
+            .unwrap();
+        // Legacy-shaped row: absolute file_path.
+        ledger
+            .record_file_event(&event("sess", "tu-1", &root.join("a.txt"), &root))
+            .unwrap();
+
+        compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let rows = ledger.file_events_for_session("sess").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, "a.txt", "row converted to repo-relative");
+        let canonical = CanonicalPath::from_raw(&root);
+        assert_eq!(
+            rows[0].project_dir,
+            canonical.as_str(),
+            "row project_dir canonicalized"
+        );
+
+        let before = ledger.file_events_for_session("sess").unwrap();
+        compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let after = ledger.file_events_for_session("sess").unwrap();
+        assert_eq!(before, after, "second compose does no extra writes");
+    }
+
+    /// The backfill runs only for the project compose actually touches; a
+    /// project never composed keeps its legacy rows (proving no boot walk).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backfill_never_touches_unopened_projects() {
+        let (_dir_x, root_x) = init_repo();
+        let (_dir_y, root_y) = init_repo();
+        std::fs::write(root_y.join("y.txt"), "y").unwrap();
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        // X has a legacy absolute row but is never composed.
+        ledger
+            .record_spawn("sess-x", "ws", &root_x.to_string_lossy(), "card-x", 0)
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess-x", "tu-x", &root_x.join("x.txt"), &root_x))
+            .unwrap();
+        let x_before = ledger.file_events_for_session("sess-x").unwrap();
+
+        // Compose only Y.
+        compose_snapshot(&root_y, Some(&ledger)).await.expect("repo");
+
+        let x_after = ledger.file_events_for_session("sess-x").unwrap();
+        assert_eq!(x_before, x_after, "unopened project X's rows are untouched");
+        assert!(
+            x_after[0].file_path.starts_with('/'),
+            "X's row stays absolute — no boot walk"
         );
     }
 }

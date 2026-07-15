@@ -352,13 +352,13 @@ Session `9ca56d5d` recorded `file_path` under `/Users/…/.tug/worktrees/lens-fr
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Gateway: `CanonicalPath` + boot alias table + memoization | pending | — |
-| #step-2 | Promote `same_file` / `get_identity` reconciliation primitive | pending | — |
-| #step-3 | Canonicalize `file_events.project_dir` (write + compose query) | pending | — |
-| #step-4 | Capture-time repo-relative `file_path` projection | pending | — |
-| #step-5 | Reconciler bridge + firmlink-split regression tests | pending | — |
-| #step-6 | Lazy opportunistic backfill of legacy rows | pending | — |
-| #step-7 | Integration checkpoint (end-to-end split + no-TCC property) | pending | — |
+| #step-1 | Gateway: `CanonicalPath` + boot alias table + memoization | done | 813103113 |
+| #step-2 | Promote `same_file` / `get_identity` reconciliation primitive | done | b755b7604 |
+| #step-3 | Canonicalize `file_events.project_dir` (write + compose query) | done | 4dc9f169e |
+| #step-4 | Capture-time repo-relative `file_path` projection | done | 66168699e |
+| #step-5 | Reconciler bridge + firmlink-split regression tests | done | fa8e04579 |
+| #step-6 | Lazy opportunistic backfill of legacy rows | done | 61856522f |
+| #step-7 | Integration checkpoint (end-to-end split + no-TCC property) | done | 2be2aad5a |
 
 #### Step 1: Gateway — `CanonicalPath` + boot alias table + memoization {#step-1}
 

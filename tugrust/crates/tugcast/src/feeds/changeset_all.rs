@@ -381,4 +381,107 @@ mod tests {
         drop(_repo_entry);
         drop(_plain_entry);
     }
+
+    /// End-to-end firmlink split through the real record → store → compose path:
+    /// a session opened under a symlink spelling records a symlink-spelled tool
+    /// `file_path`; `into_row` projects it to repo-relative in canonical space,
+    /// and `compose_aggregate` shows the file owned, not unattributed.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn end_to_end_firmlink_split_attributes() {
+        use crate::feeds::attribution::{PendingCall, repo_root_for};
+        use crate::path_resolver::CanonicalPath;
+        use tokio_util::sync::CancellationToken;
+        use tugcast_core::types::ChangesetEntry;
+
+        let repo_dir = tempfile::tempdir().unwrap();
+        let root = repo_dir.path().canonicalize().unwrap();
+        init_repo(&root);
+        // Track roadmap/x.md, then modify it — git then reports the individual
+        // file (a wholly-untracked dir would collapse to `roadmap/`).
+        std::fs::create_dir(root.join("roadmap")).unwrap();
+        std::fs::write(root.join("roadmap/x.md"), "base\n").unwrap();
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-q", "-m", "add roadmap"]);
+        std::fs::write(root.join("roadmap/x.md"), "edited\n").unwrap();
+
+        // A symlink to the repo — the "other spelling" the session opens under.
+        let link_home = tempfile::tempdir().unwrap();
+        let link = link_home.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let entry = registry.get_or_create(&link, cancel.clone()).unwrap();
+
+        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
+        ledger
+            .record_spawn(
+                "sess",
+                entry.workspace_key.as_ref(),
+                &link.to_string_lossy(),
+                "card-1",
+                0,
+            )
+            .unwrap();
+
+        // The relay's capture: canonical project_dir + canonical repo root, and a
+        // symlink-spelled tool file_path that `into_row` projects repo-relative.
+        let canonical_project_dir = CanonicalPath::from_raw(&link);
+        let repo_root = CanonicalPath::from_raw(
+            &repo_root_for(canonical_project_dir.as_path())
+                .await
+                .expect("repo root"),
+        );
+        let pending = PendingCall {
+            tool_name: "Write".to_owned(),
+            file_path: link.join("roadmap/x.md").to_string_lossy().into_owned(),
+            op: "write",
+            parent_tool_use_id: None,
+            timestamp: None,
+        };
+        let row = pending.into_row(
+            "sess",
+            "tu-1",
+            &canonical_project_dir,
+            Some(&repo_root),
+            "exact",
+            1,
+        );
+        assert_eq!(
+            row.file_path, "roadmap/x.md",
+            "recorded repo-relative despite the split"
+        );
+        ledger.record_file_event(&row).unwrap();
+
+        let snapshot = compose_aggregate(&registry, Some(&ledger)).await;
+        let project = snapshot
+            .projects
+            .iter()
+            .find(|p| !p.no_repo)
+            .expect("repo project present");
+        let owned: Vec<&str> = project
+            .snapshot
+            .changesets
+            .iter()
+            .flat_map(|e| match e {
+                ChangesetEntry::Session { files, .. } => {
+                    files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>()
+                }
+                _ => Vec::new(),
+            })
+            .collect();
+        assert_eq!(
+            owned, ["roadmap/x.md"],
+            "the split edit is owned, not unattributed"
+        );
+        assert!(
+            project.snapshot.unattributed.is_empty(),
+            "nothing falls to unattributed: {:?}",
+            project.snapshot.unattributed
+        );
+
+        drop(entry);
+        cancel.cancel();
+    }
 }

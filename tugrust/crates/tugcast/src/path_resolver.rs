@@ -8,9 +8,9 @@
 //! Uses (device, inode) as the fundamental identity — the only reliable
 //! way to determine that two paths refer to the same directory.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::{debug, info};
 
@@ -68,6 +68,190 @@ pub fn resolve_to_claude_form(path: &Path) -> PathBuf {
     #[cfg(not(target_os = "macos"))]
     {
         canonical
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CanonicalPath gateway
+// ---------------------------------------------------------------------------
+
+/// A path in the user-visible canonical form (`/Users/…` on macOS) — the one
+/// spelling every persisted key and cross-path comparison agrees on. The inner
+/// string is private, so a `CanonicalPath` can be produced only by the gateway
+/// ([`CanonicalPath::from_raw`]) or by adopting an already-canonical string
+/// ([`CanonicalPath::from_canonical`]). A raw path therefore cannot be stored or
+/// compared as canonical by construction.
+///
+/// The gateway is authored ahead of its consumers (the attribution write path
+/// and the changeset reconciler); the not-yet-wired surface carries
+/// `#[allow(dead_code)]` during rollout, the same way `attribution.rs` and the
+/// rest of the crate suppress phased-rollout dead-code.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[allow(dead_code)]
+pub struct CanonicalPath(Arc<str>);
+
+#[allow(dead_code)]
+impl CanonicalPath {
+    /// Resolve a raw path to canonical form through the gateway.
+    ///
+    /// A path already under the user-visible face (`/Users/…`) and any path
+    /// whose firmlink/synthetic prefix is in the boot-built [`AliasTable`]
+    /// resolve as a pure string rewrite — no filesystem touch. Only an unknown
+    /// symlink falls back to [`resolve_to_claude_form`] (one `canonicalize`),
+    /// and that result is memoized when it names a directory, so each distinct
+    /// project dir is resolved at most once per process.
+    pub fn from_raw(path: &Path) -> Self {
+        if let Some(hit) = memo().lock().expect("canonical memo mutex").get(path).cloned() {
+            return hit;
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(s) = path.to_str() {
+            // Already the user-visible face — trust as-is (pure string).
+            if s == "/Users" || s.starts_with("/Users/") {
+                return Self(Arc::from(s));
+            }
+            // Firmlink / synthetic prefix rewrite from the boot table.
+            if let Some(rewritten) = alias_table().rewrite(s) {
+                return Self(Arc::from(rewritten.as_str()));
+            }
+        }
+
+        // Cold fallback: real canonicalization (unknown symlink; all non-macOS
+        // paths). Memoize only directories — the bridge resolves many distinct
+        // file paths, which must not accrete in the cache.
+        let resolved = resolve_to_claude_form(path);
+        let cp = Self(Arc::from(resolved.to_string_lossy().as_ref()));
+        if resolved.is_dir() {
+            memo()
+                .lock()
+                .expect("canonical memo mutex")
+                .insert(path.to_path_buf(), cp.clone());
+        }
+        cp
+    }
+
+    /// Adopt an already-canonical string with no filesystem access — the
+    /// counterpart to [`super::feeds::workspace_registry::WorkspaceKey::from_canonical`],
+    /// used for strings a prior gateway call already produced and persisted
+    /// (e.g. `sessions.workspace_key`). The caller guarantees the string is
+    /// canonical; this performs no resolution.
+    pub fn from_canonical(s: &str) -> Self {
+        Self(Arc::from(s))
+    }
+
+    /// Construct directly from a string for tests, bypassing the gateway.
+    #[cfg(test)]
+    pub fn from_test_str(s: &str) -> Self {
+        Self(Arc::from(s))
+    }
+
+    /// The canonical path as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The canonical path as a `&Path`.
+    pub fn as_path(&self) -> &Path {
+        Path::new(&*self.0)
+    }
+}
+
+/// Per-directory resolution cache (`raw input → CanonicalPath`). Only
+/// directories are inserted (see [`CanonicalPath::from_raw`]), so the map is
+/// bounded by the number of distinct project dirs / repo roots seen.
+#[allow(dead_code)]
+fn memo() -> &'static Mutex<HashMap<PathBuf, CanonicalPath>> {
+    static MEMO: OnceLock<Mutex<HashMap<PathBuf, CanonicalPath>>> = OnceLock::new();
+    MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Test aid: whether the memo currently holds a resolved entry for `path`.
+#[cfg(test)]
+fn memo_contains(path: &Path) -> bool {
+    memo().lock().expect("canonical memo mutex").contains_key(path)
+}
+
+// ---------------------------------------------------------------------------
+// macOS: boot-time firmlink/symlink alias table
+// ---------------------------------------------------------------------------
+
+/// Firmlink/symlink prefix rewrites, built once at boot from
+/// `/etc/synthetic.conf` (symlink entries) and the APFS data-volume firmlink
+/// (`/System/Volumes/Data` → the user-visible face). Each rewrite collapses a
+/// non-canonical prefix to its `/Users/…` form as a pure string operation, so
+/// the gateway never `stat`s a historical project dir on boot — it reads
+/// `synthetic.conf` once and stats the data-volume mount once. Rewrites are
+/// identity-verified (`same_file`) at build, so applying one later needs no
+/// re-verification.
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+struct AliasTable {
+    /// `(from_prefix, to_prefix)`, longest `from` first so the most specific
+    /// prefix wins.
+    rewrites: Vec<(String, String)>,
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+fn alias_table() -> &'static AliasTable {
+    static ALIAS_TABLE: OnceLock<AliasTable> = OnceLock::new();
+    ALIAS_TABLE.get_or_init(AliasTable::build)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+impl AliasTable {
+    fn build() -> Self {
+        let mut rewrites: Vec<(String, String)> = Vec::new();
+
+        // synthetic.conf symlink entries: a two-column `name<TAB>target` line is
+        // a symlink `/name` → `target`; collapse the target's data-volume
+        // firmlink to the user-visible face and record the rewrite.
+        if let Ok(conf) = std::fs::read_to_string("/etc/synthetic.conf") {
+            for line in conf.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let parts: Vec<&str> = line.splitn(2, '\t').collect();
+                if parts.len() < 2 {
+                    continue;
+                }
+                let from = format!("/{}", parts[0].trim());
+                let target = parts[1].trim();
+                let to = resolve_apfs_firmlink_str(target).unwrap_or_else(|| target.to_string());
+                if same_file(Path::new(&from), Path::new(&to)) {
+                    rewrites.push((from, to));
+                }
+            }
+        }
+
+        // Data-volume firmlink: `/System/Volumes/Data/<rest>` → `/<rest>`.
+        if Path::new("/System/Volumes/Data").exists() {
+            rewrites.push(("/System/Volumes/Data".to_string(), String::new()));
+        }
+
+        rewrites.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        Self { rewrites }
+    }
+
+    /// Rewrite `path`'s longest matching alias prefix, or `None` when no alias
+    /// applies. A match on the exact prefix, or on the prefix followed by a
+    /// path separator, is rewritten; a partial component (`/Userspace` under
+    /// `/Users`) is not.
+    fn rewrite(&self, path: &str) -> Option<String> {
+        for (from, to) in &self.rewrites {
+            if path == from {
+                return Some(if to.is_empty() { "/".to_string() } else { to.clone() });
+            }
+            if let Some(rest) = path.strip_prefix(from) {
+                if rest.starts_with('/') {
+                    return Some(format!("{to}{rest}"));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -244,16 +428,23 @@ impl PathResolver {
 // Identity
 // ---------------------------------------------------------------------------
 
+/// The `(device, inode)` identity of a live path, or `None` when it cannot be
+/// stat'd (missing / permission-denied). Ground truth for "are these the same
+/// file", but only for **live** files — a deleted or renamed path has no inode
+/// to read, so this is a reconciliation aid, never a durable key.
 #[cfg(unix)]
-fn get_identity(path: &Path) -> Option<(u64, u64)> {
+pub fn get_identity(path: &Path) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.dev(), meta.ino()))
 }
 
+/// Whether two **live** paths name the same file by `(device, inode)`. Used to
+/// judge equality when the canonical strings disagree (firmlink/symlink alias
+/// verification, legacy-row reconciliation). `false` when either path cannot be
+/// stat'd, so a deleted path never matches.
 #[cfg(unix)]
-#[allow(dead_code)] // used only from #[cfg(target_os = "macos")] functions
-fn same_identity(a: &Path, b: &Path) -> bool {
+pub fn same_file(a: &Path, b: &Path) -> bool {
     match (get_identity(a), get_identity(b)) {
         (Some(ia), Some(ib)) => ia == ib,
         _ => false,
@@ -288,12 +479,12 @@ fn resolve_synthetic(path: &Path) -> Option<PathBuf> {
             let full = format!("{}{}", resolved_target, rest);
             let full_path = PathBuf::from(&full);
 
-            if full_path.exists() && same_identity(path, &full_path) {
+            if full_path.exists() && same_file(path, &full_path) {
                 return Some(full_path);
             }
 
             let fallback = PathBuf::from(format!("{}{}", target, rest));
-            if fallback.exists() && same_identity(path, &fallback) {
+            if fallback.exists() && same_file(path, &fallback) {
                 return Some(fallback);
             }
         }
@@ -310,7 +501,7 @@ fn resolve_apfs_firmlink(path: &Path) -> Option<PathBuf> {
     let path_str = path.to_str()?;
     let resolved = resolve_apfs_firmlink_str(path_str)?;
     let resolved_path = PathBuf::from(&resolved);
-    if resolved_path.exists() && same_identity(path, &resolved_path) {
+    if resolved_path.exists() && same_file(path, &resolved_path) {
         Some(resolved_path)
     } else {
         None
@@ -378,7 +569,7 @@ fn resolve_bind_mounts(path: &Path) -> Option<PathBuf> {
                     let alt_mount = other_fields[4];
                     let rest = path.strip_prefix(mount_point).ok()?;
                     let alt_path = PathBuf::from(alt_mount).join(rest);
-                    if alt_path.exists() && same_identity(path, &alt_path) {
+                    if alt_path.exists() && same_file(path, &alt_path) {
                         return Some(alt_path);
                     }
                 }
@@ -443,7 +634,7 @@ mod tests {
             );
             // And it must still point at the very same directory.
             assert!(
-                same_identity(&syn_root, &resolved),
+                same_file(&syn_root, &resolved),
                 "resolved form {} is not the same directory as {}",
                 resolved.display(),
                 syn_root.display(),
@@ -477,5 +668,112 @@ mod tests {
         let resolved = resolve_to_claude_form(tmp.path());
         let canon = tmp.path().canonicalize().unwrap();
         assert_eq!(resolved, canon);
+    }
+
+    /// The gateway collapses a symlink and its real target to one canonical
+    /// form, and memoizes the resolved directory so a second resolve is a
+    /// cache hit rather than a fresh `canonicalize`.
+    #[test]
+    fn gateway_collapses_symlink_alias_without_fs_after_warmup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let via_link = CanonicalPath::from_raw(&link);
+        let via_real = CanonicalPath::from_raw(&real);
+        assert_eq!(
+            via_link, via_real,
+            "symlink and real path collapse to one canonical form"
+        );
+
+        assert!(memo_contains(&link), "resolved directory is memoized");
+        assert_eq!(
+            CanonicalPath::from_raw(&link),
+            via_link,
+            "second resolve returns the memoized value"
+        );
+    }
+
+    /// A path reached through the APFS data-volume firmlink
+    /// (`/System/Volumes/Data/Users/…`) collapses back to its user-visible
+    /// `/Users/…` face via the boot alias table — a pure string rewrite.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn gateway_rewrites_data_volume_prefix() {
+        const DATA_PREFIX: &str = "/System/Volumes/Data";
+        if !Path::new(DATA_PREFIX).exists() {
+            eprintln!("skip: no {DATA_PREFIX} on this host");
+            return;
+        }
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            eprintln!("skip: no HOME");
+            return;
+        };
+        if !home.starts_with("/Users/") {
+            eprintln!("skip: HOME not under /Users");
+            return;
+        }
+        let tmp = tempfile::tempdir_in(&home).unwrap();
+        let real = tmp.path();
+        let expanded = PathBuf::from(format!("{DATA_PREFIX}{}", real.display()));
+        if !expanded.exists() {
+            eprintln!("skip: data-volume twin absent for {}", real.display());
+            return;
+        }
+        let collapsed = CanonicalPath::from_raw(&expanded);
+        assert_eq!(
+            collapsed.as_path(),
+            real,
+            "data-volume prefix collapses to the /Users face",
+        );
+    }
+
+    /// On a plain directory with no firmlink/symlink involvement, the gateway
+    /// agrees with `resolve_to_claude_form` — non-aliased projects are
+    /// unaffected.
+    #[test]
+    fn gateway_plain_directory_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let via_gateway = CanonicalPath::from_raw(tmp.path());
+        let via_resolver = resolve_to_claude_form(tmp.path());
+        assert_eq!(via_gateway.as_path(), via_resolver.as_path());
+    }
+
+    /// A symlink and its real target share `(dev, ino)`, so `same_file` judges
+    /// them equal even though the path strings differ — the reconciliation
+    /// primitive the bridge leans on for firmlink-split rows.
+    #[cfg(unix)]
+    #[test]
+    fn same_file_true_across_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(
+            same_file(&real, &link),
+            "a symlink and its target are the same file"
+        );
+    }
+
+    /// Two distinct directories are not the same file.
+    #[cfg(unix)]
+    #[test]
+    fn same_file_false_for_distinct_dirs() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        assert!(!same_file(a.path(), b.path()));
+    }
+
+    /// A path with no live inode (never created) cannot be stat'd, so
+    /// `same_file` is `false` — it is a live-path aid, never a durable key.
+    #[cfg(unix)]
+    #[test]
+    fn same_file_false_for_deleted_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gone = tmp.path().join("gone");
+        assert!(!same_file(tmp.path(), &gone));
     }
 }

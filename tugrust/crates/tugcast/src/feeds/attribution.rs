@@ -39,6 +39,7 @@ use std::time::SystemTime;
 
 use serde::Deserialize;
 
+use crate::path_resolver::CanonicalPath;
 use crate::session_ledger::FileEventRow;
 
 /// Maximum number of in-flight `tool_use` entries a relay's
@@ -121,8 +122,9 @@ pub fn exact_op_for_tool(tool_name: &str) -> Option<&'static str> {
 /// The changed path an exact tool's `input` names, or `None` when the tool
 /// is not exact-attributable or the expected key is absent / non-string.
 /// `NotebookEdit` names its target `notebook_path`; the rest use
-/// `file_path`. Paths are returned as given by the tool (absolute) —
-/// repo-relative projection happens at query time against `project_dir`.
+/// `file_path`. The path is returned as given by the tool (absolute);
+/// [`PendingCall::into_row`] projects it to repo-relative in canonical space
+/// at record time.
 pub fn file_path_for_tool(tool_name: &str, input: &serde_json::Value) -> Option<String> {
     let key = match tool_name {
         "Write" | "Edit" | "MultiEdit" => "file_path",
@@ -154,26 +156,51 @@ impl PendingCall {
     /// Build the [`FileEventRow`] this call resolves to on a successful
     /// `tool_result`. `origin` is `"exact"` live / `"replay"` on the
     /// replay path; `at` is the resolved event time.
+    ///
+    /// The tool's absolute `file_path` is projected to repo-relative in
+    /// canonical space here (given the canonical `repo_root`), so both sides of
+    /// the changeset join speak git's repo-relative language. When `repo_root`
+    /// is `None` (non-repo project dir), the canonical absolute path is stored —
+    /// there is nothing to strip against.
     pub fn into_row(
         self,
         tug_session_id: &str,
         tool_use_id: &str,
-        project_dir: &str,
+        project_dir: &CanonicalPath,
+        repo_root: Option<&CanonicalPath>,
         origin: &str,
         at: i64,
     ) -> FileEventRow {
         FileEventRow {
             tug_session_id: tug_session_id.to_owned(),
             tool_use_id: tool_use_id.to_owned(),
-            file_path: self.file_path,
+            file_path: project_repo_relative(repo_root, &self.file_path),
             tool_name: self.tool_name,
             op: self.op.to_owned(),
             origin: origin.to_owned(),
             ambiguous: false,
             parent_tool_use_id: self.parent_tool_use_id,
-            project_dir: project_dir.to_owned(),
+            project_dir: project_dir.as_str().to_owned(),
             at,
         }
+    }
+}
+
+/// Project an absolute `file_path` to its repo-relative form against the
+/// canonical `repo_root`, both in canonical space. The path is canonicalized
+/// through the gateway first (a firmlink/synthetic spelling of the same file
+/// collapses to the repo root's space), then stripped. `None` repo_root or a
+/// residual non-prefix returns the canonical absolute path — compose's bridge
+/// reconciles that case.
+fn project_repo_relative(repo_root: Option<&CanonicalPath>, file_path: &str) -> String {
+    let canonical = CanonicalPath::from_raw(Path::new(file_path));
+    match repo_root {
+        Some(root) => canonical
+            .as_path()
+            .strip_prefix(root.as_path())
+            .map(|rel| rel.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| canonical.as_str().to_owned()),
+        None => canonical.as_str().to_owned(),
     }
 }
 
@@ -287,10 +314,13 @@ impl OpenBracket {
     /// and `post` becomes one `origin='bash'` row on `project_dir` (the
     /// owning session's checkout root, so a session's Bash and exact events
     /// share a project bucket), with `ambiguous` from `saw_overlap`.
+    ///
+    /// `file_path` is stored repo-relative (stripped against the bracket's
+    /// `repo_root`), matching the exact-tool path's capture-time projection.
     pub fn into_delta_rows(
         self,
         post: &HashMap<PathBuf, FileState>,
-        project_dir: &str,
+        project_dir: &CanonicalPath,
         at: i64,
     ) -> Vec<FileEventRow> {
         let mut paths: HashSet<&PathBuf> = HashSet::new();
@@ -303,16 +333,22 @@ impl OpenBracket {
                 Some(op) => op,
                 None => continue,
             };
+            // The pre/post fingerprint keys are `repo_root.join(rel)`, so the
+            // strip always recovers git's repo-relative key.
+            let file_path = path
+                .strip_prefix(&self.repo_root)
+                .map(|rel| rel.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
             rows.push(FileEventRow {
                 tug_session_id: self.tug_session_id.clone(),
                 tool_use_id: self.tool_use_id.clone(),
-                file_path: path.to_string_lossy().into_owned(),
+                file_path,
                 tool_name: "Bash".to_owned(),
                 op: op.to_owned(),
                 origin: "bash".to_owned(),
                 ambiguous: self.saw_overlap,
                 parent_tool_use_id: self.parent_tool_use_id.clone(),
-                project_dir: project_dir.to_owned(),
+                project_dir: project_dir.as_str().to_owned(),
                 at,
             });
         }
@@ -644,13 +680,52 @@ mod tests {
 
     #[test]
     fn into_row_carries_origin_and_at() {
-        let row = call("/proj/a.rs").into_row("tug-1", "tu-1", "/proj", "replay", 42);
+        let project_dir = CanonicalPath::from_test_str("/proj");
+        let row = call("/proj/a.rs").into_row(
+            "tug-1",
+            "tu-1",
+            &project_dir,
+            None,
+            "replay",
+            42,
+        );
         assert_eq!(row.tug_session_id, "tug-1");
         assert_eq!(row.tool_use_id, "tu-1");
+        // No repo root → the canonical absolute path is stored.
         assert_eq!(row.file_path, "/proj/a.rs");
+        assert_eq!(row.project_dir, "/proj");
         assert_eq!(row.origin, "replay");
         assert_eq!(row.at, 42);
         assert!(!row.ambiguous);
+    }
+
+    /// An exact tool call under a canonical repo root records its file
+    /// repo-relative at capture time.
+    #[test]
+    fn into_row_stores_repo_relative() {
+        let project_dir = CanonicalPath::from_test_str("/repo");
+        let repo_root = CanonicalPath::from_test_str("/repo");
+        let row = call("/repo/roadmap/lens-frame.md").into_row(
+            "tug-1",
+            "tu-1",
+            &project_dir,
+            Some(&repo_root),
+            "exact",
+            1,
+        );
+        assert_eq!(row.file_path, "roadmap/lens-frame.md");
+        assert_eq!(row.project_dir, "/repo");
+    }
+
+    /// A non-repo project dir has no root to strip against, so the canonical
+    /// absolute path is stored — compose then treats it as unattributed
+    /// against git, same as before.
+    #[test]
+    fn into_row_no_repo_root_keeps_absolute_canonical() {
+        let project_dir = CanonicalPath::from_test_str("/nonrepo");
+        let row =
+            call("/nonrepo/a.rs").into_row("tug-1", "tu-1", &project_dir, None, "exact", 1);
+        assert_eq!(row.file_path, "/nonrepo/a.rs");
     }
 
     // ---- Bash bracketing --------------------------------------------
@@ -718,21 +793,20 @@ mod tests {
             pre,
             saw_overlap: false,
         };
-        let mut rows = bracket.into_delta_rows(&post, "/proj", 99);
+        let project_dir = CanonicalPath::from_test_str("/proj");
+        let mut rows = bracket.into_delta_rows(&post, &project_dir, 99);
         rows.sort_by(|a, b| a.file_path.cmp(&b.file_path));
 
+        // file_path is repo-relative (stripped against the bracket's repo_root).
         let by_path: HashMap<&str, &str> = rows
             .iter()
             .map(|r| (r.file_path.as_str(), r.op.as_str()))
             .collect();
-        assert_eq!(by_path.get("/r/new.rs"), Some(&"created"));
-        assert_eq!(by_path.get("/r/del.rs"), Some(&"deleted"));
-        assert_eq!(by_path.get("/r/ren.rs"), Some(&"renamed"));
-        assert_eq!(by_path.get("/r/gone.rs"), Some(&"modified"));
-        assert!(
-            !by_path.contains_key("/r/mod.rs"),
-            "unchanged path has no row"
-        );
+        assert_eq!(by_path.get("new.rs"), Some(&"created"));
+        assert_eq!(by_path.get("del.rs"), Some(&"deleted"));
+        assert_eq!(by_path.get("ren.rs"), Some(&"renamed"));
+        assert_eq!(by_path.get("gone.rs"), Some(&"modified"));
+        assert!(!by_path.contains_key("mod.rs"), "unchanged path has no row");
         // Every row carries Bash/bash provenance, the parent id, and the
         // owning session's project_dir.
         for r in &rows {
@@ -758,7 +832,8 @@ mod tests {
             pre: HashMap::new(),
             saw_overlap: true,
         };
-        let rows = bracket.into_delta_rows(&post, "/proj", 1);
+        let project_dir = CanonicalPath::from_test_str("/proj");
+        let rows = bracket.into_delta_rows(&post, &project_dir, 1);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].ambiguous, "overlap marks the delta ambiguous");
     }
@@ -960,19 +1035,15 @@ u UU N... 0 0 0 0 unmerged.rs
             pre,
             saw_overlap: false,
         };
-        let rows = bracket.into_delta_rows(&post, root.to_str().unwrap(), 5);
+        let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
+        let rows = bracket.into_delta_rows(&post, &project_dir, 5);
         let by_path: HashMap<String, String> = rows
             .iter()
             .map(|r| (r.file_path.clone(), r.op.clone()))
             .collect();
-        assert_eq!(
-            by_path.get(root.join("a.txt").to_str().unwrap()),
-            Some(&"modified".to_owned())
-        );
-        assert_eq!(
-            by_path.get(root.join("b.txt").to_str().unwrap()),
-            Some(&"created".to_owned())
-        );
+        // Repo-relative paths, stripped against the bracket's repo_root.
+        assert_eq!(by_path.get("a.txt"), Some(&"modified".to_owned()));
+        assert_eq!(by_path.get("b.txt"), Some(&"created".to_owned()));
     }
 
     #[tokio::test]
@@ -1019,13 +1090,14 @@ u UU N... 0 0 0 0 unmerged.rs
         std::fs::write(root.join("from_a.txt"), "a\n").unwrap();
         std::fs::write(root.join("from_b.txt"), "b\n").unwrap();
 
+        let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
         let post_a = snapshot_worktree(&root).await;
         let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
-        let rows_a = a.into_delta_rows(&post_a, root.to_str().unwrap(), 2);
+        let rows_a = a.into_delta_rows(&post_a, &project_dir, 2);
 
         let post_b = snapshot_worktree(&root).await;
         let b = reg.close_by_tool_use("tug-B", "tu-B").unwrap();
-        let rows_b = b.into_delta_rows(&post_b, root.to_str().unwrap(), 3);
+        let rows_b = b.into_delta_rows(&post_b, &project_dir, 3);
 
         assert!(!rows_a.is_empty() && !rows_b.is_empty());
         assert!(

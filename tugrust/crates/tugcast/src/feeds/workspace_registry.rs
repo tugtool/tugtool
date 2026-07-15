@@ -646,6 +646,25 @@ mod tests {
         drain_and_drop(registry, cancel).await;
     }
 
+    /// Rebind rebuilds in-memory entries by adopting each ledger row's persisted
+    /// `workspace_key` via `from_canonical`, never re-canonicalizing the project
+    /// dir. That must hold even for a since-removed directory — so boot never
+    /// stats a historical project dir (the `0400ed0f7` no-TCC-prompt property).
+    #[test]
+    fn rebind_does_not_canonicalize_historical_dirs() {
+        let gone = "/Users/nobody/removed-project-xyz-123";
+        assert!(
+            !std::path::Path::new(gone).exists(),
+            "precondition: the path is absent"
+        );
+        let key = WorkspaceKey::from_canonical(gone);
+        assert_eq!(
+            key.as_ref(),
+            gone,
+            "from_canonical adopts the persisted string verbatim, no filesystem access"
+        );
+    }
+
     // ---- find_entry_by_path (Step pre-4 routing) ----
 
     #[tokio::test]

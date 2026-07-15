@@ -458,9 +458,11 @@ pub struct FileEventRow {
     /// The tool call's `tool_use_id`. A Bash call touching N files yields
     /// N rows that share this id.
     pub tool_use_id: String,
-    /// The changed path, as given by the tool input (absolute) or derived
-    /// from the bracket delta. Repo-relative projection happens at query
-    /// time against `project_dir`.
+    /// The changed path, repo-relative within `project_dir`'s repo (projected
+    /// in canonical space at record time). Legacy rows written before that
+    /// change hold a canonical-or-raw absolute path; the changeset reconciler
+    /// bridges both forms. A non-repo project dir stores the canonical absolute
+    /// path (nothing to strip against).
     pub file_path: String,
     /// `Write` | `Edit` | `MultiEdit` | `NotebookEdit` | `Bash`.
     pub tool_name: String,
@@ -500,6 +502,17 @@ pub struct ProjectFileEvent {
     pub owner_name: Option<String>,
     pub owner_name_user_set: bool,
     pub owner_live: bool,
+}
+
+/// One legacy-row rewrite for [`SessionLedger::backfill_file_events_repo_relative`]:
+/// the row identified by `(tug_session_id, tool_use_id, old_file_path)` becomes
+/// `new_file_path` (repo-relative) under the canonical project dir.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileEventRewrite {
+    pub tug_session_id: String,
+    pub tool_use_id: String,
+    pub old_file_path: String,
+    pub new_file_path: String,
 }
 
 /// One maintained changeset draft (Spec S09) — the continuously-current,
@@ -2089,6 +2102,98 @@ impl SessionLedger {
             ],
         )?;
         Ok(())
+    }
+
+    /// Rewrite a batch of legacy `file_events` rows to their canonical
+    /// `project_dir` + repo-relative `file_path`, collision-safe against
+    /// transitional duplicate rows, in one transaction. Returns the number of
+    /// rows changed.
+    ///
+    /// Each rewrite is identified by its current PK
+    /// `(tug_session_id, tool_use_id, old_file_path)`. Because a resumed session
+    /// replays its history post-upgrade, a row already carrying the target
+    /// repo-relative PK can coexist with the legacy absolute row — a plain
+    /// multi-row `UPDATE` would abort on that PK conflict. So per row: when the
+    /// target PK already exists, the legacy row is **deleted** and its
+    /// `ambiguous` is OR-folded / the later `at` kept on the survivor;
+    /// otherwise the legacy row is updated in place. A rewrite whose legacy row
+    /// is already gone is skipped.
+    pub fn backfill_file_events_repo_relative(
+        &self,
+        canonical_project_dir: &str,
+        rewrites: &[FileEventRewrite],
+    ) -> Result<usize, LedgerError> {
+        if rewrites.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.db.lock().expect("ledger mutex");
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut changed = 0usize;
+        for rw in rewrites {
+            let legacy: Option<(i64, i64)> = tx
+                .query_row(
+                    "SELECT ambiguous, at FROM file_events
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let Some((legacy_ambiguous, legacy_at)) = legacy else {
+                continue;
+            };
+
+            let survivor: Option<(i64, i64)> = tx
+                .query_row(
+                    "SELECT ambiguous, at FROM file_events
+                     WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                    params![rw.tug_session_id, rw.tool_use_id, rw.new_file_path],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+
+            match survivor {
+                Some((surv_ambiguous, surv_at)) => {
+                    // Target PK exists (replay duplicate): merge into it and drop
+                    // the legacy row.
+                    let merged_ambiguous =
+                        i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
+                    tx.execute(
+                        "UPDATE file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
+                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                        params![
+                            rw.tug_session_id,
+                            rw.tool_use_id,
+                            rw.new_file_path,
+                            merged_ambiguous,
+                            surv_at.max(legacy_at),
+                            canonical_project_dir,
+                        ],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM file_events
+                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                        params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
+                    )?;
+                    changed += 1;
+                }
+                None => {
+                    tx.execute(
+                        "UPDATE file_events SET file_path = ?4, project_dir = ?5
+                         WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
+                        params![
+                            rw.tug_session_id,
+                            rw.tool_use_id,
+                            rw.old_file_path,
+                            rw.new_file_path,
+                            canonical_project_dir,
+                        ],
+                    )?;
+                    changed += 1;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 
     /// Every `file_events` row owned by `tug_session_id`, oldest-first by
@@ -4439,6 +4544,41 @@ mod tests {
         l.record_file_event(&row).unwrap();
         let read = l.file_events_for_session("s1").unwrap();
         assert_eq!(read, vec![row]);
+    }
+
+    #[test]
+    fn backfill_collapses_duplicate_absolute_and_relative_rows() {
+        let l = fresh();
+        seed_live(&l, "sess", "ws", "card", millis(0));
+        // The transitional pair: same (session, tool_use), one absolute + one
+        // repo-relative (the replay row), differing ambiguous / at.
+        let mut abs = sample_file_event("sess", "tu-1", "/proj/a.txt");
+        abs.ambiguous = true;
+        abs.at = 10;
+        l.record_file_event(&abs).unwrap();
+        let mut rel = sample_file_event("sess", "tu-1", "a.txt");
+        rel.ambiguous = false;
+        rel.at = 20;
+        l.record_file_event(&rel).unwrap();
+
+        let rewrites = vec![FileEventRewrite {
+            tug_session_id: "sess".to_owned(),
+            tool_use_id: "tu-1".to_owned(),
+            old_file_path: "/proj/a.txt".to_owned(),
+            new_file_path: "a.txt".to_owned(),
+        }];
+        let changed = l
+            .backfill_file_events_repo_relative("/proj", &rewrites)
+            .unwrap();
+        assert_eq!(changed, 1);
+
+        // The whole statement did not abort on the PK conflict.
+        let rows = l.file_events_for_session("sess").unwrap();
+        assert_eq!(rows.len(), 1, "the pair collapsed to one row");
+        assert_eq!(rows[0].file_path, "a.txt");
+        assert!(rows[0].ambiguous, "ambiguous OR-folded onto the survivor");
+        assert_eq!(rows[0].at, 20, "later at kept");
+        assert_eq!(rows[0].project_dir, "/proj");
     }
 
     #[test]

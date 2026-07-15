@@ -34,6 +34,7 @@ use super::attribution::{
     file_path_for_tool, repo_root_for, snapshot_worktree,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
+use crate::path_resolver::CanonicalPath;
 
 // ---------------------------------------------------------------------------
 // CrashBudget
@@ -549,6 +550,13 @@ pub async fn run_session_bridge(
     // `--session-id` — the single identifier for this session.
     let session_id_str = tug_session_id.as_str().to_string();
     let project_dir_str = project_dir.display().to_string();
+    // The attribution bucket key is canonical: two spellings of one project
+    // (firmlink / synthetic symlink) must land in one `file_events` bucket, and
+    // the compose query keys on the canonical form. Resolved once per session
+    // (the gateway memoizes); logging keeps the raw typed path.
+    let canonical_project_dir_str = crate::path_resolver::CanonicalPath::from_raw(&project_dir)
+        .as_str()
+        .to_string();
     // Trailing stderr (or spawn error) from the most recent failed spawn,
     // carried across crash-loop iterations so the top-of-loop budget-
     // exhaustion publish can fold the real failure reason into the errored
@@ -716,7 +724,7 @@ pub async fn run_session_bridge(
             &state_tx,
             child.stdin,
             lines,
-            &project_dir_str,
+            &canonical_project_dir_str,
             sessions_recorder.as_ref(),
             session_ledger.as_deref(),
             &bracket_registry,
@@ -832,6 +840,25 @@ pub async fn run_session_bridge(
     }
 }
 
+/// Resolve (and cache) the canonical repo root for the canonical
+/// `project_dir`. Sticky once found; while `None`, re-probes each call so a
+/// repo that appears mid-session (a `git init` inside a Bash tool call, or an
+/// external one) starts being projected — matching the per-Bash-call probe
+/// behaviour this replaces. `project_dir` is already canonical, so the returned
+/// root is canonical too.
+async fn ensure_repo_root(
+    cache: &mut Option<CanonicalPath>,
+    project_dir: &str,
+) -> Option<CanonicalPath> {
+    if let Some(root) = cache {
+        return Some(root.clone());
+    }
+    let root = repo_root_for(Path::new(project_dir)).await?;
+    let cp = CanonicalPath::from_raw(&root);
+    *cache = Some(cp.clone());
+    Some(cp)
+}
+
 // ---------------------------------------------------------------------------
 // relay_session_io — generic, testable inner relay
 // ---------------------------------------------------------------------------
@@ -915,6 +942,13 @@ pub async fn relay_session_io(
     // (subagent-tail re-emission), and clearing at the boundary would
     // orphan exactly the edits attribution exists to catch.
     let mut pending_calls = PendingCalls::new();
+
+    // `project_dir` arrives already canonical (the caller ran it through the
+    // gateway). Adopt it as the bucket key and cache the session's canonical
+    // repo root: sticky once found, re-probed while `None` so a repo that
+    // appears mid-session (a `git init`) starts being projected.
+    let canonical_project_dir = CanonicalPath::from_canonical(project_dir);
+    let mut repo_root_cache: Option<CanonicalPath> = None;
 
     // Handshake: write protocol_init, then wait up to 5s for protocol_ack.
     let protocol_init = b"{\"type\":\"protocol_init\",\"version\":1}\n";
@@ -1437,11 +1471,12 @@ pub async fn relay_session_io(
                                         // the fact). Non-repo dirs open no
                                         // bracket.
                                         if let Some(repo_root) =
-                                            repo_root_for(Path::new(project_dir)).await
+                                            ensure_repo_root(&mut repo_root_cache, project_dir).await
                                         {
-                                            let pre = snapshot_worktree(&repo_root).await;
+                                            let root = repo_root.as_path().to_path_buf();
+                                            let pre = snapshot_worktree(&root).await;
                                             bracket_registry.open(
-                                                repo_root,
+                                                root,
                                                 tug_session_id.as_str(),
                                                 &tu.tool_use_id,
                                                 tu.parent_tool_use_id,
@@ -1470,10 +1505,16 @@ pub async fn relay_session_io(
                                             } else {
                                                 crate::session_ledger::now_millis()
                                             };
+                                            let repo_root = ensure_repo_root(
+                                                &mut repo_root_cache,
+                                                project_dir,
+                                            )
+                                            .await;
                                             let row = pending.into_row(
                                                 tug_session_id.as_str(),
                                                 &tr.tool_use_id,
-                                                project_dir,
+                                                &canonical_project_dir,
+                                                repo_root.as_ref(),
                                                 origin,
                                                 at,
                                             );
@@ -1500,7 +1541,9 @@ pub async fn relay_session_io(
                                         let post = snapshot_worktree(&bracket.repo_root).await;
                                         let at = crate::session_ledger::now_millis();
                                         let mut recorded = false;
-                                        for row in bracket.into_delta_rows(&post, project_dir, at) {
+                                        for row in
+                                            bracket.into_delta_rows(&post, &canonical_project_dir, at)
+                                        {
                                             if let Err(err) = ledger.record_file_event(&row) {
                                                 warn!(
                                                     session = %tug_session_id,
@@ -1857,6 +1900,37 @@ fn parse_user_message_text(json: &[u8]) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// A session opened on a non-repo dir caches `None` and re-probes; once a
+    /// repo appears (a mid-session `git init`), the next probe finds it and
+    /// the cache goes sticky — the projection self-heals for the "Initialize
+    /// git" flow.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn repo_root_reprobes_after_git_init() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().canonicalize().expect("canonicalize");
+        let mut cache: Option<CanonicalPath> = None;
+
+        assert!(
+            ensure_repo_root(&mut cache, dir.to_str().unwrap())
+                .await
+                .is_none(),
+            "non-repo dir resolves no root"
+        );
+        assert!(cache.is_none(), "cache stays None so the next event re-probes");
+
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(["init", "-q"])
+            .output()
+            .expect("git init");
+
+        let root = ensure_repo_root(&mut cache, dir.to_str().unwrap()).await;
+        assert!(root.is_some(), "re-probe finds the repo that appeared mid-session");
+        assert!(cache.is_some(), "cache is now sticky");
+    }
+
     // ---- relay attribution intercept harness ([P03]–[P06]) -----------
 
     /// Forwarded frame captured off the merger channel.
@@ -2206,13 +2280,14 @@ mod tests {
             .iter()
             .map(|r| (r.file_path.clone(), r.op.clone()))
             .collect();
+        // file_path is stored repo-relative at capture time.
         assert_eq!(
-            by_path.get(root.join("a.txt").to_str().unwrap()),
+            by_path.get("a.txt"),
             Some(&"modified".to_owned()),
             "the Bash-edited tracked file is attributed"
         );
         assert_eq!(
-            by_path.get(root.join("c.txt").to_str().unwrap()),
+            by_path.get("c.txt"),
             Some(&"created".to_owned()),
             "the Bash-created file is attributed"
         );
