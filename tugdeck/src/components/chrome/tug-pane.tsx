@@ -31,7 +31,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronDown, ChevronUp, X, icons } from "lucide-react";
+import { ChevronDown, ChevronUp, MoreHorizontal, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
 import type { CardMeta, CardSizePolicy } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
@@ -48,6 +48,8 @@ import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { CardPathMenu } from "@/components/chrome/card-path-menu";
 import { cardTitleStore } from "@/lib/card-title-store";
+import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
+import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import {
   getCardCloseGuard,
   type CardCloseDecision,
@@ -169,6 +171,12 @@ export interface CardTitleBarProps {
    * of this flag.
    */
   confirmClose?: boolean;
+  /**
+   * The pane's active card id. Used only to look up any title-bar menu
+   * items the active card has contributed via `paneTitleBarMenuStore`
+   * (the generic `…` affordance). Omitted → no `…` menu.
+   */
+  activeCardId?: string;
   onCollapse: () => void;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
@@ -184,10 +192,18 @@ function CardTitleBar({
   resolveResourcePath,
   resolveCloseGuard,
   confirmClose = false,
+  activeCardId,
   onCollapse,
   onClose,
   onDragStart,
 }: CardTitleBarProps, ref) {
+  // Generic title-bar `…` menu: the active card may contribute items via
+  // `paneTitleBarMenuStore`. The pane renders them without knowing what
+  // card published them (the `cardTitleStore` precedent) — no lens import.
+  const titleBarMenuItems = useSyncExternalStore(
+    paneTitleBarMenuStore.subscribe,
+    () => paneTitleBarMenuStore.get(activeCardId ?? null),
+  );
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
@@ -462,6 +478,31 @@ function CardTitleBar({
       />
 
       <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
+        {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
+          <TugPopupMenu
+            trigger={
+              <TugButton
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<MoreHorizontal />}
+                aria-label="Section menu"
+                data-testid="tug-pane-title-bar-menu-button"
+              />
+            }
+            align="end"
+            items={titleBarMenuItems.map((item) => ({
+              id: item.id,
+              label: item.label,
+              ...(item.checked !== undefined ? { selected: item.checked } : {}),
+            }))}
+            onSelect={(id) => {
+              const item = titleBarMenuItems.find((i) => i.id === id);
+              item?.onSelect();
+            }}
+          />
+        )}
         <TugButton
           subtype="icon"
           emphasis="ghost"
@@ -638,7 +679,11 @@ function snapshotCardRects(
   zoom = 1,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  const els = document.querySelectorAll<HTMLElement>(".tug-pane[data-pane-id]");
+  // Anchored rails are excluded from snap targets — a free pane must
+  // never snap its edge to the Lens.
+  const els = document.querySelectorAll<HTMLElement>(
+    ".tug-pane[data-pane-id]:not([data-anchored='true'])",
+  );
   els.forEach((el) => {
     const paneId = el.getAttribute("data-pane-id");
     if (!paneId || paneId === excludeId) return;
@@ -771,6 +816,11 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
+// Left gutter reserved so a right-anchored rail can't be widened to cover
+// the whole viewport. The effective max width is
+// `window.innerWidth - this`.
+const ANCHORED_MIN_LEFT_GUTTER_PX = 80;
+
 // ---------------------------------------------------------------------------
 // TugPane
 // ---------------------------------------------------------------------------
@@ -796,6 +846,12 @@ export function TugPane({
 }: TugPaneProps) {
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
+  // An anchored pane derives its geometry from the anchor edge (a
+  // right-edge rail) instead of a free position: it is non-draggable,
+  // resizable only on its exposed (west) edge, and excluded from snap
+  // and merge. The pane still owns geometry per [L09]; it merely
+  // computes it from `anchor` rather than `position`.
+  const anchored = stackState.anchor === "right";
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
@@ -1453,6 +1509,9 @@ export function TugPane({
       barEls.forEach((el) => {
         const paneId = el.getAttribute("data-pane-id");
         if (!paneId || paneId === id) return;
+        // Anchored rails never accept a merge — skip their tab bar as a
+        // drop target.
+        if (el.closest(".tug-pane[data-anchored='true']")) return;
         dragTabBarCache.current.push({ paneId, rect: el.getBoundingClientRect(), el });
       });
 
@@ -1803,6 +1862,71 @@ export function TugPane({
     [id, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
+  // West-edge resize for an anchored rail. The rail stays pinned to the
+  // right edge, so only its width changes: dragging the west handle left
+  // grows the rail, right shrinks it. Width-only keeps the derived
+  // `right:0` anchoring intact (the generic handler would set `left`,
+  // fighting the anchor). The commit writes `size.width` to the pane;
+  // the anchored reopen-width mirror to `lensStore` lives in the deck
+  // manager's card-moved handler, keeping this pane lens-agnostic.
+  const handleAnchoredResizeStart = useCallback(
+    (event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!frameRef.current) return;
+      const frame: HTMLDivElement = frameRef.current;
+
+      const zoom = getTugZoom() || 1;
+      const startClientX = event.clientX;
+      const startWidth = size.width;
+      const minWidth = sizePolicy.min.width;
+      const maxWidth = Math.max(
+        minWidth,
+        window.innerWidth - ANCHORED_MIN_LEFT_GUTTER_PX,
+      );
+
+      frame.setPointerCapture(event.pointerId);
+      frame.setAttribute("data-gesture", "resize");
+
+      let width = startWidth;
+      let latestX = startClientX;
+      let rafId: number | null = null;
+
+      const apply = (): void => {
+        rafId = null;
+        // West edge: leftward pointer motion (clientX decreasing) grows
+        // the rail. Convert the visual delta to layout space via zoom.
+        const deltaLayout = (latestX - startClientX) / zoom;
+        const next = Math.min(maxWidth, Math.max(minWidth, startWidth - deltaLayout));
+        width = next;
+        frame.style.width = `${next}px`;
+      };
+
+      const onPointerMove = (e: PointerEvent): void => {
+        latestX = e.clientX;
+        if (rafId === null) rafId = requestAnimationFrame(apply);
+      };
+
+      const onPointerUp = (e: PointerEvent): void => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        frame.removeEventListener("pointermove", onPointerMove);
+        frame.removeEventListener("pointerup", onPointerUp);
+        frame.releasePointerCapture(e.pointerId);
+        frame.removeAttribute("data-gesture");
+        latestX = e.clientX;
+        apply();
+        onCardMoved(id, position, { width, height: size.height });
+      };
+
+      frame.addEventListener("pointermove", onPointerMove);
+      frame.addEventListener("pointerup", onPointerUp);
+    },
+    [id, onCardMoved, position, size.width, size.height, sizePolicy.min.width],
+  );
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -1852,12 +1976,20 @@ export function TugPane({
       data-testid="tug-pane"
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
+      {...(anchored ? { "data-anchored": "true" } : {})}
       style={{
         position: "absolute",
-        left: position.x,
-        top: position.y,
-        width: renderWidth,
-        height: frameHeight,
+        // An anchored rail pins to the right edge, spans the full height,
+        // and takes only its width from the store. A free pane uses its
+        // stored left/top/width/height. [L06]/[L09]
+        ...(anchored
+          ? { right: 0, top: 0, bottom: 0, width: renderWidth }
+          : {
+              left: position.x,
+              top: position.y,
+              width: renderWidth,
+              height: frameHeight,
+            }),
         zIndex,
         boxSizing: "border-box",
         // Expose the pane's minimum width to descendants via CSS custom
@@ -1868,14 +2000,24 @@ export function TugPane({
         ["--tug-pane-min-width" as string]: `${sizePolicy.min.width}px`,
       }}
     >
-      {/* 8 resize handles -- hidden when collapsed; drag remains active [D07] */}
-      {!collapsed && RESIZE_EDGES.map((edge) => (
-        <div
-          key={edge}
-          className={`tug-pane-resize tug-pane-resize-${edge}`}
-          onPointerDown={(e) => handleResizeStart(edge, e)}
-        />
-      ))}
+      {/* Resize handles -- hidden when collapsed; drag remains active [D07].
+          An anchored rail exposes only its west edge; a free pane exposes
+          all eight. */}
+      {!collapsed &&
+        (anchored ? (
+          <div
+            className="tug-pane-resize tug-pane-resize-w"
+            onPointerDown={handleAnchoredResizeStart}
+          />
+        ) : (
+          RESIZE_EDGES.map((edge) => (
+            <div
+              key={edge}
+              className={`tug-pane-resize tug-pane-resize-${edge}`}
+              onPointerDown={(e) => handleResizeStart(edge, e)}
+            />
+          ))
+        ))}
 
       <TugPaneFrameContext value={frameEl}>
       <TugPanePortalContext value={cardEl}>
@@ -1896,9 +2038,10 @@ export function TugPane({
             resolveResourcePath={resolveResourcePath}
             resolveCloseGuard={resolveCloseGuard}
             confirmClose={paneConfirmClose}
+            activeCardId={activeCardId}
             onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
-            onDragStart={handleDragStart}
+            onDragStart={anchored ? undefined : handleDragStart}
           />
 
           <div className="tug-pane-body" data-testid="tug-pane-body">

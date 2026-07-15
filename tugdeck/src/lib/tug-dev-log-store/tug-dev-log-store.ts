@@ -1,6 +1,6 @@
 /**
  * `TugDevLogStore` — module-scope owner of the in-app log buffer
- * surfaced by the `Log` inspector tab on `TugDevPanel`.
+ * surfaced by the `Log` section on the Lens.
  *
  * Append API:
  *   ```ts
@@ -39,7 +39,6 @@
 
 import { getTugbankClient } from "../tugbank-singleton";
 import type { TaggedValue } from "../tugbank-client";
-import { DEV_PANEL_DOMAIN } from "../tug-dev-panel-store/types";
 import {
   createInitialState,
   reduce,
@@ -55,19 +54,21 @@ import {
   type TugDevLogSnapshot,
 } from "./types";
 
-/** Tugbank keys for the log store's persisted state. Same domain as
- * the dev-panel (`dev.tugtool.dev-panel`) since the log is a tab on
- * that panel — one domain per surface. */
+/**
+ * Tugbank domain owning the log store's persisted filter prefs. Re-homed
+ * off the (deleted) dev-panel store, keeping the **same string** so users'
+ * persisted log filters survive the panel's removal ([P09]). The log
+ * store is panel-independent; the old coupling was incidental.
+ */
+export const LOG_STORE_DOMAIN = "dev.tugtool.dev-panel";
+
+/** Tugbank keys for the log store's persisted state. */
 export const DEV_LOG_KEYS = {
   FILTER_LEVELS: "logFilterLevels",
   FILTER_SOURCE: "logFilterSource",
   MAX_ENTRIES: "logMaxEntries",
   NEWEST_FIRST: "logNewestFirst",
 } as const;
-
-/** Re-export so consumers don't need to import the domain via the
- * sibling panel store. */
-export { DEV_PANEL_DOMAIN };
 
 /**
  * Public input shape for `tugDevLogStore.log(...)`. The store fills
@@ -107,7 +108,7 @@ class TugDevLogStore {
     this._hydrateFromTugbank();
 
     this._tugbankUnsub = client.onDomainChanged((domain) => {
-      if (domain === DEV_PANEL_DOMAIN) {
+      if (domain === LOG_STORE_DOMAIN) {
         this._hydrateFromTugbank();
       }
     });
@@ -117,16 +118,16 @@ class TugDevLogStore {
     const client = getTugbankClient();
     if (!client) return;
     const levels = readLevels(
-      client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.FILTER_LEVELS),
+      client.get(LOG_STORE_DOMAIN, DEV_LOG_KEYS.FILTER_LEVELS),
     );
     const source = readNullableString(
-      client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.FILTER_SOURCE),
+      client.get(LOG_STORE_DOMAIN, DEV_LOG_KEYS.FILTER_SOURCE),
     );
     const maxEntries = readNumber(
-      client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.MAX_ENTRIES),
+      client.get(LOG_STORE_DOMAIN, DEV_LOG_KEYS.MAX_ENTRIES),
     );
     const newestFirst = readBool(
-      client.get(DEV_PANEL_DOMAIN, DEV_LOG_KEYS.NEWEST_FIRST),
+      client.get(LOG_STORE_DOMAIN, DEV_LOG_KEYS.NEWEST_FIRST),
     );
     this._dispatch(
       {
@@ -413,9 +414,9 @@ interface RawTaggedBody {
 function putRaw(key: string, body: RawTaggedBody): void {
   const client = getTugbankClient();
   if (client && typeof client.setLocalValue === "function") {
-    client.setLocalValue(DEV_PANEL_DOMAIN, key, body as TaggedValue);
+    client.setLocalValue(LOG_STORE_DOMAIN, key, body as TaggedValue);
   }
-  fetch(`/api/defaults/${DEV_PANEL_DOMAIN}/${encodeURIComponent(key)}`, {
+  fetch(`/api/defaults/${LOG_STORE_DOMAIN}/${encodeURIComponent(key)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

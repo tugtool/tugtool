@@ -254,12 +254,17 @@ function parseV4(
     );
     if (cardIds.length === 0) continue;
 
-    const { x, y, width, height } = fitPaneGeometry(
-      pos,
-      sz,
-      canvasWidth,
-      canvasHeight,
-    );
+    // Anchored panes (Lens rail) derive their geometry from the anchor
+    // edge at render, not from a free position; the canvas-fit clamp
+    // would floor/cap the derived rail against the canvas, so skip it and
+    // carry the stored geometry through untouched.
+    const rawAnchor = win["anchor"];
+    const anchor = rawAnchor === "right" ? "right" : undefined;
+
+    const { x, y, width, height } =
+      anchor !== undefined
+        ? { x: pos.x, y: pos.y, width: sz.width, height: sz.height }
+        : fitPaneGeometry(pos, sz, canvasWidth, canvasHeight);
 
     const rawActiveCardId = win["activeCardId"];
     const activeCardId: string =
@@ -285,6 +290,7 @@ function parseV4(
       title,
       acceptsFamilies,
       ...(collapsed === true ? { collapsed } : {}),
+      ...(anchor !== undefined ? { anchor } : {}),
     });
   }
 

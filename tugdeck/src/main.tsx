@@ -13,7 +13,6 @@ import { initActionDispatch } from "./action-dispatch";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
 import { cardServicesStore } from "./lib/card-services-store";
-import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { restoreDevSessions } from "./lib/dev-session-restore";
 import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
@@ -45,10 +44,12 @@ import { registerChangesetCard } from "./components/tugways/cards/changeset-card
 import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
+import { registerLensCard } from "./components/lens/lens-register-card";
+import { registerLogSection } from "./components/lens/sections/log-section";
+import { registerTelemetrySection } from "./components/lens/sections/telemetry-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
-import { registerDevPanelInspectorTabs } from "./components/tug-dev-panel/inspector-tab-registrations";
 import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
@@ -259,20 +260,27 @@ if (!container) {
   registerDevCard();
   registerAboutCard();
   registerSettingsCard();
+  // The Lens card must register unconditionally and before the deck
+  // restores its layout, so the anchored rail survives reload
+  // (`filterRegisteredCards` drops panes whose only card is unregistered).
+  registerLensCard();
+  registerLogSection();
+  registerTelemetrySection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();
-  registerDevPanelInspectorTabs();
 
   // Dev-build convenience: expose the log store on `window.tugDevLog`
-  // so the WebKit Web Inspector console can drive the Log tab without
-  // a test-mode harness. Production bundles strip this branch — see
-  // Vite's `import.meta.env.DEV` constant folding. The exposed object
-  // is the store itself, so `tugDevLog.warn("manual", "msg", {x:1})`
-  // and the rest work directly.
-  if (import.meta.env.DEV) {
+  // so the WebKit Web Inspector console can drive the Log section without
+  // a test-mode harness. Also attached under the in-app test harness
+  // (`window.__tugTestMode`, injected only in DEBUG Swift builds) so
+  // app-tests can drive the Log section against the prod `dist/` bundle
+  // — production users (no DEV, no test mode) never get this branch.
+  if (import.meta.env.DEV || window.__tugTestMode === true) {
     (window as unknown as { tugDevLog?: typeof tugDevLogStore }).tugDevLog =
       tugDevLogStore;
+  }
+  if (import.meta.env.DEV) {
     installDevPlacementGlobal();
   }
 
@@ -384,23 +392,6 @@ if (!container) {
       new Set(deck.getSnapshot().cards.map((c) => c.id)),
     );
   }
-
-  // Wire the dev panel to deck-manager so it clears its selectedCardId
-  // when the selected card is closed. Subscribes once at boot; checks
-  // each deck-state notification for removed cards and notifies the
-  // dev panel store. No-op when the panel never opens (it lives lazy).
-  let knownCardIdsForDevPanel = new Set(
-    deck.getSnapshot().cards.map((c) => c.id),
-  );
-  deck.subscribe(() => {
-    const next = new Set(deck.getSnapshot().cards.map((c) => c.id));
-    for (const id of knownCardIdsForDevPanel) {
-      if (!next.has(id)) {
-        tugDevPanelStore.notifyCardGone(id);
-      }
-    }
-    knownCardIdsForDevPanel = next;
-  });
 
   // Wire the dev session-ledger store to the connection. The store
   // dispatches `list_sessions` requests on first observation, subscribes

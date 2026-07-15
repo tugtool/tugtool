@@ -100,7 +100,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // and not asserted.
   { id: "maker.reload", key: "r", mods: MOD.command },
   { id: "maker.jsConsole", key: "c", mods: MOD.command | MOD.option },
-  { id: "maker.devPanel", key: "/", mods: MOD.command | MOD.option },
+  { id: "maker.lens", key: "l", mods: MOD.command | MOD.option },
   { id: "maker.sourceTree" },
   // Help
   { id: "help.shortcuts", key: "" },

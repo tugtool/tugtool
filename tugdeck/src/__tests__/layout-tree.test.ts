@@ -228,6 +228,62 @@ describe("serialize and deserialize (v4 wire)", () => {
     expect(r.position.y + r.size.height).toBeLessThanOrEqual(800 - 8);
   });
 
+  test("round-trips an anchored pane's anchor field (survives serialize→deserialize)", () => {
+    const card: CardState = {
+      id: "lens",
+      componentId: "lens",
+      title: "Lens",
+      closable: true,
+    };
+    const pane: TugPaneState = {
+      id: "pane-lens",
+      // Geometry a right-anchored rail would carry — width is the live
+      // rail width; position is nominal (derived at render).
+      position: { x: 0, y: 0 },
+      size: { width: 420, height: 1080 },
+      cardIds: ["lens"],
+      activeCardId: "lens",
+      title: "Lens",
+      acceptsFamilies: [],
+      anchor: "right",
+    };
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const restored = deserialize(json, 1920, 1080);
+    const r = restored.panes[0];
+    // The anchor field is the exact drop-on-read regression: parseV4
+    // rebuilds panes field-by-field and would drop anything it doesn't
+    // explicitly copy.
+    expect(r.anchor).toBe("right");
+    expect(r.acceptsFamilies).toEqual([]);
+  });
+
+  test("does not fit-clamp an anchored pane (derived geometry survives a smaller canvas)", () => {
+    const card: CardState = {
+      id: "lens",
+      componentId: "lens",
+      title: "Lens",
+      closable: true,
+    };
+    // A rail saved on a tall display, restored on a shorter one. A free
+    // pane would be height-clamped by fitPaneGeometry; the anchored pane
+    // must carry its stored geometry through untouched.
+    const pane: TugPaneState = {
+      id: "pane-lens",
+      position: { x: 0, y: 0 },
+      size: { width: 500, height: 2000 },
+      cardIds: ["lens"],
+      activeCardId: "lens",
+      title: "Lens",
+      acceptsFamilies: [],
+      anchor: "right",
+    };
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const restored = deserialize(json, 1280, 800);
+    const r = restored.panes[0];
+    expect(r.size.width).toBe(500);
+    expect(r.size.height).toBe(2000);
+  });
+
   test("restore pulls an off-bottom pane up so it stays fully visible", () => {
     // A pane that fits the canvas but was saved near the bottom of a taller
     // display is shifted up so its bottom edge stays within the canvas.

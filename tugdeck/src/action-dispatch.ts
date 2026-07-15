@@ -56,7 +56,6 @@ import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPay
 import { requestLogout } from "./lib/logout-store";
 import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
 import { notifySpawnRejected } from "./lib/dev-session-restore";
-import { tugDevPanelStore } from "./lib/tug-dev-panel-store/tug-dev-panel-store";
 import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
@@ -398,24 +397,27 @@ export function initActionDispatch(
     }
   });
 
-  // show-dev-panel-toggle: Toggle the TugDevPanel's visibility. Fired
-  // by the Swift Maker menu's "Show Dev Panel" item (Opt-Cmd-/).
-  // Read-only inspector surface — no mutations propagate elsewhere.
-  registerAction("show-dev-panel-toggle", () => {
-    tugDevPanelStore.toggle();
+  // toggle-lens: Show/hide the Lens rail. Fired by the Swift menu's
+  // "Show Lens" item (⌥⌘L) and the browser-dev keybinding. Presence of
+  // the anchored pane is the open state ([P02]).
+  registerAction("toggle-lens", () => {
+    deckManager.toggleLensPane();
   });
 
-  // dev-panel-select-telemetry-tab / dev-panel-select-log-tab:
-  // Programmatically switch the active inspector tab. Used by the
-  // app-test harness to drive tab persistence verification without
-  // synthesizing mouse events on the tab strip. Future tab-switch
-  // menu items could route through the same action surface.
-  registerAction("dev-panel-select-telemetry-tab", () => {
-    tugDevPanelStore.selectTab("telemetry");
+  // focus-lens: Move focus into the Lens (opening it if hidden), or back
+  // out on a second dispatch. Routed through the responder chain so the
+  // deck-canvas handler owns the stash-prior / show / activate sequence.
+  registerAction("focus-lens", () => {
+    if (responderChainManagerRef) {
+      responderChainManagerRef.sendToFirstResponder({
+        action: TUG_ACTIONS.FOCUS_LENS,
+        phase: "discrete",
+      });
+    } else {
+      console.warn("focus-lens: responder chain manager not registered yet");
+    }
   });
-  registerAction("dev-panel-select-log-tab", () => {
-    tugDevPanelStore.selectTab("log");
-  });
+
 
   // arrange-cards: Rearrange all cards on the canvas.
   // Swift sends arrange-cards with mode: "cascade" | "tile".

@@ -177,6 +177,10 @@ export const KEYBINDINGS: KeyBinding[] = [
     preventDefaultOnMatch: true,
   },
   { key: "Comma", meta: true, action: TUG_ACTIONS.SHOW_SETTINGS },
+  // ⌘L moves focus into the Lens (opening it if hidden); ⌥⌘L toggles the
+  // rail's visibility (browser-dev parity with the Swift "Show Lens" menu).
+  { key: "KeyL", meta: true, action: TUG_ACTIONS.FOCUS_LENS, preventDefaultOnMatch: true },
+  { key: "KeyL", meta: true, alt: true, action: TUG_ACTIONS.TOGGLE_LENS, preventDefaultOnMatch: true },
   { key: "Period", meta: true, action: TUG_ACTIONS.CANCEL_DIALOG },
   // Escape routes to the same chain action as ⌘. so floating UI
   // (popovers, alerts, sheets) dismisses via its existing

@@ -1,0 +1,71 @@
+/*
+ * telemetry.css — layout for the relocated Telemetry inspector + the
+ * shared field-row / field-section primitives ([P10]).
+ *
+ * These rules were extracted from the former dev-panel CSS (deleted with the
+ * panel) so the Lens Telemetry section keeps its layout independently.
+ * Class names are preserved from the origin so the relocated TSX needs no
+ * churn; the few `--tugx-devpanel-*` slots the field values read are
+ * declared here, scoped to the inspector root. No colors — TugLabel /
+ * TugSeparator own the visual vocabulary. [L06]/[L20].
+ */
+
+.tug-devpanel-inspector {
+  --tugx-devpanel-fg: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-devpanel-row-gap: var(--tug-space-sm);
+  --tugx-devpanel-section-gap: var(--tug-space-lg);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devpanel-section-gap);
+}
+
+.tug-devpanel-inspector-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tug-devpanel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+}
+
+.tug-devpanel-section-title {
+  margin-bottom: var(--tug-space-2xs);
+}
+
+.tug-devpanel-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-devpanel-row-gap);
+}
+
+.tug-devpanel-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--tug-space-sm);
+  align-items: baseline;
+}
+
+.tug-devpanel-field-row[data-multiline="true"] {
+  grid-template-columns: 1fr;
+}
+
+.tug-devpanel-field-label,
+.tug-devpanel-field-value {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tug-devpanel-field-value-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  background-color: transparent;
+  color: var(--tugx-devpanel-fg);
+  word-break: break-all;
+}

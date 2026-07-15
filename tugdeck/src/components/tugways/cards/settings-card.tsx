@@ -22,6 +22,7 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import { SettingsGeneralBody } from "./settings-general-body";
+import { SettingsFocusRingBody } from "./settings-focus-ring-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsAppBody } from "./settings-app-body";
 import "./settings-card.css";
@@ -30,7 +31,7 @@ import "./settings-card.css";
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general" | "textCard" | "app";
+type SettingsTabId = "general" | "devCard" | "textCard" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
@@ -42,9 +43,11 @@ interface SettingsTabSpec {
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  // "Dev Card" carries the dev card's own icon; "Text Card" a file
-  // icon; "Maker" a tool icon for the app-maker gate.
-  { id: "general", label: "Dev Card", icon: "MessageSquareText" },
+  // "General" carries app-wide behavior (focus-ring modality); "Dev Card"
+  // the dev card's own icon; "Text Card" a file icon; "Maker" a tool icon
+  // for the app-maker gate.
+  { id: "general", label: "General", icon: "Settings" },
+  { id: "devCard", label: "Dev Card", icon: "MessageSquareText" },
   { id: "textCard", label: "Text Card", icon: "FileText" },
   { id: "app", label: "Maker", icon: "Wrench" },
 ];
@@ -90,7 +93,8 @@ export function SettingsCardContent() {
           />
         </div>
         <div className="settings-card-panel">
-          {tab === "general" ? <SettingsGeneralBody /> : null}
+          {tab === "general" ? <SettingsFocusRingBody /> : null}
+          {tab === "devCard" ? <SettingsGeneralBody /> : null}
           {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}
         </div>

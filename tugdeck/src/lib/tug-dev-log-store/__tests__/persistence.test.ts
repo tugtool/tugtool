@@ -5,16 +5,16 @@
  * filter is NEVER PUT (in-memory only).
  *
  * Stubs `globalThis.fetch` to capture calls — same pattern the
- * sibling `tug-dev-panel-store` persistence test uses.
+ * sibling stores' persistence tests use.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
   DEV_LOG_KEYS,
+  LOG_STORE_DOMAIN,
   tugDevLogStore,
 } from "@/lib/tug-dev-log-store/tug-dev-log-store";
-import { DEV_PANEL_DOMAIN } from "@/lib/tug-dev-panel-store/types";
 
 interface CapturedRequest {
   url: string;
@@ -60,7 +60,7 @@ describe("TugDevLogStore — persistence", () => {
     const put = pickPut(DEV_LOG_KEYS.FILTER_LEVELS);
     expect(put).toBeDefined();
     expect(put!.url).toBe(
-      `/api/defaults/${DEV_PANEL_DOMAIN}/${DEV_LOG_KEYS.FILTER_LEVELS}`,
+      `/api/defaults/${LOG_STORE_DOMAIN}/${DEV_LOG_KEYS.FILTER_LEVELS}`,
     );
     expect(put!.body).toEqual({
       kind: "json",

@@ -521,7 +521,7 @@ export class CodeSessionStore {
 
   /**
    * Dev-only read-only accessor over the internal reducer state.
-   * Used by `TugDevPanel`'s telemetry inspector to surface live
+   * Used by the Lens Telemetry section to surface live
    * counters and live-clock anchors (`awaitingApprovalSince`,
    * `transportNonOnlineSince`, etc.) that aren't on the public
    * snapshot because they would surprise non-dev consumers. The

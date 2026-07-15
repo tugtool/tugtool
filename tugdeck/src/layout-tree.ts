@@ -275,6 +275,17 @@ export interface TugPaneState {
    * Missing/undefined is treated as false. ([D04])
    */
   collapsed?: boolean;
+  /**
+   * Anchor edge for a pane whose geometry is *derived* (pinned to a
+   * viewport edge) rather than free. Missing/undefined is a free pane
+   * placed at `position`/`size`. An anchored pane resolves its geometry
+   * from this descriptor at render — the pane still owns geometry per
+   * [L09]; it merely computes it from an anchor instead of a free
+   * position. Only `"right"` (the Lens rail) exists today; extensible to
+   * other edges later. Additive-optional like `collapsed?` — no
+   * serialization version bump.
+   */
+  anchor?: "right";
 }
 
 /**

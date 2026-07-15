@@ -1,0 +1,19 @@
+/*
+ * telemetry-section.css — the Lens Telemetry section body chrome ([L06]).
+ */
+
+.lens-telemetry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.lens-telemetry-card-name {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.lens-telemetry-empty {
+  opacity: 0.6;
+  padding: var(--tug-space-sm) 0;
+}

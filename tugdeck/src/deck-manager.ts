@@ -39,6 +39,8 @@ import {
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
+import { LENS_CARD_ID } from "./components/lens/lens-register-card";
+import { lensStore } from "./lib/lens-store/lens-store";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -50,7 +52,6 @@ import { TugCreateDevCard } from "./components/tugways/tug-create-dev-card";
 import { TugLogout } from "./components/tugways/tug-logout";
 import { TugVersionGate } from "./components/tugways/tug-version-gate";
 import { ErrorBoundary } from "./components/chrome/error-boundary";
-import { TugDevPanel } from "./components/tug-dev-panel/tug-dev-panel";
 import { TugBannerProvider } from "./components/chrome/tug-banner-bridge";
 import { RateLimitBulletinBridge } from "./components/chrome/rate-limit-bulletin-bridge";
 import { RateLimitStore } from "./lib/rate-limit-store";
@@ -621,11 +622,6 @@ export class DeckManager implements IDeckManagerStore {
           // "couldn't log out" alert on failure). Sibling of TugSetup so it
           // shares the TugAlert singleton and the deck context.
           React.createElement(TugLogout, {}),
-          // Tug Dev Panel — persistent dev inspector. Mounts once at
-          // app root, hidden by default. Visibility toggled via DOM
-          // (per [L06]) by `tugDevPanelStore`. Triggered from the
-          // Swift Maker menu (Opt-Cmd-/).
-          React.createElement(TugDevPanel, {}),
         ),
       ),
     );
@@ -855,6 +851,109 @@ export class DeckManager implements IDeckManagerStore {
       return existing.id;
     }
     return this.addCard(componentId);
+  }
+
+  /**
+   * Show the Lens: if the Lens card already exists, raise/activate it;
+   * otherwise create the anchored rail pane hosting a fresh Lens card at
+   * the persisted reopen width. The anchored analogue of
+   * {@link showSingletonCard}/{@link addCard} (which only make free
+   * panes). Returns the Lens card id, or `null` if the card type is
+   * unregistered.
+   */
+  showLensPane(): string | null {
+    const existing = this.deckState.cards.find(
+      (c) => c.componentId === LENS_CARD_ID,
+    );
+    if (existing) {
+      this.activateCard(existing.id);
+      return existing.id;
+    }
+    return this._createLensPane();
+  }
+
+  /** Hide the Lens by closing its anchored pane (the presence-is-open
+   *  model, [P02]). No-op when the Lens is not open. */
+  hideLensPane(): void {
+    const card = this.deckState.cards.find(
+      (c) => c.componentId === LENS_CARD_ID,
+    );
+    if (!card) return;
+    const pane = this.deckState.panes.find((p) => p.cardIds.includes(card.id));
+    if (pane) this.handlePaneClosed(pane.id);
+  }
+
+  /** Toggle the Lens open/closed. */
+  toggleLensPane(): void {
+    const exists = this.deckState.cards.some(
+      (c) => c.componentId === LENS_CARD_ID,
+    );
+    if (exists) {
+      this.hideLensPane();
+    } else {
+      this.showLensPane();
+    }
+  }
+
+  /**
+   * Create the anchored Lens rail — mirrors {@link addCard} but pins the
+   * pane to the right edge (`anchor: "right"`), spans full height, takes
+   * its width from the persisted reopen width, and hosts nothing else
+   * (`acceptsFamilies: []`).
+   */
+  private _createLensPane(): string | null {
+    const registration = getRegistration(LENS_CARD_ID);
+    if (!registration) {
+      console.warn(
+        `[DeckManager] showLensPane: no registration for "${LENS_CARD_ID}". ` +
+          `Call registerLensCard() before showLensPane().`,
+      );
+      return null;
+    }
+
+    const sizePolicy = getSizePolicy(LENS_CARD_ID);
+    const width = Math.max(sizePolicy.min.width, lensStore.getSnapshot().widthPx);
+    const canvasHeight = this.container.clientHeight || 600;
+
+    const paneId = crypto.randomUUID();
+    const cardId = crypto.randomUUID();
+    const card: CardState = {
+      id: cardId,
+      componentId: LENS_CARD_ID,
+      title: registration.defaultMeta.title,
+      closable: registration.defaultMeta.closable !== false,
+    };
+    const pane: TugPaneState = {
+      id: paneId,
+      // Position/height are nominal — geometry is derived from `anchor`
+      // at the pane render layer. Width is the live rail width.
+      position: { x: 0, y: 0 },
+      size: { width, height: canvasHeight },
+      cardIds: [cardId],
+      activeCardId: cardId,
+      title: registration.defaultTitle ?? registration.defaultMeta.title,
+      acceptsFamilies: registration.acceptsFamilies ?? [],
+      anchor: "right",
+    };
+
+    this._flipFirstResponder(
+      cardId,
+      () => {
+        this.deckState = {
+          ...this.deckState,
+          cards: [...this.deckState.cards, card],
+          panes: [...this.deckState.panes, pane],
+          activePaneId: paneId,
+        };
+        this.notify();
+        this.scheduleSave();
+        this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
+        this.putFocusedCardIdGuarded(cardId);
+      },
+      "showLensPane",
+    );
+
+    return cardId;
   }
 
   /**
@@ -1114,6 +1213,14 @@ export class DeckManager implements IDeckManagerStore {
 
     if (positionChanged) this.cardLifecycle.notifyCardDidMove(activeCardId);
     if (sizeChanged) this.cardLifecycle.notifyCardDidResize(activeCardId);
+
+    // Anchored rail: the live width lives on the pane (persisted in the
+    // layout blob), but a hide→show cycle removes the pane, so mirror the
+    // committed width to the lens store as the preferred *reopen* width
+    // ([P02]).
+    if (existing.anchor !== undefined && sizeChanged) {
+      lensStore.setWidth(size.width);
+    }
 
     this.scheduleSave();
   }

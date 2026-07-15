@@ -437,6 +437,9 @@ export const TUG_ACTIONS = {
   // MAXIMIZE:               payload — none. Maximize the first card.
   // SHOW_COMPONENT_GALLERY: payload — none. Open or focus the gallery card.
   // SHOW_SETTINGS:          payload — none. Open the settings panel.
+  // FOCUS_LENS:             payload — none. Move focus into the Lens (opening it
+  //                         if hidden); a second dispatch focuses back out.
+  // TOGGLE_LENS:            payload — none. Show/hide the Lens rail.
   // RESET_LAYOUT:           payload — none. Reset card positions.
   // ADD_CARD_TO_ACTIVE_PANE: payload — none. Add a new card to the active pane
   //                         via the global menu / ⌘T (canvas targets the first responder).
@@ -491,6 +494,8 @@ export const TUG_ACTIONS = {
   MAXIMIZE:               "maximize",
   SHOW_COMPONENT_GALLERY: "show-component-gallery",
   SHOW_SETTINGS:          "show-settings",
+  FOCUS_LENS:             "focus-lens",
+  TOGGLE_LENS:            "toggle-lens",
   RESET_LAYOUT:           "reset-layout",
   ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   FIND:                   "find",

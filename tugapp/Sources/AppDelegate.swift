@@ -899,7 +899,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mMenu.addItem(reloadItem)
         mMenu.addItem(NSMenuItem.separator())
         mMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]).identified("maker.jsConsole"))
-        mMenu.addItem(NSMenuItem(title: "Show Dev Panel", action: #selector(showDevPanel(_:)), keyEquivalent: "/", modifierMask: [.command, .option]).identified("maker.devPanel"))
+        mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "l", modifierMask: [.command, .option]).identified("maker.lens"))
         if BuildInfo.profile == "debug" {
             // Debug-only card creators, relocated from the flattened
             // File ▸ New submenu. Compile-time gated so release bundles
@@ -1007,12 +1007,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         window.openWebInspector()
     }
 
-    /// Toggle the TugDevPanel — persistent dev inspector surface in
-    /// tugdeck. Routes through the standard `sendControl` channel so
-    /// tugdeck's action-dispatch picks it up the same way other
-    /// menu-driven RPCs do.
-    @objc private func showDevPanel(_ sender: Any) {
-        sendControl("show-dev-panel-toggle")
+    /// Toggle the Lens — the persistent right-edge rail in tugdeck.
+    /// Routes through the standard `sendControl` channel so tugdeck's
+    /// action-dispatch picks it up the same way other menu-driven RPCs do.
+    @objc private func showLens(_ sender: Any) {
+        sendControl("toggle-lens")
     }
 
     @objc private func cascadeCards(_ sender: Any?) {

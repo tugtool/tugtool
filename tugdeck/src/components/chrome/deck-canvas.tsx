@@ -31,6 +31,7 @@ import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { getRegistration, getStackSizePolicy } from "@/card-registry";
+import { LENS_CARD_ID } from "@/components/lens/lens-register-card";
 import type { TugPaneState } from "@/layout-tree";
 import { useDeckManager } from "@/deck-manager-context";
 import { cardDragCoordinator } from "@/card-drag-coordinator";
@@ -58,6 +59,17 @@ export interface DeckCanvasProps {}
  */
 const CARD_ZINDEX_BASE = 1;
 
+/**
+ * Z-index for an anchored rail (the Lens). It must sit ABOVE every free
+ * pane (tiny array-order z, 1..N) so the rail is never occluded by a
+ * card, yet strictly BELOW the canvas-overlay base
+ * (`--tug-z-overlay-base` = 9000) into which every popup/menu/tooltip —
+ * including the rail's own `…` menu and section popovers — portals. A
+ * naive "always on top" z above 9000 would bury those popups behind the
+ * rail. 8999 is the tier the former dev-panel overlay used.
+ */
+const ANCHORED_PANE_ZINDEX = 8999;
+
 // ---- DeckCanvas ----
 
 /**
@@ -78,6 +90,8 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.PREVIOUS_TAB,
   TUG_ACTIONS.NEXT_TAB,
   TUG_ACTIONS.SHOW_SETTINGS,
+  TUG_ACTIONS.FOCUS_LENS,
+  TUG_ACTIONS.TOGGLE_LENS,
   TUG_ACTIONS.SHOW_COMPONENT_GALLERY,
   TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE,
   TUG_ACTIONS.CLOSE,
@@ -119,7 +133,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   const { sortedStacks, zIndexMap } = useMemo(() => {
     const map = new Map<string, number>();
-    panes.forEach((pane, i) => map.set(pane.id, CARD_ZINDEX_BASE + i));
+    panes.forEach((pane, i) =>
+      map.set(
+        pane.id,
+        pane.anchor !== undefined ? ANCHORED_PANE_ZINDEX : CARD_ZINDEX_BASE + i,
+      ),
+    );
     const sorted = [...panes].sort((a, b) => a.id.localeCompare(b.id));
     return { sortedStacks: sorted, zIndexMap: map };
   }, [panes]);
@@ -180,6 +199,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    * are rendered into. [D03]
    */
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // The card that held focus before Cmd-L moved it into the Lens, so a
+  // second Cmd-L (or Escape inside the Lens) can restore it ([P05]).
+  const lensPriorFocusRef = useRef<string | null>(null);
 
   // Hook order: useDeckManager -> useSyncExternalStore -> useRef ->
   //             usePaneFocusController -> useRequiredResponderChain ->
@@ -308,6 +331,52 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (incomingCardId === null) return;
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId,
+          store,
+          commitMutation: () => store.activateCard(incomingCardId),
+        });
+      },
+      // ⌥⌘L — toggle the Lens rail's visibility (presence = open, [P02]).
+      // Pure visibility; focus semantics belong to FOCUS_LENS.
+      [TUG_ACTIONS.TOGGLE_LENS]: (_event: ActionEvent) => {
+        store.toggleLensPane();
+      },
+      // ⌘L — move focus INTO the Lens through the normal activation path
+      // (opening it if hidden); a second ⌘L while the Lens is the key card
+      // focuses back out to the previously-focused card ([P05]). The
+      // open-then-focus ordering is handled by `applyBagFocus`'s late-mount
+      // `armKeyboardRestore` — no bespoke plumbing.
+      [TUG_ACTIONS.FOCUS_LENS]: (_event: ActionEvent) => {
+        const snapshot = store.getSnapshot();
+        const lensCard = snapshot.cards.find(
+          (c) => c.componentId === LENS_CARD_ID,
+        );
+        const currentFR = store.getFirstResponderCardId();
+
+        // Already inside the Lens → focus back out to the stashed card.
+        if (lensCard && currentFR === lensCard.id) {
+          const prior = lensPriorFocusRef.current;
+          lensPriorFocusRef.current = null;
+          if (
+            prior !== null &&
+            store.getSnapshot().cards.some((c) => c.id === prior)
+          ) {
+            transferFocusForActivation({
+              outgoingCardId: currentFR,
+              incomingCardId: prior,
+              store,
+              commitMutation: () => store.activateCard(prior),
+            });
+          }
+          return;
+        }
+
+        // Focus in: stash the current card, open/raise the Lens, activate it.
+        lensPriorFocusRef.current = currentFR;
+        const incomingCardId = store.showLensPane();
+        if (incomingCardId === null) return;
+        transferFocusForActivation({
+          outgoingCardId: currentFR,
           incomingCardId,
           store,
           commitMutation: () => store.activateCard(incomingCardId),

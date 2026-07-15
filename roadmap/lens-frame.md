@@ -383,17 +383,17 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Lens store (`dev.tugtool.lens`) | pending | — |
-| #step-2 | Anchored-pane API + serialization | pending | — |
-| #step-3 | Lens card + toggle + keybindings + Swift menu | pending | — |
-| #step-4 | Section registry + contract + stack render | pending | — |
-| #step-5 | Sticky section band + collapse | pending | — |
-| #step-6 | Drag reorder + group-order sync + focus in/out | pending | — |
-| #step-7 | Title-bar `…` visibility menu | pending | — |
-| #step-8 | Log section | pending | — |
-| #step-9 | Telemetry section | pending | — |
-| #step-10 | Settings "General" tab move | pending | — |
-| #step-11 | Delete dev panel + test sweep | pending | — |
+| #step-1 | Lens store (`dev.tugtool.lens`) | done | ca9c17f5c |
+| #step-2 | Anchored-pane API + serialization | done | 65009de26 |
+| #step-3 | Lens card + toggle + keybindings + Swift menu | done | 22dc467ad |
+| #step-4 | Section registry + contract + stack render | done | bc2d9cc20 |
+| #step-5 | Sticky section band + collapse | done | 2478a2b93 |
+| #step-6 | Drag reorder + group-order sync + focus in/out | done | 8c7357867 |
+| #step-7 | Title-bar `…` visibility menu | done | bb0b60d8c |
+| #step-8 | Log section | done | 659605feb |
+| #step-9 | Telemetry section | done | dbcbbec85 |
+| #step-10 | Settings "General" tab move | done | 14365d9a4 |
+| #step-11 | Delete dev panel + test sweep | done | 43fd3a7c0 |
 
 ---
 
@@ -452,7 +452,7 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 **Artifacts:** `lens/lens-register-card.ts`, `lens/lens-content.tsx` (+ css); `action-vocabulary.ts`, `keybinding-map.ts`, `action-dispatch.ts`; `deck-manager.ts` anchored-singleton methods; `AppDelegate.swift`.
 
 **Tasks:**
-- [ ] `lens-register-card.ts`: `LENS_CARD_ID = "lens"`; `registerLensCard()` → `registerCard({ componentId: LENS_CARD_ID, hidden: true, family: "lens", acceptsFamilies: [], contentFactory: (cardId) => <LensContent cardId={cardId} />, defaultMeta: { title: "Lens", closable: true } })`. `family: "lens"` (a family no free pane's `acceptsFamilies` lists) plus `acceptsFamilies: []` on the anchored pane makes the lens card un-mergeable in both directions — belt-and-suspenders on top of the anchored pane already being non-draggable and single-card. Call from `main.tsx`.
+- [ ] `lens-register-card.ts`: `LENS_CARD_ID = "lens"`; `registerLensCard()` → `registerCard({ componentId: LENS_CARD_ID, hidden: true, family: "lens", acceptsFamilies: [], contentFactory: (cardId) => <LensContent cardId={cardId} />, defaultMeta: { title: "Lens", closable: true } })`. `family: "lens"` (a family no free pane's `acceptsFamilies` lists) plus `acceptsFamilies: []` on the anchored pane makes the lens card un-mergeable in both directions — belt-and-suspenders on top of the anchored pane already being non-draggable and single-card. Call from `main.tsx`. **INVARIANT (surfaced by at0230):** `registerLensCard()` MUST run at boot **unconditionally** — never behind a maker/feature gate — and before `loadLayout`. `filterRegisteredCards` drops panes whose only card's `componentId` is unregistered at load, so a gated lens card would evaporate the anchored rail on every reload. (Not app-testable: test mode ignores the persisted layout and starts empty — the invariant is enforced by registering `registerLensCard()` before the `DeckManager` constructor in `main.tsx`.)
 - [ ] `LensContent`: a placeholder section stack for now (real sections land in [#step-4]+); a plain `overflow-y:auto` div; owns `--tugx-lens-*` ([L20], one-hop [L17]).
 - [ ] `deck-manager.ts`: add `showLensPane()` (if the lens card exists → `activateCard`; else create an **anchored** pane + the lens card at `lensStore.widthPx` — the anchored analogue of `addCard`/`showSingletonCard`), `hideLensPane()` (`handlePaneClosed`), `toggleLensPane()`.
 - [ ] `action-vocabulary.ts`: add `FOCUS_LENS: "focus-lens"`, `TOGGLE_LENS: "toggle-lens"`.
@@ -503,7 +503,7 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 - [ ] Nested clearance: replicate the `.changeset-entry-block` pin-clearance pair from `changeset-card.css`.
 - [ ] Collapse appearance: `data-collapsed` + CSS ([L06]); body hidden when collapsed, band `collapsedSummary` renders live.
 
-**Tests:** app-test **at0232**: collapse a section; assert `data-collapsed="true"`, body hidden, summary present, `collapsedSections` persisted.
+**Tests:** app-test **at0232** (collapse): folded into **at0235** in [#step-8] — collapse needs a *registered* section to act on, and no section exists until the Log section lands, so the collapse assertions (`data-collapsed="true"`, body unmounted, live summary present, `collapsedSections` persisted) are made against the real Log section inside at0235.
 
 **Checkpoint:** `bunx tsc --noEmit && bunx vite build && bun test`; `just app-test`
 
@@ -524,7 +524,7 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 - [ ] `useLayoutEffect` keyed on rendered order: `focusManager.contextFor(LENS_CARD_ID).setGroupOrder([...visible section groups])`.
 - [ ] Give each section a `focusGroup`/`focusOrder` so Tab walks sections; wire ⌥⇥ section cycling via `use-cycle-mode` (register `CYCLE_FOCUS_MODE` on the lens card content responder). Escape inside the lens → `CANCEL_DIALOG` handler → restore the stashed prior card ([P05]).
 
-**Tests:** app-test **at0233**: drag section B above A; assert `sectionOrder` persisted + DOM order matches + Tab from the title bar reaches sections in the new order; Escape restores the prior card.
+**Tests:** app-test **at0233** (authored in [#step-9], where ≥2 real sections exist): drag section B above A; assert `sectionOrder` persisted + DOM order matches + Tab from the title bar reaches sections in the new order; Escape restores the prior card. Escape-to-focus-out is a **content-local** `CANCEL_DIALOG` responder on the Lens content that re-dispatches `FOCUS_LENS` (deck-canvas toggle-out restores the stashed prior card). It must live in the Lens content — NOT at the deck-canvas level — so it is only in the chain when focus is actually inside the Lens: a deck-canvas `CANCEL_DIALOG` actions-map entry consumes *every* Escape (marking it handled → `preventDefault`), which blocks unrelated Escape gestures such as at0021's mid-drag abort. This is viable once the Lens has real focusable section content (Steps 8/9) so DOM focus lands inside it.
 
 **Checkpoint:** `bunx tsc --noEmit && bunx vite build && bun test`; `just app-test`
 
@@ -545,7 +545,7 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 - [ ] **Generic render:** in `CardTitleBar`, subscribe to `paneTitleBarMenuStore` for the active card (`useSyncExternalStore`, keyed like the existing `cardTitleStore` subscription already in `TugPane`). When the active card has published items, render a `TugIconButton` (`MoreHorizontal`) to the **left** of the collapse chevron, opening a `TugPopupMenu` built from the items; render nothing when the card published none, so every existing pane is byte-unchanged. Re-run `git log -S MoreHorizontal -- tugdeck/src` first ([Q02]); absent a prior treatment, this is the default. Never hand-roll the menu.
 - [ ] **Lens contributes:** in `LensContent`, publish one item per `getRegisteredLensSections()` entry (label = section title, `checked = !hiddenSections.includes(kind)`, `onSelect` toggles `lensStore.setHidden(kind, …)`) via `paneTitleBarMenuStore.set(lensCardId, items)`, recomputed when the registry or `hiddenSections` changes; clear with `set(lensCardId, null)` on unmount. All section-visibility logic stays in the lens layer.
 
-**Tests:** app-test **at0234**: open the `…` menu on the lens pane, toggle a section off; assert it leaves the stack and `hiddenSections` persisted; toggle back on and assert it returns. Assert a free (non-lens) pane renders no `…` button.
+**Tests:** app-test **at0234** (authored in [#step-9], where ≥2 real sections exist to toggle): open the `…` menu on the lens pane, toggle a section off; assert it leaves the stack and `hiddenSections` persisted; toggle back on and assert it returns. Assert a free (non-lens) pane renders no `…` button.
 
 **Checkpoint:** `bunx tsc --noEmit && bunx vite build && bun test`; `just app-test`
 
@@ -567,7 +567,7 @@ Real app-tests only (`tests/app-test/`, `just app-test`). New at-numbers: **at02
 - [ ] Log descriptor: title "Log", a log glyph, `collapsedSummary` = live counts from `tugDevLogStore.getSnapshot()` (e.g. `124 · 3 warn · 1 error`) via `useSyncExternalStore`.
 - [ ] Body: lift the `LogInspector` rendering (filters + `LogRow` list) into the section, importing from `lens/internal/`; unchanged behavior (reads `tugDevLogStore`, owns its own scroll [L06]). `registerLensSection` from `main.tsx`. `window.tugDevLog` wiring in `main.tsx` untouched.
 
-**Tests:** app-test **at0235**: emit entries via `window.tugDevLog`; assert the Log section renders them, the collapsed summary counts match, and a level filter narrows the list.
+**Tests:** app-test **at0235**: emit entries via `window.tugDevLog` (attached under the test harness on the prod bundle via a widened guard in `main.tsx`); assert the Log section renders them, the collapsed summary counts match, and a level filter narrows the list. Also carries the folded-in at0232 collapse assertions.
 
 **Checkpoint:** `bunx tsc --noEmit && bunx vite build && bun test`; `just app-test`
 

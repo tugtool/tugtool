@@ -152,6 +152,20 @@ export interface IDeckManagerStore {
   showSingletonCard: (componentId: string) => string | null;
 
   /**
+   * Show the Lens: activate the existing Lens card if one exists, else
+   * create the anchored rail pane hosting a fresh Lens card at the
+   * persisted reopen width. Returns the Lens card id, or null when the
+   * Lens card type is unregistered.
+   */
+  showLensPane: () => string | null;
+
+  /** Hide the Lens by closing its anchored pane. No-op when not open. */
+  hideLensPane: () => void;
+
+  /** Toggle the Lens open/closed. */
+  toggleLensPane: () => void;
+
+  /**
    * Add a new card to an existing pane. Returns the new card id, or
    * null if the pane or registration is not found. The new card
    * becomes the pane's active card.
