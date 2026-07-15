@@ -37,6 +37,7 @@ The premise is stale. Verified empirically on Claude Code 2.1.207 (see [#empiric
 #### Success Criteria (Measurable) {#success-criteria}
 
 - Typing `/compact` in a Dev card runs native compaction: the card's `SESSION` chip shows the **same** session id before and after, and no new JSONL file appears in `~/.claude/projects/<project>/` (verify by `ls` before/after).
+- During a `/compact` run the card is blocked by the pane-modal progress sheet showing an indeterminate "Compacting…" indicator with a working Cancel; it dismisses when the run settles (visual check; Cancel interrupt per [Q01]).
 - The transcript shows a "Session compacted · ~Nk tokens" divider and the Compaction Summary block after `/compact` completes (visual check + app-test).
 - After **quitting and relaunching the app** (or Maker ▸ Reload), a compacted session's card still shows the Compaction Summary block and the boundary divider (app-test on a real compacted fixture JSONL).
 - The session picker never shows a compaction-born row: there is no compaction-born row to show. Rename before and after `/compact` targets the same ledger row and sticks (manual check against `sessions.db`).
@@ -49,7 +50,7 @@ The premise is stale. Verified empirically on Claude Code 2.1.207 (see [#empiric
 2. Replay emission of `compact_boundary` + a new `compact_summary` frame from JSONL records (`system`/`compact_boundary`, `isCompactSummary` user records).
 3. Live capture of the post-compaction summary user event in tugcode.
 4. tugdeck intake: reducer state for the summary, divider placement on replay, carry-forward block fed from the new frame.
-5. Removal of the fake-compaction machinery (stores, sheet, prompts, seed bake, respawn).
+5. Removal of the fork-only machinery (pending-seed store, summarization prompts, seed bake, respawn watchdog); simplification of the progress sheet/store to a modal **indeterminate** "Compacting…" surface ([P07]).
 6. Tests: tugcode unit tests on real fixture lines, tugdeck reducer tests, app-test coverage for the reload-restore path.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
@@ -88,7 +89,7 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 
 #### [Q01] Does interrupting a native `/compact` mid-flight leave the session healthy? (OPEN) {#q01-interrupt-mid-compact}
 
-**Question:** If the user hits Stop/Escape while native compaction is summarizing, does Claude Code abort cleanly (session intact, no boundary written) or can it wedge the JSONL?
+**Question:** If the user cancels while native compaction is summarizing (the sheet's Cancel button, Escape, or Stop — all routes reach `codeSessionStore.interrupt()`), does Claude Code abort cleanly (session intact, no boundary written) or can it wedge the JSONL?
 
 **Why it matters:** The old flow's Cancel button interrupted Tug's own summarization turn, which was provably safe (nothing committed). The native flow hands cancellation to Claude Code.
 
@@ -204,17 +205,19 @@ This plan follows the devise-skeleton conventions: explicit `{#anchor}` headings
 - `compaction-request.ts`'s module doc is rewritten to say it now holds **legacy replay recognition** only.
 - `reducer.suppressed-turn.test.ts` is **split, not kept whole**: its suppressed-turn and `compactionSummary` coverage survives as the legacy proof, but its `markSeed()` helper and the `describe("reducer — mark_compaction_seed")` block assert the exact event/field this plan deletes and are removed with the machinery. The wrapper seed-split tests remain green untouched.
 
-#### [P07] The compaction progress sheet and its stores are deleted (DECIDED) {#p07-drop-progress-sheet}
+#### [P07] The compaction progress sheet stays — modal, indeterminate (DECIDED) {#p07-modal-indeterminate-progress}
 
-**Decision:** Remove `compaction-progress-store.ts`, `compaction-progress-sheet.tsx`, `pending-compaction-store.ts`, the `deliverPendingCompactionSeeds` hook in `dev-session-restore.ts`, the progress close-out effect and `COMPACTION_RESPAWN_TIMEOUT_MS` watchdog in `dev-card.tsx`.
+**Decision:** Native `/compact` keeps a **pane-modal progress sheet** for the duration of the run — the session is blocked modally, the sheet shows an **indeterminate** progress indicator ("Compacting…") with a Cancel button — but the sheet and its store are **simplified in place**, and the fork-only machinery around them (`pending-compaction-store.ts`, the `deliverPendingCompactionSeeds` hook in `dev-session-restore.ts`, the `COMPACTION_RESPAWN_TIMEOUT_MS` respawn watchdog) is deleted.
 
 **Rationale:**
-- Native `/compact` is a normal ~20 s turn: the STATE strip shows busy, Stop/Escape interrupts it, and the "Compacted" stdout + divider are the completion ink. A modal sheet with its own cancel/watchdog duplicates all of that for no added safety.
-- The user's direction: simplify the primitive, don't decorate the broken one.
+- Native compaction is a ~20 s **opaque** run: empirically ([#empirical-wire-shapes](#empirical-wire-shapes)) nothing streams between the dispatch and the `compact_boundary` frame (`durationMs` ≈ 17–19 s arrives in one lump). There is no streamed-volume signal to drive a determinate bar — and the Claude Code TUI's own determinate bar is a low-quality proxy anyway. Indeterminate is the honest rendering.
+- The user must stay informed during a lengthy, session-mutating operation; a bare "busy" STATE dot under-communicates. Modal blocking also prevents queuing sends into a session that is about to have its context rewritten.
+- Cancel maps to the turn interrupt (`codeSessionStore.interrupt()`), the same path Stop/Escape takes ([Q01] verifies its safety).
 
 **Implications:**
-- `/compact` becomes interruptible exactly like any turn ([Q01] verifies the safety).
-- `dev-session-restore.ts` loses its only compaction dependency; the restore path no longer participates in compaction at all.
+- `compaction-progress-store.ts` is rewritten lean: it tracks `{ cardId, outcome }` only — the `phase` ladder (`summarizing`/`respawning`) and the numeric `progress` fraction die with the fork. `compaction-progress-sheet.tsx` renders the indeterminate indicator + Cancel and keeps its Escape/Cmd-. = Cancel dismissal contract.
+- Run lifecycle: `begin(cardId)` at dispatch (before the send); **succeed** when the `/compact` turn settles with compaction ink observed (the reducer appended the `source: "compact"` system note / `compactionSeed` updated since dispatch); **cancel/fail** when the turn settles without it (interrupted, refused, or errored — surface the reason via the pane bulletin as today). The dev-card watcher derives this from `codeSessionStore` snapshots; no timers, no watchdog.
+- `dev-session-restore.ts` loses its compaction dependency entirely; the restore path no longer participates in compaction.
 
 #### [P08] Live summary capture is ordering-armed in tugcode (DECIDED) {#p08-armed-capture}
 
@@ -264,12 +267,18 @@ Other verified facts: the same JSONL file grows in place across multiple compact
 | Artifact | Location |
 |---|---|
 | `compact:` handler body (summarize→watch→respawn→watchdog) | `dev-card.tsx`, `slashCommandSurfaces.compact` |
-| `COMPACTION_RESPAWN_TIMEOUT_MS` + respawn watchdog + progress close-out effect | `dev-card.tsx` |
+| `COMPACTION_RESPAWN_TIMEOUT_MS` + respawn watchdog | `dev-card.tsx` |
 | `buildSummarizationPrompt`, `buildCompactionSeed` | `tugdeck/src/lib/compaction-request.ts` |
 | `pendingCompactionStore` | `tugdeck/src/lib/pending-compaction-store.ts` (file deleted) |
-| `compactionProgressStore` | `tugdeck/src/lib/compaction-progress-store.ts` (file deleted) |
-| `CompactionProgressSheet` | `tugdeck/src/components/tugways/cards/compaction-progress-sheet.tsx` (file deleted) |
 | `deliverPendingCompactionSeeds` | `tugdeck/src/lib/dev-session-restore.ts` |
+
+**Rewritten in place ([P07] — modal indeterminate progress):**
+
+| Artifact | Location | Change |
+|---|---|---|
+| `compactionProgressStore` | `tugdeck/src/lib/compaction-progress-store.ts` | Lean `{ cardId, outcome }` run state; `phase` ladder + numeric `progress` fraction removed |
+| `CompactionProgressSheet` | `tugdeck/src/components/tugways/cards/compaction-progress-sheet.tsx` | Indeterminate "Compacting…" indicator + Cancel; Escape/Cmd-. = Cancel retained |
+| progress close-out effect | `dev-card.tsx` | Settles the run off `codeSessionStore` snapshots (turn settled + compaction ink observed ⇒ succeed, else cancel/fail); no timers |
 | Send-path seed flush (`seedBlock`/`wireContent` in `handleSend`) | `code-session-store/reducer.ts` |
 | `mark_compaction_seed` event + `handleMarkCompactionSeed` + `markCompactionSeed` | `events.ts`, `reducer.ts`, `code-session-store.ts` |
 | `seedPending` field on `compactionSeed` | `code-session-store/types.ts` |
@@ -280,7 +289,7 @@ Other verified facts: the same JSONL file grows in place across multiple compact
 
 #### End-to-end flows after this plan {#flows}
 
-**Live `/compact [focus]`:** user types it → `matchLocalSlashCommand` → `RUN_SLASH_COMMAND` → `slashCommandSurfaces.compact` guards `canSubmit`, then `codeSessionStore.send("/compact" + focus)` → normal turn opens (visible `/compact` bubble) → stream: boundary (divider note attaches to this turn; `preTokens` latched) → summary event (armed capture → `compact_summary` → `compactionSeed` set → carry-forward renders) → stdout echo (turn text "Compacted") → `result` (turn commits). Same session id throughout.
+**Live `/compact [focus]`:** user types it → `matchLocalSlashCommand` → `RUN_SLASH_COMMAND` → `slashCommandSurfaces.compact` guards `canSubmit`, opens the run (`compactionProgressStore.begin`) and presents the pane-modal indeterminate sheet ([P07]), then `codeSessionStore.send("/compact" + focus)` → normal turn opens (visible `/compact` bubble) → ~20 s opaque run under the sheet → stream: boundary (divider note attaches to this turn; `preTokens` latched) → summary event (armed capture → `compact_summary` → `compactionSeed` set → carry-forward renders) → stdout echo (turn text "Compacted") → `result` (turn commits; watcher sees settled-with-ink → `succeed()` → sheet dismisses). Cancel (button, Escape, Cmd-.) interrupts the turn; the watcher sees settled-without-ink → `cancel()`. Same session id throughout.
 
 **Reload of a compacted session:** tugcast respawns tugcode with `--resume` → replay walks the JSONL → boundary record → `compact_boundary` frame → divider (mid-turn attach if a turn is open at that point, else appended to the last committed turn per [P04]) → `isCompactSummary` record → `compact_summary` frame → `compactionSeed` set → carry-forward renders. Scaffolding records skipped as today.
 
@@ -318,8 +327,9 @@ Other verified facts: the same JSONL file grows in place across multiple compact
 |-------|--------------------------------------------|-----------|-----|
 | `compactionSeed` (reshaped, not new) | store data | code-session store + `useSyncExternalStore` (existing) | [L02] |
 | carry-forward collapsed/expanded | local UI disclosure | `useState` in `DevCompactionCarryForward` (existing, unchanged) | [L06] |
+| compaction run `{ cardId, outcome }` (simplified, not new) | store data | `compactionProgressStore` + `useSyncExternalStore` (existing store, fields removed) | [L02] |
 
-No new state zones; no new stores.
+No new state zones; no new stores — one store is reshaped smaller.
 
 ---
 
@@ -348,7 +358,10 @@ No new state zones; no new stores.
 | `handleCompactBoundary` | fn (modify) | `tugdeck/src/lib/code-session-store/reducer.ts` | [P04] fallback |
 | `handleSend` | fn (modify) | `tugdeck/src/lib/code-session-store/reducer.ts` | remove seed flush |
 | `compactionSeed` | type (modify) | `tugdeck/src/lib/code-session-store/types.ts` | drop `seedPending` |
-| `slashCommandSurfaces.compact` | handler (rewrite) | `tugdeck/src/components/tugways/cards/dev-card.tsx` | [P01] thin send |
+| `slashCommandSurfaces.compact` | handler (rewrite) | `tugdeck/src/components/tugways/cards/dev-card.tsx` | [P01] thin send + [P07] run open |
+| `compactionProgressStore` | store (simplify) | `tugdeck/src/lib/compaction-progress-store.ts` | [P07] `{ cardId, outcome }` only |
+| `CompactionProgressSheet` | component (simplify) | `tugdeck/src/components/tugways/cards/compaction-progress-sheet.tsx` | [P07] indeterminate + Cancel |
+| compaction run watcher | effect (rewrite) | `tugdeck/src/components/tugways/cards/dev-card.tsx` | [P07] settle off store snapshots, no timers |
 | deletions | files/symbols | per [#machinery-inventory](#machinery-inventory) | [P07] |
 
 ---
@@ -474,22 +487,24 @@ No new state zones; no new stores.
 
 **Depends on:** #step-3
 
-**Commit:** `tugdeck(compact-native): /compact dispatches natively; remove the summarize/respawn machinery`
+**Commit:** `tugdeck(compact-native): /compact dispatches natively under a modal indeterminate sheet; remove the summarize/respawn machinery`
 
-**References:** [P01] native dispatch, [P06] legacy compat, [P07] drop progress sheet, (#machinery-inventory, #flows)
+**References:** [P01] native dispatch, [P06] legacy compat, [P07] modal indeterminate progress, (#machinery-inventory, #flows)
 
 **Artifacts:**
-- Rewritten `slashCommandSurfaces.compact` in `dev-card.tsx`: guard `canSubmit` (bulletin "Can't compact while a turn is in flight" as today), then `codeSessionStore.send(args.trim().length > 0 ? \`/compact ${args.trim()}\` : "/compact", [])`.
-- Deletions per [#machinery-inventory](#machinery-inventory): the two store files, the sheet file, `deliverPendingCompactionSeeds`, the dev-card progress effect + watchdog + imports, `buildSummarizationPrompt`/`buildCompactionSeed`, the reducer send-path seed flush, the `mark_compaction_seed` event/handler/store-method.
+- Rewritten `slashCommandSurfaces.compact` in `dev-card.tsx`: guard `canSubmit` (bulletin "Can't compact while a turn is in flight" as today), `compactionProgressStore.begin(cardId)`, present the modal sheet, then `codeSessionStore.send(args.trim().length > 0 ? \`/compact ${args.trim()}\` : "/compact", [])`.
+- Rewritten-in-place per [P07]: lean `compactionProgressStore` (`{ cardId, outcome }`), indeterminate `CompactionProgressSheet` ("Compacting…" + Cancel; Escape/Cmd-. = Cancel), and a dev-card watcher that settles the run off `codeSessionStore` snapshots — turn settled with compaction ink (compact `system_note` appended / `compactionSeed` updated since dispatch) ⇒ `succeed()`; settled without it ⇒ `cancel()`/`fail(reason)` with the pane bulletin. Cancel dispatches `codeSessionStore.interrupt()`.
+- Deletions per [#machinery-inventory](#machinery-inventory): `pending-compaction-store.ts`, `deliverPendingCompactionSeeds`, the respawn watchdog + `COMPACTION_RESPAWN_TIMEOUT_MS`, `buildSummarizationPrompt`/`buildCompactionSeed`, the reducer send-path seed flush, the `mark_compaction_seed` event/handler/store-method.
 - `compaction-request.ts` module doc rewritten as legacy-replay-recognition-only ([P06]).
 - `LOCAL_SLASH_COMMANDS` `compact` description updated (e.g. "Compact the conversation in place to free up context").
 
 **Tasks:**
-- [ ] Rewrite the `compact:` handler; keep `takesArgs` routing (`/compact <focus>` passes focus through verbatim).
+- [ ] Rewrite the `compact:` handler; keep `takesArgs` routing (`/compact <focus>` passes focus through verbatim); open the run + modal sheet before the send ([P07]).
+- [ ] Rewrite `compactionProgressStore` lean (`{ cardId, outcome }`; drop `phase` + `progress`) and `CompactionProgressSheet` as the indeterminate "Compacting…" + Cancel surface; wire the dev-card watcher that settles the run off `codeSessionStore` snapshots (settled-with-compaction-ink ⇒ succeed, else cancel/fail + bulletin).
 - [ ] Execute every deletion in the inventory; chase imports (`dev-card.tsx`, `dev-session-restore.ts`) until `bunx tsc --noEmit`-clean via the vite build.
 - [ ] Split `reducer.suppressed-turn.test.ts` per [P06]: delete its `markSeed()` helper and the `describe("reducer — mark_compaction_seed")` block (they assert the deleted event/field); keep the suppressed-turn and `compactionSummary` coverage intact.
 - [ ] Verify the legacy keeps ([P06]) are untouched: `splitCompactionSeed` wrapper path, `suppressedTurn`, `send()` `suppress` option.
-- [ ] Sweep for dangling references: `grep -rn "pendingCompactionStore\|compactionProgressStore\|CompactionProgressSheet\|buildSummarizationPrompt\|buildCompactionSeed\|markCompactionSeed\|mark_compaction_seed\|seedPending" tugdeck/src` → only legacy-test/comment hits that are deliberately retained, ideally zero.
+- [ ] Sweep for dangling references: `grep -rn "pendingCompactionStore\|buildSummarizationPrompt\|buildCompactionSeed\|markCompactionSeed\|mark_compaction_seed\|seedPending\|COMPACTION_RESPAWN_TIMEOUT_MS" tugdeck/src` → only legacy-test/comment hits that are deliberately retained, ideally zero. (`compactionProgressStore`/`CompactionProgressSheet` survive per [P07] — verify their `phase`/`progress` fields are gone instead.)
 
 **Tests:**
 - [ ] The surviving suppressed-turn + `compactionSummary` sections of `reducer.suppressed-turn.test.ts` green (legacy compat proof); the `mark_compaction_seed` sections removed, file compiles.
@@ -512,8 +527,8 @@ No new state zones; no new stores.
 **Tasks:**
 - [ ] `just build` (fresh tugcode binary + Rust bins), launch the debug app.
 - [ ] App-test: extend `at0106-compact-boundary-divider.test.ts` or add a sibling that cold-loads a **real natively-compacted fixture JSONL** (model on `at0192-z2-cold-replay.test.ts`) and asserts the divider note AND the Compaction Summary block render after replay — this is the relaunch-restore regression test for the original bug. While there, fix `at0106`'s stale header comment ("a typed `/compact` is client-dispatched and never reaches the bridge").
-- [ ] On-demand real-claude verification: in a scratch project card, run `/compact` on a several-turn session; verify same `SESSION` chip id, divider + summary block appear; quit and relaunch the app; verify both restore.
-- [ ] Resolve [Q01]: interrupt a live `/compact`, confirm the session resumes and a later `/compact` succeeds.
+- [ ] On-demand real-claude verification: in a scratch project card, run `/compact` on a several-turn session; verify the modal indeterminate sheet blocks the card for the run and dismisses on completion ([P07]), same `SESSION` chip id, divider + summary block appear; quit and relaunch the app; verify divider + summary restore.
+- [ ] Resolve [Q01]: cancel a live `/compact` via the sheet's Cancel, confirm the sheet dismisses, the session resumes, and a later `/compact` succeeds.
 - [ ] Resolve [Q02]: `/compact` a 1-turn session, confirm the refusal renders and the turn settles idle.
 - [ ] Rename check: `/rename` before and after a compact — both stick, same `sessions.db` row (`sqlite3` against the instance DB).
 
@@ -529,7 +544,7 @@ No new state zones; no new stores.
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** `/compact` runs Claude Code's native compaction in place — same session id, same JSONL — with the boundary divider and Compaction Summary block rendering live and surviving app relaunch; the fork-based machinery is deleted.
+**Deliverable:** `/compact` runs Claude Code's native compaction in place — same session id, same JSONL — under a pane-modal indeterminate "Compacting…" sheet with a working Cancel, with the boundary divider and Compaction Summary block rendering live and surviving app relaunch; the fork-based machinery is deleted.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
