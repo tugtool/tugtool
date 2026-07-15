@@ -11,10 +11,18 @@ build:
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
-    mkdir -p ~/.local/bin
-    for bin in tugcast tugexec tugutil tugdash tugcode tugpulse tugrelaunch tugbank; do
-        ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
-    done
+    # Only the main checkout owns ~/.local/bin. A linked worktree (a dash under
+    # .tug/worktrees/) builds its own ephemeral binaries; pointing the global
+    # symlinks at them would dangle every tug* tool the moment the dash is torn
+    # down. A linked worktree's --git-dir differs from its --git-common-dir.
+    if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]; then
+        mkdir -p ~/.local/bin
+        for bin in tugcast tugexec tugutil tugdash tugcode tugpulse tugrelaunch tugbank; do
+            ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
+        done
+    else
+        echo "[build] linked worktree — skipping ~/.local/bin symlinks (main checkout owns them)"
+    fi
 
 # Build all binaries, then run tugexec (auto-detects source tree, activates dev mode via control socket)
 dev: build
