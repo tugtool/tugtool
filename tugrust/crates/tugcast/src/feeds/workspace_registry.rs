@@ -74,6 +74,20 @@ impl WorkspaceKey {
     pub(crate) fn from_test_str(s: &str) -> Self {
         Self(Arc::from(s))
     }
+
+    /// Adopt an already-canonicalized key string persisted elsewhere —
+    /// specifically the `workspace_key` column on a `sessions` ledger row,
+    /// which `record_spawn` wrote from this same `WorkspaceKey` when the
+    /// session first bound. `rebind_from_ledger` uses this to rebuild its
+    /// in-memory entries without re-running `canonical_key` (whose
+    /// `std::fs::metadata` + `canonicalize` would `stat` every historical
+    /// project directory on boot — enough to trip a macOS TCC prompt for any
+    /// dir under Desktop / Documents / Downloads or reached via a firmlink).
+    /// The caller is responsible for the string already being canonical; this
+    /// performs no filesystem access.
+    pub(crate) fn from_canonical(key: &str) -> Self {
+        Self(Arc::from(key))
+    }
 }
 
 impl AsRef<str> for WorkspaceKey {
@@ -352,41 +366,6 @@ impl WorkspaceRegistry {
         Ok(entry)
     }
 
-    /// The canonical [`WorkspaceKey`] for `project_dir` **without registering a
-    /// workspace** — no `WorkspaceEntry`, no FileWatcher, no file-tree walk, no
-    /// registry insertion. Validates existence + directory-ness exactly like
-    /// [`get_or_create`](Self::get_or_create), then canonicalizes via
-    /// [`PathResolver::watch_path`].
-    ///
-    /// Used by `rebind_from_ledger` to re-materialize in-memory session entries
-    /// on startup: rebind needs each row's canonical key to build its
-    /// `LedgerEntry`, but must NOT eagerly watch every historical project's
-    /// directory (that would file-watch and walk dirs — e.g. a user's home or
-    /// Desktop — for sessions whose cards are long closed). The workspace is
-    /// registered only when a client actually re-spawns the session.
-    pub fn canonical_key(&self, project_dir: &Path) -> Result<WorkspaceKey, WorkspaceError> {
-        let metadata =
-            std::fs::metadata(project_dir).map_err(|e| WorkspaceError::InvalidProjectDir {
-                path: project_dir.to_path_buf(),
-                reason: match e.kind() {
-                    std::io::ErrorKind::NotFound => "does_not_exist",
-                    std::io::ErrorKind::PermissionDenied => "permission_denied",
-                    _ => "metadata_error",
-                },
-            })?;
-        if !metadata.is_dir() {
-            return Err(WorkspaceError::InvalidProjectDir {
-                path: project_dir.to_path_buf(),
-                reason: "not_a_directory",
-            });
-        }
-        let canonical: String = PathResolver::new(project_dir.to_path_buf())
-            .watch_path()
-            .to_string_lossy()
-            .into_owned();
-        Ok(WorkspaceKey(Arc::from(canonical)))
-    }
-
     /// The `(project_dir, workspace_key)` of every currently-open workspace —
     /// the input the account-global `ChangesetAllFeed` enumerates each
     /// recompute. `project_dir` is the original (pre-canonicalized) path the
@@ -636,43 +615,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn canonical_key_computes_without_registering() {
+    async fn from_canonical_agrees_with_get_or_create() {
+        // rebind rebuilds its in-memory entries from the persisted
+        // `workspace_key` string via `WorkspaceKey::from_canonical`, never
+        // touching the filesystem. The adopted key must equal what
+        // `get_or_create` canonicalizes to, so a later re-spawn against the
+        // same directory reuses the rebound entry instead of duplicating it.
         let tmp = TempDir::new().expect("create tempdir");
         let cancel = CancellationToken::new();
         let registry = WorkspaceRegistry::new_for_test();
 
-        let key = registry
-            .canonical_key(tmp.path())
-            .expect("valid directory yields a key");
-        assert!(!key.as_ref().is_empty());
-
-        // The whole point: no workspace was registered — no FileWatcher, no
-        // tree walk, nothing in the map. rebind relies on this so it never
-        // watches a closed session's project dir.
-        assert_eq!(
-            registry.inner.lock().expect("mutex not poisoned").len(),
-            0,
-            "canonical_key must not register a workspace"
-        );
-
-        // The key must match what a later `get_or_create` computes, so a
-        // rebound LedgerEntry is reused (not duplicated) when the client
-        // re-spawns the session.
         let entry = registry
             .get_or_create(tmp.path(), cancel.clone())
-            .expect("get_or_create after canonical_key");
-        assert_eq!(
-            key.as_ref(),
-            entry.workspace_key.as_ref(),
-            "canonical_key must agree with get_or_create's canonicalization"
-        );
+            .expect("get_or_create");
 
-        // Invalid paths are rejected (rebind logs + skips them).
-        assert!(
-            registry
-                .canonical_key(std::path::Path::new("/no/such/dir/at0xyz"))
-                .is_err(),
-            "a nonexistent path must be rejected"
+        // Round-trip the canonical string the way a ledger row does.
+        let persisted = entry.workspace_key.as_ref().to_string();
+        let adopted = WorkspaceKey::from_canonical(&persisted);
+        assert_eq!(
+            adopted.as_ref(),
+            entry.workspace_key.as_ref(),
+            "from_canonical must reproduce get_or_create's key without fs access"
+        );
+        assert_eq!(
+            adopted, entry.workspace_key,
+            "the adopted key must hash/compare equal so the entry is reused"
         );
 
         drop(entry);

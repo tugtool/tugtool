@@ -5363,31 +5363,31 @@ impl AgentSupervisor {
             };
             let project_dir = PathBuf::from(&row.project_dir);
 
-            // Compute the canonical workspace key WITHOUT registering a
-            // workspace — rebind must not eagerly FileWatch + tree-walk every
-            // historical project's directory (a closed card on the user's home
-            // dir or Desktop must not be re-watched on every boot). The
-            // workspace is registered only when a client actually re-spawns
-            // the session (`do_spawn_session` → `get_or_create`). Invalid
-            // paths (nonexistent / not-a-directory / permission-denied) are
-            // logged and skipped — the user may have removed or renamed the
-            // project directory between runs.
-            let workspace_key = match self.registry.canonical_key(&project_dir) {
-                Ok(k) => k,
-                Err(WorkspaceError::InvalidProjectDir { reason, .. }) => {
-                    warn!(
-                        card_id,
-                        session_id = row.session_id.as_str(),
-                        path = ?project_dir,
-                        reason,
-                        "rebind: dropping ledger row with invalid project_dir"
-                    );
-                    continue;
-                }
-                Err(WorkspaceError::UnknownKey(_)) => {
-                    unreachable!("canonical_key never returns UnknownKey")
-                }
-            };
+            // Adopt the canonical workspace key persisted on the ledger row
+            // rather than recomputing it from `project_dir`. Recomputing via
+            // `registry.canonical_key` runs `std::fs::metadata` + `canonicalize`
+            // on the project directory, touching the filesystem for every
+            // historical project on boot — enough to trip a macOS TCC consent
+            // prompt for any dir under Desktop / Documents / Downloads or
+            // reached through a firmlink. The stored key was canonicalized by
+            // `get_or_create` when the session first bound and written by
+            // `record_spawn`; it is exactly what a recompute would yield, minus
+            // the fs touch. The workspace itself is still registered lazily —
+            // only when a client actually re-spawns the session
+            // (`do_spawn_session` → `get_or_create`), which also re-validates
+            // the directory and rejects a since-removed path, so deferring
+            // validation here costs nothing beyond a harmless stale in-memory
+            // entry until the next spawn.
+            if row.workspace_key.is_empty() {
+                warn!(
+                    card_id,
+                    session_id = row.session_id.as_str(),
+                    path = ?project_dir,
+                    "rebind: dropping ledger row with empty workspace_key"
+                );
+                continue;
+            }
+            let workspace_key = WorkspaceKey::from_canonical(&row.workspace_key);
 
             // The ledger row's `session_id` is claude's id (post
             // session_init). Use it as the tug_session_id for the
