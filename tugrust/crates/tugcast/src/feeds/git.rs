@@ -1208,14 +1208,17 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_log_snapshot_recent_commits_most_recent_first() {
         let temp = init_log_fixture_repo().await;
-        let snapshot =
-            build_git_log_snapshot(temp.path(), "gl-1".to_string(), "ws-key", 20).await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-1".to_string(), "ws-key", 20).await;
 
         assert!(!snapshot.no_repo);
         assert_eq!(snapshot.request_id, "gl-1");
         assert_eq!(snapshot.workspace_key, "ws-key");
         assert_eq!(snapshot.branch, "main");
-        let subjects: Vec<&str> = snapshot.commits.iter().map(|c| c.subject.as_str()).collect();
+        let subjects: Vec<&str> = snapshot
+            .commits
+            .iter()
+            .map(|c| c.subject.as_str())
+            .collect();
         assert_eq!(subjects, ["third", "second", "first"], "most-recent-first");
 
         let head = &snapshot.commits[0];
@@ -1232,7 +1235,11 @@ Binary files a/img.png and b/img.png differ
     async fn test_build_git_log_snapshot_honors_limit() {
         let temp = init_log_fixture_repo().await;
         let snapshot = build_git_log_snapshot(temp.path(), "gl-2".to_string(), "ws", 2).await;
-        let subjects: Vec<&str> = snapshot.commits.iter().map(|c| c.subject.as_str()).collect();
+        let subjects: Vec<&str> = snapshot
+            .commits
+            .iter()
+            .map(|c| c.subject.as_str())
+            .collect();
         assert_eq!(subjects, ["third", "second"], "the newest two only");
     }
 
@@ -1241,18 +1248,22 @@ Binary files a/img.png and b/img.png differ
         // Fresh `git init` (unborn HEAD): a real repo with no commits.
         let temp = TempDir::new().unwrap();
         git_in(temp.path(), &["init", "-b", "trunk"]).await;
-        let snapshot =
-            build_git_log_snapshot(temp.path(), "gl-3".to_string(), "ws", 20).await;
-        assert!(!snapshot.no_repo, "an initialized repo is not flagged no_repo");
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-3".to_string(), "ws", 20).await;
+        assert!(
+            !snapshot.no_repo,
+            "an initialized repo is not flagged no_repo"
+        );
         assert!(snapshot.commits.is_empty(), "no commits yet");
-        assert_eq!(snapshot.branch, "trunk", "unborn branch name still resolves");
+        assert_eq!(
+            snapshot.branch, "trunk",
+            "unborn branch name still resolves"
+        );
     }
 
     #[tokio::test]
     async fn test_build_git_log_snapshot_non_repo_flags_no_repo() {
         let temp = TempDir::new().unwrap();
-        let snapshot =
-            build_git_log_snapshot(temp.path(), "gl-4".to_string(), "ws", 20).await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-4".to_string(), "ws", 20).await;
         assert!(snapshot.no_repo);
         assert!(snapshot.commits.is_empty());
         assert_eq!(snapshot.branch, "");
@@ -1266,7 +1277,11 @@ Binary files a/img.png and b/img.png differ
         git_in(repo, &["checkout", &head]).await;
         let snapshot = build_git_log_snapshot(repo, "gl-5".to_string(), "ws", 20).await;
         assert_eq!(snapshot.branch, "(detached)");
-        assert_eq!(snapshot.commits.len(), 3, "commits still resolve when detached");
+        assert_eq!(
+            snapshot.commits.len(),
+            3,
+            "commits still resolve when detached"
+        );
     }
 
     #[tokio::test]

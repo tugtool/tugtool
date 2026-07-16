@@ -798,8 +798,7 @@ mod tests {
 
     #[test]
     fn session_prompts_since_uses_repo_relative_paths() {
-        let dirty: std::collections::HashSet<&str> =
-            ["a.txt", "sub/b.txt"].into_iter().collect();
+        let dirty: std::collections::HashSet<&str> = ["a.txt", "sub/b.txt"].into_iter().collect();
         let events = vec![
             file_event("a.txt", 500),
             file_event("sub/b.txt", 200),

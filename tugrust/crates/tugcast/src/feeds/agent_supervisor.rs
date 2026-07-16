@@ -3400,9 +3400,9 @@ impl AgentSupervisor {
             return;
         };
         let frame = watch_rx.borrow().clone();
-        let Ok(snapshot) = serde_json::from_slice::<
-            tugcast_core::types::WorkspacesChangesetSnapshot,
-        >(&frame.payload) else {
+        let Ok(snapshot) = serde_json::from_slice::<tugcast_core::types::WorkspacesChangesetSnapshot>(
+            &frame.payload,
+        ) else {
             return; // the initial empty frame, or a decode miss
         };
 
@@ -9209,14 +9209,15 @@ mod tests {
             1,
             "the rebound resume must keep its workspace registered"
         );
-        let map = sup.registry.inner_for_test();
-        let (_key, ws) = map.iter().next().expect("one workspace");
+        let ref_count = {
+            let map = sup.registry.inner_for_test();
+            let (_key, ws) = map.iter().next().expect("one workspace");
+            ws.ref_count.load(Ordering::Relaxed)
+        };
         assert_eq!(
-            ws.ref_count.load(Ordering::Relaxed),
-            1,
+            ref_count, 1,
             "the entry adopts exactly one workspace refcount"
         );
-        drop(map);
 
         // The entry now records ownership of that refcount.
         let e = sup.ledger.lock().await.get(&sid).unwrap().clone();

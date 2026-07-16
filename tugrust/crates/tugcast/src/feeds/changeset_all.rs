@@ -199,9 +199,9 @@ fn empty_snapshot(workspace_key: String) -> ChangesetSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use crate::session_ledger::FileEventRow;
     use std::path::Path;
+    use std::time::Duration;
     use tugcast_core::spawn_snapshot_feed;
 
     fn git(dir: &Path, args: &[&str]) {

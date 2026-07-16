@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{Notify, broadcast};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
