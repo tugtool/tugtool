@@ -29,7 +29,7 @@ This phase makes the Lens a monitor (glance state, click to go) and the Session 
 
 - **Extend the route mechanism, not the pane model.** The `RouteLifecycle` scalar already keeps one composer mounted and switches the submit target per route (`❯ $ ? ⌕`). Two new *view-routes* (`Changes`, `History`) additionally swap the transcript-slot content. Pane tab machinery is explicitly NOT used — a pane-card swap would swap the composer too, violating "prompt-entry stays right where it is."
 - **Keep all slot views mounted; hide inactive ones with CSS.** Scroll position, in-progress selection, and streaming state survive route switches; the transcript's mount identity stays stable ([L26]).
-- **Reuse the shipping plumbing wholesale.** Changed files: `CHANGESET` feed (0x23). Commit: `changeset_commit` CONTROL verb → `tugmark_core::commit`. AI draft: `changeset_draft_request` → draft engine → streamed `changeset_draft_delta` frames. Join: `changeset_join` → `tugdash_core::ops::join_in`. History: `GIT_LOG`/`GIT_LOG_QUERY`/`GIT_HEAD` feeds (0x25/0x26/0x27). Nothing new on the wire except optional trailer fields on `changeset_commit`.
+- **Reuse the shipping plumbing wholesale.** Changed files: the account-global `CHANGESET_ALL` aggregate (0x24) filtered to the card's workspace — the per-workspace `CHANGESET` feed (0x23) is **retired** (`tugcast-core/src/protocol.rs`, "never reuse 0x23") and must not be revived. Commit: `changeset_commit` CONTROL verb → `tugmark_core::commit`. AI draft: `changeset_draft_request` → draft engine → streamed `changeset_draft_delta` frames. Join: `changeset_join` → `tugdash_core::ops::join_in`. History: `GIT_LOG`/`GIT_LOG_QUERY`/`GIT_HEAD` feeds (0x25/0x26/0x27). Nothing new on the wire except optional trailer fields on `changeset_commit`.
 - **Build the card surfaces first, slim the Lens after** — no window where the commit flow exists nowhere.
 - **History questions ride the record.** The History route's submit is a normal `codeSessionStore.send()` invoking a new `/tugplug:history` skill that searches git context (tugmark, `git log --grep`) and answers. Claude sees everything.
 - **Commit trailers are the retrieval substrate.** `Tug-Session:` and `Tug-Dash:` trailers on every tug commit path make `git log --grep` session-scoped questions answerable. `Tug-Plan:` is deferred.
@@ -203,8 +203,8 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 #### [P07] ChangesRouteController lives in the per-card services bag (DECIDED) {#p07-changes-controller}
 
-**Decision:** Add a `ChangesRouteController` (new file `tugdeck/src/lib/changes-route-controller.ts`) to `CardServices` (`tugdeck/src/lib/card-services-store.ts`). It is a plain subscribable store ([L02]) constructed with the binding's `{ tugSessionId, workspaceKey, projectDir }` plus a workspace-filtered `FeedStore(conn, [FeedId.CHANGESET])`. It exposes:
-- `getSnapshot()` → `{ entry, dashes, unattributed, project }` derived from the workspace-scoped `CHANGESET` (0x23) snapshot filtered to this session (`owner_id === tugSessionId`);
+**Decision:** Add a `ChangesRouteController` (new file `tugdeck/src/lib/changes-route-controller.ts`) to `CardServices` (`tugdeck/src/lib/card-services-store.ts`). It is a plain subscribable store ([L02]) constructed with the binding's `{ tugSessionId, workspaceKey, projectDir }`. It does **not** open a feed of its own: the per-workspace `CHANGESET` feed (0x23) is retired (`tugcast-core/src/protocol.rs` — "never reuse 0x23"); the controller subscribes to the existing app-level `ChangesetAllStore` singleton (`tugdeck/src/lib/changeset-all-store.ts`, `CHANGESET_ALL` 0x24 — the same store the Lens reads via `useChangesetAll`) and derives its slice as a filtered projection. It exposes:
+- `getSnapshot()` → `{ entry, dashes, unattributed, project }` derived from the `CHANGESET_ALL` snapshot by `project.workspace_key === workspaceKey`, session entry by `owner_id === tugSessionId` (placeholder-project fallback exactly as the Lens's `buildItems` does when the feed hasn't emitted the project yet);
 - selection state: `selectedPaths()`, `setSelected(path, on)`, with the Lens default rule (selected unless `ambiguous || shared`);
 - `commit(message)` → `getChangesetVerbStore().commit(entryKey, projectDir, selectedPaths, message)` with `entryKey = "session:" + tugSessionId`, plus the commit trailer fields ([P08]);
 - `requestDraft()` → `getChangesetDraftStore().requestDraft(projectDir, "session", tugSessionId)`;
@@ -212,9 +212,9 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Rationale:**
 - `performSubmit` (inside `TugPromptEntry`) needs the selection at submit time; the ChangesView needs it for checkboxes. A shared per-card store is the [L02]-conformant meeting point.
-- The services bag already constructs workspace-filtered feed stores per card (`FILETREE`, `GIT_DIFF` — same pattern) and owns dispose.
+- The services bag already constructs per-card stores and owns dispose (`FILETREE`, `GIT_DIFF` — same lifecycle pattern); riding the existing `CHANGESET_ALL` singleton means zero new wire subscriptions and the controller updates on every changeset recompute for free.
 
-**Implications:** `TugPromptEntryProps` gains `changesController?: ChangesRouteController`; `CardServices` gains the field + feed store; dispose tears both down.
+**Implications:** `TugPromptEntryProps` gains `changesController?: ChangesRouteController`; `CardServices` gains the field; dispose unsubscribes the controller from `ChangesetAllStore` and tears it down. No new `FeedStore`.
 
 #### [P08] Trailers are appended server-side / library-side, never client-side (DECIDED) {#p08-trailers-serverside}
 
@@ -287,7 +287,9 @@ Notes: shortcuts extend `keybinding-map.ts` (`tugdeck/src/components/tugways/key
 `performSubmit` (`tugdeck/src/components/tugways/tug-prompt-entry.tsx`) currently branches: accept-completion → Find → clear one-shot finds → btw → local slash-commands → gates → Shell → default `send()`. The two view-route branches slot in **after the btw branch and before the local slash-command interception** (a Changes-route submit is a commit message — `/foo` in a commit message must not run a slash command; same for History questions, which are wrapped in the skill invocation anyway):
 
 - **Changes branch:** route `±` and `changesController` present → validate (non-empty trimmed message, ≥1 selected path, commit phase not pending) → `changesController.commit(message)` → push history (route `±`, raw message) → clear editor → return. An invalid state is a no-op (the Z5 button is disabled in those states anyway; the Return path needs the same gate).
-- **History branch:** route `↺` → wrap: `codeSessionStore.send("/tugplug:history " + submitText, [])` → push history (route `↺`, raw question) → clear → `routeLifecycle.setRoute(DEFAULT_ROUTE)` ([P11]) → return.
+- **History branch:** route `↺` → **send-readiness gates first**, mirroring the default `send()` path: bail if `resolveSubmitButtonView(submitButtonModeRef.current).disabled`; apply the blocked-submit logic (`!snap.canSubmit && !snap.canInterrupt` → drop on `replaying`, defer via `pendingSubmitRef` otherwise — `classifyBlockedSubmit`, exactly as the default path). A turn in flight is NOT blocked (`send()` queues mid-turn). Passing the gates → wrap: `codeSessionStore.send("/tugplug:history " + submitText, [])` → push history (route `↺`, raw question) → clear → `routeLifecycle.setRoute(DEFAULT_ROUTE)` ([P11]) → return. Without these gates a submit during replay or transport-settling would leak a turn.
+
+**No slash interception on view-routes (requirement, not an accident of ordering):** on `±` a commit message beginning with `/` must never run a local slash command, and on `↺` the question is always wrapped in the skill invocation — both branches consume the draft and `return` before the local-command interception block, and the interception's route guard (`routeAllowsLocal`) must additionally exclude `ROUTE_CHANGES`/`ROUTE_HISTORY` so the invariant survives future reordering of `performSubmit`.
 
 The route-aware Z5 mode (`routeAwareSubmitButtonMode`) gains cases: Changes → `{ kind: "submit" }` disabled while commit `pending` / empty selection (label "Commit"/"Committing…"); History → follows the Claude mode (a question is a turn).
 
@@ -382,6 +384,7 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 | active route (`±`/`↺`/…) | local-data (per-entry) | existing `RouteLifecycle` store + `useSyncExternalStore` | [L02] |
 | active slot view visibility | appearance | `data-active-view` attribute + CSS display rules | [L06] |
 | changes selection set | local-data (per-card) | `ChangesRouteController` store + `useSyncExternalStore` | [L02] |
+| changeset snapshot (files/dashes/unattributed) | external | existing `ChangesetAllStore` (0x24), projected by `ChangesRouteController` | [L02] |
 | commit round-trip phase | external | existing `ChangesetVerbStore` (CONTROL frames) | [L02] |
 | draft overlay (streaming text) | external | existing `ChangesetDraftStore` | [L02] |
 | composer pin state | local-data (per-entry) | `useState` inside the changes-route effect | [L24] |
@@ -417,8 +420,8 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 | Generate button (Z5-left, route-conditional) | JSX | `tug-prompt-entry.tsx` | [P06] |
 | SELECT_ROUTE bindings ⇧⌘E / ⇧⌘Y | entries | `components/tugways/keybinding-map.ts` | Table T01 |
 | `SessionRouteChromeManifest` route cases | edit | `components/tugways/cards/chrome/session-route-chrome-manifest.tsx` | chips + placeholder text per new route |
-| `ChangesRouteController` | class | `lib/changes-route-controller.ts` | [P07] |
-| `CardServices.changesController` (+ feed store) | field | `lib/card-services-store.ts` | construct/dispose |
+| `ChangesRouteController` | class | `lib/changes-route-controller.ts` | [P07] — filtered projection over `ChangesetAllStore` (0x24); no new feed |
+| `CardServices.changesController` | field | `lib/card-services-store.ts` | construct/dispose (unsubscribe from `ChangesetAllStore`) |
 | `SessionChangesView`, `SessionHistoryView` | components | `cards/session-changes/`, `cards/session-history/` | slot views |
 | session-view-slot wrapper + CSS | JSX/CSS | `session-card.tsx` + card CSS | (#transcript-slot) |
 | `focus-session-card` action + flash CSS | action | `action-dispatch.ts`, pane chrome CSS | [P04] |
@@ -555,16 +558,16 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 
 **Depends on:** #step-1
 
-**Commit:** `tugdeck(changes): per-card ChangesRouteController over the workspace CHANGESET feed [L02]`
+**Commit:** `tugdeck(changes): per-card ChangesRouteController as a filtered projection over ChangesetAllStore [L02]`
 
 **References:** [P05], [P07], Spec S01 (fields sent in #step-10), (#sessions-section-inventory)
 
 **Artifacts:**
-- `lib/changes-route-controller.ts`; `CardServices.changesController` + a workspace-filtered `FeedStore(conn, [FeedId.CHANGESET])` in `card-services-store.ts` (same pattern as the FILETREE/GIT_DIFF stacks); dispose wiring.
+- `lib/changes-route-controller.ts`; `CardServices.changesController` in `card-services-store.ts` (construct with the binding, subscribe to the app-level `ChangesetAllStore` singleton — NO new `FeedStore`; `CHANGESET` 0x23 is retired); dispose unsubscribes.
 - `SessionCardBody` passes `changesController` into `TugPromptEntry` (un-gating the view-routes from #step-2) and into the slot views.
 
 **Tasks:**
-- [ ] Derivation: from the workspace `ChangesetSnapshot`, select the session entry (`owner_id === tugSessionId`), dash entries, unattributed files, project header — mirroring `buildItems` scoped to one workspace (cite `tugdeck/src/lib/changeset-types.ts` for the wire types).
+- [ ] Derivation: from the `CHANGESET_ALL` (`WorkspacesChangesetSnapshot`) singleton, select this card's project by `workspace_key === binding.workspaceKey`, the session entry by `owner_id === tugSessionId`, dash entries, unattributed files, project header — mirroring `buildItems` scoped to one workspace, including its placeholder-project fallback (cite `tugdeck/src/lib/changeset-types.ts` for the wire types).
 - [ ] Selection: default rule `!ambiguous && !shared` for session files, `true` for unattributed; overrides map; `selectedPaths()`.
 - [ ] Triggers: `commit(message)` → `ChangesetVerbStore.commit("session:"+tugSessionId, projectDir, selectedPaths, message)`; `requestDraft()` → `ChangesetDraftStore.requestDraft(projectDir, "session", tugSessionId)`.
 - [ ] Unit tests against golden CHANGESET fixtures (reuse the fixture corpus guarding `changeset-types.ts`).
@@ -618,7 +621,7 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 - `performSubmit` Changes branch; Generate button left of Z5 (route-conditional); pin-semantics effect streaming the draft overlay into the editor; Z5 "Commit"/"Committing…" width-stabilized labels.
 
 **Tasks:**
-- [ ] Submit branch per (#submit-dispatch-order): gate (message non-empty, ≥1 selected, not pending) → `changesController.commit(trimmed)` → history push (route `±`) → clear.
+- [ ] Submit branch per (#submit-dispatch-order): gate (message non-empty, ≥1 selected, not pending) → `changesController.commit(trimmed)` → history push (route `±`) → clear. The branch runs BEFORE the local slash-command interception, and `routeAllowsLocal` excludes `ROUTE_CHANGES` explicitly — a commit message starting with `/` must never run a slash command.
 - [ ] Generate button: disabled while drafting; click = unpin + `changesController.requestDraft()`. Reuse `TugPushButton` with `widthStabilize`.
 - [ ] Pin semantics ported from `EntryBody`: pristine follows `useChangesetDraft(projectDir,"session",tugSessionId)` streamed text via the editor's programmatic restore (must not fire onChange/pin); user edit pins; landed commit clears + unpins; "Use latest draft" affordance when pinned and a newer draft exists.
 - [ ] Draft/commit errors surface via the pane bulletin (calm, dismissible), not the session-lost banner.
@@ -689,7 +692,7 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 - `performSubmit` History branch (wrap + send + flip to `❯`); `tugplug/skills/history/SKILL.md`.
 
 **Tasks:**
-- [ ] Submit branch: `codeSessionStore.send("/tugplug:history " + submitText, [])`, history push (route `↺`, raw question), clear, `setRoute(DEFAULT_ROUTE)`.
+- [ ] Submit branch per (#submit-dispatch-order): send-readiness gates first (`resolveSubmitButtonView(...).disabled` bail; `classifyBlockedSubmit` drop/defer on `!canSubmit && !canInterrupt` — a replay/transport-settling submit must never leak a turn; mid-turn falls through, `send()` queues) → `codeSessionStore.send("/tugplug:history " + submitText, [])`, history push (route `↺`, raw question), clear, `setRoute(DEFAULT_ROUTE)`. `routeAllowsLocal` excludes `ROUTE_HISTORY` so a `/`-leading question is never intercepted as a local command.
 - [ ] Author the skill (model on `tugplug/skills/commit/`): gather-first discipline — `tugmark log --json` / `tugmark context --json` for the project, `git log --grep` over `Tug-Session:`/`Tug-Dash:` trailers and free terms, `git show <sha>` / `git log --follow -- <path>` for file history — then answer citing shas. Read-only: the skill never commits or mutates.
 - [ ] Verify the skill registers (appears in the session's slash-command catalog) in a real session.
 
