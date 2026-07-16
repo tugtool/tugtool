@@ -39,15 +39,15 @@ export function registerSessionCard(): void {
       // (`--session-transcript-min`), so the entry never crowds the transcript
       // out even at the smallest card size.
       min: { width: 800, height: 600 },
-      // Default size opens the card tall enough for an extended
-      // transcript to read as a continuous column, not a porthole,
-      // and wide enough to give the Choose Session sheet (caps at
-      // 460px) room to breathe alongside the card body. Both
-      // dimensions intentionally exceed many laptop canvases;
-      // `addCard` clamps width AND height to 90% of the live canvas
-      // at creation, so on a smaller screen the card opens at
+      // Default size opens the card at the width floor — the tightest
+      // width that still fits the Z2 status row and gives the Choose
+      // Session sheet (caps at 460px) room beside the card body — and
+      // tall enough for an extended transcript to read as a continuous
+      // column, not a porthole. The height intentionally exceeds many
+      // laptop canvases; `addCard` clamps height to 90% of the live
+      // canvas at creation, so on a smaller screen the card opens at
       // canvas * 0.9 instead of pushing past the viewport.
-      preferred: { width: 850, height: 1200 },
+      preferred: { width: 800, height: 1200 },
     },
     engineKind: "em",
   });
