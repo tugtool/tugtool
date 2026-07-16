@@ -38,6 +38,7 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
     card_id: partial.card_id ?? null,
     name: partial.name ?? null,
     name_user_set: partial.name_user_set ?? false,
+    tag: partial.tag ?? null,
     origin: partial.origin ?? "tug",
     terminal_live: partial.terminal_live ?? null,
   };

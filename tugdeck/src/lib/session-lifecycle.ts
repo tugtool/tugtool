@@ -32,6 +32,8 @@ import {
 import type { ReplayWindow } from "@tugproto/inbound";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { logSessionLifecycle } from "./session-lifecycle-log";
+import { mintTag } from "./session-tag";
+import { sessionTagStore } from "./session-tag-store";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
   PERMISSION_MODE_DEFAULT_DOMAIN,
@@ -68,6 +70,30 @@ function resolveSpawnPermissionMode(cardId: string): string | undefined {
 }
 
 /**
+ * Resolve the provisional mnemonic tag to send on a spawn, and set it in the
+ * tag store optimistically so the Z4B chip shows one instantly "from the drop".
+ *
+ * - **Resume of an already-tagged row:** reuse the row's tag verbatim (the tag
+ *   follows the ledger row; the server preserves it via COALESCE). The tag is
+ *   taken from `existingTag` when the caller has the row in hand, else from the
+ *   store (seeded from `list_sessions_ok` / card bindings on the resumed id).
+ * - **Fresh spawn or legacy tagless resume:** mint a fresh tag, re-rolled
+ *   against every tag currently known so the client avoids collisions the
+ *   server would otherwise have to suffix.
+ *
+ * Returns the tag to thread into {@link sendSpawnSession}.
+ */
+export function provisionSpawnTag(
+  tugSessionId: string,
+  existingTag?: string | null,
+): string {
+  const reuse = (existingTag ?? sessionTagStore.getTag(tugSessionId))?.trim() ?? "";
+  const tag = reuse.length > 0 ? reuse : mintTag(sessionTagStore.knownTags());
+  sessionTagStore.setTag(tugSessionId, tag);
+  return tag;
+}
+
+/**
  * Send a `spawn_session` CONTROL frame for `(cardId, tugSessionId,
  * projectDir)`.
  *
@@ -83,6 +109,7 @@ export function sendSpawnSession(
   tugSessionId: string,
   projectDir: string,
   sessionMode: SpawnSessionMode = "new",
+  tag?: string,
 ): void {
   const permissionMode = resolveSpawnPermissionMode(cardId);
   const frame = encodeSpawnSession(
@@ -91,6 +118,7 @@ export function sendSpawnSession(
     projectDir,
     sessionMode,
     permissionMode,
+    tag,
   );
   logSessionLifecycle("spawn.frame_send", {
     card_id: cardId,
@@ -98,6 +126,7 @@ export function sendSpawnSession(
     project_dir: projectDir,
     session_mode: sessionMode,
     permission_mode: permissionMode ?? "",
+    tag: tag ?? "",
   });
   connection.send(frame.feedId, frame.payload);
 }

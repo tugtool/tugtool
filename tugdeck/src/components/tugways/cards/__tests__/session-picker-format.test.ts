@@ -22,6 +22,7 @@ function row(over: Partial<SessionRow>): SessionRow {
     card_id: null,
     name: null,
     name_user_set: false,
+    tag: null,
     origin: "external",
     terminal_live: null,
     ...over,

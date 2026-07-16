@@ -272,6 +272,7 @@ mod tests {
                 &repo.to_string_lossy(),
                 "card-1",
                 0,
+                None,
             )
             .unwrap();
         ledger
@@ -281,6 +282,7 @@ mod tests {
                 &plain.to_string_lossy(),
                 "card-2",
                 0,
+                None,
             )
             .unwrap();
 
@@ -414,6 +416,7 @@ mod tests {
                 &link.to_string_lossy(),
                 "card-1",
                 0,
+                None,
             )
             .unwrap();
 

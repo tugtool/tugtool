@@ -52,6 +52,7 @@ import { openOpenQuickly } from "@/lib/open-quickly-store";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
+import { sessionTagStore } from "./lib/session-tag-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
 import { requestLogout } from "./lib/logout-store";
 import { sessionSpawnErrorStore } from "./lib/session-spawn-error-store";
@@ -841,6 +842,10 @@ export function initActionDispatch(
         decoded.session_id,
         decoded.fields.name_user_set ? (decoded.fields.name ?? null) : null,
       );
+      // Make the optimistic provisional tag authoritative: the echoed row
+      // carries the server's claimed-or-suffixed tag (unconditional — the tag
+      // has no user-set gate; it always fronts the session when present).
+      sessionTagStore.setTag(decoded.session_id, decoded.fields.tag);
     }
     publishSessionUpdated(decoded);
   });
@@ -872,6 +877,9 @@ export function initActionDispatch(
     // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const row of rows) {
       sessionNameStore.setName(row.session_id, row.name_user_set ? row.name : null);
+      // Seed the chip's tag cache from the listed rows so a bound session reads
+      // its ledger tag once listed (or re-resumed after a legacy backfill).
+      sessionTagStore.setTag(row.session_id, row.tag);
     }
     publishListSessionsOk({
       project_dir: projectDir,
@@ -943,6 +951,9 @@ export function initActionDispatch(
     // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const b of rows) {
       sessionNameStore.setName(b.session_id, b.name_user_set ? (b.name ?? null) : null);
+      // Seed the chip's tag cache on restore so a session's mnemonic shows the
+      // moment its card rebinds (parity with the name seed).
+      sessionTagStore.setTag(b.session_id, b.tag ?? null);
     }
     publishListCardBindingsOk({ bindings: rows });
   });

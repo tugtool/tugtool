@@ -16,6 +16,7 @@ import {
   encodeResetSession,
   encodeSpawnSession,
   isControlFrame,
+  normalizeSessionRow,
   parseActivityFrame,
 } from "../protocol";
 
@@ -243,6 +244,25 @@ describe("session CONTROL frame builders", () => {
     expect("permission_mode" in payload).toBe(false);
   });
 
+  test("encodeSpawnSession forwards tag when provided", () => {
+    const frame = encodeSpawnSession(
+      "card-1",
+      "sess-1",
+      "/work/alpha",
+      "new",
+      undefined,
+      "azure-heron",
+    );
+    const payload = parsePayload(frame);
+    expect(payload.tag).toBe("azure-heron");
+  });
+
+  test("encodeSpawnSession omits tag when not provided", () => {
+    const frame = encodeSpawnSession("card-1", "sess-1", "/work/alpha");
+    const payload = parsePayload(frame);
+    expect("tag" in payload).toBe(false);
+  });
+
   test("encodeCloseSession produces a CONTROL frame with card_id and tug_session_id", () => {
     const frame = encodeCloseSession("card-1", "sess-1");
     expect(frame.feedId).toBe(FeedId.CONTROL);
@@ -281,6 +301,29 @@ describe("session CONTROL frame builders", () => {
       action: "request_replay",
       tug_session_id: "sess-r1",
     });
+  });
+});
+
+describe("normalizeSessionRow tag", () => {
+  const base = {
+    session_id: "s1",
+    workspace_key: "ws-1",
+    project_dir: "/proj",
+    created_at: 1,
+    last_used_at: 2,
+    turn_count: 0,
+    last_user_prompt: null,
+    state: "live" as const,
+    card_id: null,
+    name: null,
+  };
+
+  test("defaults tag to null when the field is absent", () => {
+    expect(normalizeSessionRow(base).tag).toBe(null);
+  });
+
+  test("passes tag through when present", () => {
+    expect(normalizeSessionRow({ ...base, tag: "azure-heron" }).tag).toBe("azure-heron");
   });
 });
 
@@ -344,12 +387,13 @@ describe("session ledger CONTROL encoders / decoders", () => {
         card_id: "card-1",
         name: null,
         // Bare ledger-row pushes never carry origin/terminal_live/file_size/
-        // name_user_set; the decoder normalizes them to the tug/not-live/
-        // no-size/not-user-set defaults.
+        // name_user_set/tag; the decoder normalizes them to the tug/not-live/
+        // no-size/not-user-set/no-tag defaults.
         origin: "tug",
         terminal_live: null,
         file_size: null,
         name_user_set: false,
+        tag: null,
       },
     });
   });

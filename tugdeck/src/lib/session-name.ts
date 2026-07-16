@@ -5,9 +5,14 @@
  * The name surfaces in two places, each with its own rule:
  *  - the **Z4B session chip** ({@link sessionChipDisplay}) — the name capped at
  *    {@link SESSION_NAME_CAP} chars (ellipsized), with the full name + raw
- *    `tugSessionId` in the tooltip; falls back to the truncated id when unnamed.
+ *    `tugSessionId` in the tooltip; falls back to the mnemonic tag, then the
+ *    truncated id, when unnamed.
  *  - the **session chooser row** ({@link sessionRowTitle}) — the name when set,
- *    else today's `last_user_prompt`-derived title.
+ *    else the tag, else today's `last_user_prompt`-derived title.
+ *
+ * Precedence in both: user `/rename` name → mnemonic tag → truncated UUID /
+ * prompt fallback. The tag is the default friendly face; the UUID is the
+ * last-resort fallback a legacy tagless session still degrades to.
  *
  * Pure string logic — no React, no DOM, no store. Unit-testable in isolation.
  *
@@ -34,36 +39,55 @@ export interface SessionChipDisplay {
 }
 
 /**
- * Chip value + tooltip for `(name, tugSessionId)`.
+ * Chip value + tooltip for `(name, tag, tugSessionId)`, precedence
+ * name → tag → truncated UUID.
  *
  * - **Named:** value is the name capped at {@link SESSION_NAME_CAP}; tooltip is
  *   the full name plus the raw session id (so the id stays discoverable).
- * - **Unnamed** (`null` / blank): value is the first {@link SESSION_ID_TRUNCATE}
- *   chars of the id; tooltip is the full id — today's behavior unchanged.
+ * - **Unnamed but tagged:** value is the tag (well under the cap, but capped for
+ *   safety); tooltip is the tag plus the raw id.
+ * - **Unnamed and untagged** (`null` / blank): value is the first
+ *   {@link SESSION_ID_TRUNCATE} chars of the id; tooltip is the full id —
+ *   today's behavior unchanged for a legacy tagless session.
  */
 export function sessionChipDisplay(
   name: string | null,
+  tag: string | null,
   tugSessionId: string,
 ): SessionChipDisplay {
-  const trimmed = name?.trim() ?? "";
-  if (trimmed.length === 0) {
+  const trimmedName = name?.trim() ?? "";
+  if (trimmedName.length > 0) {
     return {
-      value: tugSessionId.slice(0, SESSION_ID_TRUNCATE),
-      tooltip: tugSessionId,
+      value: truncateSessionName(trimmedName),
+      tooltip: `${trimmedName}\n${tugSessionId}`,
+    };
+  }
+  const trimmedTag = tag?.trim() ?? "";
+  if (trimmedTag.length > 0) {
+    return {
+      value: truncateSessionName(trimmedTag),
+      tooltip: `${trimmedTag}\n${tugSessionId}`,
     };
   }
   return {
-    value: truncateSessionName(trimmed),
-    tooltip: `${trimmed}\n${tugSessionId}`,
+    value: tugSessionId.slice(0, SESSION_ID_TRUNCATE),
+    tooltip: tugSessionId,
   };
 }
 
 /**
- * The session chooser row's title: the name when set, otherwise the
- * `last_user_prompt`-derived `fallback` (the existing title). A blank name is
- * treated as unset.
+ * The session chooser row's title, precedence name → tag → `fallback`: the name
+ * when set, else the mnemonic tag, else the `last_user_prompt`-derived
+ * `fallback` (the existing title). Blank name/tag are treated as unset.
  */
-export function sessionRowTitle(name: string | null, fallback: string): string {
-  const trimmed = name?.trim() ?? "";
-  return trimmed.length > 0 ? trimmed : fallback;
+export function sessionRowTitle(
+  name: string | null,
+  tag: string | null,
+  fallback: string,
+): string {
+  const trimmedName = name?.trim() ?? "";
+  if (trimmedName.length > 0) return trimmedName;
+  const trimmedTag = tag?.trim() ?? "";
+  if (trimmedTag.length > 0) return trimmedTag;
+  return fallback;
 }

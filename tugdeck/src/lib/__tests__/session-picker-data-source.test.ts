@@ -23,6 +23,7 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
     card_id: partial.card_id ?? null,
     name: partial.name ?? null,
     name_user_set: partial.name_user_set ?? false,
+    tag: partial.tag ?? null,
     origin: partial.origin ?? "tug",
     terminal_live: partial.terminal_live ?? null,
     file_size: partial.file_size ?? null,
@@ -41,6 +42,58 @@ function rowsOf(ds: SessionsDataSource): string[] {
   }
   return out;
 }
+
+describe("SessionsDataSource tag/name/prompt filter (/resume)", () => {
+  const ledger = () =>
+    readySnapshot([
+      makeRow({ session_id: "a", tag: "azure-heron", turn_count: 1 }),
+      makeRow({ session_id: "b", tag: "coral-otter", name: "Parser fix", turn_count: 1 }),
+      makeRow({
+        session_id: "c",
+        tag: "misty-lynx",
+        last_user_prompt: "refactor the parser",
+        turn_count: 1,
+      }),
+    ]);
+
+  test("empty filter keeps session-new + every visible row", () => {
+    const ds = new SessionsDataSource({ query: "/proj", ledger: ledger(), tagFilter: "" });
+    expect(rowsOf(ds)).toEqual(["session-new", "a", "b", "c"]);
+  });
+
+  test("a tag substring narrows to the matching row and drops session-new", () => {
+    const ds = new SessionsDataSource({
+      query: "/proj",
+      ledger: ledger(),
+      tagFilter: "heron",
+    });
+    expect(rowsOf(ds)).toEqual(["a"]);
+  });
+
+  test("the filter matches name and prompt too", () => {
+    const byName = new SessionsDataSource({
+      query: "/proj",
+      ledger: ledger(),
+      tagFilter: "parser fix",
+    });
+    expect(rowsOf(byName)).toEqual(["b"]);
+    const byPrompt = new SessionsDataSource({
+      query: "/proj",
+      ledger: ledger(),
+      tagFilter: "refactor",
+    });
+    expect(rowsOf(byPrompt)).toEqual(["c"]);
+  });
+
+  test("a non-matching filter yields an empty list (no session-new to spawn)", () => {
+    const ds = new SessionsDataSource({
+      query: "/proj",
+      ledger: ledger(),
+      tagFilter: "nonexistent",
+    });
+    expect(rowsOf(ds)).toEqual([]);
+  });
+});
 
 describe("SessionsDataSource with external rows", () => {
   test("external rows list exactly like ledger rows, in snapshot order", () => {

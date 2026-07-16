@@ -321,10 +321,10 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
     row.last_user_prompt !== null && row.last_user_prompt.length > 0
       ? row.last_user_prompt
       : null;
-  // The user-assigned name ([#step-13d]) is the row title when set; otherwise
-  // the `last_user_prompt`-derived snippet. `""` when neither exists →
+  // The user-assigned name is the row title when set; else the mnemonic tag;
+  // else the `last_user_prompt`-derived snippet. `""` when none exist →
   // "No prompts yet".
-  const titleText = sessionRowTitle(row.name, fullPrompt ?? "");
+  const titleText = sessionRowTitle(row.name, row.tag, fullPrompt ?? "");
   const snippet =
     titleText.length > 0 ? truncateForDisplay(titleText, 64) : null;
 

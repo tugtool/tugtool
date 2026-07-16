@@ -29,23 +29,30 @@ describe("truncateSessionName", () => {
 });
 
 describe("sessionChipDisplay", () => {
-  test("unnamed → truncated id value, full id tooltip", () => {
-    expect(sessionChipDisplay(null, ID)).toEqual({
+  test("unnamed + untagged → truncated id value, full id tooltip", () => {
+    expect(sessionChipDisplay(null, null, ID)).toEqual({
       value: "abcd1234",
       tooltip: ID,
     });
-    // A blank name is treated as unnamed.
-    expect(sessionChipDisplay("   ", ID).value).toBe("abcd1234");
+    // Blank name/tag are treated as unset.
+    expect(sessionChipDisplay("   ", "  ", ID).value).toBe("abcd1234");
   });
 
-  test("named → capped name value, tooltip carries full name + id", () => {
-    const out = sessionChipDisplay("My Refactor Session", ID);
+  test("unnamed but tagged → tag value, tooltip carries tag + id", () => {
+    expect(sessionChipDisplay(null, "azure-heron", ID)).toEqual({
+      value: "azure-heron",
+      tooltip: `azure-heron\n${ID}`,
+    });
+  });
+
+  test("named → capped name value, tooltip carries full name + id (name beats tag)", () => {
+    const out = sessionChipDisplay("My Refactor Session", "azure-heron", ID);
     expect(out.value).toBe("My Refactor Sess…"); // 16 chars + …
     expect(out.tooltip).toBe(`My Refactor Session\n${ID}`);
   });
 
   test("a short name shows verbatim with name + id tooltip", () => {
-    expect(sessionChipDisplay("Bugfix", ID)).toEqual({
+    expect(sessionChipDisplay("Bugfix", null, ID)).toEqual({
       value: "Bugfix",
       tooltip: `Bugfix\n${ID}`,
     });
@@ -53,9 +60,10 @@ describe("sessionChipDisplay", () => {
 });
 
 describe("sessionRowTitle", () => {
-  test("prefers the name, falls back to the prompt-derived title", () => {
-    expect(sessionRowTitle("Named", "do the thing")).toBe("Named");
-    expect(sessionRowTitle(null, "do the thing")).toBe("do the thing");
-    expect(sessionRowTitle("  ", "do the thing")).toBe("do the thing");
+  test("precedence name → tag → prompt-derived fallback", () => {
+    expect(sessionRowTitle("Named", "azure-heron", "do the thing")).toBe("Named");
+    expect(sessionRowTitle(null, "azure-heron", "do the thing")).toBe("azure-heron");
+    expect(sessionRowTitle("  ", "  ", "do the thing")).toBe("do the thing");
+    expect(sessionRowTitle(null, null, "do the thing")).toBe("do the thing");
   });
 });

@@ -19,7 +19,7 @@ export function registerSessionCard(): void {
   registerCard({
     componentId: "session",
     contentFactory: (cardId) => <SessionCardContent cardId={cardId} />,
-    defaultMeta: { title: "Session", icon: "MessageSquareText", closable: true, confirmClose: true },
+    defaultMeta: { title: "", icon: "MessageSquareText", closable: true, confirmClose: true },
     cardFeedIds: [
       FeedId.CODE_INPUT,
       FeedId.CODE_OUTPUT,

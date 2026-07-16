@@ -123,6 +123,13 @@ export interface SessionRow {
    *  chip shows the hash unless this is `true`; the chooser ignores it (it shows
    *  any title). Defaults to `false` for older tugcast that omits the field. */
   name_user_set: boolean;
+  /** Mnemonic `adjective-noun` tag minted client-side "from the drop" and made
+   *  unique per-ledger by tugcast (an optional numeric suffix breaks the rare
+   *  collision); `null` on legacy rows until they are next resumed. Layered over
+   *  the UUID and the `/rename` name (precedence: name → tag → truncated UUID).
+   *  Defaults to `null` for older tugcast that omits the field. Keep in lockstep
+   *  with the Rust `SessionRow.tag`. */
+  tag: string | null;
   /**
    * Provenance of the row: `"tug"` rows come from the sqlite ledger
    * (sessions Tug spawned or adopted); `"external"` rows were
@@ -160,8 +167,8 @@ export interface TerminalLive {
  * carry them, and an older tugcast won't send them on listings either.
  */
 export function normalizeSessionRow(
-  row: Omit<SessionRow, "origin" | "terminal_live" | "name_user_set"> &
-    Partial<Pick<SessionRow, "origin" | "terminal_live" | "name_user_set">>,
+  row: Omit<SessionRow, "origin" | "terminal_live" | "name_user_set" | "tag"> &
+    Partial<Pick<SessionRow, "origin" | "terminal_live" | "name_user_set" | "tag">>,
 ): SessionRow {
   return {
     ...row,
@@ -169,6 +176,7 @@ export function normalizeSessionRow(
     terminal_live: row.terminal_live ?? null,
     file_size: row.file_size ?? null,
     name_user_set: row.name_user_set ?? false,
+    tag: row.tag ?? null,
   };
 }
 
@@ -218,6 +226,9 @@ export interface CardBinding {
   /** `true` only when `name` was a user `/rename`. Absent on older tugcast →
    *  treated as `false`, so an auto title never seeds the chip as a rename. */
   name_user_set?: boolean;
+  /** Mnemonic tag; seeds the chip on card rebind (parity with `name`). Absent on
+   *  older tugcast → treated as `null`. Keep in lockstep with the Rust binding row. */
+  tag?: string | null;
 }
 
 /** Frame flags */
@@ -503,6 +514,11 @@ export type SpawnSessionMode = "new" | "resume";
  * runtime, racing the first turn). Omitted when the caller has no resolved
  * mode (a card with neither a per-card mode nor a configured default), and
  * absent on older clients — tugcast treats a missing field as "no override".
+ *
+ * `tag` is the provisional mnemonic the caller minted "from the drop". When
+ * present it's forwarded as `tag`; tugcast stores it on the `LedgerEntry` and
+ * claims (or suffixes) it authoritatively at `record_spawn`, echoing the final
+ * value back on `session_updated`. Omitted when the caller minted none.
  */
 export function encodeSpawnSession(
   cardId: string,
@@ -510,6 +526,7 @@ export function encodeSpawnSession(
   projectDir: string,
   sessionMode: SpawnSessionMode = "new",
   permissionMode?: string,
+  tag?: string,
 ): Frame {
   const payload: Record<string, string> = {
     card_id: cardId,
@@ -519,6 +536,9 @@ export function encodeSpawnSession(
   };
   if (permissionMode !== undefined) {
     payload.permission_mode = permissionMode;
+  }
+  if (tag !== undefined) {
+    payload.tag = tag;
   }
   return controlFrame(CONTROL_ACTION_SPAWN_SESSION, payload);
 }

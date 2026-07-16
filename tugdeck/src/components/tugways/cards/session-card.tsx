@@ -131,6 +131,7 @@ import {
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
 import {
+  provisionSpawnTag,
   sendCloseSessionKeepingBinding,
   sendSpawnSession,
 } from "@/lib/session-lifecycle";
@@ -161,6 +162,9 @@ import {
 } from "@/lib/session-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { cardTitleStore } from "@/lib/card-title-store";
+import { sessionNameStore } from "@/lib/session-name-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
+import { sessionCardTitleOverride } from "@/lib/session-card-title";
 import { useSessionCardObserver } from "./use-session-card-observer";
 import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
@@ -914,6 +918,7 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
                   sessionId,
                   projectDir,
                   sessionMode,
+                  provisionSpawnTag(sessionId),
                 );
               }
             }, SHEET_EXIT_ANIMATION_MS);
@@ -3011,6 +3016,7 @@ export function SessionCardBody({
         newSessionId,
         binding.projectDir,
         "new",
+        provisionSpawnTag(newSessionId),
       );
       sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
     },
@@ -3296,21 +3302,46 @@ export function SessionCardBody({
       [cardId],
     ),
   );
+  const boundSessionId = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () => cardSessionBindingStore.getBinding(cardId)?.tugSessionId ?? null,
+      [cardId],
+    ),
+  );
+  // The bound session's `/rename` name and mnemonic tag — the title-bar label
+  // resolves name → tag (like the Z4B chip), so subscribe to both ([L02]).
+  const sessionName = useSyncExternalStore(
+    sessionNameStore.subscribe,
+    useCallback(
+      () => (boundSessionId === null ? null : sessionNameStore.getName(boundSessionId)),
+      [boundSessionId],
+    ),
+  );
+  const sessionTag = useSyncExternalStore(
+    sessionTagStore.subscribe,
+    useCallback(
+      () => (boundSessionId === null ? null : sessionTagStore.getTag(boundSessionId)),
+      [boundSessionId],
+    ),
+  );
 
-  // Publish the bound project path to the pane chrome's title bar
-  // via `cardTitleStore`. The title bar composes it as
-  // `"Dev — <projectDir>"`. Cleared on unmount or when the binding
-  // goes away so the title bar falls back to the registry default.
+  // Publish the session's identity to the pane chrome's title bar via
+  // `cardTitleStore`. The title bar composes it as `"Session : <override>"`,
+  // where the override is `"<project-leaf> <session name → tag>"`. Cleared on
+  // unmount or when the binding goes away so the title bar falls back to the
+  // registry default.
   useEffect(() => {
-    if (projectDir !== null) {
-      cardTitleStore.set(cardId, projectDir);
-    } else {
-      cardTitleStore.clear(cardId);
-    }
+    cardTitleStore.set(
+      cardId,
+      projectDir !== null
+        ? sessionCardTitleOverride(projectDir, sessionName, sessionTag)
+        : "Session",
+    );
     return () => {
       cardTitleStore.clear(cardId);
     };
-  }, [cardId, projectDir]);
+  }, [cardId, projectDir, sessionName, sessionTag]);
 
   const projectChipText =
     projectDir !== null ? formatPathChipText(projectDir) : null;

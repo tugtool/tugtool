@@ -57,6 +57,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 import type { SessionRow } from "../protocol";
 import { caseInsensitiveSubstring } from "./text-match";
+import { matchesTagQuery } from "./session-tag";
 import type { WorkspaceSnapshot } from "./session-ledger-store";
 
 // ---------------------------------------------------------------------------
@@ -206,6 +207,15 @@ export function useSessionRecentsDataSource(
 interface SessionsInputs {
   readonly query: string;
   readonly ledger: WorkspaceSnapshot;
+  /**
+   * Optional tag/name/prompt filter (the `/resume` overlay's search field).
+   * Empty string → no filtering (the full-card project picker's behavior). When
+   * non-empty, only `session-resume` rows matching {@link matchesTagQuery} are
+   * shown and `session-new` is dropped, so a non-matching query yields an empty
+   * list that fires no spawn. Optional — absent / empty is the full-card
+   * project picker's unfiltered behavior.
+   */
+  readonly tagFilter?: string;
 }
 
 /**
@@ -332,7 +342,8 @@ export class SessionsDataSource implements TugListViewDataSource {
   setInputsWithoutNotify(next: SessionsInputs): boolean {
     if (
       this.inputs.query === next.query &&
-      this.inputs.ledger === next.ledger
+      this.inputs.ledger === next.ledger &&
+      this.inputs.tagFilter === next.tagFilter
     ) {
       return false;
     }
@@ -347,11 +358,17 @@ export class SessionsDataSource implements TugListViewDataSource {
 
   private recompute(): void {
     const { query, ledger } = this.inputs;
+    const tagFilter = this.inputs.tagFilter ?? "";
+    const filtering = tagFilter.trim().length > 0;
     const next: SessionsRow[] = [];
     if (query.length > 0) {
       if (ledger.status === "ready") {
-        next.push({ kind: "session-new" });
+        // The "New session" row is a spawn affordance, not a searchable
+        // session; hide it while a filter is active so a non-match is truly
+        // empty and fires nothing.
+        if (!filtering) next.push({ kind: "session-new" });
         for (const row of ledger.rows) {
+          if (filtering && !matchesTagQuery(row, tagFilter)) continue;
           // Visibility is decoupled from the (canonically strict) turn
           // count so a real session never vanishes because its count is
           // low ([P09]/[R06]). A row is shown when it has resumable
@@ -389,13 +406,14 @@ export class SessionsDataSource implements TugListViewDataSource {
 export function useSessionsDataSource(
   query: string,
   ledger: WorkspaceSnapshot,
+  tagFilter = "",
 ): SessionsDataSource {
   const ref = useRef<SessionsDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new SessionsDataSource({ query, ledger });
+    ref.current = new SessionsDataSource({ query, ledger, tagFilter });
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify({ query, ledger });
+  const didChange = ds.setInputsWithoutNotify({ query, ledger, tagFilter });
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();

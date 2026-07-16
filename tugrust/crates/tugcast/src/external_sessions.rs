@@ -1545,7 +1545,7 @@ mod tests {
 
         // A ledger row with an inflated stale count, left live.
         ledger
-            .record_spawn(SESSION_A, "ws", PROJECT, "card-1", 1_000)
+            .record_spawn(SESSION_A, "ws", PROJECT, "card-1", 1_000, None)
             .unwrap();
         ledger.set_turn_count(SESSION_A, 59, 1_000).unwrap();
         assert_eq!(ledger.get(SESSION_A).unwrap().unwrap().turn_count, 59);

@@ -721,7 +721,14 @@ mod tests {
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
-            .record_spawn("sess-alpha", "ws", &root.to_string_lossy(), "card-1", 0)
+            .record_spawn(
+                "sess-alpha",
+                "ws",
+                &root.to_string_lossy(),
+                "card-1",
+                0,
+                None,
+            )
             .unwrap();
         ledger.rename("sess-alpha", Some("alpha work")).unwrap();
 
@@ -866,6 +873,7 @@ mod tests {
             card_id: Some("card-1".to_owned()),
             name: name.map(str::to_owned),
             name_user_set: false,
+            tag: None,
         }
     }
 
@@ -1069,10 +1077,10 @@ mod tests {
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
-            .record_spawn("sess-a", "ws", &root.to_string_lossy(), "card-1", 0)
+            .record_spawn("sess-a", "ws", &root.to_string_lossy(), "card-1", 0, None)
             .unwrap();
         ledger
-            .record_spawn("sess-b", "ws", &link.to_string_lossy(), "card-2", 0)
+            .record_spawn("sess-b", "ws", &link.to_string_lossy(), "card-2", 0, None)
             .unwrap();
 
         // Each session's write canonicalizes its own spelling; both resolve to
@@ -1139,7 +1147,7 @@ mod tests {
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
-            .record_spawn("sess-a", "ws", &raw, "card-1", 0)
+            .record_spawn("sess-a", "ws", &raw, "card-1", 0, None)
             .unwrap();
 
         let rows = ledger.list_for_project_dir(&raw).unwrap();
@@ -1169,7 +1177,7 @@ mod tests {
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
-            .record_spawn("sess", "ws", &link.to_string_lossy(), "card-1", 0)
+            .record_spawn("sess", "ws", &link.to_string_lossy(), "card-1", 0, None)
             .unwrap();
         // Legacy row: absolute file_path under the real path, project_dir the
         // symlink spelling — the two disagree, exactly the live bug.
@@ -1213,7 +1221,7 @@ mod tests {
         let ledger = SessionLedger::open_in_memory().unwrap();
         let pd = CanonicalPath::from_raw(&root);
         ledger
-            .record_spawn("sess", "ws", pd.as_str(), "card-1", 0)
+            .record_spawn("sess", "ws", pd.as_str(), "card-1", 0, None)
             .unwrap();
         // New capture-time form: repo-relative file_path, op deleted.
         let mut ev = event("sess", "tu-1", Path::new("committed.txt"), pd.as_path());
@@ -1278,7 +1286,7 @@ mod tests {
         std::fs::write(root.join("a.txt"), "x").unwrap();
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
-            .record_spawn("sess", "ws", &root.to_string_lossy(), "card", 0)
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card", 0, None)
             .unwrap();
         // Legacy-shaped row: absolute file_path.
         ledger
@@ -1313,7 +1321,7 @@ mod tests {
         let ledger = SessionLedger::open_in_memory().unwrap();
         // X has a legacy absolute row but is never composed.
         ledger
-            .record_spawn("sess-x", "ws", &root_x.to_string_lossy(), "card-x", 0)
+            .record_spawn("sess-x", "ws", &root_x.to_string_lossy(), "card-x", 0, None)
             .unwrap();
         ledger
             .record_file_event(&event("sess-x", "tu-x", &root_x.join("x.txt"), &root_x))

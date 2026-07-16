@@ -98,6 +98,12 @@ pub const DEV_TRASH_SWEEP_AGE_DAYS: i64 = 7;
 /// stores. The picker truncates further at display time.
 pub const USER_PROMPT_MAX_CHARS: usize = 256;
 
+/// Upper bound on the `record_spawn` tag suffix retry. With client-side
+/// re-rolling against 524k combinations the server suffix is essentially never
+/// hit; this cap only guards a pathological cascade before falling back to a
+/// NULL tag rather than failing the spawn ([P03], Spec S02).
+const TAG_SUFFIX_CAP: u32 = 50;
+
 /// Errors emitted by ledger operations.
 #[derive(Debug, Error)]
 pub enum LedgerError {
@@ -173,6 +179,11 @@ pub struct SessionRow {
     /// it's an auto `aiTitle` (or unset). The Z4B session chip shows the hash
     /// unless this is `true`, so an auto title never masquerades as a rename.
     pub name_user_set: bool,
+    /// Mnemonic `adjective-noun` tag minted client-side "from the drop" and
+    /// made unique per-ledger by the `sessions_tag` index (an optional numeric
+    /// suffix breaks the rare collision). `None` on legacy rows until they are
+    /// next resumed. Keep in lockstep with the TS `SessionRow.tag`.
+    pub tag: Option<String>,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -751,6 +762,7 @@ impl SessionLedger {
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
         Self::migrate_sessions_add_name(conn)?;
         Self::migrate_sessions_add_name_user_set(conn)?;
+        Self::migrate_sessions_add_tag(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
         conn.execute_batch(
@@ -766,11 +778,19 @@ impl SessionLedger {
                 state             TEXT NOT NULL,
                 card_id           TEXT,
                 name              TEXT,
-                name_user_set     INTEGER NOT NULL DEFAULT 0
+                name_user_set     INTEGER NOT NULL DEFAULT 0,
+                tag               TEXT
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
                 ON sessions(workspace_key, last_used_at DESC);
+
+            -- Per-ledger uniqueness for the mnemonic tag. NULLs are distinct
+            -- in a SQLite unique index, so every legacy tagless row coexists
+            -- (essential for lazy backfill). A UNIQUE column can't be added via
+            -- ALTER TABLE, so the index is the only migration-safe route.
+            CREATE UNIQUE INDEX IF NOT EXISTS sessions_tag
+                ON sessions(tag);
 
             CREATE TABLE IF NOT EXISTS turns (
                 journal_id        TEXT PRIMARY KEY,
@@ -1166,6 +1186,23 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.tag` column — the mnemonic
+    /// `adjective-noun` handle that fronts a session. Adds the plain column
+    /// only; the `sessions_tag` unique index is created by the CREATE-batch
+    /// (SQLite forbids `ALTER TABLE … ADD COLUMN … UNIQUE`). Pre-column rows
+    /// read `NULL` (no tag) and acquire one lazily on their next resume. No-op
+    /// on a fresh DB (the CREATE TABLE defines it) or when already migrated.
+    fn migrate_sessions_add_tag(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "tag") {
+            conn.execute("ALTER TABLE sessions ADD COLUMN tag TEXT", [])?;
+        }
+        Ok(())
+    }
+
     /// Self-healing add of the `pulse_lines.intent` column — the retained
     /// high-level thought behind a low-level beat ("intent • action" in
     /// the strip). Pre-column rows read `NULL` (no intent), which is
@@ -1254,7 +1291,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name, name_user_set
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -1276,7 +1313,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name, name_user_set
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -1307,7 +1344,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name, name_user_set
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -1336,7 +1373,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
-                    turn_count, last_user_prompt, state, card_id, name, name_user_set
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -1369,6 +1406,7 @@ impl SessionLedger {
         project_dir: &str,
         card_id: &str,
         now: i64,
+        tag: Option<&str>,
     ) -> Result<(), LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -1401,37 +1439,78 @@ impl SessionLedger {
         } else {
             now
         });
-        tx.execute(
-            // `name_user_set` is hardcoded `0`: a scan-seeded name is always an
-            // auto `aiTitle`, never a user rename. On conflict it's left out of
-            // the SET clause so an existing user-set bit (and its `name`, kept by
-            // COALESCE) survives a respawn untouched.
-            "INSERT INTO sessions (
-                session_id, workspace_key, project_dir,
-                created_at, last_used_at, turn_count,
-                last_user_prompt, name, name_user_set, state, card_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 'live', ?9)
-             ON CONFLICT(session_id) DO UPDATE SET
-                workspace_key = excluded.workspace_key,
-                project_dir   = excluded.project_dir,
-                last_used_at  = excluded.last_used_at,
-                turn_count    = MAX(sessions.turn_count, excluded.turn_count),
-                last_user_prompt = COALESCE(sessions.last_user_prompt, excluded.last_user_prompt),
-                name          = COALESCE(sessions.name, excluded.name),
-                state         = 'live',
-                card_id       = excluded.card_id",
-            params![
-                session_id,
-                workspace_key,
-                project_dir,
-                created_at,
-                now,
-                seed_turns,
-                seed_prompt,
-                seed_name,
-                card_id
-            ],
-        )?;
+        // Claim-or-suffix ([P03], Spec S02). The candidate tag is minted
+        // client-side and re-rolled against known tags, so the `sessions_tag`
+        // unique index is only the last-resort race-breaker. On a tag-unique
+        // violation — raised on the fresh INSERT *or* on the `DO UPDATE` when a
+        // NULL row is being backfilled ([P06]) — rewrite the candidate to the
+        // next `-N` suffix and re-run the whole statement. A SQLite constraint
+        // error aborts only the statement (ABORT default), so the transaction
+        // stays alive across retries. Bounded; on exhaustion the row lands with
+        // a NULL tag rather than failing the spawn.
+        let base = tag.map(tag_base);
+        let mut candidate: Option<String> = tag.map(str::to_owned);
+        let mut suffix: u32 = 2;
+        loop {
+            let result = tx.execute(
+                // `name_user_set` is hardcoded `0`: a scan-seeded name is always
+                // an auto `aiTitle`, never a user rename. On conflict it's left
+                // out of the SET clause so an existing user-set bit (and its
+                // `name`, kept by COALESCE) survives a respawn untouched. `tag`
+                // is COALESCE'd too: a set tag survives untouched, a NULL tag is
+                // backfilled with the resumed candidate.
+                "INSERT INTO sessions (
+                    session_id, workspace_key, project_dir,
+                    created_at, last_used_at, turn_count,
+                    last_user_prompt, name, name_user_set, state, card_id, tag
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, 'live', ?9, ?10)
+                 ON CONFLICT(session_id) DO UPDATE SET
+                    workspace_key = excluded.workspace_key,
+                    project_dir   = excluded.project_dir,
+                    last_used_at  = excluded.last_used_at,
+                    turn_count    = MAX(sessions.turn_count, excluded.turn_count),
+                    last_user_prompt = COALESCE(sessions.last_user_prompt, excluded.last_user_prompt),
+                    name          = COALESCE(sessions.name, excluded.name),
+                    state         = 'live',
+                    card_id       = excluded.card_id,
+                    tag           = COALESCE(sessions.tag, excluded.tag)",
+                params![
+                    session_id,
+                    workspace_key,
+                    project_dir,
+                    created_at,
+                    now,
+                    seed_turns,
+                    seed_prompt,
+                    seed_name,
+                    card_id,
+                    candidate,
+                ],
+            );
+            match result {
+                Ok(_) => break,
+                Err(e) if is_tag_unique_violation(&e) => {
+                    // `base` is Some whenever a tag-unique violation can fire
+                    // (the row carried a candidate tag).
+                    match base {
+                        Some(b) if suffix <= TAG_SUFFIX_CAP => {
+                            candidate = Some(format!("{b}-{suffix}"));
+                            suffix += 1;
+                        }
+                        _ => {
+                            // Degenerate suffix cascade: land with no tag rather
+                            // than fail the spawn.
+                            tracing::warn!(
+                                session_id,
+                                "tag claim exhausted the suffix cap; recording NULL tag"
+                            );
+                            candidate = None;
+                        }
+                    }
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
         tx.commit()?;
         self.notify_sessions_changed();
         Ok(())
@@ -2703,6 +2782,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let card_id: Option<String> = row.get(8)?;
     let name: Option<String> = row.get(9)?;
     let name_user_set: bool = row.get::<_, i64>(10)? != 0;
+    let tag: Option<String> = row.get(11)?;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -2719,7 +2799,33 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         card_id,
         name,
         name_user_set,
+        tag,
     }))
+}
+
+/// Strip a trailing `-<digits>` suffix from a tag to recover the base
+/// `adjective-noun`, so a resumed `azure-heron-2` re-suffixes to `azure-heron-3`
+/// (never `azure-heron-2-2`) — the tag grammar allows a single numeric suffix.
+fn tag_base(tag: &str) -> &str {
+    if let Some(idx) = tag.rfind('-') {
+        let (head, tail) = (&tag[..idx], &tag[idx + 1..]);
+        if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) && head.contains('-') {
+            return head;
+        }
+    }
+    tag
+}
+
+/// True when `err` is the `sessions_tag` unique-index violation — the signal to
+/// re-suffix the candidate and retry the claim. Fires on both the fresh INSERT
+/// and the backfill `DO UPDATE`.
+fn is_tag_unique_violation(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, Some(msg))
+            if e.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+                && msg.contains("sessions.tag")
+    )
 }
 
 /// Decode one row from a `SELECT journal_id, session_id, user_text,
@@ -3019,8 +3125,146 @@ mod tests {
 
     fn seed_live(ledger: &SessionLedger, id: &str, ws: &str, card: &str, now: i64) {
         ledger
-            .record_spawn(id, ws, "/proj", card, now)
+            .record_spawn(id, ws, "/proj", card, now, None)
             .expect("record_spawn");
+    }
+
+    // ── sessions.tag: claim-or-suffix, COALESCE-preserve, lazy backfill ───────
+
+    #[test]
+    fn record_spawn_stores_the_given_tag() {
+        let l = fresh();
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .expect("record_spawn");
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron")
+        );
+    }
+
+    #[test]
+    fn record_spawn_suffixes_a_taken_tag() {
+        let l = fresh();
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        // A different session claiming the same tag gets the deterministic `-2`
+        // suffix (the fresh-insert unique-index collision path).
+        l.record_spawn(
+            "s2",
+            WS_A,
+            "/proj",
+            "card-2",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron")
+        );
+        assert_eq!(
+            l.get("s2").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron-2")
+        );
+    }
+
+    #[test]
+    fn record_spawn_preserves_tag_on_respawn_and_backfills_null_on_resume() {
+        let l = fresh();
+        // A respawn carrying a *different* provisional tag must not overwrite the
+        // stored one — COALESCE keeps the set tag.
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), Some("other-swan"))
+            .unwrap();
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron")
+        );
+
+        // A legacy NULL-tag row backfills the provided tag on resume ([P06]).
+        l.record_spawn("s2", WS_A, "/proj", "card-2", millis(0), None)
+            .unwrap();
+        assert_eq!(l.get("s2").unwrap().unwrap().tag, None);
+        l.record_spawn(
+            "s2",
+            WS_A,
+            "/proj",
+            "card-2",
+            millis(0),
+            Some("coral-otter"),
+        )
+        .unwrap();
+        assert_eq!(
+            l.get("s2").unwrap().unwrap().tag.as_deref(),
+            Some("coral-otter")
+        );
+    }
+
+    #[test]
+    fn record_spawn_suffixes_a_backfill_that_collides() {
+        let l = fresh();
+        // One row already owns the tag.
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        // A second, initially tagless row is resumed with the SAME provisional
+        // tag: the backfill `DO UPDATE` hits the unique index and must re-suffix
+        // (the claim-or-suffix retry wraps the whole statement, Spec S02).
+        l.record_spawn("s2", WS_A, "/proj", "card-2", millis(0), None)
+            .unwrap();
+        l.record_spawn(
+            "s2",
+            WS_A,
+            "/proj",
+            "card-2",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        assert_eq!(
+            l.get("s2").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron-2")
+        );
+    }
+
+    #[test]
+    fn record_spawn_allows_many_null_tags() {
+        let l = fresh();
+        // NULLs are distinct in the unique index — legacy tagless rows coexist.
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        l.record_spawn("s2", WS_A, "/proj", "card-2", millis(0), None)
+            .unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().tag, None);
+        assert_eq!(l.get("s2").unwrap().unwrap().tag, None);
     }
 
     // ── pulse_lines: capped rolling log + tail read ──────────────────────────
@@ -3070,7 +3314,7 @@ mod tests {
     fn record_spawn_inserts_live_row() {
         let l = fresh();
         let now = millis(0);
-        l.record_spawn("s1", WS_A, "/proj/alpha", "card-1", now)
+        l.record_spawn("s1", WS_A, "/proj/alpha", "card-1", now, None)
             .unwrap();
 
         let row = l.get("s1").unwrap().expect("row exists");
@@ -3114,7 +3358,7 @@ mod tests {
         .unwrap();
 
         let now = millis(10);
-        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now)
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now, None)
             .unwrap();
         let row = l.get("ext-1").unwrap().expect("row exists");
         assert_eq!(row.turn_count, 42);
@@ -3181,7 +3425,7 @@ mod tests {
 
         // Seed gate: record_spawn must not pull the inflated 99 through its
         // MAX merge — the fresh ledger row stays at 0 until reconcile.
-        l.record_spawn("ext-stale", WS_A, "/proj/alpha", "card-1", millis(10))
+        l.record_spawn("ext-stale", WS_A, "/proj/alpha", "card-1", millis(10), None)
             .unwrap();
         let row = l.get("ext-stale").unwrap().expect("row exists");
         assert_eq!(
@@ -3201,7 +3445,7 @@ mod tests {
         // without ever clobbering richer ledger values.
         let l = fresh();
         let t0 = millis(0);
-        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", t0)
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", t0, None)
             .unwrap();
         l.mark_closed("ext-1").unwrap();
         assert_eq!(l.get("ext-1").unwrap().unwrap().turn_count, 0);
@@ -3227,7 +3471,7 @@ mod tests {
         })
         .unwrap();
 
-        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-2", millis(10))
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-2", millis(10), None)
             .unwrap();
         let row = l.get("ext-1").unwrap().unwrap();
         assert_eq!(row.turn_count, 7, "backfilled from scan cache");
@@ -3239,7 +3483,7 @@ mod tests {
         // row is staler (7).
         l.record_user_prompt("ext-1", "typed in tug").unwrap();
         l.reconcile_turn_count_from_engine("ext-1", 17).unwrap();
-        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-3", millis(40))
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-3", millis(40), None)
             .unwrap();
         let row = l.get("ext-1").unwrap().unwrap();
         assert_eq!(row.turn_count, 17, "MAX keeps the richer count");
@@ -3270,7 +3514,7 @@ mod tests {
         })
         .unwrap();
         let now = millis(10);
-        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now)
+        l.record_spawn("ext-1", WS_A, "/proj/alpha", "card-1", now, None)
             .unwrap();
         let row = l.get("ext-1").unwrap().unwrap();
         assert_eq!(row.turn_count, 0);
@@ -3317,7 +3561,7 @@ mod tests {
         assert!(r.name_user_set);
 
         // A re-spawn (resume) must NOT clear the name OR its user-set bit.
-        l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000)
+        l.record_spawn("s1", WS_A, "/proj", "card-1", now + 1_000, None)
             .unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.name.as_deref(), Some("My session"));
@@ -3448,7 +3692,7 @@ mod tests {
             frontier_pending_close_msg_id: None,
         })
         .unwrap();
-        l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10))
+        l.record_spawn("ext", WS_A, "/proj/alpha", "card-1", millis(10), None)
             .unwrap();
         assert_eq!(
             l.get("ext").unwrap().unwrap().turn_count,
@@ -3515,7 +3759,7 @@ mod tests {
         l.mark_closed("s1").unwrap();
 
         let t1 = millis(0);
-        l.record_spawn("s1", WS_A, "/proj/alpha", "card-2", t1)
+        l.record_spawn("s1", WS_A, "/proj/alpha", "card-2", t1, None)
             .unwrap();
         let r = l.get("s1").unwrap().unwrap();
         assert_eq!(r.created_at, t0, "created_at must survive resume");
@@ -3701,7 +3945,7 @@ mod tests {
         let l =
             SessionLedger::open_with_claude_root(tmp_real.join("sessions.db"), claude_root.clone())
                 .unwrap();
-        l.record_spawn("s1", WS_A, alias.to_str().unwrap(), "c1", millis(0))
+        l.record_spawn("s1", WS_A, alias.to_str().unwrap(), "c1", millis(0), None)
             .unwrap();
         l.mark_closed("s1").unwrap();
 
@@ -3886,7 +4130,7 @@ mod tests {
         now: i64,
     ) {
         ledger
-            .record_spawn(id, ws, project_dir, card, now)
+            .record_spawn(id, ws, project_dir, card, now, None)
             .expect("record_spawn");
     }
 
@@ -3942,7 +4186,7 @@ mod tests {
         let path = tmp.path().to_path_buf();
         // First open seeds the schema.
         let l1 = SessionLedger::open(&path).unwrap();
-        l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0))
+        l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0), None)
             .unwrap();
         drop(l1);
         // Second open re-runs the idempotent DDL and finds the row intact.
@@ -4031,7 +4275,7 @@ mod tests {
         let l = fresh_ledger_with_root(tmp.path());
         write_jsonl(tmp.path(), "/proj/x", "sess-doomed");
 
-        l.record_spawn("sess-doomed", "ws-1", "/proj/x", "c1", millis(0))
+        l.record_spawn("sess-doomed", "ws-1", "/proj/x", "c1", millis(0), None)
             .unwrap();
         l.mark_closed("sess-doomed").unwrap();
 
@@ -4053,7 +4297,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let l = fresh_ledger_with_root(tmp.path());
         // No JSONL on disk — only the ledger row.
-        l.record_spawn("ghost", "ws-1", "/proj/x", "c1", millis(0))
+        l.record_spawn("ghost", "ws-1", "/proj/x", "c1", millis(0), None)
             .unwrap();
         l.mark_closed("ghost").unwrap();
 

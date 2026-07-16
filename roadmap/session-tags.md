@@ -317,13 +317,13 @@ The tag store is the exact same shape as `sessionNameStore` — a `Map<session_i
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Ledger: `tag` column, migration, `record_spawn` claim | pending | — |
-| #step-2 | Supervisor/bridge/protocol: carry + emit the tag | pending | — |
-| #step-3 | TS wire: `SessionRow.tag`, spawn/echo plumbing | pending | — |
-| #step-4 | TS pure logic: mint, resolve, store, precedence | pending | — |
-| #step-5 | TS ingestion + client mint wiring | pending | — |
-| #step-6 | Display + `/resume` tag filter | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Ledger: `tag` column, migration, `record_spawn` claim | done | `568f61a29` |
+| #step-2 | Supervisor/bridge/protocol: carry + emit the tag | done | `b9e5806d9` |
+| #step-3 | TS wire: `SessionRow.tag`, spawn/echo plumbing | done | `3e298569b` |
+| #step-4 | TS pure logic: mint, resolve, store, precedence | done | `f1b3292b9` |
+| #step-5 | TS ingestion + client mint wiring | done | `2e5292587` |
+| #step-6 | Display + `/resume` tag filter | done | `6f999e5b4` |
+| #step-7 | Integration checkpoint | done | N/A (verification) |
 
 #### Step 1: Ledger — `tag` column, migration, `record_spawn` claim {#step-1}
 

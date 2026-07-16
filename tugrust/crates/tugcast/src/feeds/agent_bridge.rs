@@ -1032,7 +1032,7 @@ pub async fn relay_session_io(
                             // ledger row's `card_id` column is the source of
                             // truth for the client-side restore (consumed via
                             // the `list_card_bindings` CONTROL verb).
-                            let (workspace_key, card_id) = {
+                            let (workspace_key, card_id, tag) = {
                                 let mut entry = ledger_entry.lock().await;
                                 if let Some(id) = &claude_id {
                                     entry.claude_session_id = Some(id.clone());
@@ -1058,6 +1058,7 @@ pub async fn relay_session_io(
                                 (
                                     entry.workspace_key.as_ref().to_owned(),
                                     entry.card_id.clone(),
+                                    entry.tag.clone(),
                                 )
                             };
 
@@ -1100,6 +1101,7 @@ pub async fn relay_session_io(
                                 workspace_key: &workspace_key,
                                 project_dir,
                                 card_id: card_id_for_ledger,
+                                tag: tag.as_deref(),
                             });
                             // After each successful spawn record, cap the
                             // workspace to the configured non-live row max.

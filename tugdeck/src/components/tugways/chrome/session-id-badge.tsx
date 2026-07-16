@@ -33,6 +33,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { sessionNameStore } from "@/lib/session-name-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
 import { sessionChipDisplay, SESSION_ID_TRUNCATE } from "@/lib/session-name";
 import { encodeProjectDir } from "@/lib/memory-destinations";
 import { openPathInOS } from "@/lib/os-open";
@@ -82,6 +83,15 @@ export function SessionIdBadge({
       [tugSessionId],
     ),
   );
+  // The mnemonic tag, or null when untagged. Fronts the chip when unnamed
+  // (precedence name → tag → truncated id).
+  const tag = React.useSyncExternalStore(
+    sessionTagStore.subscribe,
+    React.useCallback(
+      () => (tugSessionId === null ? null : sessionTagStore.getTag(tugSessionId)),
+      [tugSessionId],
+    ),
+  );
   // Claude Code's resolved cwd — the directory whose encoding names the
   // JSONL folder. Falls back to the binding's `projectDir` before the live
   // metadata lands. The subscription is unconditional ([L02]); a missing
@@ -100,19 +110,21 @@ export function SessionIdBadge({
     ),
   );
 
-  // Named → the name (≤16 chars, ellipsized) with name + id in the tooltip;
-  // unnamed → the truncated id, full id in the tooltip. Computed before the
+  // Precedence name → tag → truncated id (value + tooltip). Computed before the
   // early return so the copy hook below runs unconditionally ([L02] hooks).
   const display =
-    tugSessionId === null ? null : sessionChipDisplay(name, tugSessionId);
+    tugSessionId === null ? null : sessionChipDisplay(name, tag, tugSessionId);
   const value = display?.value ?? "";
 
-  // Always copy the UUID prefix (the stable, addressable handle); when the
-  // session has been renamed, copy the name alongside it so both are captured.
+  // Always copy the UUID prefix (the stable, addressable handle). Prepend the
+  // name (a user `/rename`) when set, else the tag (the mnemonic addressable
+  // handle), so the most human-facing label is captured alongside the id.
   const idPrefix =
     tugSessionId === null ? "" : tugSessionId.slice(0, SESSION_ID_TRUNCATE);
   const trimmedName = name?.trim();
-  const copyValue = trimmedName ? `${trimmedName}/${idPrefix}` : idPrefix;
+  const trimmedTag = tag?.trim();
+  const handle = trimmedName || trimmedTag;
+  const copyValue = handle ? `${handle}/${idPrefix}` : idPrefix;
   const copy = useCopyableButton(`Session: ${copyValue}`);
 
   if (tugSessionId === null || display === null) return null;

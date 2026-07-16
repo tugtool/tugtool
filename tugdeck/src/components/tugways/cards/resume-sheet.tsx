@@ -35,9 +35,11 @@
 
 import "./resume-sheet.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
+import { TugInput } from "@/components/tugways/tug-input";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   TugListView,
@@ -50,7 +52,7 @@ import {
 import { useSessionLedger } from "@/lib/session-ledger-store";
 import { SESSIONS_CELL_RENDERERS, PickerCellProvider } from "./session-picker-cells";
 import { getConnection } from "@/lib/connection-singleton";
-import { sendSpawnSession } from "@/lib/session-lifecycle";
+import { provisionSpawnTag, sendSpawnSession } from "@/lib/session-lifecycle";
 import { fireRestore } from "@/lib/session-restore";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
@@ -82,11 +84,6 @@ export function useResumeSheet({
     (cb) => cardSessionBindingStore.subscribe(cb),
     () => cardSessionBindingStore.getBinding(cardId)?.projectDir ?? "",
   );
-  // The sessions data source for the bound project, fed by the tugcast-side
-  // ledger ([L02]). Lives at the card level (a hook) so its subscription is
-  // stable.
-  const sessionLedger = useSessionLedger(projectDir);
-  const sessionsDataSource = useSessionsDataSource(projectDir, sessionLedger);
 
   const openResumeSheet = useCallback(() => {
     if (projectDir.length === 0) return;
@@ -96,32 +93,36 @@ export function useResumeSheet({
       iconRole: "agent",
       description: "Pick a session to resume in this card.",
       content: (close) => (
-        <ResumeSheetBody
-          dataSource={sessionsDataSource}
-          cardId={cardId}
-          projectDir={projectDir}
-          onClose={close}
-        />
+        <ResumeSheetBody cardId={cardId} projectDir={projectDir} onClose={close} />
       ),
     });
-  }, [showSheet, sessionsDataSource, cardId, projectDir]);
+  }, [showSheet, cardId, projectDir]);
 
   return { openResumeSheet };
 }
 
 interface ResumeSheetBodyProps {
-  dataSource: SessionsDataSource;
   cardId: string;
   projectDir: string;
   onClose: (value?: string) => void;
 }
 
 function ResumeSheetBody({
-  dataSource,
   cardId,
   projectDir,
   onClose,
 }: ResumeSheetBodyProps): React.ReactElement {
+  // The filter narrows the list by tag / name / prompt substring ([P05]). Held
+  // as transient local UI state — never persisted.
+  const [filterQuery, setFilterQuery] = useState("");
+  // The sessions data source for the bound project, fed by the tugcast-side
+  // ledger ([L02]) and narrowed by the filter query.
+  const sessionLedger = useSessionLedger(projectDir);
+  const dataSource = useSessionsDataSource(projectDir, sessionLedger, filterQuery);
+  // Seed the sheet's trapped focus onto the filter field so the caret lands
+  // there on open (text-first, mirroring the `/rename` sheet).
+  const focusGroup = React.useId();
+  useSeedKeyView(`${focusGroup}:0`);
   // Pick-to-resume: a row click rebinds + resumes (or spawns a new session),
   // then dismisses. Live-elsewhere and loading rows are inert.
   const delegate = useMemo<TugListViewDelegate>(
@@ -142,9 +143,10 @@ function ResumeSheetBody({
           }, SHEET_EXIT_ANIMATION_MS);
         } else if (row.kind === "session-new") {
           const sessionId = crypto.randomUUID();
+          const tag = provisionSpawnTag(sessionId);
           onClose("new");
           window.setTimeout(() => {
-            sendSpawnSession(connection, cardId, sessionId, projectDir, "new");
+            sendSpawnSession(connection, cardId, sessionId, projectDir, "new", tag);
           }, SHEET_EXIT_ANIMATION_MS);
         }
         // "loading" — inert.
@@ -155,6 +157,19 @@ function ResumeSheetBody({
 
   return (
     <div className="resume-sheet">
+      {/* Composes `TugInput` (the same field the `/rename` sheet uses) so the
+          editing surface inherits the substrate CUT/COPY/PASTE/SELECT_ALL/
+          UNDO/REDO responders ([L03]) — a hand-rolled input would go dead on
+          Cmd-A/C/X/V/Z. */}
+      <TugInput
+        value={filterQuery}
+        placeholder="Filter by tag, name, or prompt"
+        aria-label="Filter sessions"
+        onChange={(e) => setFilterQuery(e.target.value)}
+        data-testid="resume-filter-input"
+        focusGroup={focusGroup}
+        focusOrder={0}
+      />
       {/* The reused session cells read selection / pending-trash from this
           context; a focused pick-to-resume overlay tracks none, so the values
           are inert (no row pre-highlighted, no trash popover pending). */}

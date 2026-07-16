@@ -259,6 +259,13 @@ pub struct LedgerEntry {
     /// flip modes mid-life. `None` when tugdeck sent no mode — tugcode keeps
     /// its own default.
     pub permission_mode: Option<String>,
+    /// Provisional mnemonic tag tugdeck minted "from the drop" and sent on the
+    /// first `spawn_session`. Set once on the fresh insert and preserved across
+    /// reconnects (like `permission_mode`); the ledger's `record_spawn` claims
+    /// or suffixes it authoritatively, and the final value rides back on
+    /// `session_updated`. `None` when tugdeck sent no tag. Tug-side only — never
+    /// forwarded into the child spawn args ([P07]).
+    pub tag: Option<String>,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
     /// Whether this entry currently owns a `WorkspaceRegistry` refcount for its
@@ -376,6 +383,7 @@ impl LedgerEntry {
             project_dir,
             session_mode,
             permission_mode: None,
+            tag: None,
             spawn_state: SpawnState::Idle,
             holds_workspace_refcount: false,
             crash_budget,
@@ -430,6 +438,9 @@ pub struct SessionRecord<'a> {
     pub workspace_key: &'a str,
     pub project_dir: &'a str,
     pub card_id: &'a str,
+    /// Provisional mnemonic tag carried from the `LedgerEntry`, claimed
+    /// authoritatively by `record_spawn`. `None` when tugdeck sent none.
+    pub tag: Option<&'a str>,
 }
 
 /// Writer for the per-session ledger.
@@ -669,6 +680,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             record.project_dir,
             record.card_id,
             now,
+            record.tag,
         ) {
             warn!(error = %err, session_id = record.session_id, "ledger record_spawn failed");
             return;
@@ -841,6 +853,7 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "card_id": row.card_id,
             "name": row.name,
             "name_user_set": row.name_user_set,
+            "tag": row.tag,
         },
     });
     Frame::new(
@@ -1256,6 +1269,9 @@ fn build_listed_union(
                     name: meta.name,
                     // A scanned `aiTitle` is never a user rename.
                     name_user_set: false,
+                    // Scanned external rows carry no tag; they acquire one lazily
+                    // on their next resume ([P06]).
+                    tag: None,
                 },
                 origin: "external",
                 terminal_live,
@@ -1284,6 +1300,11 @@ struct OwnedControlPayload {
     /// payload omits it (older client, or a card with no configured default) —
     /// the string is passed through opaquely; tugcode validates it.
     permission_mode: Option<String>,
+    /// Provisional mnemonic tag tugdeck minted for a fresh spawn. `None` on
+    /// close/reset payloads and on older clients. Stored on the `LedgerEntry`
+    /// and claimed authoritatively by `record_spawn`; never forwarded to the
+    /// child ([P07]).
+    tag: Option<String>,
 }
 
 fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, ControlError> {
@@ -1313,12 +1334,18 @@ fn parse_control_payload_owned(payload: &[u8]) -> Result<OwnedControlPayload, Co
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
+    let tag = value
+        .get("tag")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     Ok(OwnedControlPayload {
         card_id,
         tug_session_id: TugSessionId::new(tug_session_id),
         project_dir,
         session_mode,
         permission_mode,
+        tag,
     })
 }
 
@@ -2174,6 +2201,7 @@ impl AgentSupervisor {
                     project_dir_str,
                     parsed.session_mode,
                     parsed.permission_mode,
+                    parsed.tag,
                     client_id,
                 )
                 .await
@@ -2473,6 +2501,7 @@ impl AgentSupervisor {
         project_dir_str: String,
         session_mode: SessionMode,
         permission_mode: Option<String>,
+        tag: Option<String>,
         client_id: ClientId,
     ) -> Result<(), ControlError> {
         let project_dir = PathBuf::from(&project_dir_str);
@@ -2624,6 +2653,10 @@ impl AgentSupervisor {
             // spawn time so the mode is correct from claude's first instant.
             if inserted || entry.spawn_state == SpawnState::Idle {
                 entry.permission_mode = permission_mode;
+                // The provisional tag is stamped on the same fresh/Idle path and
+                // preserved across reconnects; `record_spawn` claims it
+                // authoritatively when the bridge promotes the session.
+                entry.tag = tag;
             }
             entry.session_mode
         };
@@ -3925,6 +3958,7 @@ impl AgentSupervisor {
                     "is_alive": is_alive,
                     "name": row.name,
                     "name_user_set": row.name_user_set,
+                    "tag": row.tag,
                 }))
             })
             .collect();
@@ -5752,6 +5786,44 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::super::agent_bridge::{RelayOutcome, SessionChild, SpawnFuture, relay_session_io};
+
+    // ── session tag on the wire: inbound parse + outbound frame ───────────────
+
+    #[test]
+    fn parse_spawn_payload_extracts_tag() {
+        let payload = br#"{"card_id":"c1","tug_session_id":"s1","project_dir":"/p","session_mode":"new","tag":"azure-heron"}"#;
+        let parsed = parse_control_payload_owned(payload).expect("parse");
+        assert_eq!(parsed.tag.as_deref(), Some("azure-heron"));
+    }
+
+    #[test]
+    fn parse_spawn_payload_tag_absent_is_none() {
+        let payload =
+            br#"{"card_id":"c1","tug_session_id":"s1","project_dir":"/p","session_mode":"new"}"#;
+        let parsed = parse_control_payload_owned(payload).expect("parse");
+        assert_eq!(parsed.tag, None);
+    }
+
+    #[test]
+    fn session_updated_frame_carries_tag() {
+        let row = crate::session_ledger::SessionRow {
+            session_id: "s1".to_owned(),
+            workspace_key: "ws".to_owned(),
+            project_dir: "/p".to_owned(),
+            created_at: 0,
+            last_used_at: 0,
+            turn_count: 0,
+            last_user_prompt: None,
+            state: crate::session_ledger::SessionState::Live,
+            card_id: Some("c1".to_owned()),
+            name: None,
+            name_user_set: false,
+            tag: Some("azure-heron".to_owned()),
+        };
+        let frame = build_session_updated_frame(&row);
+        let body: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
+        assert_eq!(body["fields"]["tag"], "azure-heron");
+    }
 
     // ---- Test-only ChildSpawner fakes ----
 
@@ -9251,6 +9323,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         let row = ledger.get("claude-abc").unwrap().expect("row");
         assert_eq!(row.workspace_key, "ws-1");
@@ -9283,6 +9356,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         expect_ping(Arc::clone(&signal), "record (spawn)").await;
 
@@ -9301,6 +9375,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         recorder.record_user_prompt("claude-abc", "hello world");
         let row = ledger.get("claude-abc").unwrap().unwrap();
@@ -9320,6 +9395,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         // Live turns touch recency only; the count is the engine reconcile
         // ([P08]). Reconcile to 3, then live turns leave the count untouched.
@@ -9345,6 +9421,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         recorder.mark_failed("claude-abc");
 
@@ -9361,6 +9438,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         recorder.mark_closed("claude-abc");
         recorder.remove("claude-abc");
@@ -9378,6 +9456,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/proj/x",
             card_id: "card-1",
+            tag: None,
         });
         recorder.mark_closed("claude-abc");
         recorder.record_turn("claude-abc");
@@ -9433,6 +9512,7 @@ mod tests {
                 "/some/workspace",
                 "card-1",
                 1_700_000_000_000,
+                None,
             )
             .unwrap();
         {
@@ -9579,13 +9659,13 @@ mod tests {
         // prompt: spawned (record_spawn fires on session_init) but
         // never had a turn.
         ledger
-            .record_spawn("empty", "ws-1", "/proj/alpha", "card-A", 1_000)
+            .record_spawn("empty", "ws-1", "/proj/alpha", "card-A", 1_000, None)
             .unwrap();
         ledger.mark_closed("empty").unwrap();
 
         // A card with a real conversation (count from the engine reconcile).
         ledger
-            .record_spawn("real", "ws-1", "/proj/beta", "card-B", 2_000)
+            .record_spawn("real", "ws-1", "/proj/beta", "card-B", 2_000, None)
             .unwrap();
         ledger.set_turn_count("real", 1, 3_000).unwrap();
         ledger.mark_closed("real").unwrap();
@@ -9755,10 +9835,10 @@ mod tests {
         // difference between them is whether the in-memory ledger
         // entry exists in a Live state.
         ledger
-            .record_spawn("live", "ws-1", "/proj/alive", "card-Live", 1_000)
+            .record_spawn("live", "ws-1", "/proj/alive", "card-Live", 1_000, None)
             .unwrap();
         ledger
-            .record_spawn("dead", "ws-1", "/proj/dead", "card-Dead", 2_000)
+            .record_spawn("dead", "ws-1", "/proj/dead", "card-Dead", 2_000, None)
             .unwrap();
 
         // Promote "live" into the supervisor's in-memory ledger as
@@ -9809,15 +9889,15 @@ mod tests {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
-            .record_spawn("s-old", "ws-1", "/proj/alpha", "c1", 1_000)
+            .record_spawn("s-old", "ws-1", "/proj/alpha", "c1", 1_000, None)
             .unwrap();
         ledger.mark_closed("s-old").unwrap();
         ledger
-            .record_spawn("s-new", "ws-1", "/proj/alpha", "c2", 5_000)
+            .record_spawn("s-new", "ws-1", "/proj/alpha", "c2", 5_000, None)
             .unwrap();
         ledger.mark_closed("s-new").unwrap();
         ledger
-            .record_spawn("other", "ws-2", "/proj/beta", "c3", 3_000)
+            .record_spawn("other", "ws-2", "/proj/beta", "c3", 3_000, None)
             .unwrap();
         ledger.mark_closed("other").unwrap();
 
@@ -9955,7 +10035,7 @@ mod tests {
         write_registry_entry(&registry_root, "held-row", std::process::id(), "1");
         let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
         ledger
-            .record_spawn("held-row", "ws-1", "/proj/alpha", "c1", 1_000)
+            .record_spawn("held-row", "ws-1", "/proj/alpha", "c1", 1_000, None)
             .unwrap();
         ledger.mark_closed("held-row").unwrap();
         let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, Some(registry_root));
@@ -10059,7 +10139,7 @@ mod tests {
         let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
 
         ledger
-            .record_spawn("tug-row", "ws-1", "/proj/alpha", "c1", 9_000)
+            .record_spawn("tug-row", "ws-1", "/proj/alpha", "c1", 9_000, None)
             .unwrap();
         ledger.mark_closed("tug-row").unwrap();
         seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "external prompt");
@@ -10160,7 +10240,7 @@ mod tests {
 
         // Same id on disk AND in the ledger — an adopted session.
         ledger
-            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000)
+            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000, None)
             .unwrap();
         ledger.mark_closed(EXTERNAL_ID).unwrap();
         seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "adopted");
@@ -10201,7 +10281,7 @@ mod tests {
         seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "rich prompt");
         // Spawn with NO scan-cache row (cold ledger): the row is sparse.
         ledger
-            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000)
+            .record_spawn(EXTERNAL_ID, "ws-1", "/proj/alpha", "c1", 9_000, None)
             .unwrap();
         ledger.mark_closed(EXTERNAL_ID).unwrap();
         {
@@ -10298,7 +10378,7 @@ mod tests {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
-            .record_spawn("s1", "ws-1", "/p", "c1", 1_000)
+            .record_spawn("s1", "ws-1", "/p", "c1", 1_000, None)
             .unwrap();
         ledger.mark_closed("s1").unwrap();
         // Drain whatever the seed wrote.
@@ -10329,7 +10409,7 @@ mod tests {
     async fn trash_session_on_live_row_returns_error() {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
         ledger
-            .record_spawn("live1", "ws-1", "/p", "c1", 1_000)
+            .record_spawn("live1", "ws-1", "/p", "c1", 1_000, None)
             .unwrap();
         while rx.try_recv().is_ok() {}
 
@@ -10356,7 +10436,7 @@ mod tests {
         for i in 0..21 {
             let id = format!("s{i}");
             ledger
-                .record_spawn(&id, "ws-1", "/p", "c", 1_000_000 - i as i64)
+                .record_spawn(&id, "ws-1", "/p", "c", 1_000_000 - i as i64, None)
                 .unwrap();
             ledger.mark_closed(&id).unwrap();
         }
@@ -10410,16 +10490,16 @@ mod tests {
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
 
         ledger
-            .record_spawn("matched-1", "ws-1", "/proj/x", "c1", 1_000)
+            .record_spawn("matched-1", "ws-1", "/proj/x", "c1", 1_000, None)
             .unwrap();
         ledger.mark_closed("matched-1").unwrap();
         ledger
-            .record_spawn("matched-2", "ws-1", "/proj/x", "c2", 2_000)
+            .record_spawn("matched-2", "ws-1", "/proj/x", "c2", 2_000, None)
             .unwrap();
         ledger.mark_closed("matched-2").unwrap();
         // Different project_dir — survives.
         ledger
-            .record_spawn("other", "ws-2", "/proj/y", "c3", 3_000)
+            .record_spawn("other", "ws-2", "/proj/y", "c3", 3_000, None)
             .unwrap();
         ledger.mark_closed("other").unwrap();
         while rx.try_recv().is_ok() {}
@@ -10455,6 +10535,7 @@ mod tests {
             workspace_key: "ws-1",
             project_dir: "/p",
             card_id: "c1",
+            tag: None,
         });
         let first = drain_until_action(&mut rx, "session_updated");
         assert_eq!(first["fields"]["turn_count"].as_i64(), Some(0));
@@ -10514,6 +10595,7 @@ mod tests {
                 "/proj/journal",
                 "card-journal",
                 crate::session_ledger::now_millis(),
+                None,
             )
             .expect("seed session row");
     }
@@ -11202,7 +11284,7 @@ mod tests {
             entry.claude_session_id = Some("claude-A".to_string());
         }
         ledger
-            .record_spawn("claude-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .record_spawn("claude-A", "ws-1", "/proj/x", "card-1", 1_000, None)
             .unwrap();
 
         let outcome = sup
@@ -11238,7 +11320,7 @@ mod tests {
             entry.claude_session_id = Some("claude-B".to_string());
         }
         ledger
-            .record_spawn("claude-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .record_spawn("claude-B", "ws-1", "/proj/x", "card-2", 1_000, None)
             .unwrap();
 
         sup.handle_control(
@@ -11350,7 +11432,7 @@ mod tests {
             entry.claude_session_id = Some("claude-ctx-A".to_string());
         }
         ledger
-            .record_spawn("claude-ctx-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .record_spawn("claude-ctx-A", "ws-1", "/proj/x", "card-1", 1_000, None)
             .unwrap();
 
         let outcome = sup
@@ -11390,7 +11472,7 @@ mod tests {
             entry.claude_session_id = Some("claude-ctx-B".to_string());
         }
         ledger
-            .record_spawn("claude-ctx-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .record_spawn("claude-ctx-B", "ws-1", "/proj/x", "card-2", 1_000, None)
             .unwrap();
 
         sup.handle_control(
@@ -11532,7 +11614,7 @@ mod tests {
             entry.claude_session_id = Some("claude-ssc-A".to_string());
         }
         ledger
-            .record_spawn("claude-ssc-A", "ws-1", "/proj/x", "card-1", 1_000)
+            .record_spawn("claude-ssc-A", "ws-1", "/proj/x", "card-1", 1_000, None)
             .unwrap();
 
         sup.handle_control(
@@ -11578,7 +11660,7 @@ mod tests {
             entry.claude_session_id = Some("claude-ssc-B".to_string());
         }
         ledger
-            .record_spawn("claude-ssc-B", "ws-1", "/proj/x", "card-2", 1_000)
+            .record_spawn("claude-ssc-B", "ws-1", "/proj/x", "card-2", 1_000, None)
             .unwrap();
 
         sup.handle_control(
@@ -11661,7 +11743,7 @@ mod tests {
             entry.claude_session_id = Some("claude-ssc-L".to_string());
         }
         ledger
-            .record_spawn("claude-ssc-L", "ws-1", "/proj/x", "card-3", 1_000)
+            .record_spawn("claude-ssc-L", "ws-1", "/proj/x", "card-3", 1_000, None)
             .unwrap();
         ledger
             .record_session_state_change("claude-ssc-L", 100, "idle", "online", false)
@@ -11727,7 +11809,7 @@ mod tests {
         // array — the popover's "no state changes recorded" bug.
         let (sup, ledger, mut rx) = make_supervisor_with_ledger();
         ledger
-            .record_spawn("sess-reload-race", "ws-1", "/proj/x", "card-9", 1_000)
+            .record_spawn("sess-reload-race", "ws-1", "/proj/x", "card-9", 1_000, None)
             .unwrap();
         ledger
             .record_session_state_change("sess-reload-race", 100, "idle", "online", false)

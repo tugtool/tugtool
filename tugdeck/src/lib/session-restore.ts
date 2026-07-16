@@ -71,7 +71,7 @@
 
 import type { DeckManager } from "../deck-manager";
 import type { TugConnection } from "../connection";
-import { sendSpawnSession } from "./session-lifecycle";
+import { provisionSpawnTag, sendSpawnSession } from "./session-lifecycle";
 import { logSessionLifecycle } from "./session-lifecycle-log";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { cardServicesStore } from "./card-services-store";
@@ -592,7 +592,8 @@ function fireFreshSpawn(
   // delay-gates its centered panel on this, so a fast fresh spawn
   // shows only the backdrop and a slow one explains itself.
   restoreStartedAt.set(cardId, Date.now());
-  sendSpawnSession(connection, cardId, tugSessionId, projectDir, "new");
+  const tag = provisionSpawnTag(tugSessionId);
+  sendSpawnSession(connection, cardId, tugSessionId, projectDir, "new", tag);
   sessionRestoreRegistry._register(
     cardId,
     { tugSessionId, projectDir },
@@ -639,7 +640,10 @@ export function fireRestore(
   } else {
     resumeDisplayMetadata.delete(cardId);
   }
-  sendSpawnSession(connection, cardId, tugSessionId, projectDir, "resume");
+  // Resume: reuse the row's tag (from the store, seeded on listing/binding), or
+  // mint one to backfill a legacy tagless row.
+  const tag = provisionSpawnTag(tugSessionId);
+  sendSpawnSession(connection, cardId, tugSessionId, projectDir, "resume", tag);
   sessionRestoreRegistry._register(
     cardId,
     { tugSessionId, projectDir },
