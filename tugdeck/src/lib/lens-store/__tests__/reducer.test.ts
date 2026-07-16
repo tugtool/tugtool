@@ -116,6 +116,7 @@ describe("LensStore reducer — hydrate", () => {
       sectionOrder: ["log"],
       hiddenSections: [],
       collapsedSections: ["log"],
+      anchorSide: "right",
     };
     expect(reduce(seeded, { type: "hydrate" })).toBe(seeded);
   });
@@ -136,6 +137,7 @@ describe("LensStore reducer — hydrate", () => {
       sectionOrder: ["log", "telemetry"],
       hiddenSections: ["telemetry"],
       collapsedSections: [],
+      anchorSide: "left",
     };
     const next = reduce(seeded, {
       type: "hydrate",
@@ -143,6 +145,7 @@ describe("LensStore reducer — hydrate", () => {
       sectionOrder: ["log", "telemetry"],
       hiddenSections: ["telemetry"],
       collapsedSections: [],
+      anchorSide: "left",
     });
     expect(next).toBe(seeded);
   });
@@ -155,11 +158,28 @@ describe("LensStore reducer — toSnapshot", () => {
       sectionOrder: ["log", "telemetry"],
       hiddenSections: ["telemetry"],
       collapsedSections: ["log"],
+      anchorSide: "left",
     };
     const snap = toSnapshot(s);
     expect(snap.widthPx).toBe(500);
     expect(snap.sectionOrder).toEqual(["log", "telemetry"]);
     expect(snap.hiddenSections).toEqual(["telemetry"]);
     expect(snap.collapsedSections).toEqual(["log"]);
+    expect(snap.anchorSide).toBe("left");
+  });
+});
+
+describe("LensStore reducer — anchorSide", () => {
+  it("set_anchor_side updates the side", () => {
+    const next = reduce(fresh(), { type: "set_anchor_side", side: "left" });
+    expect(next.anchorSide).toBe("left");
+  });
+  it("setting the same side is a no-op (same-ref)", () => {
+    const a = reduce(fresh(), { type: "set_anchor_side", side: "left" });
+    expect(reduce(a, { type: "set_anchor_side", side: "left" })).toBe(a);
+  });
+  it("hydrate applies anchorSide", () => {
+    const next = reduce(fresh(), { type: "hydrate", anchorSide: "left" });
+    expect(next.anchorSide).toBe("left");
   });
 });

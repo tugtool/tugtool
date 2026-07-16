@@ -25,7 +25,19 @@ export const LENS_KEYS = {
   SECTION_ORDER: "sectionOrder",
   HIDDEN_SECTIONS: "hiddenSections",
   COLLAPSED_SECTIONS: "collapsedSections",
+  ANCHOR_SIDE: "anchorSide",
 } as const;
+
+/** Viewport edge the Lens rail pins to; the deck faces the opposite side. */
+export type LensAnchorSide = "left" | "right";
+
+/** Default anchor side — the rail opens on the right of the deck. */
+export const DEFAULT_LENS_ANCHOR_SIDE: LensAnchorSide = "right";
+
+/** Coerce an arbitrary persisted value to a valid anchor side. */
+export function normalizeLensAnchorSide(value: unknown): LensAnchorSide {
+  return value === "left" ? "left" : "right";
+}
 
 /**
  * Default reopen width in pixels — matches the historical dev-panel
@@ -53,4 +65,6 @@ export interface LensSnapshot {
   hiddenSections: readonly string[];
   /** Kinds the user has collapsed (band-only). */
   collapsedSections: readonly string[];
+  /** Viewport edge the Lens rail pins to. */
+  anchorSide: LensAnchorSide;
 }

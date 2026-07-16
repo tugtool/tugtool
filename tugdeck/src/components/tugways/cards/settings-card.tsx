@@ -22,7 +22,7 @@ import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import type { CardState } from "@/layout-tree";
 import { SettingsGeneralBody } from "./settings-general-body";
-import { SettingsFocusRingBody } from "./settings-focus-ring-body";
+import { SettingsLensBody } from "./settings-lens-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsAppBody } from "./settings-app-body";
 import "./settings-card.css";
@@ -93,7 +93,7 @@ export function SettingsCardContent() {
           />
         </div>
         <div className="settings-card-panel">
-          {tab === "general" ? <SettingsFocusRingBody /> : null}
+          {tab === "general" ? <SettingsLensBody /> : null}
           {tab === "devCard" ? <SettingsGeneralBody /> : null}
           {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}

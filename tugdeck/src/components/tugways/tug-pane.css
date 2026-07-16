@@ -157,6 +157,22 @@ body {
   border-radius: 0;
 }
 
+/* Anchored rail: it pins flush to a viewport edge, so the only edge that
+   reads against the deck is the one facing it. Drop the three
+   viewport-flush borders and keep a single divider on the deck side —
+   left border for a right-anchored rail, right border for a
+   left-anchored one. The border-style/color set on `.tug-pane-chrome`
+   carry over; only the widths change. */
+.tug-pane[data-anchored="right"] .tug-pane-chrome {
+  border-width: 0;
+  border-left-width: 1px;
+}
+
+.tug-pane[data-anchored="left"] .tug-pane-chrome {
+  border-width: 0;
+  border-right-width: 1px;
+}
+
 /* ============================================================================
    Body wrapper -- holds accessory + content below the title bar [D07]
    ========================================================================= */

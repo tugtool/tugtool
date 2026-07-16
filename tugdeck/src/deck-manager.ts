@@ -41,6 +41,7 @@ import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
 import { LENS_CARD_ID } from "./components/lens/lens-register-card";
 import { lensStore } from "./lib/lens-store/lens-store";
+import type { LensAnchorSide } from "./lib/lens-store/types";
 import { TugConnection } from "./connection";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -971,10 +972,34 @@ export class DeckManager implements IDeckManagerStore {
   }
 
   /**
+   * Set the viewport edge the Lens rail anchors to. Persists the
+   * preference (so the next open honors it) and, when the rail is
+   * already open, flips the live pane's anchor so it moves sides in
+   * place. No-op cost when the side is unchanged.
+   */
+  setLensAnchorSide(side: LensAnchorSide): void {
+    lensStore.setAnchorSide(side);
+    const card = this.deckState.cards.find(
+      (c) => c.componentId === LENS_CARD_ID,
+    );
+    if (!card) return;
+    const pane = this.deckState.panes.find((p) => p.cardIds.includes(card.id));
+    if (!pane || pane.anchor === side) return;
+    this.deckState = {
+      ...this.deckState,
+      panes: this.deckState.panes.map((p) =>
+        p.id === pane.id ? { ...p, anchor: side } : p,
+      ),
+    };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  /**
    * Create the anchored Lens rail — mirrors {@link addCard} but pins the
-   * pane to the right edge (`anchor: "right"`), spans full height, takes
-   * its width from the persisted reopen width, and hosts nothing else
-   * (`acceptsFamilies: []`).
+   * pane to the persisted anchor edge (`anchor: "left" | "right"`), spans
+   * full height, takes its width from the persisted reopen width, and
+   * hosts nothing else (`acceptsFamilies: []`).
    */
   private _createLensPane(): string | null {
     const registration = getRegistration(LENS_CARD_ID);
@@ -987,7 +1012,8 @@ export class DeckManager implements IDeckManagerStore {
     }
 
     const sizePolicy = getSizePolicy(LENS_CARD_ID);
-    const width = Math.max(sizePolicy.min.width, lensStore.getSnapshot().widthPx);
+    const lensSnapshot = lensStore.getSnapshot();
+    const width = Math.max(sizePolicy.min.width, lensSnapshot.widthPx);
     const canvasHeight = this.container.clientHeight || 600;
 
     const paneId = crypto.randomUUID();
@@ -1008,7 +1034,7 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: cardId,
       title: registration.defaultTitle ?? registration.defaultMeta.title,
       acceptsFamilies: registration.acceptsFamilies ?? [],
-      anchor: "right",
+      anchor: lensSnapshot.anchorSide,
     };
 
     this._flipFirstResponder(

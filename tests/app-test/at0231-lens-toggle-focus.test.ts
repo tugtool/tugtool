@@ -43,7 +43,7 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const ANCHORED_SELECTOR = `.tug-pane[data-anchored="true"]`;
+const ANCHORED_SELECTOR = `.tug-pane[data-anchored]`;
 
 async function anchoredPaneExists(app: App): Promise<boolean> {
   return app.evalJS<boolean>(

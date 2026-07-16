@@ -404,6 +404,18 @@ export function initActionDispatch(
     deckManager.toggleLensPane();
   });
 
+  // set-lens-side: Anchor the Lens rail to the left or right viewport
+  // edge. Fired by the General settings control; persists the preference
+  // and flips an already-open rail in place.
+  registerAction("set-lens-side", (payload) => {
+    const side = payload.side;
+    if (side !== "left" && side !== "right") {
+      console.warn("set-lens-side: invalid side", payload);
+      return;
+    }
+    deckManager.setLensAnchorSide(side);
+  });
+
   // focus-lens: Move focus into the Lens (opening it if hidden), or back
   // out on a second dispatch. Routed through the responder chain so the
   // deck-canvas handler owns the stash-prior / show / activate sequence.

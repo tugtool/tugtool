@@ -1,14 +1,17 @@
 /**
- * at0236-settings-general-tab.test.ts — the Settings card's new **General**
- * tab hosts the focus-ring modality control (moved off the dev surface).
+ * at0236-settings-general-tab.test.ts — the Settings card's **General**
+ * tab hosts the Lens section: choose which side of the deck the Lens rail
+ * anchors to.
  *
- * Selecting "Keyboard + pointer" writes `dev.tugtool.app/focusRingModality`
- * (unchanged persistence) — the control behaves exactly as it did on the
- * dev panel, now in a user-facing home.
+ * Picking "Left" writes `dev.tugtool.lens/anchorSide` AND flips an
+ * already-open rail in place: the deck manager re-anchors the live pane,
+ * so it moves from the right edge to the left edge without a reopen.
  *
  * Scenario:
- *   1. Open Settings; the General tab is first (default).
- *   2. Pick the "pointer" radio; assert the modality persists to tugbank.
+ *   1. Open the Lens (`toggle-lens`) — it mounts on the right by default.
+ *   2. Open Settings; the General tab is first (default).
+ *   3. Pick the "Left" segment.
+ *   4. Assert the rail flips to the left edge AND the side persists.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -24,8 +27,21 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const RING_GROUP = `[data-testid="settings-focus-ring-modality"]`;
-const POINTER_RADIO = `${RING_GROUP} [data-radio-value="pointer"]`;
+const RAIL = `.tug-pane[data-anchored]`;
+const SIDE_GROUP = `[data-testid="settings-lens-side"]`;
+const LEFT_SEGMENT = `${SIDE_GROUP} [data-choice-value="left"]`;
+
+async function dispatch(app: App, action: string): Promise<void> {
+  await app.evalJS<void>(
+    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
+  );
+}
+
+async function railLeft(app: App): Promise<number> {
+  return app.evalJS<number>(
+    `document.querySelector(${JSON.stringify(RAIL)}).getBoundingClientRect().left`,
+  );
+}
 
 async function openSettings(app: App): Promise<void> {
   await app.evalJS<void>(
@@ -38,10 +54,10 @@ async function openSettings(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0236 — Settings General tab: focus-ring modality persists",
+  "at0236 — Settings General tab: Lens anchor side flips + persists",
   () => {
     test(
-      "selecting pointer modality writes dev.tugtool.app/focusRingModality",
+      "picking Left re-anchors the open rail and writes anchorSide",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {
@@ -52,27 +68,41 @@ describe.skipIf(!SHOULD_RUN)(
             persistInTestMode: true,
           });
           try {
+            // 1. Open the Lens — defaults to the right edge.
+            await dispatch(app, "toggle-lens");
+            await app.waitForCondition<boolean>(
+              `document.querySelector('${RAIL}[data-anchored="right"]') !== null`,
+              { timeoutMs: 5_000 },
+            );
+
+            // 2. Open Settings; General tab (Lens side group) is up.
             await openSettings(app);
-
-            // The General tab is the default → the focus-ring group is up.
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(RING_GROUP)}) !== null`,
+              `document.querySelector(${JSON.stringify(SIDE_GROUP)}) !== null`,
               { timeoutMs: 3_000 },
             );
 
-            // Pick "Keyboard + pointer".
-            await app.nativeClickAtElement(POINTER_RADIO);
+            // 3. Pick "Left".
+            await app.nativeClickAtElement(LEFT_SEGMENT);
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(POINTER_RADIO)}).getAttribute("aria-checked") === "true"`,
+              `document.querySelector(${JSON.stringify(LEFT_SEGMENT)}).getAttribute("aria-checked") === "true"`,
               { timeoutMs: 3_000 },
             );
 
+            // 4a. The live rail re-anchors to the left edge (flush with 0).
+            await app.waitForCondition<boolean>(
+              `document.querySelector('${RAIL}[data-anchored="left"]') !== null`,
+              { timeoutMs: 3_000 },
+            );
+            expect(Math.abs(await railLeft(app))).toBeLessThanOrEqual(2);
+
+            // 4b. And the choice persists to tugbank.
             const persisted = tugbankRead<string>(
               tugbankPath,
-              "dev.tugtool.app",
-              "focusRingModality",
+              "dev.tugtool.lens",
+              "anchorSide",
             );
-            expect(persisted?.value).toBe("pointer");
+            expect(persisted?.value).toBe("left");
           } finally {
             await app.close();
           }

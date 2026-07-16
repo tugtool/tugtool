@@ -691,7 +691,7 @@ function snapshotCardRects(
   // Anchored rails are excluded from snap targets — a free pane must
   // never snap its edge to the Lens.
   const els = document.querySelectorAll<HTMLElement>(
-    ".tug-pane[data-pane-id]:not([data-anchored='true'])",
+    ".tug-pane[data-pane-id]:not([data-anchored])",
   );
   els.forEach((el) => {
     const paneId = el.getAttribute("data-pane-id");
@@ -825,10 +825,10 @@ type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 
-// Left gutter reserved so a right-anchored rail can't be widened to cover
-// the whole viewport. The effective max width is
+// Gutter reserved on the deck side so an anchored rail can't be widened
+// to cover the whole viewport. The effective max width is
 // `window.innerWidth - this`.
-const ANCHORED_MIN_LEFT_GUTTER_PX = 80;
+const ANCHORED_MIN_GUTTER_PX = 80;
 
 // ---------------------------------------------------------------------------
 // TugPane
@@ -856,11 +856,15 @@ export function TugPane({
   const { id, position, size } = stackState;
   const collapsed = stackState.collapsed === true;
   // An anchored pane derives its geometry from the anchor edge (a
-  // right-edge rail) instead of a free position: it is non-draggable,
-  // resizable only on its exposed (west) edge, and excluded from snap
-  // and merge. The pane still owns geometry per [L09]; it merely
-  // computes it from `anchor` rather than `position`.
-  const anchored = stackState.anchor === "right";
+  // left- or right-edge rail) instead of a free position: it is
+  // non-draggable, resizable only on its exposed (deck-facing) edge, and
+  // excluded from snap and merge. The pane still owns geometry per [L09];
+  // it merely computes it from `anchor` rather than `position`.
+  const anchorSide =
+    stackState.anchor === "left" || stackState.anchor === "right"
+      ? stackState.anchor
+      : null;
+  const anchored = anchorSide !== null;
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
@@ -1520,7 +1524,7 @@ export function TugPane({
         if (!paneId || paneId === id) return;
         // Anchored rails never accept a merge — skip their tab bar as a
         // drop target.
-        if (el.closest(".tug-pane[data-anchored='true']")) return;
+        if (el.closest(".tug-pane[data-anchored]")) return;
         dragTabBarCache.current.push({ paneId, rect: el.getBoundingClientRect(), el });
       });
 
@@ -1871,13 +1875,15 @@ export function TugPane({
     [id, onCardMoved, position.x, position.y, size.width, size.height],
   );
 
-  // West-edge resize for an anchored rail. The rail stays pinned to the
-  // right edge, so only its width changes: dragging the west handle left
-  // grows the rail, right shrinks it. Width-only keeps the derived
-  // `right:0` anchoring intact (the generic handler would set `left`,
-  // fighting the anchor). The commit writes `size.width` to the pane;
-  // the anchored reopen-width mirror to `lensStore` lives in the deck
-  // manager's card-moved handler, keeping this pane lens-agnostic.
+  // Deck-facing-edge resize for an anchored rail. The rail stays pinned
+  // to its viewport edge, so only its width changes. For a right-anchored
+  // rail the exposed edge is the west one (dragging left grows it); for a
+  // left-anchored rail it is the east edge (dragging right grows it).
+  // Width-only keeps the derived edge anchoring intact (the generic
+  // handler would set left/top, fighting the anchor). The commit writes
+  // `size.width` to the pane; the anchored reopen-width mirror to
+  // `lensStore` lives in the deck manager's card-moved handler, keeping
+  // this pane lens-agnostic.
   const handleAnchoredResizeStart = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
@@ -1891,8 +1897,12 @@ export function TugPane({
       const minWidth = sizePolicy.min.width;
       const maxWidth = Math.max(
         minWidth,
-        window.innerWidth - ANCHORED_MIN_LEFT_GUTTER_PX,
+        window.innerWidth - ANCHORED_MIN_GUTTER_PX,
       );
+      // A left rail's deck edge faces right (east): rightward motion
+      // grows it. A right rail's deck edge faces left (west): leftward
+      // motion grows it.
+      const growSign = anchorSide === "left" ? 1 : -1;
 
       frame.setPointerCapture(event.pointerId);
       frame.setAttribute("data-gesture", "resize");
@@ -1903,10 +1913,13 @@ export function TugPane({
 
       const apply = (): void => {
         rafId = null;
-        // West edge: leftward pointer motion (clientX decreasing) grows
-        // the rail. Convert the visual delta to layout space via zoom.
+        // Convert the visual pointer delta to layout space via zoom, then
+        // apply the deck-facing grow direction.
         const deltaLayout = (latestX - startClientX) / zoom;
-        const next = Math.min(maxWidth, Math.max(minWidth, startWidth - deltaLayout));
+        const next = Math.min(
+          maxWidth,
+          Math.max(minWidth, startWidth + growSign * deltaLayout),
+        );
         width = next;
         frame.style.width = `${next}px`;
       };
@@ -1933,7 +1946,15 @@ export function TugPane({
       frame.addEventListener("pointermove", onPointerMove);
       frame.addEventListener("pointerup", onPointerUp);
     },
-    [id, onCardMoved, position, size.width, size.height, sizePolicy.min.width],
+    [
+      id,
+      onCardMoved,
+      position,
+      size.width,
+      size.height,
+      sizePolicy.min.width,
+      anchorSide,
+    ],
   );
 
   // ---------------------------------------------------------------------------
@@ -1985,15 +2006,20 @@ export function TugPane({
       data-testid="tug-pane"
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
-      {...(anchored ? { "data-anchored": "true" } : {})}
+      {...(anchorSide ? { "data-anchored": anchorSide } : {})}
       {...(effectiveMeta.squareCorners ? { "data-square-corners": "true" } : {})}
       style={{
         position: "absolute",
-        // An anchored rail pins to the right edge, spans the full height,
-        // and takes only its width from the store. A free pane uses its
-        // stored left/top/width/height. [L06]/[L09]
+        // An anchored rail pins to its viewport edge (left or right),
+        // spans the full height, and takes only its width from the store.
+        // A free pane uses its stored left/top/width/height. [L06]/[L09]
         ...(anchored
-          ? { right: 0, top: 0, bottom: 0, width: renderWidth }
+          ? {
+              ...(anchorSide === "left" ? { left: 0 } : { right: 0 }),
+              top: 0,
+              bottom: 0,
+              width: renderWidth,
+            }
           : {
               left: position.x,
               top: position.y,
@@ -2011,12 +2037,12 @@ export function TugPane({
       }}
     >
       {/* Resize handles -- hidden when collapsed; drag remains active [D07].
-          An anchored rail exposes only its west edge; a free pane exposes
-          all eight. */}
+          An anchored rail exposes only its deck-facing edge (west for a
+          right rail, east for a left rail); a free pane exposes all eight. */}
       {!collapsed &&
         (anchored ? (
           <div
-            className="tug-pane-resize tug-pane-resize-w"
+            className={`tug-pane-resize tug-pane-resize-${anchorSide === "left" ? "e" : "w"}`}
             onPointerDown={handleAnchoredResizeStart}
           />
         ) : (

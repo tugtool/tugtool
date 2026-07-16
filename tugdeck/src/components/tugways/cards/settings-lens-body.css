@@ -1,0 +1,21 @@
+/* ----------------------------------------------------------------------------
+   Settings General > Lens — a compact label + choice row.
+
+   The shared `.settings-general-key-grid` reserves a 5rem label column
+   sized for the Dev Card tab's longer labels ("Return key"). "Side" is a
+   single short word, so this row hugs the control instead of stranding it
+   across a wide gap. Appearance only ([L06]).
+   ----------------------------------------------------------------------------- */
+
+.settings-lens-row {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  justify-content: start;
+  column-gap: var(--tug-space-lg);
+}
+
+.settings-lens-row-label {
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}

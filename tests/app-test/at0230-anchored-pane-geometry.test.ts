@@ -107,7 +107,7 @@ describe.skipIf(!SHOULD_RUN)(
             // The anchored rail mounts with its data-anchored marker.
             await app.waitForCondition<boolean>(
               `document.querySelector(${JSON.stringify(
-                `${RAIL_SELECTOR}[data-anchored="true"]`,
+                `${RAIL_SELECTOR}[data-anchored]`,
               )}) !== null`,
               { timeoutMs: 5_000 },
             );

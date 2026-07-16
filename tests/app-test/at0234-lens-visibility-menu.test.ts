@@ -28,7 +28,7 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const MENU_BUTTON = `.tug-pane[data-anchored="true"] [data-testid="tug-pane-title-bar-menu-button"]`;
+const MENU_BUTTON = `.tug-pane[data-anchored] [data-testid="tug-pane-title-bar-menu-button"]`;
 const TELEMETRY = `.lens-section[data-lens-section="telemetry"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {

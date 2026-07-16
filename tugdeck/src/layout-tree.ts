@@ -281,11 +281,11 @@ export interface TugPaneState {
    * placed at `position`/`size`. An anchored pane resolves its geometry
    * from this descriptor at render — the pane still owns geometry per
    * [L09]; it merely computes it from an anchor instead of a free
-   * position. Only `"right"` (the Lens rail) exists today; extensible to
-   * other edges later. Additive-optional like `collapsed?` — no
-   * serialization version bump.
+   * position. `"left"` / `"right"` pin the Lens rail to a viewport side;
+   * extensible to other edges later. Additive-optional like `collapsed?`
+   * — no serialization version bump.
    */
-  anchor?: "right";
+  anchor?: "left" | "right";
 }
 
 /**
