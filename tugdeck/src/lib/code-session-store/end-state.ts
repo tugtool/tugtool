@@ -194,29 +194,48 @@ export interface ContextWindowStep {
  *   - `perTurn(N)` = `window(N) - window(N-1)`, signed — `0` for a plain
  *     zero-usage turn, the negative drop at a `/compact` boundary.
  *
+ * **Honest post-compaction override ([P01], Spec S02):** `windowOverrides`
+ * is a per-turn array aligned to `usages`; when `windowOverrides[i]` is a
+ * finite number it IS `window(i)` directly (the zero-usage/reset logic is
+ * skipped for that turn), and `perTurn(i) = window(i) - window(i-1)`. A
+ * compaction turn commits before any post-compaction `cost_update` exists,
+ * so its raw window would carry the stale pre-compaction peak forward; the
+ * override supplies the honest resident total (`sessionInit + post_tokens`)
+ * so CONTEXT drops in place with no one-turn lag. The next real turn has no
+ * override and self-corrects to its exact feed window.
+ *
  * Identity: `sessionInit + sum of perTurn = window(latest)` —
- * telescopes exactly, every turn including compactions.
+ * telescopes exactly, every turn including compactions (the override IS
+ * `window(i)`, so the telescoping identity is preserved).
  *
  * Pure: no DOM, no React, no time source. Safe in `useMemo` / render.
  */
 export function deriveContextWindows(
   usages: ReadonlyArray<LiveMessageUsage>,
   sessionInit: number,
+  windowOverrides?: ReadonlyArray<number | null>,
 ): ReadonlyArray<ContextWindowStep> {
   const raws = usages.map((u) => turnWindowTokens(u));
   const steps: ContextWindowStep[] = [];
   let prevWindow = sessionInit;
   for (let i = 0; i < raws.length; i++) {
-    const raw = raws[i]!;
+    const override = windowOverrides?.[i];
     let window: number;
-    if (raw !== 0) {
-      window = raw;
+    if (typeof override === "number" && Number.isFinite(override)) {
+      // Honest post-compaction total: this turn's window is supplied
+      // directly (the compaction turn's own usage is stale/absent).
+      window = override;
     } else {
-      // Zero-usage turn: carry the prior window forward UNLESS the next real
-      // turn is a drop below it — then this is a compaction/clear boundary and
-      // the window resets to the post-compact value, never the stale peak.
-      const nextReal = nextNonZeroWindow(raws, i + 1);
-      window = nextReal !== null && nextReal < prevWindow ? nextReal : prevWindow;
+      const raw = raws[i]!;
+      if (raw !== 0) {
+        window = raw;
+      } else {
+        // Zero-usage turn: carry the prior window forward UNLESS the next real
+        // turn is a drop below it — then this is a compaction/clear boundary and
+        // the window resets to the post-compact value, never the stale peak.
+        const nextReal = nextNonZeroWindow(raws, i + 1);
+        window = nextReal !== null && nextReal < prevWindow ? nextReal : prevWindow;
+      }
     }
     steps.push({ window, perTurn: window - prevWindow });
     prevWindow = window;

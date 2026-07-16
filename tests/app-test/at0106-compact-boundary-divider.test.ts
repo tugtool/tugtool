@@ -29,7 +29,9 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const DIVIDER = '[data-slot="compaction-divider"]';
-const DIVIDER_LABEL = `${DIVIDER} .dev-card-transcript-compaction-label`;
+// The compaction point renders a Voice-3 quiet line (label + muted token count)
+// inside the wrapper; assert its combined text.
+const DIVIDER_LABEL = `${DIVIDER} [data-slot="tug-quiet-line"]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
 
@@ -108,7 +110,9 @@ describe.skipIf(!SHOULD_RUN)(
           const label = await app.evalJS<string>(
             `(document.querySelector(${JSON.stringify(DIVIDER_LABEL)})||{}).textContent || ""`,
           );
-          expect(label).toBe("Session compacted · ~48k tokens");
+          // Quiet-line label + muted token subject, concatenated in the DOM.
+          expect(label).toContain("Session compacted");
+          expect(label).toContain("48k tokens");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

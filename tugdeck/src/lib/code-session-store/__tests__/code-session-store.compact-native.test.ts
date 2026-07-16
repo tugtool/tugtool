@@ -12,6 +12,7 @@
 import { describe, it, expect } from "bun:test";
 
 import { CodeSessionStore } from "@/lib/code-session-store";
+import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
@@ -89,5 +90,41 @@ describe("CodeSessionStore — native compaction replay ([P04]/[P05])", () => {
     emit(conn, { type: "replay_complete", count: 0 });
 
     expect(store.getSnapshot().transcript).toHaveLength(0);
+  });
+});
+
+describe("CodeSessionStore — post-compaction accounting (transcript intact)", () => {
+  it("leaves every turn in place; stamps the honest total on the last turn (H1); CONTEXT ≥ base", () => {
+    const { store, conn } = makeStore();
+    emit(conn, { type: "replay_started" });
+    // Establish the session base.
+    emit(conn, { type: "streaming_usage", msg_id: FIXTURE_IDS.MSG_ID_N(1), usage: { input_tokens: 24_000 } });
+    for (let n = 1; n <= 3; n++) for (const f of turnFrames(n)) emit(conn, f);
+    emit(conn, {
+      type: "compact_boundary",
+      trigger: "manual",
+      pre_tokens: 26_239,
+      post_tokens: 1_442,
+    });
+    emit(conn, { type: "replay_complete", count: 3 });
+
+    const snap = store.getSnapshot();
+    const tx = snap.transcript;
+    // The transcript is untouched — all three turns remain.
+    expect(tx).toHaveLength(3);
+    // The compaction divider seats on the last committed turn.
+    const last = tx[tx.length - 1];
+    expect(last.messages.some((m) => m.kind === "system_note" && m.source === "compact")).toBe(true);
+    // Honest total = sessionInit (24_000) + post_tokens (1_442), stamped on it.
+    expect(last.compactionPostTotal).toBe(25_442);
+    expect(snap.sessionInitTokens).toBe(24_000);
+    // deriveContextWindows reports the honest window (≥ base, no stale peak).
+    const windows = deriveContextWindows(
+      tx.map((t) => t.cost),
+      snap.sessionInitTokens ?? 0,
+      tx.map((t) => t.compactionPostTotal ?? null),
+    );
+    expect(windows[windows.length - 1]!.window).toBe(25_442);
+    expect(windows[windows.length - 1]!.window).toBeGreaterThanOrEqual(24_000);
   });
 });

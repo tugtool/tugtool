@@ -46,7 +46,6 @@ import {
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionLedger } from "@/lib/dev-session-ledger-store";
 import { deriveColdRestoreActive } from "./dev-card-restore-gate";
-import { DevCompactionCarryForward } from "./dev-compaction-carry-forward";
 import {
   deriveControlBarState,
   deriveLoadStatus,
@@ -100,20 +99,18 @@ export function DevTranscriptTopRow({
     },
     [codeSessionStore],
   );
+  // The Compaction Summary is NOT hoisted here — it renders inline at the
+  // compaction point (right above the compaction quiet line) so it stays with
+  // the compaction that produced it. See the `system_note` "compact" branch in
+  // `dev-card-transcript.tsx`.
   return (
-    <>
-      <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
-        <ControlBarMetadata
-          codeSessionStore={codeSessionStore}
-          cardId={cardId}
-          onLoad={onLoad}
-        />
-      </div>
-      {/* Carry-forward is its own full-width row BELOW the metadata strip
-          (the strip is a fixed-height horizontal chrome bar, not a column
-          container) — it renders only for a `/compact`-born session. */}
-      <DevCompactionCarryForward codeSessionStore={codeSessionStore} />
-    </>
+    <div className="dev-transcript-top-row" data-slot="dev-transcript-top-row">
+      <ControlBarMetadata
+        codeSessionStore={codeSessionStore}
+        cardId={cardId}
+        onLoad={onLoad}
+      />
+    </div>
   );
 }
 

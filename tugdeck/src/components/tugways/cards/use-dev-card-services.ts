@@ -27,6 +27,7 @@ import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { resolveArgumentHint } from "@/lib/slash-argument-hint";
 import { LOCAL_SLASH_COMMANDS, type LocalSlashCommandSpec } from "@/lib/slash-commands";
 import { isHiddenSlashCommand } from "@/lib/slash-supported";
+import { isCompactionLowEffect } from "@/lib/code-session-store/telemetry";
 import { wrapPositionZero } from "./completion-providers/position-zero";
 import {
   filterCommandProvider,
@@ -91,8 +92,20 @@ export function useDevCardServices(cardId: string): DevCardServices | null {
   // the `/` popup (position-0 gated) and the mid-text inline ghost matcher.
   const commandMatchProvider = useMemo<CompletionProvider | null>(() => {
     if (services === null) return null;
+    const codeSessionStore = services.codeSessionStore;
     return mergeCommandProviders(
-      localCommandCompletionProvider(),
+      localCommandCompletionProvider({
+        // [P08] minimal-effect hint: when the conversation is much smaller than
+        // the base, `/compact` frees little — tint the `compact` row's muted
+        // description to say so (read live per query [L07]; never gates it).
+        descriptionOverride: (name) => {
+          if (name !== "compact") return undefined;
+          const snap = codeSessionStore.getSnapshot();
+          return isCompactionLowEffect(snap.transcript, snap.sessionInitTokens)
+            ? "Compact — frees little; most context is fixed base"
+            : undefined;
+        },
+      }),
       filterCommandProvider(
         services.sessionMetadataStore.getCommandCompletionProvider(),
         (name) => !isHiddenSlashCommand(name),

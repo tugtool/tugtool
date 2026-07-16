@@ -463,6 +463,7 @@ export function computeTokensSummary(
   const steps = deriveContextWindows(
     transcript.map((t) => t.cost),
     sessionInitTokens ?? 0,
+    transcript.map((t) => t.compactionPostTotal ?? null),
   );
   const perTurn = steps.map((s) => s.perTurn);
   const totalTokens = perTurn.reduce((acc, v) => acc + v, 0);
@@ -475,6 +476,46 @@ export function computeTokensSummary(
         ? 0
         : Math.round(totalTokens / transcript.length),
   };
+}
+
+/**
+ * The conversation-to-base ratio below which `/compact` frees little — the
+ * threshold behind the minimal-effect hint ([P08]). At 0.25, a conversation
+ * under a quarter of the base (e.g. base ≈ 38K, conversation ≈ 4K) reads as
+ * "small effect"; a conversation ≳ a third of the base does not.
+ */
+export const COMPACTION_LOW_EFFORT_RATIO = 0.25;
+
+/**
+ * Whether the conversation is much smaller than the fixed base — the predicate
+ * behind the `/compact` minimal-effect hint ([P08]). `/compact` summarizes only
+ * the conversation (`window(latest) − sessionInit`); when that is a small
+ * fraction of the base (`sessionInit`), compaction frees little and the hint
+ * says so. NEVER gates the command — only tints its slash-popup description.
+ *
+ * Reads the honest window via {@link deriveContextWindows} (with the
+ * post-compaction overrides, so a just-compacted session doesn't itself trip
+ * the hint on a stale peak). Returns false when there is no base yet
+ * (`sessionInit` null/≤0), no turns, or the conversation is empty/negative —
+ * the hint needs a real base+conversation to be honest.
+ *
+ * Pure: no DOM, no React, no time source.
+ */
+export function isCompactionLowEffect(
+  transcript: ReadonlyArray<TurnEntry>,
+  sessionInitTokens: number | null,
+): boolean {
+  if (sessionInitTokens === null || sessionInitTokens <= 0) return false;
+  const steps = deriveContextWindows(
+    transcript.map((t) => t.cost),
+    sessionInitTokens,
+    transcript.map((t) => t.compactionPostTotal ?? null),
+  );
+  if (steps.length === 0) return false;
+  const window = steps[steps.length - 1]!.window;
+  const conversation = window - sessionInitTokens;
+  if (conversation <= 0) return false;
+  return conversation < sessionInitTokens * COMPACTION_LOW_EFFORT_RATIO;
 }
 
 /**

@@ -88,6 +88,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Cog,
+  Layers,
   Search,
   X,
 } from "lucide-react";
@@ -164,6 +165,7 @@ import {
 import { deriveColdRestoreActive } from "@/components/tugways/cards/dev-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
+import { DevCompactionCarryForward } from "@/components/tugways/cards/dev-compaction-carry-forward";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./dev-command-block-registry";
 import { composeShellShareText } from "./shell-exchange-view";
@@ -818,22 +820,29 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     }
     if (message.kind === "system_note") {
       if (message.source === "compact") {
-        // Compaction divider — a soft separator matching the terminal's
-        // compaction indicator (the raw summary block stays hidden, as
-        // in Claude Code's own UI). Appearance is CSS-only ([L06]).
+        // The compaction point, in place: the Compaction Summary renders right
+        // above a quiet line marking where the session compacted — the summary
+        // sits with the compaction that produced it, not hoisted away at the
+        // top. The quiet line uses the shared Voice-3 register ([TugQuietLine])
+        // like task / background notices. The transcript is otherwise intact.
+        // `message.text` is "Session compacted · ~Nk tokens" (or just "Session
+        // compacted"); split so the token count reads as the muted subject.
+        const [compactLabel, ...compactRest] = message.text.split(" · ");
         elements.push(
           <div
             key={message.messageKey}
             className="dev-card-transcript-compaction"
-            role="separator"
             data-slot="compaction-divider"
           >
-            <span
-              className="dev-card-transcript-compaction-label"
+            <TugQuietLine
+              className="dev-card-transcript-compaction-line"
+              icon={<Layers size={16} aria-hidden="true" />}
+              label={compactLabel}
+              subject={compactRest.length > 0 ? compactRest.join(" · ") : undefined}
+              tone="quiet"
               data-tugx-findable=""
-            >
-              {message.text}
-            </span>
+            />
+            <DevCompactionCarryForward codeSessionStore={session} />
           </div>,
         );
         continue;

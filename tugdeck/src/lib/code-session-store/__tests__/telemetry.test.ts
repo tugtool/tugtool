@@ -21,9 +21,12 @@ import {
   computeTimeSummary,
   computeTokensSummary,
   computeRichContextBreakdown,
+  isCompactionLowEffect,
   turnHasTiming,
   type PauseSegment,
 } from "@/lib/code-session-store/telemetry";
+import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
+import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import {
   createInitialState,
   type CodeSessionState,
@@ -975,5 +978,110 @@ describe("deriveJobExtendedActiveMs", () => {
     expect(
       deriveJobExtendedActiveMs({ ...base, jobs, nowMs: 999_000 }),
     ).toBe(9_300);
+  });
+});
+
+describe("computeRichContextBreakdown — honest post-compaction ([P08] / Step 5)", () => {
+  const CONTEXT_MAX = 1_000_000;
+
+  // The honest post-compaction window fed by the CONTEXT cell walk:
+  // sessionInit + post_tokens (base + Claude's small conversation figure). The
+  // breakdown's `messages` slice must fall out to post_tokens, and totalUsed
+  // must equal the window (the same figure the CONTEXT cell shows).
+  function win(n: number): TurnEntry {
+    return turn({
+      cost: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: n,
+        totalCostUsd: 0,
+      },
+    });
+  }
+
+  it("messages == post_tokens; totalUsed == the honest window == CONTEXT cell", () => {
+    const sessionInit = 24_000;
+    const postTokens = 1_442;
+    // A trailing compaction turn carrying the honest total override.
+    const compactionTurn = turn({
+      cost: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalCostUsd: 0,
+      },
+      compactionPostTotal: sessionInit + postTokens,
+    });
+    const transcript = [win(807_000), compactionTurn];
+    // The CONTEXT cell derives the window with the honest override.
+    const windows = deriveContextWindows(
+      transcript.map((t) => t.cost),
+      sessionInit,
+      transcript.map((t) => t.compactionPostTotal ?? null),
+    );
+    const cellWindow = windows[windows.length - 1]!.window;
+    expect(cellWindow).toBe(sessionInit + postTokens);
+
+    const r = computeRichContextBreakdown({
+      staticBreakdown: null,
+      sessionInitTokens: sessionInit,
+      windowTokens: cellWindow,
+      contextMax: CONTEXT_MAX,
+    })!;
+    expect(r.totalUsed).toBe(cellWindow); // == the CONTEXT cell value
+    const messages = r.segments.find((s) => s.id === "messages")!;
+    expect(messages.value).toBe(postTokens); // window − base = post_tokens (small)
+    expect(r.totalUsed).toBeGreaterThanOrEqual(sessionInit); // never below base
+  });
+});
+
+describe("isCompactionLowEffect ([P08] predicate)", () => {
+  function win(n: number): TurnEntry {
+    return turn({
+      cost: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: n,
+        totalCostUsd: 0,
+      },
+    });
+  }
+
+  it("true when the conversation is much smaller than the base", () => {
+    // base 38K, conversation 4K → 4/38 ≈ 0.10 < 0.25 → hint.
+    expect(isCompactionLowEffect([win(42_000)], 38_000)).toBe(true);
+  });
+
+  it("false when the conversation is a substantial fraction of the base", () => {
+    // base 24K, conversation 10K → 10/24 ≈ 0.42 → no hint.
+    expect(isCompactionLowEffect([win(34_000)], 24_000)).toBe(false);
+  });
+
+  it("false with no base, no turns, or an empty conversation", () => {
+    expect(isCompactionLowEffect([win(42_000)], null)).toBe(false);
+    expect(isCompactionLowEffect([], 38_000)).toBe(false);
+    expect(isCompactionLowEffect([win(38_000)], 38_000)).toBe(false); // conversation 0
+  });
+
+  it("reads the honest override, so a just-compacted small session trips it", () => {
+    // sessionInit 24K, compaction override 25.4K → conversation 1.4K → hint.
+    const compactionTurn = turn({
+      cost: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalCostUsd: 0,
+      },
+      compactionPostTotal: 25_442,
+    });
+    expect(isCompactionLowEffect([win(807_000), compactionTurn], 24_000)).toBe(true);
+  });
+
+  it("the compact command is always registered (never gated by the hint)", () => {
+    expect(LOCAL_SLASH_COMMANDS.some((c) => c.name === "compact")).toBe(true);
   });
 });

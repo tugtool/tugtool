@@ -453,6 +453,16 @@ export interface TurnEntry {
    * that received no `cost_update`. See {@link TurnCost}.
    */
   cost: TurnCost;
+  /**
+   * Honest post-compaction resident window ([P01], Spec S04) — present
+   * only on a turn that carried a `compact_boundary`. Holds
+   * `sessionInitTokens + compact_boundary.post_tokens` (base + Claude's
+   * post-compaction conversation figure), NOT raw `post_tokens`. Consumed
+   * by `deriveContextWindows` as `window(N)` for this turn so CONTEXT drops
+   * in place with no one-turn lag; it never enters {@link cost} (which
+   * stays the real, zero-usage `TurnCost`) so it can't masquerade as usage.
+   */
+  compactionPostTotal?: number;
 }
 
 /**

@@ -273,4 +273,53 @@ describe("deriveContextWindows", () => {
   it("an empty transcript yields no steps", () => {
     expect(deriveContextWindows([], 18575)).toEqual([]);
   });
+
+  it("a windowOverride supplies the honest post-compaction window directly ([P01])", () => {
+    // The trailing compaction turn commits zero-usage (no post-compaction
+    // cost_update yet). Its override `sessionInit + post_tokens` becomes
+    // window(i) directly, so CONTEXT drops in place instead of carrying the
+    // pre-compaction peak. perTurn is the honest negative drop; the identity
+    // still telescopes.
+    const sessionInit = 24_000;
+    const post = 2_011;
+    const steps = deriveContextWindows(
+      [win(807_000), cost({})],
+      sessionInit,
+      [null, sessionInit + post],
+    );
+    expect(steps.map((s) => s.window)).toEqual([807_000, sessionInit + post]);
+    expect(steps.map((s) => s.perTurn)).toEqual([783_000, sessionInit + post - 807_000]);
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(sessionInit + sum).toBe(steps[steps.length - 1].window);
+    // Never below base.
+    expect(steps[steps.length - 1].window).toBeGreaterThanOrEqual(sessionInit);
+  });
+
+  it("a real turn after the compaction override self-corrects to its feed window ([R03])", () => {
+    // The compaction turn keeps its honest override; the next real turn has no
+    // override, so window(latest) is its exact feed window — CONTEXT converges
+    // to the precise figure once the first post-compaction turn lands.
+    const sessionInit = 24_000;
+    const override = sessionInit + 2_011;
+    const steps = deriveContextWindows(
+      [win(807_000), cost({}), win(31_000)],
+      sessionInit,
+      [null, override, null],
+    );
+    expect(steps.map((s) => s.window)).toEqual([807_000, override, 31_000]);
+    const sum = steps.reduce((acc, s) => acc + s.perTurn, 0);
+    expect(sessionInit + sum).toBe(31_000);
+  });
+
+  it("a null/absent windowOverride leaves the zero-usage logic intact", () => {
+    // Overrides shorter than the transcript, or holding null, fall through to
+    // the existing carry-forward/reset behavior.
+    const steps = deriveContextWindows(
+      [win(19354), cost({}), win(21971)],
+      18575,
+      [null, null, null],
+    );
+    expect(steps.map((s) => s.window)).toEqual([19354, 19354, 21971]);
+    expect(steps.map((s) => s.perTurn)).toEqual([779, 0, 2617]);
+  });
 });

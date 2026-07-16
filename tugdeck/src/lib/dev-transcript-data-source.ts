@@ -576,6 +576,7 @@ export class DevTranscriptDataSource implements TugListViewDataSource {
     const windows = deriveContextWindows(
       snap.transcript.map((t) => t.cost),
       snap.sessionInitTokens ?? 0,
+      snap.transcript.map((t) => t.compactionPostTotal ?? null),
     );
     this._windowsMemo = { snapshot: snap, windows };
     return windows;

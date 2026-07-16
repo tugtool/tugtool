@@ -2100,6 +2100,15 @@ export class CodeSessionStore {
             nextTranscript[lastIndex] = {
               ...turn,
               messages: [...turn.messages, note],
+              // Replay honest-total stamp (H1, Spec S03): the divider seats on
+              // this last surviving turn, so "window after this turn = the
+              // post-compaction total" is exactly honest. `deriveContextWindows`
+              // reads it as `window(N)` even with no post-compaction turn. On
+              // the live path the scratch stamp already set it, so the effect
+              // omits it and this leaves the committed value untouched.
+              ...(typeof effect.compactionPostTotal === "number"
+                ? { compactionPostTotal: effect.compactionPostTotal }
+                : {}),
             };
             this._transcript = nextTranscript;
           }

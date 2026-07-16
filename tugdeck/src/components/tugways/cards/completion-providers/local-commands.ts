@@ -31,6 +31,14 @@ export interface LocalCommandProviderOptions {
    * registered command is offered.
    */
   isOffered?: (name: LocalCommandName) => boolean;
+  /**
+   * Per-command description override, evaluated fresh on every query so it can
+   * read live state ([P08]: the `/compact` minimal-effect hint when the
+   * conversation is much smaller than the base). Returning `undefined` keeps
+   * the static registry description; the command is never gated by this — only
+   * its muted description column changes.
+   */
+  descriptionOverride?: (name: LocalCommandName) => string | undefined;
 }
 
 /**
@@ -50,7 +58,7 @@ export interface LocalCommandProviderOptions {
 export function localCommandCompletionProvider(
   options: LocalCommandProviderOptions = {},
 ): CompletionProvider {
-  const { isOffered } = options;
+  const { isOffered, descriptionOverride } = options;
   return (query: string): CompletionItem[] => {
     const items: CompletionItem[] = [];
     for (const cmd of LOCAL_SLASH_COMMANDS) {
@@ -66,7 +74,7 @@ export function localCommandCompletionProvider(
           value: cmd.name,
         },
         matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
-        description: cmd.description,
+        description: descriptionOverride?.(cmd.name) ?? cmd.description,
       });
     }
     return items;

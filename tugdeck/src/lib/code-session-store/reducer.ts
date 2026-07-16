@@ -191,13 +191,18 @@ export interface ScratchEntry {
   toolCallIndex: Map<string, number>;
   systemNoteSeq: number;
   /**
-   * Resident context after an in-turn compaction (`compact_boundary.postTokens`),
-   * when this turn compacted. `buildTurnEntry` stamps it as the committed turn's
-   * window so the CONTEXT readout drops in place immediately instead of carrying
-   * the pre-compaction peak forward until the next turn. Absent for ordinary
-   * turns. Per-turn scoped: discarded with the scratch entry at commit.
+   * Honest post-compaction resident window for this turn ([P01], Spec S04),
+   * when it compacted: `sessionInitTokens + compact_boundary.post_tokens`
+   * (base + Claude's post-compaction conversation figure), stamped in
+   * `handleCompactBoundary` only when both terms are finite. `buildTurnEntry`
+   * copies it onto the committed `TurnEntry.compactionPostTotal`, where
+   * `deriveContextWindows` reads it as `window(N)` so the CONTEXT readout
+   * drops in place immediately instead of carrying the pre-compaction peak
+   * forward until the next turn. NOT raw `post_tokens` (a sub-base figure);
+   * never written into `cost`. Absent for ordinary turns. Per-turn scoped:
+   * discarded with the scratch entry at commit.
    */
-  compactionPostTokens?: number;
+  compactionPostTotal?: number;
 }
 
 /**
@@ -2651,24 +2656,12 @@ function buildTurnEntry(
   const telemetry = mergeTurnTelemetry(inlineTelemetry, derivedTelemetry);
   // Compaction turn: the summarization turn's own `cost_update` reports the
   // pre-compaction context it read (or nothing), so the window-walk would carry
-  // the stale peak forward until the next turn. Stamp the authoritative
-  // post-compaction resident window (`compact_boundary.postTokens`, latched on
-  // the scratch entry) as this turn's cost so CONTEXT drops in place and the
-  // per-turn TOKENS delta shows the real negative drop. Persistence rides the
-  // same `entry.cost` (see `buildRecordTelemetryEffect`), so the two agree.
-  const compactionPostTokens = entry?.compactionPostTokens;
-  const cost: TurnCost =
-    typeof compactionPostTokens === "number"
-      ? {
-          inputTokens: compactionPostTokens,
-          outputTokens: 0,
-          cacheReadInputTokens: 0,
-          cacheCreationInputTokens: 0,
-          // Preserve the turn's actual dollar cost; only the resident window is
-          // overridden (the token fields feed `turnWindowTokens`).
-          totalCostUsd: telemetry.cost.totalCostUsd,
-        }
-      : telemetry.cost;
+  // the stale peak forward until the next turn. The honest post-compaction
+  // window rides `entry.compactionPostTotal` (`sessionInit + post_tokens`) and
+  // is copied onto the committed entry below, where `deriveContextWindows`
+  // reads it as `window(N)` — the cost stays the real, zero-usage `TurnCost` so
+  // the value never masquerades as usage ([P01]).
+  const cost: TurnCost = telemetry.cost;
   // The terminal reason is recovered from the persisted telemetry
   // block on the replay path — `mergeTurnTelemetry` adopted the inline
   // block wholesale, so `telemetry.turnEndReason` is the value the
@@ -2715,6 +2708,12 @@ function buildTurnEntry(
     maxStreamGapMs: telemetry.maxStreamGapMs,
     turnEndReason: effectiveReason,
     cost,
+    // Honest post-compaction window ([P01]) — copied from the scratch when
+    // this turn compacted mid-turn; consumed by `deriveContextWindows` as
+    // `window(N)`, never folded into `cost`.
+    ...(typeof entry?.compactionPostTotal === "number"
+      ? { compactionPostTotal: entry.compactionPostTotal }
+      : {}),
   };
 }
 
@@ -3741,18 +3740,50 @@ function handleUnknownEvent(
  * off the per-turn `systemNoteSeq`; the committed-turn fallback keys off the
  * last turn's `messages.length` (minted wrapper-side).
  */
+/**
+ * The honest post-compaction resident window ([P01], [Q02]):
+ * `sessionInitTokens + post_tokens` (base + Claude's post-compaction
+ * conversation figure). `undefined` unless BOTH terms are finite numbers —
+ * raw `post_tokens` alone is a sub-base figure and must never stand in as the
+ * window. This is the single derivation point for both the live scratch stamp
+ * and the replay-path `append-compact-note` stamp (Spec S03, H1).
+ */
+function honestCompactionTotal(
+  sessionInitTokens: number | null,
+  postTokens: number | undefined,
+): number | undefined {
+  if (
+    typeof sessionInitTokens === "number" &&
+    Number.isFinite(sessionInitTokens) &&
+    typeof postTokens === "number" &&
+    Number.isFinite(postTokens)
+  ) {
+    return sessionInitTokens + postTokens;
+  }
+  return undefined;
+}
+
 function handleCompactBoundary(
   state: CodeSessionState,
   event: CompactBoundaryEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
+  // The honest post-compaction window (`sessionInit + post_tokens`) — the same
+  // derivation on both paths ([P01]). The transcript is left intact (the
+  // Compaction Summary renders inline right above the compaction divider at the
+  // compaction point); only the CONTEXT accounting drops in place.
+  const honestTotal = honestCompactionTotal(state.sessionInitTokens, event.postTokens);
   const turnKey = state.pendingTurn?.turnKey;
   if (turnKey === undefined) {
-    // No open turn (replay path) — hand the wrapper an effect that appends the
-    // divider to the last committed turn, where the transcript actually lives.
+    // No open turn (replay path) — append the divider to the last committed
+    // turn and stamp the honest total (H1) on it so CONTEXT is honest on reload.
     return {
       state,
       effects: [
-        { kind: "append-compact-note", text: compactionNoteText(event.preTokens) },
+        {
+          kind: "append-compact-note",
+          text: compactionNoteText(event.preTokens),
+          ...(honestTotal !== undefined ? { compactionPostTotal: honestTotal } : {}),
+        },
       ],
     };
   }
@@ -3767,15 +3798,14 @@ function handleCompactBoundary(
     text: compactionNoteText(event.preTokens),
     source: "compact",
   };
+  // Live mid-turn boundary: stamp the HONEST post-compaction resident window on
+  // the open turn's scratch (base + Claude's post-compaction conversation
+  // figure) so it commits with the reduced context ([P01], [P02]).
   const nextEntry: ScratchEntry = {
     ...entry,
     messages: [...entry.messages, note],
     systemNoteSeq: entry.systemNoteSeq + 1,
-    // Stamp the post-compaction resident window so this turn commits with the
-    // reduced context, dropping the CONTEXT readout in place.
-    ...(typeof event.postTokens === "number"
-      ? { compactionPostTokens: event.postTokens }
-      : {}),
+    ...(honestTotal !== undefined ? { compactionPostTotal: honestTotal } : {}),
   };
   return {
     state: {

@@ -550,57 +550,40 @@
   opacity: 0.5;
 }
 
-/* Compaction divider — a soft, centered separator marking where claude
-   auto-compacted its context. Appearance only ([L06]); the raw summary
-   block stays hidden, matching Claude Code's own UI. Color is inherited
-   and opacity carries the de-emphasis (the ghost-row precedent), so it
-   reads as ambient, not as an error; the flanking rules draw from
-   `currentColor` to track the theme without a bespoke token. */
+/* The compaction point, in place: the Compaction Summary block stacked above a
+   quiet line marking where claude compacted its context. A vertical stack (not
+   the old centered separator) so the summary sits with the compaction that
+   produced it. Appearance only ([L06]); the summary + quiet line carry their
+   own chrome, so this wrapper is pure layout. */
 .dev-card-transcript-compaction {
   display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
+  flex-direction: column;
+  gap: var(--tug-space-xs);
   width: 100%;
-  /* Top-only and follower-position-only: transcript body children space
-     with top margins (see the run-end comment in block-chrome.css), and
-     the margin applies only when the divider follows a sibling — a
-     first-in-body divider sits flush under the attribution header. The
-     adjacency rules below carry the gaps around the divider. */
-  margin-block: 0;
-  font-size: 0.85em;
-  opacity: 0.55;
-  user-select: none;
+  /* A CLEAR break from the preceding turn: a beefy vertical gap, then a
+     full-width horizontal rule immediately above the quiet line (the padding
+     sets the rule → quiet-line gap). The margin is above the rule; the border
+     is the rule. Uniform regardless of what precedes it, so the adjacency
+     overrides below are pinned to the same beefy gap. */
+  margin-top: var(--tug-space-2xl);
+  padding-top: var(--tug-space-lg);
+  border-top: 1px solid var(--tugx-block-border);
 }
-.dev-card-transcript-compaction::before,
-.dev-card-transcript-compaction::after {
-  content: "";
-  flex: 1 1 auto;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.4;
-}
-.dev-card-transcript-compaction-label {
-  flex: 0 0 auto;
-  white-space: nowrap;
+.dev-card-transcript-compaction-line {
   font-variant-numeric: tabular-nums;
 }
 
-* + .dev-card-transcript-compaction {
-  margin-top: var(--tug-space-xs);
+/* Pin every preceding-sibling case to the same beefy gap — the clear break is
+   the point, so a block or thinking block before it must not shrink it. */
+* + .dev-card-transcript-compaction,
+.tool-block-chrome + .dev-card-transcript-compaction,
+.dev-thinking-block + .dev-card-transcript-compaction {
+  margin-top: var(--tug-space-2xl);
 }
 
-/* Top-margins-only adjacency around the divider: prose after the divider
-   owns the xs gap (prose has no margin of its own; blocks already carry a
-   bigger top margin), and the divider keeps the preceding block's wider
-   gap when it directly follows one. */
+/* Prose after the compaction block owns the small following gap. */
 .dev-card-transcript-compaction + .tug-markdown-block {
   margin-top: var(--tug-space-xs);
-}
-.tool-block-chrome + .dev-card-transcript-compaction {
-  margin-top: var(--tugx-block-run-gap);
-}
-.dev-thinking-block + .dev-card-transcript-compaction {
-  margin-top: var(--tug-space-lg);
 }
 
 /* Empty-run marker — an inline trace shown in place of an assistant

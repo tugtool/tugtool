@@ -629,10 +629,11 @@ export interface CompactBoundary {
   /** Context token count just before compaction, when claude reports it. */
   pre_tokens?: number;
   /**
-   * Resident context token count just AFTER compaction (the summary + preserved
-   * tail), when claude reports it. This is the authoritative post-compaction
-   * window; tugdeck stamps it onto the compaction turn so the CONTEXT readout
-   * drops in place immediately rather than lagging until the next turn.
+   * Claude's post-compaction CONVERSATION token count (summary + preserved
+   * tail), when reported. This is BELOW the session base — not the resident
+   * window — so tugdeck never renders it raw; it is an addend in the honest
+   * total `sessionInitTokens + post_tokens` that drops the CONTEXT readout in
+   * place without lagging until the next turn ([P01]).
    */
   post_tokens?: number;
   ipc_version: number;

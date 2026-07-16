@@ -45,7 +45,9 @@ const SID = "a7c0d1ea-0000-4000-8000-0000000c0mpact";
 
 const DIVIDER = '[data-slot="compaction-divider"]';
 const CARRY_FORWARD = '[data-card-id="A"] [data-slot="compaction-carry-forward"]';
-const CARRY_FORWARD_NAME = `${CARRY_FORWARD} .dev-compaction-carry-forward-name`;
+// The summary block composes the shared BlockChrome; its title rides the
+// tool-block header name span.
+const CARRY_FORWARD_NAME = `${CARRY_FORWARD} .tool-call-header-name`;
 
 /** Mirrors tugcode's `encodeProjectDir` (every non-`[A-Za-z0-9-]` → `-`). */
 const encodeProjectDir = (absDir: string): string =>

@@ -399,12 +399,12 @@ No new stores; one per-turn field added, one reducer effect added, one `deriveCo
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Revert the post_tokens hack; honest window via override | pending | — |
-| #step-2 | tugcode: emit `preserved_turns` on the boundary frame | pending | — |
-| #step-3 | tugdeck: truncate pre-compaction turns (live + reload) | pending | — |
-| #step-4 | tugdeck: SESSION COMPACTED banner + hoisted summary + affordance | pending | — |
-| #step-5 | Minimal-effect hint + breakdown honesty check | pending | — |
-| #step-6 | Integration checkpoint: live ≡ reload post-compaction view | pending | — |
+| #step-1 | Revert the post_tokens hack; honest window via override | done | `91d32eb18` |
+| #step-2 | tugcode: emit `preserved_turns` on the boundary frame | done | `6309fb331` |
+| #step-3 | tugdeck: truncate pre-compaction turns (live + reload) | done | `c7b777f19` |
+| #step-4 | tugdeck: SESSION COMPACTED banner + hoisted summary + affordance | done | `45e5e590a` |
+| #step-5 | Minimal-effect hint + breakdown honesty check | done | `7b010d005` |
+| #step-6 | Integration checkpoint: live ≡ reload post-compaction view | done | `7d7061903` |
 
 #### Step 1: Revert the post_tokens hack; honest window via override {#step-1}
 

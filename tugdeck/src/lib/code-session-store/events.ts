@@ -597,9 +597,10 @@ export interface GoalFeedbackEvent {
  * Display-only for the divider: the reducer appends a `system_note`
  * (`source: "compact"`) to the active turn — or, on replay with no open turn,
  * to the last committed turn — rendered as a soft divider. `preTokens` /
- * `postTokens` are normalized from the wire's `pre_tokens` / `post_tokens`;
- * `postTokens` (the resident context after compaction) is stamped onto the
- * compaction turn's committed window so the CONTEXT readout drops in place.
+ * `postTokens` are normalized from the wire's `pre_tokens` / `post_tokens`.
+ * `postTokens` is Claude's post-compaction CONVERSATION figure (below the
+ * session base); it is NEVER rendered raw — it feeds the honest window total
+ * `sessionInitTokens + postTokens` ([P01], [P02]) as an addend only.
  */
 export interface CompactBoundaryEvent {
   type: "compact_boundary";

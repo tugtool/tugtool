@@ -391,6 +391,7 @@ export const DevTelemetryWindowUtilization: React.FC<DevTelemetryProps> = ({
   const windows = deriveContextWindows(
     snap.transcript.map((t) => t.cost),
     snap.sessionInitTokens ?? 0,
+    snap.transcript.map((t) => t.compactionPostTotal ?? null),
   );
   const contextTokens =
     windows.length > 0
@@ -756,6 +757,7 @@ export const DevTelemetryStatusRow = React.forwardRef<
   const windows = deriveContextWindows(
     snap.transcript.map((t) => t.cost),
     sessionInit ?? 0,
+    snap.transcript.map((t) => t.compactionPostTotal ?? null),
   );
   const lastCommittedWindow =
     windows.length > 0 ? windows[windows.length - 1].window : null;
