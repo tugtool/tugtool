@@ -2323,7 +2323,7 @@ impl SessionLedger {
 
     /// Every `file_events` row owned by `tug_session_id`, oldest-first by
     /// `at`. The authoritative "files this session changed" list that
-    /// `tugutil changes` filters against current `git status`.
+    /// `tugmark changes` filters against current `git status`.
     pub fn file_events_for_session(
         &self,
         tug_session_id: &str,

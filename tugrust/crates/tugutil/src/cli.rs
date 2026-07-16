@@ -120,29 +120,6 @@ pub enum Commands {
         long_about = "Print the per-project runtime-state directory.\n\nResolves <data_dir>/Tug/projects/<slug>/ for the current repository — the\nout-of-repo home for per-user runtime state (the dash-log, the code-sign\nsentinel, future side-command output). Creates the directory if absent, so\nshell consumers (the Justfile, the host) can write into it without re-deriving\nthe path."
     )]
     StateDir,
-
-    /// List the files this session changed (authoritative attribution)
-    ///
-    /// Reads tugcast's `file_events` attribution rows from `sessions.db` and
-    /// joins them against `git status`, so it reports exactly the files the
-    /// session changed — including Bash-mediated edits (`sed`, `perl`,
-    /// `git mv`) that reconstructing from conversation memory misses.
-    #[command(
-        long_about = "List the files this session changed.\n\nReads the authoritative `file_events` attribution rows tugcast records at\nthe moment of change and joins them against the current `git status`, so\ncommitted or reverted files drop out. Unlike reconstructing the list from\nconversation memory, this sees Bash-mediated edits (sed, perl, git mv).\n\nThe session defaults from $TUG_SESSION_ID (set inside every Session-card\nsession); the project defaults to the current directory.\n\nPlain output prints one repo-relative path per line, excluding ambiguous\nfiles (touched by an overlapping session) and noting any omission on stderr.\n--json emits {session, project, files:[{path, op, origin, ambiguous,\ngit_status}]} — the commit skill's contract — including ambiguous files with\nthe flag set. --all keeps files that are no longer dirty. Exits 2 when no\nsession id is available or the id is unknown."
-    )]
-    Changes {
-        /// Session id to query (defaults to $TUG_SESSION_ID)
-        #[arg(long)]
-        session: Option<String>,
-
-        /// Project directory to resolve git status against (defaults to cwd)
-        #[arg(long)]
-        project: Option<String>,
-
-        /// Include files that are no longer dirty (committed or reverted)
-        #[arg(long)]
-        all: bool,
-    },
 }
 
 /// Get the command args for use in the application

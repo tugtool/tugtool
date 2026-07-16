@@ -23,6 +23,7 @@ elif [ "$TOOL_NAME" = "Bash" ]; then
     grep\ *|grep)       APPROVE=true ;;
     ls\ *|ls)           APPROVE=true ;;
     tugtool\ *|tugutil) APPROVE=true ;;
+    tugmark\ *|tugmark) APPROVE=true ;;
     find\ *)            APPROVE=true ;;
   esac
 fi

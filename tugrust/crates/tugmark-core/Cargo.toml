@@ -1,0 +1,21 @@
+[package]
+name = "tugmark-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Core library for tugmark: git changes & commits (changes/context/commit/log/diff)"
+
+[lib]
+name = "tugmark_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+dirs.workspace = true
+rusqlite.workspace = true
+tugcore.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

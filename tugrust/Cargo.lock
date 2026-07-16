@@ -2314,6 +2314,7 @@ dependencies = [
  "tugcore",
  "tugdash-core",
  "tuglog",
+ "tugmark-core",
  "tugutil-core",
  "uuid",
 ]
@@ -2395,6 +2396,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "tugmark"
+version = "0.8.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tugmark-core",
+]
+
+[[package]]
+name = "tugmark-core"
+version = "0.8.0"
+dependencies = [
+ "dirs",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tugcore",
+]
+
+[[package]]
 name = "tugrelaunch"
 version = "0.8.0"
 dependencies = [
@@ -2411,10 +2437,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "dirs",
  "libc",
  "regex",
- "rusqlite",
  "serde",
  "serde_json",
  "serial_test",

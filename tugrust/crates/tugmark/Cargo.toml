@@ -1,0 +1,22 @@
+[package]
+name = "tugmark"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "tugmark — standalone git changes & commits (changes/context/commit/log/diff)"
+
+[[bin]]
+name = "tugmark"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tugmark-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+assert_cmd.workspace = true
+rusqlite.workspace = true

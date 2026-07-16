@@ -9,114 +9,56 @@
 use std::path::Path;
 
 use tokio::process::Command;
-use tracing::{debug, warn};
+use tracing::warn;
 
 use tugcast_core::types::{
     FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitLogCommit, GitLogSnapshot,
     GitStatus,
 };
 
-/// Parse git status --porcelain=v2 --branch output into GitStatus
+/// Parse git status --porcelain=v2 --branch output into GitStatus.
+///
+/// Delegates the parsing to `tugmark_core`'s canonical
+/// [`parse_status_porcelain_v2`](tugmark_core::parse_status_porcelain_v2)
+/// ([P06]/[P08]) and maps its [`StatusReport`](tugmark_core::StatusReport) into
+/// the `tugcast_core` wire type: each tracked entry's XY splits into a staged
+/// (X, rendered `R` for a rename) and/or unstaged (Y) `FileStatus`, in the same
+/// per-line order as before; untracked paths and branch/ahead/behind/head carry
+/// straight over. `head_message` is filled separately via git log. The wire
+/// contract is unchanged — only the parser internals moved.
 pub(crate) fn parse_porcelain_v2(output: &str) -> GitStatus {
-    let mut branch = String::new();
-    let mut ahead: u32 = 0;
-    let mut behind: u32 = 0;
-    let mut head_sha = String::new();
+    let report = tugmark_core::parse_status_porcelain_v2(output);
     let mut staged: Vec<FileStatus> = Vec::new();
     let mut unstaged: Vec<FileStatus> = Vec::new();
-    let mut untracked: Vec<String> = Vec::new();
-
-    for line in output.lines() {
-        if line.starts_with("# branch.oid ") {
-            head_sha = line.trim_start_matches("# branch.oid ").to_string();
-            if head_sha == "(initial)" {
-                head_sha = String::new();
-            }
-        } else if line.starts_with("# branch.head ") {
-            branch = line.trim_start_matches("# branch.head ").to_string();
-        } else if line.starts_with("# branch.ab ") {
-            let rest = line.trim_start_matches("# branch.ab ");
-            let parts: Vec<&str> = rest.split_whitespace().collect();
-            if parts.len() >= 2 {
-                ahead = parts[0].trim_start_matches('+').parse().unwrap_or(0);
-                behind = parts[1].trim_start_matches('-').parse().unwrap_or(0);
-            }
-        } else if line.starts_with("1 ") {
-            // Ordinary changed entry: 1 XY sub mH mI mW hH hI path
-            let parts: Vec<&str> = line.splitn(9, ' ').collect();
-            if parts.len() >= 9 {
-                let xy = parts[1];
-                let path = parts[8];
-
-                if xy.len() >= 2 {
-                    let x = xy.chars().next().unwrap();
-                    let y = xy.chars().nth(1).unwrap();
-
-                    if x != '.' {
-                        staged.push(FileStatus {
-                            path: path.to_string(),
-                            status: x.to_string(),
-                        });
-                    }
-                    if y != '.' {
-                        unstaged.push(FileStatus {
-                            path: path.to_string(),
-                            status: y.to_string(),
-                        });
-                    }
-                }
-            }
-        } else if line.starts_with("2 ") {
-            // Renamed/copied entry: 2 XY sub mH mI mW hH hI Xscore path\torigPath
-            let parts: Vec<&str> = line.splitn(10, ' ').collect();
-            if parts.len() >= 10 {
-                let xy = parts[1];
-                let path_field = parts[9];
-
-                // Split on tab to get new path and original path
-                let tab_parts: Vec<&str> = path_field.split('\t').collect();
-                let new_path = if !tab_parts.is_empty() {
-                    tab_parts[0]
+    for entry in &report.entries {
+        let mut chars = entry.xy.chars();
+        let x = chars.next().unwrap_or('.');
+        let y = chars.next().unwrap_or('.');
+        if x != '.' {
+            staged.push(FileStatus {
+                path: entry.path.clone(),
+                status: if entry.renamed {
+                    "R".to_string()
                 } else {
-                    path_field
-                };
-
-                if xy.len() >= 2 {
-                    let x = xy.chars().next().unwrap();
-                    let y = xy.chars().nth(1).unwrap();
-
-                    if x != '.' {
-                        staged.push(FileStatus {
-                            path: new_path.to_string(),
-                            status: "R".to_string(),
-                        });
-                    }
-                    if y != '.' {
-                        unstaged.push(FileStatus {
-                            path: new_path.to_string(),
-                            status: y.to_string(),
-                        });
-                    }
-                }
-            }
-        } else if line.starts_with("? ") {
-            let path = line.trim_start_matches("? ");
-            untracked.push(path.to_string());
-        } else if line.starts_with("u ") {
-            // Unmerged entry - skip with debug log
-            debug!("skipping unmerged entry: {}", line);
+                    x.to_string()
+                },
+            });
         }
-        // Skip other # lines (e.g., # branch.upstream, # stash)
+        if y != '.' {
+            unstaged.push(FileStatus {
+                path: entry.path.clone(),
+                status: y.to_string(),
+            });
+        }
     }
-
     GitStatus {
-        branch,
-        ahead,
-        behind,
+        branch: report.branch,
+        ahead: report.ahead,
+        behind: report.behind,
         staged,
         unstaged,
-        untracked,
-        head_sha,
+        untracked: report.untracked,
+        head_sha: report.head_sha,
         head_message: String::new(), // Filled separately via git log
     }
 }
@@ -530,126 +472,34 @@ pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<
 
 /// Split combined `git diff` output into one [`GitDiffFile`] per file.
 ///
-/// Files are delimited by `diff --git ` header lines (git emits exactly one
-/// per file pair, including pure renames and binary files). Each file's
-/// `unified` text is its chunk verbatim; status, paths, and `+`/`-` counts
-/// are derived per [`parse_diff_chunk`].
+/// Delegates to `tugmark_core`'s canonical
+/// [`parse_unified_diff`](tugmark_core::parse_unified_diff) ([P06]/[P08]) and
+/// maps each [`DiffFile`](tugmark_core::DiffFile) into the `tugcast_core` wire
+/// type (the two structs carry identical fields — only the status enum differs).
+/// The `unified` chunk text is preserved verbatim, so the frame the client
+/// parses is unchanged.
 pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
-    let mut files = Vec::new();
-    let mut chunk: Option<Vec<&str>> = None;
-    for line in output.lines() {
-        if line.starts_with("diff --git ") {
-            if let Some(lines) = chunk.take() {
-                files.push(parse_diff_chunk(&lines));
-            }
-            chunk = Some(vec![line]);
-        } else if let Some(lines) = chunk.as_mut() {
-            lines.push(line);
-        }
-        // Lines before the first `diff --git` (none for plain `git diff`) are
-        // ignored — there is no chunk to attach them to.
-    }
-    if let Some(lines) = chunk.take() {
-        files.push(parse_diff_chunk(&lines));
-    }
-    files
+    tugmark_core::parse_unified_diff(output)
+        .into_iter()
+        .map(|f| GitDiffFile {
+            path: f.path,
+            old_path: f.old_path,
+            status: map_diff_status(f.status),
+            added: f.added,
+            removed: f.removed,
+            binary: f.binary,
+            unified: f.unified,
+        })
+        .collect()
 }
 
-/// Strip git's `a/` or `b/` path prefix (after a `--- `/`+++ ` marker).
-fn strip_ab_prefix(s: &str) -> &str {
-    s.strip_prefix("a/")
-        .or_else(|| s.strip_prefix("b/"))
-        .unwrap_or(s)
-}
-
-/// Parse the new-side path out of a `diff --git a/<old> b/<new>` header,
-/// the only path source for a binary file (no `---`/`+++` lines). Best-effort
-/// for paths without spaces — the overwhelming common case; renames and text
-/// files take the more precise `rename to` / `+++ b/` paths instead.
-fn path_from_diff_header(header: &str) -> Option<String> {
-    let rest = header.strip_prefix("diff --git ")?;
-    let idx = rest.rfind(" b/")?;
-    Some(rest[idx + 3..].to_string())
-}
-
-/// Derive one file's [`GitDiffFile`] from its chunk lines (the first line is
-/// the `diff --git` header). Status comes from git's metadata markers; paths
-/// from the `rename to`/`+++ b/`/`--- a/` lines (falling back to the header);
-/// `added`/`removed` from the `+`/`-` hunk-body lines.
-fn parse_diff_chunk(lines: &[&str]) -> GitDiffFile {
-    let header = lines.first().copied().unwrap_or("");
-    let mut status = GitDiffFileStatus::Modified;
-    let mut rename_from: Option<String> = None;
-    let mut rename_to: Option<String> = None;
-    let mut plus_path: Option<String> = None;
-    let mut minus_path: Option<String> = None;
-    let mut binary = false;
-    let mut added = 0u32;
-    let mut removed = 0u32;
-    let mut in_hunk = false;
-
-    for &line in lines.iter().skip(1) {
-        if line.starts_with("new file mode") {
-            status = GitDiffFileStatus::Added;
-        } else if line.starts_with("deleted file mode") {
-            status = GitDiffFileStatus::Deleted;
-        } else if let Some(p) = line.strip_prefix("rename from ") {
-            status = GitDiffFileStatus::Renamed;
-            rename_from = Some(p.to_string());
-        } else if let Some(p) = line.strip_prefix("rename to ") {
-            status = GitDiffFileStatus::Renamed;
-            rename_to = Some(p.to_string());
-        } else if line.starts_with("Binary files ") {
-            binary = true;
-        } else if let Some(p) = line.strip_prefix("--- ") {
-            if p != "/dev/null" {
-                minus_path = Some(strip_ab_prefix(p).to_string());
-            }
-        } else if let Some(p) = line.strip_prefix("+++ ") {
-            if p != "/dev/null" {
-                plus_path = Some(strip_ab_prefix(p).to_string());
-            }
-        } else if line.starts_with("@@") {
-            in_hunk = true;
-        } else if in_hunk && line.starts_with('+') {
-            added += 1;
-        } else if in_hunk && line.starts_with('-') {
-            removed += 1;
-        }
-    }
-
-    let (path, old_path) = if status == GitDiffFileStatus::Renamed {
-        (
-            rename_to.or_else(|| plus_path.clone()).unwrap_or_default(),
-            rename_from.or_else(|| minus_path.clone()),
-        )
-    } else {
-        (
-            plus_path
-                .or(minus_path)
-                .or_else(|| path_from_diff_header(header))
-                .unwrap_or_default(),
-            None,
-        )
-    };
-
-    let unified = if lines.is_empty() {
-        String::new()
-    } else {
-        // Reconstruct the chunk verbatim with a trailing newline; the client
-        // parser tolerates the `diff --git`/`index` preamble and a trailing
-        // blank line.
-        format!("{}\n", lines.join("\n"))
-    };
-
-    GitDiffFile {
-        path,
-        old_path,
-        status,
-        added,
-        removed,
-        binary,
-        unified,
+/// Map `tugmark_core`'s diff status to the `tugcast_core` wire enum.
+fn map_diff_status(status: tugmark_core::DiffFileStatus) -> GitDiffFileStatus {
+    match status {
+        tugmark_core::DiffFileStatus::Added => GitDiffFileStatus::Added,
+        tugmark_core::DiffFileStatus::Modified => GitDiffFileStatus::Modified,
+        tugmark_core::DiffFileStatus::Deleted => GitDiffFileStatus::Deleted,
+        tugmark_core::DiffFileStatus::Renamed => GitDiffFileStatus::Renamed,
     }
 }
 

@@ -7,7 +7,7 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugrelaunch -p tugbank
+    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugmark -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
@@ -17,7 +17,7 @@ build:
     # down. A linked worktree's --git-dir differs from its --git-common-dir.
     if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]; then
         mkdir -p ~/.local/bin
-        for bin in tugcast tugexec tugutil tugdash tugcode tugpulse tugrelaunch tugbank; do
+        for bin in tugcast tugexec tugutil tugdash tugmark tugcode tugpulse tugrelaunch tugbank; do
             ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
         done
     else
@@ -854,7 +854,7 @@ build-app:
     )"
 
     echo "==> [1/5] Rust debug binaries"
-    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugrelaunch -p tugbank)
+    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugmark -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
 

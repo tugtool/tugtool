@@ -63,7 +63,7 @@ tugdash commit <name> --message "<conventional commit>" --json <<'EOF'
 EOF
 ```
 One command: git commit + a line in the per-project dash-log (the verbatim
-instruction; `git log` on the dash branch reads the commits back). A follow-up
+instruction; `tugmark log` on the dash branch reads the commits back). A follow-up
 instruction for the same dash is just another commit — do it and commit again.
 
 ### Build (when there's something to see)

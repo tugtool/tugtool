@@ -87,7 +87,7 @@ echo "    Identity: $IDENTITY"
 # tugrelaunch are present in some bundle configurations and not
 # others, and a missing entry is benign (the bundle just doesn't ship
 # that helper).
-RUST_BINS=(tugcast tugutil tugdash tugexec tugrelaunch tugbank)
+RUST_BINS=(tugcast tugutil tugdash tugmark tugexec tugrelaunch tugbank)
 for bin in "${RUST_BINS[@]}"; do
     bin_path="$APP_PATH/Contents/MacOS/$bin"
     if [ -x "$bin_path" ]; then

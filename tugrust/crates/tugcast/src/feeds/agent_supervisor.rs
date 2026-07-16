@@ -3522,7 +3522,7 @@ impl AgentSupervisor {
                     "action": "changeset_commit_ok",
                     "project_dir": project_dir,
                     "sha": receipt.sha,
-                    "receipt": receipt.receipt,
+                    "receipt": receipt.numstat,
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,

@@ -423,16 +423,16 @@ All return types derive `Serialize` for the CLI envelope. `changes`/`context` di
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Scaffold crates + workspace + build wiring | pending | — |
-| #step-2 | tugmark-core git foundation (shell + parsers) | pending | — |
-| #step-3 | tugmark-core changes query (ledger ∩ status) | pending | — |
-| #step-4 | tugmark-core commit → structured receipt | pending | — |
-| #step-5 | tugmark-core context, log, diff | pending | — |
-| #step-6 | tugmark CLI binary over the library | pending | — |
-| #step-7 | Distribution wiring (justfile, bundle, hooks) | pending | — |
-| #step-8 | Consolidate tugcast onto tugmark-core | pending | — |
-| #step-9 | Migrate skills; remove tugutil changes | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Scaffold crates + workspace + build wiring | done | 08267a652 |
+| #step-2 | tugmark-core git foundation (shell + parsers) | done | 89c33cb6c |
+| #step-3 | tugmark-core changes query (ledger ∩ status) | done | 75afc6766 |
+| #step-4 | tugmark-core commit → structured receipt | done | 58d711cda |
+| #step-5 | tugmark-core context, log, diff | done | 0ee41907c |
+| #step-6 | tugmark CLI binary over the library | done | 9b5800280 |
+| #step-7 | Distribution wiring (justfile, bundle, hooks) | done | 4843c1341 |
+| #step-8 | Consolidate tugcast onto tugmark-core | done | ce0e63e9b |
+| #step-9 | Migrate skills; remove tugutil changes | done | d7d48f631 |
+| #step-10 | Integration checkpoint | done | (verification only) |
 
 #### Step 1: Scaffold crates + workspace + build wiring {#step-1}
 

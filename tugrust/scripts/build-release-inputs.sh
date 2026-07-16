@@ -5,17 +5,17 @@
 # build-app.sh (the distribution bundle) get their compiled inputs from here,
 # so the set of binaries and the build flags can't drift between the two paths.
 #
-# Populates tugrust/target/release/{tugcast,tugdash,tugexec,tugutil,tugrelaunch,
-# tugcode,tugpulse} and tugdeck/dist/. The Tug Xcode target's copy phase reads
-# all six binaries from target/$CONFIGURATION and errors if any are missing, so
-# this script must build the full set.
+# Populates tugrust/target/release/{tugcast,tugdash,tugmark,tugexec,tugutil,
+# tugrelaunch,tugcode,tugpulse} and tugdeck/dist/. The Tug Xcode target's copy
+# phase reads these binaries from target/$CONFIGURATION and errors if any are
+# missing, so this script must build the full set.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "==> Building release Rust binaries"
-(cd "$REPO_ROOT/tugrust" && cargo build --release -p tugcast -p tugdash -p tugexec -p tugutil -p tugrelaunch)
+(cd "$REPO_ROOT/tugrust" && cargo build --release -p tugcast -p tugdash -p tugmark -p tugexec -p tugutil -p tugrelaunch)
 
 echo "==> Compiling tugcode + tugpulse (bun)"
 (

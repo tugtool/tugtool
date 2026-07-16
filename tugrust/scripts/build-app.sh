@@ -79,10 +79,10 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$DERIVED_DATA" "$STAGING_DIR"
 
 # Step 1: Build the shared release inputs — the optimized Rust binaries
-# (tugcast/tugexec/tugutil/tugrelaunch), the bun-compiled tugcode/tugpulse,
-# and the tugdeck static assets. Shared with `just app-release` via one script
-# so the two release paths can't drift on which binaries or flags they build.
-# The Tug Xcode copy phase requires all six binaries in target/release.
+# (tugcast/tugdash/tugmark/tugexec/tugutil/tugrelaunch), the bun-compiled
+# tugcode/tugpulse, and the tugdeck static assets. Shared with `just app-release`
+# via one script so the two release paths can't drift on which binaries or flags
+# they build. The Tug Xcode copy phase requires all of these in target/release.
 echo "==> Building release inputs (shared with app-release)"
 bash "$SCRIPT_DIR/build-release-inputs.sh"
 

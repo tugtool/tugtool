@@ -29,11 +29,6 @@ fn main() -> ExitCode {
         Some(Commands::Instance(cmd)) => commands::run_instance(cmd),
         Some(Commands::Gate(cmd)) => Ok(commands::run_gate(cmd, cli.json, cli.quiet)),
         Some(Commands::StateDir) => commands::run_state_dir(cli.json, cli.quiet),
-        Some(Commands::Changes {
-            session,
-            project,
-            all,
-        }) => commands::run_changes(session, project, all, cli.json, cli.quiet),
         None => {
             // No subcommand - show splash screen
             if !cli.quiet {

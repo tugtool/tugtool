@@ -42,7 +42,7 @@ truth for "where are we?". Read it first:
 
 **If the plan has no Step Status Ledger** (an older or hand-written plan), fall back
 gracefully: with no selector, walk from Step 1; infer which steps are already done from
-`git log` on the dash branch if the dash exists, and confirm with the user before
+`tugmark log` on the dash branch if the dash exists, and confirm with the user before
 skipping any. Offer to add a ledger to the plan (on the worktree) so future runs resume
 cleanly.
 
@@ -120,8 +120,8 @@ Walk the resolved steps in dependency order. For each step:
   EOF
   ```
   One command: it makes the git commit AND appends the verbatim instruction to the
-  per-project dash-log (`tugutil state-dir`). Read progress back with `git log` on the
-  dash branch.
+  per-project dash-log (`tugutil state-dir`). Read progress back with `tugmark log` on
+  the dash branch.
 - **Update the Step Status Ledger** in the plan: flip the step from `pending` to
   `done` and record its commit. (Edit the plan in the worktree.)
 - **Mark the step's task complete** (`TaskUpdate`) in the same breath as the ledger

@@ -19,11 +19,9 @@ toml.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 regex.workspace = true
-dirs.workspace = true
 tugcore.workspace = true
 tugutil-core.workspace = true
 chrono.workspace = true
-rusqlite = { workspace = true }
 ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
