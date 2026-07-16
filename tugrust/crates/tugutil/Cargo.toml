@@ -1,13 +1,13 @@
 [package]
-name = "tug"
+name = "tugutil"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "tug — the unified Tug developer CLI (changes & commits, dashes, host plumbing)"
+description = "tugutil — the unified Tug developer CLI (changes & commits, dashes, host plumbing)"
 
 [[bin]]
-name = "tug"
+name = "tugutil"
 path = "src/main.rs"
 
 [dependencies]

@@ -9,7 +9,7 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-const BIN: &str = env!("CARGO_BIN_EXE_tug");
+const BIN: &str = env!("CARGO_BIN_EXE_tugutil");
 
 /// Find a free port by binding an ephemeral listener and dropping it.
 /// Racy in principle; fine for a test that uses it immediately.

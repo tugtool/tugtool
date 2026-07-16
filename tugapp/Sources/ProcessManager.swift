@@ -919,7 +919,7 @@ class ProcessManager {
     /// loop or kill the wrong process.
     private func takeOverFromIncumbent() {
         let id = InstanceConfig.instanceId
-        if let tug = resolveBundledTool("tug") {
+        if let tug = resolveBundledTool("tugutil") {
             let proc = Process()
             proc.executableURL = tug
             proc.arguments = ["host", "instance", "stop", id, "--timeout", "5"]

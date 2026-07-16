@@ -7,7 +7,7 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugrust && cargo build -p tugcast -p tugexec -p tug -p tugrelaunch -p tugbank
+    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
@@ -534,7 +534,7 @@ reap *MODE:
     TUGUTIL="tugrust/target/debug/tug"
     if [ ! -x "$TUGUTIL" ]; then
         echo "==> building tug (needed to identify live instances)…"
-        (cd tugrust && cargo build -p tug) || { echo "error: could not build tug" >&2; exit 1; }
+        (cd tugrust && cargo build -p tugutil) || { echo "error: could not build tugutil" >&2; exit 1; }
     fi
     # A read failure here must abort: reaping against an empty/unknown live
     # set would treat every running instance as an orphan.
@@ -857,7 +857,7 @@ build-app:
     )"
 
     echo "==> [1/5] Rust debug binaries"
-    (cd tugrust && cargo build -p tugcast -p tugexec -p tug -p tugrelaunch -p tugbank)
+    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
 
@@ -1009,7 +1009,7 @@ app-test *FILES:
     if [ "${TUG_APPTEST_GATED:-}" != "1" ]; then
         if [ ! -x tugrust/target/debug/tug ]; then
             echo "==> building tug (needed for the app-test gate)…"
-            (cd tugrust && cargo build -p tug >/dev/null)
+            (cd tugrust && cargo build -p tugutil >/dev/null)
         fi
         export TUG_APPTEST_GATED=1
         exec tugrust/target/debug/tug host gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}

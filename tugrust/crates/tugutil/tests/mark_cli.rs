@@ -79,7 +79,7 @@ fn seed_home(repo_root: &Path) -> tempfile::TempDir {
 
 /// A `tug` command with `HOME` pointed at `home` and no instance id.
 fn tug(home: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("tug").unwrap();
+    let mut cmd = Command::cargo_bin("tugutil").unwrap();
     cmd.env("HOME", home);
     cmd.env_remove("TUG_INSTANCE_ID");
     cmd.env_remove("TUG_SESSION_ID");

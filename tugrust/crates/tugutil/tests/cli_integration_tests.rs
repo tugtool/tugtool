@@ -11,7 +11,7 @@ fn tug_binary() -> PathBuf {
     path.pop(); // repo root
     path.push("target");
     path.push("debug");
-    path.push("tug");
+    path.push("tugutil");
     path
 }
 
