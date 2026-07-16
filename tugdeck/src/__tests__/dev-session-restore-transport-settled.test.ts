@@ -1,10 +1,10 @@
 /**
- * `dev-session-restore` — transport_settled wiring on binding arrival
- * (Step 5 of tugplan-dev-connection-health).
+ * `session-session-restore` — transport_settled wiring on binding arrival
+ * (Step 5 of tugplan-session-connection-health).
  *
  * Verifies the production wire: when a binding arrives in
  * `cardSessionBindingStore` for a card that's currently in the
- * `devRestoreRegistry`, the binding subscriber dispatches
+ * `sessionRestoreRegistry`, the binding subscriber dispatches
  * `transport_settled` into that card's `CodeSessionStore` via
  * `cardServicesStore.getServices(cardId)?.codeSessionStore.notifyTransportSettled()`.
  *
@@ -20,7 +20,9 @@
  * are not initialized in the test environment).
  */
 
-import { describe, it, expect, afterEach, mock } from "bun:test";
+import { describe, it, expect, afterEach, afterAll, mock } from "bun:test";
+import { setTugbankClient } from "@/lib/tugbank-singleton";
+import type { TugbankClient } from "@/lib/tugbank-client";
 
 import type { TugConnection } from "@/connection";
 
@@ -51,16 +53,17 @@ mock.module("@/lib/connection-lifecycle", () => ({
 
 // Tugbank stub. `cardServicesStore._construct` reads dev recents on
 // every successful bind; the test doesn't care about that side effect,
-// so the read returns nothing and the writer is a no-op.
+// so the read returns nothing and the writer is a no-op. Wired through
+// the real `setTugbankClient` seam rather than `mock.module` — a module
+// mock on the singleton leaks across files in bun's single-process run
+// and would starve other suites' hydrate.
 const fakeTugbank = {
   get: (_domain: string, _key: string) => undefined,
   readDomain: (_domain: string) => undefined,
   onDomainChanged: (_cb: (domain: string) => void) => () => {},
 };
-mock.module("@/lib/tugbank-singleton", () => ({
-  getTugbankClient: () => fakeTugbank,
-  setTugbankClient: () => {},
-}));
+setTugbankClient(fakeTugbank as unknown as TugbankClient);
+afterAll(() => setTugbankClient(null));
 
 // `cardServicesStore._construct` calls `putDevRecentProjects` —
 // stubbed here so it doesn't reach for `globalThis.fetch`.
@@ -79,8 +82,8 @@ import {
 } from "@/lib/card-session-binding-store";
 import {
   restoreDevSessions,
-  devRestoreRegistry,
-} from "@/lib/dev-session-restore";
+  sessionRestoreRegistry,
+} from "@/lib/session-session-restore";
 
 interface FakeCard {
   id: string;
@@ -126,9 +129,9 @@ afterEach(() => {
   TOUCHED_CARD_IDS.clear();
 });
 
-describe("dev-session-restore — transport_settled on binding arrival (Step 5)", () => {
+describe("session-session-restore — transport_settled on binding arrival (Step 5)", () => {
   it("clears the registry entry and dispatches transport_settled into the store", () => {
-    const cardId = "dev-restore-card-1";
+    const cardId = "session-restore-card-1";
     const tugSessionId = "tug-session-restore-1";
     const projectDir = "/work/restore-test";
 
@@ -151,12 +154,12 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     // Pre-arm the registry as if a `spawn_session(mode=resume)` were
     // in flight. Use a no-op timeout — the binding arriving below
     // clears the entry before the timer would fire.
-    devRestoreRegistry._register(
+    sessionRestoreRegistry._register(
       cardId,
       { tugSessionId, projectDir },
       () => {},
     );
-    expect(devRestoreRegistry.has(cardId)).toBe(true);
+    expect(sessionRestoreRegistry.has(cardId)).toBe(true);
 
     // First binding arrival constructs the store via cardServicesStore.
     bind(cardId, tugSessionId);
@@ -165,7 +168,7 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     const store = services!.codeSessionStore;
 
     // The registry entry is cleared by the binding subscriber.
-    expect(devRestoreRegistry.has(cardId)).toBe(false);
+    expect(sessionRestoreRegistry.has(cardId)).toBe(false);
 
     // Walk the store through the full transport-state lifecycle to
     // prove the wiring drives it home: drop the wire, reconnect,
@@ -192,7 +195,7 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     // Re-arm the registry, then re-bind to drive the binding
     // subscriber again. The same store gets `notifyTransportSettled`
     // and flips back to `online`.
-    devRestoreRegistry._register(
+    sessionRestoreRegistry._register(
       cardId,
       { tugSessionId, projectDir },
       () => {},
@@ -215,7 +218,7 @@ describe("dev-session-restore — transport_settled on binding arrival (Step 5)"
     // whatever the shared lifecycle is in (carried over from prior
     // tests in this file or fresh; either way, `online` because the
     // store was just constructed).
-    const cardId = "dev-restore-card-2";
+    const cardId = "session-restore-card-2";
     const tugSessionId = "tug-session-restore-2";
 
     const fakeDeck = createFakeDeck([]);

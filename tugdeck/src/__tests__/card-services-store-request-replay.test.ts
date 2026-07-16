@@ -8,7 +8,7 @@
  * bindings do not.
  *
  * Connection + lifecycle singletons are mocked the same way
- * `dev-session-restore-transport-settled.test.ts` does — those
+ * `session-session-restore-transport-settled.test.ts` does — those
  * singletons aren't initialized in the test environment, but
  * `cardServicesStore._construct` early-returns null without them.
  *
@@ -18,7 +18,9 @@
  * already covered in plan; this test pins the wire-side contribution.
  */
 
-import { describe, it, expect, afterEach, mock } from "bun:test";
+import { describe, it, expect, afterEach, afterAll, mock } from "bun:test";
+import { setTugbankClient } from "@/lib/tugbank-singleton";
+import type { TugbankClient } from "@/lib/tugbank-client";
 
 import type { TugConnection } from "@/connection";
 
@@ -50,15 +52,16 @@ mock.module("@/lib/connection-lifecycle", () => ({
   registerConnectionLifecycle: () => {},
 }));
 
+// Wire the tugbank stub through the real `setTugbankClient` seam rather
+// than `mock.module` — a module mock on the singleton leaks across files
+// in bun's single-process run and would starve other suites' hydrate.
 const fakeTugbank = {
   get: (_domain: string, _key: string) => undefined,
   readDomain: (_domain: string) => undefined,
   onDomainChanged: (_cb: (domain: string) => void) => () => {},
 };
-mock.module("@/lib/tugbank-singleton", () => ({
-  getTugbankClient: () => fakeTugbank,
-  setTugbankClient: () => {},
-}));
+setTugbankClient(fakeTugbank as unknown as TugbankClient);
+afterAll(() => setTugbankClient(null));
 
 import * as actualSettingsApi from "@/settings-api";
 mock.module("@/settings-api", () => ({
