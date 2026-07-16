@@ -21,7 +21,7 @@
 
 #### Context {#context}
 
-Composing a commit needs three facts: **which files** changed this session, **what** changed in them, and **how** commits here read (message style). Today only the first has a home — `tugutil changes --json` (the session's attribution rows ∩ `git status`). The other two have no owner, so every tugplug skill improvises a raw-git tail, and those tails drift: `git log --oneline -10` in the `commit` skill vs. bare `git log` in `implement`/`dash`/`audit`; `--no-pager` only in `commit`; three different `git status` forms across layers (`--porcelain=v2` in `tugutil/src/commands/changes.rs`, `--porcelain` v1 in `tugcast/src/feeds/changeset.rs`, bare `git status` in the `commit` skill); `git add <paths>` in the skill vs. `git add -- <files>` server-side. The `commit` skill even hand-rolls `git commit … && git --no-pager show --numstat --format= HEAD` while `tugcast/src/feeds/changeset.rs` (`run_changeset_commit`) already implements that exact operation and returns a structured receipt — two implementations of one thing, drifting, with tugdeck's `commit-block.tsx` scraping the numstat text back into structure at the end.
+Composing a commit needs three facts: **which files** changed this session, **what** changed in them, and **how** commits here read (message style). Today only the first has a home — `tugutil changes --json` (the session's attribution rows ∩ `git status`). The other two have no owner, so every tugplug skill improvises a raw-git tail, and those tails drift: `git log --oneline -10` in the `commit` skill vs. bare `git log` in `implement`/`dash`/`audit`; `--no-pager` only in `commit`; mixed `git status` forms (`--porcelain=v2` in `tugutil/src/commands/changes.rs` and `tugcast/src/feeds/git.rs`, bare `git status` in the `commit` skill, and `tugcast/src/feeds/changeset.rs` mixing porcelain forms across its status header and dash-diff paths); `git add <paths>` in the skill vs. `git add -- <files>` server-side. The `commit` skill even hand-rolls `git commit … && git --no-pager show --numstat --format= HEAD` while `tugcast/src/feeds/changeset.rs` (`run_changeset_commit`) already implements that exact operation and returns a structured receipt — two implementations of one thing, drifting, with tugdeck's `commit-block.tsx` scraping the numstat text back into structure at the end.
 
 `tugutil` is where this landed only because it is the project's miscellaneous-command grab-bag (eight unrelated subcommands: `init`, `resolve`, `version`, `tell`, `instance`, `gate`, `state-dir`, `changes` — only `changes` touches git or the ledger). The AI-powered IDE this project is building treats git changes & commits as a *fundamental* surface; it deserves its own program, designed once, with a stable JSON contract, so no agent ever invents the incantation again.
 
@@ -64,7 +64,7 @@ Composing a commit needs three facts: **which files** changed this session, **wh
 
 - The Shell route now exports `$TUG_SESSION_ID` to spawned shells (commit `dc9263805`, `tugcast/src/feeds/shell.rs`). This is what makes `tugmark context`/`commit` usable from the `$` route; without it those commands can't resolve a session.
 - `tugcore::instance::sessions_db_path()` (`tugrust/crates/tugcore/src/instance.rs:183`) — resolves the per-instance `sessions.db`.
-- `tugutil_core::worktree::find_repo_root()` (`tugrust/crates/tugutil-core/src/worktree.rs:15`) — repo-root resolution without shelling `git rev-parse`.
+- Repo-root resolution: `git rev-parse --show-toplevel` from the project dir (the `changes` join must key off the *session's* worktree root, not the main checkout — so `tugutil_core::worktree::find_repo_root` is deliberately NOT used; it starts from cwd and resolves a linked worktree back to the main repo, both wrong here). See [P08].
 - Read models to port from: `tugutil/src/commands/changes.rs` (the `changes` query), `tugcast/src/feeds/changeset.rs` `run_changeset_commit` (the commit+receipt), `tugcast/src/feeds/git.rs` `parse_porcelain_v2`/`parse_git_diff` (the parsers).
 
 #### Constraints {#constraints}
@@ -225,14 +225,15 @@ Anchors are explicit and kebab-case; design decisions are `[P01]`, specs `S01`, 
 
 #### [P08] Canonical git shell + parsers live in `tugmark-core`; `--porcelain=v2` everywhere (DECIDED) {#p08-canonical-git}
 
-**Decision:** `tugmark-core` exposes a `pub` git-shell helper (`git_stdout`/`git_output`) and pure parsers (`parse_status_porcelain_v2`, `parse_unified_diff`, `parse_numstat`). Repo-root resolution uses `tugutil_core::worktree::find_repo_root`. Status is always `--porcelain=v2`.
+**Decision:** `tugmark-core` exposes a `pub` git-shell helper (`git_stdout`/`git_output`) and pure parsers (`parse_status_porcelain_v2`, `parse_unified_diff`, `parse_numstat`). Repo-root resolution is a `repo_root_for(dir)` helper that runs `git -C <dir> rev-parse --show-toplevel` and falls back to the project dir when it isn't a git repo (then the status map is empty and everything reads as non-dirty). Status is always `--porcelain=v2`.
 
 **Rationale:**
-- Kills the v1/v2/bare `git status` drift by having one status invocation and one parser.
-- Reusing `find_repo_root` avoids a redundant `git rev-parse --show-toplevel` shell and matches `tugdash-core`.
+- Kills the mixed `git status` drift by having one status invocation and one parser.
+- `git rev-parse --show-toplevel` from the project dir is the behavior `tugutil/src/commands/changes.rs` already uses (`git_repo_root`), and it is the *correct* one: it returns the worktree the session edits in. `tugutil_core::worktree::find_repo_root` is deliberately rejected — it takes no path (starts from cwd, so `--project` can't be honored) and resolves a linked worktree back to the **main** repo, which would join a `tugdash`-worktree session's `file_events` against the wrong `git status` and report everything as non-dirty.
 
 **Implications:**
-- `tugcast/src/feeds/changeset.rs` (which used `--porcelain` v1) moves to the v2 parser via [P06]; verify its status consumers still get what they need (staged/unstaged/untracked).
+- The project-dir → repo-root → empty-status-fallback chain from `changes.rs` is preserved verbatim in `tugmark-core`.
+- `tugcast/src/feeds/changeset.rs` already parses via `parse_porcelain_v2` for its status header; its dash-diff path and any v1 status calls route through the canonical parser via [P06] — verify status consumers still get staged/unstaged/untracked.
 
 ---
 
@@ -313,7 +314,7 @@ Flags: `--session <id>` (default `$TUG_SESSION_ID`), `--project <dir>` (default 
                "ambiguous": false, "git_status": " M", "diff": "…unified diff…" } ],
   "recent_commits": [ { "sha": "abc1234", "subject": "tugcast(shell): export TUG_SESSION_ID to $ route" } ] }
 ```
-`files` always carries `diff` (context is *for composing a message* — the diff is the point). `recent_commits` default depth 10; `--log-limit N` overrides. This is the one-shot command the `commit` skill runs.
+`files` always carries `diff` (context is *for composing a message* — the diff is the point); a created/untracked file carries a synthesized add-diff, never an empty string. Flags: `--session <id>` (default `$TUG_SESSION_ID`), `--project <dir>` (default cwd — must match how `commit` resolves the repo, since `commit` reuses the same `changes` set), `--log-limit N` (recent-commit depth, default 10). This is the one-shot command the `commit` skill runs.
 
 **Spec S03: `tugmark commit --json` data payload (`CommitReceipt`)** {#s03-commit-schema}
 
@@ -324,7 +325,7 @@ Flags: `--session <id>` (default `$TUG_SESSION_ID`), `--project <dir>` (default 
   "aggregate": { "files_changed": 2, "insertions": 34, "deletions": 10 },
   "numstat": "24\t6\trel/path.rs\n10\t4\tother.rs\n" }
 ```
-`status` ∈ `created|modified|deleted|renamed`. `added`/`deleted` are `null` for binary files (numstat `-`). `numstat` is the raw `git show --numstat --format= HEAD` text ([Q01] bridge). Flags: `--message <m>` (required), `--session <id>`, `--paths <p>…` (explicit set), `--all` (include ambiguous). Errors (exit 1) on empty file set or blank message.
+`status` ∈ `created|modified|deleted|renamed`. `added`/`deleted` are `null` for binary files (numstat `-`). `numstat` is the raw `git show --numstat --format= HEAD` text ([Q01] bridge). Flags: `--message <m>` (required), `--session <id>`, `--project <dir>` (default cwd — resolves the same repo/`changes` set as `context`, so the staged set can't disagree with the reviewed context), `--paths <p>…` (explicit set), `--all` (include ambiguous). Errors (exit 1) on empty file set or blank message.
 
 **Spec S04: `tugmark log` / `tugmark diff` data payloads** {#s04-log-diff-schema}
 
@@ -355,7 +356,7 @@ pub fn parse_numstat(out: &str)              -> Vec<NumstatEntry>;
 pub fn git_stdout(dir: &Path, args: &[&str]) -> Result<String, String>;
 pub fn git_output(dir: &Path, args: &[&str]) -> Result<std::process::Output, String>;
 ```
-All return types derive `Serialize` for the CLI envelope.
+All return types derive `Serialize` for the CLI envelope. `changes`/`context` distinguish the exit-2 conditions (no session id, no ledger, unknown session) from real errors via a typed error/outcome rather than a `String`, so `main()` can map them to `ExitCode::from(2)` vs `1` ([F5]). `ChangesReport` carries `known: bool` (the unknown-session-with-no-events signal, per today's `compute_changes`).
 
 ---
 
@@ -386,8 +387,10 @@ All return types derive `Serialize` for the CLI envelope.
 
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
-| `ChangesOptions`/`ChangesReport`/`Change` | structs | `tugmark-core/src/changes.rs` | mirrors today's `ChangesJson`/`ChangeFile` + optional `diff` |
-| `CommitOptions`/`CommitReceipt`/`CommitFile`/`Aggregate` | structs | `tugmark-core/src/commit.rs` | Spec S03 |
+| `ChangesOptions`/`ChangesReport`/`Change` | structs | `tugmark-core/src/changes.rs` | mirrors today's `ChangesJson`/`ChangeFile` + optional `diff`; `ChangesReport` carries `known: bool`; `ChangesOptions` has `project` |
+| `ChangesError` (or equivalent outcome) | enum | `tugmark-core/src/changes.rs` | distinguishes exit-2 cases (no session id / no ledger / unknown session) from exit-1 errors, so the CLI can map cleanly ([F5], `changes.rs:63/83/91`) |
+| `CommitOptions`/`CommitReceipt`/`CommitFile`/`Aggregate` | structs | `tugmark-core/src/commit.rs` | Spec S03; `CommitOptions` has `project` |
+| `ContextOptions` | struct | `tugmark-core/src/context.rs` | Spec S02; has `session`, `project`, `log_limit` |
 | `ContextReport`/`LogReport`/`LogEntry`/`DiffReport`/`DiffFile`/`NumstatEntry`/`StatusReport` | structs | `tugmark-core/src/{context,git}.rs` | Specs S02/S04 |
 | `run_changeset_commit` | fn (retire) | `tugcast/src/feeds/changeset.rs` | replace body with `spawn_blocking(tugmark_core::commit)` ([P06]) |
 | `parse_porcelain_v2`/`parse_git_diff` | fn (retarget) | `tugcast/src/feeds/git.rs` | delegate to `tugmark-core` parsers ([P06]) |
@@ -493,12 +496,13 @@ All return types derive `Serialize` for the CLI envelope.
 **Tasks:**
 - [ ] Port `tugutil/src/commands/changes.rs` logic: resolve session (`--session` else `$TUG_SESSION_ID`; empty → error/exit 2), resolve `sessions.db` via `tugcore::instance::sessions_db_path()`, open read-only.
 - [ ] Query `file_events` (`SELECT file_path, op, origin, ambiguous … WHERE tug_session_id = ?1 ORDER BY at, tool_use_id, file_path`) and `session_exists` (`SELECT COUNT(*) FROM sessions WHERE session_id = ?1`).
-- [ ] Resolve repo root via `tugutil_core::worktree::find_repo_root`; build the status map via `parse_status_porcelain_v2`; dedup per path (latest op/origin, OR `ambiguous`), join, drop non-dirty unless `--all`.
-- [ ] Add `--diff`: attach per-file unified diff via `git diff -- <path>` (working tree) using `parse_unified_diff`/raw text.
+- [ ] Resolve repo root via the `repo_root_for(project_dir)` helper (`git rev-parse --show-toplevel`, project-dir fallback per [P08]); build the status map via `parse_status_porcelain_v2`; dedup per path (latest op/origin, OR `ambiguous`), join, drop non-dirty unless `--all`.
+- [ ] Add `--diff`: attach per-file unified diff. For tracked files, `git diff -- <path>` (working tree). For **untracked/created** files (`op: created` — a new-file `Write` — where `git diff` emits nothing), synthesize an add-diff via `git diff --no-index -- /dev/null <path>` (note: exits 1 when the files differ, which is the normal case — treat exit 1 with output as success, not an error).
 - [ ] Add a comment in `ledger.rs` naming `tugcast/src/feeds/attribution.rs` + `session_ledger.rs` as the schema source of truth.
 
 **Tests:**
 - [ ] Integration: temp git repo + seeded `sessions.db` (known `file_events`/`sessions` rows) → `changes` returns expected paths/op/origin/ambiguous with correct `git_status`.
+- [ ] Integration: `--diff` on an **untracked** file yields a non-empty add-diff (guards the F2 gap where `git diff` is silent for new files).
 - [ ] Integration: unknown session → exit-2 semantics; valid-but-empty session → empty files, exit 0.
 - [ ] Contract: schema-coupling test (R04) with a hand-built `sessions.db`.
 
@@ -540,12 +544,12 @@ All return types derive `Serialize` for the CLI envelope.
 - `tugmark-core/src/context.rs`: `context`, `log`, `diff`.
 
 **Tasks:**
-- [ ] `context`: `changes` set (always with diff) + `head`/`branch` + `recent_commits` via `git log --format=%h%x00%s -n <log-limit>` (default 10) parsed to `{sha, subject}`.
+- [ ] `context`: `changes` set (always with diff — reuse Step 3's tracked + untracked/created add-diff handling, so new files carry a real diff) + `head`/`branch` + `recent_commits` via `git log --format=%h%x00%s -n <log-limit>` (default 10) parsed to `{sha, subject}`.
 - [ ] `log`: `--limit`/`--range` → `LogReport`.
 - [ ] `diff`: working tree / `--staged` / `--range` / `--session` (session files only) → `DiffReport` via `parse_numstat`/`parse_unified_diff`.
 
 **Tests:**
-- [ ] Integration: temp repo with commits + edits → `context` returns files-with-diff and the recent commit subjects in order.
+- [ ] Integration: temp repo with commits + edits → `context` returns files-with-diff (including a non-empty diff for a newly created/untracked file) and the recent commit subjects in order.
 - [ ] Integration: `log --limit 3` returns 3 entries; `diff --staged` reflects the index.
 
 **Checkpoint:**
@@ -565,16 +569,18 @@ All return types derive `Serialize` for the CLI envelope.
 **List L01: subcommand surface** {#l01-subcommands}
 - `tugmark changes [--session][--project][--all][--diff][--json]`
 - `tugmark context [--session][--project][--log-limit N][--json]`
-- `tugmark commit --message <m> [--session][--paths <p>…][--all][--json]`
+- `tugmark commit --message <m> [--session][--project][--paths <p>…][--all][--json]`
 - `tugmark log [--limit N][--range a..b][--json]`
 - `tugmark diff [--range a..b][--staged][--session][--json]`
 
 **Tasks:**
 - [ ] Wire each subcommand to its library op; format `--json` via `JsonResponse::ok("mark <cmd>", data)` and a plain read-out otherwise.
-- [ ] Preserve `changes` exit codes (0/2) from the library.
+- [ ] Exit-code plumbing: the library surfaces the unknown-session / no-ledger case as a **typed** outcome (e.g. `ChangesOutcome::UnknownSession`), NOT a stringly `Err` — `tugdash`'s `main()` maps every `Err` to exit 1, which would collapse the 0/2 distinction. `main()` matches the typed outcome to `ExitCode::from(2)` (with the stderr message from `changes.rs:63/83/91`), reserving exit 1 for real errors.
+- [ ] Preserve plain-mode behavior: one repo-relative path per line excluding ambiguous rows, and the "`N ambiguous file(s) omitted — use --json`" stderr note (`changes.rs` `render_plain`).
 
 **Tests:**
 - [ ] Integration (invoke the built binary in a temp repo + seeded `sessions.db`): `tugmark changes --json`, `tugmark context --json`, `tugmark commit --message … --json`, `tugmark log --json`, `tugmark diff --json` each emit a valid envelope with the Spec payload.
+- [ ] Integration: `tugmark changes` with an unknown session exits **2** (not 1); a valid empty session exits 0.
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugmark` green
@@ -616,15 +622,17 @@ All return types derive `Serialize` for the CLI envelope.
 **Artifacts:**
 - `tugcast/Cargo.toml` (+`tugmark-core`); `tugcast/src/feeds/changeset.rs`; `tugcast/src/feeds/git.rs`.
 
+**Invariant (freeze the wire contract):** the frame the deck receives is unchanged. `agent_supervisor.rs` (the commit request handler, which today forwards `run_changeset_commit`'s `{sha, receipt}`) must still emit the **exact same** sha + raw-numstat-text frame the deck's `commit-block.tsx` scrapes — the richer structured `CommitReceipt` is consumed server-side, and only `.numstat`/`.sha` cross the wire until [Q01] migrates the deck. Do not change any `tugcast_core` wire type in this step.
+
 **Tasks:**
 - [ ] Add `tugmark-core = { workspace = true }` to `tugcast/Cargo.toml`.
-- [ ] Replace `run_changeset_commit`'s body with `spawn_blocking(move || tugmark_core::commit(…))`; adapt the caller from `ChangesetCommitReceipt {sha, receipt}` to `CommitReceipt` (use `.numstat` where the raw string was expected).
+- [ ] Replace `run_changeset_commit`'s body with `spawn_blocking(move || tugmark_core::commit(…))`; adapt its caller (`agent_supervisor.rs` commit handler) from `ChangesetCommitReceipt {sha, receipt}` to `CommitReceipt`, taking `.sha` and `.numstat` for the unchanged wire frame.
 - [ ] Retarget `parse_porcelain_v2`/`parse_git_diff` in `feeds/git.rs` to delegate to `tugmark_core::parse_status_porcelain_v2`/`parse_unified_diff`, mapping results into the existing `tugcast_core::types`; keep the async builders and wire types unchanged.
 - [ ] Capture golden snapshots of the pre-change parser output on the fixture corpus; assert identical after.
 
 **Tests:**
-- [ ] Golden/contract: git status + `/diff` + log feed snapshots byte-identical to pre-consolidation on the fixture corpus (R01).
-- [ ] Existing changeset/commit tests in tugcast still pass against the new receipt shape.
+- [ ] Golden/contract: git status + `/diff` + log feed snapshots byte-identical to pre-consolidation on the fixture corpus (R01) — confirm the corpus covers a rename (score-suffixed porcelain).
+- [ ] Adapt the existing `run_changeset_commit_*` tests (`changeset.rs`: `run_changeset_commit_commits_exactly_the_listed_files`, `_stages_untracked_selections`, `_refuses_empty_list_and_blank_message`, `_error_carries_git_stderr`) to the new `commit`/`CommitReceipt` path; they must keep passing (equal-file-set staging, untracked staging, refusals, git-stderr surfacing).
 
 **Checkpoint:**
 - [ ] `cargo nextest run` (whole workspace) green
@@ -643,7 +651,8 @@ All return types derive `Serialize` for the CLI envelope.
 **Tasks:**
 - [ ] `commit` skill: replace the `tugutil changes --json` + `git status`/`git diff`/`git log` preamble with a single `tugmark context --json`; replace the commit line with `tugmark commit --message "<m>" --json` (`--paths` for ambiguous-include). Fix "Dev card" → "Session card".
 - [ ] `implement`/`dash`/`audit`: replace bare/ad-hoc `git log` reads with `tugmark log`; audit's range review → `tugmark diff --range <base>..<branch>`.
-- [ ] Remove the `Changes` variant + dispatch from `tugutil/src/cli.rs`, drop it from `commands/mod.rs`, delete `commands/changes.rs`; drop now-unused deps from `tugutil/Cargo.toml` if any.
+- [ ] Remove the `Changes` variant + dispatch from `tugutil/src/cli.rs`, drop it from `commands/mod.rs`, delete `commands/changes.rs`.
+- [ ] Check for orphaned deps: `changes` was `tugutil`'s only `rusqlite` user (and a `dirs` user). `-D warnings` does NOT flag unused manifest deps, so audit `tugutil/Cargo.toml` by hand (or `cargo machete`) and drop `rusqlite`/`dirs` if nothing else in the crate uses them.
 - [ ] `grep -rn "tugutil changes"` across the repo → clean.
 
 **Tests:**
