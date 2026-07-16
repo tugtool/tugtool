@@ -182,11 +182,12 @@ struct ShellChild {
 async fn spawn_session_shell(
     spawn_cwd: &PathBuf,
     marker: &str,
+    tug_session_id: &str,
 ) -> std::io::Result<(ShellChild, i32, Option<String>)> {
-    if let Ok((sh, pid)) = spawn_shell_child(spawn_cwd, marker, true).await {
+    if let Ok((sh, pid)) = spawn_shell_child(spawn_cwd, marker, true, tug_session_id).await {
         return Ok((sh, pid, None));
     }
-    let (sh, pid) = spawn_shell_child(spawn_cwd, marker, false).await?;
+    let (sh, pid) = spawn_shell_child(spawn_cwd, marker, false, tug_session_id).await?;
     Ok((sh, pid, Some(SAFE_MODE_NOTICE.to_string())))
 }
 
@@ -204,6 +205,7 @@ async fn spawn_shell_child(
     spawn_cwd: &PathBuf,
     marker: &str,
     login: bool,
+    tug_session_id: &str,
 ) -> std::io::Result<(ShellChild, i32)> {
     let shell = resolve_exec_shell();
     let mut cmd = Command::new(&shell);
@@ -233,7 +235,11 @@ async fn spawn_shell_child(
         .env("TERM", "xterm-256color")
         .env("CLICOLOR", "1")
         .env("CLICOLOR_FORCE", "1")
-        .env("FORCE_COLOR", "1");
+        .env("FORCE_COLOR", "1")
+        // The card's session id, matching what the agent bridge exports for
+        // claude's own subprocesses. Load-bearing for `tugutil changes`, which
+        // reads `$TUG_SESSION_ID` to resolve the session against the ledger.
+        .env("TUG_SESSION_ID", tug_session_id);
     if spawn_cwd.is_dir() {
         cmd.current_dir(spawn_cwd);
     }
@@ -414,7 +420,7 @@ async fn shell_session_task(
 
         // Lazy spawn / respawn.
         if child.is_none() {
-            match spawn_session_shell(&spawn_cwd, &marker).await {
+            match spawn_session_shell(&spawn_cwd, &marker, &tug_session_id).await {
                 Ok((sh, pid, notice)) => {
                     child = Some(sh);
                     shared.lock().unwrap().pid = Some(pid);

@@ -11,7 +11,9 @@
  *      prompt entry each settle a transcript row carrying the command, the
  *      combined output, and the exit label; the `cd` moves the live cwd
  *      chip ([P10]) and the following `pwd` proves the shell session is
- *      stateful across exchanges.
+ *      stateful across exchanges. A final `echo "$TUG_SESSION_ID"` proves
+ *      the shell child inherits the card's session id (parity with the
+ *      agent bridge's env export) — the value `tugutil changes` reads.
  *   2. **Non-context styling hook** — every shell row renders inside
  *      `[data-slot="session-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
@@ -260,14 +262,18 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // --- Three real exchanges through the live shell backend. ---
+          // --- Four real exchanges through the live shell backend. The last
+          // reads $TUG_SESSION_ID: the shell child must inherit the card's
+          // session id (parity with the agent bridge), so `tugutil changes`
+          // run from this route resolves the session against the ledger. ---
           await execAndSettle(app, "echo hello-from-shell", 0);
           await execAndSettle(app, "cd sub", 1);
           await execAndSettle(app, "pwd", 2);
+          await execAndSettle(app, 'echo "sid=$TUG_SESSION_ID"', 3);
 
           // Row facts: command, real output, exit label.
           const live = await shellRowFacts(app);
-          expect(live.length).toBe(3);
+          expect(live.length).toBe(4);
           expect(live[0].command).toBe("echo hello-from-shell");
           expect(live[0].output).toContain("hello-from-shell");
           expect(live[0].footer).toContain("exit 0");
@@ -276,6 +282,9 @@ describe.skipIf(!SHOULD_RUN)(
           expect(live[2].command).toBe("pwd");
           expect(live[2].output).toContain(join(projectDir, "sub"));
           expect(live[2].footer).toContain("exit 0");
+          expect(live[3].command).toBe('echo "sid=$TUG_SESSION_ID"');
+          expect(live[3].output).toContain(`sid=${SID}`);
+          expect(live[3].footer).toContain("exit 0");
 
           // The `cd` moved the live cwd chip ([P10]) — the full path rides
           // the chip's Finder tooltip; the face may be ellipsized.
@@ -322,7 +331,14 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Interleaved order + the [P11] non-context styling hooks.
           const liveOrder = await participantOrder(app);
-          expect(liveOrder).toEqual(["user", "assistant", "shell", "shell", "shell"]);
+          expect(liveOrder).toEqual([
+            "user",
+            "assistant",
+            "shell",
+            "shell",
+            "shell",
+            "shell",
+          ]);
 
           // --- Maker ▸ Reload → real resume replay + ledger restore. ---
           await app.appReload();
@@ -339,7 +355,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(function(){
               var shells = document.querySelectorAll(${JSON.stringify(SHELL_ROWS)});
               var entries = document.querySelectorAll(${JSON.stringify(ENTRIES)});
-              return shells.length === 3 && entries.length >= 5;
+              return shells.length === 4 && entries.length >= 6;
             })()`,
             { timeoutMs: 20_000 },
           );
@@ -351,13 +367,15 @@ describe.skipIf(!SHOULD_RUN)(
           ).toEqual(liveOrder);
 
           const restored = await shellRowFacts(app);
-          expect(restored.length).toBe(3);
+          expect(restored.length).toBe(4);
           expect(restored[0].command).toBe("echo hello-from-shell");
           expect(restored[0].output).toContain("hello-from-shell");
           expect(restored[0].footer).toContain("exit 0");
           expect(restored[1].command).toBe("cd sub");
           expect(restored[2].command).toBe("pwd");
           expect(restored[2].output).toContain(join(projectDir, "sub"));
+          expect(restored[3].command).toBe('echo "sid=$TUG_SESSION_ID"');
+          expect(restored[3].output).toContain(`sid=${SID}`);
         } finally {
           await app.close();
         }
