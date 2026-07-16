@@ -1,5 +1,5 @@
 /**
- * CodeSessionStore — per-Dev-card L02 store that owns Claude Code turn
+ * CodeSessionStore — per-Session-card L02 store that owns Claude Code turn
  * state for a single `tug_session_id`. It observes filtered
  * CODE_OUTPUT / SESSION_STATE frames through a real `FeedStore`,
  * dispatches CODE_INPUT messages via `encodeCodeInputPayload`, and
@@ -274,7 +274,7 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // (Monitor / CronCreate / ScheduleWakeup / …). The reducer
   // transitions `idle → waking` and accepts the wake's content
   // events; the bracket closes implicitly on the next `turn_complete`.
-  // See `roadmap/tugplan-dev-session-wake.md` [D01].
+  // See `roadmap/tugplan-session-wake.md` [D01].
   "wake_started",
   // Neutral assistant-originated turn opener (`tuglaws/turn-metric.md`
   // S02): opens an assistant-only turn for orphan assistant content
@@ -319,7 +319,7 @@ export interface CodeSessionStoreOptions {
    * The user's session-mode intent at card-open time, captured from
    * the per-card `CardSessionBinding`. Threaded onto
    * `CodeSessionSnapshot.sessionMode` so pure derivations (e.g.
-   * `deriveDevCardBannerSpec`) can branch on it without a second
+   * `deriveSessionCardBannerSpec`) can branch on it without a second
    * subscription to `cardSessionBindingStore`. Required: every binding
    * carries a mode, so every store has one. Stable for the store's
    * lifetime — a re-bind constructs a fresh services bag with a
@@ -549,7 +549,7 @@ export class CodeSessionStore {
    * Test-only. Feed a wire frame into the store exactly as
    * `onFeedStoreChange` would for a real frame off the connection —
    * decode via `frameToEvent`, then `dispatch`. The app-test harness
-   * drives a dev card through the lifecycle matrix with this;
+   * drives a session card through the lifecycle matrix with this;
    * production frames always arrive through the `FeedStore`
    * subscription, never here.
    *
@@ -612,7 +612,7 @@ export class CodeSessionStore {
         (this.state.phase === "idle" || this.state.phase === "errored") &&
         this.state.transportState === "online",
       // `waking` is included per [Q03] resolution in
-      // `roadmap/tugplan-dev-session-wake.md`: the user can stop a
+      // `roadmap/tugplan-session-wake.md`: the user can stop a
       // runaway wake turn just like a user-initiated one. The
       // interrupt frame uses the same wire shape regardless — the
       // server doesn't need to distinguish.
@@ -885,14 +885,14 @@ export class CodeSessionStore {
   /**
    * System notification: the per-card binding has been (re-)acked by
    * the supervisor and the wire is fully settled. Dispatched by the
-   * `cardSessionBindingStore` subscriber in `dev-session-restore.ts`
+   * `cardSessionBindingStore` subscriber in `session-restore.ts`
    * after a restore completes; the reducer flips `transportState`
    * from `restoring` → `online` (and is a no-op when already online).
    *
    * Public rather than internal because the dispatch source lives
    * outside this class. The store does not subscribe to the binding
    * store directly: per [D04] / [D07] the binding subscriber in
-   * `dev-session-restore.ts` is the canonical "binding has arrived"
+   * `session-restore.ts` is the canonical "binding has arrived"
    * signal, and feeding the event through a named method here keeps
    * `dispatch` private and the binding subscriber free of any
    * knowledge of the reducer event vocabulary.
@@ -1029,12 +1029,12 @@ export class CodeSessionStore {
 
   /**
    * Set the session's permission mode. Emits a `permission_mode` CODE_INPUT
-   * frame and changes no transcript state — the dev-card's Z4B chip reflects
+   * frame and changes no transcript state — the session-card's Z4B chip reflects
    * the new mode from the next `system_metadata` (owned by
    * `SessionMetadataStore`), not from this call, so the indicator stays
    * truthful even if the change races an in-flight turn.
    *
-   * The dispatch source is the dev-card's `Shift+Tab` handler (and the
+   * The dispatch source is the session-card's `Shift+Tab` handler (and the
    * per-card mode restore on mount); routing through a named method here
    * keeps `dispatch` private and the caller free of reducer-event
    * vocabulary — same precedent as `interrupt` / `respondQuestion`.
@@ -1046,7 +1046,7 @@ export class CodeSessionStore {
 
   /**
    * Set the session's model. Emits a `model_change` CODE_INPUT frame and
-   * changes no transcript state — the dev-card's Z4B model chip reflects the
+   * changes no transcript state — the session-card's Z4B model chip reflects the
    * new model from the next `system_metadata` (owned by
    * `SessionMetadataStore`), not from this call, so the indicator stays
    * truthful even if the change races an in-flight turn. The dispatch source
@@ -1612,7 +1612,7 @@ export class CodeSessionStore {
         // tugcode does not mint it (tugcode is a Node subprocess; it
         // has no React); the store wrapper mints it on receipt and
         // threads it onto the dispatched event so the reducer stays
-        // pure. See `roadmap/tugplan-dev-session-wake.md` [D02].
+        // pure. See `roadmap/tugplan-session-wake.md` [D02].
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       if (ev.type === "assistant_opener") {

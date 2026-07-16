@@ -1,6 +1,6 @@
 /**
- * use-effort.ts — the dev-card's reasoning-effort set path plus its per-card
- * persistence and mount-restore, factored out of `dev-card.tsx` (mirroring
+ * use-effort.ts — the session-card's reasoning-effort set path plus its per-card
+ * persistence and mount-restore, factored out of `session-card.tsx` (mirroring
  * [use-permission-mode.ts]).
  *
  * The chip ([effort-chip.tsx]) only *displays* the level; the behavior —

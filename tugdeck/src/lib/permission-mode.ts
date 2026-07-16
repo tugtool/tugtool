@@ -1,5 +1,5 @@
 /**
- * permission-mode.ts — pure helpers for the dev-card permission-mode chip
+ * permission-mode.ts — pure helpers for the session-card permission-mode chip
  * and its `Shift+Tab` cycle.
  *
  * No React, no DOM, no I/O — every export here is a pure function or a
@@ -9,7 +9,7 @@
  * and IPC live in the hook, not here.
  *
  * The cycle matches the Claude Code terminal's `Shift+Tab` exactly per the
- * dev-card / Claude-Code-parity plan: `default → acceptEdits → plan → auto`,
+ * session-card / Claude-Code-parity plan: `default → acceptEdits → plan → auto`,
  * wrapping back to `default`. `bypassPermissions`, `dontAsk`, and `delegate`
  * are real modes claude reports but are deliberately NOT in the cycle — they
  * are reached only via `/permissions`, matching the terminal.
@@ -127,7 +127,7 @@ export const PERMISSION_MODE_DOMAIN = "dev.permission-mode";
 /**
  * tugbank domain/key for the *global* default permission mode — the mode a
  * brand-new card (one with nothing persisted under {@link PERMISSION_MODE_DOMAIN})
- * adopts on mount. Set from the Settings card's "Dev Card" tab; distinct from
+ * adopts on mount. Set from the Settings card's "Session Card" tab; distinct from
  * the per-card domain so changing the global default never disturbs an open
  * card that already carries its own remembered mode.
  */

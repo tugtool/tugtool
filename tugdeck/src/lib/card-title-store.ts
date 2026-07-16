@@ -4,7 +4,7 @@
  * A card's registered `defaultMeta.title` is the static label baked
  * into the registry at card type definition time ("Dev", "Git",
  * "Hello"). Some cards have a stateful identity beyond their type —
- * the Dev card binds to a project at session pick time, and from
+ * the Session card binds to a project at session pick time, and from
  * that moment forward the title bar should reflect *which* project
  * is loaded, not just "Dev".
  *

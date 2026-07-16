@@ -63,7 +63,7 @@ The first responder is the chain's *single global* register (see [responder-chai
 A card has **one focus destination at any moment**, and it is a rule, not an element: the context's **pushed key destination** when it owns one — a pending card-modal dialog's trap (Question / Permission), a mid-flow focus cycle, a descended scope — and the **resting editor** otherwise ([P20]). Every path that places focus "back on a card" must resolve the destination through that rule:
 
 - **Activation** (click, tab switch, pane promotion, cross-pane move, window blur→focus, cold boot) dispatches through `applyBagFocus`, whose first act is `adoptKeyCard`: a context that owns a pushed destination gets its key view focused and the resting-editor claim is skipped.
-- **Lifecycle reclaims** — a sheet/banner `didHide` over the card, a pane drag/resize commit (`cardDidMove` / `cardDidResize`, which fire even for a zero-move title-bar click), the body's mount claim — run the same gate before falling back to the editor (the dev card consolidates this as `reclaimFocusDestination`).
+- **Lifecycle reclaims** — a sheet/banner `didHide` over the card, a pane drag/resize commit (`cardDidMove` / `cardDidResize`, which fire even for a zero-move title-bar click), the body's mount claim — run the same gate before falling back to the editor (the session card consolidates this as `reclaimFocusDestination`).
 
 A raw "focus the editor" claim is a bug even when it *looks* harmless: under a modal scrim the entry stands down, so the claim cannot move DOM focus — but its **responder promotion still fires**, the chain seed re-points the key view at the editor, and the dialog silently loses its ring and arrow walk while DOM focus sits correctly on the dialog. Symptomless in the DOM, dead to the keyboard.
 
@@ -108,11 +108,11 @@ Building a control or surface that participates in the language:
 - **Author controls into a focus group.** Give every focusable a `focusGroup` (the enclosing surface's group) and a `focusOrder`; that is what puts it in the `Tab` walk and the spatial plane. A control with neither is a native-only stop and will read as "Tab skips it."
 - **Seed the opening key view** with `useSeedKeyView(\`${group}:${order}\`)` — the field for a form, the list for a picker, the default button for a button-only surface. For a Radix-trapped dialog, prefer `onOpenAutoFocus` → `event.preventDefault()` + `focusManager.armKeyboardRestore(...)` so the engine, not Radix, owns the seed.
 - **Mark the commit button** with `persistentDefaultRing` (and `primary` emphasis) so it holds the default ring and owns `Return`. Danger confirmations seed the default on **Cancel** so `Return` can't fire a destructive action. Gate the flag when the surface's `Return` is consumed elsewhere mid-flow (a wizard whose options commit on `Return`): the ring must light only when `Return` truly fires the button — see "Buttons" above.
-- **Never focus the resting editor directly from a lifecycle trigger.** Any reclaim that can fire while a card-modal dialog is pending must resolve the card's focus destination through the [P20] gate (`adoptKeyCard`, or the dev card's `reclaimFocusDestination`) — see "The card's focus destination — one rule."
+- **Never focus the resting editor directly from a lifecycle trigger.** Any reclaim that can fire while a card-modal dialog is pending must resolve the card's focus destination through the [P20] gate (`adoptKeyCard`, or the session card's `reclaimFocusDestination`) — see "The card's focus destination — one rule."
 - **Declare the arrow order** with `useSpatialOrder(rowGridOrder([...]))` (or a hand-built `SpatialOrder`). For a **dialog/sheet/alert**, the `useSpatialOrder` call must run **inside** the trap's `FocusModeScope` — mount a small null-rendering registrar there (see `AlertSpatialOrder` / `ConfirmPopoverSpatialOrder`); calling it in the component body binds the order to the mode *above* the trap ([L03]).
 - **The engine is structure** ([L22]). Key view, cursor, scope stack, and cycling-mode push/pop are the `FocusManager`'s; never mirror them in `useState`.
 
-Reference implementations: `TugConfirmPopover` and `TugAlert` (dialog button rows), the dev-card pickers and `gallery-sheet` bodies (field + buttons), `TugListView` (item-group + cursor).
+Reference implementations: `TugConfirmPopover` and `TugAlert` (dialog button rows), the session-card pickers and `gallery-sheet` bodies (field + buttons), `TugListView` (item-group + cursor).
 
 ---
 

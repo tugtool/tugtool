@@ -37,7 +37,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const SID = "test-session-A"; // bindDevSession's synthetic tug_session_id
+const SID = "test-session-A"; // bindSession's synthetic tug_session_id
 
 const CARD = '[data-card-id="A"]';
 const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
@@ -68,7 +68,7 @@ const turnDone = (msgId: string) => ({
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -112,7 +112,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           await app.waitForCondition<boolean>(
@@ -120,7 +120,7 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
-          // Make the dev card the key card so ⇧⌘P routes to its card-content
+          // Make the session card the key card so ⇧⌘P routes to its card-content
           // responder (the same focus step at0088 uses).
           await app.nativeClickAtElement(PROMPT_INPUT);
 
@@ -137,7 +137,7 @@ describe.skipIf(!SHOULD_RUN)(
           const modeBefore = await modeLabel(app);
 
           // 2. Start a turn → `canSubmit` is false. All three chips lock.
-          await app.driveDevSession("A", { op: "send", text: "hello" });
+          await app.driveSession("A", { op: "send", text: "hello" });
           await app.waitForCondition<boolean>(
             `window.__tug.getElementState(${JSON.stringify(MODE_CHIP)}).disabled === true`,
             { timeoutMs: 4000 },
@@ -161,12 +161,12 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe(modeBefore);
 
           // 4. Complete the turn → the chips re-enable.
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded: asstText("m1", "ok"),
           });
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded: turnDone("m1"),

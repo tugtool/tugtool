@@ -25,9 +25,9 @@ function countSettings(): string {
   return `window.tugdeck.diag.getDeckState().cards.filter((c) => c.componentId === "settings").length`;
 }
 
-function devDeckShape() {
+function sessionDeckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -76,16 +76,16 @@ describe.skipIf(!SHOULD_RUN)("AT0173: ⌘, opens Settings", () => {
   );
 
   test(
-    "native ⌘, creates the Settings card with a focused dev-card editor",
+    "native ⌘, creates the Settings card with a focused session-card editor",
     async () => {
       const app = await launchTugApp({ testName: "at0173-settings-shortcut-focused" });
       try {
         await app.enableDeckTrace(true);
-        await app.seedDeckState({ state: devDeckShape(), focusCardId: "A" });
+        await app.seedDeckState({ state: sessionDeckShape(), focusCardId: "A" });
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: "at0173-session" });
+        await app.bindSession("A", { tugSessionId: "at0173-session" });
         await app.awaitEngineReady("A");
 
         // Put the caret inside the CodeMirror prompt editor — the

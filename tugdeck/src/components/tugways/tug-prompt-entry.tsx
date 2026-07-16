@@ -112,7 +112,7 @@ import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
-import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import { useResponder } from "./use-responder";
 import { useFocusable } from "./use-focusable";
@@ -240,9 +240,9 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  */
 export function routeAwareSubmitButtonMode(
   route: string | null,
-  claudeMode: DevSubmitButtonMode,
+  claudeMode: SessionSubmitButtonMode,
   shellInflight: boolean,
-): DevSubmitButtonMode {
+): SessionSubmitButtonMode {
   // Find: Z5 is the always-live "next match" button — never stop, never inert
   // (an empty query just makes `next()` a no-op). The render swaps its glyph to
   // a down chevron; the click rides the SUBMIT action into `performSubmit`,
@@ -691,7 +691,7 @@ export interface TugPromptEntryProps {
    * paste of an unsupported / oversize / undecodable image, or a submit
    * attempted while an attachment is still processing). The message is
    * user-facing and names the file. Hosts surface it as a calm,
-   * card-scoped notice — the Dev card raises a pane bulletin — never the
+   * card-scoped notice — the Session card raises a pane bulletin — never the
    * session-error banner. Omit for standalone hosts (the gallery); the
    * message is then routed to the dev log.
    */
@@ -749,7 +749,7 @@ export interface TugPromptEntryProps {
    * Fires when the user presses Escape while the editor is *empty*
    * (`doc.length === 0`). A host-effect hook: the entry owns no pane
    * geometry, so it just surfaces the gesture and lets the host decide
-   * — the Dev card collapses the entry pane to its minimum height.
+   * — the Session card collapses the entry pane to its minimum height.
    *
    * Only fires on the idle path. When a turn is in flight the entry's
    * conditional `CANCEL_DIALOG` handler claims Escape upstream (Stop ≡
@@ -763,7 +763,7 @@ export interface TugPromptEntryProps {
    * Fires on a double-Escape (two presses within
    * `ESCAPE_DOUBLE_PRESS_MS`) while the editor is *empty*. The entry
    * owns no rewind surface, so it just surfaces the gesture and lets the
-   * host open it — the Dev card raises the same sheet as `/rewind`.
+   * host open it — the Session card raises the same sheet as `/rewind`.
    *
    * The single-press empty-Escape (`onEscapeWhenEmpty`) still fires on
    * the first press; this only adds the second-press action. Omit to
@@ -837,7 +837,7 @@ export interface TugPromptEntryProps {
    * route value (`❯` Code / `$` Shell — see
    * `ROUTE_ITEMS`). The entry looks up the active route and forwards
    * the match to `TugTextEditor`; routes absent from the map — or an
-   * undefined prop entirely — render no placeholder. The dev-card
+   * undefined prop entirely — render no placeholder. The session-card
    * supplies route-specific copy; the gallery prompt-entry omits it.
    */
   placeholderByRoute?: Readonly<Record<string, string>>;
@@ -871,7 +871,7 @@ export interface TugPromptEntryProps {
    * stop without the entry knowing why. Omitted by default: the submit is
    * a plain native focus stop (the editor owns Tab) and never joins a walk.
    *
-   * The Dev card supplies this (under its keyboard-focus-cycling
+   * The Session card supplies this (under its keyboard-focus-cycling
    * `CycleScope`, so the registration lands in that mode, not the base
    * one) to make the submit the cycle's commit-home; the gallery and
    * card-host hosts omit it, so their submit behaves exactly as before.
@@ -884,7 +884,7 @@ export interface TugPromptEntryProps {
    * forwarded to the trigger `TugButton`'s `focusGroup`, surfaced on the
    * entry like {@link submitFocusGroup}. The trigger is one Tab stop;
    * activating it opens the route menu. Omitted by default (the route is
-   * not a walk stop). Supplied by the Dev card under its `CycleScope` so
+   * not a walk stop). Supplied by the Session card under its `CycleScope` so
    * the route joins the cycle as the stop after the commit-home.
    */
   routeFocusGroup?: string;
@@ -892,7 +892,7 @@ export interface TugPromptEntryProps {
   routeFocusOrder?: number;
   /**
    * Authors the **editor input area** itself into a focus group ([P02]) as a
-   * **text stop** — the last stop of the dev card's keyboard-focus cycle
+   * **text stop** — the last stop of the session card's keyboard-focus cycle
    * ([P10]/[P11]). When set, the input-area wrapper registers a focusable: the
    * cycle can land the ring on it (the editor stays blurred via `deactivated`),
    * and Return "descends" into the editor — `onResumeTyping` fires to drop the
@@ -913,7 +913,7 @@ export interface TugPromptEntryProps {
    * Authors the `Z4C` compose-phase attachment tiles into a focus group
    * ([P02]) — forwarded to `TugAttachmentPreview` so each image-attachment
    * tile registers as a leaf cycle stop (Return / Space opens its preview
-   * sheet). Supplied by the Dev card under its `CycleScope`; omitted by
+   * sheet). Supplied by the Session card under its `CycleScope`; omitted by
    * non-cycling hosts, where the tiles stay plain native focus stops.
    */
   attachmentFocusGroup?: string;
@@ -925,7 +925,7 @@ export interface TugPromptEntryProps {
   attachmentFocusOrderBase?: number;
   /**
    * Fired whenever the number of compose-phase image attachments changes,
-   * surfacing the live tile count to the host. The Dev card uses it to size
+   * surfacing the live tile count to the host. The Session card uses it to size
    * the attachment row of its keyboard-cycle spatial grid to exactly the
    * registered tiles. Omit when the host does not author the tiles into a
    * cycle.
@@ -934,7 +934,7 @@ export interface TugPromptEntryProps {
 }
 
 /**
- * Imperative handle exposed via `forwardRef`. Used by the Dev card
+ * Imperative handle exposed via `forwardRef`. Used by the Session card
  * to drive focus from global keyboard shortcuts.
  *
  * Methods are thin pass-throughs to the composed `TugTextEditor`'s
@@ -1084,7 +1084,7 @@ export const TugPromptEntry = React.forwardRef<
   // Attachment rejection is transient input validation, not a session
   // fault: it must never write `lastError` (that lights the entry's red
   // errored ring and routes the session-lost banner). Hand the message to
-  // the host, which surfaces a calm card-scoped notice (the Dev card
+  // the host, which surfaces a calm card-scoped notice (the Session card
   // raises a pane bulletin). Standalone hosts that omit the handler get a
   // dev-log line so the message is never silently swallowed.
   const publishAttachmentError = useCallback(
@@ -1136,7 +1136,7 @@ export const TugPromptEntry = React.forwardRef<
     [],
   );
   // Surface the live attachment-tile count to the host ([L07] via ref so a
-  // fresh inline callback never re-fires the effect). The Dev card sizes its
+  // fresh inline callback never re-fires the effect). The Session card sizes its
   // keyboard-cycle spatial-grid attachment row from this, so the count must
   // track every drop / paste / delete — the same `composeImageAtoms` set the
   // Z4C strip renders.
@@ -1667,7 +1667,7 @@ export const TugPromptEntry = React.forwardRef<
                 return true;
               }
               // Double-Escape on an empty editor surfaces the rewind
-              // gesture (the Dev card raises the same sheet as `/rewind`).
+              // gesture (the Session card raises the same sheet as `/rewind`).
               const onDoubleEscape = onDoubleEscapeWhenEmptyRef.current;
               if (onDoubleEscape === undefined) return false;
               onDoubleEscape();
@@ -1998,7 +1998,7 @@ export const TugPromptEntry = React.forwardRef<
         }
       }
 
-      // [D14] notice for a typed `/command` the dev card will not run
+      // [D14] notice for a typed `/command` the session card will not run
       // ([#step-13a]). Two cases: a *hidden* (known-unsupported) command —
       // never sent to claude — and a *genuine unknown* (catalog populated,
       // name absent) that would otherwise burn a turn on a typo. Either way,
@@ -2922,11 +2922,11 @@ export const TugPromptEntry = React.forwardRef<
               ref={textEditorRef}
               borderless
               // Auto-height: opens at the host's `--tug-text-editor-min-height`
-              // (the Dev card sets 200px), grows with content up to its
+              // (the Session card sets 200px), grows with content up to its
               // height cap, then scrolls. The cap is `maxRows` rows by
               // default; a host may override the scroller's `max-height`
-              // (the Dev card caps by card height instead — see
-              // `dev-card.css` — so the gallery prompt keeps the 20-row cap
+              // (the Session card caps by card height instead — see
+              // `session-card.css` — so the gallery prompt keeps the 20-row cap
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
               disabled={deactivated}

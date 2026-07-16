@@ -191,7 +191,7 @@ export function parseInitializeControlResponse(
  * **Why this exists.** claude's turn-free `initialize` handshake answers
  * *before* it has loaded `--plugin-dir` plugins, so its `commands` catalog
  * omits every plugin command — the full list only arrives with the first
- * turn's `system` init. A fresh Dev card (no messages yet) would therefore
+ * turn's `system` init. A fresh Session card (no messages yet) would therefore
  * show no plugin commands in the `/` popup *and* reject a typed
  * `/<plugin>:<cmd>` as "Unknown" at submit. tugcode owns the (universal,
  * bundled) plugin dir, so it enumerates the plugin's commands here and merges
@@ -264,7 +264,7 @@ export function enumeratePluginCommands(pluginDir: string): CapabilityCommand[] 
  * claude's turn-free `initialize` handshake reports a plugin skill by its
  * *bare* leaf name (`commit`), while its loaded catalog (and the wire it
  * expands) use the *qualified* name (`tugplug:commit`). Listing both in the
- * Dev card's `/` popup is the duplication this reconciles: for every
+ * Session card's `/` popup is the duplication this reconciles: for every
  * enumerated `<plugin>:<leaf>`, drop claude's bare `leaf` entry (it is the
  * same command, reported unqualified) and add the qualified one. Bare entries
  * that are NOT an enumerated plugin leaf (genuine user skills / built-ins like

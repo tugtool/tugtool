@@ -4,7 +4,7 @@
  * heading · `→ answer`), shared by both surfaces so they are pixel-identical
  * by construction rather than by hand-synced CSS:
  *
- *   - the LIVE wizard's rail (`dev-question-dialog.tsx`) — interactive rows
+ *   - the LIVE wizard's rail (`session-question-dialog.tsx`) — interactive rows
  *     the user clicks to jump back to a question, with a per-row status
  *     (current / done / recommended / pending) driving the marker tone and
  *     the current-row tint;

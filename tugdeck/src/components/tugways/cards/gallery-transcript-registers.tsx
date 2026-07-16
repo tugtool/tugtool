@@ -57,7 +57,7 @@ import {
 import { BashToolBlock } from "./blocks/bash-tool-block";
 import { TaskInlineToolBlock } from "./blocks/task-inline-tool-block";
 import type { ToolBlockProps } from "../blocks/types";
-import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
+import { PermissionDialog } from "@/components/tugways/chrome/session-permission-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugQuietLine, type TugQuietLineTone } from "@/components/tugways/tug-quiet-line";

@@ -57,7 +57,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -127,7 +127,7 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({ testName: "at0191-turns-end-to-end" });
         const ingest = (decoded: unknown) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded,
@@ -152,7 +152,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", {
+          await app.bindSession("A", {
             tugSessionId: SID,
             sessionMode: "resume",
           });
@@ -197,7 +197,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(addrs).toContain("#a8");
 
           // --- Phase 2: page in the older history (turns 1..5) ------------
-          await app.driveDevSession("A", { op: "loadPrevious", amount: "all" });
+          await app.driveSession("A", { op: "loadPrevious", amount: "all" });
           await ingest(replayStarted());
           for (let n = 1; n <= 5; n++) {
             await ingest(userMsg(`u${n}`));

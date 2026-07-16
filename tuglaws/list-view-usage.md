@@ -72,17 +72,17 @@ adding a consumer.
 | `model-picker-sheet` | `TugListRow` title/subtitle + `selectedGlyph` | consumer | |
 | `effort-picker-sheet` | `TugListRow` title/subtitle + `selectedGlyph` | consumer | |
 | `permission-rules-editor` | `TugListRow` (matcher rides `children`, justified) | consumer | |
-| dev session picker (`dev-picker-cells`) | `TugListRow` title/subtitle + trailing trash | `selectionRequired` | |
-| dev recents (`dev-picker-cells`) | `TugListRow` `children` (RTL path + `<mark>`, justified) | `selectionRequired` | |
+| dev session picker (`session-picker-cells`) | `TugListRow` title/subtitle + trailing trash | `selectionRequired` | |
+| dev recents (`session-picker-cells`) | `TugListRow` `children` (RTL path + `<mark>`, justified) | `selectionRequired` | |
 | `rewind-sheet` | `TugListRow` title/subtitle | consumer | |
 | transcript body-kinds (`path-list`, `todo-list`, `search-result`) | see [Sanctioned exceptions](#sanctioned-exceptions) | none, `inline` | |
-| `dev-card-transcript` | custom streaming turn cells | none, `inline` | sanctioned exception |
+| `session-card-transcript` | custom streaming turn cells | none, `inline` | sanctioned exception |
 
 ## Sanctioned exceptions
 
 A cell may bypass `TugListRow` only if it appears here with a rationale.
 
-- **`dev-card-transcript` — streaming turn cells.** A transcript turn is not a
+- **`session-card-transcript` — streaming turn cells.** A transcript turn is not a
   row: it hosts streaming markdown, tool blocks, approval prompts, and inline
   questions, observed directly from stores ([L22]) and grown imperatively
   ([L06]). `AssistantTurnCell` and the user/tool turn cells are custom React

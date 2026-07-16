@@ -4781,7 +4781,7 @@ function handleAssistantOpener(
  * `isInWake` and gates re-emission until the next `result`); a stray
  * frame from a busy phase would be a tugcode bug.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D01] [D02]
+ * See `roadmap/tugplan-session-wake.md` [D01] [D02]
  * [#spec-wake-started-state-reset].
  */
 function handleWakeStarted(

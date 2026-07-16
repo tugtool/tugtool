@@ -1,7 +1,7 @@
 /**
  * model-label.ts — THE single source of a model's display label.
  *
- * Every chip that names a model — the Dev card's Z4B model chip AND the
+ * Every chip that names a model — the Session card's Z4B model chip AND the
  * Settings Assistant default chip — derives its content through
  * {@link resolveModelLabel} in this module. One copy, by construction: the
  * two surfaces cannot drift because there is no second label path.

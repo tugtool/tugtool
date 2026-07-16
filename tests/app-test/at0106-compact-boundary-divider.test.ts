@@ -1,12 +1,12 @@
 /**
- * at0106-compact-boundary-divider.test.ts — the dev-card transcript shows
+ * at0106-compact-boundary-divider.test.ts — the session-card transcript shows
  * a soft compaction divider when claude auto-compacts mid-turn ([AT0106]).
  *
  * ## Why this exists
  *
  * Claude compacts its context — at capacity (auto) or on a native
  * `/compact` dispatched over the stream-json bridge — and emits a
- * `system`/`compact_boundary`. The dev card mirrors it as a soft
+ * `system`/`compact_boundary`. The session card mirrors it as a soft
  * divider — matching the terminal's compaction indicator. The summary
  * itself now rides a dedicated `compact_summary` frame into the
  * carry-forward block (see at0193); this test covers the divider live.
@@ -33,7 +33,7 @@ const DIVIDER = '[data-slot="compaction-divider"]';
 // inside the wrapper; assert its combined text.
 const DIVIDER_LABEL = `${DIVIDER} [data-slot="tug-quiet-line"]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
+const TUG_SESSION_ID = "test-session-A"; // bindSession default
 
 let projectDir = "";
 
@@ -49,7 +49,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -82,17 +82,17 @@ describe.skipIf(!SHOULD_RUN)(
             // first-compile cost, which exceeds the 10s default.
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
           // Open a turn so there is an active turn for the boundary to
           // attach to (auto-compaction fires mid-turn). No backend
           // response flows in stub mode — the active turn stays in flight.
-          await app.driveDevSession("A", { op: "send", text: "do a long thing", atoms: [] });
+          await app.driveSession("A", { op: "send", text: "do a long thing", atoms: [] });
 
           // Inject a synthetic compact_boundary through the store's real
           // frameToEvent → dispatch path.
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded: {

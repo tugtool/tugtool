@@ -7,7 +7,7 @@
  * A slash command only *runs* when it leads the message — claude expands
  * `/cmd` into a user invocation just at the start of the prompt. Typed
  * anywhere else (`hello /rewi…`) it is plain text that will never run, so the
- * Dev card does not offer the full descriptive popup there. Instead it mirrors
+ * Session card does not offer the full descriptive popup there. Instead it mirrors
  * the terminal: a single inline **ghost completion** — the muted remainder of
  * the best-matching command, shown after the caret — that the user can accept
  * (Tab / →) to fill in as ordinary text. No chip, because a chip would imply

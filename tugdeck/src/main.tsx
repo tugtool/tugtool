@@ -13,8 +13,8 @@ import { initActionDispatch } from "./action-dispatch";
 import { initHostMenuState } from "./lib/host-menu-state";
 import { initRecentDocuments } from "./lib/recent-documents";
 import { cardServicesStore } from "./lib/card-services-store";
-import { restoreDevSessions } from "./lib/dev-session-restore";
-import { attachDevSessionLedgerStore } from "./lib/dev-session-ledger-store";
+import { restoreSessions } from "./lib/session-restore";
+import { attachSessionLedgerStore } from "./lib/session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
 import { attachSessionActivityStore } from "./lib/session-activity-store";
@@ -42,7 +42,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerSessionsSection } from "./components/lens/sections/sessions-section";
 import { registerGitHistorySection } from "./components/lens/sections/git-history-section";
-import { registerDevCard } from "./components/tugways/cards/dev-card-registration";
+import { registerSessionCard } from "./components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
@@ -51,7 +51,7 @@ import { registerTelemetrySection } from "./components/lens/sections/telemetry-s
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
-import { installDevPlacementGlobal } from "./components/tugways/cards/dev-card-placement-experiment";
+import { installSessionPlacementGlobal } from "./components/tugways/cards/session-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
@@ -257,7 +257,7 @@ if (!container) {
   // Register card types before DeckManager construction so addCard("hello") works
   // from the first render.
   registerHelloWorldCard();
-  registerDevCard();
+  registerSessionCard();
   registerAboutCard();
   registerSettingsCard();
   // The Lens card must register unconditionally and before the deck
@@ -285,7 +285,7 @@ if (!container) {
       tugDevLogStore;
   }
   if (import.meta.env.DEV) {
-    installDevPlacementGlobal();
+    installSessionPlacementGlobal();
   }
 
   // Extract card IDs from the loaded layout and read per-card state bags
@@ -329,7 +329,7 @@ if (!container) {
     { testMode: isTestMode }
   );
 
-  // Initialize action dispatch (no DevNotificationRef in Phase 0).
+  // Initialize action dispatch (no SessionNotificationRef in Phase 0).
   initActionDispatch(connection, deck);
 
   // Initial Claude-auth probe. Sent HERE — after initActionDispatch has
@@ -401,7 +401,7 @@ if (!container) {
   // dispatches `list_sessions` requests on first observation, subscribes
   // to `session_updated` push frames, and invalidates on reconnect. The
   // picker reads via `useSessionLedger(workspaceKey)` (step 5).
-  attachDevSessionLedgerStore(connection);
+  attachSessionLedgerStore(connection);
 
   // Wire the per-session state-change store to the connection. Without
   // this the singleton is never created — `useSessionStateChanges`
@@ -440,18 +440,18 @@ if (!container) {
 
   // Re-assert session bindings for dev cards that were alive before
   // this page reload. The deck layout is materialized;
-  // `restoreDevSessions` sends a `list_card_bindings` CONTROL request
+  // `restoreSessions` sends a `list_card_bindings` CONTROL request
   // (the server reads from its sqlite ledger) and emits
   // `spawn_session(mode=resume)` per matching card. The server's ack
   // populates `cardSessionBindingStore`, which flips each card from
   // picker to bound body before `cardDidActivate` fires for any of
   // them.
-  restoreDevSessions(deck, connection);
+  restoreSessions(deck, connection);
 
   // Reconnect path: every WebSocket recovery from a close re-runs the
   // restore loop so cards rebind without a page reload after a tugcast
   // restart. The order — clearAll, then re-restore — is per [D04] in
-  // roadmap/tugplan-dev-connection-health.md: bindings the client
+  // roadmap/tugplan-session-connection-health.md: bindings the client
   // still holds against a now-dead server are worse than no bindings,
   // because they would route frames the new server is not emitting.
   //
@@ -461,7 +461,7 @@ if (!container) {
   // the close-then-open gating so this subscriber never has to.
   connectionLifecycle.observeConnectionDidReconnect(() => {
     cardSessionBindingStore.clearAll();
-    restoreDevSessions(deck, connection, {
+    restoreSessions(deck, connection, {
       reason: "reconnect",
     });
   });

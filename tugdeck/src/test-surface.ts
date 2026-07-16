@@ -130,10 +130,10 @@ import {
  * `system_metadata` payload, so the Z4B effort-chip app-test ([#step-4]) can
  * mount the chip and exercise its model gate without a live claude handshake.
  * The chip reads its own `SESSION_SIDEBAND` FeedStore, which the
- * `driveDevSession`/`ingestFrame` (CodeSessionStore) path does not reach.
+ * `driveSession`/`ingestFrame` (CodeSessionStore) path does not reach.
  * Additive; major stays `1`.
  *
- * `1.10.0`: adds {@link TugTestSurface.ingestGitDiff} — drives a dev card's
+ * `1.10.0`: adds {@link TugTestSurface.ingestGitDiff} — drives a session card's
  * `GitDiffStore` with a decoded `git_diff_response` payload, so the `/diff`
  * sheet app-test ([#step-10b]) can render the per-file accordion without a
  * live tugcast git round-trip (which [#step-10a]'s subprocess test proves).
@@ -146,7 +146,7 @@ import {
  * Additive; major stays `1`.
  *
  * `1.14.0`: adds {@link TugTestSurface.ingestSideQuestionAnswer} — settles a
- * dev card's `SideQuestionStore` with a decoded `side_question_answer`
+ * session card's `SideQuestionStore` with a decoded `side_question_answer`
  * payload, so the `/btw` overlay app-test can render an answer (and assert the
  * transcript stays clean) without a live claude round-trip. Additive; major
  * stays `1`.
@@ -253,8 +253,8 @@ export interface SeedDeckStateArgs {
 }
 
 /**
- * One step in driving a bound dev card's `CodeSessionStore` through
- * the lifecycle matrix — consumed by {@link TugTestSurface.driveDevSession}.
+ * One step in driving a bound session card's `CodeSessionStore` through
+ * the lifecycle matrix — consumed by {@link TugTestSurface.driveSession}.
  *
  *  - `send` — submit a user message (`store.send`); a mid-turn `send`
  *    queues, exactly as the prompt-entry does.
@@ -270,7 +270,7 @@ export interface SeedDeckStateArgs {
  *    the loaded window (the response replay bracket is then injected via
  *    `ingestFrame`). Exercises backward paging and the prepend path.
  */
-export type DevSessionDriveAction =
+export type SessionDriveAction =
   | { op: "send"; text: string; atoms?: AtomSegment[]; suppress?: boolean }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
@@ -358,7 +358,7 @@ export interface EmCardState {
   kind: "em";
   /**
    * The card's `componentId` — e.g. `"gallery-prompt-input"`,
-   * `"gallery-prompt-entry"`, `"dev-card"`. Tagged so tests can
+   * `"gallery-prompt-entry"`, `"session-card"`. Tagged so tests can
    * branch on engine flavor without consulting deck state
    * separately.
    */
@@ -596,7 +596,7 @@ export interface TugTestSurface {
    * trace ring contains an `engine-ready` event for the card,
    * `false` otherwise. The matching emit site lives at each EM-
    * engine factory's mount-time engine init (wired first in
-   * `tug-prompt-input.tsx`; dev-card / gallery-prompt-entry
+   * `tug-prompt-input.tsx`; session-card / gallery-prompt-entry
    * follow as they pick up their own sites).
    *
    * The harness's `awaitEngineReady` wraps this in
@@ -609,9 +609,9 @@ export interface TugTestSurface {
   isEngineReady(cardId: string): boolean;
 
   /**
-   * Bind a fake session for a dev card so it skips past the
-   * project-picker UI and renders DevCardBody directly. Without a
-   * binding, `useDevCardServices` returns `null` and dev-card
+   * Bind a fake session for a session card so it skips past the
+   * project-picker UI and renders SessionCardBody directly. Without a
+   * binding, `useSessionCardServices` returns `null` and session-card
    * shows the picker; production sets the binding from a
    * `spawn_session_ok` CONTROL ack that requires a live tugcast +
    * tugcode + Claude pipeline. Tests that exercise dev-specific
@@ -631,7 +631,7 @@ export interface TugTestSurface {
    *
    * Test-mode-only. Available when `window.__tugTestMode === true`.
    */
-  bindDevSession(
+  bindSession(
     cardId: string,
     options?: {
       tugSessionId?: string;
@@ -641,7 +641,7 @@ export interface TugTestSurface {
        * `"new" | "resume"` — the user's session-mode intent at
        * card-open time. Threaded onto `CodeSessionSnapshot.sessionMode`
        * by `cardServicesStore` so pure derivations (e.g.
-       * `deriveDevCardBannerSpec`) can branch on it. Defaults to
+       * `deriveSessionCardBannerSpec`) can branch on it. Defaults to
        * `"new"` so existing tests, which model the fresh-bind path,
        * keep their current semantics; tests that exercise resume
        * behavior (cold-boot preflight, replay-loading banner, etc.)
@@ -661,9 +661,9 @@ export interface TugTestSurface {
    * SESSION_SIDEBAND` fan-out → `SessionMetadataStore`.
    *
    * This is the ONLY surface verb that drives the genuine cold-replay
-   * delivery chain end-to-end. Unlike `bindDevSession` (which writes a
+   * delivery chain end-to-end. Unlike `bindSession` (which writes a
    * synthetic binding and never spawns tugcode) and
-   * `driveDevSession`/`ingestSessionMetadata` (which inject frames straight
+   * `driveSession`/`ingestSessionMetadata` (which inject frames straight
    * into the client store, bypassing tugcast's fan-out), this exercises the
    * real model-delivery ordering/no-clobber path — the one a pre-cooked
    * `SESSION_SIDEBAND` frame would fake-pass.
@@ -685,17 +685,17 @@ export interface TugTestSurface {
   // ---- Dev lifecycle-matrix driving (SURFACE_VERSION 1.6.0) ----
 
   /**
-   * Drive a bound dev card's `CodeSessionStore` one step through the
+   * Drive a bound session card's `CodeSessionStore` one step through the
    * lifecycle matrix. Resolves the card's services via
    * `cardServicesStore`; throws if the card is not bound (call
-   * `bindDevSession` first). See {@link DevSessionDriveAction} for
+   * `bindSession` first). See {@link SessionDriveAction} for
    * the step vocabulary.
    *
-   * The app-test matrix-coordination test drives a dev card through
+   * The app-test matrix-coordination test drives a session card through
    * every distinct matrix row with this and asserts the rendered
    * Z1 / Z2 / Z5 zones. Test-mode-only.
    */
-  driveDevSession(cardId: string, action: DevSessionDriveAction): void;
+  driveSession(cardId: string, action: SessionDriveAction): void;
 
   /**
    * Drive the app-level, account-global rate-limit store with a quota as if a
@@ -714,35 +714,35 @@ export interface TugTestSurface {
   ingestUsage(payload: unknown): void;
 
   /**
-   * Drive a dev card's `SessionMetadataStore` with a decoded SESSION_SIDEBAND
+   * Drive a session card's `SessionMetadataStore` with a decoded SESSION_SIDEBAND
    * payload (`session_capabilities` or `system_metadata`) as if it had landed
    * on the feed ([#step-4]). Resolves the card's services via
-   * `cardServicesStore`; throws if the card is not bound (call `bindDevSession`
+   * `cardServicesStore`; throws if the card is not bound (call `bindSession`
    * first). Used by the effort-chip app-test to mount the chip and flip its
    * model gate without a live claude handshake — the chip reads its own
-   * SESSION_SIDEBAND FeedStore, unreachable by `driveDevSession`.
+   * SESSION_SIDEBAND FeedStore, unreachable by `driveSession`.
    */
   ingestSessionMetadata(cardId: string, payload: unknown): void;
 
   /**
-   * Drive a dev card's `GitDiffStore` with a decoded `git_diff_response`
+   * Drive a session card's `GitDiffStore` with a decoded `git_diff_response`
    * payload, as if a matching `GIT_DIFF` frame had landed — so the `/diff`
    * sheet ([#step-10b]) renders its per-file accordion without a live tugcast
-   * git round-trip. Requires a prior `bindDevSession(cardId)`.
+   * git round-trip. Requires a prior `bindSession(cardId)`.
    */
   ingestGitDiff(cardId: string, payload: unknown): void;
 
   /**
-   * Settle a bound dev card's `SideQuestionStore` with a decoded
+   * Settle a bound session card's `SideQuestionStore` with a decoded
    * `side_question_answer` payload, as if a matching CODE_OUTPUT frame had
    * landed — so the `/btw` overlay renders its answer without a live claude
    * round-trip. The payload's `request_id` must match a pending (loading)
-   * exchange (i.e. a prior `/btw` ask). Requires a prior `bindDevSession`.
+   * exchange (i.e. a prior `/btw` ask). Requires a prior `bindSession`.
    */
   ingestSideQuestionAnswer(cardId: string, payload: unknown): void;
 
   /**
-   * Read a bound dev card's perf instrumentation: the
+   * Read a bound session card's perf instrumentation: the
    * `CodeSessionStore` replay-ingest / live-turn commit counters plus
    * the (app-global) row-parse counters. Pure read — the
    * resume-performance baseline and budget app-tests assert internal
@@ -1465,7 +1465,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       //   - TugPromptEntry wrapper (current):
       //     `{ route, draft: TugTextEditingState | null }`.
       //     This is what `TugPromptEntry` (and every card hosting it
-      //     — `gallery-prompt-entry`, dev-card) returns. Reach into
+      //     — `gallery-prompt-entry`, session-card) returns. Reach into
       //     `draft` to get the engine state.
       //
       //   - TugPromptEntry legacy wrapper:
@@ -1530,7 +1530,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       return false;
     },
 
-    bindDevSession(
+    bindSession(
       cardId: string,
       options?: {
         tugSessionId?: string;
@@ -1571,12 +1571,12 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       );
     },
 
-    driveDevSession(cardId: string, action: DevSessionDriveAction): void {
+    driveSession(cardId: string, action: SessionDriveAction): void {
       const services = cardServicesStore.getServices(cardId);
       if (services === null) {
         throw new Error(
-          `driveDevSession: card "${cardId}" has no bound session — ` +
-            `call bindDevSession("${cardId}") first`,
+          `driveSession: card "${cardId}" has no bound session — ` +
+            `call bindSession("${cardId}") first`,
         );
       }
       const store = services.codeSessionStore;
@@ -1602,7 +1602,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         default: {
           const exhaustive: never = action;
           throw new Error(
-            `driveDevSession: unknown action ${JSON.stringify(exhaustive)}`,
+            `driveSession: unknown action ${JSON.stringify(exhaustive)}`,
           );
         }
       }
@@ -1621,7 +1621,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       if (services === null) {
         throw new Error(
           `ingestSessionMetadata: card "${cardId}" has no bound session — ` +
-            `call bindDevSession("${cardId}") first`,
+            `call bindSession("${cardId}") first`,
         );
       }
       services.sessionMetadataStore._ingestForTest(payload);
@@ -1632,7 +1632,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       if (services === null) {
         throw new Error(
           `ingestGitDiff: card "${cardId}" has no bound session — ` +
-            `call bindDevSession("${cardId}") first`,
+            `call bindSession("${cardId}") first`,
         );
       }
       services.gitDiffStore._ingestForTest(payload);
@@ -1643,7 +1643,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       if (services === null) {
         throw new Error(
           `ingestSideQuestionAnswer: card "${cardId}" has no bound session — ` +
-            `call bindDevSession("${cardId}") first`,
+            `call bindSession("${cardId}") first`,
         );
       }
       services.sideQuestionStore._ingestForTest(payload);
@@ -1660,7 +1660,7 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       if (services === null) {
         throw new Error(
           `getSessionPerf: card "${cardId}" has no bound session — ` +
-            `call bindDevSession("${cardId}") first`,
+            `call bindSession("${cardId}") first`,
         );
       }
       return {

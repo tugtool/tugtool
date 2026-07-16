@@ -12,8 +12,8 @@
  *    single-row, fixed-HEIGHT strip — height drives the tile, width follows
  *    aspect (capped) — so the strip's height is constant regardless of
  *    image aspect, count, or load state. That constant lets the prompt-entry
- *    reserve its Z4C zone up front (no hop) and the Dev card steal exactly
- *    that height from the editor (see `tug-prompt-entry.css` / `dev-card.css`).
+ *    reserve its Z4C zone up front (no hop) and the Session card steal exactly
+ *    that height from the editor (see `tug-prompt-entry.css` / `session-card.css`).
  *    Each compose tile also carries a ✕ delete overlay.
  *
  * Each tile has a small caption beneath; clicking opens the sheet. The
@@ -48,7 +48,7 @@
                          the compose strip is height-driven. NOTE: the
                          prompt-entry zone that hosts the compose strip pins
                          its own height to fit `tile-height` + caption (see
-                         `--tug-prompt-entry-attach-height` in dev-card.css) —
+                         `--tug-prompt-entry-attach-height` in session-card.css) —
                          change `tile-height` and that constant together.
        - `tile-max-width` — cap on a compose tile's aspect-driven width so a
                          panorama can't run away. */
@@ -265,7 +265,7 @@
  * follows its own aspect (capped so a panorama can't run away). Its height
  * is therefore CONSTANT regardless of image aspect, count, or load state —
  * which lets the prompt-entry reserve the zone the instant an atom drops
- * (no hop, no pre-bake gap) and lets the Dev card steal exactly that height
+ * (no hop, no pre-bake gap) and lets the Session card steal exactly that height
  * from the editor's empty floor. Transcript tiles keep the fixed-WIDTH,
  * wrapping grid defined by the base rules above. */
 [data-slot="tug-attachment-preview"][data-deletable] {
@@ -281,7 +281,7 @@
      offset + width — keeps the outline painting inside the clip box rather
      than sheared off at the tile boundary. The hosting zone reserves enough
      height above the strip to absorb this (see `--tug-prompt-entry-attach-
-     height` in dev-card.css). */
+     height` in session-card.css). */
   padding: calc(
     var(--tugx-focus-ring-offset) + var(--tugx-focus-ring-width)
   );

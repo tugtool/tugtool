@@ -1,5 +1,5 @@
 /**
- * denials.ts — decode + accumulate `permission_denials` for the dev card's
+ * denials.ts — decode + accumulate `permission_denials` for the session card's
  * `/permissions` Recently-denied tab.
  *
  * tugcode forwards a turn's denied tool calls verbatim on the `cost_update`

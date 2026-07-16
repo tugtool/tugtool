@@ -3,7 +3,7 @@
  * the deck-default stores + the persisted model catalog.
  *
  * The Settings card edits the deck-wide default Model / Permission Mode /
- * Effort through the *same* chips + sheets the Dev card's Z4B row uses. Those
+ * Effort through the *same* chips + sheets the Session card's Z4B row uses. Those
  * components consume a {@link ReadableMetadataStore} (`subscribe` +
  * `getSnapshot → SessionMetadataSnapshot`); this adapter satisfies that shape
  * by composing `DefaultModelStore` / `DefaultPermissionModeStore` /

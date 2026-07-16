@@ -1289,7 +1289,7 @@ impl SessionLedger {
 
     /// All non-failed rows that carry a `card_id`, ordered newest-first
     /// by `last_used_at`. The client-side restore consumes this through
-    /// the `list_card_bindings` CONTROL verb: for each dev card in the
+    /// the `list_card_bindings` CONTROL verb: for each session card in the
     /// deck, the most recent matching row drives either
     /// `spawn_session(mode=resume)` (if `turn_count > 0`, i.e. claude
     /// has a JSONL on disk) or `spawn_session(mode=new)` with a fresh

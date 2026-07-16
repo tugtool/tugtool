@@ -111,7 +111,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -179,12 +179,12 @@ describe.skipIf(!SHOULD_RUN)(
             const q = (sel) => !!(card && card.querySelector(sel));
             return {
               hasCard: !!card,
-              picker: q('[data-slot="dev-card-picker"]'),
-              restoring: q('[data-slot="dev-card-restoring"]'),
-              body: q('[data-slot="dev-card"]'),
+              picker: q('[data-slot="session-card-picker"]'),
+              restoring: q('[data-slot="session-card-restoring"]'),
+              body: q('[data-slot="session-card"]'),
               divider: q('[data-slot="compaction-divider"]'),
               carryForward: q('[data-slot="compaction-carry-forward"]'),
-              spawnError: q('[data-testid="dev-card-spawn-error-retry"]'),
+              spawnError: q('[data-testid="session-card-spawn-error-retry"]'),
             };
           })())`;
           try {

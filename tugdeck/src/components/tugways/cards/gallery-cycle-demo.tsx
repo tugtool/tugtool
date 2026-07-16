@@ -1,6 +1,6 @@
 /**
  * gallery-cycle-demo.tsx — exercises the keyboard-focus-cycling mode primitive
- * (`useCycleMode`) on a minimal surface, decoupled from the dev card's stateful
+ * (`useCycleMode`) on a minimal surface, decoupled from the session card's stateful
  * picker/connected machinery.
  *
  * The card stands in for a text-first card: a **resting** focusable (the
@@ -14,7 +14,7 @@
  *   - OFF → the mode pops and the key view returns to the resting focusable.
  *
  * This is the permanent showcase + app-test surface for the mechanism
- * ([#step-cycle-mechanism]); the real consumer (the dev card, with per-state
+ * ([#step-cycle-mechanism]); the real consumer (the session card, with per-state
  * default focus + roles) lands in [#step-cycle-devcard]. Escape / Return / Space
  * mode-key semantics land in [#step-cycle-keys].
  *

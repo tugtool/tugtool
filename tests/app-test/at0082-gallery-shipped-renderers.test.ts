@@ -5,7 +5,7 @@
  * # What this proves
  *
  * [#step-14-5] ships gallery cards for the renderers landed through
- * [#step-13]: the `DevThinkingBlock` chrome, the `JsonTreeBlock` body
+ * [#step-13]: the `SessionThinkingBlock` chrome, the `JsonTreeBlock` body
  * kind, the file tool wrappers (`ReadToolBlock` / `EditToolBlock`), and
  * the `DefaultToolWrapper` fallback. It also extends the pre-existing
  * `gallery-bash-tool-block` card.
@@ -64,10 +64,10 @@ interface CardSpec {
 
 const CARD_SPECS: ReadonlyArray<CardSpec> = [
   {
-    componentId: "gallery-dev-thinking",
-    testId: "gallery-dev-thinking",
+    componentId: "gallery-session-thinking",
+    testId: "gallery-session-thinking",
     // Streaming + completed-long + completed-short.
-    expectedSlots: [{ selector: '[data-slot="dev-thinking-block"]', count: 3 }],
+    expectedSlots: [{ selector: '[data-slot="session-thinking-block"]', count: 3 }],
   },
   {
     componentId: "gallery-json-tree-block",

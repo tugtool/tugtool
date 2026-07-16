@@ -185,7 +185,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // Escape routes to the same chain action as ⌘. so floating UI
   // (popovers, alerts, sheets) dismisses via its existing
   // CANCEL_DIALOG handlers, AND — when nothing dialog-like is in the
-  // chain — a card-level CANCEL_DIALOG handler (e.g. dev-card.tsx's
+  // chain — a card-level CANCEL_DIALOG handler (e.g. session-card.tsx's
   // card-content responder) can interrupt an in-flight turn. The
   // chain's "first responder up" walk gives the natural priority:
   // visible popover dismisses first, drag cancels next (via the
@@ -249,13 +249,13 @@ export const KEYBINDINGS: KeyBinding[] = [
   // RETURN_ACTION_BY_ROUTE, where `⌕` is present. Plain ⌘F is left to whichever
   // CM6 editor owns find. `preventDefaultOnMatch` suppresses WebKit's ⇧⌘F.
   { key: "KeyF", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "⌕", preventDefaultOnMatch: true },
-  // ⇧⌘P cycles the dev card's permission mode. Tug deliberately departs from
+  // ⇧⌘P cycles the session card's permission mode. Tug deliberately departs from
   // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
   // but in a GUI Shift+Tab must move focus to the previous control. So the
   // cycle moves to a non-conflicting chord (mnemonic: the chip's /PERMISSIONS
   // caption). `scope: "key-card"` routes to the active card's `card-content`
-  // responder; only the dev card registers a handler. `preventDefaultOnMatch`
-  // suppresses the macOS beep when no dev card claims it (and any WebKit
+  // responder; only the session card registers a handler. `preventDefaultOnMatch`
+  // suppresses the macOS beep when no session card claims it (and any WebKit
   // default). The chip / sheet and the `/permissions` command remain the
   // pick-a-mode affordances. Tab / Shift-Tab are NOT in this map — the
   // focus-walk stage in `responder-chain-provider.tsx` owns them.
@@ -263,7 +263,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // ⌥⇥ toggles a text-first card's keyboard-focus-cycling mode — the mode in
   // which Tab circulates the card's chrome zones (the [D97] Z-areas) instead of
   // feeding the editor. `scope: "key-card"` routes to the active card's
-  // `card-content` responder; only a text-first card (the dev card first)
+  // `card-content` responder; only a text-first card (the session card first)
   // registers a handler, and the cycle focus-scope itself lands with the
   // mechanism. `preventDefaultOnMatch` suppresses the native default + the
   // macOS beep when no card claims it. ⌥⇥ is free here: the focus-walk stage in
@@ -276,7 +276,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // responder, so the chord walks up from wherever focus sits (prompt
   // editor included) — this is why it works card-wide where the list
   // view's own scroll-container PageUp/PageDown pager does not. ⌥↑/⌥↓
-  // are intentionally avoided (editor word-movement); only the dev card
+  // are intentionally avoided (editor word-movement); only the session card
   // registers a handler. `preventDefaultOnMatch` suppresses the native
   // default + macOS beep when no card claims it. Stage 1 runs in capture
   // phase before a focused editor sees the key, so the chord dispatches

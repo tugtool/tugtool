@@ -238,7 +238,7 @@ describe.skipIf(!SHOULD_RUN)("AT0223: text card bottom find bar", () => {
         await waitForChip(app, "1 of 2");
 
         // Wrapping past the last match raises the SHARED wrap indicator —
-        // the same `FindSession`-driven overlay the Dev card shows (the two
+        // the same `FindSession`-driven overlay the Session card shows (the two
         // surfaces ride one controller, so the affordance cannot diverge).
         await app.nativeKey("Return");
         await waitForChip(app, "2 of 2");

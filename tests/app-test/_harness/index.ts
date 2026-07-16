@@ -93,7 +93,7 @@ export type {
   SelectionSnapshot,
   StartTugcodeOptions,
   StartTugcodeResult,
-  DevSessionDriveAction,
+  SessionDriveAction,
   TugcodeTranscript,
   TugcodeTranscriptTurn,
 } from "./client";
@@ -569,16 +569,16 @@ export class App {
   }
 
   /**
-   * Bind a fake session for a dev-card so its content factory
-   * renders DevCardBody (the editor) instead of the project-picker.
+   * Bind a fake session for a session-card so its content factory
+   * renders SessionCardBody (the editor) instead of the project-picker.
    * Production binds via `spawn_session_ok` from a live
    * tugcast/tugcode/Claude pipeline; the harness writes synthetic
    * values directly into the binding store. Use whenever a test
-   * needs to interact with a dev-card's editor (focus, selection,
+   * needs to interact with a session-card's editor (focus, selection,
    * typing) — the AI-facing stores stay empty, but the editor
    * mounts and accepts user-shaped gestures.
    */
-  bindDevSession(
+  bindSession(
     cardId: string,
     options?: {
       tugSessionId?: string;
@@ -594,7 +594,7 @@ export class App {
       sessionMode?: "new" | "resume";
     },
   ): Promise<void> {
-    return client.bindDevSession(this as HarnessCaller, cardId, options);
+    return client.bindSession(this as HarnessCaller, cardId, options);
   }
 
   /**
@@ -602,7 +602,7 @@ export class App {
    * tugcast spawns a genuine tugcode `--resume` that replays the on-disk
    * JSONL through the `CODE_OUTPUT → SESSION_METADATA` fan-out into the
    * card's `SessionMetadataStore`. The only verb that drives the true
-   * cold-replay delivery chain (vs. `bindDevSession`'s synthetic binding or
+   * cold-replay delivery chain (vs. `bindSession`'s synthetic binding or
    * `ingestSessionMetadata`'s injected frame). Place the fixture JSONL at
    * `~/.claude/projects/<encode(projectDir)>/<tugSessionId>.jsonl` first.
    */
@@ -614,17 +614,17 @@ export class App {
   }
 
   /**
-   * Drive a bound dev card's `CodeSessionStore` one step through the
+   * Drive a bound session card's `CodeSessionStore` one step through the
    * lifecycle matrix — `send` a user message, `ingestFrame` a decoded
    * wire frame, `interrupt`, or drive the transport overlay. The card
-   * must be bound first (`bindDevSession`). Frames flow through the
+   * must be bound first (`bindSession`). Frames flow through the
    * store's real `frameToEvent` → `dispatch` path.
    */
-  driveDevSession(
+  driveSession(
     cardId: string,
-    action: client.DevSessionDriveAction,
+    action: client.SessionDriveAction,
   ): Promise<void> {
-    return client.driveDevSession(this as HarnessCaller, cardId, action);
+    return client.driveSession(this as HarnessCaller, cardId, action);
   }
 
   /**
@@ -636,31 +636,31 @@ export class App {
   }
 
   /**
-   * Drive a dev card's `SessionMetadataStore` with a decoded
+   * Drive a session card's `SessionMetadataStore` with a decoded
    * `session_capabilities` / `system_metadata` payload ([#step-4]) — mounts
    * the Z4B effort chip and flips its model gate without a live claude
-   * handshake. Requires a prior `bindDevSession(cardId)`.
+   * handshake. Requires a prior `bindSession(cardId)`.
    */
   ingestSessionMetadata(cardId: string, payload: unknown): Promise<void> {
     return client.ingestSessionMetadata(this as HarnessCaller, cardId, payload);
   }
 
   /**
-   * Drive a dev card's `GitDiffStore` with a decoded `git_diff_response`
+   * Drive a session card's `GitDiffStore` with a decoded `git_diff_response`
    * payload so the `/diff` sheet ([#step-10b]) renders its per-file
    * accordion without a live tugcast git round-trip. Requires a prior
-   * `bindDevSession(cardId)`.
+   * `bindSession(cardId)`.
    */
   ingestGitDiff(cardId: string, payload: unknown): Promise<void> {
     return client.ingestGitDiff(this as HarnessCaller, cardId, payload);
   }
 
   /**
-   * Settle a dev card's `SideQuestionStore` with a decoded
+   * Settle a session card's `SideQuestionStore` with a decoded
    * `side_question_answer` payload so the `/btw` overlay renders its answer
    * without a live claude round-trip (and the transcript can be asserted
    * clean). The payload `request_id` must match a pending ask. Requires a
-   * prior `bindDevSession(cardId)`.
+   * prior `bindSession(cardId)`.
    */
   ingestSideQuestionAnswer(cardId: string, payload: unknown): Promise<void> {
     return client.ingestSideQuestionAnswer(this as HarnessCaller, cardId, payload);

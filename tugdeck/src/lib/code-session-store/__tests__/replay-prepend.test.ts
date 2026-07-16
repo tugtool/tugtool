@@ -15,7 +15,7 @@ import type { TugConnection } from "@/connection";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
-import { DevTranscriptDataSource } from "@/lib/dev-transcript-data-source";
+import { SessionTranscriptDataSource } from "@/lib/session-transcript-data-source";
 
 const TUG = FIXTURE_IDS.TUG_SESSION_ID;
 
@@ -149,7 +149,7 @@ describe("load-previous prepend", () => {
 
   it("keeps row ids content-addressed across the prepend ([P06])", () => {
     const { store, conn } = makeStore();
-    const ds = new DevTranscriptDataSource(store);
+    const ds = new SessionTranscriptDataSource(store);
 
     replayRange(conn, 5, 7, {
       firstLoadedTurnIndex: 5,
@@ -175,7 +175,7 @@ describe("load-previous prepend", () => {
 
   it("exposes hasOlder / oldestLoadedTurnIndex from the window metadata", () => {
     const { store, conn } = makeStore();
-    const ds = new DevTranscriptDataSource(store);
+    const ds = new SessionTranscriptDataSource(store);
 
     replayRange(conn, 5, 7, {
       firstLoadedTurnIndex: 5,

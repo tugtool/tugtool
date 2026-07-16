@@ -39,7 +39,7 @@ pub struct Cli {
     /// The distributed app omits this — per-card workspaces drive every feed
     /// directory at card-open time. When absent, the bootstrap watches an
     /// empty per-instance directory purely to emit the initial empty
-    /// snapshots an unbound Dev card renders against. Transitional: removed
+    /// snapshots an unbound Session card renders against. Transitional: removed
     /// entirely once the bootstrap workspace is retired.
     #[arg(long)]
     pub source_tree: Option<PathBuf>,

@@ -351,9 +351,9 @@ export interface InterruptActionEvent {
  * Internal action injected by `CodeSessionStore.setPermissionMode`. Not a
  * wire event — never decoded from a frame. The reducer emits a single
  * `permission_mode` SendFrame effect and changes NO transcript state: the
- * dev-card's chip reflects the mode from the post-mutation `system_metadata`
+ * session-card's chip reflects the mode from the post-mutation `system_metadata`
  * round-trip (owned by `SessionMetadataStore`), not from this action, per
- * the dev-card / Claude-Code-parity plan's round-trip mutation decision.
+ * the session-card / Claude-Code-parity plan's round-trip mutation decision.
  */
 export interface SetPermissionModeActionEvent {
   type: "set_permission_mode";
@@ -363,9 +363,9 @@ export interface SetPermissionModeActionEvent {
 /**
  * Internal action injected by `CodeSessionStore.setModel`. Not a wire event —
  * never decoded from a frame. The reducer emits a single `model_change`
- * SendFrame effect and changes NO transcript state: the dev-card's model chip
+ * SendFrame effect and changes NO transcript state: the session-card's model chip
  * reflects the model from the post-mutation `system_metadata` round-trip
- * (owned by `SessionMetadataStore`), not from this action, per the dev-card /
+ * (owned by `SessionMetadataStore`), not from this action, per the session-card /
  * Claude-Code-parity plan's round-trip mutation decision.
  */
 export interface SetModelActionEvent {
@@ -777,7 +777,7 @@ export interface ResumeFailedEvent {
  * reducer drops it in any other phase so a stray frame on a live
  * session can't corrupt `pendingTurn`.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D14] (activeMsgId
+ * See `roadmap/tugplan-session-wake.md` [D14] (activeMsgId
  * tracking), [D15] (add_<kind> naming), and `#spec-wire-frames` for
  * the canonical wire-shape definition.
  */
@@ -946,7 +946,7 @@ export interface SessionRewindActionEvent {
  * claude actively polling rather than going idle, so there is no
  * wake to bracket.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D01], [D02] for the
+ * See `roadmap/tugplan-session-wake.md` [D01], [D02] for the
  * bracket pattern and detection rationale.
  */
 export interface WakeStartedEvent {

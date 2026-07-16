@@ -42,10 +42,10 @@
  * general, not error-only: the tone selects the icon. The full detail still
  * lives in the body, one expand away.
  *
- * `caution` is rendered as an inline `DevCautionBadge` in the header
+ * `caution` is rendered as an inline `SessionCautionBadge` in the header
  * per [D04] / [Q03] — three reasons surface: `unknown_tool`,
  * `unknown_shape`, `version_drift`. The chrome owns only the
- * placement; the chip is `chrome/dev-caution-badge.tsx`.
+ * placement; the chip is `chrome/session-caution-badge.tsx`.
  *
  * ## Actions slot — body-kind affordance host
  *

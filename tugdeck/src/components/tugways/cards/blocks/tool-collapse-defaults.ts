@@ -3,7 +3,7 @@
  * truth for which tool blocks mount **expanded** in the transcript
  * ([P06]/[P07]).
  *
- * The transcript dispatch site (`CodeRowBody` in `dev-card-transcript`)
+ * The transcript dispatch site (`CodeRowBody` in `session-card-transcript`)
  * reads `collapseDefaultFor(toolName)` and wraps a block in
  * `ToolBlockHistoryCollapse` (default-collapsed, body materializes on
  * expand) when it returns `true` — applied **live and historical**, the

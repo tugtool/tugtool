@@ -19,7 +19,7 @@
  * (`model === null`) and no `initialize` default is known, the chip stays
  * mounted with a `?` value and a `data-unknown` hook — the same "surface the
  * gap, don't swallow it" treatment the Claude Code version chip uses for drift
- * ([dev-route-indicator-badge.tsx]). An absent model is information worth
+ * ([session-route-indicator-badge.tsx]). An absent model is information worth
  * seeing, not a reason to vanish; the press still opens the picker so the user
  * can set one.
  *
@@ -63,7 +63,7 @@ export interface ModelChipProps {
   /** Metadata store supplying the live `model` + the `initialize` model list. */
   sessionMetadataStore: ReadableMetadataStore;
   /**
-   * Open the shared model picker sheet. Wired by the dev card to the single
+   * Open the shared model picker sheet. Wired by the session card to the single
    * opener from {@link useModelPicker} — the same opener the `/model` slash
    * command routes to, so the chip and the command present one sheet.
    */
@@ -72,7 +72,7 @@ export interface ModelChipProps {
    *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
   disabled?: boolean;
   /** Author the chip into a focus group ([P02]) — forwarded to the composed
-   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  {@link TugPushButton}. The session card passes its cycle group so the chip
    *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
   focusGroup?: string;
   /** Order within {@link focusGroup}. */

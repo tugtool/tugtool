@@ -1,11 +1,11 @@
 /**
- * `lifecycle-state` — the Dev card lifecycle state machine.
+ * `lifecycle-state` — the Session card lifecycle state machine.
  *
- * `deriveLifecycleSnapshot` encodes the dev-card lifecycle
+ * `deriveLifecycleSnapshot` encodes the session-card lifecycle
  * state-to-zone coordination matrix as one pure projection: it reads the
  * matrix-relevant signals off the `CodeSessionStore` snapshot and
- * returns the matrix row — the `DevLifecycleState`, the active
- * `DevLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
+ * returns the matrix row — the `SessionLifecycleState`, the active
+ * `SessionLifecycleOverlay`s, and the derived Z5 `submitButtonMode`.
  * Every zone that coordinates on lifecycle reads this one snapshot
  * (via `useLifecycleState`), so the matrix has exactly one executable
  * source of truth and a regression against any matrix cell is a
@@ -32,12 +32,12 @@ import type { CodeSessionPhase, TransportState } from "./types";
 // ---------------------------------------------------------------------------
 
 /**
- * The ten lifecycle states of the dev-card lifecycle matrix. Eight map 1:1
+ * The ten lifecycle states of the session-card lifecycle matrix. Eight map 1:1
  * onto a `CodeSessionPhase`; two are projections with no raw phase of
  * their own — INTERRUPTING (an interrupt round-trip is in flight) and
  * COMPLETE (`idle` once at least one turn has committed).
  */
-export type DevLifecycleState =
+export type SessionLifecycleState =
   | "idle"
   | "submitting"
   | "awaiting_first_token"
@@ -56,7 +56,7 @@ export type DevLifecycleState =
  * derived value here — it surfaces directly as transcript ghost rows off
  * the snapshot's `queuedSends`.
  */
-export type DevLifecycleOverlay = "transport_down";
+export type SessionLifecycleOverlay = "transport_down";
 
 /**
  * The Z5 submit-button mode — the matrix's Z5 column. The `submit`
@@ -69,7 +69,7 @@ export type DevLifecycleOverlay = "transport_down";
  * ghost rows). The remaining kinds are all disabled buttons:
  * `awaiting_user` / `stopping` / `reconnecting` / `restoring`.
  */
-export type DevSubmitButtonMode =
+export type SessionSubmitButtonMode =
   | { kind: "submit"; disabled: boolean }
   | { kind: "stop" }
   | { kind: "awaiting_user" }
@@ -78,10 +78,10 @@ export type DevSubmitButtonMode =
   | { kind: "restoring" };
 
 /** One row of the matrix — what `deriveLifecycleSnapshot` projects. */
-export interface DevLifecycleSnapshot {
-  state: DevLifecycleState;
-  overlays: ReadonlySet<DevLifecycleOverlay>;
-  submitButtonMode: DevSubmitButtonMode;
+export interface SessionLifecycleSnapshot {
+  state: SessionLifecycleState;
+  overlays: ReadonlySet<SessionLifecycleOverlay>;
+  submitButtonMode: SessionSubmitButtonMode;
 }
 
 /**
@@ -116,11 +116,11 @@ export interface LifecycleStoreSignals {
  * an active streaming turn (status indicator success+pulse, submit
  * button is Stop). Slice 2 may introduce a `waking` matrix state
  * with trigger-aware chrome (see [Q02] in
- * `roadmap/tugplan-dev-session-wake.md`); until then, sharing the
+ * `roadmap/tugplan-session-wake.md`); until then, sharing the
  * streaming row gives wakes the right visual treatment without a
  * matrix-wide audit.
  */
-function deriveLifecycleState(s: LifecycleStoreSignals): DevLifecycleState {
+function deriveLifecycleState(s: LifecycleStoreSignals): SessionLifecycleState {
   if (s.phase === "errored") return "errored";
   if (s.phase === "replaying") return "replaying";
   if (s.interruptInFlight) return "interrupting";
@@ -153,8 +153,8 @@ function deriveLifecycleState(s: LifecycleStoreSignals): DevLifecycleState {
 /** The active overlay set — the matrix's overlay row. */
 function deriveOverlays(
   s: LifecycleStoreSignals,
-): ReadonlySet<DevLifecycleOverlay> {
-  const overlays = new Set<DevLifecycleOverlay>();
+): ReadonlySet<SessionLifecycleOverlay> {
+  const overlays = new Set<SessionLifecycleOverlay>();
   // TRANSPORT_DOWN covers both `offline` (no wire) and `restoring`
   // (wire back, binding not re-ack'd) — anything but `online`.
   if (s.transportState !== "online") overlays.add("transport_down");
@@ -163,9 +163,9 @@ function deriveOverlays(
 
 /** The Z5 submit-button mode — the matrix's Z5 column. */
 function deriveSubmitButtonMode(
-  state: DevLifecycleState,
-  overlays: ReadonlySet<DevLifecycleOverlay>,
-): DevSubmitButtonMode {
+  state: SessionLifecycleState,
+  overlays: ReadonlySet<SessionLifecycleOverlay>,
+): SessionSubmitButtonMode {
   // Transport down trumps everything — neither submit nor stop can
   // reach the wire, so the button is an inert "Reconnecting…".
   if (overlays.has("transport_down")) return { kind: "reconnecting" };
@@ -207,8 +207,8 @@ function deriveSubmitButtonMode(
 // ---------------------------------------------------------------------------
 
 function overlaySetsEqual(
-  a: ReadonlySet<DevLifecycleOverlay>,
-  b: ReadonlySet<DevLifecycleOverlay>,
+  a: ReadonlySet<SessionLifecycleOverlay>,
+  b: ReadonlySet<SessionLifecycleOverlay>,
 ): boolean {
   if (a.size !== b.size) return false;
   for (const overlay of a) {
@@ -218,8 +218,8 @@ function overlaySetsEqual(
 }
 
 function submitButtonModesEqual(
-  a: DevSubmitButtonMode,
-  b: DevSubmitButtonMode,
+  a: SessionSubmitButtonMode,
+  b: SessionSubmitButtonMode,
 ): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "submit" && b.kind === "submit") {
@@ -236,8 +236,8 @@ function submitButtonModesEqual(
  * {@link deriveLifecycleSnapshot} is built on this.
  */
 export function lifecycleSnapshotsEqual(
-  a: DevLifecycleSnapshot,
-  b: DevLifecycleSnapshot,
+  a: SessionLifecycleSnapshot,
+  b: SessionLifecycleSnapshot,
 ): boolean {
   if (a === b) return true;
   return (
@@ -266,12 +266,12 @@ export function lifecycleSnapshotsEqual(
  */
 export function deriveLifecycleSnapshot(
   storeSnapshot: LifecycleStoreSignals,
-  previous?: DevLifecycleSnapshot,
-): DevLifecycleSnapshot {
+  previous?: SessionLifecycleSnapshot,
+): SessionLifecycleSnapshot {
   const state = deriveLifecycleState(storeSnapshot);
   const overlays = deriveOverlays(storeSnapshot);
   const submitButtonMode = deriveSubmitButtonMode(state, overlays);
-  const next: DevLifecycleSnapshot = { state, overlays, submitButtonMode };
+  const next: SessionLifecycleSnapshot = { state, overlays, submitButtonMode };
   if (previous !== undefined && lifecycleSnapshotsEqual(previous, next)) {
     return previous;
   }

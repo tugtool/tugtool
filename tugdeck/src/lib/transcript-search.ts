@@ -1,5 +1,5 @@
 /**
- * transcript-search — the pure match engine behind the Dev card's Find
+ * transcript-search — the pure match engine behind the Session card's Find
  * route.
  *
  * Given an ordered array of per-row plain-text projections (one string per

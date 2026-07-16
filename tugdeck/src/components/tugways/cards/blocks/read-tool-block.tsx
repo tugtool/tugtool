@@ -40,7 +40,7 @@
  *
  * Registration:
  *
- *   `dev-assistant-renderer-dispatch.ts` imports this module and
+ *   `session-assistant-renderer-dispatch.ts` imports this module and
  *   calls `registerToolBlock("read", ReadToolBlock)` from its own
  *   bottom-of-file initialization. Routing the registration through
  *   dispatch (rather than self-registering) preserves the

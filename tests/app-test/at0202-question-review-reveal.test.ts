@@ -40,13 +40,13 @@ const TEST_TIMEOUT_MS = 120_000;
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
-const SCROLLER = `${CARD} [data-tug-scroll-key="dev-card-transcript"]`;
-const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const ACTIONBAR = `${DIALOG} [data-slot="dev-question-dialog-actionbar"]`;
-const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
-const REVIEW_NOTICE = `${DIALOG} .dev-question-dialog-panel-review`;
-const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
-const OPTIONS = `${DIALOG} .dev-question-dialog-options-list`;
+const SCROLLER = `${CARD} [data-tug-scroll-key="session-card-transcript"]`;
+const DIALOG = `${CARD} [data-slot="session-question-dialog"]`;
+const ACTIONBAR = `${DIALOG} [data-slot="session-question-dialog-actionbar"]`;
+const NAV_BUTTONS = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-outlined-action`;
+const REVIEW_NOTICE = `${DIALOG} .session-question-dialog-panel-review`;
+const SUBMIT = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-primary-action`;
+const OPTIONS = `${DIALOG} .session-question-dialog-options-list`;
 
 /** Long option descriptions so the dialog overflows the short pane. */
 function longOptions(prefix: string): Array<Record<string, string>> {
@@ -163,7 +163,7 @@ function atReview(app: App): Promise<boolean> {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -192,11 +192,11 @@ async function openQuestion(
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
   );
-  await app.bindDevSession("A", { tugSessionId: sid });
+  await app.bindSession("A", { tugSessionId: sid });
   await app.awaitEngineReady("A");
 
-  await app.driveDevSession("A", { op: "send", text: "ask me" });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", { op: "send", text: "ask me" });
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {
@@ -210,12 +210,12 @@ async function openQuestion(
     },
   });
   const forward = controlRequestForward(sid, questions);
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: toolUseFor(sid, forward),
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: forward,

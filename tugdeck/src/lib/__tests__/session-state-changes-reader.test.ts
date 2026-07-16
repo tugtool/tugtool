@@ -10,10 +10,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
-  _resetDevSessionLedgerEventsForTest,
+  _resetSessionLedgerEventsForTest,
   publishListSessionStateChangesErr,
   publishListSessionStateChangesOk,
-} from "@/lib/dev-session-ledger-events";
+} from "@/lib/session-ledger-events";
 import { loadSessionStateChanges } from "@/lib/session-state-changes-reader";
 import {
   CONTROL_ACTION_LIST_SESSION_STATE_CHANGES,
@@ -39,11 +39,11 @@ function decodeFrame(frame: RecordedFrame): { action: string; tug_session_id: st
 }
 
 beforeEach(() => {
-  _resetDevSessionLedgerEventsForTest();
+  _resetSessionLedgerEventsForTest();
 });
 
 afterEach(() => {
-  _resetDevSessionLedgerEventsForTest();
+  _resetSessionLedgerEventsForTest();
 });
 
 describe("loadSessionStateChanges", () => {

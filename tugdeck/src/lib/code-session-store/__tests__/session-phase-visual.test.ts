@@ -11,15 +11,15 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  DEV_SESSION_PHASE_LABELS,
-  devSessionPhaseKey,
-  devSessionPhaseVisual,
-  type DevSessionPhaseInput,
+  SESSION_PHASE_LABELS,
+  sessionSessionPhaseKey,
+  sessionSessionPhaseVisual,
+  type SessionPhaseInput,
 } from "../session-phase-visual";
 
 function input(
-  overrides: Partial<DevSessionPhaseInput>,
-): DevSessionPhaseInput {
+  overrides: Partial<SessionPhaseInput>,
+): SessionPhaseInput {
   return {
     phase: "idle",
     transportState: "online",
@@ -28,7 +28,7 @@ function input(
   };
 }
 
-describe("devSessionPhaseKey — transport precedence", () => {
+describe("sessionSessionPhaseKey — transport precedence", () => {
   test("offline transport overrides every phase", () => {
     for (const phase of [
       "idle",
@@ -36,7 +36,7 @@ describe("devSessionPhaseKey — transport precedence", () => {
       "tool_work",
       "errored",
     ] as const) {
-      expect(devSessionPhaseKey(input({ phase, transportState: "offline" }))).toBe(
+      expect(sessionSessionPhaseKey(input({ phase, transportState: "offline" }))).toBe(
         "offline",
       );
     }
@@ -44,7 +44,7 @@ describe("devSessionPhaseKey — transport precedence", () => {
 
   test("offline transport overrides interrupt-in-flight", () => {
     expect(
-      devSessionPhaseKey(
+      sessionSessionPhaseKey(
         input({
           phase: "streaming",
           transportState: "offline",
@@ -57,14 +57,14 @@ describe("devSessionPhaseKey — transport precedence", () => {
   test("restoring transport overrides every phase", () => {
     for (const phase of ["idle", "streaming", "errored"] as const) {
       expect(
-        devSessionPhaseKey(input({ phase, transportState: "restoring" })),
+        sessionSessionPhaseKey(input({ phase, transportState: "restoring" })),
       ).toBe("restoring");
     }
   });
 
   test("restoring transport overrides interrupt-in-flight", () => {
     expect(
-      devSessionPhaseKey(
+      sessionSessionPhaseKey(
         input({
           phase: "streaming",
           transportState: "restoring",
@@ -75,21 +75,21 @@ describe("devSessionPhaseKey — transport precedence", () => {
   });
 });
 
-describe("devSessionPhaseKey — interrupt precedence", () => {
+describe("sessionSessionPhaseKey — interrupt precedence", () => {
   test("interrupt-in-flight on an online wire reads 'interrupting'", () => {
     expect(
-      devSessionPhaseKey(input({ phase: "streaming", interruptInFlight: true })),
+      sessionSessionPhaseKey(input({ phase: "streaming", interruptInFlight: true })),
     ).toBe("interrupting");
   });
 
   test("interrupt-in-flight wins over `errored` phase", () => {
     expect(
-      devSessionPhaseKey(input({ phase: "errored", interruptInFlight: true })),
+      sessionSessionPhaseKey(input({ phase: "errored", interruptInFlight: true })),
     ).toBe("interrupting");
   });
 });
 
-describe("devSessionPhaseKey — phase fallback", () => {
+describe("sessionSessionPhaseKey — phase fallback", () => {
   test.each([
     "idle",
     "submitting",
@@ -101,20 +101,20 @@ describe("devSessionPhaseKey — phase fallback", () => {
     "waking",
     "errored",
   ] as const)("phase %s falls through to itself", (phase) => {
-    expect(devSessionPhaseKey(input({ phase }))).toBe(phase);
+    expect(sessionSessionPhaseKey(input({ phase }))).toBe(phase);
   });
 });
 
-describe("devSessionPhaseVisual — role/state mapping", () => {
+describe("sessionSessionPhaseVisual — role/state mapping", () => {
   test("offline → danger/aborted", () => {
-    expect(devSessionPhaseVisual("offline")).toEqual({
+    expect(sessionSessionPhaseVisual("offline")).toEqual({
       role: "danger",
       state: "aborted",
     });
   });
 
   test("errored → danger/aborted", () => {
-    expect(devSessionPhaseVisual("errored")).toEqual({
+    expect(sessionSessionPhaseVisual("errored")).toEqual({
       role: "danger",
       state: "aborted",
     });
@@ -125,7 +125,7 @@ describe("devSessionPhaseVisual — role/state mapping", () => {
     "interrupting",
     "awaiting_approval",
   ] as const)("%s → caution/running", (key) => {
-    expect(devSessionPhaseVisual(key)).toEqual({
+    expect(sessionSessionPhaseVisual(key)).toEqual({
       role: "caution",
       state: "running",
     });
@@ -139,28 +139,28 @@ describe("devSessionPhaseVisual — role/state mapping", () => {
     "replaying",
     "waking",
   ] as const)("active phase %s → action/running", (key) => {
-    expect(devSessionPhaseVisual(key)).toEqual({
+    expect(sessionSessionPhaseVisual(key)).toEqual({
       role: "action",
       state: "running",
     });
   });
 
   test("idle → inherit/stopped", () => {
-    expect(devSessionPhaseVisual("idle")).toEqual({
+    expect(sessionSessionPhaseVisual("idle")).toEqual({
       role: "inherit",
       state: "stopped",
     });
   });
 
   test("unknown phase falls through to idle defaults", () => {
-    expect(devSessionPhaseVisual("nonsense")).toEqual({
+    expect(sessionSessionPhaseVisual("nonsense")).toEqual({
       role: "inherit",
       state: "stopped",
     });
   });
 });
 
-describe("DEV_SESSION_PHASE_LABELS — human-readable labels", () => {
+describe("SESSION_PHASE_LABELS — human-readable labels", () => {
   test.each([
     ["idle", "Idle"],
     ["submitting", "Sending"],
@@ -175,6 +175,6 @@ describe("DEV_SESSION_PHASE_LABELS — human-readable labels", () => {
     ["restoring", "Reconnecting"],
     ["interrupting", "Interrupting"],
   ] as const)("key %s resolves to %s", (key, expected) => {
-    expect(DEV_SESSION_PHASE_LABELS[key]).toBe(expected);
+    expect(SESSION_PHASE_LABELS[key]).toBe(expected);
   });
 });

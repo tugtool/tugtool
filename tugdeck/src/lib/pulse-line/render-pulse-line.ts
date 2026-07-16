@@ -76,7 +76,7 @@ export function escapeHtml(text: string): string {
 /** Render one TeX source through the engine; never throws. */
 function mathHtml(engine: KaTeXEngine | null, source: string): string {
   if (engine === null) {
-    return `<span class="dev-pulse-math-pending">${escapeHtml(source)}</span>`;
+    return `<span class="session-pulse-math-pending">${escapeHtml(source)}</span>`;
   }
   try {
     // Inline mode always: the strip is one line; display math in
@@ -86,7 +86,7 @@ function mathHtml(engine: KaTeXEngine | null, source: string): string {
       throwOnError: false,
     });
   } catch {
-    return `<span class="dev-pulse-math-error">${escapeHtml(source)}</span>`;
+    return `<span class="session-pulse-math-error">${escapeHtml(source)}</span>`;
   }
 }
 

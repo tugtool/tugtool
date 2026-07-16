@@ -3,7 +3,7 @@
  * ([#step-3.5]).
  *
  * The subscription quota is **account-global** — one limit shared by every
- * session and dev card — so it belongs in a single app-level store, not the
+ * session and session card — so it belongs in a single app-level store, not the
  * per-card `SessionMetadataStore` (that's why [#step-3.5] supersedes [Q02] for
  * this surface). This store owns a `FeedStore` on the SESSION_SIDEBAND feed
  * (where the tugcast supervisor rewraps `rate_limit_event` off CODE_OUTPUT,

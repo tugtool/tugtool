@@ -5,11 +5,11 @@
  *
  * The session-phase model has three orthogonal axes — `phase`,
  * `transportState`, `interruptInFlight` — but a UI indicator only
- * needs one identifier per render. {@link devSessionPhaseKey}
+ * needs one identifier per render. {@link sessionSessionPhaseKey}
  * flattens the triple into a stable string key; {@link
- * DEV_SESSION_PHASE_LABELS} maps every key to its human-readable
+ * SESSION_PHASE_LABELS} maps every key to its human-readable
  * title (used for the indicator's visible label and tooltip); and
- * {@link devSessionPhaseVisual} maps every key to a partial
+ * {@link sessionSessionPhaseVisual} maps every key to a partial
  * `{ role, state }` for the indicator's visual treatment.
  *
  * Transport health dominates phase: an offline wire reads as
@@ -38,7 +38,7 @@ import type { CodeSessionPhase, TransportState } from "./types";
  * legacy `TugStateIndicatorState`; renamed here to avoid implying any
  * coupling to a particular indicator component.
  */
-export interface DevSessionPhaseInput {
+export interface SessionPhaseInput {
   readonly phase: CodeSessionPhase;
   readonly transportState: TransportState;
   readonly interruptInFlight: boolean;
@@ -48,7 +48,7 @@ export interface DevSessionPhaseInput {
 // Phase key
 // ---------------------------------------------------------------------------
 
-export type DevSessionPhaseKey =
+export type SessionPhaseKey =
   | "offline"
   | "restoring"
   | "interrupting"
@@ -60,7 +60,7 @@ export type DevSessionPhaseKey =
  * flag take precedence over the reducer's phase; otherwise the phase
  * enum is the key.
  */
-export function devSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhaseKey {
+export function sessionSessionPhaseKey(input: SessionPhaseInput): SessionPhaseKey {
   if (input.transportState === "offline") return "offline";
   if (input.transportState === "restoring") return "restoring";
   if (input.interruptInFlight) return "interrupting";
@@ -81,7 +81,7 @@ export function devSessionPhaseKey(input: DevSessionPhaseInput): DevSessionPhase
  * indistinguishable to the user from a normal stream; the distinction
  * is internal lifecycle bookkeeping.
  */
-export const DEV_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
+export const SESSION_PHASE_LABELS: Record<SessionPhaseKey, string> = {
   offline: "Disconnected",
   restoring: "Reconnecting",
   interrupting: "Interrupting",
@@ -116,8 +116,8 @@ export const DEV_SESSION_PHASE_LABELS: Record<DevSessionPhaseKey, string> = {
  * (`state: completed`) — paired together they give a clear
  * blue-while-running → green-when-finished story.
  */
-export function devSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
-  switch (phaseKey as DevSessionPhaseKey) {
+export function sessionSessionPhaseVisual(phaseKey: string): TugProgressIndicatorPhaseVisual {
+  switch (phaseKey as SessionPhaseKey) {
     case "offline":
     case "errored":
       return { role: "danger", state: "aborted" };

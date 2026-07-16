@@ -27,7 +27,7 @@ The selection-plan history (`roadmap/tugplan-selection.md`) captures the elabora
 4. Cross-link the elaborated entry in `roadmap/tugplan-selection.md` if applicable.
 5. Add the gating test as `tests/app-test/at{NNNN}-{slug}.test.ts`.
 
-> **Collision renumbering (2026-06-11 reconciliation).** Six AT numbers previously had **two test files gating unrelated regressions** — a violation of the "one tag = one regression" rule (multiple files per tag are allowed only for halves of the *same* regression, e.g. an FC half + EM half). Resolved: in each pair the earlier-authored file kept the number and the later interloper moved to a fresh tag (AT0175–AT0180). The moves: `at0051-dev-mount-focus` → **AT0175**; `at0104-tab-accepts-completion` → **AT0176**; `at0105-permission-cycle-keys` → **AT0177**; `at0106-sheet-focus-trap` → **AT0178**; `at0107-dynamic-keybinding` → **AT0179**; `at0163-list-accessory-keyboard` → **AT0180** (here `sheet-focus-language` predated the accessory test, so AT0163 stays with `sheet-focus-language`).
+> **Collision renumbering (2026-06-11 reconciliation).** Six AT numbers previously had **two test files gating unrelated regressions** — a violation of the "one tag = one regression" rule (multiple files per tag are allowed only for halves of the *same* regression, e.g. an FC half + EM half). Resolved: in each pair the earlier-authored file kept the number and the later interloper moved to a fresh tag (AT0175–AT0180). The moves: `at0051-session-mount-focus` → **AT0175**; `at0104-tab-accepts-completion` → **AT0176**; `at0105-permission-cycle-keys` → **AT0177**; `at0106-sheet-focus-trap` → **AT0178**; `at0107-dynamic-keybinding` → **AT0179**; `at0163-list-accessory-keyboard` → **AT0180** (here `sheet-focus-language` predated the accessory test, so AT0163 stays with `sheet-focus-language`).
 >
 > **Tag reuse.** Four tags were reused after their original meaning was retired/deferred — the entries below document the current meaning: **AT0024**, **AT0025** (now prompt-state round-trips, formerly component-protocol structural tags), **AT0070**, **AT0071** (now TugDevPanel tags, formerly deferred FileBlock / retired find-fixture tags).
 
@@ -173,7 +173,7 @@ Component-level state preservation — gaps surfaced from the L23 audit of the s
 #### [AT0025] Selection survives the deactivation → reload/relaunch path
 - **Status:** ✅ closed.
 - **Tests:** `at0025-prompt-deactivated-roundtrip.test.ts`.
-- **Summary:** Layer-4 case — type + select in a dev card, deactivate it by clicking a sibling tab, reload or relaunch, reactivate; the selection round-trips (previously lost because `engine.captureState()` read a live DOM Selection that no longer existed on the deactivated card).
+- **Summary:** Layer-4 case — type + select in a session card, deactivate it by clicking a sibling tab, reload or relaunch, reactivate; the selection round-trips (previously lost because `engine.captureState()` read a live DOM Selection that no longer existed on the deactivated card).
 
 #### [AT0026] Open-overlay persistence semantics
 - **Status:** ✅ closed at Step 25F.
@@ -227,7 +227,7 @@ Surfaced during selection-plan Step 23F / 23G / 25C.5 work. Each closes a specif
 #### [AT0035] App-switch selection survival (EM + dev)
 - **Status:** ✅ closed at Step 23G.
 - **Tests:** `at0035-em-app-switch-selection.test.ts`, `at0035-dev-app-switch-selection.test.ts`.
-- **Summary:** Selection survives cmd-tab away + back for EM cards. The dev-specific variant exercises the redundant focus-paths bug (legacy `cardDidActivate` + framework `onCardActivated`) that triggered WebKit's selectionchange-on-focus quirk intermittently — it reproduces ONLY with dev-card, not `gallery-prompt-entry`. The 23G fix routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern.
+- **Summary:** Selection survives cmd-tab away + back for EM cards. The dev-specific variant exercises the redundant focus-paths bug (legacy `cardDidActivate` + framework `onCardActivated`) that triggered WebKit's selectionchange-on-focus quirk intermittently — it reproduces ONLY with session-card, not `gallery-prompt-entry`. The 23G fix routes the delegate's `focus()` through `engine.setSelectedRange` for the WebKit-safe focus-then-select pattern.
 
 #### [AT0036] Inactive-card cmd-tab selection survival
 - **Status:** ⬛ retired — gating test removed (2026-06-08).
@@ -246,7 +246,7 @@ Surfaced during selection-plan Step 25C.4 (active/inactive paint split). Gate cr
 #### [AT0038] Deactivation-time inactive paint
 - **Status:** ✅ closed at Step 25C.4. Covered by the `gallery-prompt-entry` variants.
 - **Tests:** `at0038-deactivation-inactive-paint.test.ts` (renamed from `m27-*` during the 25L AT-series audit; original numbering collided with the AT0027 layout-state tag).
-- **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content. The `dev` (DevCardBody) variants were removed (2026-06-08): they died at the same multi-pane native-activation-click setup as AT0036, never reaching the paint assertion; the property is fully covered by the `gallery-prompt-entry` variants, which drive the same EM engine.
+- **Summary:** When a user deactivates a scrolled EM card with a selection, `paintMirrorAsInactive(publish)` rebuilds a DOM Range at the user's actual selection — not at a wrong scroll-relative position. Gates `flatToDom`'s correctness against scrolled content. The `dev` (SessionCardBody) variants were removed (2026-06-08): they died at the same multi-pane native-activation-click setup as AT0036, never reaching the paint assertion; the property is fully covered by the `gallery-prompt-entry` variants, which drive the same EM engine.
 
 ### Title-bar / close-confirm + text-editor tags (AT0039–AT0050)
 
@@ -361,7 +361,7 @@ Surfaced during the popup-bindings plan (`roadmap/tugplan-tide-popup-bindings.md
 
 ### Region-scroll anchor-metadata save tag (AT0059)
 
-Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension that lets variable-height virtualized lists (notably the dev-card transcript) preserve their scroll position across reload by anchoring on `(cellIndex, offsetWithinCell)` rather than raw pixels. This tag pins the SAVE side: the `data-tug-scroll-state` DOM attribute reflects live scroll, and `captureRegionScrolls` reads it into `bag.regionScroll[key].meta`.
+Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension that lets variable-height virtualized lists (notably the session-card transcript) preserve their scroll position across reload by anchoring on `(cellIndex, offsetWithinCell)` rather than raw pixels. This tag pins the SAVE side: the `data-tug-scroll-state` DOM attribute reflects live scroll, and `captureRegionScrolls` reads it into `bag.regionScroll[key].meta`.
 
 #### [AT0059] Region-scroll anchor metadata — save side
 - **Status:** ✅ closed at Phase E.6 step 1 (`just app-test` PASS).
@@ -371,7 +371,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0060] Variable-height list view — content settled detection
 - **Status:** ✅ closed at Phase E.6 step 2 (`just app-test` PASS).
 - **Tests:** `at0060-list-view-content-settled.test.ts`.
-- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which runs in `inline=true` mode — every cell mounted, mirroring the dev-card transcript). Prove three signals that together identify "content has loaded, rendered, and settled": (1) **loaded** — `dataSource.numberOfItems()` reflects the seeded item count; (2) **rendered** — `document.querySelectorAll('[data-tug-list-cell-index]').length === itemCount` (every cell in DOM); (3) **settled** — `scrollHeight` of the scroll container is stable across two observations 250ms apart, AND scrollHeight exceeds clientHeight (real layout has happened, not a zero-height intermediate state). Once all three are true, the apply path's preconditions for anchor-based restore are satisfied. Closes Phase E.6's "prove we can identify when content has settled" sub-task.
+- **Summary:** Mount the `gallery-list-view-scroll-keyed` card (which runs in `inline=true` mode — every cell mounted, mirroring the session-card transcript). Prove three signals that together identify "content has loaded, rendered, and settled": (1) **loaded** — `dataSource.numberOfItems()` reflects the seeded item count; (2) **rendered** — `document.querySelectorAll('[data-tug-list-cell-index]').length === itemCount` (every cell in DOM); (3) **settled** — `scrollHeight` of the scroll container is stable across two observations 250ms apart, AND scrollHeight exceeds clientHeight (real layout has happened, not a zero-height intermediate state). Once all three are true, the apply path's preconditions for anchor-based restore are satisfied. Closes Phase E.6's "prove we can identify when content has settled" sub-task.
 
 #### [AT0061] Region-scroll anchor metadata — apply side (full round-trip)
 - **Status:** ✅ closed at Phase E.6 step 3 (`just app-test` PASS).
@@ -390,12 +390,12 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Status:** 🗑️ superseded at Phase E.8. Replaced by [AT0068]. Same goal — inner scroll survives reload — but AT0068 pins the stronger contract that the scroller is CREATED at the saved `scrollTop` (no jump from 0 to saved).
 - **Tests:** *(removed)*.
 
-#### [AT0065] Dev-card-like inner scroll survives Maker > Reload + scroller-rebuild
+#### [AT0065] Session-card-like inner scroll survives Maker > Reload + scroller-rebuild
 - **Status:** 🗑️ superseded at Phase E.8. The element-identity-gated `MutationObserver` re-apply for inner-scroller rebuilds stays in `card-host.tsx` (it's the fallback for scrollers recreated mid-card-lifetime), but the production failure AT0065 pinned was scoped to the now-removed late-mount path; the manual checkpoints in `tide-assistant-rendering.md` Phase E.8 cover the rebuild-after-restore case end-to-end.
 - **Tests:** *(removed)*.
 
 #### [AT0067] BashToolBlock fold state mounts in its saved value on first paint
-- **Status:** 🗑️ retired — surface migrated. The per-body TerminalBlock fold AT0067 drove no longer exists for tool blocks: `BashToolBlock` renders its `TerminalBlock` `embedded`, which suppresses the per-body fold (the body renders a flat clamped preview), and the whole-block fold moved to the chrome (`ToolBlockHistoryCollapse`, `data-block-collapsed`), persisted via `ToolBlockExpansionContext` overrides that only the transcript host provides. The mount-in-saved-state contract for that override is unit-covered by `blocks/__tests__/expansion-state.test.ts`, and the chrome's synchronous `useState` initializer prevents the post-mount flash by construction. (A future dev-card/transcript-level test could add integration coverage of the chrome fold's first-paint-from-saved-state; the gallery-bash approach can't reach it.)
+- **Status:** 🗑️ retired — surface migrated. The per-body TerminalBlock fold AT0067 drove no longer exists for tool blocks: `BashToolBlock` renders its `TerminalBlock` `embedded`, which suppresses the per-body fold (the body renders a flat clamped preview), and the whole-block fold moved to the chrome (`ToolBlockHistoryCollapse`, `data-block-collapsed`), persisted via `ToolBlockExpansionContext` overrides that only the transcript host provides. The mount-in-saved-state contract for that override is unit-covered by `blocks/__tests__/expansion-state.test.ts`, and the chrome's synchronous `useState` initializer prevents the post-mount flash by construction. (A future session-card/transcript-level test could add integration coverage of the chrome fold's first-paint-from-saved-state; the gallery-bash approach can't reach it.)
 - **Tests:** none (was `at0067-bash-block-mount-in-saved-state.test.ts`, deleted; the `gallery-bash-mount-in-saved-state` fixture was removed too).
 
 #### [AT0068] BashToolBlock inner scroller is created at its saved scrollTop
@@ -424,70 +424,70 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 - **Tests:** `at0073-content-owning-focus-survives-reload.test.ts` (deleted).
 
 #### [AT0074] Engine focus fallback when `bag.focus` is absent
-- **Status:** 🗑 **retired at Phase E.12** — bundled with the find-fixture AT-series at Phase E.12. The "absent `bag.focus` → engine resolution" path it gated is still exercised: a fresh dev card has no saved focus and AT0033 gates fresh-card activation; AT0078 / AT0080 / AT0081 gate the engine path across every activation source. No successor needed.
+- **Status:** 🗑 **retired at Phase E.12** — bundled with the find-fixture AT-series at Phase E.12. The "absent `bag.focus` → engine resolution" path it gated is still exercised: a fresh session card has no saved focus and AT0033 gates fresh-card activation; AT0078 / AT0080 / AT0081 gate the engine path across every activation source. No successor needed.
 - **Tests:** `at0074-engine-focus-fallback.test.ts` (deleted).
 
-#### [AT0075] Dev-card find row focus survives app-switch
+#### [AT0075] Session-card find row focus survives app-switch
 - **Status:** 🗑 **retired at Phase E.12** — was `describe.skip` pending a harness extension; per-block Find is removed in total at Phase E.12, so the behavior is gone. The file is deleted.
 - **Tests:** `at0075-dev-find-app-switch.test.ts` (deleted).
 
-#### [AT0076] Dev-card find row focus survives card-switch
+#### [AT0076] Session-card find row focus survives card-switch
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
 - **Tests:** `at0076-dev-find-card-switch.test.ts` (deleted).
 
-#### [AT0077] Dev-card find row focus survives Maker > Reload
+#### [AT0077] Session-card find row focus survives Maker > Reload
 - **Status:** 🗑 **retired at Phase E.12** — same reason as AT0075. The file is deleted.
 - **Tests:** `at0077-dev-find-reload.test.ts` (deleted).
 
-#### [AT0078] Dev-card engine focus survives app-switch
-- **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a dev card's activation focus always lands on the `tug-prompt-entry` contenteditable.
+#### [AT0078] Session-card engine focus survives app-switch
+- **Status:** ✅ shipped at Phase E.11; retained + repurposed at Phase E.12 as the app-switch gate for the single-text-entry rule (#phase-e-12): a session card's activation focus always lands on the `tug-prompt-entry` contenteditable.
 - **Tests:** `at0078-dev-engine-focus-survives.test.ts`.
-- **Summary:** Seed a dev-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the dev-card's contenteditable.
+- **Summary:** Seed a session-card, bind a fake session, await engine ready. Click into the contenteditable, type "hello", `simulateAppResign` (window-blur). After a brief blur dwell, `simulateAppBecomeActive` runs `reactivateCurrentFocusDestination` → `applyBagFocus` → engine resolution → engine hook invocation → `view.focus()`. Asserts `document.activeElement` is the session-card's contenteditable.
 
-#### [AT0079] Dev-card engine focus wins over stale find-row mount
+#### [AT0079] Session-card engine focus wins over stale find-row mount
 - **Status:** 🗑 **retired at Phase E.12** — was `describe.skip`; per-block Find is removed in total at Phase E.12, so there is no "stale find-row mount" for the engine kind to win over. The file is deleted.
 - **Tests:** `at0079-dev-engine-focus-wins-over-stale-find.test.ts` (deleted).
 
-#### [AT0080] Dev-card focus lands on the prompt entry after card-switch
+#### [AT0080] Session-card focus lands on the prompt entry after card-switch
 - **Status:** ✅ shipped at Phase E.12 — the card-switch gate for the single-text-entry rule (#phase-e-12).
 - **Tests:** `at0080-dev-focus-card-switch.test.ts`.
 - **Summary:** Two dev cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
 
-#### [AT0081] Dev-card focus lands on the prompt entry after Maker > Reload
+#### [AT0081] Session-card focus lands on the prompt entry after Maker > Reload
 - **Status:** ✅ shipped at Phase E.12 — the cold-boot / reload gate for the single-text-entry rule (#phase-e-12). Exercises the `deferred-engine` settle (the one late-mount focus path that survives Phase E.12's retirement of the `deferred-dom` focus-retry branch).
 - **Tests:** `at0081-dev-focus-reload.test.ts`.
-- **Summary:** Seed a dev card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the dev-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
+- **Summary:** Seed a session card, bind a fake session, type into the contenteditable, `appReload`, re-seed with the persisted bag, re-bind the session. Asserts `document.activeElement` is the session-card's `tug-prompt-entry` contenteditable after the cold-boot RESTORE → `deferred-engine` → `engineHooksVersion` re-run path. Waits for the contenteditable to mount rather than the `engine-ready` harness signal, which does not re-arm after `appReload`.
 
-> **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a dev card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
+> **Cross-pane drag** — the fourth activation source for the single-text-entry rule (#phase-e-12) — is gated by AT0034 (`at0034-em-focus-after-move.test.ts`), which exercises a cross-pane drag and a detach on `gallery-prompt-entry` (the `tug-prompt-entry` surface a session card uses internally) and asserts focus lands on the contenteditable. No new tag is needed.
 
 #### [AT0082] Gallery-shipped assistant renderers
 - **Status:** ✅ closed.
 - **Tests:** `at0082-gallery-shipped-renderers.test.ts`.
-- **Summary:** Render-half verification for the Dev assistant-rendering gallery cards — the `DevThinkingBlock` chrome, the `JsonTreeBlock` body kind, the file tool wrappers (`ReadToolBlock` / `EditToolBlock`), the `DefaultToolWrapper` fallback, and the extended `gallery-bash-tool-block` card. (Registry wiring is pinned separately by the `gallery-registrations.test.ts` unit test.)
+- **Summary:** Render-half verification for the Dev assistant-rendering gallery cards — the `SessionThinkingBlock` chrome, the `JsonTreeBlock` body kind, the file tool wrappers (`ReadToolBlock` / `EditToolBlock`), the `DefaultToolWrapper` fallback, and the extended `gallery-bash-tool-block` card. (Registry wiring is pinned separately by the `gallery-registrations.test.ts` unit test.)
 
 #### [AT0083] TugListView scroll-to-bottom reliability + auto-pin funnel
 - **Status:** ✅ shipped at tide-assistant-turns Step 20.4.16 Sub-step I — gates the I-0 restore-anchor fix and the I-1 `maybePinToBottom` consolidation.
 - **Tests:** `at0083-list-view-submit-pin.test.ts`.
-- **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the dev-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
+- **Summary:** Drives `gallery-list-view-scroll-keyed` (real `TugListView` + `SmartScroll` + CardHost region-scroll restore). Test 1 (I-0): cold-boot a card restored to a mid-list anchor, drive the fixture's "Scroll to bottom" control (the inner `TugListView`'s imperative `scrollToBottom()` — the same method the session-card transcript host calls on submit), assert the scroller lands AND holds at the bottom — the restore-anchor apply effect must not pull it back. Test 2 (I-0 a/b/c + I-1): `scrollToBottom()` at the bottom is a no-op; after `tug-disengage-follow-bottom` content growth does NOT auto-pin (gate false — also covers the collapsed-hunk case); `scrollToBottom()` re-engages follow-bottom; subsequent growth then auto-pins (gate true). Gates `SmartScroll.shouldAutoPin` / `maybePinToBottom` — the funnel `TugMarkdownView` also routes through.
 
-### Dev-card lifecycle + chrome tags (AT0084–AT0088)
+### Session-card lifecycle + chrome tags (AT0084–AT0088)
 
-Surfaced during the dev-card-zones / Claude-Code-parity plans. Gate the lifecycle state-to-zone coordination matrix, the route axis, and the Z4B chrome chips. (The shipped-renderers tag AT0082 and the list-view tag AT0083 above belong to the dev assistant-rendering / region-scroll families.)
+Surfaced during the session-card-zones / Claude-Code-parity plans. Gate the lifecycle state-to-zone coordination matrix, the route axis, and the Z4B chrome chips. (The shipped-renderers tag AT0082 and the list-view tag AT0083 above belong to the dev assistant-rendering / region-scroll families.)
 
-#### [AT0084] Dev-card lifecycle state-to-zone coordination matrix
+#### [AT0084] Session-card lifecycle state-to-zone coordination matrix
 - **Status:** ✅ closed.
-- **Tests:** `at0084-dev-lifecycle-coordination.test.ts`.
-- **Summary:** Drives a real `CodeSessionStore` inside a real dev card through every distinct lifecycle matrix row (IDLE → STREAMING → TOOL_WORK → COMPLETE, AWAITING_USER, QUEUED_NEXT_TURN, ERRORED, REPLAYING, TRANSPORT_DOWN, the two interrupt cases) via `driveDevSession` and asserts the rendered DOM for zones Z1/Z2/Z5. No mock store, no fake DOM.
+- **Tests:** `at0084-session-lifecycle-coordination.test.ts`.
+- **Summary:** Drives a real `CodeSessionStore` inside a real session card through every distinct lifecycle matrix row (IDLE → STREAMING → TOOL_WORK → COMPLETE, AWAITING_USER, QUEUED_NEXT_TURN, ERRORED, REPLAYING, TRANSPORT_DOWN, the two interrupt cases) via `driveSession` and asserts the rendered DOM for zones Z1/Z2/Z5. No mock store, no fake DOM.
 
 #### [AT0085] tug-prompt-entry route survives reload
 - **Status:** ✅ closed.
 - **Tests:** `at0085-prompt-entry-route.test.ts`.
 - **Summary:** `TugPromptEntry`'s `route` axis rides `bag.content.route` and round-trips across reload — the successor coverage for the retired AT0031 chrome axis.
 
-#### [AT0086] DevRouteIndicatorBadge repaint + mount identity
+#### [AT0086] SessionRouteIndicatorBadge repaint + mount identity
 - **Status:** ✅ closed.
-- **Tests:** `at0086-dev-route-indicator-badge.test.ts`.
-- **Summary:** `DevRouteIndicatorBadge` repaints when the prompt-entry route flips (Code / Shell) and keeps its mount identity across the flip.
+- **Tests:** `at0086-session-route-indicator-badge.test.ts`.
+- **Summary:** `SessionRouteIndicatorBadge` repaints when the prompt-entry route flips (Code / Shell) and keeps its mount identity across the flip.
 
 #### [AT0087] TugBadge two-line presentation
 - **Status:** ✅ closed.
@@ -501,7 +501,7 @@ Surfaced during the dev-card-zones / Claude-Code-parity plans. Gate the lifecycl
 
 ### Claude-Code-parity command + banner tags (AT0090–AT0108)
 
-Surfaced during the dev-card / Claude-Code-parity plan. Gate the `/permissions` editor, slash-command live surfaces (`/rewind`, `/resume`, `/diff`, `/compact`), pane-scope routing, completion-acceptance, and the soft warn/caution banners.
+Surfaced during the session-card / Claude-Code-parity plan. Gate the `/permissions` editor, slash-command live surfaces (`/rewind`, `/resume`, `/diff`, `/compact`), pane-scope routing, completion-acceptance, and the soft warn/caution banners.
 
 #### [AT0090] /permissions rules editor
 - **Status:** ✅ closed.
@@ -581,12 +581,12 @@ Surfaced during the dev-card / Claude-Code-parity plan. Gate the `/permissions` 
 #### [AT0105] API retry banner
 - **Status:** ✅ closed.
 - **Tests:** `at0105-api-retry-banner.test.ts`.
-- **Summary:** The dev card surfaces claude's API-retry state as a soft banner.
+- **Summary:** The session card surfaces claude's API-retry state as a soft banner.
 
 #### [AT0106] Compact-boundary divider
 - **Status:** ✅ closed.
 - **Tests:** `at0106-compact-boundary-divider.test.ts`.
-- **Summary:** The dev-card transcript shows a compaction-boundary divider.
+- **Summary:** The session-card transcript shows a compaction-boundary divider.
 
 #### [AT0107] /compact live surface
 - **Status:** ✅ closed.
@@ -596,7 +596,7 @@ Surfaced during the dev-card / Claude-Code-parity plan. Gate the `/permissions` 
 #### [AT0108] Unknown-event warn banner
 - **Status:** ✅ closed.
 - **Tests:** `at0108-unknown-event-banner.test.ts`.
-- **Summary:** The dev card surfaces tugcode's forward-compat `unknown_event` frame as a soft, dismissible warn banner (rather than silently dropping an untranslated top-level event).
+- **Summary:** The session card surfaces tugcode's forward-compat `unknown_event` frame as a soft, dismissible warn banner (rather than silently dropping an untranslated top-level event).
 
 ### Focus-language, keyboard-cycling + menu-validation tags (AT0109–AT0174)
 
@@ -717,10 +717,10 @@ The largest cluster — the unified focus ring / selection color contract, per-c
 - **Tests:** `at0139-cycle-mode-scope.test.ts`.
 - **Summary:** The keyboard-focus-cycling mode primitive scopes correctly to its surface.
 
-#### [AT0140] Dev card joins the cycle ring
+#### [AT0140] Session card joins the cycle ring
 - **Status:** ✅ closed.
-- **Tests:** `at0140-cycle-devcard.test.ts`.
-- **Summary:** The dev card joins the keyboard-focus-cycling ring.
+- **Tests:** `at0140-cycle-session-card.test.ts`.
+- **Summary:** The session card joins the keyboard-focus-cycling ring.
 
 #### [AT0141] Session-picker persistent keyboard stop
 - **Status:** ✅ closed.
@@ -896,10 +896,10 @@ The largest cluster — the unified focus ring / selection color contract, per-c
 
 These tags were minted on 2026-06-11 to resolve the six prefix collisions (see the note at the top of the file). Each is the later-authored file of a colliding pair, moved off the number the earlier file kept.
 
-#### [AT0175] Dev-card mount-time focus + caret claim
+#### [AT0175] Session-card mount-time focus + caret claim
 - **Status:** ✅ closed (renumbered from AT0051).
-- **Tests:** `at0175-dev-mount-focus.test.ts`.
-- **Summary:** When a dev card mounts as the focused card and its session binds, the prompt-entry editor (CodeMirror's `contentDOM`) gains DOM focus AND the custom caret layer renders, all without a user click. Pins the editor-focus contract (Spec [S02], `roadmap/tugplan-dev-session-init-orchestration.md`): every overlay that sets `inert` on `.tug-pane-body` emits a per-card `xxxDidHide` after `inert` clears, and `DevCardBody` makes an idempotent focus claim.
+- **Tests:** `at0175-session-mount-focus.test.ts`.
+- **Summary:** When a session card mounts as the focused card and its session binds, the prompt-entry editor (CodeMirror's `contentDOM`) gains DOM focus AND the custom caret layer renders, all without a user click. Pins the editor-focus contract (Spec [S02], `roadmap/tugplan-session-init-orchestration.md`): every overlay that sets `inert` on `.tug-pane-body` emits a per-card `xxxDidHide` after `inert` clears, and `SessionCardBody` makes an idempotent focus claim.
 
 #### [AT0176] Tab accepts an open completion
 - **Status:** ✅ closed (renumbered from AT0104).
@@ -950,15 +950,15 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 
 ### Route enhancements — three-route chrome (AT0215–AT0216)
 
-#### [AT0215] Three-route Dev card — per-route Z4B chrome, flanking geometry, btw round-trip
+#### [AT0215] Three-route Session card — per-route Z4B chrome, flanking geometry, btw round-trip
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0215-route-chrome.test.ts`.
-- **Summary:** The `code | shell | btw` Dev card. The per-route Z4B chrome manifest mounts exactly its Table T01 chip set on each route (chips a route drops UNMOUNT — code shows Session/Project/Mode/Model/Effort, shell shows Project/Cwd, btw shows Session/Project), verified across a choice-group click (→ Shell) and the ⇧⌘B keybinding (→ btw). Risk R04: the leading Z4A choice group and trailing Z5 submit button stay pixel-fixed while the centred-floating Z4B cluster swaps width. The `?`-route submission is a native side question ([P02]): submitting on btw opens the overlay and the ask + settled answer never change the transcript entry count (the [D108] invariant, beside AT0211). Guards [P01]/[P02]/[P03], Table T01. Native CGEvents (click + type + key) + a synthetic ⇧⌘B keydown.
+- **Summary:** The `code | shell | btw` Session card. The per-route Z4B chrome manifest mounts exactly its Table T01 chip set on each route (chips a route drops UNMOUNT — code shows Session/Project/Mode/Model/Effort, shell shows Project/Cwd, btw shows Session/Project), verified across a choice-group click (→ Shell) and the ⇧⌘B keybinding (→ btw). Risk R04: the leading Z4A choice group and trailing Z5 submit button stay pixel-fixed while the centred-floating Z4B cluster swaps width. The `?`-route submission is a native side question ([P02]): submitting on btw opens the overlay and the ask + settled answer never change the transcript entry count (the [D108] invariant, beside AT0211). Guards [P01]/[P02]/[P03], Table T01. Native CGEvents (click + type + key) + a synthetic ⇧⌘B keydown.
 
 #### [AT0216] Shell route — exchange e2e, live cwd, restore interleave
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0216-shell-route.test.ts`.
-- **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="dev-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Maker ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
+- **Summary:** The `$` route end-to-end against the REAL shell backend ([P06]/[P07], Risk R02). Submitting `echo` / `cd` / `pwd` through the prompt entry sends SHELL_INPUT over the live connection; tugcast's per-session shell child executes each command and the SHELL_OUTPUT frames settle a transcript row carrying the command, the combined output, and the exit label — non-context ink ([P11]), tagged `[data-slot="session-transcript-shell-row"]` with `[data-participant="shell"]`. The stateful `cd` moves the live Cwd chip ([P10]) and the following `pwd` prints the moved directory (proving the shell session persists across exchanges). Restore ([P07]): after Maker ▸ Reload, a real `spawn_session(resume)` replays a fixture JSONL Claude turn while the ledgered exchanges restore through `list_shell_exchanges`; the reloaded transcript reproduces the identical interleaved row order (`user, assistant, shell, shell, shell`) and shell row content regardless of arrival order — the ledger restore can land before the JSONL replay, so a replayed Claude turn slides back past the already-seated shell rows to its arrival position (append order is the source of truth; the real corpus is 39% non-monotonic in timestamp, so timestamp is not a safe global sort key). Native CGEvents (click + type + key).
 
 ### Focus / alert / status polish (AT0217–AT0220)
 
@@ -997,7 +997,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 #### [AT0223] Text card bottom find bar
 - **Status:** ✅ open (new feature gate).
 - **Tests:** `at0223-text-card-find-bar.test.ts`.
-- **Summary:** The Text card's find bar is the Dev entry's find face on the shared `TugEntryShell`, docked between the editor and the status bar: a CM6 substrate query field above the shell toolbar (shared Case/Word/Grep cluster + count badge centred; outlined-↑ / filled-↓ Z5 pair trailing; no route trigger, no ✕). ⌘F summons it with focus in the field, typing counts over CM6 search decorations, Enter advances / Shift-Enter retreats / the ↓ button advances, the Case toggle narrows the count live, Escape closes and clears decorations, wrapping past the last match raises the shared `FindSession`-driven wrap indicator (the same overlay the Dev card shows), and the Case toggle persists into a freshly opened bar through the global find-options preference (`dev.tugtool.find`/`options`).
+- **Summary:** The Text card's find bar is the Dev entry's find face on the shared `TugEntryShell`, docked between the editor and the status bar: a CM6 substrate query field above the shell toolbar (shared Case/Word/Grep cluster + count badge centred; outlined-↑ / filled-↓ Z5 pair trailing; no route trigger, no ✕). ⌘F summons it with focus in the field, typing counts over CM6 search decorations, Enter advances / Shift-Enter retreats / the ↓ button advances, the Case toggle narrows the count live, Escape closes and clears decorations, wrapping past the last match raises the shared `FindSession`-driven wrap indicator (the same overlay the Session card shows), and the Case toggle persists into a freshly opened bar through the global find-options preference (`dev.tugtool.find`/`options`).
 
 #### [AT0224] Active-card keyboard contract
 - **Status:** ✅ open (new feature gate).

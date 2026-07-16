@@ -1,5 +1,5 @@
 /**
- * Transient-notice projection — the pure half of the Dev card's
+ * Transient-notice projection — the pure half of the Session card's
  * non-blocking interruption surface.
  *
  * Self-healing model interruptions (API retries, transport blips, replay
@@ -115,7 +115,7 @@ export function projectNotices(
   }
 
   // Only `offline` — the cold-restore `restoring` window is owned by the
-  // `DevRestoring` placeholder, so surfacing it here would double-signal.
+  // `SessionRestoring` placeholder, so surfacing it here would double-signal.
   if (snap.transportState === "offline") {
     out.push({
       id: NOTICE_IDS.transport,

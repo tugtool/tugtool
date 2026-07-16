@@ -71,14 +71,14 @@ const TEST_TIMEOUT_MS = 120_000;
 // Picker stops addressed by their stable authored focus-key (`group:order`) —
 // the same attribute the engine lands `data-key-view-kbd` on, so it doubles as
 // the key-view probe target and is immune to DOM-structure churn.
-const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
+const PATH = '[data-tug-focus-key="session-picker-cycle:0"]';
 // The native "Browse…" folder button sits between the path field and Recents in
 // the walk, at a fractional order so the stops below keep their stable keys.
-const BROWSE = '[data-tug-focus-key="dev-picker-cycle:0.5"]';
-const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
-const SESSIONS = '[data-tug-focus-key="dev-picker-cycle:2"]';
-const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
-const PICKER_FORM = ".dev-card-picker-form";
+const BROWSE = '[data-tug-focus-key="session-picker-cycle:0.5"]';
+const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
+const SESSIONS = '[data-tug-focus-key="session-picker-cycle:2"]';
+const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
+const PICKER_FORM = ".session-card-picker-form";
 
 // Real directories that exist on the macOS test host, so the path-seed (first
 // recent) leaves Open ENABLED whether or not a tugcast backend answers the
@@ -133,7 +133,7 @@ async function tabUntil(
 // cursor (`data-key-cursor`), or null. Proves the cursor roves WITHIN the single
 // list stop.
 const CURSORED_RECENT = `(function(){
-  var row = document.querySelector('.dev-card-picker-recents-list [data-key-cursor]');
+  var row = document.querySelector('.session-card-picker-recents-list [data-key-cursor]');
   if (row === null) return null;
   var host = row.closest('[data-recent-path]') || row.querySelector('[data-recent-path]') || row;
   return host ? (host.getAttribute('data-recent-path') || row.textContent) : row.textContent;
@@ -150,7 +150,7 @@ const PICKER_OPEN = `document.querySelector(${JSON.stringify(PICKER_FORM)}) !== 
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -179,7 +179,7 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
 
-        // An UNBOUND dev card presents its picker. Do NOT bind a session.
+        // An UNBOUND session card presents its picker. Do NOT bind a session.
         await app.waitForCondition<boolean>(PICKER_OPEN, { timeoutMs: 8000 });
 
         // Populate Recents in-process so the list mounts as a cycle stop and the

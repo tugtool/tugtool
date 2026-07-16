@@ -36,7 +36,7 @@ const BATCH_2_CARDS: ReadonlyArray<{ componentId: string; title: string }> = [
   { componentId: "gallery-image-block", title: "ImageBlock" },
   {
     componentId: "gallery-dev-chrome",
-    title: "Dev Chrome (banner / error / caution)",
+    title: "Session Chrome (banner / error / caution)",
   },
 ];
 

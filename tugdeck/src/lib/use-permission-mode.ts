@@ -1,11 +1,11 @@
 /**
- * use-permission-mode.ts — the dev-card's permission-mode `Shift+Tab` cycle
+ * use-permission-mode.ts — the session-card's permission-mode `Shift+Tab` cycle
  * plus its per-card persistence and mount-restore, factored out of
- * `dev-card.tsx`.
+ * `session-card.tsx`.
  *
  * The chip itself ([permission-mode-chip.tsx]) only *displays* the mode; the
  * behavior — advancing the cycle, sending the IPC, persisting per card, and
- * restoring on relaunch — lives here so the dev card's card-content responder
+ * restoring on relaunch — lives here so the session card's card-content responder
  * can register a single `cycle` handler.
  *
  * Mutations round-trip per [D03]: `cycle()` sends a `permission_mode` frame

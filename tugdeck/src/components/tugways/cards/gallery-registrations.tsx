@@ -90,7 +90,7 @@ import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
 import { GalleryTranscriptRegisters } from "./gallery-transcript-registers";
 import { GalleryCommitBlock } from "./gallery-commit-block";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
-import { GalleryDevThinking } from "./gallery-dev-thinking";
+import { GallerySessionThinking } from "./gallery-session-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
 import { GalleryToolBlockFile } from "./gallery-tool-block-file";
 import { GalleryToolBlockDefault } from "./gallery-tool-block-default";
@@ -204,7 +204,7 @@ function badgeRolesFor(emphasis: TugBadgeEmphasis): TugBadgeRole[] {
 }
 
 /**
- * Realistic dev-card Z4B chrome faces for the two-line layout demos —
+ * Realistic session-card Z4B chrome faces for the two-line layout demos —
  * the permission-mode / model / rate-limit / session indicators that
  * later steps mount into the prompt-entry band. Each pairs a
  * letter-spaced caption with the value the chip displays, plus the
@@ -785,7 +785,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-dev-chrome",
     contentFactory: (_cardId) => <GalleryDevChrome />,
-    defaultMeta: { title: "Dev Chrome (banner / error / caution)", icon: "Layers", closable: true },
+    defaultMeta: { title: "Session Chrome (banner / error / caution)", icon: "Layers", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -818,11 +818,11 @@ export function registerGalleryCards(): void {
     category: CATEGORIES.blockRenderers,
   });
 
-  // DevThinkingBlock — the inline collapsible reasoning chrome.
+  // SessionThinkingBlock — the inline collapsible reasoning chrome.
   registerCard({
-    componentId: "gallery-dev-thinking",
-    contentFactory: (_cardId) => <GalleryDevThinking />,
-    defaultMeta: { title: "DevThinkingBlock", icon: "Brain", closable: true },
+    componentId: "gallery-session-thinking",
+    contentFactory: (_cardId) => <GallerySessionThinking />,
+    defaultMeta: { title: "SessionThinkingBlock", icon: "Brain", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
@@ -950,7 +950,7 @@ export function registerGalleryCards(): void {
 
   // Keyboard-focus-cycling app-test fixture for the `useCycleMode` primitive
   // (⌥⇥ toggles a trapped cycle scope; Tab wraps the stops; toggle off restores
-  // the resting key view). The real consumer is the dev card; this card exercises
+  // the resting key view). The real consumer is the session card; this card exercises
   // the mechanism in isolation for `at0139`. Hidden from the `+` picker — a
   // mechanism proof, not a component demo — but kept as a driven test surface.
   registerCard({
@@ -969,7 +969,7 @@ export function registerGalleryCards(): void {
   // `onSelect` gating). Companion to `gallery-list-view` above:
   // that card exercises mutation, streaming, and windowing; this
   // one scopes to the role contract introduced by Phase 0 of
-  // `tugplan-dev-picker-redesign`.
+  // `tugplan-session-picker-redesign`.
   registerCard({
     componentId: "gallery-list-view-headers",
     hidden: true,
@@ -985,10 +985,10 @@ export function registerGalleryCards(): void {
   // `TugListView` carries `scrollKey="gallery-list-view-scroll"` so
   // the [A9] region-scroll axis captures the list's position into
   // `bag.regionScroll`, AND mounts in `inline` mode (every cell in
-  // the DOM, no windowing) to mirror the dev-card transcript
+  // the DOM, no windowing) to mirror the session-card transcript
   // configuration. The region-scroll-anchor app-tests
   // (`at0059-region-scroll-anchor-save.test.ts`,
-  // `at0060-dev-card-content-settled.test.ts`,
+  // `at0060-session-card-content-settled.test.ts`,
   // `at0061-region-scroll-anchor-apply.test.ts`) drive this card.
   registerCard({
     componentId: "gallery-list-view-scroll-keyed",

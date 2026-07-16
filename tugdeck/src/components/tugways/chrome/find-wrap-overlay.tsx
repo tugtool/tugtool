@@ -1,6 +1,6 @@
 /**
  * find-wrap-overlay — the transient "search wrapped around" indicator for the
- * Dev card's Find route.
+ * Session card's Find route.
  *
  * When Find navigation crosses an end (Next from the last match back to the
  * first, or Previous from the first to the last), `FindSession` raises its

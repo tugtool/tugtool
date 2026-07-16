@@ -89,7 +89,7 @@ function deckShape(cardIds: string[]) {
   return {
     cards: cardIds.map((id) => ({
       id,
-      componentId: "dev",
+      componentId: "session",
       title: `Dev ${id}`,
       closable: true,
     })),
@@ -147,9 +147,9 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
-          await app.bindDevSession("B");
+          await app.bindSession("B");
           await app.awaitEngineReady("B");
 
           // ---- Open Settings (same control action as ⌘,).
@@ -216,7 +216,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toContain("first request");
           await app.click(`${SETTINGS_SHEET} [data-slot="model-picker-cancel"]`);
 
-          // ---- A session reports capabilities → the Dev card persists the
+          // ---- A session reports capabilities → the Session card persists the
           //      live catalog. Every chip now shows the account default's
           //      "name with version" title, derived from claude's own
           //      description wording via the one resolveModelLabel path.
@@ -380,7 +380,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           // ---- The bulletin presents, naming the missing selector.

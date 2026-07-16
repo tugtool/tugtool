@@ -1,5 +1,5 @@
 /**
- * model.ts — pure helpers for the dev-card model chip's per-card persistence
+ * model.ts — pure helpers for the session-card model chip's per-card persistence
  * and deck-wide default.
  *
  * No React, no DOM, no I/O — every export is a pure function or a constant, so
@@ -56,7 +56,7 @@ export const MODEL_DOMAIN = "dev.model";
 /**
  * tugbank domain/key for the *global* default model selector — the model a
  * brand-new card (one with nothing persisted under {@link MODEL_DOMAIN}) adopts
- * on mount. Set from the Settings card's "Dev Card" tab; distinct from the
+ * on mount. Set from the Settings card's "Session Card" tab; distinct from the
  * per-card domain so changing the global default never disturbs an open card
  * that already carries its own remembered model. Mirrors the permission-mode
  * default domain.

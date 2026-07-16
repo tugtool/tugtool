@@ -433,7 +433,7 @@ function TabView({
 }: TabViewProps) {
   // Text cards publish their basename through `cardTitleStore` (the
   // static registry title is just "File"); consult it live so a file
-  // tab shows the leaf filename. Scoped to text cards so a Dev card's
+  // tab shows the leaf filename. Scoped to text cards so a Session card's
   // projectDir override never leaks into its tab label.
   const titleOverride = useSyncExternalStore(
     cardTitleStore.subscribe,

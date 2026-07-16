@@ -55,7 +55,7 @@
  *   - `status === "error"` → the body is dropped; the chrome paints the
  *     error band from the plain-text `tool_result.output`.
  *
- * Registration: `dev-assistant-renderer-registrations.ts` imports this
+ * Registration: `session-assistant-renderer-registrations.ts` imports this
  * module and calls `registerToolBlock("agent", TaskToolBlock)` from
  * its registration loop — the historical `task` name resolves here via
  * the `task → agent` alias ([D16]).

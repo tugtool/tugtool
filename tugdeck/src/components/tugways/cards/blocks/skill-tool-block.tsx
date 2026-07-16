@@ -11,7 +11,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `BlockChrome` owns the frame: a `Sparkles` icon + the tool
  *    name `Skill` + a `/<skill-name>` args summary, the status stripe,
- *    the inline `DevCautionBadge` (when the dispatch flagged drift),
+ *    the inline `SessionCautionBadge` (when the dispatch flagged drift),
  *    and the error band.
  *  - **Header** — `Skill · /<skill-name>` (the `/` prefix mirrors how
  *    skills are referenced in Claude Code prompts; the `<code>`

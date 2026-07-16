@@ -8,7 +8,7 @@
 
 ## Why a turn-lifecycle projection
 
-A Dev card runs a conversation as a sequence of *turns*: the user submits, the assistant streams a reply (possibly pausing for a permission prompt or a tool call), the turn completes, the card returns to idle. That progression is a single state machine — `CodeSessionStore`'s `phase` — but many surfaces need to *react* to where it is. The Z5 submit button poses as a blue arrow or a red stop; the status indicator pulses; the Mode / Model / Effort chips light or dim; the Permission Mode menu enables or greys. If each surface read the raw phase and re-decided "is a turn live?" for itself, the decisions would drift — one surface would think the turn is over while another still holds it, and a setting changed in that gap would race the turn.
+A Session card runs a conversation as a sequence of *turns*: the user submits, the assistant streams a reply (possibly pausing for a permission prompt or a tool call), the turn completes, the card returns to idle. That progression is a single state machine — `CodeSessionStore`'s `phase` — but many surfaces need to *react* to where it is. The Z5 submit button poses as a blue arrow or a red stop; the status indicator pulses; the Mode / Model / Effort chips light or dim; the Permission Mode menu enables or greys. If each surface read the raw phase and re-decided "is a turn live?" for itself, the decisions would drift — one surface would think the turn is over while another still holds it, and a setting changed in that gap would race the turn.
 
 The turn lifecycle resolves this the way the card and route lifecycles do: the machine is a **source** that publishes its state as one derived projection, and every surface is a **delegate** that subscribes to that projection and supplies its own response. It is the Dev-session sibling of the deck's `CardLifecycle` ([lifecycle-delegates.md](lifecycle-delegates.md)) and the prompt entry's `RouteLifecycle` ([route-lifecycle.md](route-lifecycle.md)) — same source→delegate shape, different scope: one machine per bound Dev session, projected purely, read everywhere. This is the executable form of [L28].
 
@@ -32,7 +32,7 @@ Every surface that cares about turn state subscribes to one of the two faces and
 | Delegate | Reads | Response |
 |----------|-------|----------|
 | Z5 submit button | `submitButtonMode` | Renders arrow / stop / inert pose (`tug-prompt-entry-submit-button.ts`) |
-| Z4B Mode / Model / Effort chips | `canSubmit` | `disabled={!canSubmit}` (`dev-card.tsx`) |
+| Z4B Mode / Model / Effort chips | `canSubmit` | `disabled={!canSubmit}` (`session-card.tsx`) |
 | `setMode` / `setModel` / `setEffort` | `canSubmit` | Decline a user change while a turn is live (the seam, below) |
 | `/mode` `/model` `/effort`, ⇧⌘P cycle, `SET_PERMISSION_MODE` | `canSubmit` | Refuse with a caution instead of a silent no-op (`guardTurnIdleForSetting`) |
 | Native Permission Mode menu | `canChangeSettings` (= `canSubmit`) | Radios + Cycle validate disabled mid-turn (`host-menu-state.ts` → `useMenuStatePublication` → Swift `validateMenuItem`); with every child disabled AppKit auto-disables the parent |
@@ -77,13 +77,13 @@ On the `$` shell route the Z5 submit button is route-aware (`routeAwareSubmitBut
 
 Primary canonical authority — the source is the tie-breaker.
 
-- [`tugdeck/src/lib/code-session-store/lifecycle-state.ts`](../tugdeck/src/lib/code-session-store/lifecycle-state.ts) — `deriveLifecycleSnapshot`, the `DevLifecycleState` / `DevSubmitButtonMode` vocabulary, and the [DT09] reference-stability check.
+- [`tugdeck/src/lib/code-session-store/lifecycle-state.ts`](../tugdeck/src/lib/code-session-store/lifecycle-state.ts) — `deriveLifecycleSnapshot`, the `SessionLifecycleState` / `SessionSubmitButtonMode` vocabulary, and the [DT09] reference-stability check.
 - [`tugdeck/src/lib/code-session-store.ts`](../tugdeck/src/lib/code-session-store.ts) — the phase machine and the `canSubmit` / `canInterrupt` snapshot fields.
 
 Secondary implementation source — where the projection is consumed as delegates.
 
 - [`tugdeck/src/lib/use-permission-mode.ts`](../tugdeck/src/lib/use-permission-mode.ts), [`use-model.ts`](../tugdeck/src/lib/use-model.ts), [`use-effort.ts`](../tugdeck/src/lib/use-effort.ts) — the setter seam and its `fromRestore` exemption.
-- [`tugdeck/src/components/tugways/cards/dev-card.tsx`](../tugdeck/src/components/tugways/cards/dev-card.tsx) — the chips' `disabled={!canSubmit}` wiring and `guardTurnIdleForSetting` for the slash / cycle / menu handlers.
+- [`tugdeck/src/components/tugways/cards/session-card.tsx`](../tugdeck/src/components/tugways/cards/session-card.tsx) — the chips' `disabled={!canSubmit}` wiring and `guardTurnIdleForSetting` for the slash / cycle / menu handlers.
 - [`tugdeck/src/lib/host-menu-state.ts`](../tugdeck/src/lib/host-menu-state.ts) + [`components/tugways/cards/use-menu-state-publication.ts`](../tugdeck/src/components/tugways/cards/use-menu-state-publication.ts) + [`tugapp/Sources/AppDelegate.swift`](../tugapp/Sources/AppDelegate.swift) — `canChangeSettings` from publish to Swift `validateMenuItem`.
 
 Regression coverage.

@@ -4,7 +4,7 @@
  *
  * ## Why this exists
  *
- * The user-reported regression: a Dev card with multi-line text,
+ * The user-reported regression: a Session card with multi-line text,
  * a non-collapsed selection, and an editor scroll position loses
  * those axes on `Maker > Reload` AND on quit + relaunch. The
  * gallery card `gallery-prompt-entry` exhibits the same shape
@@ -38,7 +38,7 @@
  *   `gallery-prompt-entry` (`{ currentRoute, perRoute, maximized }`
  *   wrapper) and `dev` (production card; same wrapper as the
  *   entry, mounted after a fake-session bind via
- *   {@link App.bindDevSession}).
+ *   {@link App.bindSession}).
  *
  *   Triggers are `app.appReload()` (Layer 1 primitive — same
  *   Tug.app + tugcast process, fresh WKWebView) and
@@ -120,7 +120,7 @@ const TEST_TIMEOUT_MS = 90_000;
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "dev";
+  | "session";
 
 const PROMPT_INPUT_SELECTOR =
   '[data-slot="tug-text-editor"] .cm-content';
@@ -290,10 +290,10 @@ async function setupPhaseA(
     focusCardId: "A",
   });
 
-  if (componentId === "dev") {
-    // Dev-card mounts its picker by default. Bind a fake session
-    // so `DevCardBody` (which embeds `TugPromptEntry`) renders.
-    await app.bindDevSession("A");
+  if (componentId === "session") {
+    // Session-card mounts its picker by default. Bind a fake session
+    // so `SessionCardBody` (which embeds `TugPromptEntry`) renders.
+    await app.bindSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -486,8 +486,8 @@ async function reseedFromDisk(
     focusCardId: "A",
   });
 
-  if (componentId === "dev") {
-    await app.bindDevSession("A");
+  if (componentId === "session") {
+    await app.bindSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -738,13 +738,13 @@ describe.skipIf(!SHOULD_RUN)(
 
     test(
       "dev × appReload",
-      () => runAppReloadScenario("dev"),
+      () => runAppReloadScenario("session"),
       TEST_TIMEOUT_MS,
     );
 
     test(
       "dev × relaunch",
-      () => runRelaunchScenario("dev"),
+      () => runRelaunchScenario("session"),
       TEST_TIMEOUT_MS,
     );
   },

@@ -34,7 +34,7 @@ const REQUEST_ID = "at0165-perm-1";
 
 const CARD = (id: string) => `[data-card-id="${id}"]`;
 const TAB = (id: string) => `[data-testid="tug-tab-${id}"]`;
-const DIALOG = `${CARD("A")} [data-slot="dev-permission-dialog"]`;
+const DIALOG = `${CARD("A")} [data-slot="session-permission-dialog"]`;
 
 // Two separate panes, each one card. p2 (card B) is the active/frontmost pane.
 // Closing B destroys p2 and promotes p1 (card A) to frontmost — a pane
@@ -172,16 +172,16 @@ describe.skipIf(!SHOULD_RUN)("AT0165: activation restores the first responder", 
       const app = await launchTugApp({ testName: "at0165-bugA" });
       try {
         await app.enableDeckTrace(true);
-        await app.seedDeckState({ state: twoCards("dev"), focusCardId: "A" });
+        await app.seedDeckState({ state: twoCards("session"), focusCardId: "A" });
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Present a card-modal permission dialog on A.
-        await app.driveDevSession("A", { op: "send", text: "count lines with tokei" });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", { op: "send", text: "count lines with tokei" });
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: controlRequestForward(),

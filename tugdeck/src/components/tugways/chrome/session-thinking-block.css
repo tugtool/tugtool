@@ -1,0 +1,240 @@
+/* @tug-pairings:
+   - --tugx-block-bg / --tugx-block-text-color-muted           (shared block frame; from tugx-block.css)
+   - --tugx-block-row-hover-bg / --tugx-block-text-color       (shared hover overlay)
+   `SessionThinkingBlock` paints a tinted strip under the assistant
+   reasoning preview. Foreground roles split between the strong
+   "Thinking" label and the muted preview / body text. Hover paints a
+   darker tint on the header to signal the toggle is interactive.
+   Shared block-surface scaffold lives in `styles/tugx-block.css`.
+*/
+
+/**
+ * session-thinking-block.css — `SessionThinkingBlock` chrome.
+ *
+ * Renders the thinking strip inline at the top of a Dev code row:
+ * a tinted button-row (chevron + "Thinking" label + collapsed-state
+ * preview) above a grid-animated body that holds the streaming
+ * `TugMarkdownBlock`.
+ *
+ * Two state surfaces drive every visual:
+ *   - `[data-collapsed="true|false"]` on the root → animates the body
+ *     row between `grid-template-rows: 0fr` (collapsed) and `1fr`
+ *     (expanded). Smooth, no max-height cap. Per L06, the toggle is
+ *     a class swap; the rule below interpolates.
+ *   - `[data-empty="true|false"]` on the root → in streaming mode,
+ *     hides the chrome entirely until thinking content arrives so a
+ *     turn that produces no thinking shows nothing. The static-mode
+ *     parent should already skip the mount when `turn.thinking ===
+ *     ""`, but the rule below is a belt-and-braces guard.
+ *
+ * The collapse animation respects `prefers-reduced-motion`: instant
+ * snap when the user has reduced motion enabled.
+ *
+ * Token sources:
+ *  - Shared block-surface scaffold (frame, header strip padding, hover
+ *    overlay) comes from `--tugx-block-*` in `styles/tugx-block.css`.
+ *    Consumed directly in the rules below.
+ *  - Thinking-specific slots (wider lg margin, label size + weight,
+ *    preview size, italic content style, collapse animation) live in
+ *    the body{} block below as `--tugx-thinking-*`.
+ *
+ * Tuglaw cross-check:
+ *   - [L06] appearance via DOM-mutation + CSS, not React state. The
+ *     React side only flips `data-collapsed`; the rule below does
+ *     the visual.
+ *   - [L17] `--tugx-block-*` and `--tugx-thinking-*` each resolve to
+ *     `--tug7-*` in one hop.
+ *   - [L19] component-authoring guide — file-pair, module docstring,
+ *     `data-slot="session-thinking-block"`.
+ *   - [L20] component-token sovereignty — every visible declaration
+ *     consumes a `--tugx-*` token. No literal colors here.
+ */
+
+/* ---- Component-tier aliases — thinking-specific only [L17] ----
+ *
+ * Scoped under `[data-variant="note"]` — the block-variant contract marker
+ * the root stamps. `SessionThinkingBlock` is the `note` variant: it adopts the
+ * shared `--tugx-block-*` SURFACE (frame, strip padding, hover overlay) and
+ * keeps these `--tugx-thinking-*` tones as its sovereign sub-family ([P08],
+ * [L20]) — the label, preview, italic body, and collapse animation have no
+ * `--tugx-block-*` counterpart. Keying the defs on the attribute (not `body`)
+ * makes the variant a real contract citizen: any `note` root gets them. */
+
+[data-variant="note"] {
+  /* Margin — wider (lg) than the shared block-margin (md) because
+   * the thinking strip is a major chrome element that benefits from
+   * extra vertical breathing room. Top-only AND follower-position-only:
+   * blocks space with top margins (see the run-end comment in
+   * block-chrome.css), and the margin applies only when the strip
+   * follows a sibling — a first-in-body strip sits flush so the
+   * transcript entry's body-margin token alone sets the gap under the
+   * attribution header. The follower rules below carry the lg gap
+   * under the strip. */
+  --tugx-thinking-margin: var(--tug-space-lg) 0 0 0;
+
+  /* Label — strong "Thinking" header text */
+  --tugx-thinking-label-size:   var(--tug-font-size-sm);
+  --tugx-thinking-label-weight: var(--tug-font-weight-semibold);
+
+  /* Preview — collapsed-only one-line summary */
+  --tugx-thinking-preview-size:   var(--tug-font-size-sm);
+  --tugx-thinking-preview-weight: var(--tug-font-weight-regular);
+
+  /* Content — italic body for streaming reasoning */
+  --tugx-thinking-content-padding: var(--tug-space-xs) var(--tug-space-md) var(--tug-space-md);
+  --tugx-thinking-content-size:    var(--tug-font-size-sm);
+  --tugx-thinking-content-style:   italic;
+
+  /* Collapse animation */
+  --tugx-thinking-collapse-duration: var(--tug-motion-duration-moderate);
+  --tugx-thinking-collapse-easing:   var(--tug-motion-easing-standard);
+
+  --tugx-thinking-focus-ring: var(--tug7-element-global-text-normal-link-rest);
+}
+
+.session-thinking-block {
+  display: block;
+  margin: 0;
+  padding: 0;
+  /* Match the tool-block chrome surface (the raised `--tugx-block-chrome-bg`),
+   * not the inset `--tugx-block-bg`, so a note reads as the same card as every
+   * other block rather than a darker inset. */
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  overflow: hidden;
+}
+
+/* Follower-position margin — the strip opens its lg gap only when it
+ * follows a sibling; first-in-body it sits flush under the attribution
+ * header. */
+* + .session-thinking-block {
+  margin: var(--tugx-thinking-margin);
+}
+
+/* Top-margins-only spacing (see the run-end comment in block-chrome.css):
+ * the strip carries no bottom margin, so whatever follows owns the lg gap
+ * the strip's bottom edge used to provide. */
+.session-thinking-block + .tug-markdown-block,
+.session-thinking-block + .tool-block-chrome {
+  margin-top: var(--tug-space-lg);
+}
+
+/* ---- Hide the entire strip when there is no thinking content yet.
+ * Streaming-mode default — the chrome appears only after the first
+ * non-empty observation. Static mode usually skips the mount, so this
+ * branch only fires in defensive cases.
+ */
+.session-thinking-block[data-empty="true"] {
+  display: none;
+}
+
+/* ---- Header: identity toggle (left) + affordance cluster (right) ----
+ * Refines [P07]: note now wears the shared block affordance pattern. The
+ * identity region (label + collapsed preview) is the flexible left column and
+ * stays click-to-toggle; the trailing cluster carries the shared Copy + fold
+ * cue on the RIGHT, matching every other block. */
+
+.session-thinking-block-header {
+  display: flex;
+  align-items: center;
+  /* Trailing-edge gap so the affordance cluster doesn't touch the frame. */
+  padding-inline-end: var(--tug-space-sm);
+}
+
+/* The clickable identity region — carries the strip padding and the label /
+ * preview typography. Full-strength label color to match the tool header's
+ * name (the preview keeps its own muted tone below). */
+.session-thinking-block-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-block-strip-gap);
+  padding: var(--tugx-block-strip-padding);
+  background: transparent;
+  border: 0;
+  color: var(--tugx-block-text-color);
+  font-family: inherit;
+  font-size: var(--tugx-thinking-label-size);
+  font-weight: var(--tugx-thinking-label-weight);
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-thinking-block-toggle:focus-visible {
+  outline: 2px solid var(--tugx-thinking-focus-ring);
+  outline-offset: -2px;
+}
+
+/* Trailing affordance cluster — the shared Copy + fold cue, at the tool
+ * header's xs scale with a matching 2xs gap. */
+.session-thinking-block-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}
+
+.session-thinking-block-label {
+  flex: 0 0 auto;
+}
+
+/* ---- Preview (collapsed-only one-line summary) ---- */
+
+.session-thinking-block-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tugx-block-text-color-muted);
+  font-size: var(--tugx-thinking-preview-size);
+  font-weight: var(--tugx-thinking-preview-weight);
+}
+
+/* While expanded the preview is irrelevant — body content is visible.
+ * Hidden visually but kept in the DOM so the imperative text-content
+ * write path is identical regardless of collapse state.
+ */
+.session-thinking-block[data-collapsed="false"] .session-thinking-block-preview {
+  visibility: hidden;
+}
+
+/* ---- Body (grid-template-rows animation) ---- */
+
+.session-thinking-block-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--tugx-thinking-collapse-duration)
+    var(--tugx-thinking-collapse-easing);
+}
+
+.session-thinking-block[data-collapsed="true"] .session-thinking-block-body {
+  grid-template-rows: 0fr;
+}
+
+.session-thinking-block-viewport {
+  /* The grid child must clip during the 0fr→1fr interpolation —
+   * without `overflow: hidden`, the body text spills out of its
+   * intended height during the animation.
+   */
+  overflow: hidden;
+  min-height: 0;
+}
+
+.session-thinking-block-content {
+  padding: var(--tugx-thinking-content-padding);
+  color: var(--tugx-block-text-color-muted);
+  font-size: var(--tugx-thinking-content-size);
+  font-style: var(--tugx-thinking-content-style);
+}
+
+/* ---- Reduced motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .session-thinking-block-body,
+  .session-thinking-block-chevron {
+    transition: none;
+  }
+}

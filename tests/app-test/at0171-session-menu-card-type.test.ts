@@ -3,14 +3,14 @@
  * session-bound validation.
  *
  * The Session menu is disabled-not-hidden: every `session.*` item
- * requires a frontmost dev card, and below that tier:
+ * requires a frontmost session card, and below that tier:
  *
- *   - `session.focusPrompt` — any frontmost dev card (bound or not).
+ *   - `session.focusPrompt` — any frontmost session card (bound or not).
  *   - `session.stop` — an interruptible turn (`canInterrupt`).
  *   - `session.rewind` — a bound session with committed turns.
  *   - everything else — a bound session.
  *
- * Two states here: an UNBOUND dev card (picker stage — no dev block
+ * Two states here: an UNBOUND session card (picker stage — no dev block
  * rides menuState, so only Focus Prompt and the tier-3-only items
  * light up) and a BOUND, idle session (command surfaces enabled, Stop
  * and Rewind still gated). The non-dev negative half (every surface
@@ -26,9 +26,9 @@ import { launchTugApp, type App } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-function devDeckShape() {
+function sessionDeckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -70,17 +70,17 @@ async function expectEnabled(app: App, identifier: string, want: boolean): Promi
 
 describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => {
   test(
-    "unbound dev card: Focus Prompt and tier-3 items enabled; bound-session items disabled",
+    "unbound session card: Focus Prompt and tier-3 items enabled; bound-session items disabled",
     async () => {
       const app = await launchTugApp({ testName: "at0171-unbound" });
       try {
         await app.enableDeckTrace(true);
-        await app.seedDeckState({ state: devDeckShape(), focusCardId: "A" });
+        await app.seedDeckState({ state: sessionDeckShape(), focusCardId: "A" });
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
 
-        // Card-type tier passes (dev card frontmost)…
+        // Card-type tier passes (session card frontmost)…
         await expectEnabled(app, "session.focusPrompt", true);
         await expectEnabled(app, "file.exportTranscript", true);
         await expectEnabled(app, "help.shortcuts", true);
@@ -109,11 +109,11 @@ describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => 
       const app = await launchTugApp({ testName: "at0171-bound-idle" });
       try {
         await app.enableDeckTrace(true);
-        await app.seedDeckState({ state: devDeckShape(), focusCardId: "A" });
+        await app.seedDeckState({ state: sessionDeckShape(), focusCardId: "A" });
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: "at0171-session" });
+        await app.bindSession("A", { tugSessionId: "at0171-session" });
         await app.awaitEngineReady("A");
 
         await expectEnabled(app, "session.focusPrompt", true);

@@ -1,5 +1,5 @@
 /**
- * DevPulseCard — the expanded view of the compact PULSE sparkline ([P12]).
+ * SessionPulseCard — the expanded view of the compact PULSE sparkline ([P12]).
  * Small-multiples: one metric block per channel, always all of them.
  *
  * Design canon (see the plan's research note): Tufte sparklines — no chrome,
@@ -21,7 +21,7 @@
  *         sampled imperatively off the render path ([P03]).
  *   [L06] the numeric value is written to the DOM imperatively on a calm tick
  *         — never React state, so a busy session doesn't re-render the card.
- *   [L19] `.tsx`/`.css` pair, `data-slot="dev-pulse-card"`.
+ *   [L19] `.tsx`/`.css` pair, `data-slot="session-pulse-card"`.
  *
  * @module components/tugways/cards/pulse-card
  */
@@ -197,19 +197,19 @@ function PulseRow({
   }, [session, channel]);
 
   return (
-    <div className="dev-pulse-card-row" data-activity-channel={channel}>
+    <div className="session-pulse-card-row" data-activity-channel={channel}>
       {/* One tinted block per metric (Gestalt common region — the label can
           only belong to the line it shares a box with), split into two
           zones: a reserved head band (label left, value right), then the
           graph beneath it. Separate zones, so the line can never run into
           the text no matter how hard it bursts. */}
-      <div className="dev-pulse-card-row-head">
+      <div className="session-pulse-card-row-head">
         <TugTooltip content={meta.blurb} side="left" align="center">
-          <span className="dev-pulse-card-label" tabIndex={-1}>
+          <span className="session-pulse-card-label" tabIndex={-1}>
             {meta.label}
           </span>
         </TugTooltip>
-        <span ref={valueRef} className="dev-pulse-card-value" data-idle="true" />
+        <span ref={valueRef} className="session-pulse-card-value" data-idle="true" />
       </div>
       <TugSparkline
         getSeries={getSeries}
@@ -219,14 +219,14 @@ function PulseRow({
         curve={descriptor.curve}
         width={SPARK_WIDTH}
         height={SPARK_HEIGHT}
-        className="dev-pulse-card-spark"
+        className="session-pulse-card-spark"
         title={`${meta.label} — ${meta.blurb}`}
       />
     </div>
   );
 }
 
-export function DevPulseCard({
+export function SessionPulseCard({
   session,
 }: {
   session: string;
@@ -235,9 +235,9 @@ export function DevPulseCard({
   // a flat baseline, and lights up when work arrives. No membership state,
   // no empty-state swap — the card never re-renders after mount.
   return (
-    <div className="dev-pulse-card" data-slot="dev-pulse-card">
-      <div className="dev-pulse-card-title">Pulse</div>
-      <div className="dev-pulse-card-rows">
+    <div className="session-pulse-card" data-slot="session-pulse-card">
+      <div className="session-pulse-card-title">Pulse</div>
+      <div className="session-pulse-card-rows">
         {VISIBLE_CHANNELS.map((channel) => (
           <PulseRow key={channel} session={session} channel={channel} />
         ))}

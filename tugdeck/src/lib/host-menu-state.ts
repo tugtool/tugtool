@@ -12,7 +12,7 @@
  *
  * Why an aggregator module rather than a push inside
  * `DeckManager.notify()`: menu enablement depends on more than deck
- * structure — the dev card's session state (bound, can-interrupt,
+ * structure — the session card's session state (bound, can-interrupt,
  * permission mode) changes without any deck mutation, so a second
  * publisher has to feed the same channel. One module owning the merged
  * payload keeps one wire channel and one diff.
@@ -204,11 +204,11 @@ export interface MenuStateActiveCard {
 }
 
 /**
- * Dev-card session block, published by the dev card's menu-state
+ * Session-card session block, published by the session card's menu-state
  * effect. Rides the payload only while its card is the focused pane's
  * active card.
  */
-export interface MenuStateDevBlock {
+export interface MenuStateSessionBlock {
   cardId: string;
   /** A session binding exists for the card. */
   sessionBound: boolean;
@@ -311,8 +311,8 @@ export interface MenuStatePayload {
   activeCard: MenuStateActiveCard | null;
   /** Whether a card is selected (see {@link MenuStateDeckProjection.selectionActive}). */
   selectionActive: boolean;
-  /** Dev-card session block; null unless the active card is a dev card. */
-  dev: MenuStateDevBlock | null;
+  /** Session-card session block; null unless the active card is a session card. */
+  session: MenuStateSessionBlock | null;
   /** Text-card block; null unless the active card is a Text card. */
   file: MenuStateFileBlock | null;
   /** Edit-menu capabilities of the current first responder. */
@@ -393,13 +393,13 @@ export class HostMenuStatePublisher {
     focusedActiveCardId: null,
   };
   /**
-   * Per-card dev blocks. Every mounted dev card publishes its own
+   * Per-card dev blocks. Every mounted session card publishes its own
    * block unconditionally; the flush (not the card) decides which one
    * rides the payload, by checking the focused pane's active card.
    */
-  private readonly devBlocks = new Map<string, MenuStateDevBlock>();
+  private readonly sessionBlocks = new Map<string, MenuStateSessionBlock>();
   /**
-   * Per-card File blocks, same rider discipline as {@link devBlocks}:
+   * Per-card File blocks, same rider discipline as {@link sessionBlocks}:
    * every mounted Text card publishes its own; the flush picks the one
    * whose card is the focused pane's active card.
    */
@@ -424,13 +424,13 @@ export class HostMenuStatePublisher {
     this.scheduleFlush();
   }
 
-  setDevBlock(cardId: string, block: MenuStateDevBlock): void {
-    this.devBlocks.set(cardId, block);
+  setSessionBlock(cardId: string, block: MenuStateSessionBlock): void {
+    this.sessionBlocks.set(cardId, block);
     this.scheduleFlush();
   }
 
-  clearDevBlock(cardId: string): void {
-    if (!this.devBlocks.delete(cardId)) return;
+  clearSessionBlock(cardId: string): void {
+    if (!this.sessionBlocks.delete(cardId)) return;
     this.scheduleFlush();
   }
 
@@ -466,9 +466,9 @@ export class HostMenuStatePublisher {
   private flush(): void {
     const { panes, activeCard, selectionActive, focusedActiveCardId } =
       this.deckProjection;
-    const dev =
-      activeCard?.component === "dev" && focusedActiveCardId !== null
-        ? (this.devBlocks.get(focusedActiveCardId) ?? null)
+    const session =
+      activeCard?.component === "session" && focusedActiveCardId !== null
+        ? (this.sessionBlocks.get(focusedActiveCardId) ?? null)
         : null;
     const file =
       activeCard?.component === "text" && focusedActiveCardId !== null
@@ -478,7 +478,7 @@ export class HostMenuStatePublisher {
       panes,
       activeCard,
       selectionActive,
-      dev,
+      session,
       file,
       edit: this.editCapabilities,
       recentDocuments: this.recentDocuments,
@@ -537,18 +537,18 @@ export function initHostMenuState(deck: DeckSource): void {
 }
 
 /**
- * Publish (or refresh) a dev card's session block. Called by the dev
+ * Publish (or refresh) a session card's session block. Called by the dev
  * card's menu-state effect on every relevant store change; a no-op
  * before {@link initHostMenuState} runs (browser-dev edge — the boot
  * sequence wires the publisher before any card mounts in-app).
  */
-export function publishDevMenuState(cardId: string, block: MenuStateDevBlock): void {
-  activePublisher?.setDevBlock(cardId, block);
+export function publishSessionMenuState(cardId: string, block: MenuStateSessionBlock): void {
+  activePublisher?.setSessionBlock(cardId, block);
 }
 
-/** Drop a dev card's session block (card unmount / services teardown). */
-export function clearDevMenuState(cardId: string): void {
-  activePublisher?.clearDevBlock(cardId);
+/** Drop a session card's session block (card unmount / services teardown). */
+export function clearSessionMenuState(cardId: string): void {
+  activePublisher?.clearSessionBlock(cardId);
 }
 
 /**

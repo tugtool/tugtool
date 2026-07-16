@@ -13,7 +13,7 @@
  * isn't probed here.)
  *
  * Also covers the card-type tier's negative half with a non-dev
- * active card: every dev-card command surface (`session.*`,
+ * active card: every session-card command surface (`session.*`,
  * `edit.copyLastResponse`, `file.exportTranscript`, `help.shortcuts`)
  * validates disabled.
  *
@@ -150,7 +150,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
   );
 
   test(
-    "two panes: pane cycling enabled; non-dev card gates the dev-command surfaces off",
+    "two panes: pane cycling enabled; non-session card gates the dev-command surfaces off",
     async () => {
       const app = await launchTugApp({ testName: "at0169-twopanes" });
       try {
@@ -164,7 +164,7 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
         await expectEnabled(app, "window.nextCard", false);
 
         // Card-type tier, negative half: the active card is a
-        // gallery-input, so every dev-card command surface is disabled.
+        // gallery-input, so every session-card command surface is disabled.
         await expectEnabled(app, "session.focusPrompt", false);
         await expectEnabled(app, "session.stop", false);
         await expectEnabled(app, "session.model", false);

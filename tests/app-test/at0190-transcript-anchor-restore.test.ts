@@ -58,7 +58,7 @@ describe.skipIf(!SHOULD_RUN)("at0190: scrolled-up transcript restores pixel-perf
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
-      const seeded = await seedFixtureSession("dev-transcript-basic", "at0190");
+      const seeded = await seedFixtureSession("session-transcript-basic", "at0190");
       tugbankWrite(
         tugbankPath,
         "dev.tugtool.dev",
@@ -119,7 +119,7 @@ describe.skipIf(!SHOULD_RUN)("at0190: scrolled-up transcript restores pixel-perf
           CARD_ID,
         );
         expect(onDisk).not.toBeNull();
-        const regionA = onDisk?.value?.regionScroll?.["dev-card-transcript"];
+        const regionA = onDisk?.value?.regionScroll?.["session-card-transcript"];
         expect(regionA).toBeTruthy();
         expect(regionA?.meta?.atBottom).not.toBe(true);
         expect(typeof regionA?.meta?.anchor?.index).toBe("number");

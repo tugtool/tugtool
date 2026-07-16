@@ -331,7 +331,7 @@ fn run_join_resolve(
             }
         }
         return Err(format!(
-            "{} file(s) unresolved; run the join from a Dev card for AI assist",
+            "{} file(s) unresolved; run the join from a Session card for AI assist",
             outcome.unresolved.len()
         ));
     };

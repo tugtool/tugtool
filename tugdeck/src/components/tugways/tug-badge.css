@@ -125,7 +125,7 @@
 /* ============================================================================
    Component-scoped slots ([L20])
 
-   The two-line caption line borrows the dev-card status-bar legend
+   The two-line caption line borrows the session-card status-bar legend
    discipline (uppercase, 0.08em tracking, weight 600, the shared
    field-label colour). Size and tracking live in the badge's own slot
    so the caption tunes independently of TugBox's legend tokens — the
@@ -155,7 +155,7 @@ body {
   /* Two-line chip heights mirror the TugPushButton height scale
      (`--tug-button-{size}-height`: 20 / 24 / 28 / 32 / 36 px) by value,
      not by token — a two-line chip reads as tall and deliberate as a
-     button, and the `lg` face matches the dev-card submit button
+     button, and the `lg` face matches the session-card submit button
      (`TugPushButton size="lg"`). Owning these under the badge's own slot
      keeps [L20] intact (no reach into TugButton's namespace); the badge's
      own single-line `height` scale is unchanged. `xl` / `2xl` extend the

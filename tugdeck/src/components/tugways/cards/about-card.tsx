@@ -50,7 +50,7 @@ export function AboutCardContent({ cardId }: { cardId: string }) {
   const copyright = info?.copyright ?? PLACEHOLDER;
 
   // Publish the chrome title from card content via the same
-  // `cardTitleStore` mechanism the dev card uses. The About card
+  // `cardTitleStore` mechanism the session card uses. The About card
   // declares no static registry title — its title *is* its dynamic
   // identity — so this override stands alone as the whole title bar
   // ("About Tug-debug"). useLayoutEffect so the title is set before

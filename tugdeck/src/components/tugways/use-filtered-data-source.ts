@@ -70,7 +70,7 @@
  *    id / kind / role appears at its filtered position with no copy.
  *  - Adds `baseIndexFor(filteredIndex): number` for typed cell
  *    renderers that need to query the base data source's extension
- *    methods (e.g. `DevTranscriptDataSource.rowAt(baseIndex)`).
+ *    methods (e.g. `SessionTranscriptDataSource.rowAt(baseIndex)`).
  *
  * ## `filterToken` discipline
  *
@@ -134,7 +134,7 @@
  *    test file), module docstring, exported types.
  *
  * Decisions:
- *  - tugplan-dev-picker-redesign [D01] uitableview-search-split.
+ *  - tugplan-session-picker-redesign [D01] uitableview-search-split.
  */
 
 import React from "react";

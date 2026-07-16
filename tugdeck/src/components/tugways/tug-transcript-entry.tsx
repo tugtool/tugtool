@@ -135,7 +135,7 @@ export interface TugTranscriptEntryProps {
   /**
    * Optional in-flight indicator slot, sandwiched between the body and
    * the `controls` slot. Used by transcript hosts to mount per-row
-   * in-flight chrome (e.g. the Dev card's `DevZ1C` indicator) on the
+   * in-flight chrome (e.g. the Session card's `SessionZ1C` indicator) on the
    * row that is currently the in-flight tip; every other row passes
    * `undefined` / `null` and the slot consumes no vertical space.
    *

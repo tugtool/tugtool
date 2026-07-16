@@ -18,7 +18,7 @@
  * - `resume_failed` — tugcast emitted `SESSION_STATE: errored` for a
  *   restoring session, or the post-binding observer tripped on a
  *   resume failure.
- * - `restore_canceled` — user clicked Cancel in `DevRestoring`.
+ * - `restore_canceled` — user clicked Cancel in `SessionRestoring`.
  * - `restore_timed_out` — restore-registry timeout elapsed without
  *   either a binding or an errored response.
  * - `signed_out` — the per-session auth gate found the CLI logged out

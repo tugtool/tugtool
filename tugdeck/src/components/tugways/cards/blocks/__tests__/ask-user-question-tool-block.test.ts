@@ -34,8 +34,8 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../dev-assistant-renderer-dispatch";
-import type { ParsedQuestion } from "@/components/tugways/chrome/dev-question-dialog";
+} from "../../session-assistant-renderer-dispatch";
+import type { ParsedQuestion } from "@/components/tugways/chrome/session-question-dialog";
 
 function q(question: string, multiSelect: boolean, labels: string[]): ParsedQuestion {
   return {

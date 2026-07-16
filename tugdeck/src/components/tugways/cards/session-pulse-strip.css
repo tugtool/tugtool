@@ -1,0 +1,351 @@
+/**
+ * session-pulse-strip.css — the Z2 PULSE strip's scoped styling.
+ *
+ * One fixed-height line: a letterspaced mono PULSE legend, then the
+ * machine's latest thought in a small italic, ellipsized. A changed line
+ * SWAPS INSTANTLY — one text node, no animation. Text cannot cross-fade
+ * (two different strings in one box interleave their glyphs into a
+ * smash), and the dwell paces changes ≥1.8s apart, so an instant replace
+ * reads calm; the sparkline carries the liveness.
+ *
+ * Tuglaw cross-check:
+ *  - [L19] component file pair with `data-slot="session-pulse-strip"`.
+ *  - [L20] the strip owns its own legend/stage/text/placeholder
+ *    scope; the session card contributes only the mount position.
+ *  - [L16] color-setting rules pair with `@tug-renders-on` (the strip
+ *    rides the card's status surface).
+ *
+ * @module components/tugways/cards/session-pulse-strip
+ */
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-strip {
+  /* One fixed-height line. The line box equals the strip height, so the
+   * single line centers vertically and the legend + text — same font-size,
+   * same line box — share ONE baseline. Tall typeset math crops (overflow)
+   * rather than moving layout. */
+  --session-pulse-strip-height: 34px;
+  --session-pulse-strip-font-size: 0.75rem;
+  /* The legend matches the Z2 status labels' size exactly; the line text
+   * keeps its own larger size. */
+  --session-pulse-strip-label-size: 0.5625rem;
+  /* ── Geometry fine-tuning (one location) ──────────────────────────────
+   * Each offset nudges one element up (negative) or down (positive) from
+   * its flex-centered rest position, via translateY — so it shifts only
+   * that element and never changes the bar's height or flow. The text
+   * offset moves the whole stage, so every message (commentary, None,
+   * Done) shifts together. Bar height is --session-pulse-strip-height above. */
+  --session-pulse-strip-legend-offset-y: 1px;
+  --session-pulse-strip-text-offset-y: 1px;
+  --session-pulse-strip-spark-offset-y: 0px;
+  /* Horizontal gap between the PULSE label and the text that follows it:
+   * positive nudges the text right (away from the label), negative pulls it
+   * left (toward the label). Moves the whole stage, so every message tracks. */
+  --session-pulse-strip-text-offset-x: -2px;
+  /* How tightly the keyboard focus ring hugs the PULSE label pill (smaller =
+   * tighter). The global default is 2px; this label wears a snugger ring. */
+  --session-pulse-strip-legend-ring-offset: 0px;
+  display: flex;
+  /* Optically center the small label against the larger line text (NOT
+   * baseline-aligned — that drops the small label low). */
+  align-items: center;
+  gap: var(--tug-space-sm);
+  flex: 0 0 auto;
+  height: var(--session-pulse-strip-height);
+  line-height: var(--session-pulse-strip-height);
+  box-sizing: border-box;
+  padding-block: 0;
+  padding-inline: var(--tug-space-md);
+  /* The strip MIRRORS the transcript — same background — so it reads as a
+   * distinct band between the Z2 status row (its own status surface) and the
+   * text editor, with NO rules of its own. Z2 drops its bottom border when
+   * this strip follows (see session-card.css), so the only divider in the
+   * cluster is the full-contrast transcript→Z2 rule above. */
+  background-color: var(--tugx-pane-bg);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-strip-legend {
+  /* A button-rooted popover trigger (the recent-pulses history), styled to
+   * read as the legend label: same font + size as the text (NOT mono),
+   * uppercase + tracking matching the Z2 status labels
+   * (`.session-telemetry-endcap-label`). A subtle hover tint + pointer makes the
+   * click target discoverable, exactly as the Z2 status cells do. */
+  appearance: none;
+  border: none;
+  margin: 0;
+  /* A taller pill than the bare text so the click target is easy to hit; the
+     text is centered in it (both axes) rather than nudged. The trailing
+     letter-spacing pads the right edge, so a matching start indent keeps the
+     glyph run optically centered. */
+  height: 24px;
+  padding-inline: 7px;
+  padding-block: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-indent: 0.18em;
+  line-height: 1;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: inherit;
+  font-size: var(--session-pulse-strip-label-size);
+  letter-spacing: 0.18em;
+  flex: 0 0 auto;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  transform: translateY(var(--session-pulse-strip-legend-offset-y));
+}
+
+.session-pulse-strip-legend:hover {
+  /* This is a ghost-control trigger; use the interactive-control hover tint
+     (white a:100), which reads with real contrast on the pulse bar's darker
+     surface — twice the highlight `hover` tint the Z2 cells use. */
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+/* While the popover is open the trigger stays lit (Radix sets data-state). */
+.session-pulse-strip-legend[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
+}
+
+/* Hug the focus ring tighter to the short PULSE pill — the global 2px offset
+   reads tubby on a 24px control. The ring still follows the pill's own
+   border-radius; only the gap shrinks (see --session-pulse-strip-legend-ring-offset). */
+.session-pulse-strip-legend[data-key-view-kbd] {
+  outline-offset: var(--session-pulse-strip-legend-ring-offset);
+}
+
+/* The cross-fade stage: fills the remaining width so the text runs to the
+ * strip's right padding before it ellipsizes (no character-count clip). */
+.session-pulse-strip-stage {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  transform: translate(
+    var(--session-pulse-strip-text-offset-x),
+    var(--session-pulse-strip-text-offset-y)
+  );
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-strip-text {
+  /* The current line sits IN FLOW so its baseline drives the stage's
+   * baseline (shared with the legend). One line, ellipsized at the stage's
+   * right edge — fills the available width, not a character count. */
+  display: block;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--session-pulse-strip-font-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The activity sparkline; flex-centered in the bar, then nudged by the
+ * spark offset token (see --session-pulse-strip-spark-offset-y above). */
+.session-pulse-strip-spark {
+  transform: translateY(var(--session-pulse-strip-spark-offset-y));
+}
+
+/* The sparkline's popover trigger: a button wrapper that wears the same
+ * ghost-control hover/active tint as the PULSE legend, so both entry points to
+ * the expanded views read as one discoverable pair. The padding gives the tint
+ * a pill to fill; a matching negative margin absorbs it so wrapping the
+ * sparkline never shifts the strip layout. */
+.session-pulse-strip-spark-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 5px;
+  margin: -3px -5px;
+  border: none;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.session-pulse-strip-spark-trigger:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+/* While the detail popover is open the trigger stays lit (Radix data-state),
+   mirroring the legend pill. */
+.session-pulse-strip-spark-trigger[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-strip-placeholder {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── Two-level line: "intent › action" ─────────────────────────────────
+   The retained goal (muted context) leads into the live beat (primary).
+   The line is a flex row so the BEAT is layout-pinned and the INTENT
+   ellipsizes first — the thing happening now is never the part that gets
+   cut, the inversion the old single-run ellipsis produced. `›` is a
+   directional divider (reads "into detail"), not the symmetric bullet. */
+.session-pulse-line--twolevel {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* The goal: muted, shrinks first, ellipsized. Its markdown emphasis is
+   flattened (see below) so it stays a calm context line and never
+   flickers to bold/mono as tool beats start and stop. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-intent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Emphasis flattening: a `**bold**` or `/slash` code span in the goal
+   must not out-shout the muted context tone. Scoped to the intent only —
+   a standalone monologue line (rendered as the bright beat) keeps full
+   markdown. */
+.session-pulse-intent :is(strong, b, em, i) {
+  font-weight: inherit;
+  font-style: inherit;
+}
+.session-pulse-intent code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-intent-sep {
+  flex: 0 0 auto;
+  margin-inline: 0.45em;
+  color: var(--tug7-element-global-text-normal-muted-disabled-rest);
+}
+
+/* The live beat: primary reading. Pinned (does not shrink to make room
+   for the goal), brighter, a touch heavier so it reads as the action. */
+/* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
+.session-pulse-beat {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+/* Rendered markdown flattens to one inline run: the strip is a single
+ * line; block wrappers from the parse lose their box behavior. */
+.session-pulse-strip-text :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.session-pulse-strip-text li {
+  list-style: none;
+}
+
+.session-pulse-strip-text code {
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.95em;
+}
+
+/* Transcript parity inside one line: display math flows inline, media
+ * shrinks to text height, tables flatten to an inline run. */
+.session-pulse-strip-text .katex-display {
+  display: inline;
+  margin: 0;
+}
+
+.session-pulse-strip-text .katex-display > .katex {
+  display: inline;
+  white-space: nowrap;
+}
+
+.session-pulse-strip-text :is(img, svg, video) {
+  max-height: 1.1em;
+  width: auto;
+  vertical-align: text-bottom;
+}
+
+.session-pulse-strip-text :is(table, thead, tbody, tr, th, td) {
+  display: inline;
+  padding: 0;
+  border: none;
+}
+
+/* KaTeX inside the strip: clamp the engine's 1.21em default so a
+ * fraction stack fits the fixed box. */
+.session-pulse-strip-text .katex {
+  font-size: 1.05em;
+}
+
+/* ── PULSE legend popover: recent pulses, grouped by intent ────────────────
+   Composed on TugPopupListFrame (kind="item") — the titled surface the Z2
+   status popups share, so the recent-pulses list reads as one of that
+   family. The frame owns width, padding, titlebar chrome, and the scroll
+   cap; these rules add only the intent-group vocabulary. */
+
+/* Space between two intent groups so a new goal reads as a fresh section. */
+.session-pulse-history-group + .session-pulse-history-group {
+  margin-block-start: var(--tug-space-sm);
+}
+
+/* The goal heading over a run of beats. Shown ONCE per group (not on
+   every row, the old repetition). Prose, so it drops the frame's mono
+   body face for the ambient sans and wraps rather than ellipsizing; muted
+   so the beats beneath read as the primary data. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-pulse-history-intent {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding: var(--tug-space-xs) var(--tug-space-sm) var(--tug-space-2xs);
+}
+
+/* Flatten the goal's markdown so the heading stays calm (no bold/mono
+   shouting over the muted context tone), and collapse block wrappers to
+   one inline run so it wraps as plain prose. */
+.session-pulse-history-intent :is(p, ul, ol, li, blockquote) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+.session-pulse-history-intent :is(strong, b, em, i) {
+  font-weight: inherit;
+  font-style: inherit;
+}
+.session-pulse-history-intent code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* Beat rows flatten their rendered markdown to one inline run so the
+   item-primary's single-line ellipsis holds. */
+.session-pulse-history-beat :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.session-pulse-history-beat li {
+  list-style: none;
+}

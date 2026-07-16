@@ -41,7 +41,7 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../dev-assistant-renderer-dispatch";
+} from "../../session-assistant-renderer-dispatch";
 import { loadGoldenProbe } from "@/lib/code-session-store/testing/golden-catalog";
 
 // ---------------------------------------------------------------------------

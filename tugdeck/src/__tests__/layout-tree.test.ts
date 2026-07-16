@@ -151,6 +151,30 @@ describe("serialize and deserialize (v4 wire)", () => {
     expect(restored.cards.find((c) => c.id === "card-mt-3")?.closable).toBe(false);
   });
 
+  test("legacy componentId \"dev\" restores as the current \"session\" kind", () => {
+    // A deck saved when the Session card shipped as componentId "dev".
+    const legacy = {
+      version: 4,
+      cards: [{ id: "c-dev", componentId: "dev", title: "Dev", closable: true }],
+      panes: [
+        {
+          id: "p-dev",
+          position: { x: 40, y: 40 },
+          size: { width: 800, height: 600 },
+          cardIds: ["c-dev"],
+          activeCardId: "c-dev",
+          title: "",
+          acceptsFamilies: ["maker"],
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(legacy), 1920, 1080);
+    // The card is not dropped, and its kind is migrated to "session".
+    expect(restored.cards.length).toBe(1);
+    expect(restored.cards[0].componentId).toBe("session");
+    expect(restored.panes[0].cardIds).toEqual(["c-dev"]);
+  });
+
   test("serialize emits version: 4", () => {
     const out = serialize({ cards: [], panes: [], hasFocus: true }) as { version: number };
     expect(out.version).toBe(4);
@@ -200,7 +224,7 @@ describe("serialize and deserialize (v4 wire)", () => {
     const card: CardState = {
       id: "card-big",
       componentId: "terminal",
-      title: "Dev",
+      title: "Session",
       closable: true,
     };
     const pane: TugPaneState = {
@@ -257,6 +281,28 @@ describe("serialize and deserialize (v4 wire)", () => {
     expect(r.acceptsFamilies).toEqual([]);
   });
 
+  test("round-trips a LEFT-anchored pane's anchor field", () => {
+    const card: CardState = {
+      id: "lens",
+      componentId: "lens",
+      title: "Lens",
+      closable: true,
+    };
+    const pane: TugPaneState = {
+      id: "pane-lens",
+      position: { x: 0, y: 0 },
+      size: { width: 420, height: 1080 },
+      cardIds: ["lens"],
+      activeCardId: "lens",
+      title: "Lens",
+      acceptsFamilies: [],
+      anchor: "left",
+    };
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], hasFocus: true }));
+    const restored = deserialize(json, 1920, 1080);
+    expect(restored.panes[0].anchor).toBe("left");
+  });
+
   test("does not fit-clamp an anchored pane (derived geometry survives a smaller canvas)", () => {
     const card: CardState = {
       id: "lens",
@@ -290,7 +336,7 @@ describe("serialize and deserialize (v4 wire)", () => {
     const card: CardState = {
       id: "card-low",
       componentId: "terminal",
-      title: "Dev",
+      title: "Session",
       closable: true,
     };
     const pane: TugPaneState = {

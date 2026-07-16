@@ -12,7 +12,7 @@
  *      `changeset_join` verb, which squash-lands the dash and tears its branch
  *      down (verified against real git).
  *
- * One dev card is opened via real `spawn_session(mode=resume)` on a scratch git
+ * One session card is opened via real `spawn_session(mode=resume)` on a scratch git
  * repo, so the project is "open" and its `tugdash/*` branches surface as dash
  * entries in the aggregate.
  *
@@ -142,7 +142,7 @@ async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: s
 function deckShape() {
   return {
     cards: [
-      { id: "B", componentId: "dev", title: "Dev B", closable: true },
+      { id: "B", componentId: "session", title: "Session B", closable: true },
     ],
     panes: [
       { id: "p2", position: { x: 780, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
@@ -180,7 +180,7 @@ describe.skipIf(!SHOULD_RUN)("AT0229: changeset card — dash Join preview + cle
           { timeoutMs: 10_000 },
         );
 
-        // Both dash entries appear (the project is open via the dev card).
+        // Both dash entries appear (the project is open via the session card).
         await app.waitForCondition<boolean>(
           `document.querySelector('${dashEntry("clean")} [data-testid="sessions-dash-join"]') !== null &&
            document.querySelector('${dashEntry("clash")} [data-testid="sessions-dash-join"]') !== null`,

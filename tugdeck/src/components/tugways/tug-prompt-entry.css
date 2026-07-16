@@ -70,11 +70,11 @@ body {
   min-height: 0;
   /* Fixed, content-independent height. The compose strip is one
      fixed-height row, so the zone reserves a CONSTANT slot the instant an
-     image atom drops — before its pixels arrive. Two payoffs: the Dev card
+     image atom drops — before its pixels arrive. Two payoffs: the Session card
      steals exactly this height from the editor's empty floor (no hop when
-     the first image lands — see dev-card.css), and the pre-bake "empty box"
+     the first image lands — see session-card.css), and the pre-bake "empty box"
      flash is gone because the space is already held. Host-overridable via
-     `--tug-prompt-entry-attach-height` (the Dev card pins it to match the
+     `--tug-prompt-entry-attach-height` (the Session card pins it to match the
      amount it steals). */
   height: var(--tug-prompt-entry-attach-height, 84px);
   box-sizing: border-box;

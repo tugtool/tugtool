@@ -21,11 +21,11 @@ import { filterDeckStateByRegistration } from "../deck-manager";
 import { registerCard, getRegistration, _resetForTest } from "../card-registry";
 import type { DeckState } from "../layout-tree";
 
-function registerDevLike(): void {
+function registerSessionLike(): void {
   registerCard({
-    componentId: "dev",
+    componentId: "session",
     contentFactory: () => null,
-    defaultMeta: { title: "Dev", icon: "Terminal", closable: true },
+    defaultMeta: { title: "Session", icon: "Terminal", closable: true },
     cardFeedIds: [],
   });
 }
@@ -35,11 +35,11 @@ function persistedBlob(): DeckState {
   return {
     cards: [
       { id: "A", componentId: "changeset", title: "Changeset", closable: true },
-      { id: "B", componentId: "dev", title: "Dev B", closable: true },
+      { id: "B", componentId: "session", title: "Session B", closable: true },
       { id: "C", componentId: "changeset", title: "Changeset 2", closable: true },
     ],
     panes: [
-      // A mixed stack: the changeset card drops, the dev card survives.
+      // A mixed stack: the changeset card drops, the session card survives.
       {
         id: "p1",
         position: { x: 40, y: 40 },
@@ -72,7 +72,7 @@ describe("retired changeset card degrades a persisted deck blob gracefully", () 
 
   test("drops the unregistered changeset card and its now-empty stack, keeps the rest", () => {
     _resetForTest();
-    registerDevLike();
+    registerSessionLike();
     // The retirement invariant: "changeset" is not a registered CARD.
     expect(getRegistration("changeset")).toBeUndefined();
 
@@ -81,9 +81,9 @@ describe("retired changeset card degrades a persisted deck blob gracefully", () 
       (componentId) => getRegistration(componentId) !== undefined,
     );
 
-    // Both changeset cards dropped; the dev card survives.
+    // Both changeset cards dropped; the session card survives.
     expect(filtered.cards.map((c) => c.id)).toEqual(["B"]);
-    // The mixed stack survives with only the dev card (active falls back to it);
+    // The mixed stack survives with only the session card (active falls back to it);
     // the changeset-only stack is gone.
     expect(filtered.panes.map((p) => p.id)).toEqual(["p1"]);
     const p1 = filtered.panes[0];
@@ -95,9 +95,9 @@ describe("retired changeset card degrades a persisted deck blob gracefully", () 
 
   test("a blob with no retired cards is returned unchanged (same reference)", () => {
     _resetForTest();
-    registerDevLike();
+    registerSessionLike();
     const clean: DeckState = {
-      cards: [{ id: "B", componentId: "dev", title: "Dev B", closable: true }],
+      cards: [{ id: "B", componentId: "session", title: "Session B", closable: true }],
       panes: [
         {
           id: "p1",

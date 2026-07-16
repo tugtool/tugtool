@@ -153,7 +153,7 @@ export function openFileInCard(
         // seeded with the path (becomes the pane's active card).
         // `addCardToPane` only flips the deck's first responder when its
         // pane is already the active one; when the target pane sits
-        // behind another (e.g. a Dev card on top), activate the new card
+        // behind another (e.g. a Session card on top), activate the new card
         // explicitly so it raises + focuses like `new` / `reuse` do —
         // otherwise the file opens invisibly in a background pane.
         const outgoing = store.getFirstResponderCardId();

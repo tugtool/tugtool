@@ -19,11 +19,11 @@ import { stripAnsi } from "@/lib/ansi/strip-ansi";
 import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
-} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+} from "@/components/tugways/cards/session-assistant-renderer-dispatch";
 import { BashToolBlock } from "@/components/tugways/cards/blocks/bash-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/blocks/read-tool-block";
 import { ToolBlockExpansionState } from "@/components/tugways/blocks/expansion-state";
-import type { DevTranscriptDataSource, DevRowDescriptor } from "@/lib/dev-transcript-data-source";
+import type { SessionTranscriptDataSource, SessionRowDescriptor } from "@/lib/session-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
 // The tool-block registry is populated by an app-boot side-effect module the
@@ -41,15 +41,15 @@ const NO_OPTIONS = { caseSensitive: false, wholeWord: false, grep: false };
 const emptyStore = { get: () => undefined } as unknown as PropertyStore;
 
 /** Fixture data source over a fixed descriptor list. */
-function fixtureSource(rows: DevRowDescriptor[]): DevTranscriptDataSource {
+function fixtureSource(rows: SessionRowDescriptor[]): SessionTranscriptDataSource {
   return {
     numberOfItems: () => rows.length,
     rowAt: (i: number) => rows[i],
-  } as unknown as DevTranscriptDataSource;
+  } as unknown as SessionTranscriptDataSource;
 }
 
 function buildRows(
-  rows: DevRowDescriptor[],
+  rows: SessionRowDescriptor[],
   expansion: ToolBlockExpansionState = new ToolBlockExpansionState(),
 ): string[][] {
   // Projection assertions compare unit TEXTS; the segment kind is `dom` for
@@ -64,11 +64,11 @@ function domRows(rows: readonly (readonly string[])[]): RowSegment[][] {
   return rows.map((parts) => parts.map((text) => ({ kind: "dom" as const, text })));
 }
 
-function ghostRow(): DevRowDescriptor {
-  return { kind: "ghost", turnKey: "g1" } as unknown as DevRowDescriptor;
+function ghostRow(): SessionRowDescriptor {
+  return { kind: "ghost", turnKey: "g1" } as unknown as SessionRowDescriptor;
 }
 
-function shellRow(): DevRowDescriptor {
+function shellRow(): SessionRowDescriptor {
   return {
     kind: "shell",
     turnKey: "s1",
@@ -84,17 +84,17 @@ function shellRow(): DevRowDescriptor {
         },
       ],
     },
-  } as unknown as DevRowDescriptor;
+  } as unknown as SessionRowDescriptor;
 }
 
-function assistantRow(messages: unknown[]): DevRowDescriptor {
+function assistantRow(messages: unknown[]): SessionRowDescriptor {
   return {
     kind: "assistant",
     turnKey: "t1",
     messageStart: 0,
     messageEnd: messages.length,
     turn: { turnKey: "t1", messages },
-  } as unknown as DevRowDescriptor;
+  } as unknown as SessionRowDescriptor;
 }
 
 describe("buildTranscriptSearchRows — DOM-free projections", () => {
@@ -139,7 +139,7 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
           },
         ],
       },
-    } as unknown as DevRowDescriptor;
+    } as unknown as SessionRowDescriptor;
     const rows = buildRows([row]);
     const output = rows[0]![1]!;
     expect(output.startsWith("red line")).toBe(true);
@@ -314,7 +314,7 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
   });
 
   test("a user row with no message projects nothing", () => {
-    const row = { kind: "user", turnKey: "t1" } as unknown as DevRowDescriptor;
+    const row = { kind: "user", turnKey: "t1" } as unknown as SessionRowDescriptor;
     const rows = buildRows([row]);
     expect(rows[0]).toEqual([]);
   });

@@ -5,7 +5,7 @@
  *
  * ## Why this exists
  *
- * Step 0 of the dev-card / Claude-Code-parity plan adds a two-line
+ * Step 0 of the session-card / Claude-Code-parity plan adds a two-line
  * `TugBadge` variant (`layout="label-top" | "content-top"` + `label`)
  * that every Z4B chrome chip (permission-mode, model, rate-limit,
  * session) will consume. Because tugdeck has no DOM-rendering unit

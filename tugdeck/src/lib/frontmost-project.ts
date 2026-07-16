@@ -1,12 +1,12 @@
 /**
  * frontmost-project.ts — the project Open Quickly should search.
  *
- * A "project" is a bound dev-card session, whose binding carries the
+ * A "project" is a bound session-card session, whose binding carries the
  * `projectDir` (the absolute workspace root — FILETREE indexes paths
  * relative to it) and the `workspaceKey` (which scopes the FILETREE feed).
  * Open Quickly picks the **most-frontmost** such project: walking the deck
  * front-to-back (topmost pane's active card first), it returns the first
- * card that has a binding — so as long as any dev card has a project open,
+ * card that has a binding — so as long as any session card has a project open,
  * that's very likely the one the user means, and Open Quickly stays live.
  * When no card is bound, the result is `null` and Open Quickly is disabled.
  *

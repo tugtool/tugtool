@@ -1,5 +1,5 @@
 /**
- * useMenuStatePublication — publishes the dev card's session state to
+ * useMenuStatePublication — publishes the session card's session state to
  * the host menu-state aggregator (`lib/host-menu-state.ts`), which
  * forwards it to the Swift host for menu validation (Stop enablement,
  * the permission-mode checkmark, rewind/copy gates).
@@ -24,7 +24,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
-import { clearDevMenuState, publishDevMenuState } from "@/lib/host-menu-state";
+import { clearSessionMenuState, publishSessionMenuState } from "@/lib/host-menu-state";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   PERMISSION_MODE_DOMAIN,
@@ -65,7 +65,7 @@ export function useMenuStatePublication(
       const persisted = parsePersistedPermissionMode(
         getTugbankClient()?.get(PERMISSION_MODE_DOMAIN, cardId),
       );
-      publishDevMenuState(cardId, {
+      publishSessionMenuState(cardId, {
         cardId,
         sessionBound: cardSessionBindingStore.getBinding(cardId) !== undefined,
         canInterrupt: snap.canInterrupt,
@@ -87,7 +87,7 @@ export function useMenuStatePublication(
 
     return () => {
       for (const unsubscribe of unsubscribes) unsubscribe();
-      clearDevMenuState(cardId);
+      clearSessionMenuState(cardId);
     };
   }, [cardId, codeSessionStore, sessionMetadataStore]);
 }

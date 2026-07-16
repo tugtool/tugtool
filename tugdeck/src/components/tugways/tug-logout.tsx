@@ -8,7 +8,7 @@
  *   on failure/timeout a "Couldn't log out" alert (the user stays logged in).
  *
  * Logout is app-level (it stops every session and reopens the wizard), so it
- * lives here rather than on a Dev card — both the File-menu item and the
+ * lives here rather than on a Session card — both the File-menu item and the
  * `/logout` slash command funnel through {@link requestLogout}. The confirm and
  * error surfaces use the shared TugAlert singleton ([L02]/[L06]); the login
  * state itself is owned by `authStore` and read by TugSetup.

@@ -40,7 +40,7 @@ function GalleryAlertInner() {
   const [dangerResult, setDangerResult] = React.useState("none");
   const [cautionResult, setCautionResult] = React.useState("none");
   const [okOnlyResult, setOkOnlyResult] = React.useState("none");
-  const [createDevCardResult, setCreateDevCardResult] = React.useState("none");
+  const [createSessionCardResult, setCreateSessionCardResult] = React.useState("none");
 
   // Ref-based section
   const alertRef = React.useRef<TugAlertHandle>(null);
@@ -130,15 +130,15 @@ function GalleryAlertInner() {
     setCautionResult(confirmed ? "confirmed" : "cancelled");
   }
 
-  async function handleCreateDevCardPreview() {
+  async function handleCreateSessionCardPreview() {
     if (!chooseRef.current) return;
     const choice = await chooseRef.current.choose({
       title: "What's next?",
       icon: "Compass",
       choices: [
         {
-          id: "dev",
-          label: "Create Dev Card",
+          id: "session",
+          label: "Create Session Card",
           description: "Start a new development session.",
           icon: "MessageSquareText",
           isDefault: true,
@@ -151,7 +151,7 @@ function GalleryAlertInner() {
         },
       ],
     });
-    setCreateDevCardResult(choice ?? "cancelled");
+    setCreateSessionCardResult(choice ?? "cancelled");
   }
 
   async function handleOkOnlyAlert() {
@@ -245,7 +245,7 @@ function GalleryAlertInner() {
       <div className="cg-section">
         <TugLabel className="cg-section-title">What's Next? (Empty-Deck Chooser)</TugLabel>
         <div style={labelStyle}>
-          The TugCreateDevCard empty-deck app-modal, previewed through the same
+          The TugCreateSessionCard empty-deck app-modal, previewed through the same
           chrome — the multi-action `choose()` form as rich rows (leading icon +
           title + description) plus Cancel, in one closed arrow ring. The real
           one only opens with zero cards.
@@ -256,14 +256,14 @@ function GalleryAlertInner() {
           <TugPushButton
             emphasis="outlined"
             size="sm"
-            onClick={handleCreateDevCardPreview}
+            onClick={handleCreateSessionCardPreview}
             data-testid="gallery-preview-whats-next"
           >
             Preview What's Next
           </TugPushButton>
         </div>
         <div style={resultStyle} data-testid="whats-next-result">
-          Result: <strong>{createDevCardResult}</strong>
+          Result: <strong>{createSessionCardResult}</strong>
         </div>
       </div>
 

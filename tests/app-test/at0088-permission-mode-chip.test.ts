@@ -10,10 +10,10 @@
  * `SessionMetadataStore.applyPermissionMode`. Two user paths drive it:
  *
  *   1. **`⇧⌘P`** — the `CYCLE_PERMISSION_MODE` key-card binding →
- *      the dev card's card-content responder → `cycle()`. The chip's value
+ *      the session card's card-content responder → `cycle()`. The chip's value
  *      line must advance through default → acceptEdits → plan → auto.
  *   2. **Behavior sheet** — clicking the chip opens a `TugSheet` listing the
- *      behavior options; picking one calls the dev card's `setMode`. Picking
+ *      behavior options; picking one calls the session card's `setMode`. Picking
  *      an option must update the chip to that mode.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -42,7 +42,7 @@ const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -94,7 +94,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           // The chip mounts as a two-line button with a value line. (We do not
@@ -109,7 +109,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           const initialMode = await chipMode(app);
 
-          // 1. ⇧⌘P advances the mode (focus the editor first so the dev card
+          // 1. ⇧⌘P advances the mode (focus the editor first so the session card
           //    is the key card the binding routes to). From an unknown ("…")
           //    state the cycle resets to Default; from a known mode it steps to
           //    the next. Tug deliberately departs from the Claude Code TUI: the

@@ -54,6 +54,17 @@ function parseAcceptsFamilies(raw: unknown): readonly string[] {
   return (raw as string[]).map((f) => (f === "developer" ? "maker" : f));
 }
 
+/**
+ * Map a persisted card `componentId` through the kind-rename history so a deck
+ * saved before a registry-kind rename still resolves to a registered card.
+ * The Session card shipped as componentId `"dev"`; decks saved then carry
+ * `"dev"`, which is no longer registered and would be dropped by
+ * `filterDeckStateByRegistration`. Rewrite it to the current `"session"` kind.
+ */
+function migrateComponentId(componentId: string): string {
+  return componentId === "dev" ? "session" : componentId;
+}
+
 // ---- Geometry fitting ----
 
 /**
@@ -224,7 +235,7 @@ function parseV4(
         : undefined;
     cards.push({
       id,
-      componentId,
+      componentId: migrateComponentId(componentId),
       title,
       closable,
       ...(state !== undefined ? { state } : {}),
@@ -259,7 +270,8 @@ function parseV4(
     // would floor/cap the derived rail against the canvas, so skip it and
     // carry the stored geometry through untouched.
     const rawAnchor = win["anchor"];
-    const anchor = rawAnchor === "right" ? "right" : undefined;
+    const anchor: "left" | "right" | undefined =
+      rawAnchor === "right" || rawAnchor === "left" ? rawAnchor : undefined;
 
     const { x, y, width, height } =
       anchor !== undefined
@@ -399,7 +411,7 @@ function migrateV1ToDeckState(
       const title = typeof rawTitle === "string" ? rawTitle : "";
       const rawClosable = tab["closable"];
       const closable = typeof rawClosable === "boolean" ? rawClosable : true;
-      cards.push({ id, componentId, title, closable });
+      cards.push({ id, componentId: migrateComponentId(componentId), title, closable });
       cardIds.push(id);
     }
 

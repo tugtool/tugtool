@@ -50,7 +50,7 @@ export function openPathInOS(path: string, kind: OsOpenKind = "file"): void {
  * to put a second window, so a `window.open` for an http(s) URL is caught by
  * the host's `createWebViewWith` delegate (`MainWindow.swift`) and routed to
  * `NSWorkspace.shared.open` — the link lands in the system browser, never
- * inside the Dev card. Outside the host (browser dev / tests) `window.open`
+ * inside the Session card. Outside the host (browser dev / tests) `window.open`
  * opens an ordinary tab. The `noopener` feature keeps the opened page from
  * reaching back into `window.opener`.
  */

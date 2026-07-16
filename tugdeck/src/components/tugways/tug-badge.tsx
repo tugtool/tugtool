@@ -67,7 +67,7 @@ export type TugBadgeSize = "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
  *
  * - `single` — the default pill: one row, `children` only (icon + text inline).
  * - `label-top` — two stacked rows with the letter-spaced `label` caption above
- *   the `children` content line. Mirrors the dev-card status-bar legend
+ *   the `children` content line. Mirrors the session-card status-bar legend
  *   discipline so ambient chrome reads with one visual vocabulary.
  * - `content-top` — the same two rows in reverse vertical order (content above
  *   label) for the rarer case where the value reads first and the label is a

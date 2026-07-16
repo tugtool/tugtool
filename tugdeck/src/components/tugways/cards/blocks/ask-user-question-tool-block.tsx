@@ -11,7 +11,7 @@
  *   1. **Asking state (live question).** When a `control_request_forward`
  *      for this call's `tool_use_id` is the session's `pendingQuestion`
  *      (and `status === "streaming"`), the block fills its chrome body
- *      with the live `QuestionWizard` (`dev-question-dialog.tsx`) — the
+ *      with the live `QuestionWizard` (`session-question-dialog.tsx`) — the
  *      radio / check prompt that submits the user's choices back to
  *      Claude. The chrome is `forceExpanded` so a blocking question can't
  *      be folded away ([P07]). Before the forward arrives (and the user
@@ -49,7 +49,7 @@
  *    `input.answers`) so the wrapper renders correctly across the
  *    catalog's variations.
  *
- * Registration: `dev-assistant-renderer-dispatch.ts` imports this
+ * Registration: `session-assistant-renderer-dispatch.ts` imports this
  * module and calls `registerToolBlock("askuserquestion", …)`
  * alongside the other wrappers. The registry's lowercased keys
  * absorb wire-shape casing variants (`AskUserQuestion` /
@@ -91,7 +91,7 @@ import {
   parseQuestions,
   QuestionWizard,
   type ParsedQuestion,
-} from "@/components/tugways/chrome/dev-question-dialog";
+} from "@/components/tugways/chrome/session-question-dialog";
 import {
   QuestionSummaryList,
   type QuestionSummaryRowData,

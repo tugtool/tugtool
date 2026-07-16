@@ -188,7 +188,7 @@ export interface DiffBlockProps {
    * Identifier used for tugbank-persisted per-card preferences.
    * Currently scopes the inline ↔ side-by-side `viewMode`. When
    * omitted, `viewMode` falls back to the prop / default and is not
-   * persisted. The Dev card consumer normally passes its own
+   * persisted. The Session card consumer normally passes its own
    * `cardId` through.
    */
   cardId?: string;

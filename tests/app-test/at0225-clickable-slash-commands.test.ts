@@ -1,6 +1,6 @@
 /**
  * at0225-clickable-slash-commands.test.ts — clickable slash commands in
- * the Dev card transcript, driven end-to-end against the real app.
+ * the Session card transcript, driven end-to-end against the real app.
  *
  * A backticked slash command in assistant prose (e.g.
  * `` `/tugplug:implement roadmap/find-route.md` ``) whose name is in the
@@ -60,7 +60,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -126,7 +126,7 @@ const replayComplete = () => ({
 // JSON string so it round-trips through `evalJS`.
 const spanStateJS = (needle: string) => `JSON.stringify((function(){
   var codes = Array.from(document.querySelectorAll(
-    '[data-card-id="A"] .dev-card-transcript-code-body code'));
+    '[data-card-id="A"] .session-card-transcript-code-body code'));
   var el = codes.find(function(c){
     return (c.textContent || '').indexOf(${JSON.stringify(needle)}) !== -1;
   });
@@ -147,7 +147,7 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         testName: "at0225-clickable-slash-commands",
       });
       const ingest = (decoded: unknown) =>
-        app.driveDevSession("A", {
+        app.driveSession("A", {
           op: "ingestFrame",
           feedId: CODE_OUTPUT_FEED,
           decoded,
@@ -166,7 +166,7 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           { timeoutMs: 30_000 },
         );
-        await app.bindDevSession("A", {
+        await app.bindSession("A", {
           tugSessionId: SID,
           sessionMode: "resume",
         });

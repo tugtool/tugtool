@@ -5,7 +5,7 @@
  * stack").
  *
  * Regression for a cross-pane leak via the GLOBAL default-button stack. An
- * unbound dev card's "Choose Session" picker registers its **Open** button as
+ * unbound session card's "Choose Session" picker registers its **Open** button as
  * a default button (`TugPushButton emphasis="filled" role="action"`). The
  * editor keymap's submit-Enter path (and the document Stage-2 path) used to
  * call the *process-global* `peekDefaultButton()` and click whatever was on
@@ -14,8 +14,8 @@
  * peek to the *originating* pane (`peekDefaultButtonInScope`), so a default
  * button in another pane is unreachable by construction.
  *
- * Setup mirrors the report: pane p1 is a bound dev card (two anchored turns,
- * so `/rewind` has a target); pane p2 is an unbound dev card whose picker is
+ * Setup mirrors the report: pane p1 is a bound session card (two anchored turns,
+ * so `/rewind` has a target); pane p2 is an unbound session card whose picker is
  * open. We type `/rewind` in p1 and submit with Shift+Enter (which the editor
  * keymap resolves to "submit" on the Code route, exercising the
  * default-button-defer branch — the exact path the stack trace named). The
@@ -54,8 +54,8 @@ afterAll(() => {
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "dev", title: "Dev A", closable: true },
-      { id: "B", componentId: "dev", title: "Dev B", closable: true },
+      { id: "A", componentId: "session", title: "Session A", closable: true },
+      { id: "B", componentId: "session", title: "Session B", closable: true },
     ],
     panes: [
       { id: "p1", position: { x: 40, y: 40 }, size: { width: 760, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
@@ -86,12 +86,12 @@ describe.skipIf(!SHOULD_RUN)(
 
           // Bind A with two anchored turns so `/rewind` has a target. B stays
           // unbound (its picker is the cross-pane default-button source).
-          await app.bindDevSession("A", { tugSessionId: SID_A, projectDir: dirA });
+          await app.bindSession("A", { tugSessionId: SID_A, projectDir: dirA });
           await app.awaitEngineReady("A");
           const drive = async (uuid: string, msgId: string, text: string) => {
-            await app.driveDevSession("A", { op: "send", text });
+            await app.driveSession("A", { op: "send", text });
             const frame = (d: Record<string, unknown>) =>
-              app.driveDevSession("A", { op: "ingestFrame", feedId: FEED_CODE_OUTPUT, decoded: { tug_session_id: SID_A, ...d } });
+              app.driveSession("A", { op: "ingestFrame", feedId: FEED_CODE_OUTPUT, decoded: { tug_session_id: SID_A, ...d } });
             await frame({ type: "prompt_anchor", promptUuid: uuid });
             await frame({ type: "content_block_start", msg_id: msgId, block_index: 0, kind: "text" });
             await frame({ type: "assistant_text", msg_id: msgId, block_index: 0, text: "ok", is_partial: false });

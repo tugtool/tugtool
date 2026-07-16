@@ -11,14 +11,14 @@
 //! | `local`   | `<cwd>/.claude/settings.local.json` |
 //!
 //! `GET /api/permissions?cwd=<abs>` returns each scope's four rule buckets so
-//! the dev-card editor can present the merged, scope-labeled union.
+//! the session-card editor can present the merged, scope-labeled union.
 //! `POST /api/permissions/rule` adds or removes a single rule string in one
 //! scope's bucket, preserving every other key in the file. Claude Code watches
 //! these files and reloads `permissions` live, so a write takes effect without
 //! a respawn (captured in `roadmap/transport-exploration.md`).
 //!
 //! Like the other `/api` handlers these are restricted to loopback
-//! connections. `cwd` is supplied by the caller — the dev card reads it from
+//! connections. `cwd` is supplied by the caller — the session card reads it from
 //! the trusted session metadata — and must be absolute; handlers only ever
 //! touch `.claude/settings*.json` beneath `cwd` (or `$HOME`).
 
@@ -44,7 +44,7 @@ const BUCKET_KEYS: [&str; 4] = ["allow", "ask", "deny", "additionalDirectories"]
 const MAX_RULE_LEN: usize = 4096;
 
 /// A writable settings scope. Deserialized from the lowercase tab/scope name
-/// the dev card sends.
+/// the session card sends.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum Scope {

@@ -539,7 +539,7 @@ export function GalleryTextEditor({ cardId }: GalleryTextEditorProps) {
     [],
   );
 
-  // Argument-hint resolver mirroring the dev card's: accepting a skill /
+  // Argument-hint resolver mirroring the session card's: accepting a skill /
   // agent command atom (or a `takesArgs` local) paints a ghost placeholder.
   // Lets the slot be vetted here without the full app.
   const argumentHintResolver = useMemo<ArgumentHintResolver>(() => {

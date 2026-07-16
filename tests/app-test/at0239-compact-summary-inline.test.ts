@@ -53,7 +53,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -121,12 +121,12 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({ testName: "at0239-compact-summary-inline" });
         const ingest = (decoded: unknown) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded,
           });
-        const TX_JS = `(document.querySelector('[data-card-id="A"] .dev-card-transcript') || document.body).textContent || ""`;
+        const TX_JS = `(document.querySelector('[data-card-id="A"] .session-card-transcript') || document.body).textContent || ""`;
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -134,7 +134,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", {
+          await app.bindSession("A", {
             tugSessionId: SID,
             sessionMode: "resume",
             projectDir,

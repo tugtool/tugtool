@@ -50,7 +50,7 @@ export interface EffortChipProps {
   /** Metadata store supplying the live `effort` + the capability `models[]`. */
   sessionMetadataStore: ReadableMetadataStore;
   /**
-   * Open the shared effort picker sheet. Wired by the dev card to the single
+   * Open the shared effort picker sheet. Wired by the session card to the single
    * opener from {@link useEffortPicker} — the same opener a future `/effort`
    * slash command would route to, so the chip and the command present one
    * sheet.
@@ -60,7 +60,7 @@ export interface EffortChipProps {
    *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
   disabled?: boolean;
   /** Author the chip into a focus group ([P02]) — forwarded to the composed
-   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  {@link TugPushButton}. The session card passes its cycle group so the chip
    *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
   focusGroup?: string;
   /** Order within {@link focusGroup}. */

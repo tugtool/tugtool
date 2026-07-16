@@ -28,7 +28,7 @@
  * session is what the shared cluster and the shared {@link FindWrapOverlay}
  * read; options seed from the GLOBAL find preference and persist back
  * through the session's `onOptionsChanged` hook (`putFindOptions`) —
- * identical wiring to the Dev card. (Parity note: the count refreshes on
+ * identical wiring to the Session card. (Parity note: the count refreshes on
  * find actions, not on document edits made while the bar is open.)
  *
  * Laws: [L02] the surface snapshot is `Object.is`-stable between refreshes;
@@ -106,7 +106,7 @@ export interface TextCardFindBarProps {
   /**
    * The card's root element — the shared {@link FindWrapOverlay}'s
    * containment box (the wrap graphic anchors to the card, exactly as it
-   * does over the Dev card).
+   * does over the Session card).
    */
   cardRootRef: React.RefObject<HTMLElement | null>;
 }

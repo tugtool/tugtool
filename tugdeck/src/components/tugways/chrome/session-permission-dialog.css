@@ -1,0 +1,127 @@
+/* @tug-pairings:
+   - --tugx-perm-reason-color    | --tugx-idialog-bg    (muted-italic reason span inside the pending dialog's description)
+   `PermissionDialog` is pending-only post-Step-3.5 (`#step-3-5`).
+   The visible chrome is delegated entirely to `TugInlineDialog`.
+   This stylesheet keeps only the small set of inline-fragment styles
+   the pending dialog drops into the primitive's `description` slot
+   (a muted-italic reason-line span) plus the height-capped wrapper
+   around the preview tool block.
+*/
+
+/**
+ * session-permission-dialog.css — `PermissionDialog` chrome fragments.
+ *
+ * `PermissionDialog` has a single visible state — *pending* — after
+ * Step 3.5 removed the recorded chrome (JSONL has no durable record
+ * to reconstruct one from; see `roadmap/archive/dev-interactive-dialogs.md`
+ * `#step-3-5`). The pending dialog composes `TugInlineDialog`
+ * (owns `--tugx-idialog-*` and the dialog frame). The things this file
+ * owns are:
+ *
+ *   - `.session-permission-dialog-reason` — muted-italic span used to
+ *     append the wire `decision_reason` after the synthesized
+ *     description prose.
+ *   - `.session-permission-dialog-preview` — the height-capped, scrollable
+ *     wrapper around the real transcript tool block the dialog mounts
+ *     as the approve/deny preview, so an unbounded input (e.g. a huge
+ *     `ExitPlanMode` plan) scrolls inside the dialog instead of
+ *     stretching it off-screen.
+ *
+ * Tuglaw cross-check:
+ *  - [L17] every `--tugx-perm-*` slot resolves to a `--tug7-*` base
+ *    token in one hop.
+ *  - [L19] component-authoring guide — file pair, module docstring.
+ *  - [L20] component-token sovereignty — owns `--tugx-perm-*` (just
+ *    the reason colour token); the dialog family tokens are composed,
+ *    never overridden.
+ */
+
+/* ---- Component-tier aliases — permission-dialog-specific only [L17] ---- */
+
+body {
+  /* Reason span appended to the rich description in the pending dialog. */
+  --tugx-perm-reason-color: var(--tug7-element-global-text-normal-muted-rest);
+
+}
+
+/* ---- Pending: small inline fragments inside the primitive ---- */
+
+/* Reason-line span (appended after the synthesized description prose).
+ *
+ * @tug-renders-on: --tugx-idialog-bg */
+.session-permission-dialog-reason {
+  color: var(--tugx-perm-reason-color);
+}
+
+/* ---- Preview tool block ----
+ *
+ * The dialog mounts the real transcript tool block (`BashToolBlock`,
+ * `DefaultToolBlock`, …) as the approve/deny preview. This wrapper gives it
+ * top breathing room below the description and a generous outer scroll cap so
+ * a large JSON input (the `ExitPlanMode` blow-up) can't stretch the dialog
+ * off-screen. The block carries its own chrome tokens; this wrapper owns only
+ * spacing + the safety cap.
+ *
+ * @tug-renders-on: --tugx-idialog-bg */
+.session-permission-dialog-preview {
+  margin-top: var(--tug-space-md);
+  max-height: 24rem;
+  overflow: auto;
+  text-align: left;
+}
+
+/* The dialog preview has no collapse chevron, so a long, multi-line command
+ * would grow the header unbounded. Cap the command TEXT element at ~8 rows
+ * and scroll inside it. The cap rides the command node itself (the
+ * `tool-call-header-clamp` text), NOT the `.tool-call-header-detail` flex box
+ * — touching the detail's `align-items`/overflow breaks the header's
+ * name↔command baseline trick (every first-row item rides an equal one-line
+ * box, centered). Leaving the detail untouched keeps that intact: when the
+ * command grows to 8 rows the detail still centers it, so the first line
+ * stays on row 1 with the dot + name, and the overflow scrolls below.
+ *
+ * @tug-renders-on: --tugx-idialog-bg */
+.session-permission-dialog-preview .tool-call-header-clamp {
+  display: block;
+  max-height: calc(8 * var(--tugx-toolheader-line));
+  overflow-y: auto;
+}
+
+/* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */
+
+/*
+ * The dialog is card-modal: inline display, trapped focus. Its controls are
+ * focus-language archetypes authored into the trap — Deny / Allow are leaf
+ * buttons (the global key-view ring paints on the focused one) and the scope
+ * choices are a radio item-group (below). There is no full-width focusable
+ * scope wrapper anymore, so clicking inert chrome establishes no focus state
+ * ([P18]) — the former `.session-permission-dialog-scope` dead-zone + its
+ * box-shadow ring relocation are gone.
+ *
+ * Action buttons render OUTLINED / PRIMARY and PROMOTE to their filled,
+ * role-coloured style + role ring when the keyboard lands on them — a
+ * first-class TugPushButton capability (`internal/tug-button.css`, keyed on
+ * `[data-key-view-kbd]`), so no bespoke copy lives here. Allow additionally
+ * carries `persistentDefaultRing` (engine-owned "Return's home" ring).
+ */
+
+/* Horizontal room between the action buttons for the promoted ring. */
+.session-permission-dialog .tug-inline-dialog-actions {
+  gap: 0.5rem;
+}
+
+/*
+ * Scope choices ([P02]/[Q06]) — a standard `TugRadioGroup` (one item-group Tab
+ * stop, arrows move the cursor, Space/Enter check the cursor row). The group
+ * owns its own item spacing + focus treatment; this wrapper adds breathing room
+ * below the dialog description (whose negative bottom margin from
+ * `TugInlineDialog` otherwise pulls the options up tight against it) and centers
+ * the group as a whole in the dialog — the rows stay left-aligned internally,
+ * but the group block is shrink-to-content and horizontally centered, echoing
+ * the centered description line above it.
+ */
+.session-permission-dialog-scope {
+  margin-top: var(--tug-space-md);
+  display: flex;
+  justify-content: center;
+}

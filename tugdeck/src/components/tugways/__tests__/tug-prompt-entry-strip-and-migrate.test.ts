@@ -23,7 +23,7 @@ import {
   computeSideQuestionArg,
   routeAwareSubmitButtonMode,
 } from "@/components/tugways/tug-prompt-entry";
-import type { DevSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
+import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { CommandLineAtom } from "@/lib/slash-commands";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import type { AtomSegment } from "@/lib/tug-atom-img";
@@ -34,7 +34,7 @@ import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 // ---------------------------------------------------------------------------
 
 describe("routeAwareSubmitButtonMode", () => {
-  const claude: DevSubmitButtonMode = { kind: "stopping" };
+  const claude: SessionSubmitButtonMode = { kind: "stopping" };
 
   it("passes the Claude lifecycle mode through unchanged on `❯` and `?`", () => {
     expect(routeAwareSubmitButtonMode("❯", claude, false)).toBe(claude);

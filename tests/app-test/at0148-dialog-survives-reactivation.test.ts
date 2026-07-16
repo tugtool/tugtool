@@ -44,8 +44,8 @@ const FEED_CODE_OUTPUT = 0x40;
 const REQUEST_ID = "at0148-perm-1";
 
 const CARD = '[data-card-id="A"]';
-const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
-const DIALOG = `${CARD} [data-slot="dev-permission-dialog"]`;
+const CARD_ROOT = `${CARD} [data-slot="session-card"]`;
+const DIALOG = `${CARD} [data-slot="session-permission-dialog"]`;
 const ALLOW = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 
 function controlRequestForward(): Record<string, unknown> {
@@ -81,7 +81,7 @@ function exists(app: App, selector: string): Promise<boolean> {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -99,8 +99,8 @@ function deckShape() {
 }
 
 async function presentPermission(app: App): Promise<void> {
-  await app.driveDevSession("A", { op: "send", text: "count lines with tokei" });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", { op: "send", text: "count lines with tokei" });
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {
@@ -113,7 +113,7 @@ async function presentPermission(app: App): Promise<void> {
       seq: 0,
     },
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: controlRequestForward(),
@@ -158,7 +158,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { tugSessionId: SID });
+          await app.bindSession("A", { tugSessionId: SID });
           await app.awaitEngineReady("A");
 
           await presentPermission(app);

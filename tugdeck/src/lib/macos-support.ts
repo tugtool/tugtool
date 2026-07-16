@@ -49,7 +49,7 @@ export const SUPPORTED_MACOS: Readonly<
  * iterate the panel under HMR without spoofing the host version. Leave
  * `false`; the `import.meta.env.DEV` guard folds it out of production.
  */
-export const DEV_FORCE_VERSION_GATE: "open" | "closed" | false = false;
+export const SESSION_FORCE_VERSION_GATE: "open" | "closed" | false = false;
 
 /** Parse a dotted macOS version string; `null` if it isn't `N`, `N.N`, or `N.N.N`. */
 export function parseMacosVersion(version: string): MacosVersion | null {
@@ -130,9 +130,9 @@ export function deriveTugSetupOpen(
 }
 
 /**
- * TugCreateDevCard's open state — the empty-deck affordance for a set-up,
+ * TugCreateSessionCard's open state — the empty-deck affordance for a set-up,
  * logged-in user. Last in the app-modal precedence chain (Spec S02):
- * gate > setup > create-dev-card.
+ * gate > setup > create-session-card.
  *
  * During a genuine first run (`firstRun` — the persisted setup-seen flag was
  * absent at mount) the setup wizard owns the empty deck via its "Start a
@@ -141,7 +141,7 @@ export function deriveTugSetupOpen(
  * lands here, not back in the wizard. Pure — unit-testable beside
  * {@link deriveTugSetupOpen}.
  */
-export function deriveCreateDevCardOpen(args: {
+export function deriveCreateSessionCardOpen(args: {
   gateOpen: boolean;
   suppressed: boolean;
   loggedIn: boolean | null;
@@ -166,8 +166,8 @@ export function deriveCreateDevCardOpen(args: {
  */
 export function useVersionGateOpen(): boolean {
   const host = useHostInfo();
-  if (import.meta.env.DEV && DEV_FORCE_VERSION_GATE !== false) {
-    return DEV_FORCE_VERSION_GATE === "open";
+  if (import.meta.env.DEV && SESSION_FORCE_VERSION_GATE !== false) {
+    return SESSION_FORCE_VERSION_GATE === "open";
   }
   return isHostBelowFloor(host);
 }

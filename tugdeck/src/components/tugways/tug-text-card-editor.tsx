@@ -56,7 +56,7 @@
 
 import "./tug-text-card-editor.css";
 // The find landing-flash ring class + keyframes — the SAME one-shot accent
-// ring the Dev card's transcript find draws ([L14] reduced-motion aware).
+// ring the Session card's transcript find draws ([L14] reduced-motion aware).
 import "./transcript-find.css";
 import { placeFindFlash, type FindFlashHandle } from "./find-flash";
 
@@ -855,7 +855,7 @@ export const TugTextCardEditor = React.forwardRef<
   //  - if the selected match is fully visible with the scroller panned all
   //    the way LEFT, snap `scrollLeft` to 0 — zero horizontal scroll is
   //    favored over the minimal pan CM6's scrollIntoView leaves behind;
-  //  - draw the one-shot accent ring over the match (the Dev card's
+  //  - draw the one-shot accent ring over the match (the Session card's
   //    landing flash), absolutely positioned in the scroller's content
   //    coordinates so it scrolls with the text and clips at the editor.
   const findFlashRef = useRef<FindFlashHandle | null>(null);

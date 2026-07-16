@@ -14,10 +14,10 @@
  * breakage.
  *
  * The pure halves (`classifyApiRetry`, `projectNotices`, `reconcileNotices`,
- * `deriveDevCardBannerSpec`) are unit-tested. This drives the **live surface**
+ * `deriveSessionCardBannerSpec`) are unit-tested. This drives the **live surface**
  * end to end without a real (rare) API failure: it injects synthetic frames
  * through the store's real `frameToEvent → dispatch` path
- * (`driveDevSession`/`ingestFrame`) and asserts (1) the pane body is never
+ * (`driveSession`/`ingestFrame`) and asserts (1) the pane body is never
  * `inert`, (2) a bulletin shows with the classified label + live attempt
  * count, (3) a new attempt updates it in place, (4) a likely-fatal category
  * escalates tone, and (5) a `cost_update` (turn boundary) dismisses it.
@@ -40,7 +40,7 @@ const BULLETIN = ".tug-pane-bulletin";
 const BULLETIN_TITLE = `${BULLETIN} [data-title]`;
 const BULLETIN_DESC = `${BULLETIN} [data-description]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
+const TUG_SESSION_ID = "test-session-A"; // bindSession default
 
 let projectDir = "";
 
@@ -56,7 +56,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -110,14 +110,14 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
           // Baseline: the pane body is interactive before any retry.
           expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
 
           // ── transient category (rate_limit), attempt 3 ───────────────
-          await app.driveDevSession(
+          await app.driveSession(
             "A",
             apiRetryFrame({
               attempt: 3,
@@ -155,7 +155,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
 
           // ── a fresh attempt updates the SAME bulletin in place ───────
-          await app.driveDevSession(
+          await app.driveSession(
             "A",
             apiRetryFrame({
               attempt: 4,
@@ -177,7 +177,7 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBe(1);
 
           // ── likely-fatal category escalates tone to danger ──────────
-          await app.driveDevSession(
+          await app.driveSession(
             "A",
             apiRetryFrame({
               attempt: 5,
@@ -200,7 +200,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await app.evalJS<boolean>(PANE_BODY_NOT_INERT)).toBe(true);
 
           // ── a cost_update lands (turn boundary) → bulletin dismissed ─
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded: {

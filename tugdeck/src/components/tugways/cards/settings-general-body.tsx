@@ -1,9 +1,9 @@
 /**
- * settings-general-body.tsx — the Dev Card settings panel.
+ * settings-general-body.tsx — the Session Card settings panel.
  *
  * The editor/response preferences that previously lived behind the Dev
  * card's title-bar `…` sheet, now hosted by the Settings card's
- * "Dev Card" tab. Three stacked sections:
+ * "Session Card" tab. Three stacked sections:
  *
  *   1. **Response** — Magnification (CSS `zoom` on the transcript
  *      root, per card) and the inter-entry vertical gap. The macOS
@@ -13,7 +13,7 @@
  *      policy for the prompt editor.
  *   3. **Assistant** — the deck-wide default Model / Permission Mode /
  *      Effort new cards adopt on first open, edited through the *same*
- *      chips + sheets as the Dev card's Z4B row, bound to the deck
+ *      chips + sheets as the Session card's Z4B row, bound to the deck
  *      defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
  *      no parallel dropdown UI.
  *
@@ -21,7 +21,7 @@
  * `ResponseSettingsStore` instances at mount and disposes them on
  * unmount. Both stores read/write **global** tugbank domains and
  * observe `onDomainChanged`, so edits made here propagate live to
- * every open Dev card (whose own instances watch the same domains) —
+ * every open Session card (whose own instances watch the same domains) —
  * no shared store instance is required. Neither instance is ever
  * `bind()`-ed to a DOM element, so this panel never writes editor CSS
  * variables itself; it only persists.
@@ -130,7 +130,7 @@ export function SettingsGeneralBody() {
   );
 
   // One sheet host for the Assistant pickers — the same single-host pattern
-  // the Dev card uses, so opening one picker replaces any other open sheet.
+  // the Session card uses, so opening one picker replaces any other open sheet.
   const assistantSheet = useTugSheet();
   const { openModelPicker } = useModelPicker({
     onSelectModel: (selector) => defaultsAdapter.modelStore.set(selector),
@@ -213,7 +213,7 @@ export function SettingsGeneralBody() {
               label column auto-sized to the longest entry, keeping labels
               close to their slider track. Both sliders share `valueWidth`
               so their value columns also align. Magnification scales the
-              whole transcript subtree (CSS `zoom` on `.dev-card-transcript`)
+              whole transcript subtree (CSS `zoom` on `.session-card-transcript`)
               per card; the macOS app's View menu (`WKWebView.pageZoom`)
               still scales the entire window and composes with this. */}
           <div className="settings-general-slider-grid">

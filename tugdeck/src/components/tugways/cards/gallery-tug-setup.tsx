@@ -318,8 +318,8 @@ function buildFlow(
           signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
           open({
             status: "active",
-            detail: "Open a Dev card to get started",
-            cta: { label: "Open a Dev Card", onClick: () => go("complete") },
+            detail: "Open a Session card to get started",
+            cta: { label: "Open a Session Card", onClick: () => go("complete") },
           }),
         ],
       };
@@ -344,7 +344,7 @@ function buildFlow(
         steps: [
           install({ status: "done", label: "Claude Code installed", detail: "Claude Code is ready." }),
           signin({ status: "done", label: "Logged in as ken@example.com", detail: "Claude Max plan" }),
-          open({ status: "done", detail: "Opening Dev card…" }),
+          open({ status: "done", detail: "Opening Session card…" }),
         ],
       };
     case "transport_down":

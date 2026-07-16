@@ -384,11 +384,11 @@ Never chain aliases (`--tugx-pane-bg: var(--tugx-pane-other-alias)`) — that is
 
 #### Shared utility: `--tugx-block-*` for block-surface components
 
-For body-kinds (FileBlock, DiffBlock, TerminalBlock, DevThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (BlockChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
+For body-kinds (FileBlock, DiffBlock, TerminalBlock, SessionThinkingBlock, the TugMarkdownView code panels) and chrome wrappers (BlockChrome), the shared "block surface" pattern lives at `tugdeck/styles/tugx-block.css` as `--tugx-block-*`. It captures the canonical scaffold once: inset card frame, optional raised chrome variant, code-typography defaults (mono font + sm size + 1.55 line-height), header / footer strip chrome, body row hover overlay, and tone-tinted feedback bands (add / remove / caution / active).
 
 When authoring a body-kind or chrome wrapper, **consume `--tugx-block-*` directly in CSS rules** for the parts that match the shared pattern. Keep `--tugx-{component}-*` slots only for parts that are genuinely component-specific (gutter widths, match-highlight overlays, ANSI palettes, heading scales, etc.).
 
-`--tugx-block-*` is also the substrate for the **block-variant contract** (`BlockVariant` = `tool | receipt | note | data`). A block surface stamps `data-variant` on its root; variant-specific appearance is `--tugx-block-*` overrides scoped under `[data-variant="…"]`, never a render fork (per [L06]/[L20]). `BlockChrome` is the React implementation of the `tool` (default) and `receipt` variants; `DevThinkingBlock` (`note`) and the markdown-table frame (`data`, an imperative-DOM substrate) adopt the same `--tugx-block-*` + `[data-variant]` contract from their own roots rather than rendering through it. A genuinely distinct variant keeps its own `--tugx-{variant}-*` sub-family for tones the shared slots don't cover (e.g. `note` keeps `--tugx-thinking-*` for its label / preview / italic body / collapse animation).
+`--tugx-block-*` is also the substrate for the **block-variant contract** (`BlockVariant` = `tool | receipt | note | data`). A block surface stamps `data-variant` on its root; variant-specific appearance is `--tugx-block-*` overrides scoped under `[data-variant="…"]`, never a render fork (per [L06]/[L20]). `BlockChrome` is the React implementation of the `tool` (default) and `receipt` variants; `SessionThinkingBlock` (`note`) and the markdown-table frame (`data`, an imperative-DOM substrate) adopt the same `--tugx-block-*` + `[data-variant]` contract from their own roots rather than rendering through it. A genuinely distinct variant keeps its own `--tugx-{variant}-*` sub-family for tones the shared slots don't cover (e.g. `note` keeps `--tugx-thinking-*` for its label / preview / italic body / collapse animation).
 
 ```css
 /* file-block.css — consume the shared block-surface scaffold directly */
@@ -817,7 +817,7 @@ Resting affordances (Copy, fold cue, view-mode toggle) do **not** get their own 
 
 The portal mechanism is React-side, not DOM-side: `BlockChrome` renders a `<div ref={setActionsTarget}>` inside its header, publishes the DOM node via `ChromeActionsTargetContext`, and a body kind composed under it reads the context via `useChromeActionsTarget()`. When `embedded={true}` and the context returns a non-null target, the body kind `createPortal`s its affordance cluster into the chrome's slot. This keeps affordance state (fold collapsed-set, view-mode toggle) entirely inside the body kind while placing the rendered affordance node in the chrome subtree where it belongs for layout and sticky-pin coverage.
 
-Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a dev card that is the engine's `tug-prompt-entry`.
+Content blocks render no text-entry UI of their own — no per-block Find row. A card has at most one text-entry surface (see [Focus in content-owning cards](#focus-in-content-owning-cards)); for a session card that is the engine's `tug-prompt-entry`.
 
 **Authoring rules:**
 
@@ -960,7 +960,7 @@ For components with multiple visual emphases (filled, outlined, ghost) crossed w
 
 ### Two-line label / content layout (TugBadge)
 
-A chip that packs a letter-spaced caption above (or below) its value, borrowing the dev-card status-bar legend discipline so ambient chrome reads with one visual vocabulary. `TugBadge` exposes it via `layout` + `label`:
+A chip that packs a letter-spaced caption above (or below) its value, borrowing the session-card status-bar legend discipline so ambient chrome reads with one visual vocabulary. `TugBadge` exposes it via `layout` + `label`:
 
 - **`single`** (default) — the one-row pill. Use for transient or single-fact chips, counts, and status pills. Existing call sites pass only `children`; nothing changes for them.
 - **`label-top`** — the caption sits above the value. **This is the default for chrome that mirrors the status bar** (the Z4B permission-mode / model / rate-limit / session indicators). The caption is uppercase, weight 600, `0.08em` tracking — the same legend signature as `tug-box.css`'s `.tug-box-legend`.
@@ -970,7 +970,7 @@ A chip that packs a letter-spaced caption above (or below) its value, borrowing 
 
 **Width is the wider of the two rows, intrinsically.** An inline-flex column sizes its cross axis to its widest child, so the chip is exactly as wide as its widest line with no fixed width. A consumer that must hold width across *content* changes (a rate-limit chip cycling "5h 23m" ↔ "rate-limited") reserves the slot itself — overlay the active and a hidden alternate in one grid cell, per [R01] — the chip primitive does not.
 
-**Height comes from the button scale, not the single-line scale.** A two-line chip stands as tall as a button: its per-size height mirrors the `TugPushButton` heights by value (`--tugx-badge-twoline-height-*`: 20 / 24 / 28 / 32 / 36 px for `2xs`→`lg`, extending to 40 / 44 px for `xl` / `2xl`). The `lg` face equals the dev-card submit button (`TugPushButton size="lg"`), which is the size the Z4B chips use so the chrome band reads as one row of equal-height controls. The two rows centre vertically inside that fixed box. These tokens live in the badge's own slot — the height is *derived from* the button scale, not borrowed from TugButton's tokens, so [L20] holds.
+**Height comes from the button scale, not the single-line scale.** A two-line chip stands as tall as a button: its per-size height mirrors the `TugPushButton` heights by value (`--tugx-badge-twoline-height-*`: 20 / 24 / 28 / 32 / 36 px for `2xs`→`lg`, extending to 40 / 44 px for `xl` / `2xl`). The `lg` face equals the session-card submit button (`TugPushButton size="lg"`), which is the size the Z4B chips use so the chrome band reads as one row of equal-height controls. The two rows centre vertically inside that fixed box. These tokens live in the badge's own slot — the height is *derived from* the button scale, not borrowed from TugButton's tokens, so [L20] holds.
 
 **Caption tokens stay in the badge's own slot [L20].** The caption's size (`--tugx-badge-label-text-size`, em-relative so one slot tracks every size variant) and tracking (`--tugx-badge-label-tracking`) live under TugBadge's namespace — it never reaches into TugBox's legend tokens. Only the *colour* is shared: the caption uses the seven-slot `--tug7-element-field-text-normal-label-rest` field-label token [L18], the same token the status-bar legend paints, which is what makes the two surfaces read as one family.
 
@@ -1188,7 +1188,7 @@ The renderer assigns `scroller.scrollTop = initialScrollTop` immediately after `
 
 Some scrollers can't restore correctly from raw pixel `scrollTop` alone:
 
-- **Variable-height virtualized lists** (`TugListView` driving dev-card's transcript). Cell heights drift as async sub-content settles; the saved pixel `y` no longer maps to the saved *content* by the time the bag is replayed.
+- **Variable-height virtualized lists** (`TugListView` driving session-card's transcript). Cell heights drift as async sub-content settles; the saved pixel `y` no longer maps to the saved *content* by the time the bag is replayed.
 - **Code editors with wrapping** (CM6 in `FileBlock`). Font-load reflow shifts the pixel position of every line on first paint; a raw pixel restore lands at the wrong line.
 
 For these, the substrate writes a richer payload onto `data-tug-scroll-state`:
@@ -1286,11 +1286,11 @@ The attribute is button-class-only. Structural markers like `data-slot="tug-canv
 
 ### Focus in content-owning cards
 
-**A card has at most one text-entry / input surface.** For a content-owning + engine card (a dev card, anything whose factory writes `bag.content`) that surface is the engine's editor — `tug-prompt-entry` for a dev card. Content blocks inside the card (`FileBlock`, `DiffBlock`, `TerminalBlock`) render no text-entry UI of their own. So a dev card's activation focus has exactly one destination: the engine. There is no "where does focus go when this card is activated" decision — it goes to the prompt entry, on every activation source (cold-boot, app-switch, card-switch, cross-pane drag, reload).
+**A card has at most one text-entry / input surface.** For a content-owning + engine card (a session card, anything whose factory writes `bag.content`) that surface is the engine's editor — `tug-prompt-entry` for a session card. Content blocks inside the card (`FileBlock`, `DiffBlock`, `TerminalBlock`) render no text-entry UI of their own. So a session card's activation focus has exactly one destination: the engine. There is no "where does focus go when this card is activated" decision — it goes to the prompt entry, on every activation source (cold-boot, app-switch, card-switch, cross-pane drag, reload).
 
-The engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks`, and the framework's `applyBagFocus` dispatcher invokes them through the `engine` resolution. A dev card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it; either way the assembler leaves `bag.focus` absent and `resolveBagFocus` routes the card to the engine from its registry tag.
+The engine is a **callable**: it registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks`, and the framework's `applyBagFocus` dispatcher invokes them through the `engine` resolution. A session card carries no `data-tug-focus-key` / `data-tug-state-key` element of its own, so `captureFocus` only ever returns `engine` or `none` for it; either way the assembler leaves `bag.focus` absent and `resolveBagFocus` routes the card to the engine from its registry tag.
 
-**Focusable-but-not-entry content classifies as `none`.** A read-only `TugCodeView` (FileBlock's CM6 viewer) is still *focusable* — CM6 read-only views accept focus for selection / copy. But its `.cm-content` lives under `data-slot="tug-code-view"`, which is not an engine-owned selector and carries no `data-tug-*-key`. So when the user clicks into a FileBlock viewer inside a dev card, `captureFocus` returns `none`, and on the next activation `resolveBagFocus` routes the card to its engine — focus lands on the prompt entry, not back in the viewer. This is intended: a viewer is not a text-entry surface, and transient selection-to-copy focus is not preserved across activation.
+**Focusable-but-not-entry content classifies as `none`.** A read-only `TugCodeView` (FileBlock's CM6 viewer) is still *focusable* — CM6 read-only views accept focus for selection / copy. But its `.cm-content` lives under `data-slot="tug-code-view"`, which is not an engine-owned selector and carries no `data-tug-*-key`. So when the user clicks into a FileBlock viewer inside a session card, `captureFocus` returns `none`, and on the next activation `resolveBagFocus` routes the card to its engine — focus lands on the prompt entry, not back in the viewer. This is intended: a viewer is not a text-entry surface, and transient selection-to-copy focus is not preserved across activation.
 
 **Do not add per-block transient focus targets to a content-owning card.** No per-block find rows, no inline parameter editors stamped with `data-tug-focus-key`, no second text input. The notion of Find is being redesigned and will not return as a per-block widget. If a future feature needs in-card text entry, it belongs in (or replaces) the engine's one text-entry surface — not as a sibling framework-axis target.
 
@@ -1539,7 +1539,7 @@ Before a component is done:
 
 Some external stores aren't backed by tugbank; they're projections of
 server-side state that the supervisor pushes over the CONTROL feed.
-`DevSessionLedgerStore` is the second consumer of this pattern — the
+`SessionLedgerStore` is the second consumer of this pattern — the
 first was the live-sessions broadcast handling that landed alongside
 T3.4.c §step-4-5-5.
 
@@ -1551,7 +1551,7 @@ The shape:
    handler validates the payload shape and forwards a typed event
    through a small pub/sub bus.
 2. **A pub/sub bus per store.** The ledger uses
-   `lib/dev-session-ledger-events.ts` — a process-global module that
+   `lib/session-ledger-events.ts` — a process-global module that
    exports `subscribe*` / `publish*` functions per event kind. The bus
    is the single decoupling point between the wire decoder and the
    store consumer.

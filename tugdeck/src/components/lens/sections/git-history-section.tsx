@@ -1,7 +1,7 @@
 /**
  * git-history-section.tsx — the Lens **Git History** section.
  *
- * A read-only view of the followed dev card's recent commits. Follows the
+ * A read-only view of the followed session card's recent commits. Follows the
  * active card's project ([P02]): `useFollowedProject()` chains
  * `useLensFollowedCard()` → `cardSessionBindingStore` to yield the followed
  * card's `projectDir`, and the body and collapsed summary both read it so they

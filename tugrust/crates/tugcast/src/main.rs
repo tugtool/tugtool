@@ -309,7 +309,7 @@ async fn main() {
     // Note: `cli.source_tree` is the transitional CLI flag name (formerly
     // `--dir`). Internally we still call the bootstrap-watched directory
     // `watch_dir` because that's what it is semantically — the Cargo walk
-    // at T3.0.W3.b deletes the bootstrap entirely when the Dev card lands
+    // at T3.0.W3.b deletes the bootstrap entirely when the Session card lands
     // a per-card project picker.
     let watch_dir = match cli.source_tree.clone() {
         Some(p) if p.is_absolute() => p,
@@ -317,7 +317,7 @@ async fn main() {
         None => {
             // Distributed app: no project is bound at startup. The bootstrap
             // workspace exists only to emit the initial empty feed snapshots
-            // an unbound Dev card renders against; per-card workspaces drive
+            // an unbound Session card renders against; per-card workspaces drive
             // every real feed directory at card-open time. Watch an empty
             // per-instance directory so nothing meaningful is observed.
             let dir = tug_instance::data_dir().join("bootstrap-empty");
@@ -566,7 +566,7 @@ async fn main() {
             request_id: Option<String>,
             /// Optional repo-relative pathspec — the changeset card scopes
             /// its diff to one file or one changeset. Absent/empty keeps
-            /// the whole-tree diff (dev card `/diff`). Head flavor only.
+            /// the whole-tree diff (session card `/diff`). Head flavor only.
             paths: Option<Vec<String>>,
             /// Dash range flavor ([P19]): a present `branch` selects
             /// `<base>...<branch>` + worktree dirt instead of `git diff HEAD`.
@@ -1143,9 +1143,9 @@ async fn main() {
     // responses now flow primarily through the shared broadcast
     // channel: the watch carries the bootstrap's initial empty
     // `FileTreeSnapshot`, and the router's "deliver latest value on
-    // connect" pass for snapshot_watches is what causes the dev card
+    // connect" pass for snapshot_watches is what causes the session card
     // to see *any* FILETREE frame before a query has been sent. The
-    // dev card gates rendering on `feedData.size > 0` across
+    // session card gates rendering on `feedData.size > 0` across
     // `[CODE_INPUT, CODE_OUTPUT, SESSION_SIDEBAND, FILETREE]`; without
     // this initial empty frame, a brand-new card with no session
     // bound hangs at "Loading..." indefinitely. The broadcast does

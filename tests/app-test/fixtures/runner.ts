@@ -1,6 +1,6 @@
 /**
  * runner.ts — drive a COMMITTED fixture session through the production
- * dev-card picker → spawn → reveal path, for behavior/correctness legs.
+ * session-card picker → spawn → reveal path, for behavior/correctness legs.
  *
  * Mirrors `corpus/runner.ts`'s picker dance (never Tab/Tab/Enter — the
  * picker's Enter fall-through opens a NEW session) but is decoupled from
@@ -13,20 +13,20 @@ import { expect } from "bun:test";
 import type { App } from "../_harness";
 import type { SeededFixtureSession } from "./resolve";
 
-export const PICKER_FORM = ".dev-card-picker-form";
-export const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
-export const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
+export const PICKER_FORM = ".session-card-picker-form";
+export const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
+export const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
 export const TRANSCRIPT =
-  '[data-card-id="A"] [data-testid="dev-card-transcript"]';
+  '[data-card-id="A"] [data-testid="session-card-transcript"]';
 /** The scroll container CardHost captures/restores under this region key. */
 export const SCROLLER =
-  '[data-card-id="A"] [data-tug-scroll-key="dev-card-transcript"]';
+  '[data-card-id="A"] [data-tug-scroll-key="session-card-transcript"]';
 
 export const rowSel = (id: string): string => `[data-session-id="${id}"]`;
 
 export function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -98,12 +98,12 @@ export async function openFixtureSession(
   expect(
     await clickElement(
       app,
-      `.dev-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
+      `.session-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
     ),
   ).toBe(true);
   await app.waitForCondition<boolean>(
     `(function(){
-      var el = document.querySelector(".dev-card-picker-form input");
+      var el = document.querySelector(".session-card-picker-form input");
       return el !== null && el.value === ${JSON.stringify(seeded.projectDir)};
     })()`,
     { timeoutMs: 8000 },

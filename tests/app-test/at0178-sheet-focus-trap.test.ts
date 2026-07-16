@@ -8,7 +8,7 @@
  * `data-focus-mode` — and on dismiss the mode is popped and the key view
  * returns to the element that was current when the sheet opened.
  *
- * Driven through the dev card's permission sheet (a TugSheet opened by clicking
+ * Driven through the session card's permission sheet (a TugSheet opened by clicking
  * the Mode chip):
  *   - open  → `data-focus-mode` present on <html>, and the sheet is shown;
  *   - Escape → sheet closes, `data-focus-mode` removed, and the key view is
@@ -35,7 +35,7 @@ const SHEET = '[data-slot="tug-sheet"]';
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -66,7 +66,7 @@ describe.skipIf(!SHOULD_RUN)("AT0178: sheet pushes/pops a focus-trap mode", () =
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(MODE_CHIP)}) !== null`,

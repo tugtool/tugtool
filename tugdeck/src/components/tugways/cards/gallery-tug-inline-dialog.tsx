@@ -27,8 +27,8 @@
 
 import React from "react";
 
-import { PermissionDialog } from "@/components/tugways/chrome/dev-permission-dialog";
-import { QuestionDialog } from "@/components/tugways/chrome/dev-question-dialog";
+import { PermissionDialog } from "@/components/tugways/chrome/session-permission-dialog";
+import { QuestionDialog } from "@/components/tugways/chrome/session-question-dialog";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
@@ -117,7 +117,7 @@ const CMD_ONE_LINER = "tokei";
 const CMD_TWO_LINE =
   'for i in 1 2 3 4 5; do echo "tick $i"; sleep 1; done; echo "done"';
 const CMD_LONG =
-  'cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck/src/components/tugways/cards && ls blocks/ && echo "---DISPATCH HEAD---" && sed -n \'1,60p\' cards/dev-assistant-renderer-dispatch.ts 2>/dev/null || find . -name "dev-assistant-renderer-dispatch.ts"';
+  'cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck/src/components/tugways/cards && ls blocks/ && echo "---DISPATCH HEAD---" && sed -n \'1,60p\' cards/session-assistant-renderer-dispatch.ts 2>/dev/null || find . -name "session-assistant-renderer-dispatch.ts"';
 const CMD_VERY_LONG = `${CMD_LONG} && grep -rn "KIND_RENDERERS" . --include="*.ts" | head -40 && echo "scanning the dispatch table for permission renderers" && for f in blocks/*.tsx; do echo "checking $f for a bespoke renderer"; done && echo "sweep complete — every command path accounted for"`;
 
 // ---------------------------------------------------------------------------

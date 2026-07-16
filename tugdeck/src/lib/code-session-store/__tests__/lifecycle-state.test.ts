@@ -1,5 +1,5 @@
 /**
- * Pure-logic tests for `lifecycle-state.ts` — the dev-card
+ * Pure-logic tests for `lifecycle-state.ts` — the session-card
  * lifecycle state-to-zone matrix encoded as `deriveLifecycleSnapshot`.
  *
  * Coverage:
@@ -27,7 +27,7 @@ import {
   deriveLifecycleSnapshot,
   lifecycleSnapshotsEqual,
   type LifecycleStoreSignals,
-  type DevLifecycleSnapshot,
+  type SessionLifecycleSnapshot,
 } from "../lifecycle-state";
 
 // ---------------------------------------------------------------------------
@@ -53,8 +53,8 @@ const ONE_TURN: ReadonlyArray<unknown> = [{}];
 
 function derive(
   s: LifecycleStoreSignals,
-  previous?: DevLifecycleSnapshot,
-): DevLifecycleSnapshot {
+  previous?: SessionLifecycleSnapshot,
+): SessionLifecycleSnapshot {
   return deriveLifecycleSnapshot(s, previous);
 }
 

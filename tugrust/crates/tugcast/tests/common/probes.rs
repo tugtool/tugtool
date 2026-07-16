@@ -952,7 +952,7 @@ pub static PROBES: &[ProbeRecord] = &[
         ),
     },
     // --- Test 36: Slash command /rewind (terminal-local; bounces) ---
-    // Empirical capture for dev-card `/rewind` ([#step-7a], [D10]). The
+    // Empirical capture for session-card `/rewind` ([#step-7a], [D10]). The
     // terminal's `/rewind` is an interactive checkpoint picker rendered
     // entirely client-side — it is NOT a wire verb. Driven over
     // stream-json as a `user_message`, claude bounces it with a
@@ -963,7 +963,7 @@ pub static PROBES: &[ProbeRecord] = &[
     //
     // This probe pins that bounce so a future claude that DID add a real
     // rewind verb (or changed the bounce text/shape) surfaces as drift.
-    // The dev-card `/rewind` ([#step-7]) is therefore necessarily
+    // The session-card `/rewind` ([#step-7]) is therefore necessarily
     // client-driven: tugcode truncates the session JSONL at the chosen
     // message uuid and respawns `--resume` (the [R07] respawn pattern) —
     // there is nothing to forward to claude.
@@ -977,7 +977,7 @@ pub static PROBES: &[ProbeRecord] = &[
         skip_reason: None,
     },
     // --- Test 37: `rewind_files` round-trip through tugcode ([#step-7-1]) ---
-    // The code-restore half of dev-card `/rewind`, driven END-TO-END through
+    // The code-restore half of session-card `/rewind`, driven END-TO-END through
     // tugcast → tugcode → claude (the [#step-7a] capture was direct against
     // claude; this is the bridge). Sequence:
     //   1. Ask claude to Write a file → creates a file checkpoint
@@ -1042,7 +1042,7 @@ pub static PROBES: &[ProbeRecord] = &[
         // a raw `claude --permission-mode {bypassPermissions,acceptEdits}`
         // with file checkpointing on completes the identical Write turn
         // in a small AND a 2000-file repo. It is NOT the product in
-        // Auto/default mode — the live Dev card (Auto mode, checkpointing
+        // Auto/default mode — the live Session card (Auto mode, checkpointing
         // on) runs Write/Edit turns to completion. The hang is specific
         // to the capture path in **acceptEdits** mode at 2.1.197 — i.e. a
         // tugcode SDK-control-protocol interaction with an
@@ -1053,12 +1053,12 @@ pub static PROBES: &[ProbeRecord] = &[
         // handles the new 2.1.197 control exchange.
         skip_reason: Some(
             "2.1.197: Write-tool turn does not complete through tugcode in \
-             acceptEdits mode (raw claude + the Auto-mode Dev card are fine); \
+             acceptEdits mode (raw claude + the Auto-mode Session card are fine); \
              pending frame-level root-cause",
         ),
     },
     // --- Test 38: conversation rewind, FORK (default) ([#step-7-2]) ---
-    // The conversation half of dev-card `/rewind`, end-to-end through the
+    // The conversation half of session-card `/rewind`, end-to-end through the
     // bridge. A two-turn session is rewound to turn 2: tugcode copies the
     // truncated history under a freshly-minted claude session id, silent-
     // respawns `--resume` against the fork, and acks `rewind_result`

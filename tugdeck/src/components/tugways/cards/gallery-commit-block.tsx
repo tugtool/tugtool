@@ -116,7 +116,7 @@ const COMMIT_ENRICHED_OUT = `[main 1f2e3d4c] Add commit receipt body kind
 
 312\t0\ttugdeck/src/components/tugways/body-kinds/commit-block.tsx
 196\t0\ttugdeck/src/components/tugways/body-kinds/commit-block.css
-6\t1\ttugdeck/src/components/tugways/cards/dev-assistant-renderer-dispatch.ts
+6\t1\ttugdeck/src/components/tugways/cards/session-assistant-renderer-dispatch.ts
 0\t22\ttugdeck/src/lib/old-commit-helper.ts`;
 
 // --- Build the parsed fixtures (real parse path) --------------------------

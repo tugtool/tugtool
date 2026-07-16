@@ -408,7 +408,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // editor's handler. Re-assert the destination through the sanctioned
   // gate: an open card-modal sheet keeps its key view (`adoptKeyCard`),
   // otherwise focus the editor (which re-promotes it via `focusin`). This
-  // is the same reclaim the Dev card runs; it is what keeps
+  // is the same reclaim the Session card runs; it is what keeps
   // `sendToFirstResponder` reliable across moves.
   const reclaimFocusDestination = useCallback((): void => {
     if (cardLifecycle?.getFirstResponderCardId() !== cardId) return;
@@ -439,12 +439,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     // `applyBagFocus`. A `cardDidActivate` reclaim here would only duplicate
     // that claim — and, draining AFTER the framework's single-channel claim,
     // risk clobbering a framework-axis target ([L05] timing-derived ordering;
-    // [L23] single-channel), exactly as the Dev card's comment records.
+    // [L23] single-channel), exactly as the Session card's comment records.
     //
     // `cardDidMove` / `cardDidResize` keep their reclaim: those gestures move
     // the card's DOM identity (cross-pane move) or fire off a title-bar
     // interaction that pulled first responder onto the pane, and re-asserting
-    // the editor destination is the recovery path (same as the Dev card).
+    // the editor destination is the recovery path (same as the Session card).
     cardDidMove: () => reclaimFocusDestination(),
     cardDidResize: () => reclaimFocusDestination(),
   });
@@ -754,7 +754,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // engine hook, which bumps the engine-hooks version; `CardHost`'s
   // `subscribeEngineHooksChange` retry re-runs `applyBagFocus`, resolves this
   // card to `engine`, and `paintMirrorAsActive` focuses the freshly-created
-  // CM6 view. One claim, one channel — the same path the Dev card's late
+  // CM6 view. One claim, one channel — the same path the Session card's late
   // editor bind rides.
 
   // ---- Render ----

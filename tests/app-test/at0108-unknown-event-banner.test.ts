@@ -1,5 +1,5 @@
 /**
- * at0108-unknown-event-banner.test.ts — the dev card surfaces tugcode's
+ * at0108-unknown-event-banner.test.ts — the session card surfaces tugcode's
  * forward-compat `unknown_event` frame as a soft, dismissible bulletin (NOT a
  * locking banner) ([AT0108]).
  *
@@ -8,7 +8,7 @@
  * When claude streams a top-level event type this build doesn't translate,
  * tugcode's `routeTopLevelEvent` default branch emits an `unknown_event`
  * IPC frame (`original_type` + a hex payload preview) instead of silently
- * dropping it. The dev card folds that into `snapshot.unknownEvent`. It is a
+ * dropping it. The session card folds that into `snapshot.unknownEvent`. It is a
  * forward-compat FYI — the session keeps working — so it is an
  * acknowledge-sticky top-right bulletin (with an OK button), never a banner
  * that locks the pane.
@@ -17,7 +17,7 @@
  * and the projection (`transient-notice.test.ts`) — are unit-tested. This
  * drives the **live surface** end to end: it injects the already-translated
  * `unknown_event` frame through the store's real `frameToEvent → dispatch`
- * path (`driveDevSession`/`ingestFrame`) and asserts the bulletin's tone,
+ * path (`driveSession`/`ingestFrame`) and asserts the bulletin's tone,
  * copy, that the pane stays interactive, OK-dismiss, and re-raise on a new
  * type.
  *
@@ -39,7 +39,7 @@ const BULLETIN_TITLE = `${BULLETIN} [data-title]`;
 const BULLETIN_DESC = `${BULLETIN} [data-description]`;
 const BULLETIN_OK = `${BULLETIN} [data-button]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
+const TUG_SESSION_ID = "test-session-A"; // bindSession default
 
 /** True iff `.tug-pane-body` is NOT inert — i.e. the prompt is interactive. */
 const PANE_BODY_NOT_INERT = `(function(){var b=document.querySelector(${JSON.stringify(
@@ -60,7 +60,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -107,11 +107,11 @@ describe.skipIf(!SHOULD_RUN)(
             // first-compile cost, which can exceed the 10s default.
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
           // ── inject a forward-incompatible event ──────────────────────
-          await app.driveDevSession("A", unknownEventFrame("future_telemetry"));
+          await app.driveSession("A", unknownEventFrame("future_telemetry"));
 
           // A bulletin mounts (caution tone = Sonner data-type="warning").
           await app.waitForCondition<boolean>(
@@ -139,7 +139,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
 
           // ── a different unknown type re-raises after the dismiss ──────
-          await app.driveDevSession("A", unknownEventFrame("another_future_thing"));
+          await app.driveSession("A", unknownEventFrame("another_future_thing"));
           await app.waitForCondition<boolean>(
             `(function(){var d=document.querySelector(${JSON.stringify(BULLETIN_DESC)});return d!==null && d.textContent.indexOf("another_future_thing")!==-1;})()`,
             { timeoutMs: 6000 },

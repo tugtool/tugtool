@@ -199,7 +199,7 @@ body {
 
 /* A toggleable-cycling context shows the focus language ONLY while it is
    cycling ([P13]). When cycling is off (`data-cycling="false"` on the context
-   root, e.g. the dev card resting on its editor caret), the keyboard lives in
+   root, e.g. the session card resting on its editor caret), the keyboard lives in
    the editor — the cycle stops must show no ring, behind-tint, or cursor, even
    though the engine may still mark a *resting* key view among them (the route
    group seeds the key view on its selected segment). Suppress the ring

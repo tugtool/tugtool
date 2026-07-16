@@ -150,7 +150,7 @@ function deckShape() {
   return {
     cards: cardIds.map((id) => ({
       id,
-      componentId: "dev",
+      componentId: "session",
       title: `Dev ${id}`,
       closable: true,
     })),
@@ -240,9 +240,9 @@ describe.skipIf(!SHOULD_RUN)(
               };
               return {
                 hasCard: !!card,
-                picker: q('[data-slot="dev-card-picker"]'),
-                body: q('[data-slot="dev-card"]'),
-                spawnError: q('[data-testid="dev-card-spawn-error-retry"]'),
+                picker: q('[data-slot="session-card-picker"]'),
+                body: q('[data-slot="session-card"]'),
+                spawnError: q('[data-testid="session-card-spawn-error-retry"]'),
                 model: txt('[data-slot="model-value"] [data-tug-stable="active"]'),
               };
             };

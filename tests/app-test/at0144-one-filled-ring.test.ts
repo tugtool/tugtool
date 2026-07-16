@@ -59,7 +59,7 @@ function hasAttr(app: App, selector: string, attr: string): Promise<boolean> {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -87,7 +87,7 @@ describe.skipIf(!SHOULD_RUN)("AT0144: at most one filled+ring per sheet", () => 
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Open /model via the real submit path.

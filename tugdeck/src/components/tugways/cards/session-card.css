@@ -1,0 +1,1259 @@
+/* ============================================================================
+   session-card.css
+   ============================================================================
+   Session card — the Unified Command Surface.
+
+   The card body is a plain flex column (no split pane, no JS sizing). The
+   transcript column (`.session-card-top-column`: history + Z2 status row) flexes
+   into the remaining height but never drops below `--session-transcript-min`;
+   the prompt-entry region below is pinned to the bottom. The text area opens
+   at `--tug-text-editor-min-height` and grows with content up to
+   `--session-entry-max-height` (a fraction of the card height), then scrolls —
+   so the Z4 / Z5 toolbar stays pinned to the card bottom, always fully
+   visible.
+   ========================================================================= */
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  /* Size container so the prompt editor's growth cap can be expressed in
+     `cqh` (a fraction of the card's own height). The card's size comes from
+     its hosting pane (definite), so size containment changes nothing
+     visually. */
+  container-type: size;
+  /* ── Tune this ──────────────────────────────────────────────────────
+     The transcript region (history + Z2 status row) never shrinks below
+     this — a hard floor. ───────────────────────────────────────────────── */
+  --session-transcript-min: 52px;
+  /* ── Tune this ──────────────────────────────────────────────────────
+     How tall the text area may auto-expand before it scrolls — a fraction
+     of the card's own height (`cqh`). The transcript and the pinned Z4 / Z5
+     toolbar share the rest. ───────────────────────────────────────────── */
+  --session-entry-max-height: 50cqh;
+  /* No `min-width` here — a leaf cannot widen its container, it only
+     overflows and clips. The card's width floor is declared as
+     `sizePolicy.min.width` in `registerSessionCard`; the hosting pane's
+     resize clamp honors it (aggregated across the stack by
+     `getStackSizePolicy`), so the card box is always wide enough and
+     this surface never needs to constrain its own width. */
+}
+
+/* Entry pane wrapper — a TugBox rendered plain + inset={false}.
+   TugBox's default width:fit-content would collapse the box to content
+   width; `width: 100%` makes it span the entry region. Height is
+   content-sized (no `height: 100%`) so the auto-height editor drives the
+   region's height. The fieldset element is otherwise already reset by
+   tug-box.css (no border, no margin, no padding when plain + inset={false}). */
+.session-card-entry-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Top-pane flex column — three rows:
+     [Z0 .session-card-header-content] (flex 0 0 auto, content-sized)
+     [.session-card-transcript]         (flex 1 1 auto, scrolls)
+     [Z2 .session-card-status-bar]      (flex 0 0 auto, content-sized)
+   Always rendered so the transcript's mount identity is stable
+   across slot-content changes ([L26]). Empty Z0 / Z2 wrappers
+   collapse to zero height naturally — no intrinsic content, no
+   padding, flex basis of `auto`. The transcript flexes into all
+   remaining vertical space; `min-height: 0` on every ancestor
+   (.session-card, .session-card-top-column, .session-card-transcript) keeps
+   the inner list view's scroll behavior intact when the row above
+   or below changes height. */
+.session-card-top-column {
+  display: flex;
+  flex-direction: column;
+  /* Direct flex child of `.session-card` now (the split pane is gone). Flexes
+     into all height the content-sized entry region below leaves, but never
+     drops below `--session-transcript-min` — the transcript (and its Z2 status
+     row) always keeps a usable minimum, even when the entry grows. The inner
+     list view keeps its own `min-height: 0` for scrolling; this floor is on
+     the outer column only. */
+  flex: 1 1 0;
+  width: 100%;
+  min-height: var(--session-transcript-min, 140px);
+  min-width: 0;
+}
+
+/* Prompt-entry region — sibling of the transcript column, ALWAYS pinned to
+   the bottom (last flex child; the transcript column above is `flex: 1 1 0`
+   and absorbs the slack).
+
+   `flex: 0 1 auto` — content-sized (the editor's height drives it) with no
+   min-height of its own, so the region is exactly text-area + the fixed
+   Z4 / Z5 rows, no dead space below the toolbar. `flex-shrink: 1` lets the
+   region yield to the transcript's `--session-transcript-min` floor on a small
+   card rather than overflowing. */
+.session-card-entry-region {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  width: 100%;
+  min-width: 0;
+  /* ── Tune this ──────────────────────────────────────────────────────
+     Opening (empty) height of the text-entry area, in CSS pixels. The
+     editor opens this tall and grows with content up to its cap — `card
+     height − --session-transcript-min − --session-entry-chrome` (see the scroller
+     rule below) — then scrolls. So it never pushes the Z4 / Z5 toolbar off
+     the card bottom. The fixed Z4 / Z5 rows are unaffected.
+
+     HEIGHT-STEAL HEADROOM: when a compose image is present the editor floor
+     drops to `base − --tug-prompt-entry-attach-height` (= 160 − 84 = 76px
+     today). That floor is the height three typed lines are meant to fit
+     into so the strip steals cleanly with no hop. If three lines hop, the
+     floor is a hair too short for the real rendered line height — BUMP THIS
+     VALUE; every px added here adds 1px of steal headroom (and opens the
+     empty editor 1px taller). ──────────────────────────────────────────── */
+  --session-entry-base-height: 162px;
+  /* Constant height of the compose attachment zone (Z4C). Inherited down
+     into `.tug-prompt-entry-attachments` (which sets its own height from
+     this var) AND subtracted by the steal below, so the height the editor
+     yields and the height the zone occupies are ONE value — they can't
+     drift. Owned here (a prompt-entry/Dev dimension), NOT in the
+     attachment-preview token family — the strip's own tile tokens
+     (`--tugx-attachment-tile-*`) live there. Sized to fit one compose tile
+     (`--tugx-attachment-tile-height`, 56px) plus its caption; shrinking the
+     tile and this together widens the range of text lengths that steal
+     cleanly. */
+  --tug-prompt-entry-attach-height: 84px;
+  /* Hard safety floor for the editor min-height. Only engaged if the strip
+     ever grows taller than `base − floor`; in the normal case the steal
+     target (`base − strip` ≈ 3 editor rows) sits above it. */
+  --session-entry-steal-floor: 64px;
+  /* HEIGHT-STEALING. When a compose preview is present the editor yields
+     exactly the strip's height from its empty floor, so the entry's TOTAL
+     height is unchanged — the editor doesn't hop when the first image
+     drops. The `:has()` rule below feeds `--tug-attach-height`; with no
+     preview it's unset → 0 → this resolves to the plain base height
+     (pixel-identical to before). */
+  --tug-text-editor-min-height:
+    max(var(--session-entry-steal-floor),
+        calc(var(--session-entry-base-height) - var(--tug-attach-height, 0px)));
+}
+
+/* Feed the steal: a present compose strip contributes its constant height,
+   which the editor min-height above subtracts. Pure CSS — no measurement,
+   no React state ([L06]). */
+.session-card-entry-region:has(.tug-prompt-entry-attachments) {
+  --tug-attach-height: var(--tug-prompt-entry-attach-height);
+}
+
+/* Cap the text area's auto-expand at `--session-entry-max-height` (a fraction
+   of the card's height); past it the editor SCROLLS, so the Z4 / Z5 toolbar
+   is never pushed off the card bottom. [L20] — the card tunes the substrate's
+   scroll height through its own scoped rule. */
+.session-card-entry-region .tug-text-editor > .cm-editor > .cm-scroller {
+  max-height: var(--session-entry-max-height, 50cqh);
+}
+
+/* The `TugPaneBulletinProvider` nested inside the top column carries the same
+   flex-column layout so the transcript still grows, and (via
+   `.tug-pane-bulletin-root`) is the positioning context the pane bulletin
+   anchors to — pinned to the bottom of the transcript region, ABOVE the Z2
+   status bar (which is a sibling below this host, outside the provider). The
+   transcript scrolls inside its own child, so clipping here only contains the
+   absolutely-positioned toaster — it never adds an outer scrollbar. */
+.session-card-bulletin-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Outer bulletin scope wrapping the bottom host — its `.tug-pane-bulletin-root`
+   (position: relative) is the positioning context for the TOP-RIGHT transient
+   notice toaster (retry/transport/replay/unknown). Carries the same flex-column
+   layout so the inner host (and the transcript) still grow.
+
+   `overflow: clip` contains the absolutely-positioned toaster to the card.
+   Sonner enters a right-anchored toast with `translateX(100%)` — momentarily
+   off the card's right edge — and expands the stack on pointer interaction;
+   without containment that transient spill grew the card's scroll size, so
+   clicking the bulletin flashed a horizontal scrollbar and hopped the whole
+   card. The resting toast is unaffected: at the 800px card-width floor it sits
+   ~380px from the right edge (356px Sonner width + 24px offset), never near the
+   clip box, so only the off-card enter transform is clipped (the toast now
+   slides in from the card edge rather than from beyond the window). `clip`
+   over `hidden` so this wrapper never becomes a scroll container. */
+.session-card-notice-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: clip;
+}
+
+/* Z0 — top-of-card content slot. Content-sized; empty by default.
+   No padding or background so the empty state takes zero visual
+   space. Consumers fill it with whatever (typed) display content
+   makes sense; the host owns only the layout box per [L20]. */
+.session-card-header-content {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Z2 — status-bar content slot. Lives at the BOTTOM of the top
+   split-panel, OUTSIDE the scrolling transcript. Content-sized;
+   empty by default. Layout shift on telemetry update is contained:
+   the row grows into space the transcript ceded, with no scroll
+   repositioning. The host owns the layout box + breathing-room
+   padding + status-bar background; composed children declare their
+   own tokens per [L20]. Rule sets only `background-color` (no
+   foreground) — self-documenting per [L16]; descendants render on
+   this surface and declare their own `@tug-renders-on` accordingly. */
+.session-card-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  /* The status content lives in `.session-card-status-bar-main` (`flex: 1 1
+     auto`), so it spans the row and the status-row renderer inside centers
+     its own cells. `justify-content: center` is inert while `main` flexes,
+     but is kept so a future content-sized Z2 occupant (one not `width:
+     100%`) still centers in the row. */
+  justify-content: center;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-status-rest);
+  /* Borders top and bottom frame the status bar: the top rule separates it
+     from the transcript above, the bottom rule from the prompt entry below.
+     When the PULSE strip follows, the bottom rule is dropped (see below) —
+     the strip's transcript-colored background does the separating instead.
+     Both render on the status surface set on this same rule (self-documenting
+     per [L16]). */
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  /* `position: relative` + `z-index: 1`: `TugListView`'s scroller (inside
+     `.session-card-transcript`) sets `position: relative` and so paints in the
+     positioned-descendants phase of the surrounding stacking context. The
+     bar must be promoted to a positioned element with a higher z-index so
+     its own paint lands above the scroller's positioned subtree rather than
+     under the transcript. */
+  position: relative;
+  z-index: 1;
+  /* Establish a CSS containment context so the combined status-row
+     renderer's container queries can target this host. `inline-size`
+     so the queries see the host's width but height stays content-
+     sized; `session-status` so the renderer's @container rules match
+     this container by name rather than the nearest unnamed ancestor. */
+  container-type: inline-size;
+  container-name: session-status;
+}
+
+/* When Z2 has no content, the wrapper renders as an empty `<div>`
+   (JSX `{null}` produces no DOM child). `:empty` matches that case
+   and removes the entire strip — background, border, padding all
+   vanish so the transcript reads as the bottom of the top split-
+   panel until something fills the slot. React mount identity is
+   unaffected: the div node stays mounted, only its CSS box
+   collapses. */
+.session-card-status-bar:empty {
+  display: none;
+}
+
+/* When the PULSE strip follows Z2, it differentiates itself by its
+   transcript-colored background, not a rule — so drop Z2's bottom divider
+   to collapse the cluster of lower lines. The border box is kept
+   (color → transparent) so there's no 1px layout shift. With the pulse
+   disabled there's no `.session-pulse-strip` sibling and the divider stays. */
+.session-card-status-bar:has(+ .session-pulse-strip) {
+  border-bottom-color: transparent;
+}
+
+/* Z2 status content — `flex: 1 1 auto` lets it span the row; `min-width: 0`
+   lets it shrink below content. The status-row renderer inside is `width:
+   100%` and centers its own cells. */
+.session-card-status-bar-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* The separator between the transcript and the prompt entry is the Z2
+   status bar's own `border-top` (1px) — there is no sash element. The card
+   body is a plain flex column; the entry region sizes to content. */
+
+/* Renderer-specific styling for the telemetry chips (window
+   utilization, etc.) lives alongside the renderers themselves in
+   `session-card-telemetry-renderers.css`. Keying overrides on a
+   renderer-owned class (e.g. `.session-telemetry-window-utilization`)
+   rather than a placement-zone selector means the chip looks the
+   same whether the placement-experiment harness puts it in Z2, Z3,
+   or Z4 — exactly the property the experiment depends on. */
+
+/* Top-pane transcript host. Wraps a `TugListView` that renders
+   committed turns + the in-flight pair as alternating (user, code)
+   rows. Lives inside `.session-card-top-column` as the flex-grow row
+   between Z0 (header) and Z2 (status bar). `flex: 1 1 auto` +
+   `min-height: 0` lets the inner list view's scroller behave
+   correctly when the row above or below changes height. Cascade-
+   scoped overrides adjust the list view's layout tokens for this
+   consumer per [D12] — the primitive's tokens are read, never
+   redefined globally ([L20]). No new tokens are introduced here;
+   the overrides reuse existing `--tug-space-*` and
+   `--tugx-list-view-*` tokens. */
+.session-card-transcript {
+  /* Positioning context for the floating jump-to-latest button. */
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+
+  /* Per-card response-settings tokens. The `ResponseSettingsStore`
+     overrides these via inline custom properties on this same
+     element; descendants consume them via the cascade rules below.
+     Defaults mirror `DEFAULT_RESPONSE_SETTINGS` in
+     `lib/response-settings-store.ts`. [L06 / L24] */
+  --tugx-session-entry-margin: 16px;
+
+  /* Per-card transcript zoom. CSS `zoom` is a layout scale (reflows,
+     stays crisp) applied to this root, which wholly contains the
+     TugListView scrollport — so every measurement the list makes lives
+     in one uniformly-scaled space, exactly as the Swift host's
+     `WKWebView.pageZoom` does for the whole document. Only the
+     transcript subtree scales; the Z2/Z4 chrome (siblings) stays at 1×.
+     `ResponseSettingsStore` overrides `--transcript-zoom` per card. */
+  --transcript-zoom: 1;
+  zoom: var(--transcript-zoom, 1);
+
+  /* Transcript root font-size. Em-relative descendants (markdown
+     body, paragraph margins, heading rhythm, icon overrides below)
+     anchor to this nominal 14px; the per-card `zoom` above scales the
+     whole subtree on top of that. The Swift host's `WKWebView.pageZoom`
+     (View > Zoom In / Zoom Out) still scales the entire page uniformly. */
+  font-size: 14px;
+}
+
+/* [DT10] transcript-replay paint gate — NARROWED to the inline
+   (non-windowed) class. `SessionTranscriptHost` sets `data-replaying`
+   only when a replay window is open AND the transcript is below the
+   windowed-mounting thresholds: there the whole window is
+   sub-perceptual and a single reveal avoids the accumulation FOUC.
+   Windowed transcripts paint PROGRESSIVELY at fold flushes instead
+   (the resume-performance progressive reveal), so the attribute never
+   appears on them.
+
+   The rule hides the LIST, not the host root, so the replay progress
+   strip above it stays visible through the gated window.
+
+   `visibility: hidden`, not `display: none`: the subtree keeps its
+   layout box, so the inner list view's `ResizeObserver` still measures
+   cells as they commit and the height index is final by the time the
+   gate lifts — the scroll restore then resolves once against a settled
+   transcript height. The subtree is never unmounted ([L06] — paint is
+   gated via a data-attr + CSS, never by conditional rendering; [L26] —
+   the host keeps its mount identity across the window). */
+.session-card-transcript[data-replaying] .tug-list-view {
+  visibility: hidden;
+}
+
+.session-card-transcript .tug-list-view {
+  /* Never let the scrollbar's arrival reflow the column. `overflow-y:
+     scroll` reserves the classic-scrollbar track at all times (works on
+     every WebKit), so the content width is constant whether or not the bar
+     is showing — the bar never "appears," it is always there. On
+     overlay-scrollbar systems the bar overlays and reserves nothing either
+     way, so no shift in that case too. `overflow-y: scroll` alone is the
+     complete no-reflow guarantee in BOTH scrollbar modes.
+
+     Do NOT add `scrollbar-gutter: stable` here. It is redundant with the
+     above, and on overlay-scrollbar Macs it FORCES a reserved gutter that
+     contradicts overlay's "reserve nothing" — a gutter WebKit re-evaluates
+     during rapid streaming reflow, flickering the column by one
+     scrollbar-width (content jumps right, the reserved bar shoves off-edge,
+     then snaps back). The flicker is worst with a second pane snapped
+     immediately to the right, whose left edge repaints against this
+     scroller's gutter at the same x. Dropping it restores a rock-steady
+     column under streaming. */
+  overflow-y: scroll;
+  --tugx-list-view-row-gap: var(--tugx-session-entry-margin);
+  --tugx-list-view-padding-block: var(--tug-space-md);
+  /* Start side ZEROED: the permanent Z0 row is the list's leading content,
+     and it must sit flush at the very top of the scroll content — exactly
+     where the load overlay's absolute `top: 0` band sits — so the resting
+     strip and the loading band align pixel-for-pixel. The top breathing room
+     the `::before` spacer used to give the first entry now lives BELOW the Z0
+     row instead (its `margin-block-end`, in session-load-control-bar.css). */
+  --tugx-list-view-padding-block-start: 0;
+  /* Bottom-only override: the symmetric `md` reads as cramped
+     against the Z2 status bar — the last entry's Z1B sits a few
+     pixels below the status indicator dot above. Bump just the
+     end side to `2xl` (24px) so there's generous breathing room
+     between the bottom-most Z1B and the status surface. */
+  --tugx-list-view-padding-block-end: var(--tug-space-2xl);
+  --tugx-list-view-scroll-padding-end: var(--tug-space-2xl);
+
+  /* Static fallback for the entry-header pin offset. The
+   * `TugTranscriptEntry` ResizeObserver writes the live measured
+   * header height onto the entry root via inline style, which
+   * always wins over this selector-based default. But if the JS
+   * write hasn't happened yet (mount race) or fails for any
+   * reason, descendants still see a sensible non-zero value here
+   * — and the wrapper-chrome / fenced-code / file-actions stack
+   * pins below the entry header rather than sliding under it. */
+  --tugx-pin-stack-top: 36px;
+}
+
+/* Tighten the gap between an entry's body and its trailing controls
+   (e.g. the per-entry copy button). The base token reads as standard
+   editorial spacing for transcript-style rows; in this consumer the
+   controls are a small ghost icon button that reads better hugging
+   the body than at the default distance. The companion adjustment is
+   `--tugx-list-view-row-gap` above, which puts the saved space back
+   between entries instead of inside one. */
+.session-card-transcript .tug-transcript-entry {
+  --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
+}
+
+/* Identifier + timestamp + sequence-badge sized in `em` against the
+   `.session-card-transcript` nominal 14px root:
+     - identifier 0.95em ≈ 13.3px — a small bump above the
+       original 0.875em ≈ 12.25px (which sat *below* body) and a
+       touch below body text (14px). The 600 font-weight + larger
+       icon do the visual landmark work; the identifier itself
+       stays a hair compact.
+     - timestamp + sequence both 0.85em ≈ 11.9px. Above the earlier
+       0.75em (≈ 10.5px) so the metadata reads without the user
+       needing to squint, but still a clear step below the
+       identifier. Both carry tabular-nums so the digit cells
+       match — important now that the sequence is right-aligned
+       (see below) and grows from `#001` to `#999`+ over a session.
+*/
+.session-card-transcript .tug-transcript-entry__identifier {
+  font-size: 0.95em;
+}
+
+.session-card-transcript .tug-transcript-entry__timestamp {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shell row's `• cwd` clause, trailing the exec timestamp in the
+   timestamp slot. A native `<button>` reset to read as inline text:
+   it inherits the timestamp's muted color and 0.85em size (it nests
+   inside the timestamp span) so it reads as paired metadata, but it
+   is a live affordance — a pointer cursor and a hover underline cue
+   the click, which opens the directory in Finder. `nowrap` keeps the
+   path on the timestamp's line rather than breaking mid-path. */
+.session-card-transcript .session-card-transcript-shell-cwd {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  text-underline-offset: 0.15em;
+}
+
+.session-card-transcript .session-card-transcript-shell-cwd:hover {
+  text-decoration: underline;
+}
+
+/* Sequence — right-aligned within the header row so the badge
+   becomes a fixed marker at the trailing edge regardless of how
+   long the identifier or timestamp is. `margin-left: auto` absorbs
+   the residual flex space between the timestamp and the sequence.
+   Tabular figures keep `#003` and `#012` aligned in the same
+   character cells, which is the standard "right-aligned counter
+   stays put as digits grow" treatment. */
+.session-card-transcript .tug-transcript-entry__sequence {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* Gutter icons (User / Bot / Shell / Command). Lucide renders SVGs
+   with width / height pixel attributes — override via CSS so the
+   icon sits at an em-relative size against the transcript root
+   (1.2em ≈ 16.8px at the 14px root) AND slightly above the
+   identifier. `margin-block-start: 0` overrides the primitive's
+   0.125em baseline-correction nudge — that nudge was sized for the
+   original 1em icon paired with smaller body text. With the icon
+   now bigger and the identifier slightly smaller, the nudge
+   pushes the glyph visibly below the text baseline; setting it to
+   0 puts the icon and text top edges back into alignment. */
+.session-card-transcript .tug-transcript-entry {
+  --tugx-transcript-icon-column-width: 2.5em;
+}
+
+.session-card-transcript .tug-transcript-entry__icon svg {
+  width: 1.2em;
+  height: 1.2em;
+  /* 1px nudge down — visually aligns the icon's optical center
+   * with the identifier text after the 0.95em / 1.2em proportion
+   * shift. Was 0 (which left the icon a hair too high), originally
+   * 0.125em (left it a hair too low). 1px is a fixed pixel rather
+   * than em because the nudge is a baseline-correction artifact of
+   * the font/icon rendering, not a content-scaled offset. */
+  margin-block-start: 1px;
+}
+
+/* Per-entry control row icons (the trailing copy button). The
+   TugPushButton's `icon` SVG is sized in pixels via the lucide
+   `size` prop; override here so the button glyph scales too. */
+.session-card-transcript .tug-transcript-entry__controls .lucide {
+  width: 1em;
+  height: 1em;
+}
+
+/* Ghost-row body — the plain-text preview of a queued send awaiting
+   dispatch. Wraps long lines, preserves user-typed whitespace, `1em`
+   font-size anchors to the transcript root. A committed/in-flight user
+   message takes the markdown path below instead. */
+.session-card-transcript-user-body {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 1em;
+}
+
+/* User-row body — a submitted prompt rendered through `TugMarkdownBlock`
+   with its inline atom chips grafted back in (`TugAtomMarkdownBody`).
+   The inner markdown block carries `.session-card-transcript-code-body`, so
+   its padding cancel, full width, and `1em` block typography match the
+   assistant body exactly. This wrapper only fills the row column and
+   provides the menu-anchor element; the markdown block owns
+   paragraph/list/heading spacing via the shared `--tugx-md-*` rhythm —
+   the same compact spacing the assistant uses, replacing the old
+   pre-wrap body where a blank source line cost a full line-height. */
+.session-card-transcript-user-markdown {
+  width: 100%;
+}
+
+/* Ghost row — a queued send awaiting dispatch. Painted as an ordinary
+   user row, then de-emphasized so it reads as "not yet sent." Opacity
+   alone — no token-governed color property — carries the ghosting; the
+   row carries a per-row ✕ that un-sends that one queued message. The
+   dimming lands on the icon/header/body, NOT the controls — opacity on
+   the whole row would scrim the ✕ too (a child can't exceed its parent's
+   opacity), and the un-send button stays full-strength and live. */
+.session-card-transcript-ghost-row .tug-transcript-entry__icon,
+.session-card-transcript-ghost-row .tug-transcript-entry__header,
+.session-card-transcript-ghost-row .tug-transcript-entry__body {
+  opacity: 0.5;
+}
+
+/* The compaction point, in place: the Compaction Summary block stacked above a
+   quiet line marking where claude compacted its context. A vertical stack (not
+   the old centered separator) so the summary sits with the compaction that
+   produced it. Appearance only ([L06]); the summary + quiet line carry their
+   own chrome, so this wrapper is pure layout. */
+.session-card-transcript-compaction {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  width: 100%;
+  /* A CLEAR break from the preceding turn: a beefy vertical gap, then a
+     full-width horizontal rule immediately above the quiet line (the padding
+     sets the rule → quiet-line gap). The margin is above the rule; the border
+     is the rule. Uniform regardless of what precedes it, so the adjacency
+     overrides below are pinned to the same beefy gap. */
+  margin-top: var(--tug-space-2xl);
+  padding-top: var(--tug-space-lg);
+  border-top: 1px solid var(--tugx-block-border);
+}
+.session-card-transcript-compaction-line {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pin every preceding-sibling case to the same beefy gap — the clear break is
+   the point, so a block or thinking block before it must not shrink it. */
+* + .session-card-transcript-compaction,
+.tool-block-chrome + .session-card-transcript-compaction,
+.session-thinking-block + .session-card-transcript-compaction {
+  margin-top: var(--tug-space-2xl);
+}
+
+/* Prose after the compaction block owns the small following gap. */
+.session-card-transcript-compaction + .tug-markdown-block {
+  margin-top: var(--tug-space-xs);
+}
+
+/* Empty-run marker — an inline trace shown in place of an assistant
+   run's empty body: a `plumbing` line for a hidden-tool-only run
+   ("Scheduled a wake-up") or the `empty` placeholder for a blank turn.
+   Composes `TugQuietLine` (quiet tone) for the row; this wrapper owns
+   only spacing. */
+.session-card-transcript-run-marker {
+  user-select: none;
+}
+/* Top-margins-only adjacency, matching the compaction divider: the
+   marker owns the xs gap when it follows a sibling; first-in-body it
+   sits flush under the attribution header. A thinking chip before it
+   keeps its wider gap so the trace reads as a follow-on line. */
+* + .session-card-transcript-run-marker {
+  margin-top: var(--tug-space-xs);
+}
+.session-thinking-block + .session-card-transcript-run-marker {
+  margin-top: var(--tug-space-lg);
+}
+
+/* Wake-trigger chip — opens a wake turn's assistant body with what
+   scheduled it ("loop pacing", a cron's prompt), seeded from
+   `wake_started.wake_trigger.summary`. Composes `TugQuietLine` (quiet
+   tone) for the row; this wrapper owns only its margins. */
+.session-card-transcript-wake-trigger {
+  margin-block: var(--tug-space-xs) 0;
+  user-select: none;
+}
+.session-card-transcript-wake-trigger + .tug-markdown-block {
+  margin-top: var(--tug-space-xs);
+}
+/* The wake-trigger chip's text renders through `TugMarkdownBlock` so a
+   background-agent answer formats as real markdown. It rides the quiet
+   line's `subject` slot (an `inline-flex` item), so give the block full
+   row width and cancel the primitive's stand-alone horizontal padding —
+   the quiet line's icon gutter already provides the indent. Color stays
+   the muted subject tone the slot inherits. */
+.session-card-transcript-wake-trigger .tug-quiet-line-subject:has(
+    > .session-card-transcript-wake-trigger-md
+  ) {
+  display: block;
+}
+.session-card-transcript-wake-trigger-md {
+  --tugx-md-block-padding-x: 0;
+  width: 100%;
+}
+/* The subject switches to `display:block` (above), so its markdown text
+   flows on its baseline and rides high in the line box, while the quiet
+   line's icon still geometrically centers in the `sm * 1.6` box — a
+   centered glyph against baseline text reads low. Raise the icon so it
+   optically centers on the first text line. */
+.session-card-transcript-wake-trigger .tug-quiet-line-icon {
+  top: -1px;
+}
+
+
+/* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
+   wraps inside the row column. The default `--tugx-md-block-padding-x`
+   is `1rem` (a soft default for stand-alone consumers); inside a
+   transcript code row the body should align flush with the
+   identifier line — the `TugTranscriptEntry` icon column already
+   provides the gutter, so we cancel the block's horizontal padding
+   here per the [L20] cascade-override pattern. */
+.session-card-transcript-code-body {
+  width: 100%;
+  --tugx-md-block-padding-x: 0;
+}
+
+/* Markdown content typography. Body text uses 1em so it anchors to
+   the transcript root. Heading sizes are intentionally NOT overridden
+   here: the transcript uses the one global compressed heading scale
+   ([P04], `tug-markdown-view.css`) so it stays identical to every other
+   markdown surface (the gallery, etc.). A local override here is what
+   made the transcript's headings — and their em-based margins — larger
+   than the gallery's; removing it is what makes the two consistent. */
+.session-card-transcript-code-body .tugx-md-block {
+  font-size: 1em;
+}
+
+/* Trailing interrupted indicator on a committed code row whose
+   `result === "interrupted"`. Mirrors Claude Code's terminal layout
+   where "Interrupted" is the postscript line under the assistant's
+   (possibly partial) output. The wrapper aligns the badge flush with
+   the body content; the small unconditional top margin lifts the
+   badge off whatever assistant content sits above it. For CASE A
+   interrupts (empty assistantText) the gap is harmless — the row's
+   identifier line provides enough visual separation that the small
+   margin reads as deliberate spacing rather than dangling whitespace. */
+.session-card-transcript-code-interrupted {
+  display: flex;
+  align-items: center;
+  margin-top: var(--tug-space-xs, 4px);
+}
+
+/* Backdrop rendered behind the picker sheet. The project picker
+   lives in a TugSheet that drops from the title bar; the card body
+   below the sheet must read as a solid surface, not transparent
+   chrome that lets the canvas grid bleed through. The sheet itself
+   sits in front. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.session-card-picker-backdrop {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}
+
+/* ─── Restoring placeholder (session-restore in-flight) ─── */
+
+/* Card-body-filling container that holds the restoring panel
+   centered. Rendered by `SessionRestoring` while a persisted session is
+   being re-asserted through `spawn_session(mode=resume)` — replaces
+   the picker for cards with a pending restore so no half-dismissed
+   sheet flashes when the ack arrives. */
+.session-card-restoring-backdrop {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tug-space-lg, 16px);
+  box-sizing: border-box;
+}
+
+/* Inner panel — borrows the visual weight of TugAlert content but
+   inline rather than modal. Max-width so it reads as a focused
+   status rather than sprawling to fill large cards.
+
+   Delay-gated: `SessionRestoring` mounts this panel
+   only once the restore has run past `RESTORE_PLACEHOLDER_DELAY_MS`,
+   so for a fast restore it never appears. When it does mount, this
+   one-shot keyframe fades it in so the centered panel arrives as a
+   soft beat rather than a hard pop ([L06] — appearance via CSS, the
+   panel's existence via React). */
+.session-card-restoring-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md, 12px);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--tug-space-lg, 16px);
+  background-color: var(--tugx-alert-bg, var(--tug7-surface-control-primary-ghost-action-hover));
+  color: var(--tugx-alert-fg, var(--tug7-element-global-text-normal-strong-rest));
+  border: 1px solid var(--tugx-alert-border, var(--tug7-element-global-stroke-neutral-muted-rest));
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+  animation: session-card-restoring-panel-in
+    var(--tug-motion-duration-moderate, 200ms) ease-out both;
+}
+
+@keyframes session-card-restoring-panel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-card-restoring-panel {
+    animation: none;
+  }
+}
+
+.session-card-restoring-title {
+  font-weight: var(--tug-font-weight-semibold);
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.session-card-restoring-project {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  opacity: 0.8;
+  /* Long paths truncate with ellipsis rather than wrap arbitrarily. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--tug-font-family-mono, ui-monospace, monospace);
+}
+
+/* Footer row: spinner pinned left, Cancel button pinned right. */
+.session-card-restoring-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--tug-space-md, 12px);
+  margin-top: var(--tug-space-sm, 8px);
+}
+
+.session-card-restoring-spinner {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Retry button on a picker notice (S3/S5). Sits below the notice
+   message so the click target is obvious. */
+.session-card-picker-notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--tug-space-xs, 4px);
+}
+
+/* Form content inside the picker sheet. The `xl` gap separates the
+   top-level label+item sections (path field, Recents, Sessions, sheet
+   actions) so each reads as its own beat — a wider gap than the
+   `sm` label-to-item gap inside each section, so the section breaks
+   dominate the rhythm. */
+.session-card-picker-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* "Directory doesn't exist" warning in the picker action row. Sits
+   left of Cancel: `margin-right: auto` claims the row's free space so
+   the buttons stay pinned to the right edge. */
+.session-card-picker-dir-warning {
+  margin-right: auto;
+  align-self: center;
+}
+
+/* One-shot notice surfaced above the form when the picker is
+   re-presented after a session failure (e.g. resume failed).
+   @tug-renders-on: surface.global.attention.muted */
+.session-card-picker-notice {
+  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
+  border-radius: var(--tug-radius-sm, 6px);
+  background: var(--tug7-element-global-surface-attention-muted-rest, rgba(255, 196, 0, 0.12));
+  color: var(--tug7-element-global-text-normal-strong-rest);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  font-family: var(--tug-font-family-sans);
+  line-height: var(--tug-line-height-tight, 1.35);
+}
+
+.session-card-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+/* While the path field's completion menu is open, fade the Recent Project
+   Paths block to a faint ghost (keeps its layout space) so the floating
+   overlay reads clearly without fully erasing the list. [L06] via DOM attr. */
+.session-card-picker-section[data-completing="true"] {
+  opacity: 0.05;
+}
+
+/* Keep a recents row's trash icon visible while its confirm popover is open
+   (Mac-menu-open style), mirroring the Sessions list. The row carries
+   `data-pending-trash="true"`; its trailing slot is hover-revealed by default. */
+.tug-list-row[data-pending-trash="true"] .tug-list-row-trailing {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* @tug-renders-on: surface.global.neutral.default
+   Matches TugBox legend treatment so the Project path label and
+   the section legends below read as one family of headings. */
+.session-card-picker-label {
+  /* A flex row that ALWAYS reserves the scan-bar's line box, so the rare
+     inline progress bar appearing beside the label never grows this row and
+     shoves the list below — the interface must not shift. The bar's label
+     rides `sm`/line-height-1.4 (taller than this `xs` heading), so that box
+     is the tallest thing the row can hold; reserve exactly it and the bar
+     drops in without moving anything. `align-items: center` keeps the
+     heading vertically centered with or without the bar. */
+  display: flex;
+  align-items: center;
+  min-height: calc(var(--tug-font-size-sm, 0.8125rem) * 1.4);
+  font-size: var(--tug-font-size-xs, 0.75rem);
+  font-weight: var(--tug-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tug7-element-field-text-normal-label-rest);
+  font-family: var(--tug-font-family-sans);
+}
+
+/* Inline "scanning terminal sessions…" hint beside the Sessions label,
+   shown while the host's phase-2 external-JSONL scan is still running
+   (the ledger rows are already listed). Muted, non-uppercase, lower
+   weight so it reads as a transient status, not a second heading. */
+.session-card-picker-scanning {
+  margin-left: 0.5em;
+  font-weight: var(--tug-font-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.65;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Determinate scan-progress bar (host emitting `list_sessions_progress`
+   ticks): the labeled-bar recipe inline in the section header. The bar
+   needs an explicit track width to render inside the inline-flex
+   header span. */
+.session-card-picker-scanning .session-card-picker-scanning-bar {
+  inline-size: 16rem;
+}
+
+/* Project-path input — mono family so the typed path and the recent
+   paths in the list below read as one family. The smoothing pins
+   mirror `.session-card-picker-path-recent` exactly so the two surfaces
+   never disagree on macOS subpixel rendering. Scoped under
+   `.session-card-picker-field` (specificity 0,2,0) so it wins over
+   `.tug-input`'s `font-family: inherit` regardless of stylesheet
+   load order. */
+.session-card-picker-field .session-card-picker-path-input {
+  font-family: var(--tug-font-family-mono);
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* ----------------------------------------------------------------------------
+   .session-card-picker — master/detail picker body (Recents + Sessions)
+   ----------------------------------------------------------------------------
+   Vertical master/detail: a Recents section (master, always visible)
+   above a Sessions section (detail, always visible). Each section is a
+   header label stacked over a fixed-height, bordered list host — no
+   enclosing TugBox. The header label uses the same uppercase treatment
+   as the `Project path` label (and the former TugBox legends); the
+   bordered host frames the list, and the list carries its own row
+   structure (the `flush` hairline dividers, the rows' hover / selected
+   fills).
+   ----------------------------------------------------------------------------- */
+
+/* A picker section — header label stacked above its list host.
+   Mirrors `.session-card-picker-field` (the `Project path` label + its
+   input) so the three stacked label-over-content groups read as one
+   family down the sheet. */
+.session-card-picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+  width: 100%;
+}
+
+/* List hosts — content-sized wrappers that grow with their content up to a
+   per-section cap (the cap is a `max-height` on the embedded list view, which
+   is the scroll container). An empty or sparse section collapses to its
+   content so a new user with no recents / sessions doesn't stare at a big
+   reserved void; a section with many rows grows to the cap, then scrolls. The
+   cap is the former fixed height, so the busy case is unchanged. */
+/* The picker boxes are pure sizing wrappers: the embedded TugListView draws its
+   own frame, rounded corners, row clipping, and focus ring from these tokens
+   (it is the scroll container, so it clips its own rows to the radius). No
+   border / overflow / ring drawn here — the component owns all of it. */
+/* @tug-renders-on: surface.global.neutral.default */
+.session-card-picker-recents-host,
+.session-card-picker-sessions-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  --tugx-list-view-radius: var(--tug-radius-sm);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Empty-state placeholder — content-sized now (the host no longer reserves a
+   fixed height), so an empty section collapses to a compact hint rather than a
+   tall blank panel. A small min-height keeps the single line of italic hint
+   from looking cramped. Centered text reads as a quiet hint. */
+.session-card-picker-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: var(--tug-space-md, 12px);
+  font-size: var(--tug-font-size-sm, 0.875rem);
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+}
+
+/* The embedded Sessions TugListView — zero row gap so adjacent cells share
+   their borders. Content-height (the scroller grows with its rows) capped at
+   the section's max; beyond the cap the list scrolls. */
+.session-card-picker-list-view.tug-list-view {
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-row-gap: 0;
+  height: auto;
+  max-height: 14.5rem;
+}
+
+/* The Recents list fills its host edge-to-edge — zero block + inline
+   padding so the rows sit flush to the bordered host on every side.
+   Content-height capped at the section's max (the former fixed height); the
+   list scrolls past it. The `flush` zero row gap and hairline dividers come
+   from `rowLayout="flush"` in `tug-list-view.css`. */
+.session-card-picker-recents-list.tug-list-view {
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-inline: 0;
+  height: auto;
+  max-height: 7.5rem;
+}
+
+/* path-recent — the path text inside a `mono` `flush` `TugListRow`. The
+   row type (`mono`) owns the mono family, the compact `xs` size that
+   matches the size="sm" `Project path` input, the dense padding, and the
+   macOS smoothing pin. This rule owns only the path-display nicety the
+   row type does not: Finder-style ellipsis-at-START truncation (RTL), so
+   the meaningful tail of a long path stays visible. Text color is left
+   to `TugListRow`'s cascade — the path inherits it (selected → white). */
+.session-card-picker-recents-list .session-card-picker-path-recent {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  unicode-bidi: plaintext;
+}
+
+/* The whole recent row is a click target — the `TugListView` cell
+   wrapper owns activation; the pointer cursor is the affordance. */
+.session-card-picker-recents-list .tug-list-view-cell {
+  cursor: pointer;
+}
+
+/* Match-range highlight (the matcher attaches ranges when the typed
+   input is a substring of the path). No horizontal padding — even
+   1px of inline-box padding shifts surrounding text when ranges
+   appear/disappear (e.g., clicking a recent makes its full path
+   match), and the bg + border-radius read as a highlight on their
+   own. */
+/* @tug-renders-on: surface.global.data.tinted */
+.session-card-picker-match {
+  background: var(--tug7-surface-global-data-tinted-default-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  border-radius: var(--tug-radius-2xs, 2px);
+}
+
+/* On a selected recents row the path equals the typed path, so the
+   matcher marks the whole string — its own tinted fill + dark text
+   would stack on the selection fill and defeat the row's color swap
+   (the path would stay dark on the blue). Drop the mark's fill and let
+   it inherit the row's selected-text color like the rest of the row. */
+.session-card-picker-recents-list
+  .tug-list-row[data-selected="true"]
+  .session-card-picker-match {
+  background: transparent;
+  color: inherit;
+}
+
+/* Uniform session-row height. The `New session` row is single-line
+   while the resume rows carry a title + subtitle (two lines), so a min
+   height keeps every session row the same comfortable size — the short
+   row fills to it, centered. Tune by eye; it is a floor, never clips a
+   taller row. */
+.session-card-picker-sessions-list .tug-list-row {
+  --tugx-list-row-min-height: 3.5rem;
+}
+
+/* Trailing affordance — the trash icon button lives in the row's
+   TugListRow trailing slot, which hides it until the row is engaged
+   (`trailingReveal="engaged"`: hover, focus-within, selected, or
+   keyboard cursor). The only extra behavior
+   this scope adds: keep the trash visible while THIS row's confirm
+   popover is open — the pointer is then on the portaled popover, off
+   the row, so the primitive's hover reveal wouldn't fire. */
+.session-card-picker-sessions-list
+  .tug-list-row[data-pending-trash="true"]
+  .tug-list-row-trailing[data-reveal="engaged"] {
+  opacity: 1;
+}
+
+/* Mac-menu-open style: while THIS row's confirm popover is up, paint
+   the trash button with the danger-active token so it reads as "this
+   is the affordance whose menu is open" — regardless of cursor
+   position. TugIconButton composes `.session-card-picker-session-trash`
+   onto the `<button>`, so the selector targets the button itself; the
+   active-token overrides apply on top of TugButton's
+   `.tug-button-ghost-danger` rest classes. */
+/* @tug-renders-on: --tug7-surface-control-primary-ghost-danger-active */
+.session-card-picker-sessions-list
+  .tug-list-row[data-pending-trash="true"]
+  .session-card-picker-session-trash {
+  background-color: var(--tug7-surface-control-primary-ghost-danger-active);
+  border-color: var(--tug7-element-control-border-ghost-danger-active);
+  color: var(--tug7-element-control-text-ghost-danger-active);
+}
+.session-card-picker-sessions-list
+  .tug-list-row[data-pending-trash="true"]
+  .session-card-picker-session-trash svg {
+  color: var(--tug7-element-control-icon-ghost-danger-active);
+}
+
+/* Give the trailing accessories more breathing room: the `terminal`
+   provenance badge sat too close to the trash button at the default xs gap. */
+.session-card-picker-sessions-list .tug-list-row-trailing {
+  --tugx-list-row-trailing-gap: var(--tug-space-md);
+}
+
+/* The `terminal` provenance badge inherits the row's color instead of carrying
+   its own tinted-data hue — it reads as a quiet provenance marker, not a
+   saturated chip competing with the trash button beside it. */
+.session-card-picker-sessions-list .tug-badge-tinted-data {
+  background-color: transparent;
+  color: inherit;
+  border-color: inherit;
+}
+
+/* Trash-all button container — centered below the Sessions box.
+   The button is always rendered (disabled when there's nothing to
+   trash) so the box's height stays stable as ledger ticks bring
+   the non-live count above and below zero. Generous top margin
+   separates it from the dense list above. */
+.session-card-picker-trash-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tug-space-sm, 8px);
+  padding: var(--tug-space-lg, 16px) var(--tug-space-md, 12px) 0;
+}
+
+/* Nothing to trash: dim the whole affordance (the label as well as the
+   already-`disabled` icon button) so it reads as inert, not actionable. */
+.session-card-picker-trash-all[data-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Tighten the gap between the Sessions section (which carries the
+   Trash-all button at its bottom edge) and the Cancel/Open action
+   row. The form's 24px inter-section gap is right above the section
+   boundaries elsewhere; here it stacks on the button's empty bottom
+   and reads as too much air. A negative margin-top on the actions
+   row brings the effective gap to ~12px. */
+.session-card-picker-form > .tug-sheet-actions {
+  margin-top: calc(0px - var(--tug-space-md, 12px));
+}
+
+/* ---- Card-modal scrim ([P19]) -------------------------------------------
+ *
+ * While an inline dialog (permission / question) is pending the card is
+ * card-modal ([P16]): the keyboard is trapped in the dialog and the content
+ * AROUND it is scrimmed so the modality is felt, not just enforced. Driven by
+ * the engine-derived `data-inline-dialog-pending` signal on the card root —
+ * appearance-only ([L06]), no portal, no backdrop element, no React state.
+ *
+ * The dialog restates its own subject (the description names the command /
+ * file; an Edit shows its diff in the body), so the single bright island is the
+ * transcript row holding the dialog; everything else dims — the other
+ * transcript rows, the Z2 status bar, and the prompt-entry pane. The dialog row
+ * is excepted via `:has()` ([Q09] option (a)).
+ */
+/* The scrim is also a MODAL BARRIER, not just a dim: each scrimmed region drops
+   `pointer-events` so the pending dialog truly owns interaction — no hovering the
+   Copy chip on a faded turn, no clicking the status bar or typing in the entry
+   pane behind the dialog. `pointer-events: none` on a cell leaves it transparent
+   to hit-testing, so wheel events still reach the scroll container and the
+   transcript scrolls normally; only the controls inside the faded regions go
+   inert. The dialog subtree (the bright island) keeps `pointer-events: auto`. */
+.session-card[data-inline-dialog-pending="true"] .session-card-status-bar,
+.session-card[data-inline-dialog-pending="true"] .session-card-entry-pane {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* Transcript turns dim except the one holding the pending dialog. Transcript
+   rows are TugListView cells (`.tug-list-view-cell`), so the dim is keyed there
+   — the user-message turns and every prior turn fade and go inert. */
+.session-card[data-inline-dialog-pending="true"]
+  .session-card-transcript
+  .tug-list-view-cell:not(:has(.session-permission-dialog)):not(:has(.session-question-dialog)) {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* …but the dialog's OWN option rows are a nested `TugListView`, so its cells are
+   also `.tug-list-view-cell` descendants of the transcript that don't *contain* a
+   dialog — the rule above would dim AND inert them too. Re-light + re-enable any
+   list cell that lives INSIDE the bright-island dialog. Compound depth matches
+   the dim rule's specificity and, declared after it, wins on source order. */
+.session-card[data-inline-dialog-pending="true"]
+  .session-card-transcript
+  .session-permission-dialog
+  .tug-list-view
+  .tug-list-view-cell,
+.session-card[data-inline-dialog-pending="true"]
+  .session-card-transcript
+  .session-question-dialog
+  .tug-list-view
+  .tug-list-view-cell {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The dialog lives in the LIVE assistant turn, alongside that turn's prose
+   (the `.session-card-transcript-code-body`). Dim + inert that prose so the dialog
+   is the single bright, interactive island — the dialog restates its own
+   subject ([Q09]/R04), so nothing legible is lost. The PERMISSION dialog is a
+   sibling of the prose at the turn foot; the QUESTION wizard lives inside its
+   own tool block (`.tool-block-chrome:has(.session-question-dialog)`) and stays
+   bright while its sibling tool blocks dim (next rule). */
+.session-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.session-permission-dialog)
+  .session-card-transcript-code-body,
+.session-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.session-question-dialog)
+  .session-card-transcript-code-body {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* The QUESTION wizard now renders IN PLACE inside its own tool block, mid-turn,
+   so the live turn's OTHER tool blocks must dim to leave the question block the
+   single bright island. The live cell is excepted from the whole-cell dim
+   above; here we dim every tool block in that cell EXCEPT the one holding the
+   wizard (`:not(:has(.session-question-dialog))`). No common dimmed ancestor sits
+   over the question block (the cell + body wrapper are never opacity-dimmed),
+   so the group-opacity rule can't trap it dark. */
+.session-card[data-inline-dialog-pending="true"]
+  .tug-list-view-cell:has(.session-question-dialog)
+  .tool-block-chrome:not(:has(.session-question-dialog)) {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* The jump-to-bottom affordance is follow-bottom chrome for free reading; while a
+   dialog is pending it's both off-topic and part of the scrimmed surround, and a
+   tall inline dialog spuriously disengages follow-bottom and pops it up. Hide it
+   for the duration (wins over its own `[data-visible="true"]` reveal). */
+.session-card[data-inline-dialog-pending="true"] .session-jump-to-bottom-button {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Diagnostic tail in the session-dead detail panel: the crashed
+   subprocess's trailing stderr, surfaced so an operator sees *why* the
+   session died. Monospace, wrapping, and independently scrollable so a
+   long claude/tugcode error can't push the Dismiss footer off-screen. */
+.session-card-error-diagnostic-block {
+  margin-top: 12px;
+}
+
+.session-card-error-diagnostic-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.session-card-error-diagnostic {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background-color: var(--tug7-surface-global-primary-normal-overlay-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* The stderr tail is meant to be read and copied: keep it selectable even
+     if an ancestor pane sets user-select:none, and show a text cursor. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+

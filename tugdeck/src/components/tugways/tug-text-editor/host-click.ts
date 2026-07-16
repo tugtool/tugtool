@@ -3,7 +3,7 @@
  * anywhere inside the `.tug-text-editor` wrapper lands the caret.
  *
  * CM6 owns pointer selection only within `view.contentDOM`, which is
- * content-sized. A host taller than its content (the Dev card's prompt
+ * content-sized. A host taller than its content (the Session card's prompt
  * opens at `--tug-text-editor-min-height`) leaves a blank band below the
  * last line — inside the scroller, outside the content. A mousedown there
  * reaches no CM6 handler, and WebKit's mousedown focus default then walks

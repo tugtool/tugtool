@@ -159,7 +159,7 @@ export interface UseResponderOptions<Extra extends string = never> {
    * focuses the responder's `[data-responder-id]` element or its
    * first tabbable descendant.
    *
-   * Per `tugplan-dev-popup-bindings.md` [D03] (#focus-contract). Like
+   * Per `tugplan-session-popup-bindings.md` [D03] (#focus-contract). Like
    * `canHandle` / `validateAction` / `kind`, `focus` is a structural
    * property captured at mount; changing it on a later render does
    * not re-register and the change has no effect. This matches the

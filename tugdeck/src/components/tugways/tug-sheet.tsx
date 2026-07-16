@@ -929,11 +929,11 @@ export function TugSheetContent({
   // contentDOM). When the sheet exits, the editor is reachable again
   // but unfocused — Radix's `onUnmountAutoFocus` returns focus to
   // the trigger element, but Dev's editor is not the trigger here.
-  // `DevCardBody` subscribes to `sheetDidHide` and re-focuses the
+  // `SessionCardBody` subscribes to `sheetDidHide` and re-focuses the
   // prompt-entry editor, gated on first-responder state. Per the
-  // contract documented in `dev-card.tsx` (the focus-claim handlers
+  // contract documented in `session-card.tsx` (the focus-claim handlers
   // block) and pinned by
-  // `tests/app-test/at0175-dev-mount-focus.test.ts`: any modal-class
+  // `tests/app-test/at0175-session-mount-focus.test.ts`: any modal-class
   // surface that portals into the pane chrome and sets `inert` on
   // the pane body MUST emit a per-card `didHide` lifecycle event
   // after `inert` clears, mirroring this emission. Removing or

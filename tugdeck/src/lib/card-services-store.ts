@@ -1,13 +1,13 @@
 /**
  * CardServicesStore — module-scope owner of per-card service bags.
  *
- * The Dev card needs a `CodeSessionStore`, an `EditorSettingsStore`,
+ * The Session card needs a `CodeSessionStore`, an `EditorSettingsStore`,
  * and a couple of feed-store stacks. These have side effects on
  * construction (FeedStore subscribes to the wire, CodeSessionStore
  * registers an `onClose` on the connection). They cannot be created
  * during render and must outlive transient React effect re-runs.
  *
- * Earlier the lifecycle lived inside `useDevCardServices` as
+ * Earlier the lifecycle lived inside `useSessionCardServices` as
  * `useState<services>` populated by a `useLayoutEffect` keyed on the
  * binding. That violated [L02] (no `useEffect` copying external state
  * into React state) and produced a class of bugs where services tore
@@ -47,7 +47,7 @@ import type { CompletionProvider } from "./tug-text-types";
 import { getConnection } from "./connection-singleton";
 import { encodeTrashProjectDirSessions } from "../protocol";
 import { DEFAULT_REPLAY_WINDOW_TURNS } from "../protocol";
-import { resolveRestoreWindow } from "./dev-restore-window";
+import { resolveRestoreWindow } from "./session-restore-window";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 import { getTugbankClient } from "./tugbank-singleton";
 import {
@@ -56,9 +56,9 @@ import {
 } from "./card-session-binding-store";
 import { sendCloseSession, sendRequestReplay } from "./session-lifecycle";
 import {
-  readDevRecentProjects,
-  insertDevRecentProject,
-  putDevRecentProjects,
+  readSessionRecentProjects,
+  insertSessionRecentProject,
+  putSessionRecentProjects,
 } from "../settings-api";
 import type { DeckManager } from "../deck-manager";
 import { logSessionLifecycle } from "./session-lifecycle-log";
@@ -128,8 +128,8 @@ export interface CardServices {
 }
 
 /** The dev transcript's scroll region key — matches `TugListView`'s
- *  `scrollKey="dev-card-transcript"`. */
-const TRANSCRIPT_SCROLL_KEY = "dev-card-transcript";
+ *  `scrollKey="session-card-transcript"`. */
+const TRANSCRIPT_SCROLL_KEY = "session-card-transcript";
 
 /**
  * Read the saved transcript anchor's `turnDepthFromEnd` (turns from the
@@ -202,7 +202,7 @@ class CardServicesStore {
   attachDeckManager(deckManager: DeckManager): void {
     // Ensure the binding-store subscription is in place before any
     // later module subscribes to the same store. The downstream
-    // `dev-session-restore.ts` binding subscriber depends on
+    // `session-restore.ts` binding subscriber depends on
     // cardServicesStore having already constructed the per-card
     // services for a freshly-arrived binding (it looks up the
     // codeSessionStore via `getServices`); subscribers fire in
@@ -326,7 +326,7 @@ class CardServicesStore {
       lifecycle,
       tugSessionId: binding.tugSessionId,
       // Thread the user's session-mode intent onto the store so
-      // pure derivations (notably `deriveDevCardBannerSpec`) can
+      // pure derivations (notably `deriveSessionCardBannerSpec`) can
       // suppress the JSONL-replay banner for new bindings without
       // a second subscription to `cardSessionBindingStore`. Stable
       // for the store's lifetime — a re-bind builds a fresh services
@@ -506,10 +506,10 @@ class CardServicesStore {
     // would multiply-write the same path.
     const tugbank = getTugbankClient();
     if (tugbank) {
-      const current = readDevRecentProjects(tugbank);
-      const updated = insertDevRecentProject(current, binding.projectDir);
+      const current = readSessionRecentProjects(tugbank);
+      const updated = insertSessionRecentProject(current, binding.projectDir);
       if (updated[0] !== current[0] || updated.length !== current.length) {
-        putDevRecentProjects(updated);
+        putSessionRecentProjects(updated);
         // Recents↔ledger coherence: any path that fell off the recents
         // tail also has its ledger rows dropped so the picker doesn't
         // surface sessions for a path the user no longer recognizes.
@@ -529,7 +529,7 @@ class CardServicesStore {
     });
 
     // Recovery dispatch ([D12], Phase A-R1 / Step R1c, broadened by
-    // mid-turn-replay [Step 5](roadmap/tugplan-dev-mid-turn-replay.md#step-5)).
+    // mid-turn-replay [Step 5](roadmap/tugplan-session-mid-turn-replay.md#step-5)).
     // Whenever fresh services are constructed for a binding, ask the
     // supervisor to forward a `request_replay` verb to the live tugcode
     // subprocess. The verb tells tugcode to re-run `runReplay` so the
@@ -626,7 +626,7 @@ class CardServicesStore {
 
   /**
    * Subscribe to "any cardId's services entry changed" notifications.
-   * Used by `useSyncExternalStore` in `useDevCardServices`.
+   * Used by `useSyncExternalStore` in `useSessionCardServices`.
    */
   subscribe = (listener: () => void): (() => void) => {
     this._ensureInitialized();

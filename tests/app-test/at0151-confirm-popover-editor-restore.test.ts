@@ -3,7 +3,7 @@
  * restores the prompt-entry caret on cancel.
  *
  * The user-visible repro:
- *   1. A connected dev card with the caret blinking in the prompt entry.
+ *   1. A connected session card with the caret blinking in the prompt entry.
  *   2. Click the title-bar X → the "Close Card?" confirm popover opens (the
  *      popover seeds the ring onto its default button, displacing DOM focus).
  *   3. Cmd-. (or Cancel) dismisses the popover.
@@ -43,7 +43,7 @@ const EDITOR_TEXT = `(function(){
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -75,7 +75,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(EDITOR)}) !== null`,
@@ -86,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.nativeClickAtElement(EDITOR);
           await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
 
-          // (2) Click the title-bar X — the dev card opts into close-confirm, so
+          // (2) Click the title-bar X — the session card opts into close-confirm, so
           // the "Close Card?" popover opens (and seeds the ring on its default
           // button, taking DOM focus off the editor).
           await app.nativeClickAtElement(CLOSE_BUTTON);

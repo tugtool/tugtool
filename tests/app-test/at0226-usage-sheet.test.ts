@@ -66,7 +66,7 @@ const USAGE_TEXT = [
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -100,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)("AT0226: /usage sheet", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Seed the account-global usage store as if `claude -p "/usage"` replied.

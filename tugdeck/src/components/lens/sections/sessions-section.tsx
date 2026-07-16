@@ -8,7 +8,7 @@
  *
  * Renders the aggregate CHANGESET_ALL feed (0x24) joined against the open
  * dev cards (the card-session binding store). Each entry is a session bound
- * to an open dev card — the feed emits a (possibly fileless) entry for every
+ * to an open session card — the feed emits a (possibly fileless) entry for every
  * live session, titled by the chooser's rule (name → prompt snippet → id
  * prefix) — or a session with attributed dirty files, plus one entry per
  * dash worktree and an "Unattributed" entry per project with unclaimed dirty

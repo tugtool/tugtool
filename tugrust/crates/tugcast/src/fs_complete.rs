@@ -3,7 +3,7 @@
 //!
 //! Given the session `base` (cwd) and the `partial` path the user has typed,
 //! returns the child **directories** of the partial's parent whose names
-//! prefix-match, so the dev-card form can offer Tab-style completion — the
+//! prefix-match, so the session-card form can offer Tab-style completion — the
 //! graphical equivalent of the terminal's `Tab to complete` hint.
 //!
 //! Loopback-only, like the other `/api` handlers. Listing is best-effort: an

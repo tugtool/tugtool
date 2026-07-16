@@ -1,11 +1,11 @@
 /**
- * transcript-export.ts — serialize a dev-card transcript to an exportable
+ * transcript-export.ts — serialize a session-card transcript to an exportable
  * document ([#step-13c]).
  *
  * `/export` saves the current session's transcript to a file the user picks
  * via the macOS save panel. The export *content* is built here, client-side,
  * from the committed transcript we already hold (the same `TurnEntry[]` the
- * dev card renders) — the host bridge only owns the save panel + file write.
+ * session card renders) — the host bridge only owns the save panel + file write.
  *
  * Two formats, mirroring the terminal's export choices:
  *  - **Markdown** — a readable document: each turn as a `## You` prompt above

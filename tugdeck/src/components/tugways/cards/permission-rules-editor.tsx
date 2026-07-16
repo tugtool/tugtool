@@ -16,7 +16,7 @@
  * sheet stays open and the list reflects the change.
  *
  * `Recently denied` has no persisted feed yet — denials are runtime events the
- * dev card will surface when the `control_request_forward` UI lands ([#step-15])
+ * session card will surface when the `control_request_forward` UI lands ([#step-15])
  * — so it renders the terminal's empty-state. The promote-to-rule affordance
  * arrives with that feed.
  *
@@ -783,13 +783,13 @@ export interface PermissionRulesSheetController {
 
 /**
  * Own the rules editor once, at the card level, so the `/permissions` slash
- * command opens it card-scoped ([D15]). The dev card calls this hook, routes
+ * command opens it card-scoped ([D15]). The session card calls this hook, routes
  * its `RUN_SLASH_COMMAND` handler for `permissions` to `openRulesSheet`, and
  * passes the card's shared `showSheet` host so the editor and the pickers
  * occupy ONE sheet at a time.
  *
  * The `cwd` is resolved fresh at open time ([L07]): the card's bind-time
- * `projectDir` — the project root this dev card is rooted at, known from the
+ * `projectDir` — the project root this session card is rooted at, known from the
  * moment the session binds (so `/permissions` works before claude's first
  * metadata frame) — falling back to the live `system_metadata` cwd. With
  * neither known the open is a no-op — there's no project root to resolve the

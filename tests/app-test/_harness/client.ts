@@ -693,8 +693,8 @@ export async function awaitEngineReady(
 }
 
 /**
- * Bind a fake session for a dev-card so its content factory skips
- * past the project-picker UI and renders DevCardBody directly.
+ * Bind a fake session for a session-card so its content factory skips
+ * past the project-picker UI and renders SessionCardBody directly.
  *
  * Production binds via a `spawn_session_ok` CONTROL ack from a live
  * tugcast/tugcode/Claude pipeline. In the in-app harness, that
@@ -716,7 +716,7 @@ export async function awaitEngineReady(
  *                    (cold-boot preflight, replay-loading banner)
  *                    pass `"resume"` explicitly.
  */
-export function bindDevSession(
+export function bindSession(
   caller: HarnessCaller,
   cardId: string,
   options?: {
@@ -732,7 +732,7 @@ export function bindDevSession(
       ? JSON.stringify(options)
       : "undefined";
   const script = callSurface(
-    `(window.__tug.bindDevSession(${lit(cardId)}, ${optsLit}), null)`,
+    `(window.__tug.bindSession(${lit(cardId)}, ${optsLit}), null)`,
   );
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
@@ -743,7 +743,7 @@ export function bindDevSession(
  * tugcode `--resume` that replays the on-disk JSONL through the
  * `CODE_OUTPUT → SESSION_METADATA` fan-out into the card's
  * `SessionMetadataStore`. The only harness verb that drives the true
- * cold-replay delivery chain (vs. the synthetic `bindDevSession` or the
+ * cold-replay delivery chain (vs. the synthetic `bindSession` or the
  * injected `ingestSessionMetadata`). The fixture JSONL must already sit at
  * `~/.claude/projects/<encode(projectDir)>/<tugSessionId>.jsonl`.
  */
@@ -760,8 +760,8 @@ export function spawnSessionResume(
 }
 
 /**
- * One step in driving a bound dev card's `CodeSessionStore` through
- * the lifecycle matrix — mirrors `DevSessionDriveAction` on the
+ * One step in driving a bound session card's `CodeSessionStore` through
+ * the lifecycle matrix — mirrors `SessionDriveAction` on the
  * `test-surface.ts` side (the two graphs are kept structurally
  * identical; the JSON wire is the contract).
  *
@@ -774,7 +774,7 @@ export function spawnSessionResume(
  *  - `transportClose` / `transportReconnect` — drive the transport
  *    overlay.
  */
-export type DevSessionDriveAction =
+export type SessionDriveAction =
   | { op: "send"; text: string; atoms?: unknown[]; suppress?: boolean }
   | { op: "ingestFrame"; feedId: number; decoded: unknown }
   | { op: "interrupt" }
@@ -785,18 +785,18 @@ export type DevSessionDriveAction =
   | { op: "loadPrevious"; amount: number | "all" };
 
 /**
- * Drive a bound dev card's `CodeSessionStore` one step through the
- * lifecycle matrix via `window.__tug.driveDevSession`. The card must
- * already be bound (`bindDevSession`); the surface throws otherwise.
+ * Drive a bound session card's `CodeSessionStore` one step through the
+ * lifecycle matrix via `window.__tug.driveSession`. The card must
+ * already be bound (`bindSession`); the surface throws otherwise.
  */
-export function driveDevSession(
+export function driveSession(
   caller: HarnessCaller,
   cardId: string,
-  action: DevSessionDriveAction,
+  action: SessionDriveAction,
   evalOpts?: EvalJsOptions,
 ): Promise<void> {
   const script = callSurface(
-    `(window.__tug.driveDevSession(${lit(cardId)}, ${lit(action)}), null)`,
+    `(window.__tug.driveSession(${lit(cardId)}, ${lit(action)}), null)`,
   );
   return caller.evalJS<null>(script, evalOpts).then(() => undefined);
 }
@@ -828,12 +828,12 @@ export function ingestRateLimit(
 }
 
 /**
- * Drive a dev card's `SessionMetadataStore` via
+ * Drive a session card's `SessionMetadataStore` via
  * `window.__tug.ingestSessionMetadata` — feeds a decoded
  * `session_capabilities` / `system_metadata` payload as if it had landed on
  * the SESSION_METADATA feed, so the Z4B effort chip ([#step-4]) can mount and
  * flip its model gate without a live claude handshake. Requires a prior
- * `bindDevSession(cardId)`.
+ * `bindSession(cardId)`.
  */
 export function ingestSessionMetadata(
   caller: HarnessCaller,
@@ -848,11 +848,11 @@ export function ingestSessionMetadata(
 }
 
 /**
- * Drive a dev card's `GitDiffStore` via `window.__tug.ingestGitDiff` — feeds
+ * Drive a session card's `GitDiffStore` via `window.__tug.ingestGitDiff` — feeds
  * a decoded `git_diff_response` payload as if it had landed on the GIT_DIFF
  * feed, so the `/diff` sheet ([#step-10b]) renders its per-file accordion
  * without a live tugcast git round-trip. Requires a prior
- * `bindDevSession(cardId)`.
+ * `bindSession(cardId)`.
  */
 export function ingestGitDiff(
   caller: HarnessCaller,
@@ -867,12 +867,12 @@ export function ingestGitDiff(
 }
 
 /**
- * Settle a dev card's `SideQuestionStore` via
+ * Settle a session card's `SideQuestionStore` via
  * `window.__tug.ingestSideQuestionAnswer` — feeds a decoded
  * `side_question_answer` payload as if a matching CODE_OUTPUT frame had
  * landed, so the `/btw` overlay renders its answer without a live claude
  * round-trip. The payload `request_id` must match a pending (loading)
- * exchange. Requires a prior `bindDevSession(cardId)`.
+ * exchange. Requires a prior `bindSession(cardId)`.
  */
 export function ingestSideQuestionAnswer(
   caller: HarnessCaller,

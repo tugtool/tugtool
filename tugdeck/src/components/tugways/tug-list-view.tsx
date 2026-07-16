@@ -63,7 +63,7 @@
  *   to ordinary cells. Cell renderers may attach their own click
  *   handlers if a header/footer needs an action; the primitive's
  *   gating is purely about wrapper-level selection dispatch. See
- *   `tugplan-dev-picker-redesign.md` [D02] for the rationale and the
+ *   `tugplan-session-picker-redesign.md` [D02] for the rationale and the
  *   relationship to a future `numberOfSections` migration.
  *
  * Filtering:
@@ -79,7 +79,7 @@
  *   know it's filtered, and the consumer doesn't have to teach it.
  *   See `gallery-list-view-filter` for the canonical pattern (host-
  *   owned `TugInput` + `useFilteredDataSource` + `baseIndexFor`-aware
- *   cell renderer) and `tugplan-dev-picker-redesign.md` [D01] /
+ *   cell renderer) and `tugplan-session-picker-redesign.md` [D01] /
  *   [Spec S06] for the rationale.
  */
 
@@ -91,7 +91,7 @@ import { SmartScroll } from "@/lib/smart-scroll";
 import {
   anchorDepthFromEnd,
   anchorRowIndexInWindow,
-} from "@/lib/dev-restore-window";
+} from "@/lib/session-restore-window";
 
 import { HeightIndex } from "./internal/list-view-height-index";
 import {
@@ -199,7 +199,7 @@ export interface TugListViewDataSource {
    * If a data source has one logical row whose appearance evolves
    * over time, prefer a single kind whose renderer branches on the
    * row payload rather than two kinds with two renderers. (See the
-   * assistant row in `DevTranscriptDataSource` for the canonical
+   * assistant row in `SessionTranscriptDataSource` for the canonical
    * example.)
    */
   kindForIndex(index: number): string;
@@ -369,7 +369,7 @@ export interface TugListViewDelegate {
  * given the index path and queries the data source for the row.
  *
  * The generic `DS` defaults to the base `TugListViewDataSource`. A
- * consumer with a typed adapter (e.g. `DevTranscriptDataSource`)
+ * consumer with a typed adapter (e.g. `SessionTranscriptDataSource`)
  * narrows `DS` so its cell renderers can call adapter-specific methods
  * such as `rowAt(index)` without casting.
  */
@@ -455,7 +455,7 @@ export interface TugListViewHandle {
    * Scroll to the bottom of real content and engage follow-bottom, so
    * subsequent content growth stays pinned. The deliberate inverse of
    * a user scroll-up (which disengages follow-bottom): consumers call
-   * this for a "jump to latest" gesture — e.g. a dev-card submitting
+   * this for a "jump to latest" gesture — e.g. a session-card submitting
    * a new prompt while the transcript is scrolled up. Delegates to
    * `SmartScroll.scrollToBottom`, which excludes the `inert` tail
    * spacer so the scroll lands at the bottom of *content*, not the
@@ -498,7 +498,7 @@ export interface TugListViewHandle {
    * motion PageUp / PageDown perform inside the scroll container, but
    * callable from anywhere. A consumer binds this to a key that should
    * drive turn navigation regardless of where focus sits within its
-   * surface (e.g. the Dev card binds Opt-Cmd-Up / Opt-Cmd-Down at the
+   * surface (e.g. the Session card binds Opt-Cmd-Up / Opt-Cmd-Down at the
    * card root). Requires `inline` rendering (every entry mounted); a
    * no-op if the scroll instance or a target entry element is absent.
    */
@@ -555,7 +555,7 @@ export interface TugListViewProps<
    *
    * Must be unique within the enclosing card subtree; cards mounting
    * two `TugListView` instances pass distinct keys (e.g.
-   * `"dev-card-transcript"` vs `"dev-card-history"`).
+   * `"session-card-transcript"` vs `"session-card-history"`).
    *
    * @default "tug-list-view"
    */
@@ -567,8 +567,8 @@ export interface TugListViewProps<
    * not by reaching into the primitive's CSS ([L20]).
    *
    * @example
-   * <div className="dev-card-transcript">
-   *   <TugListView ... className="dev-card-transcript-list" />
+   * <div className="session-card-transcript">
+   *   <TugListView ... className="session-card-transcript-list" />
    * </div>
    */
   className?: string;

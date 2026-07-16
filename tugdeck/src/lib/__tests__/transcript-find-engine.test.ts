@@ -1,5 +1,5 @@
 /**
- * transcript-find-engine.test — the Dev card's find engine behind the
+ * transcript-find-engine.test — the Session card's find engine behind the
  * shared session: debounced index search, active-match identity
  * preservation across re-searches, and wrap-around navigation.
  */

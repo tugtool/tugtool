@@ -671,7 +671,7 @@ const DEFAULT_TELEMETRY: ReplayTelemetry = {
  * added to cycle pairing) cannot recur — adding a new opener kind is
  * a one-line addition (mint a new prefix), not a structural change.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D13] (replay direct
+ * See `roadmap/tugplan-session-wake.md` [D13] (replay direct
  * emission), [D14] (activeMsgId tracking), and `#spec-translate-context`
  * for the normative state-rules table.
  */
@@ -884,7 +884,7 @@ function emitOrphanIfOpen(
  * Match Claude Code's `<task-notification>` envelope — the synthetic
  * `user` JSONL entry the runtime injects when a between-turn Monitor /
  * Bash-runbg / Task-runbg notification (Cohort A wake source per
- * `roadmap/tugplan-dev-session-wake.md` [Q01]) closes a wait. The
+ * `roadmap/tugplan-session-wake.md` [Q01]) closes a wait. The
  * envelope shape, from a captured Monitor wake:
  *
  *     <task-notification>
@@ -1520,7 +1520,7 @@ function handleUserEntry(
     // `/rewind` anchor ([#step-7-1]). The JSONL `user` record's `uuid` is
     // claude's prompt-record id — the value `rewind_files.user_message_id`
     // takes and the JSONL truncation boundary. Carry it so a resumed /
-    // cold-booted dev-card recovers each turn's anchor from the replay.
+    // cold-booted session-card recovers each turn's anchor from the replay.
     ...(typeof entry.uuid === "string" && entry.uuid.length > 0
       ? { promptUuid: entry.uuid }
       : {}),

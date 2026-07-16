@@ -1,10 +1,10 @@
 /**
- * at0081-dev-focus-reload.test.ts — a dev card's activation focus
+ * at0081-dev-focus-reload.test.ts — a session card's activation focus
  * lands on the prompt entry after Maker > Reload [AT0081].
  *
  * ## Why this exists
  *
- * Phase E.12's rule: a dev card has exactly one text-entry surface
+ * Phase E.12's rule: a session card has exactly one text-entry surface
  * (`tug-prompt-entry`), so its activation focus has exactly one
  * destination. AT0081 gates the cold-boot source: a Maker >
  * Reload tears the DOM down and rebuilds it from the saved bag, and
@@ -20,7 +20,7 @@
  * remaining late-mount focus path after Phase E.12 retired the
  * `deferred-dom` MutationObserver focus-retry branch.
  *
- * A content-owning dev card does not persist a `bag.focus` field —
+ * A content-owning session card does not persist a `bag.focus` field —
  * `resolveBagFocus` infers the engine destination from the card's
  * engine-managed `componentId` when `bag.focus` is absent. So the
  * test does not assert anything about the on-disk `bag.focus`; the
@@ -29,14 +29,14 @@
  *
  * ## Shape
  *
- *   1. Seed a dev card; bind a fake session; await engine ready.
+ *   1. Seed a session card; bind a fake session; await engine ready.
  *   2. Click into the contenteditable; type "hello".
  *   3. `appReload` — `prepareForReload` flushes the bag to tugbank.
  *   4. Re-seed the reloaded page with the persisted bag; re-bind
  *      the session; await engine ready. (`enableDeckTrace` persists
  *      across `appReload`, so `engine-ready` is recorded on the
  *      reloaded page and `awaitEngineReady` resolves normally.)
- *   5. Assert `document.activeElement` is the dev-card's
+ *   5. Assert `document.activeElement` is the session-card's
  *      `tug-prompt-entry` contenteditable.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -59,7 +59,7 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const SEED_STATE = {
   cards: [
-    { id: "A", componentId: "dev", title: "Dev A", closable: true },
+    { id: "A", componentId: "session", title: "Session A", closable: true },
   ],
   panes: [
     {
@@ -77,7 +77,7 @@ const SEED_STATE = {
 } as const;
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0081: dev-card focus lands on the prompt entry after Maker > Reload",
+  "AT0081: session-card focus lands on the prompt entry after Maker > Reload",
   () => {
     test(
       "after appReload, focus restores to the prompt-entry contenteditable",
@@ -100,7 +100,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           await app.nativeClickAtElement(`[data-card-id="A"] ${PROMPT_INPUT_SELECTOR}`);
@@ -140,7 +140,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 8000 },
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           await app.waitForCondition<boolean>(

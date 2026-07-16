@@ -5132,7 +5132,7 @@ impl AgentSupervisor {
                         // Rewrap onto SESSION_SIDEBAND (same rationale as
                         // `system_metadata`: the FeedStore keeps only the
                         // latest payload per feed, and the client routes by
-                        // wire feed-id) so the dev card's metadata store
+                        // wire feed-id) so the session card's metadata store
                         // receives it. Retained in its own per-session slot
                         // (`latest_capabilities`, distinct from the
                         // `latest_metadata` system_metadata slot) so a card
@@ -5180,7 +5180,7 @@ impl AgentSupervisor {
                         // Rewrap onto SESSION_SIDEBAND (same rationale as
                         // `system_metadata` / `session_capabilities`: the
                         // FeedStore keeps only the latest payload per feed and
-                        // the client routes by wire feed-id) so the dev card's
+                        // the client routes by wire feed-id) so the session card's
                         // metadata store — not the high-churn CODE_OUTPUT
                         // transcript store — receives it. Retained in its own
                         // per-session slot (`latest_rate_limit`) so a card that

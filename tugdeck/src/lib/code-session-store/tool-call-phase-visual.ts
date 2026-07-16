@@ -146,7 +146,7 @@ export function toolCallPhaseVisual(
     case "awaiting":
       // `running` (not `paused`) so the dot keeps pulsing while a
       // permission/question dialog blocks the call — the caution role
-      // tints it yellow. Mirrors `devSessionPhaseVisual`'s
+      // tints it yellow. Mirrors `sessionSessionPhaseVisual`'s
       // `awaiting_approval` mapping; a frozen dot read as "stuck."
       return { role: "caution", state: "running" };
     case "success":

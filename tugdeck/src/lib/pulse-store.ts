@@ -378,7 +378,7 @@ export function usePulse(): PulseSnapshot {
 /**
  * React hook: just the `pulse/enabled` toggle. A narrow selector (boolean,
  * no identity churn) so a subscriber re-renders only when the kill switch
- * flips, not on every new line — the dev card reads this to decide whether
+ * flips, not on every new line — the session card reads this to decide whether
  * the PULSE strip occupies a row in its keyboard-focus cycle.
  */
 export function usePulseEnabled(): boolean {

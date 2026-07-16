@@ -11,7 +11,7 @@ import {
   deriveShellExchangeView,
   formatShellDuration,
 } from "../shell-exchange-view";
-import { walkTurnGroups } from "@/lib/dev-transcript-data-source";
+import { walkTurnGroups } from "@/lib/session-transcript-data-source";
 import type { ShellExchangeMessage } from "@/lib/code-session-store/types";
 
 function msg(over: Partial<ShellExchangeMessage>): ShellExchangeMessage {

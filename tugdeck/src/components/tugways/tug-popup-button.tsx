@@ -51,7 +51,7 @@
  *
  * ## Service-popup semantics via composition
  *
- * Per `tugplan-dev-popup-bindings.md` [D08] (#popup-button-defaults),
+ * Per `tugplan-session-popup-bindings.md` [D08] (#popup-button-defaults),
  * TugPopupButton inherits the **service** popup role through
  * composition. Activating the trigger opens a Radix dropdown that
  * grabs DOM focus via `FocusScope`; on close, the engine focus trap

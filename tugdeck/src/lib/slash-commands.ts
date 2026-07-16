@@ -8,14 +8,14 @@
  * `/model`, `/rewind`, …): the terminal handles them itself and claude
  * never sees them. In stream-json / print mode claude has no interactive
  * UI, so a locally-rendered command sent to it bounces with "isn't
- * available in this environment." The dev-card reimplements those
+ * available in this environment." The session-card reimplements those
  * commands as graphical surfaces — and this module is the single source
  * of truth for which commands are local and how a typed command line is
  * recognized.
  *
  * This is pure data + a pure lookup — no React, no DOM, no store
  * dependency. The completion layer reads {@link LOCAL_SLASH_COMMANDS} to
- * offer the commands in the slash popup ([#step-1c] dev-card composition
+ * offer the commands in the slash popup ([#step-1c] session-card composition
  * layer); the prompt entry's submit path reads {@link
  * matchLocalSlashCommand} to decide whether a draft is a local command
  * to dispatch or text to send to claude; later command steps ([#step-2b]
@@ -23,11 +23,11 @@
  * ([#step-13]) reads the same set.
  *
  * Dispatch + surface ownership live elsewhere: a matched command is
- * dispatched key-card-scoped as `RUN_SLASH_COMMAND` and the dev card's
+ * dispatched key-card-scoped as `RUN_SLASH_COMMAND` and the session card's
  * card-content responder opens the surface (see [D23] and
- * `dev-card.tsx`). Keeping this module surface-agnostic is what lets the
+ * `session-card.tsx`). Keeping this module surface-agnostic is what lets the
  * matcher run inside the generic `TugPromptEntry` without coupling it to
- * dev-card concepts.
+ * session-card concepts.
  *
  * @module lib/slash-commands
  */
@@ -59,11 +59,11 @@ export interface LocalSlashCommandSpec {
 }
 
 /**
- * Every command the dev-card handles locally, in popup order. The seed
+ * Every command the session-card handles locally, in popup order. The seed
  * is `/permissions` ([#step-1c]); each later command step appends its
  * entry. The `as const satisfies` shape both validates the descriptors
  * and narrows {@link LocalCommandName} to the literal union — which the
- * dev card's `RUN_SLASH_COMMAND` handler keys an exhaustive map on, so a
+ * session card's `RUN_SLASH_COMMAND` handler keys an exhaustive map on, so a
  * registry entry without a wired surface is a compile error rather than
  * a silently-swallowed command.
  */
@@ -71,7 +71,7 @@ export interface LocalSlashCommandSpec {
 // editor ([#step-1.6]) — distinct from the permission *mode* chip, which is a
 // click + `Shift+Tab` control with no slash command. `/model` ([#step-2b]) is
 // the next consumer. `as const satisfies` both validates each descriptor and
-// narrows {@link LocalCommandName} to the literal union, so the dev card's
+// narrows {@link LocalCommandName} to the literal union, so the session card's
 // `RUN_SLASH_COMMAND` handler keys an exhaustive `Record<LocalCommandName, …>`
 // on it — a registry entry without a wired surface is a compile error.
 export const LOCAL_SLASH_COMMANDS = [

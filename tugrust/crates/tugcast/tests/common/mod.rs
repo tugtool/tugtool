@@ -259,7 +259,7 @@ impl TestTugcast {
             command.env_remove(var);
         }
         // Scrub the host app's per-instance identity/resource env vars.
-        // When the suite runs from inside a Tug Dev card terminal, the
+        // When the suite runs from inside a Tug Session card terminal, the
         // launching app exports these into the environment; without the
         // scrub the spawned tugcast adopts the *live* instance's identity
         // — refused by the duplicate-launch guard (exit 73, so it never

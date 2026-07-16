@@ -122,7 +122,7 @@ function makeEngineState(suffix: string): EngineState {
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "dev";
+  | "session";
 
 function makeContentBag(
   _componentId: PromptComponentId,
@@ -203,7 +203,7 @@ function makeLayout(id: LayoutId): Layout {
         id,
         cards: [
           { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
-          { cardId: "B", componentId: "dev", suffix: "B" },
+          { cardId: "B", componentId: "session", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
         activePaneId: "p1",
@@ -213,7 +213,7 @@ function makeLayout(id: LayoutId): Layout {
       return {
         id,
         cards: [
-          { cardId: "A", componentId: "dev", suffix: "A" },
+          { cardId: "A", componentId: "session", suffix: "A" },
           { cardId: "B", componentId: "gallery-prompt-entry", suffix: "B" },
         ],
         panes: [{ id: "p1", cardIds: ["A", "B"], activeCardId: "A" }],
@@ -225,7 +225,7 @@ function makeLayout(id: LayoutId): Layout {
         id,
         cards: [
           { cardId: "A", componentId: "gallery-prompt-entry", suffix: "A" },
-          { cardId: "B", componentId: "dev", suffix: "B" },
+          { cardId: "B", componentId: "session", suffix: "B" },
         ],
         panes: [
           { id: "p1", cardIds: ["A"], activeCardId: "A" },
@@ -261,8 +261,8 @@ async function setupPhaseA(app: App, layout: Layout): Promise<void> {
 
   // Bind dev sessions (skip past the project picker).
   for (const c of layout.cards) {
-    if (c.componentId === "dev") {
-      await app.bindDevSession(c.cardId);
+    if (c.componentId === "session") {
+      await app.bindSession(c.cardId);
     }
   }
 
@@ -360,8 +360,8 @@ async function reseedFromDisk(
   });
 
   for (const c of layout.cards) {
-    if (c.componentId === "dev") {
-      await app.bindDevSession(c.cardId);
+    if (c.componentId === "session") {
+      await app.bindSession(c.cardId);
     }
   }
 

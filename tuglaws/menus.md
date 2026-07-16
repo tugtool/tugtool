@@ -22,7 +22,7 @@ WKWebView ◀── control frame ◀── NSMenuItem action          validateM
 Two channels, one in each direction:
 
 - **State out** — `tugdeck/src/lib/host-menu-state.ts` projects the deck
-  store (plus the dev card's published session block) into one payload,
+  store (plus the session card's published session block) into one payload,
   diffs, coalesces on a microtask, and posts to
   `webkit.messageHandlers.menuState`. `MainWindow` forwards it to
   `AppDelegate.updateMenuState`, which replaces the cached `MenuState`
@@ -47,7 +47,7 @@ Posted by the aggregator; parsed by `AppDelegate`'s `MenuState` struct.
     "component": "dev",
     "closable": true
   },
-  "dev": {                         // null unless the active card is a dev card
+  "dev": {                         // null unless the active card is a session card
     "cardId": "...",
     "sessionBound": true,
     "canInterrupt": false,
@@ -71,10 +71,10 @@ Publication discipline:
 
 - The deck half comes from the aggregator's own `DeckManager`
   subscription (wired once at boot in `main.tsx`).
-- The dev block is published by the dev card's
+- The dev block is published by the session card's
   `use-menu-state-publication.ts` effect, which **subscribes to the
   stores directly** ([L22]) — publication is a side effect, not a render
-  derivation. Every dev card publishes unconditionally; the aggregator
+  derivation. Every session card publishes unconditionally; the aggregator
   decides which block rides the payload (the focused pane's active dev
   card).
 - The `edit` block is published by the responder-chain provider, which
@@ -171,9 +171,9 @@ classification:
 
 | Frame | Category | JS handling |
 |---|---|---|
-| `run-card-command {name, args?}` | Control-frame-only | re-dispatches `RUN_SLASH_COMMAND {name, args}` via `sendToKeyCard` — re-enters the dev card's slash-command surface map, byte-identical to typing the command |
-| `set-permission-mode {mode}` | Both | validated against the four-mode menu set, then `SET_PERMISSION_MODE` via `sendToKeyCard`; the dev card commits through the chip's mode-set path |
-| `interrupt-session` | Both | `INTERRUPT_SESSION` via `sendToKeyCard`; the dev card calls `codeSessionStore.interrupt()` — deliberately NOT Escape's dismiss-priority walk |
+| `run-card-command {name, args?}` | Control-frame-only | re-dispatches `RUN_SLASH_COMMAND {name, args}` via `sendToKeyCard` — re-enters the session card's slash-command surface map, byte-identical to typing the command |
+| `set-permission-mode {mode}` | Both | validated against the four-mode menu set, then `SET_PERMISSION_MODE` via `sendToKeyCard`; the session card commits through the chip's mode-set path |
+| `interrupt-session` | Both | `INTERRUPT_SESSION` via `sendToKeyCard`; the session card calls `codeSessionStore.interrupt()` — deliberately NOT Escape's dismiss-priority walk |
 | `find` / `find-next` / `find-previous` | Both | `sendToFirstResponder` round-trips (the focused card's find session) |
 | `undo` / `redo` | Both | `sendToFirstResponder` round-trips into the focused editor's own history (CM6 `handleUndo` / `handleRedo`); items validate against the editor's depth. Bypassed when `nativeUndoToken` is non-zero — the host drives the web view's NSUndoManager natively instead |
 | `next-tab` / `previous-tab` / `cycle-card` | Both | `sendToFirstResponder` round-trips |
@@ -223,8 +223,8 @@ Every `NSMenuItem` — including dynamically built ones — carries a stable
 `NSUserInterfaceItemIdentifier`, namespaced by menu:
 
 ```
-app.about        file.newDevCard      edit.findNext        session.stop
-view.theme.<name> window.pane.<n>      maker.devPanel       help.shortcuts
+app.about        file.newSessionCard      edit.findNext        session.stop
+view.theme.<name> window.pane.<n>      maker.sessionPanel       help.shortcuts
 session.permissionMode.<mode>          view.zoomInAlias (hidden ⌘= alias)
 ```
 

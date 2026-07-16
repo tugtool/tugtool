@@ -11,7 +11,7 @@
  * embedded font finished loading — painting the label invisibly — and
  * never re-rasterize on its own. The chip sat labelless (icon + blank
  * width) until something invalidated the view: scroll, resize, theme
- * switch. The path only triggers on the Dev card: its
+ * switch. The path only triggers on the Session card: its
  * `EditorSettingsStore` calls `setAtomFont` with the Plex editor stack,
  * whose `@font-face` faces are embeddable — a gallery editor stays on
  * `system-ui` and always took the generic-fallback path.
@@ -24,7 +24,7 @@
  *
  * ## Shape
  *
- *   1. Boot a Dev card, bind a session, let fonts settle (the bug
+ *   1. Boot a Session card, bind a session, let fonts settle (the bug
  *      needs the atom-font database warm before the first bake).
  *   2. Drop a real PNG `File` on the prompt editor via a synthesized
  *      `drop` DragEvent — drives the production
@@ -62,9 +62,9 @@ const EDITOR_HOST_SELECTOR =
 const ATOM_IMG_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content img[data-atom-label]';
 
-const DEV_DECK_STATE = {
+const SESSION_DECK_STATE = {
   cards: [
-    { id: "A", componentId: "dev", title: "Dev A", closable: true },
+    { id: "A", componentId: "session", title: "Session A", closable: true },
   ],
   panes: [
     {
@@ -258,9 +258,9 @@ describe.skipIf(!SHOULD_RUN)(
 
           try {
             await app.enableDeckTrace(true);
-            await app.seedDeckState({ state: DEV_DECK_STATE, focusCardId: "A" });
+            await app.seedDeckState({ state: SESSION_DECK_STATE, focusCardId: "A" });
             await new Promise<void>((r) => setTimeout(r, 1500));
-            await app.bindDevSession("A");
+            await app.bindSession("A");
             await app.waitForCondition<boolean>(
               `document.querySelector(${JSON.stringify(`${EDITOR_HOST_SELECTOR} .cm-content`)}) !== null`,
               { timeoutMs: 10_000 },

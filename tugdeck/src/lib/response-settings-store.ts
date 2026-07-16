@@ -6,7 +6,7 @@
  *
  *   - `entryMargin` (px): inter-entry vertical gap, written through to
  *     `--tugx-list-view-row-gap` via the cascade variable
- *     `--tugx-dev-entry-margin`.
+ *     `--tugx-session-entry-margin`.
  *   - `magnification` (factor, 1 = 100%): the Settings sheet's
  *     Magnification slider, now implemented as CSS `zoom` applied to the
  *     transcript root via `--transcript-zoom`. Layout zoom scopes the
@@ -145,7 +145,7 @@ export class ResponseSettingsStore {
     const el = this._targetEl;
     if (!el) return;
     const s = this._settings;
-    el.style.setProperty("--tugx-dev-entry-margin", `${s.entryMargin}px`);
+    el.style.setProperty("--tugx-session-entry-margin", `${s.entryMargin}px`);
     el.style.setProperty("--transcript-zoom", `${s.magnification}`);
   }
 }

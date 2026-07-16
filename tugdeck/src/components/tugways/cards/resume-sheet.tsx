@@ -8,7 +8,7 @@
  * turns within the current session. They share no component — only the
  * card-scoped overlay shell ([D15]).
  *
- * This is NOT the full-card `DevProjectPicker` (project-path entry + recents +
+ * This is NOT the full-card `SessionProjectPicker` (project-path entry + recents +
  * sessions, shown when no session is bound). It is a focused overlay that
  * reuses the EXISTING sessions data source + `SESSIONS_CELL_RENDERERS` over the
  * card's already-bound project — sessions only, no path/recents chrome. The
@@ -19,7 +19,7 @@
  * spawns a fresh one. Cancel / ESC / backdrop dismiss and leave the live
  * session intact. The wire send is deferred past the sheet's exit animation so
  * the binding flip doesn't unmount the sheet mid-animation (mirrors
- * `DevProjectPicker`'s Open).
+ * `SessionProjectPicker`'s Open).
  *
  * Compositional — composes `TugSheet`, `TugListView`, `TugPushButton`; the
  * reused session cells keep their own tokens ([L20]).
@@ -44,17 +44,17 @@ import {
   type TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import {
-  useDevSessionsDataSource,
-  type DevSessionsDataSource,
-} from "@/lib/dev-picker-data-source";
-import { useSessionLedger } from "@/lib/dev-session-ledger-store";
-import { SESSIONS_CELL_RENDERERS, PickerCellProvider } from "./dev-picker-cells";
+  useSessionsDataSource,
+  type SessionsDataSource,
+} from "@/lib/session-picker-data-source";
+import { useSessionLedger } from "@/lib/session-ledger-store";
+import { SESSIONS_CELL_RENDERERS, PickerCellProvider } from "./session-picker-cells";
 import { getConnection } from "@/lib/connection-singleton";
 import { sendSpawnSession } from "@/lib/session-lifecycle";
-import { fireRestore } from "@/lib/dev-session-restore";
+import { fireRestore } from "@/lib/session-restore";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
-// Mirrors `dev-card.tsx`'s sheet exit duration: defer the wire send so the
+// Mirrors `session-card.tsx`'s sheet exit duration: defer the wire send so the
 // binding flip (which rebinds + re-renders the card) doesn't unmount the sheet
 // mid-exit-animation.
 const SHEET_EXIT_ANIMATION_MS = 220;
@@ -86,7 +86,7 @@ export function useResumeSheet({
   // ledger ([L02]). Lives at the card level (a hook) so its subscription is
   // stable.
   const sessionLedger = useSessionLedger(projectDir);
-  const sessionsDataSource = useDevSessionsDataSource(projectDir, sessionLedger);
+  const sessionsDataSource = useSessionsDataSource(projectDir, sessionLedger);
 
   const openResumeSheet = useCallback(() => {
     if (projectDir.length === 0) return;
@@ -110,7 +110,7 @@ export function useResumeSheet({
 }
 
 interface ResumeSheetBodyProps {
-  dataSource: DevSessionsDataSource;
+  dataSource: SessionsDataSource;
   cardId: string;
   projectDir: string;
   onClose: (value?: string) => void;
@@ -167,13 +167,13 @@ function ResumeSheetBody({
         }}
       >
         <div className="resume-sheet-list">
-          <TugListView<DevSessionsDataSource>
+          <TugListView<SessionsDataSource>
             dataSource={dataSource}
             delegate={delegate}
             cellRenderers={SESSIONS_CELL_RENDERERS}
             scrollKey="resume-sheet-sessions"
             rowLayout="flush"
-            className="dev-card-picker-sessions-list dev-card-picker-list-view"
+            className="session-card-picker-sessions-list session-card-picker-list-view"
           />
         </div>
       </PickerCellProvider>

@@ -94,7 +94,7 @@ function diffPayload() {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -122,7 +122,7 @@ describe.skipIf(!SHOULD_RUN)("AT0104: /diff accordion sheet", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // ── 1. Non-git dir → a pane-modal alert (NOT a diff sheet). ──────────

@@ -32,7 +32,7 @@ const SID = "at0149-session";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
-const DIALOG = `${CARD} [data-slot="dev-permission-dialog"]`;
+const DIALOG = `${CARD} [data-slot="session-permission-dialog"]`;
 const ALLOW = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
 const SCOPE_CHECKED = `${SCOPE} [data-slot="tug-radio-item"][data-state="checked"]`;
@@ -55,7 +55,7 @@ function controlRequestForward(): Record<string, unknown> {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       { id: "p1", position: { x: 40, y: 40 }, size: { width: 820, height: 620 }, cardIds: ["A"], activeCardId: "A", title: "", acceptsFamilies: ["maker"] },
     ],
@@ -93,13 +93,13 @@ function textOf(app: App, selector: string): Promise<string | null> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function presentPermission(app: App): Promise<void> {
-  await app.driveDevSession("A", { op: "send", text: "count lines with tokei" });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", { op: "send", text: "count lines with tokei" });
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: { type: "assistant_text", tug_session_id: SID, msg_id: "at0149-m1", text: "x", is_partial: true, rev: 0, seq: 0 },
   });
-  await app.driveDevSession("A", { op: "ingestFrame", feedId: FEED_CODE_OUTPUT, decoded: controlRequestForward() });
+  await app.driveSession("A", { op: "ingestFrame", feedId: FEED_CODE_OUTPUT, decoded: controlRequestForward() });
   await app.waitForCondition<boolean>(
     `document.querySelector(${JSON.stringify(DIALOG)}) !== null`,
     { timeoutMs: 6000 },
@@ -124,7 +124,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { tugSessionId: SID });
+          await app.bindSession("A", { tugSessionId: SID });
           await app.awaitEngineReady("A");
           await presentPermission(app);
 

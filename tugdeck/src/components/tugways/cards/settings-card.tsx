@@ -31,7 +31,7 @@ import "./settings-card.css";
 // Tabs — a fixed, non-closable tab set
 // ---------------------------------------------------------------------------
 
-type SettingsTabId = "general" | "devCard" | "textCard" | "app";
+type SettingsTabId = "general" | "sessionCard" | "textCard" | "app";
 
 interface SettingsTabSpec {
   readonly id: SettingsTabId;
@@ -43,11 +43,11 @@ interface SettingsTabSpec {
 }
 
 const TABS: readonly SettingsTabSpec[] = [
-  // "General" carries app-wide behavior (focus-ring modality); "Dev Card"
-  // the dev card's own icon; "Text Card" a file icon; "Maker" a tool icon
+  // "General" carries app-wide behavior (focus-ring modality); "Session Card"
+  // the session card's own icon; "Text Card" a file icon; "Maker" a tool icon
   // for the app-maker gate.
   { id: "general", label: "General", icon: "Settings" },
-  { id: "devCard", label: "Dev Card", icon: "MessageSquareText" },
+  { id: "sessionCard", label: "Session Card", icon: "MessageSquareText" },
   { id: "textCard", label: "Text Card", icon: "FileText" },
   { id: "app", label: "Maker", icon: "Wrench" },
 ];
@@ -94,7 +94,7 @@ export function SettingsCardContent() {
         </div>
         <div className="settings-card-panel">
           {tab === "general" ? <SettingsLensBody /> : null}
-          {tab === "devCard" ? <SettingsGeneralBody /> : null}
+          {tab === "sessionCard" ? <SettingsGeneralBody /> : null}
           {tab === "textCard" ? <SettingsTextCardBody /> : null}
           {tab === "app" ? <SettingsAppBody /> : null}
         </div>
@@ -119,7 +119,7 @@ export function registerSettingsCard(): void {
     hidden: true,
     sizePolicy: {
       min: { width: 420, height: 420 },
-      // Tall enough that the "Dev Card" tab — Response, Editor, and Assistant
+      // Tall enough that the "Session Card" tab — Response, Editor, and Assistant
       // sections — fits without scrolling at the default open size.
       preferred: { width: 560, height: 820 },
     },

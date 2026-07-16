@@ -37,9 +37,9 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const PICKER_FORM = ".dev-card-picker-form";
+const PICKER_FORM = ".session-card-picker-form";
 const CONFIRM_POPOVER = '[data-slot="tug-confirm-popover"]';
-const TRASH_RECENT = '[data-recent-path="/tmp"] .dev-card-picker-recent-trash';
+const TRASH_RECENT = '[data-recent-path="/tmp"] .session-card-picker-recent-trash';
 
 // Real directories on the macOS test host, so the recents seed renders rows
 // (and the path-existence check, if a backend answers, is satisfied).
@@ -58,7 +58,7 @@ const PICKER_OPEN = `document.querySelector(${JSON.stringify(PICKER_FORM)}) !== 
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -91,7 +91,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
 
-          // An UNBOUND dev card presents its picker. Seed Recents in-process so a
+          // An UNBOUND session card presents its picker. Seed Recents in-process so a
           // trashable list row mounts (no backend needed).
           await app.waitForCondition<boolean>(PICKER_OPEN, { timeoutMs: 8000 });
           await app.evalJS<null>(

@@ -1,13 +1,13 @@
 /**
- * at0080-dev-focus-card-switch.test.ts — a dev card's activation
+ * at0080-dev-focus-card-switch.test.ts — a session card's activation
  * focus lands on the prompt entry after a card-switch round-trip
  * [AT0080].
  *
  * ## Why this exists
  *
  * Phase E.12's rule: a card has at most one text-entry surface, and
- * for a dev card that surface is the `tug-prompt-entry`. So a
- * dev card's activation focus has exactly one destination — the
+ * for a session card that surface is the `tug-prompt-entry`. So a
+ * session card's activation focus has exactly one destination — the
  * engine's contenteditable — regardless of activation source.
  *
  * AT0080 gates the card-switch source. AT0078 gates app-switch;
@@ -48,7 +48,7 @@ function activeElementInCard(cardId: string): string {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0080: dev-card focus lands on the prompt entry after card-switch",
+  "AT0080: session-card focus lands on the prompt entry after card-switch",
   () => {
     test(
       "switch A → B → A returns focus to Card A's prompt-entry contenteditable",
@@ -60,8 +60,8 @@ describe.skipIf(!SHOULD_RUN)(
           await app.seedDeckState({
             state: {
               cards: [
-                { id: "A", componentId: "dev", title: "Dev A", closable: true },
-                { id: "B", componentId: "dev", title: "Dev B", closable: true },
+                { id: "A", componentId: "session", title: "Session A", closable: true },
+                { id: "B", componentId: "session", title: "Session B", closable: true },
               ],
               panes: [
                 {
@@ -84,9 +84,9 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );
 
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
-          await app.bindDevSession("B");
+          await app.bindSession("B");
           await app.awaitEngineReady("B");
 
           // Click into A's contenteditable; type some text so the

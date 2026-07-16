@@ -211,7 +211,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
       <TugMarkdownBlock
         key={text}
         initialText={text}
-        className="dev-card-transcript-code-body"
+        className="session-card-transcript-code-body"
         findable
       />
       {mounts.map(({ host, atom, key }) =>

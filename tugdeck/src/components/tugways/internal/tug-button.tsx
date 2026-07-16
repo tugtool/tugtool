@@ -46,7 +46,7 @@ const DEFAULT_CONFIRMATION_DURATION_MS = 1500;
  * TugButton emphasis values — controls visual weight [D02].
  *
  * `tinted` is the display-leaning emphasis shared with TugBadge: a faint
- * role-tinted wash behind role-colored text (the dev-card status-chip look),
+ * role-tinted wash behind role-colored text (the session-card status-chip look),
  * for buttons that should read as a quiet chip rather than a solid call to
  * action. It reuses TugBadge's `tinted` tokens directly and is static across
  * rest/hover/active — the mirror image of TugBadge's `filled` reusing the

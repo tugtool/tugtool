@@ -11,7 +11,7 @@
  * exception: a body that OPENS with a large markdown heading (h1–h3) gets
  * the wider `-heading` margin (8px).
  *
- * The fixture (`dev-transcript-margins.jsonl`) covers every opening
+ * The fixture (`session-transcript-margins.jsonl`) covers every opening
  * shape, and the assertions guard BOTH failure directions of the
  * position-anchored `:has()` chain in `tug-transcript-entry.css`:
  *
@@ -24,7 +24,7 @@
  *   - a turn whose thinking block closed EMPTY must render its tool
  *     block at the tight margin — a hidden (`data-empty`) strip left in
  *     the DOM is a phantom sibling that re-opens the run gap (the
- *     `StreamedTextGate` contract in dev-card-transcript.tsx).
+ *     `StreamedTextGate` contract in session-card-transcript.tsx).
  *
  * Measurement scrolls each entry to viewport center first (an unstuck
  * header), then reads rect deltas: header bottom → the top of the body's
@@ -89,7 +89,7 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
       const seeded = await seedFixtureSession(
-        "dev-transcript-margins",
+        "session-transcript-margins",
         "at0208",
       );
       try {

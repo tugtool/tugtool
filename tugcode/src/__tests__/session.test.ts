@@ -808,7 +808,7 @@ describe("routeTopLevelEvent", () => {
 
 // ---------------------------------------------------------------------------
 // buildWakeStartedMessage tests — wake-detector pure helper
-// (`roadmap/tugplan-dev-session-wake.md` Step 3, [D02], [Q01])
+// (`roadmap/tugplan-session-wake.md` Step 3, [D02], [Q01])
 // ---------------------------------------------------------------------------
 
 describe("buildWakeStartedMessage", () => {

@@ -1,6 +1,6 @@
 /**
  * DefaultModelStore — subscribable store for the *global* default model
- * selector the Settings card's "Dev Card" tab edits.
+ * selector the Settings card's "Session Card" tab edits.
  *
  * Unlike the per-card model (`use-model.ts`), this is a single deck-wide value:
  * the model a brand-new card adopts on mount when it has nothing persisted of

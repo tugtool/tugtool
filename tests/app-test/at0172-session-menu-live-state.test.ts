@@ -2,7 +2,7 @@
  * at0172-session-menu-live-state.test.ts — Session-menu validation
  * tracks live session state.
  *
- * Three live transitions on one bound dev card:
+ * Three live transitions on one bound session card:
  *
  *   1. **Permission-mode checkmark** — the radio submenu's `.on` state
  *      (snapshot `state`, refreshed during the validation sweep)
@@ -18,7 +18,7 @@
  *      mode change can never race the running turn, re-enabled at idle.
  *
  * The turn is driven through the real `CodeSessionStore` wire path
- * (`driveDevSession` send + ingestFrame — the at0099 pattern); the
+ * (`driveSession` send + ingestFrame — the at0099 pattern); the
  * mode change goes through `dispatchControlAction`, byte-identical to
  * the control frame the Swift menu item posts.
  *
@@ -40,7 +40,7 @@ const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -118,7 +118,7 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // ── 1. Permission-mode checkmark ──
@@ -149,14 +149,14 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await expectEnabled(app, "session.rewind", false);
 
         const frame = (decoded: Record<string, unknown>) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: { tug_session_id: SID, ...decoded },
           });
 
         // A turn in flight: canInterrupt → Stop enables.
-        await app.driveDevSession("A", { op: "send", text: "hello there" });
+        await app.driveSession("A", { op: "send", text: "hello there" });
         await expectEnabled(app, "session.stop", true);
 
         // The Mode control locks mid-turn: the Permission Mode radios and

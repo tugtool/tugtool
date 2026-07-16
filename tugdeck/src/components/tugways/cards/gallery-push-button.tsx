@@ -58,7 +58,7 @@ export const ALL_ROLES: TugButtonRole[] = ["accent", "action", "agent", "data", 
 export const ALL_ROUNDED = ["none", "sm", "md", "lg", "full"] as const;
 
 /**
- * Realistic dev-card chrome faces for the two-line layout demos — the
+ * Realistic session-card chrome faces for the two-line layout demos — the
  * permission-mode / model / branch / status indicators that read as tall,
  * deliberate chips. Each pairs a letter-spaced caption with the value the
  * button shows, mirroring TugBadge's two-line idiom so the two component
@@ -446,7 +446,7 @@ export function GalleryPushButton() {
             </div>
           </div>
           <div className="cg-subtype-block">
-            <TugLabel size="2xs" emphasis="calm">two-line status chips — tinted label-top (dev-card parity)</TugLabel>
+            <TugLabel size="2xs" emphasis="calm">two-line status chips — tinted label-top (session-card parity)</TugLabel>
             <div className="cg-variant-row">
               {TWO_LINE_CHIPS.map((chip) => (
                 <TugPushButton

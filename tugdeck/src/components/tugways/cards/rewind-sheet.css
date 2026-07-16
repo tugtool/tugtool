@@ -1,6 +1,6 @@
 /* @tug-pairings: none — layout only. The sheet chrome comes from the composed
    TugSheet; the turn list reuses the session picker's section + bordered host
-   (`dev-card-picker-section` / `dev-card-picker-sessions-host`) and option
+   (`session-card-picker-section` / `session-card-picker-sessions-host`) and option
    visual; the scope picker from TugChoiceGroup; the buttons from
    TugPushButton. No color-setting rules (secondary text dimmed via opacity,
    which inherits the sheet foreground), so no `@tug-renders-on` ([L16]). */

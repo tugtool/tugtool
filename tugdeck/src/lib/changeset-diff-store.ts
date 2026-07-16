@@ -4,7 +4,7 @@
  *
  * The changeset card serves every open project and shows several diffs at once
  * (one per expanded entry), and each pop-out Diff card wants its own. Unlike
- * the dev card's per-card, workspace-key-filtered store (see
+ * the session card's per-card, workspace-key-filtered store (see
  * `card-services-store`), these take no construction-time project dir and no
  * workspace filter: each `requestDiff(descriptor)` names its own project, and
  * response correlation rides the store-unique `requestId` alone (the GIT_DIFF

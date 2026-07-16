@@ -4,7 +4,7 @@
  *
  * `/rewind` is a turns-within-this-session picker (NOT the `/resume` sessions
  * chooser — [D05]). {@link useRewindSheet} owns the sheet once at the card
- * level (mirroring {@link useModelPicker}): the dev card wires `openRewindSheet`
+ * level (mirroring {@link useModelPicker}): the session card wires `openRewindSheet`
  * to its `rewind` `RUN_SLASH_COMMAND` handler and presents it through the
  * shared `cardPickerSheet` host as a **wide** card-scoped overlay ([D15]).
  *
@@ -484,9 +484,9 @@ function RewindSheetBody({
         >
           {/* Reuse the session picker's section + bordered host so the two
               pickers read the same ([L20] cascade-scoped). */}
-          <div className="dev-card-picker-section">
-            <span className="dev-card-picker-label">Turns</span>
-            <div className="dev-card-picker-sessions-host">
+          <div className="session-card-picker-section">
+            <span className="session-card-picker-label">Turns</span>
+            <div className="session-card-picker-sessions-host">
               {visibleRows.length > 0 ? (
                 <TugListView<RewindTurnDataSource>
                   dataSource={dataSource}
@@ -494,7 +494,7 @@ function RewindSheetBody({
                   cellRenderers={REWIND_CELL_RENDERERS}
                   scrollKey="rewind-turns"
                   rowLayout="flush"
-                  className="dev-card-picker-sessions-list dev-card-picker-list-view"
+                  className="session-card-picker-sessions-list session-card-picker-list-view"
                   focusGroup={focusGroup}
                   focusOrder={LIST_ORDER}
                   singleSelect

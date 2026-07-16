@@ -531,7 +531,7 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
         so live transcript streams pin to the tail.
       */}
       {/* Render at the product's transcript base font (14px) so this
-          harness is a faithful reference for what the dev-card transcript
+          harness is a faithful reference for what the session-card transcript
           shows — not the app's larger default, which made gallery vs
           transcript look inconsistent side-by-side. */}
       <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, position: "relative", fontSize: 14 }}>

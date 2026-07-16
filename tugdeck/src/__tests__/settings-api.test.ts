@@ -18,15 +18,15 @@ import {
   readCardStates,
   putPromptHistory,
   getPromptHistory,
-  readDevRecentProjects,
-  insertDevRecentProject,
+  readSessionRecentProjects,
+  insertSessionRecentProject,
   capDurableCardState,
   boundPromptHistoryForPersist,
   MAX_PERSISTED_THUMBNAILS,
   MAX_PROMPT_HISTORY_BYTES,
   pruneOrphanedCardDefaults,
   CARD_KEYED_DOMAINS,
-  DEV_RECENT_PROJECTS_MAX,
+  SESSION_RECENT_PROJECTS_MAX,
 } from "../settings-api";
 import type { CardStateBag } from "../layout-tree";
 import type { TugbankClient, TaggedValue } from "../lib/tugbank-client";
@@ -445,33 +445,33 @@ describe("getPromptHistory", () => {
 // dev recent-projects (step 4m)
 // ---------------------------------------------------------------------------
 
-describe("insertDevRecentProject", () => {
+describe("insertSessionRecentProject", () => {
   test("prepends a new path to an empty list", () => {
-    expect(insertDevRecentProject([], "/tmp")).toEqual(["/tmp"]);
+    expect(insertSessionRecentProject([], "/tmp")).toEqual(["/tmp"]);
   });
 
   test("moves an existing path to the front (dedup)", () => {
-    expect(insertDevRecentProject(["/a", "/b", "/c"], "/b")).toEqual([
+    expect(insertSessionRecentProject(["/a", "/b", "/c"], "/b")).toEqual([
       "/b",
       "/a",
       "/c",
     ]);
   });
 
-  test("caps the list at DEV_RECENT_PROJECTS_MAX", () => {
+  test("caps the list at SESSION_RECENT_PROJECTS_MAX", () => {
     const over = ["/a", "/b", "/c", "/d", "/e"];
-    const next = insertDevRecentProject(over, "/f");
-    expect(next.length).toBe(DEV_RECENT_PROJECTS_MAX);
+    const next = insertSessionRecentProject(over, "/f");
+    expect(next.length).toBe(SESSION_RECENT_PROJECTS_MAX);
     expect(next[0]).toBe("/f");
     // Oldest entry drops off.
     expect(next).not.toContain("/e");
   });
 });
 
-describe("readDevRecentProjects", () => {
+describe("readSessionRecentProjects", () => {
   test("returns [] when the key is unset", () => {
     const client = makeMockClient({});
-    expect(readDevRecentProjects(client)).toEqual([]);
+    expect(readSessionRecentProjects(client)).toEqual([]);
   });
 
   test("returns the paths array from a json-tagged value", () => {
@@ -483,7 +483,7 @@ describe("readDevRecentProjects", () => {
         } as TaggedValue,
       },
     });
-    expect(readDevRecentProjects(client)).toEqual(["/a", "/b"]);
+    expect(readSessionRecentProjects(client)).toEqual(["/a", "/b"]);
   });
 
   test("drops non-string entries defensively", () => {
@@ -495,7 +495,7 @@ describe("readDevRecentProjects", () => {
         } as TaggedValue,
       },
     });
-    expect(readDevRecentProjects(client)).toEqual(["/a", "/b"]);
+    expect(readSessionRecentProjects(client)).toEqual(["/a", "/b"]);
   });
 
   test("returns [] when the value shape is wrong", () => {
@@ -504,15 +504,15 @@ describe("readDevRecentProjects", () => {
         "recent-projects": { kind: "json", value: "not-an-object" } as TaggedValue,
       },
     });
-    expect(readDevRecentProjects(client)).toEqual([]);
+    expect(readSessionRecentProjects(client)).toEqual([]);
   });
 });
 
-// PUT behavior for `putDevRecentProjects` is covered by T-DEV-07 in
-// dev-card.test.tsx (which asserts the bind effect fires it with the
+// PUT behavior for `putSessionRecentProjects` is covered by T-DEV-07 in
+// session-card.test.tsx (which asserts the bind effect fires it with the
 // right payload). Duplicating it here would require an unmocked
-// `fetch`, but dev-card.test.tsx process-globally replaces the
-// exported `putDevRecentProjects` with a recorder to keep dev-card's
+// `fetch`, but session-card.test.tsx process-globally replaces the
+// exported `putSessionRecentProjects` with a recorder to keep session-card's
 // bind effect from racing with other test files' fetch stubs.
 
 describe("capDurableCardState — strip the dead cellHeights field", () => {
@@ -520,7 +520,7 @@ describe("capDurableCardState — strip the dead cellHeights field", () => {
     const bag: CardStateBag = {
       scroll: { x: 0, y: 9 },
       regionScroll: {
-        "dev-card-transcript": {
+        "session-card-transcript": {
           x: 0,
           y: 5000,
           meta: { anchor: { index: 900, offset: 2 }, cellHeights: new Array(50).fill(60) },
@@ -528,14 +528,14 @@ describe("capDurableCardState — strip the dead cellHeights field", () => {
       },
     };
     const out = capDurableCardState(bag);
-    const region = out.regionScroll!["dev-card-transcript"];
+    const region = out.regionScroll!["session-card-transcript"];
     expect((region.meta as Record<string, unknown>).cellHeights).toBeUndefined();
     expect((region.meta as Record<string, unknown>).anchor).toEqual({ index: 900, offset: 2 });
     expect(region.y).toBe(5000);
     expect(out.scroll).toEqual({ x: 0, y: 9 });
     // The input bag (the in-memory copy) is NOT mutated.
     expect(
-      ((bag.regionScroll!["dev-card-transcript"].meta as Record<string, unknown>)
+      ((bag.regionScroll!["session-card-transcript"].meta as Record<string, unknown>)
         .cellHeights as number[]).length,
     ).toBe(50);
   });

@@ -67,7 +67,7 @@ export interface PaneBulletinOptions {
  *
  * Sonner keys toasts by `id` in a single *global* store — `toasterId` only
  * routes which `<Toaster>` renders a toast, it does not scope identity. So two
- * panes raising the same logical id (e.g. every Dev card's `"notice-api-retry"`)
+ * panes raising the same logical id (e.g. every Session card's `"notice-api-retry"`)
  * collide: the second post updates — and steals — the first pane's toast. The
  * dismiss path (`toast.dismiss(id)`) is global for the same reason. Prefixing
  * the id with the per-pane `toasterId` (stable `useId`) gives each pane its own

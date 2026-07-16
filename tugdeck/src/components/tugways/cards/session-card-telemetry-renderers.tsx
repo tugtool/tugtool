@@ -1,0 +1,1187 @@
+/**
+ * session-card-telemetry-renderers.tsx — small, focused React components
+ * that render one datum each from the session card's per-turn and
+ * session-cumulative telemetry surface.
+ *
+ * Each renderer is **placement-agnostic**: it takes the data it needs
+ * (a store, a `TurnEntry`, etc.) and renders a deterministic display
+ * fragment. The same renderer is suitable for the status-bar /
+ * prompt-entry-top / prompt-entry-footer (session-scoped renderers)
+ * or the per-turn trailing slot (per-turn renderers); the experiment
+ * harness decides which datum lands in which zone.
+ *
+ * Conformance:
+ *  - [L02] Session-scoped renderers subscribe to `CodeSessionStore` via
+ *    `useSyncExternalStore`. Live-clock-dependent renderers also
+ *    subscribe to a shared per-second tick so the displayed clock
+ *    moves between store updates (the tick is a tiny external store
+ *    backed by `setInterval`; the renderer's `getSnapshot` reads
+ *    `Date.now()` derivatively).
+ *  - [L06] Renderers produce only text + primitives (TugLinearGauge for
+ *    the window-utilization datum). No React state for visible-only
+ *    appearance.
+ *  - [L19] Each renderer is a self-contained React function component.
+ *  - [L20] No new token slots authored — renderers consume the host's
+ *    layout box plus existing component-tier primitives.
+ *
+ * @module components/tugways/cards/session-card-telemetry-renderers
+ */
+
+import "./session-card-telemetry-renderers.css";
+
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+
+import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
+import {
+  FocusManagerContext,
+  type FocusPolicy,
+} from "@/components/tugways/focus-manager";
+import { CardIdContext } from "@/lib/card-id-context";
+import { TugPlacard } from "@/components/tugways/tug-placard";
+import { TugStatusCell } from "@/components/tugways/tug-status-cell";
+import { SideQuestionBody } from "@/components/tugways/cards/side-question-overlay";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorState,
+} from "@/components/tugways/tug-progress-indicator";
+import {
+  sessionSessionPhaseKey,
+  sessionSessionPhaseVisual,
+  SESSION_PHASE_LABELS,
+  type SessionPhaseInput,
+} from "@/lib/code-session-store/session-phase-visual";
+import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { TurnEntry } from "@/lib/code-session-store/types";
+import {
+  computeRichContextBreakdown,
+  deriveJobExtendedActiveMs,
+  deriveSessionTotals,
+  deriveTimeCellMs,
+  turnHasTiming,
+} from "@/lib/code-session-store/telemetry";
+import {
+  deriveContextWindows,
+  perTurnTokens,
+  turnWindowTokens,
+} from "@/lib/code-session-store/end-state";
+import { useLifecycleTick } from "@/lib/code-session-store/hooks/use-lifecycle-tick";
+import { deriveColdRestoreActive } from "@/components/tugways/cards/session-card-restore-gate";
+import {
+  DEFAULT_CONTEXT_MAX_TOKENS,
+  resolveModelContextMax,
+} from "@/lib/model-context-max";
+import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { SideQuestionStore } from "@/lib/side-question-store";
+import { useSessionStateChanges } from "@/lib/session-state-changes-store";
+
+import {
+  ContextPopoverContent,
+  StateChangeLogPopoverContent,
+  TimePopoverContent,
+  TokensPopoverContent,
+  WorkPopoverContent,
+  type ScrollToRowHandler,
+} from "./session-card-telemetry-popovers";
+import { useTaskListState } from "@/lib/code-session-store/hooks/use-task-list-state";
+import { useJobsState } from "@/lib/code-session-store/hooks/use-jobs-state";
+import {
+  countJobs,
+  jobsOwnedByTurn,
+} from "@/lib/code-session-store/select-jobs";
+import { goalIsActive } from "@/lib/code-session-store/select-goal";
+import {
+  composeWorkSummary,
+  countRecentlyDone,
+  formatWorkCount,
+  nextLingerExpiryMs,
+  workActiveCount,
+  workCellPose,
+  WORK_LINGER_MS,
+  workDisplayCount,
+} from "@/lib/code-session-store/select-work";
+import { countTasks } from "@/components/tugways/body-kinds/todo-list-block";
+
+// ---------------------------------------------------------------------------
+// Pure-logic formatters (exported for tests)
+// ---------------------------------------------------------------------------
+
+/** Format a token count as `12.3k` or `1.05M`. Tiny counts render exact. */
+export function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n < 1_000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+/**
+ * Same magnitudes as `formatTokens` but with **uppercase** suffixes —
+ * `K` (kilo), `M` (mega), `G` (giga). Instrument-shorthand convention
+ * adopted for the Z2 status row in #step-20-4.
+ *
+ * Signed: a negative count renders with a leading U+2212 minus sign
+ * (`-208.3K`). The per-turn token figure is a signed window delta — a
+ * `/compact` turn shrinks the window — and the cell shows that
+ * honestly rather than clamping a real shrink to `0`.
+ */
+export function formatTokensCaps(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  if (n < 0) return `−${formatTokensCaps(-n)}`;
+  if (n < 1_000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}G`;
+}
+
+/** Format milliseconds as `1.2s` / `34s` / `2m 03s` / `1h 04m`. */
+export function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0s";
+  if (ms < 1_000) return `${ms}ms`;
+  const totalSec = Math.floor(ms / 1_000);
+  if (totalSec < 60) {
+    const tenths = Math.floor((ms % 1_000) / 100);
+    return totalSec < 10 ? `${totalSec}.${tenths}s` : `${totalSec}s`;
+  }
+  if (totalSec < 3_600) {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}m ${s.toString().padStart(2, "0")}s`;
+  }
+  const h = Math.floor(totalSec / 3_600);
+  const m = Math.floor((totalSec % 3_600) / 60);
+  return `${h}h ${m.toString().padStart(2, "0")}m`;
+}
+
+/**
+ * Always-hours time format — `Hh Mm SSs` shape at every magnitude.
+ * `0h 0m 12s` even when below an hour; `4h 30m 00s` for a marathon
+ * session. Always includes the seconds component. Used by the time
+ * popover's per-turn rows, where the uniform `Hh Mm SSs` shape keeps
+ * the stacked figures column-aligned.
+ */
+export function formatTimeAlwaysHours(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0h 0m 00s";
+  const totalSec = Math.max(0, Math.floor(ms / 1_000));
+  const h = Math.floor(totalSec / 3_600);
+  const m = Math.floor((totalSec % 3_600) / 60);
+  const s = totalSec % 60;
+  return `${h}h ${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+/**
+ * Conditional-hours time format — `Mm SSs` for any span under an
+ * hour, `Hh MMm SSs` once a single span crosses the hour mark. The
+ * status row's TIME cell uses this so the common case (turns lasting
+ * seconds or a few minutes) reads without a vestigial leading `0h`;
+ * an hour-plus turn still surfaces its hours component. Always
+ * includes a zero-padded seconds component; once past an hour the
+ * minutes component is zero-padded too, so the hour-plus display holds
+ * a stable width as the minutes tick.
+ */
+export function formatTimeMinutesSeconds(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0m 00s";
+  const totalSec = Math.max(0, Math.floor(ms / 1_000));
+  const s = (totalSec % 60).toString().padStart(2, "0");
+  const m = Math.floor((totalSec % 3_600) / 60);
+  if (totalSec < 3_600) return `${m}m ${s}s`;
+  const h = Math.floor(totalSec / 3_600);
+  return `${h}h ${m.toString().padStart(2, "0")}m ${s}s`;
+}
+
+/** Format a USD cost as `$0.0123` (4 decimals when small, 2 when ≥ $1). */
+export function formatUsd(usd: number): string {
+  if (!Number.isFinite(usd) || usd < 0) return "$0";
+  if (usd < 1) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Live-tick external store — one shared interval, all session-clock
+// renderers subscribe via `useSyncExternalStore` per [L02].
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-scoped 1Hz tick. Lazy-started on first subscribe; stopped
+ * when the last subscriber unsubscribes. The "snapshot" is the last
+ * tick wall-clock ms; renderers read it (or `Date.now()` directly,
+ * which is fine because `useSyncExternalStore` only re-renders when
+ * the snapshot reference changes — and the snapshot changes once per
+ * tick).
+ */
+const tickListeners = new Set<() => void>();
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+let tickValue = 0;
+
+function startTick(): void {
+  if (tickTimer !== null) return;
+  tickValue = Date.now();
+  tickTimer = setInterval(() => {
+    tickValue = Date.now();
+    for (const fn of tickListeners) fn();
+  }, 1_000);
+}
+
+function stopTickIfIdle(): void {
+  if (tickListeners.size === 0 && tickTimer !== null) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+}
+
+function subscribeTick(listener: () => void): () => void {
+  tickListeners.add(listener);
+  startTick();
+  return () => {
+    tickListeners.delete(listener);
+    stopTickIfIdle();
+  };
+}
+
+function getTick(): number {
+  return tickValue;
+}
+
+/**
+ * Hook returning the current 1Hz tick value. Renderers that need a
+ * live clock subscribe; the underlying interval starts on first
+ * subscription and stops when nothing subscribes.
+ *
+ * Exported for the Jobs popover's per-row elapsed readout — the leaf
+ * `JobElapsedValue` component mounts only while the popover is open,
+ * so an idle session with running jobs pays no tick until the user
+ * actually looks.
+ */
+export function useLiveTick(): number {
+  return useSyncExternalStore(subscribeTick, getTick, getTick);
+}
+
+// ---------------------------------------------------------------------------
+// Session-scoped renderers
+// ---------------------------------------------------------------------------
+
+export interface SessionTelemetryProps {
+  codeSessionStore: CodeSessionStore;
+  sessionMetadataStore?: SessionMetadataStore;
+}
+
+/**
+ * Props for {@link SessionTelemetryStatusRow} — the session telemetry
+ * props plus the optional transcript-scroll handler the Time / Tokens
+ * popovers thread onto their per-turn `#u{turn}` / `#a{turn}` addresses.
+ */
+export interface SessionTelemetryStatusRowProps extends SessionTelemetryProps {
+  /**
+   * Scrolls the transcript to a transcript row when the user clicks
+   * its `#u{turn}` / `#a{turn}` address in the Time / Tokens popover. The
+   * session card supplies it (it owns the transcript's imperative handle);
+   * omitted in the gallery / fixtures, where the addresses render as
+   * inert text.
+   */
+  onScrollToRow?: ScrollToRowHandler;
+  /**
+   * Author the row's cells into a focus group ([P10] revised) — when set,
+   * **each cell is its own leaf cycle stop** (Tab moves cell-to-cell,
+   * no arrow-roving), like the Z4B chips. Supplied by the session card's
+   * cycle scope; omitted in the gallery / fixtures, where the cells are
+   * not Tab stops.
+   */
+  focusGroup?: string;
+  /**
+   * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
+   * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
+   * WORK, BTW = base + 0…5).
+   */
+  focusOrderBase?: number;
+  /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
+  focusPolicy?: FocusPolicy;
+  /**
+   * Side-question store for the BTW cell. When set, the row renders a BTW
+   * cell showing the number of `/btw` exchanges (or an em-dash when none) and
+   * the BTW cell toggles the shared placard open on the `/btw` body; omitted
+   * in the gallery / fixtures (the BTW cell is then inert).
+   */
+  sideQuestionStore?: SideQuestionStore;
+}
+
+/**
+ * Which Z2 detail surface the shared {@link TugPlacard} shows. Each key
+ * matches a status cell's `data-priority`, so the host can find the cell to
+ * anchor the placard under it.
+ */
+export type PlacardKind =
+  | "state"
+  | "time"
+  | "tokens"
+  | "context"
+  | "work"
+  | "btw";
+
+/** Placard header title per surface — the placard header carries these now
+ *  that the composed `TugPopupList` frames render headerless. */
+const PLACARD_TITLES: Record<PlacardKind, string> = {
+  state: "State",
+  time: "Time",
+  tokens: "Tokens",
+  context: "Context",
+  work: "Work",
+  btw: "/btw",
+};
+
+/**
+ * Imperative handle for {@link SessionTelemetryStatusRow}. Lets the session card open a
+ * status-row placard programmatically — the surfaces the `/context` and
+ * `/tasks` slash commands map to (they show the same breakdown a click on the
+ * cell shows, no separate sheet). Threaded down through `useSessionPlacementSlots`
+ * to the row's Z2 instance; a null ref (the row isn't the current Z2 datum)
+ * makes these no-ops.
+ */
+export interface SessionTelemetryStatusRowHandle {
+  /** Open the CONTEXT placard (the `/context`-style breakdown). */
+  openContext(): void;
+  /** Open the WORK placard (goal / jobs / scheduled / checklist) — the
+   *  `/tasks` surface. */
+  openWork(): void;
+  /** Open the `/btw` placard (the side-question body). */
+  openSideQuestions(): void;
+}
+
+/**
+ * Window-utilization gauge — the context-window occupancy after the
+ * most-recent committed turn (`window(latest)` from the transcript
+ * window-walk: the last turn's last-iteration `input + output +
+ * cache-read + cache-creation`) divided by the static context-window
+ * max for the active model.
+ *
+ * Uses TugLinearGauge in `compact` density so the strip fits inside
+ * a status-bar or prompt-entry footer without dominating layout.
+ */
+export const SessionTelemetryWindowUtilization: React.FC<SessionTelemetryProps> = ({
+  codeSessionStore,
+  sessionMetadataStore,
+}) => {
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  const meta = useSyncExternalStore(
+    useCallback(
+      (listener) =>
+        sessionMetadataStore !== undefined
+          ? sessionMetadataStore.subscribe(listener)
+          : () => {},
+      [sessionMetadataStore],
+    ),
+    useCallback(
+      () => sessionMetadataStore?.getSnapshot().model ?? null,
+      [sessionMetadataStore],
+    ),
+  );
+  // Resident context after the latest committed turn — the transcript
+  // window-walk (carry-forward over any zero-usage turn). `0` for a
+  // fresh session before `sessionInitTokens` is captured.
+  const windows = deriveContextWindows(
+    snap.transcript.map((t) => t.cost),
+    snap.sessionInitTokens ?? 0,
+    snap.transcript.map((t) => t.compactionPostTotal ?? null),
+  );
+  const contextTokens =
+    windows.length > 0
+      ? windows[windows.length - 1].window
+      : snap.sessionInitTokens ?? 0;
+  const max = meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
+  const maxText = formatTokens(max);
+  // Render value as `current / max` so the denominator is visible
+  // beneath the arc's proportional sweep. The "tokens" label rides
+  // the gauge's separate label slot (which TugArcGauge renders in a
+  // flex column below the value at compact density). Cascade-scoped
+  // CSS (see session-card.css under `.session-card-status-bar`) drops the
+  // primitive's default ALL-CAPS / mono treatment for this surface.
+  const formatRatio = useCallback(
+    (v: number) => `${formatTokens(v)} / ${maxText}`,
+    [maxText],
+  );
+  return (
+    <TugArcGauge
+      className="session-telemetry-window-utilization"
+      data-slot="session-telemetry-window-utilization"
+      value={contextTokens}
+      min={0}
+      max={max}
+      density="compact"
+      formatValue={formatRatio}
+      thresholds={{ caution: 0.75, danger: 0.9 }}
+    />
+  );
+};
+
+/**
+ * Cumulative session input + cache-read + cache-creation + output
+ * tokens. Sum across every committed turn — the lifetime tokens cost
+ * of the session so far.
+ */
+export const SessionTelemetryCumulativeTokens: React.FC<SessionTelemetryProps> = ({
+  codeSessionStore,
+}) => {
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  const totals = deriveSessionTotals(snap.transcript);
+  const total =
+    totals.totalInputTokens +
+    totals.totalCacheReadTokens +
+    totals.totalCacheCreationTokens +
+    totals.totalOutputTokens;
+  return (
+    <span
+      className="session-telemetry-text"
+      data-slot="session-telemetry-cumulative-tokens"
+    >
+      {formatTokens(total)} tokens
+    </span>
+  );
+};
+
+/**
+ * Cumulative session Claude-active time across every committed turn.
+ * In-flight turns are NOT added — the precise live-segment computation
+ * (subtracting awaiting-approval + transport-downtime windows) requires
+ * the internal reducer state and lives outside this placement-agnostic
+ * renderer. Subscribes to a 1Hz tick so any side-channel that flips
+ * the committed sum mid-second still surfaces promptly.
+ */
+export const SessionTelemetryCumulativeActiveMs: React.FC<SessionTelemetryProps> = ({
+  codeSessionStore,
+}) => {
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  // Subscribe to the live tick so the display refreshes even when no
+  // store dispatch has fired. The tick value itself is unused — the
+  // store snapshot is the source of truth for the committed total.
+  useLiveTick();
+  const committed = deriveSessionTotals(snap.transcript).totalActiveMs;
+  return (
+    <span
+      className="session-telemetry-text"
+      data-slot="session-telemetry-cumulative-active-ms"
+    >
+      {formatDurationMs(committed)}
+    </span>
+  );
+};
+
+/**
+ * Phase / "Claude is thinking" indicator — surfaces the session's
+ * coarse-grained `phase` enum. Useful in Z4 (prompt-entry footer)
+ * during the HMR study to compare against ambient-light placements.
+ */
+export const SessionTelemetryPhase: React.FC<SessionTelemetryProps> = ({
+  codeSessionStore,
+}) => {
+  const phase = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().phase,
+      [codeSessionStore],
+    ),
+  );
+  return (
+    <span className="session-telemetry-text" data-slot="session-telemetry-phase">
+      {phase}
+    </span>
+  );
+};
+
+/**
+ * Combined session status row — production Z2 surface promoted from
+ * the workshop gallery. Layout:
+ *
+ *     STATE   TIME   TOKENS   CONTEXT   WORK
+ *
+ * Five cell anchors, each opening a popover on click:
+ *
+ *   - **STATE** → `StateChangeLogPopoverContent` driven by
+ *     `useSessionStateChanges(snap.tugSessionId)` against the
+ *     persisted SQLite ledger.
+ *   - **TIME** → `TimePopoverContent` — per-turn `activeMs` log +
+ *     count/total/avg footer + live in-flight footer row when a
+ *     turn is in flight.
+ *   - **TOKENS** → `TokensPopoverContent` — per-turn token-sum log +
+ *     count/total/avg footer + live in-flight footer row.
+ *   - **CONTEXT** → `ContextPopoverContent` — rich `/context`-style
+ *     breakdown when a `lastContextBreakdown` frame is present, the
+ *     5-segment `cost_update`-derived fallback otherwise.
+ *
+ * TIME cell text is the live in-flight clock when a turn is in
+ * flight (`isLivePhase(phase)` true) and the last committed turn's
+ * `activeMs` after commit. `deriveTimeCellMs` pauses on yellow axes
+ * (awaiting-approval / transport-downtime / interrupt-in-flight)
+ * via the snapshot's union-pause bookkeeping, freezes at
+ * `turn_complete`, and re-engages on the next submit.
+ * `useLifecycleTick` provides the 1Hz heartbeat — it ticks only
+ * while in flight and reports `0` otherwise (the helper's fallback
+ * path uses the static value in that case).
+ *
+ * The STATE cell mirrors the other three: an endcap-rule legend
+ * above a value. The value is the human-readable phase title from
+ * `SESSION_PHASE_LABELS`: "Idle", "Running tools", "Awaiting first
+ * response". Flanking the value, pinned to either end of the value
+ * area, are two label-less `TugProgressIndicator` pulsing-dot glyphs
+ * — their dot + pulsing ring read
+ * `phase × transportState × interruptInFlight` (resolved via
+ * `sessionSessionPhaseKey` + `sessionSessionPhaseVisual`) and give the
+ * cell the live motion a static figure cannot.
+ *
+ * The WORK cell unifies the [D100] todo list, the [D102]
+ * background-jobs ledger (`useJobsState`), and the `/goal` under one
+ * merged `label + pose` grammar (`select-work.ts`): jobs and goals
+ * never idle-demote (a background job genuinely runs between turns),
+ * the checklist contribution keeps [D100]'s idle demotion. Cumulative
+ * TOTAL TIME / TOTAL TOKENS are not separate cells; the same sums
+ * surface in the TIME and TOKENS popovers' summary footers (one click
+ * reveals the per-turn rows + the cumulative totals).
+ *
+ * **Mount-identity ([L26]):** the five-cell flex row and every cell
+ * are unconditionally mounted across phase / transport / interrupt
+ * transitions. Only the popovers' open/closed state and the cell
+ * values change; the STATE indicators reconcile tone in place.
+ */
+export const SessionTelemetryStatusRow = React.forwardRef<
+  SessionTelemetryStatusRowHandle,
+  SessionTelemetryStatusRowProps
+>(function SessionTelemetryStatusRow(
+  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore },
+  ref,
+) {
+  // The Z2 detail surfaces render as ONE card-scoped TugPlacard, toggled open
+  // on the activating cell — so only one is ever open ([P05]). `placard` names
+  // the open surface plus the horizontal offset it opens at (measured under the
+  // triggering cell, [P06]). `rowRef` locates the cells + the placard's
+  // positioned container.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [placard, setPlacard] = useState<{
+    key: PlacardKind;
+    anchorCenter: number;
+  } | null>(null);
+  // Mirror the open key so the toggle can read it without a stale closure.
+  const placardKeyRef = useRef<PlacardKind | null>(null);
+  placardKeyRef.current = placard?.key ?? null;
+
+  // On-trigger anchoring: the cell's CENTER within the placard's positioned
+  // container — the `.session-card-status-bar` padding box (the placard's
+  // offsetParent; the row itself is unpositioned, [P06]). The placard centers
+  // itself on this x (clamped in-card). `clientLeft` is the container's left
+  // border width, so `barRect.left + clientLeft` is the padding-box edge the
+  // placard's `left` is measured from.
+  const measureAnchorCenter = useCallback((key: PlacardKind): number => {
+    const row = rowRef.current;
+    if (row === null) return 0;
+    const cell = row.querySelector<HTMLElement>(
+      `[data-slot="tug-status-cell"][data-priority="${key}"]`,
+    );
+    const statusBar = row.closest<HTMLElement>(
+      '[data-slot="session-card-status-bar"]',
+    );
+    if (cell === null || statusBar === null) return 0;
+    const cellRect = cell.getBoundingClientRect();
+    const barRect = statusBar.getBoundingClientRect();
+    return cellRect.left + cellRect.width / 2 - (barRect.left + statusBar.clientLeft);
+  }, []);
+
+  const showPlacard = useCallback(
+    (key: PlacardKind): void => {
+      setPlacard({ key, anchorCenter: measureAnchorCenter(key) });
+    },
+    [measureAnchorCenter],
+  );
+  // Cell activation toggles: re-clicking the open cell closes it ([P05]).
+  const togglePlacard = useCallback(
+    (key: PlacardKind): void => {
+      if (placardKeyRef.current === key) setPlacard(null);
+      else showPlacard(key);
+    },
+    [showPlacard],
+  );
+  const closePlacard = useCallback(() => setPlacard(null), []);
+
+  // [P10] Escape ownership while a Z2 placard is open. The placard is
+  // non-modal, focus-refusing chrome (it never pushes a focus mode of its
+  // own), so a placard opened FROM A CYCLE STOP would otherwise leave the
+  // cycle mode on top — and the cycle's `escapeExits` would eat Escape,
+  // exiting the whole cycle instead of just closing the placard. Pushing an
+  // Escape-owning mode while the placard is open makes the placard the top
+  // mode: Escape (and Space) run `onEscapeDismiss`/`spaceDismisses` → close
+  // the placard, and popping restores the ring to the triggering cell. The
+  // cycle scope stays on the stack throughout, so the card reads as still
+  // cycling ([P10]: a cell popover is not a cycle exit). No focus is moved on
+  // push (the cell keeps the ring), matching the placard's chrome nature.
+  const focusManager = useContext(FocusManagerContext);
+  const cardId = useContext(CardIdContext);
+  const focusCtx = useMemo(
+    () => (focusManager === null ? null : focusManager.contextFor(cardId)),
+    [focusManager, cardId],
+  );
+  const placardFocusScopeId = useId();
+  useEffect(() => {
+    if (focusCtx === null || placard === null) return;
+    focusCtx.pushFocusMode(placardFocusScopeId, {
+      trapped: true,
+      onEscapeDismiss: closePlacard,
+      spaceDismisses: true,
+    });
+    return () => focusCtx.popFocusMode(placardFocusScopeId);
+  }, [focusCtx, placard, placardFocusScopeId, closePlacard]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openContext: () => showPlacard("context"),
+      openWork: () => showPlacard("work"),
+      openSideQuestions: () => showPlacard("btw"),
+    }),
+    [showPlacard],
+  );
+
+  // Cycle stops ([P10] revised): each cell is its own leaf stop (Tab
+  // cell-to-cell, no arrow-roving), like the Z4B chips. The cells take
+  // consecutive orders left→right from `focusOrderBase`; passing an
+  // undefined group leaves them off the walk entirely (`TugStatusCell`
+  // registers only when a `focusGroup` is supplied). `cellOrder` keeps
+  // the per-cell order in one place so the DOM order and the walk order
+  // can't drift.
+  const cellOrder = (offset: number): number | undefined =>
+    focusOrderBase === undefined ? undefined : focusOrderBase + offset;
+
+  // BTW count — the number of `/btw` exchanges, live via useSyncExternalStore
+  // ([L02]). The snapshot is a primitive (the count), so no render loop; the
+  // store is absent in the gallery / fixtures, where the count reads 0.
+  const btwCount = useSyncExternalStore(
+    useCallback(
+      (cb: () => void) =>
+        sideQuestionStore ? sideQuestionStore.subscribe(cb) : () => {},
+      [sideQuestionStore],
+    ),
+    useCallback(
+      () => (sideQuestionStore ? sideQuestionStore.getSnapshot().exchanges.length : 0),
+      [sideQuestionStore],
+    ),
+  );
+
+  const snap = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    codeSessionStore.getSnapshot,
+  );
+  const meta = useSyncExternalStore(
+    useCallback(
+      (listener) =>
+        sessionMetadataStore !== undefined
+          ? sessionMetadataStore.subscribe(listener)
+          : () => {},
+      [sessionMetadataStore],
+    ),
+    useCallback(
+      () => sessionMetadataStore?.getSnapshot().model ?? null,
+      [sessionMetadataStore],
+    ),
+  );
+  // Jobs ledger — read early because the TIME cell folds background
+  // work into its clock (a request whose agent still runs between
+  // turns keeps counting) as well as feeding the JOBS cell below.
+  const jobsLedger = useJobsState(codeSessionStore);
+
+  const lastTurn =
+    snap.transcript.length > 0
+      ? snap.transcript[snap.transcript.length - 1]
+      : null;
+  // Background jobs launched by the last committed turn — the work
+  // that keeps the request "in progress" after the turn commits.
+  const lastTurnJobs =
+    lastTurn !== null ? jobsOwnedByTurn(lastTurn.messages, jobsLedger) : [];
+  const lastTurnJobsRunning = lastTurnJobs.some((j) => j.status === "running");
+  // Live 1Hz heartbeat — ticks while phase is non-terminal, AND while
+  // the last turn's background work is still running (the TIME cell
+  // keeps counting between turns then). `tickAt` is the helper's
+  // input, not a render-affecting value itself; `deriveTimeCellMs`
+  // folds it into its union-pause math.
+  const tickAt = useLifecycleTick(snap.phase, undefined, lastTurnJobsRunning);
+  // Subscribe to the persisted state-change log so the indicator's
+  // popover surfaces the live row stream. Returns the idle snapshot
+  // when no card has bound to a session id, so the subscription is
+  // cheap even before the popover opens.
+  const stateChangeSnap = useSessionStateChanges(snap.tugSessionId);
+
+  // TIME cell: live in-flight clock when a turn is in flight; after
+  // commit, the last turn's activeMs extended across its background
+  // work — climbing while a launched agent still runs, frozen at the
+  // request's true total once it finishes.
+  const lastCommittedActiveMs =
+    lastTurn !== null
+      ? deriveJobExtendedActiveMs({
+          turnActiveMs: lastTurn.activeMs,
+          turnEndedAt: lastTurn.endedAt,
+          jobs: lastTurnJobs,
+          nowMs: tickAt,
+        })
+      : 0;
+  const perTurnActiveMs = deriveTimeCellMs(snap, tickAt, lastCommittedActiveMs);
+  // Per-turn TIME is durable-only (overlaid from `turn_telemetry`, [P03]); a
+  // turn restored without a row carries the zero-placeholder. Show the honest
+  // `—` then, never a fabricated `0:00`. A live in-flight clock is always real.
+  const lastTurnHasTiming = lastTurn !== null && turnHasTiming(lastTurn);
+  // TOKENS / CONTEXT cells — both feed-derived. While a turn is in
+  // flight the cells read the latest `streaming_usage` frame
+  // (`liveTurnUsage`) so they climb mid-turn the way TIME does; once
+  // the turn commits — and between turns — they read the transcript
+  // window-walk.
+  //
+  // TOKENS — `perTurn`: the signed per-turn delta `window(N) −
+  // window(N−1)` (the number Z1B shows; negative at a `/compact`).
+  // CONTEXT — the resident context total, unified with the popover
+  // through `computeRichContextBreakdown`: `breakdown.totalUsed` is
+  // `window` by construction. Before turn 1 (no `sessionInit`, no
+  // window) the breakdown's bootstrap is tugcode's static estimate,
+  // so the cell shows a session-init figure the moment the session
+  // opens — never blank.
+  const sessionInit = snap.sessionInitTokens;
+  const windows = deriveContextWindows(
+    snap.transcript.map((t) => t.cost),
+    sessionInit ?? 0,
+    snap.transcript.map((t) => t.compactionPostTotal ?? null),
+  );
+  const lastCommittedWindow =
+    windows.length > 0 ? windows[windows.length - 1].window : null;
+  const isInflight = snap.activeTurn !== null;
+  const live = snap.liveTurnUsage;
+  // Resident window: the live in-flight frame, else the last committed
+  // turn's window, else `null` (no turns yet — fresh session).
+  const windowTokens =
+    isInflight && live !== null ? turnWindowTokens(live) : lastCommittedWindow;
+  // The prior window the in-flight per-turn delta is measured against.
+  const priorWindow = lastCommittedWindow ?? sessionInit ?? 0;
+  // The instant a turn is submitted the TOKENS cell clears — it must
+  // not keep showing the *previous* turn's delta until the new turn's
+  // first `streaming_usage` frame lands. So in-flight with no live
+  // frame yet reads 0; the last-committed delta is shown only between
+  // turns.
+  const tokensCellValue = isInflight
+    ? live !== null
+      ? perTurnTokens(live, priorWindow)
+      : 0
+    : windows.length > 0
+      ? windows[windows.length - 1].perTurn
+      : 0;
+  const contextMax =
+    meta !== null ? resolveModelContextMax(meta) : DEFAULT_CONTEXT_MAX_TOKENS;
+  // One breakdown computation feeds BOTH the CONTEXT cell (its
+  // `totalUsed`) and the Context popover (its `segments`) — the two
+  // surfaces cannot disagree.
+  const contextBreakdown = computeRichContextBreakdown({
+    staticBreakdown: snap.lastContextBreakdown,
+    sessionInitTokens: sessionInit,
+    windowTokens,
+    contextMax,
+  });
+  const contextTotal = contextBreakdown?.totalUsed ?? windowTokens ?? 0;
+
+  // Color-coded context numerator. The `/` and denominator stay
+  // muted so the live numerator reads first. Threshold class is
+  // applied to the wrapping span; the CSS rule paints the
+  // numerator's color via descendant selector.
+  const ratio = contextMax > 0 ? contextTotal / contextMax : 0;
+  const contextThreshold: "normal" | "caution" | "danger" =
+    ratio >= 0.9 ? "danger" : ratio >= 0.75 ? "caution" : "normal";
+
+  // Replay-window inerting: while a resume replay is reconstructing
+  // history, every value-oriented cell would otherwise flip wildly as
+  // replayed turns fold through the telemetry derivations — readings
+  // of HISTORY, not of anything happening now. The value cells render
+  // an inert em-dash for the duration (and the row's
+  // `data-replay-inert` attribute dims them + drops pointer events via
+  // CSS, [L06]); only STATE stays live, reading "Restoring".
+  const replayInert =
+    snap.phase === "replaying" || deriveColdRestoreActive(snap);
+  const inertValue = (text: string): string => (replayInert ? "—" : text);
+
+  const indicatorState: SessionPhaseInput = {
+    phase: snap.phase,
+    transportState: snap.transportState,
+    interruptInFlight: snap.interruptInFlight,
+  };
+  const statePhaseKey = sessionSessionPhaseKey(indicatorState);
+  // STATE cell value — the human-readable phase title. The two
+  // flanking indicators take the same phase key and derive their
+  // own role + state via sessionSessionPhaseVisual.
+  const stateLabelText = SESSION_PHASE_LABELS[statePhaseKey];
+
+  // WORK cell — the unified surface over every trackable unit of
+  // session work ([P02]/[P03] of `roadmap/slash-command-plan.md`): the
+  // task checklist ([D100]'s fold, with its idle demotion preserved for
+  // the checklist contribution only), the background-jobs ledger
+  // ([D102]'s ledger, never idle-demoted — a job genuinely runs between
+  // turns), and the `/goal`. Pose and label are the merged grammar in
+  // `select-work.ts`; the popover carries the full grouped picture.
+  const taskListState = useTaskListState(codeSessionStore);
+  const taskCounts = countTasks(taskListState.tasks);
+  const hasTasks = taskCounts.total > 0;
+  const isIdle = snap.phase === "idle";
+  const allTasksComplete =
+    hasTasks && taskCounts.completed === taskCounts.total;
+  const goal = snap.goal;
+  const jobCounts = countJobs(jobsLedger);
+  const hasWork =
+    hasTasks || jobsLedger.length > 0 || goal !== null;
+  // Completion linger: hold the recently-finished count for
+  // WORK_LINGER_MS rather than snapping to "None" the instant the last
+  // item completes. `nowMs` is read at render; while idle-and-lingering
+  // a single bounded timeout (below) recomputes once at the window's
+  // edge — no ticker, matching the tick-free scheduled badge.
+  const nowMs = Date.now();
+  const activeCount = workActiveCount(taskCounts, jobCounts, goal);
+  const recentlyDone = countRecentlyDone(
+    taskListState.tasks,
+    jobsLedger,
+    nowMs,
+    WORK_LINGER_MS,
+  );
+  const displayCount = workDisplayCount(activeCount, recentlyDone);
+  const recentlyCompleted = recentlyDone > 0;
+  const workLabelText = formatWorkCount(displayCount);
+  const workIndicatorState: TugProgressIndicatorState = workCellPose(
+    jobsLedger,
+    goal,
+    { hasTasks, allTasksComplete, isIdle },
+    recentlyCompleted,
+  );
+  const workSummary = composeWorkSummary(taskCounts, jobCounts, goal);
+  const [, setLingerTick] = useState(0);
+  useEffect(() => {
+    // Only the idle→"None" transition needs a nudge: active work keeps
+    // the row re-rendering on its own (the live TIME clock). Schedule
+    // one timeout at the earliest lingering item's expiry; when it
+    // fires, a recompute drops that item and reschedules for the next.
+    if (activeCount !== 0 || recentlyDone === 0) return;
+    const expiry = nextLingerExpiryMs(
+      taskListState.tasks,
+      jobsLedger,
+      Date.now(),
+      WORK_LINGER_MS,
+    );
+    if (expiry === null) return;
+    const id = setTimeout(
+      () => setLingerTick((n) => n + 1),
+      Math.max(0, expiry - Date.now()),
+    );
+    return () => clearTimeout(id);
+  }, [activeCount, recentlyDone, taskListState.tasks, jobsLedger]);
+  // Popover actions — fire-and-forget control-style callbacks onto the
+  // store's named methods (stop/cancel/stop-loop/clear-goal ride the
+  // wire; clear is deck-local).
+  const stopJob = useCallback(
+    (jobId: string) => codeSessionStore.stopJob(jobId),
+    [codeSessionStore],
+  );
+  const clearJobs = useCallback(
+    () => codeSessionStore.clearJobs(),
+    [codeSessionStore],
+  );
+  const cancelScheduledWork = useCallback(
+    (jobId: string) => codeSessionStore.cancelScheduledWork(jobId),
+    [codeSessionStore],
+  );
+  const stopLoop = useCallback(
+    (jobId: string) => codeSessionStore.stopLoop(jobId),
+    [codeSessionStore],
+  );
+  const clearGoal = useCallback(
+    () => codeSessionStore.clearGoal(),
+    [codeSessionStore],
+  );
+
+  // Per-anchor popover content. Each popover receives only the
+  // inputs it needs — no shared context object — so future popover
+  // changes touch one factory call instead of a coupling layer.
+  // `isInflight` (computed above with the cell values) gates both
+  // per-area popovers' in-flight footer.
+  // Canonical turn-number base: the loaded window's `firstLoadedTurnIndex`,
+  // so the popovers' per-turn `#u{turn}` / `#a{turn}` addresses match the
+  // transcript's paged numbering (0 for a full / non-windowed load).
+  const turnNumberBase = snap.replayWindow?.firstLoadedTurnIndex ?? 0;
+  const timePopover = (
+    <TimePopoverContent
+      transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
+      inflight={
+        isInflight ? { currentTurnActiveMs: perTurnActiveMs } : null
+      }
+      onScrollToRow={onScrollToRow}
+    />
+  );
+  const tokensPopover = (
+    <TokensPopoverContent
+      transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
+      sessionInitTokens={sessionInit}
+      inflight={
+        // The in-flight footer carries the live per-turn delta —
+        // `tokensCellValue` is the signed `window − priorWindow`
+        // while a turn is in flight (see the cell-value block above).
+        isInflight ? { currentTurnTokens: tokensCellValue } : null
+      }
+      onScrollToRow={onScrollToRow}
+    />
+  );
+  const contextPopover = (
+    <ContextPopoverContent
+      breakdown={contextBreakdown}
+      threshold={contextThreshold}
+    />
+  );
+  const statePopover = (
+    <StateChangeLogPopoverContent rows={stateChangeSnap.rows} />
+  );
+  const workPopover = (
+    <WorkPopoverContent
+      goal={goal}
+      canClearGoal={isIdle && goalIsActive(goal)}
+      onClearGoal={clearGoal}
+      taskState={taskListState}
+      idle={isIdle}
+      jobs={jobsLedger}
+      transcript={snap.transcript}
+      turnNumberBase={turnNumberBase}
+      onScrollToRow={onScrollToRow}
+      onStopJob={stopJob}
+      onCancelScheduledWork={cancelScheduledWork}
+      onStopLoop={stopLoop}
+      onClearJobs={clearJobs}
+    />
+  );
+
+  // The one open placard's body — the same content element the cell used to
+  // pass as its popover, now shown headerless inside the shared placard. BTW
+  // shows the side-question body (its own store, unrelated to the code
+  // session) and is only reachable when a store is present.
+  const placardBody =
+    placard === null
+      ? null
+      : placard.key === "state"
+        ? statePopover
+        : placard.key === "time"
+          ? timePopover
+          : placard.key === "tokens"
+            ? tokensPopover
+            : placard.key === "context"
+              ? contextPopover
+              : placard.key === "work"
+                ? workPopover
+                : sideQuestionStore !== undefined
+                  ? <SideQuestionBody store={sideQuestionStore} />
+                  : null;
+
+  // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + WORK as
+  // direct siblings. The row's `justify-content: center` (declared in
+  // CSS) packs the cells as one group with a fixed inter-item `gap`;
+  // the leftover width splits into equal flexing margins on the row's
+  // far left and right. Every cell is a fixed-width box so the group's
+  // width is constant and the cells never shift.
+  return (
+    <div
+      ref={rowRef}
+      className="session-telemetry-status-row"
+      data-slot="session-telemetry-status-row"
+      data-replay-inert={replayInert ? "true" : undefined}
+    >
+      {/* One card-scoped placard over whichever Z2 surface is open — auto-
+          dismiss, fixed under its trigger cell, one at a time ([P05]/[P06]).
+          Its offsetParent is the (position:relative) `.session-card-status-bar`,
+          so it floats just above Z2 over the transcript's tail. */}
+      {placard !== null && (
+        <TugPlacard
+          open
+          onClose={closePlacard}
+          dismiss="auto"
+          triggerSelector="[data-placard-trigger]"
+          anchorCenter={placard.anchorCenter}
+          className="session-telemetry-status-placard"
+          title={PLACARD_TITLES[placard.key]}
+          aria-label={PLACARD_TITLES[placard.key]}
+        >
+          {placardBody}
+        </TugPlacard>
+      )}
+      <TugStatusCell
+        priority="state"
+        label="STATE"
+        onActivate={() => togglePlacard("state")}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(0)}
+        focusPolicy={focusPolicy}
+      >
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={12}
+          phase={statePhaseKey}
+          phaseVisual={sessionSessionPhaseVisual}
+          aria-hidden
+        />
+        <span className="session-telemetry-status-value">{stateLabelText}</span>
+        <TugProgressIndicator
+          variant="pulsing-dot"
+          size={12}
+          phase={statePhaseKey}
+          phaseVisual={sessionSessionPhaseVisual}
+          aria-hidden
+        />
+      </TugStatusCell>
+      <TugStatusCell
+        priority="time"
+        label="TIME"
+        onActivate={() => togglePlacard("time")}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(1)}
+        focusPolicy={focusPolicy}
+      >
+        <span className="session-telemetry-status-value">
+          {inertValue(
+            isInflight || lastTurnHasTiming
+              ? formatTimeMinutesSeconds(perTurnActiveMs)
+              : "—",
+          )}
+        </span>
+      </TugStatusCell>
+      <TugStatusCell
+        priority="tokens"
+        label="TOKENS"
+        onActivate={() => togglePlacard("tokens")}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(2)}
+        focusPolicy={focusPolicy}
+      >
+        <span className="session-telemetry-status-value">
+          {inertValue(formatTokensCaps(tokensCellValue))}
+        </span>
+      </TugStatusCell>
+      <TugStatusCell
+        priority="context"
+        label="CONTEXT"
+        onActivate={() => togglePlacard("context")}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(3)}
+        focusPolicy={focusPolicy}
+      >
+        <span
+          className="session-telemetry-status-value session-telemetry-status-value-context"
+          data-context-threshold={contextThreshold}
+        >
+          <span className="session-telemetry-status-context-numerator">
+            {inertValue(formatTokensCaps(contextTotal))}
+          </span>
+          <span className="session-telemetry-status-context-denominator">
+            {`/ ${formatTokensCaps(contextMax)}`}
+          </span>
+        </span>
+      </TugStatusCell>
+      <TugStatusCell
+        priority="work"
+        label="WORK"
+        onActivate={() => togglePlacard("work")}
+        valueEmpty={!hasWork}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(4)}
+        focusPolicy={focusPolicy}
+      >
+        {replayInert ? (
+          <span className="session-telemetry-status-value">—</span>
+        ) : (
+          <TugProgressIndicator
+            variant="pulsing-dot"
+            glyphPosition="both"
+            size={10}
+            state={workIndicatorState}
+            label={workLabelText}
+            labelAlign="center"
+            phaseLabels={{
+              none: "None",
+              max: "00",
+            }}
+            aria-label={workSummary}
+          />
+        )}
+      </TugStatusCell>
+      <TugStatusCell
+        priority="btw"
+        label="BTW"
+        onActivate={
+          sideQuestionStore !== undefined
+            ? () => togglePlacard("btw")
+            : undefined
+        }
+        valueEmpty={btwCount === 0}
+        focusGroup={focusGroup}
+        focusOrder={cellOrder(5)}
+        focusPolicy={focusPolicy}
+        aria-label="Side questions"
+        title="Side questions (/btw)"
+      >
+        <span className="session-telemetry-status-value">
+          {btwCount > 0 ? String(btwCount) : "—"}
+        </span>
+      </TugStatusCell>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Per-turn renderers (Z1)
+// ---------------------------------------------------------------------------
+
+export interface SessionTurnTelemetryProps {
+  turn: TurnEntry;
+}
+
+/** Per-turn Claude-active duration (committed turns only). */
+export const SessionTelemetryPerTurnDuration: React.FC<SessionTurnTelemetryProps> = ({
+  turn,
+}) => (
+  <span
+    className="session-telemetry-text"
+    data-slot="session-telemetry-per-turn-duration"
+  >
+    {turnHasTiming(turn) ? formatDurationMs(turn.activeMs) : "—"}
+  </span>
+);
+
+/** Per-turn cost in USD (committed turns only). */
+export const SessionTelemetryPerTurnCost: React.FC<SessionTurnTelemetryProps> = ({
+  turn,
+}) => (
+  <span
+    className="session-telemetry-text"
+    data-slot="session-telemetry-per-turn-cost"
+  >
+    {formatUsd(turn.cost.totalCostUsd)}
+  </span>
+);
+
+/** Per-turn time-to-first-token (committed turns only). */
+export const SessionTelemetryPerTurnTtft: React.FC<SessionTurnTelemetryProps> = ({
+  turn,
+}) => (
+  <span
+    className="session-telemetry-text"
+    data-slot="session-telemetry-per-turn-ttft"
+  >
+    {turn.ttftMs !== null ? formatDurationMs(turn.ttftMs) : "—"}
+  </span>
+);

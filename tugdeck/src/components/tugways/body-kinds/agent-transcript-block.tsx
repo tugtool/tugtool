@@ -73,7 +73,7 @@ import "./agent-transcript-block.css";
 import React from "react";
 import { createPortal } from "react-dom";
 
-import { dispatchToolCallState } from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+import { dispatchToolCallState } from "@/components/tugways/cards/session-assistant-renderer-dispatch";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import {
   ToolBlockHistoryCollapse,

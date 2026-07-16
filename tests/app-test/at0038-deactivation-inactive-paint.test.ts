@@ -66,7 +66,7 @@ const SCROLLER_SELECTOR =
 const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 
 // Only the gallery-prompt-entry editor is exercised here. The `dev`
-// (DevCardBody) variants were removed: they died at a native
+// (SessionCardBody) variants were removed: they died at a native
 // second-pane activation click in the harness — a multi-pane CGEvent
 // geometry brittleness, never reaching the selection-paint assertion —
 // and the underlying property (selection survives deactivation at the
@@ -136,7 +136,7 @@ function makeContentBag(_componentId: PromptComponentId): Record<string, unknown
 }
 
 /**
- * Two-pane geometry — matches the user's repro: dev card and the
+ * Two-pane geometry — matches the user's repro: session card and the
  * Component Gallery card live in separate panes; both are visible
  * simultaneously. Deactivation moves focus authority between panes
  * but doesn't hide either card. This is critical for reproducing

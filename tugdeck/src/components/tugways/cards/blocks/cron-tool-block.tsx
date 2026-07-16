@@ -19,7 +19,7 @@
  * Composition (Spec S03, [#bk-conformance]):
  *  - `BlockChrome` owns the frame: a `Clock` icon + a
  *    composed tool-name string (`Cron · create` / `Cron · delete` /
- *    `Cron · list`), the status stripe, the inline `DevCautionBadge`
+ *    `Cron · list`), the status stripe, the inline `SessionCautionBadge`
  *    (when the dispatch flagged drift), and the error band.
  *  - **Header** — verb-qualified name above; the chrome's args slot
  *    carries the most-identifying field for each verb (note that

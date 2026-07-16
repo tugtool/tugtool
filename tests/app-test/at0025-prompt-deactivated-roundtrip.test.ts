@@ -4,7 +4,7 @@
  *
  * ## The user-reported regression this gates
  *
- * Reproducer (paraphrased): open a Dev card with a sibling card in
+ * Reproducer (paraphrased): open a Session card with a sibling card in
  * the same pane. Type into Dev; make a selection. Click the sibling
  * card's tab to deactivate Dev. Reload (or quit + relaunch). Click
  * Dev's tab to reactivate. Result before this gate: selection lost.
@@ -79,7 +79,7 @@ const TEST_TIMEOUT_MS = 90_000;
 
 type PromptComponentId =
   | "gallery-prompt-entry"
-  | "dev";
+  | "session";
 
 const PROMPT_INPUT_SELECTOR =
   '[data-slot="tug-text-editor"] .cm-content';
@@ -213,8 +213,8 @@ async function setupPhaseA(
     focusCardId: "A",
   });
 
-  if (componentId === "dev") {
-    await app.bindDevSession("A");
+  if (componentId === "session") {
+    await app.bindSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -376,8 +376,8 @@ async function reseedFromDiskAndReactivate(
     focusCardId: "B",
   });
 
-  if (componentId === "dev") {
-    await app.bindDevSession("A");
+  if (componentId === "session") {
+    await app.bindSession("A");
   }
 
   await app.waitForCondition<boolean>(
@@ -534,13 +534,13 @@ describe.skipIf(!SHOULD_RUN)(
 
     test(
       "dev × appReload",
-      () => runAppReloadScenario("dev"),
+      () => runAppReloadScenario("session"),
       TEST_TIMEOUT_MS,
     );
 
     test(
       "dev × relaunch",
-      () => runRelaunchScenario("dev"),
+      () => runRelaunchScenario("session"),
       TEST_TIMEOUT_MS,
     );
   },

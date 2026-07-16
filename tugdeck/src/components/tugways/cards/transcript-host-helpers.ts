@@ -1,11 +1,11 @@
 /**
  * Transcript-host helpers — value exports split out of
- * `dev-card-transcript.tsx` so that file stays a component-only React Fast
+ * `session-card-transcript.tsx` so that file stays a component-only React Fast
  * Refresh boundary. A `.tsx` exporting hooks/functions alongside its
- * `DevTranscriptHost` component is "mixed" and non-accepting, so editing it
+ * `SessionTranscriptHost` component is "mixed" and non-accepting, so editing it
  * (or anything it transitively imports) full-reloads. This module owns the
  * model-name hook, the timestamp formatter, and the per-cell context-menu
- * wiring; `dev-card-transcript.tsx` and the copy-wiring gallery import them.
+ * wiring; `session-card-transcript.tsx` and the copy-wiring gallery import them.
  *
  * **Laws:** [L02] — `useSessionModelName` reads the model through
  * `useSyncExternalStore` over `SessionMetadataStore` only. [L07] — the
@@ -259,7 +259,7 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
         text = resolve(body, sel);
       } catch (err) {
         tugDevLogStore.warn(
-          "dev-card-transcript",
+          "session-card-transcript",
           "copy reconstruction threw; falling back to plain text",
           { error: String(err) },
         );
@@ -271,7 +271,7 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
       // which is plain text by design and not logged.)
       if (text === null) {
         tugDevLogStore.warn(
-          "dev-card-transcript",
+          "session-card-transcript",
           "copy reconstruction yielded no markdown; falling back to plain text",
         );
       }
@@ -288,7 +288,7 @@ export function useTranscriptCellMenu(resolveCopyMarkdown?: CopyMarkdownResolver
         html = rendered === "" ? null : rendered;
       } catch (err) {
         tugDevLogStore.warn(
-          "dev-card-transcript",
+          "session-card-transcript",
           "copy text/html render threw; writing plain text only",
           { error: String(err) },
         );

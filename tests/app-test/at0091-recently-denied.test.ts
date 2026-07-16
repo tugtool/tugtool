@@ -5,13 +5,13 @@
  * ## Why this exists
  *
  * Denied tool calls (permission rule OR auto-mode classifier) ride the
- * `cost_update` frame's `permission_denials[]`; the dev card accumulates them
+ * `cost_update` frame's `permission_denials[]`; the session card accumulates them
  * per session and lists them in the Recently-denied tab, each with one-click
  * promote to a local Allow/Ask/Deny rule. The wire shape was captured in
  * `roadmap/transport-exploration.md`. This drives the **tugdeck half** end to
  * end without needing a real (rare, classifier-gated) denial: it injects a
  * synthetic `cost_update` frame through the store's real
- * `frameToEvent → dispatch` path (`driveDevSession`/`ingestFrame`), opens the
+ * `frameToEvent → dispatch` path (`driveSession`/`ingestFrame`), opens the
  * editor, and asserts the row renders + promoting it writes the rule file. The
  * tugcode emit half is covered by `tugcode/src/__tests__/session.test.ts`.
  *
@@ -32,7 +32,7 @@ const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
 const DENIED_LIST = `${SHEET} [data-slot="recently-denied-list"]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const TUG_SESSION_ID = "test-session-A"; // bindDevSession default
+const TUG_SESSION_ID = "test-session-A"; // bindSession default
 const DENIED_MATCHER = "Bash(at0091-denied-cmd)";
 
 let projectDir = "";
@@ -48,7 +48,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -87,12 +87,12 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A");
 
           // Inject a synthetic cost_update carrying one denial through the
           // store's real frameToEvent → dispatch path.
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded: {

@@ -228,7 +228,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     static let defaultPageZoom: CGFloat = 1.0
 
     /// Minimum content size the user can resize the window down to.
-    /// Dev + the canvas need this much room to lay out without
+    /// The Session card + the canvas need this much room to lay out without
     /// clipping the prompt area or stat row.
     static let minWindowSize = NSSize(width: 1200, height: 1000)
 
@@ -812,7 +812,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         // A clicked link to anything other than the app's own origin opens
         // in the system browser, never inside our webview — a transcript URL
         // (markdown link or a bare URL linkified by `enhance-links.ts`) must
-        // not navigate the app away from the Dev card. Same-origin http(s)
+        // not navigate the app away from the Session card. Same-origin http(s)
         // navigation (e.g. an in-page `#fragment`) is left to load normally.
         if navigationAction.navigationType == .linkActivated,
            let url = navigationAction.request.url,

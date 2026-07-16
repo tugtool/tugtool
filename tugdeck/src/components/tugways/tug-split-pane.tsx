@@ -67,7 +67,7 @@
  * This primitive does not observe content to grow/shrink panels. A
  * consumer that genuinely needs a content-driven *split* would wire up its
  * own observers and call `panelRef.current.requestSize(px)`. (Note: the
- * dev-card / gallery prompt entries do NOT use this primitive — they are
+ * session-card / gallery prompt entries do NOT use this primitive — they are
  * plain content-sized flex columns; an auto-height editor sizes them
  * natively, no JS.)
  *
@@ -169,7 +169,7 @@ interface TugSplitPaneWriteContextValue {
    * Persist the group's current layout through the user-drag path —
    * the same code `onLayoutChanged` runs at the end of a native sash
    * drag. An external drag handle (a grip that lives outside the
-   * sash — e.g. the Dev card's Z2 status-bar grips) applies live
+   * sash — e.g. the Session card's Z2 status-bar grips) applies live
    * sizes through `TugSplitPanelHandle.dragResizePixels` with the
    * gate held, so nothing is written mid-drag, then calls this once
    * on pointer release so the settled layout — flex-grow ratios and

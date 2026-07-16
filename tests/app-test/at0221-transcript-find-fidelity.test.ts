@@ -11,7 +11,7 @@
  * their agreement — same match COUNT and same per-row match ORDER — is an
  * invariant nothing enforces structurally. This test is the gate: it drives
  * a real replayed session (fixture JSONL → real `spawn_session(resume)` →
- * the live dev card) and asserts index↔DOM agreement over markdown
+ * the live session card) and asserts index↔DOM agreement over markdown
  * constructs, a mixed thinking+text row, a markdown user body, and
  * chrome-adjacent text (a collapsed Bash block whose header command
  * contains the query — chrome must never paint).
@@ -378,7 +378,7 @@ afterAll(() => {
 
 function deckShape(height: number) {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -457,7 +457,7 @@ async function waitForCountChip(app: App, expected: string): Promise<void> {
   );
 }
 
-/** Mount the dev card, resume the fixture session, wait for the replay. */
+/** Mount the session card, resume the fixture session, wait for the replay. */
 async function mountAndReplay(
   app: App,
   sid: string,
@@ -541,7 +541,7 @@ async function revealAndClick(app: App, selector: string): Promise<void> {
   // re-pinned by the next resize flush, leaving the target off-screen again.
   await app.evalJS<void>(
     `(() => {
-      const scroller = document.querySelector('[data-tug-scroll-key="dev-card-transcript"]');
+      const scroller = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
       if (scroller) {
         scroller.dispatchEvent(new WheelEvent("wheel", {
           deltaY: -40, bubbles: true, cancelable: true,
@@ -629,7 +629,7 @@ async function waitForActiveInBand(app: App): Promise<void> {
         break;
       }
       if (!rect || (rect.width === 0 && rect.height === 0)) return false;
-      const scroller = document.querySelector('[data-tug-scroll-key="dev-card-transcript"]');
+      const scroller = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
       if (!scroller) return false;
       const s = scroller.getBoundingClientRect();
       // The pin stack is per-entry — read it from inside the match's entry
@@ -651,7 +651,7 @@ async function waitForActiveInBand(app: App): Promise<void> {
  * `window.__at0221Flash`.
  */
 const INSTALL_FLASH_PROBE_JS = `(() => {
-  const scroller = document.querySelector('[data-tug-scroll-key="dev-card-transcript"]');
+  const scroller = document.querySelector('[data-tug-scroll-key="session-card-transcript"]');
   if (!scroller) return false;
   window.__at0221Flash = undefined;
   const obs = new MutationObserver((muts) => {
@@ -939,10 +939,10 @@ describe.skipIf(!SHOULD_RUN)("AT0221: transcript find fidelity gate", () => {
         await app.nativeKey("Enter", ["cmd"]);
         await app.waitForCondition<boolean>(
           `(() => {
-            const rows = document.querySelectorAll('[data-slot="dev-transcript-shell-row"]');
+            const rows = document.querySelectorAll('[data-slot="session-transcript-shell-row"]');
             if (rows.length === 0) return false;
             const row = rows[rows.length - 1];
-            const foot = row.querySelector('[data-slot="dev-z1b-end-state"]');
+            const foot = row.querySelector('[data-slot="session-z1b-end-state"]');
             return foot !== null && (foot.textContent || '').includes('exit') &&
               (row.textContent || '').includes('quartzling-out');
           })()`,
@@ -964,7 +964,7 @@ describe.skipIf(!SHOULD_RUN)("AT0221: transcript find fidelity gate", () => {
         // but the collapse guard keeps it unpainted while the index
         // projects nothing (Spec S01's collapse-guard case).
         await app.click(
-          '[data-slot="dev-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]',
+          '[data-slot="session-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]',
         );
         await waitForCountChip(app, "No results");
         expect(await readPaintedRanges(app)).toEqual([]);
@@ -972,7 +972,7 @@ describe.skipIf(!SHOULD_RUN)("AT0221: transcript find fidelity gate", () => {
         // Expand it again: both matches return, live (the expansion
         // notify drives the recompute — no manual refresh).
         await app.click(
-          '[data-slot="dev-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]',
+          '[data-slot="session-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]',
         );
         await waitForCountChip(app, "1 of 2");
       } finally {

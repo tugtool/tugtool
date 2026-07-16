@@ -3,7 +3,7 @@
  *
  * Lives in `@/lib/` rather than under the substrate directory because
  * non-substrate consumers (gallery cards, completion providers, the
- * dev-card) reference these types without taking a hard dependency
+ * session-card) reference these types without taking a hard dependency
  * on CodeMirror or any view code.
  *
  * Only types live here — no runtime helpers and no React. Everything

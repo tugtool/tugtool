@@ -1,7 +1,7 @@
 /**
  * Text card registration — split from `text-card.tsx` so the card body
  * stays a component-only Fast-Refresh boundary (mirrors the
- * `dev-card.tsx` / `dev-card-registration.tsx` split).
+ * `session-card.tsx` / `session-card-registration.tsx` split).
  *
  * `engineKind: "em"` — the card content owns its own focus lifecycle:
  * activation routes to the body's `onCardActivated` (which lands focus
@@ -26,12 +26,12 @@ export function registerTextCard(): void {
     engineKind: "em",
     category: { label: "Files", icon: "FileText" },
     sizePolicy: {
-      // Sized like the Dev card so a Text card opens at the same
+      // Sized like the Session card so a Text card opens at the same
       // stature next to one. The 800 width floor and 850×1200 preferred
-      // match `dev-card-registration.tsx` exactly — the preferred height
+      // match `session-card-registration.tsx` exactly — the preferred height
       // is deliberately taller than most canvases and `addCard` clamps
       // both dimensions to 90% of the live canvas at creation. The only
-      // divergence is the height floor: the Dev card's 600 exists to fit
+      // divergence is the height floor: the Session card's 600 exists to fit
       // its fixed 200px prompt entry + toolbars + transcript minimum,
       // which a Text card has none of, so it can shrink to 400.
       min: { width: 800, height: 400 },

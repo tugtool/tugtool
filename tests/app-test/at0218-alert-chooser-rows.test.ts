@@ -2,12 +2,12 @@
  * at0218-alert-chooser-rows.test.ts — TugAlert's multi-action `choose()` form
  * renders rich rows as a SELECTABLE LIST plus an OK / Cancel action bar.
  *
- * The empty-deck "What's next?" chooser (TugCreateDevCard) is a `choose()` call
+ * The empty-deck "What's next?" chooser (TugCreateSessionCard) is a `choose()` call
  * with per-choice icon + description. This drives the same form through the
  * gallery ("Preview What's Next"), which the real modal mirrors, and pins the
  * select-then-commit model:
  *   - the choices render as a vertical stack of `.tug-alert-choice` rows in the
- *     order they were passed (Create Dev Card, then Open Text Card);
+ *     order they were passed (Create Session Card, then Open Text Card);
  *   - the LIST holds the key-view ring on open (the default row highlighted +
  *     under the cursor), while OK wears the persistent default ring (Return's
  *     home) — the ring is on the list, but Return still commits via OK;
@@ -135,12 +135,12 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() is a selectable list + O
         expect(
           await app.evalJS<string[]>(rowTitles),
           "rows render top-to-bottom in passed order",
-        ).toEqual(["Create Dev Card", "Open Text Card"]);
+        ).toEqual(["Create Session Card", "Open Text Card"]);
 
         // 2. On open the LIST holds the ring with the default row highlighted;
         //    OK wears the persistent default ring (Return's home).
         await app.waitForCondition<boolean>(
-          `${selectedTitle} === "Create Dev Card"`,
+          `${selectedTitle} === "Create Session Card"`,
           { timeoutMs: 3000 },
         );
         await app.waitForCondition<boolean>(`${listRinged} === true`, { timeoutMs: 3000 });
@@ -175,7 +175,7 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() is a selectable list + O
           `document.querySelectorAll(${JSON.stringify(ROWS)})[0].click()`,
         );
         await app.waitForCondition<boolean>(
-          `${selectedTitle} === "Create Dev Card"`,
+          `${selectedTitle} === "Create Session Card"`,
           { timeoutMs: 3000 },
         );
         expect(
@@ -194,7 +194,7 @@ describe.skipIf(!SHOULD_RUN)("AT0218: TugAlert choose() is a selectable list + O
         await app.waitForCondition<boolean>(
           `(function(){
             var el = document.querySelector(${JSON.stringify(RESULT)});
-            return el !== null && (el.textContent || "").indexOf("dev") !== -1;
+            return el !== null && (el.textContent || "").indexOf("session") !== -1;
           })()`,
           { timeoutMs: 3000 },
         );

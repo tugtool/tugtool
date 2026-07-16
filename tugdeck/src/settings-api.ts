@@ -512,7 +512,7 @@ export function putTextCardCardSettings(cardId: string, settings: unknown): void
 
 /**
  * Response-settings shape stored in tugbank. Presentation knobs for
- * the Dev card's transcript pane (top pane, distinct from the editor
+ * the Session card's transcript pane (top pane, distinct from the editor
  * pane below it):
  *
  *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
@@ -653,7 +653,7 @@ export function readFindOptions(client: TugbankClient): FindOptions | null {
 
 /**
  * PUT the deck-wide Find option toggles to tugbank (fire-and-forget). New Find
- * sessions adopt these on construction (see `dev-card`'s `findSession` seed) so
+ * sessions adopt these on construction (see `session-card`'s `findSession` seed) so
  * a toggle survives a card reload.
  */
 export function putFindOptions(options: FindOptions): void {
@@ -765,10 +765,10 @@ export function putSplitPaneLayout(storageKey: string, layout: SplitPaneLayout):
 // ── Dev recent projects ────────────────────────────────────────────────────
 
 /** Maximum number of recent-project paths retained in the quick-pick list. */
-export const DEV_RECENT_PROJECTS_MAX = 5;
+export const SESSION_RECENT_PROJECTS_MAX = 5;
 
 /**
- * Read the dev-card recent-projects list from the TugbankClient cache.
+ * Read the session-card recent-projects list from the TugbankClient cache.
  *
  * Domain: `dev.tugtool.dev`, key: `recent-projects`.
  * Value shape: `{ paths: string[] }`. Returns `[]` if unset or malformed.
@@ -779,7 +779,7 @@ export const DEV_RECENT_PROJECTS_MAX = 5;
  * identifier so every consumer (recents, session-id map, bind
  * payload, tugcode's persistence) reads and writes the same string.
  */
-export function readDevRecentProjects(client: TugbankClient): string[] {
+export function readSessionRecentProjects(client: TugbankClient): string[] {
   const entry = client.get("dev.tugtool.dev", "recent-projects");
   if (!entry || entry.kind !== "json" || entry.value === undefined) {
     return [];
@@ -792,11 +792,11 @@ export function readDevRecentProjects(client: TugbankClient): string[] {
 }
 
 /**
- * PUT the dev-card recent-projects list to tugbank (fire-and-forget).
+ * PUT the session-card recent-projects list to tugbank (fire-and-forget).
  * Callers are responsible for dedup + capping; the helper writes the list
  * verbatim.
  */
-export function putDevRecentProjects(paths: string[]): void {
+export function putSessionRecentProjects(paths: string[]): void {
   fetch("/api/defaults/dev.tugtool.dev/recent-projects", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -808,12 +808,12 @@ export function putDevRecentProjects(paths: string[]): void {
 
 /**
  * Prepend `projectDir` onto `existing`, dedup case-sensitively, and cap at
- * `DEV_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
- * list before handing it to `putDevRecentProjects`.
+ * `SESSION_RECENT_PROJECTS_MAX`. Pure helper so callers can compose the new
+ * list before handing it to `putSessionRecentProjects`.
  */
-export function insertDevRecentProject(existing: string[], projectDir: string): string[] {
+export function insertSessionRecentProject(existing: string[], projectDir: string): string[] {
   const next = [projectDir, ...existing.filter((p) => p !== projectDir)];
-  return next.slice(0, DEV_RECENT_PROJECTS_MAX);
+  return next.slice(0, SESSION_RECENT_PROJECTS_MAX);
 }
 
 /**

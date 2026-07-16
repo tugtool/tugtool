@@ -28,7 +28,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const SID = "test-session-A"; // bindDevSession default
+const SID = "test-session-A"; // bindSession default
 const CHIP = '[data-slot="wake-trigger-chip"]';
 
 let projectDir = "";
@@ -45,7 +45,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -70,7 +70,7 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const app = await launchTugApp({ testName: "at0198-wake-trigger-chip" });
         const ingest = (decoded: unknown) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded,
@@ -82,7 +82,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
           // The wake bracket opens between turns (phase idle) with a

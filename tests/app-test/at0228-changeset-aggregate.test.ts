@@ -5,9 +5,9 @@
  * feed's session-row join, the git_init verb — is covered by Rust unit tests
  * on real content):
  *
- *   1. **Open-dev-card filter** — the card shows one session entry per open
- *      dev card, and ONLY those. The bootstrap `--source-tree` is registered
- *      (and its workspace has ledger rows) but no dev card here is bound to
+ *   1. **Open-session-card filter** — the card shows one session entry per open
+ *      session card, and ONLY those. The bootstrap `--source-tree` is registered
+ *      (and its workspace has ledger rows) but no session card here is bound to
  *      it, so it must NOT appear.
  *   2. **Init self-heal** — clicking "Initialize git" on a session entry in a
  *      non-repo directory runs `git init`, and the entry flips to a repo on
@@ -101,7 +101,7 @@ const DIRTY_CONTENT = "at0228-dirty-marker-9f3a";
 // The added line in the modified tracked file — the diff sheet must show it.
 const DIFF_MARKER = "at0228-diff-marker-2e7b";
 
-// Two scratch projects, each opened in its own dev card.
+// Two scratch projects, each opened in its own session card.
 interface Scratch {
   cardId: string;
   sid: string;
@@ -166,8 +166,8 @@ async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: s
 function deckShape() {
   return {
     cards: [
-      { id: "B", componentId: "dev", title: "Dev B", closable: true },
-      { id: "C", componentId: "dev", title: "Dev C", closable: true },
+      { id: "B", componentId: "session", title: "Session B", closable: true },
+      { id: "C", componentId: "session", title: "Session C", closable: true },
     ],
     panes: [
       { id: "p2", position: { x: 740, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
@@ -188,9 +188,9 @@ function nonRepoProbe(sid: string): string {
   })()`;
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, Init, file click", () => {
+describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-session-card filter, Init, file click", () => {
   test(
-    "shows exactly the open dev-card projects; Init self-heals; a file opens in a Text card",
+    "shows exactly the open session-card projects; Init self-heals; a file opens in a Text card",
     async () => {
       const app = await launchTugApp({ testName: "at0228-changeset-aggregate" });
       try {
@@ -213,7 +213,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
 
         // (1) Filter: the section settles on EXACTLY the two open dev cards'
         // sessions (one row each). The bootstrap source-tree is registered but
-        // unbound to any dev card here, so none of its sessions appear.
+        // unbound to any session card here, so none of its sessions appear.
         await app.waitForCondition<boolean>(
           `(function(){
             var ids = ${SESSION_IDS_JS};

@@ -1,9 +1,9 @@
 /**
- * at0215-route-chrome.test.ts — the three-route Dev card: per-route Z4B
+ * at0215-route-chrome.test.ts — the three-route Session card: per-route Z4B
  * chrome manifest, flanking-cell geometry, and the `?` route's side-question
  * round-trip ([P01]/[P02]/[P03], Table T01, Risk R04, roadmap/route-enhancements.md).
  *
- * Drives the REAL dev card (the manifest + chips live there, not in the
+ * Drives the REAL session card (the manifest + chips live there, not in the
  * gallery prompt-entry wrapper), cycling routes via a route popup pick and
  * the ⇧⌘ keybinding, and asserts:
  *
@@ -55,10 +55,10 @@ const LABEL_BY_ROUTE: Readonly<Record<string, string>> = {
   [ROUTE_SHELL]: "Shell",
   [ROUTE_BTW]: "btw",
 };
-// Chip data-slots (in the dev card's Z4B cluster).
+// Chip data-slots (in the session card's Z4B cluster).
 const CHIP = {
-  identity: "dev-route-indicator-badge",
-  session: "dev-session-id-badge",
+  identity: "session-route-indicator-badge",
+  session: "session-id-badge",
   project: "project-chip",
   cwd: "cwd-chip",
   mode: "permission-mode-chip",
@@ -87,7 +87,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev A", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session A", closable: true }],
     panes: [
       {
         id: "p1",
@@ -176,7 +176,7 @@ async function keybindToBtw(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0215: three-route Dev card — manifest, geometry, btw round-trip",
+  "AT0215: three-route Session card — manifest, geometry, btw round-trip",
   () => {
     test(
       "per-route chip sets, unmoved flanking cells, and a btw ask that never touches the transcript",
@@ -188,13 +188,13 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { tugSessionId: SID, projectDir: dir });
+          await app.bindSession("A", { tugSessionId: SID, projectDir: dir });
           await app.awaitEngineReady("A");
 
           // One committed turn so the transcript has entries to count.
-          await app.driveDevSession("A", { op: "send", text: "hello" });
+          await app.driveSession("A", { op: "send", text: "hello" });
           const frame = (decoded: Record<string, unknown>) =>
-            app.driveDevSession("A", {
+            app.driveSession("A", {
               op: "ingestFrame",
               feedId: FEED_CODE_OUTPUT,
               decoded: { tug_session_id: SID, ...decoded },

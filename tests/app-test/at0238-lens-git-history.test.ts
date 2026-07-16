@@ -1,11 +1,11 @@
 /**
  * at0238-lens-git-history.test.ts — the Lens **Git History** section renders
- * the followed dev card's real recent commits, read-only, over the live
+ * the followed session card's real recent commits, read-only, over the live
  * GIT_LOG wire path.
  *
  * Single-project scope ([Q02]): the section is driven against a real repo —
  * this worktree itself, which tugcast registers as its bootstrap
- * `--source-tree`. A dev card is bound to it and the section is asserted to
+ * `--source-tree`. A session card is bound to it and the section is asserted to
  * render that repo's real recent commits (by their unique short-sha prefixes,
  * most-recent-first) with a `<branch> · <n> commits` collapsed summary. The
  * expected shas / branch / count are read from `git` at test time, so the
@@ -21,8 +21,8 @@
  * section's projectDir-keyed effect, per [Q02].
  *
  * Scenario:
- *   1. Open the Lens with a focused-but-unbound dev card → empty state
- *      ("No dev card in focus.").
+ *   1. Open the Lens with a focused-but-unbound session card → empty state
+ *      ("No session card in focus.").
  *   2. Bind the card to the repo → the section requests and renders the repo's
  *      recent commits, most-recent-first.
  *   3. Collapse → the band summary reads `<branch> · <n> commits` (Spec S03).
@@ -107,11 +107,11 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 5_000 },
             );
 
-            // A single dev card, focused but not yet bound.
+            // A single session card, focused but not yet bound.
             await app.seedDeckState({
               state: {
                 cards: [
-                  { id: "D", componentId: "dev", title: "Dev", closable: true },
+                  { id: "D", componentId: "session", title: "Session", closable: true },
                 ],
                 panes: [
                   {
@@ -153,7 +153,7 @@ describe.skipIf(!SHOULD_RUN)(
             // Bind the card to the repo. No re-activation: the section tracks
             // the topmost bound card even when it is not the active key card, so
             // binding alone drives the request + render.
-            await app.bindDevSession("D", { projectDir: REPO });
+            await app.bindSession("D", { projectDir: REPO });
             await app.waitForCondition<boolean>(
               `(function(){
                 var el = document.querySelector(${JSON.stringify(`${BODY} .cm-content`)});

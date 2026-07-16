@@ -64,7 +64,7 @@ describe.skipIf(!SHOULD_RUN)("at0189: atBottom restore never slams a scrolled-up
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath);
-      const seeded = await seedFixtureSession("dev-transcript-basic", "at0189");
+      const seeded = await seedFixtureSession("session-transcript-basic", "at0189");
 
       // Pre-seed the picker's recent-projects to ONLY the temp fixture
       // dir, BEFORE launch — so the picker autofills that path on mount
@@ -113,7 +113,7 @@ describe.skipIf(!SHOULD_RUN)("at0189: atBottom restore never slams a scrolled-up
           CARD_ID,
         );
         expect(onDisk).not.toBeNull();
-        const regionA = onDisk?.value?.regionScroll?.["dev-card-transcript"];
+        const regionA = onDisk?.value?.regionScroll?.["session-card-transcript"];
         expect(regionA).toBeTruthy();
         expect(regionA?.meta?.atBottom).toBe(true);
 

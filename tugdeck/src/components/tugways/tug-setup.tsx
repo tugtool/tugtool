@@ -10,9 +10,9 @@
  * status` probe surfaced via `check_auth`) plus the deck's card count:
  *   1. Claude Code installed & reachable — Tug-managed install + recheck.
  *   2. Logged in to Claude — browser OAuth shell-out.
- *   3. Open your first session — pops the first Dev card. First-run only:
+ *   3. Open your first session — pops the first Session card. First-run only:
  *      a set-up user whose deck goes empty mid-life gets the lightweight
- *      TugCreateDevCard sibling, not the wizard.
+ *      TugCreateSessionCard sibling, not the wizard.
  *
  * ("Installed" and "reachable" collapse into one step: Tug resolves `claude`
  * via PATH then `~/.local/bin` — see `resolveClaudePath`/`claude_executable` —
@@ -30,7 +30,7 @@
  *     body (only swaps an already-open wizard; never pops setup on a set-up
  *     user — the app-wide reconnect banner owns that);
  *   - version too old → `TugVersionGate`, a sibling app-modal that takes
- *     precedence (Spec S02); logged-out mid-session → the per-card dev-card
+ *     precedence (Spec S02); logged-out mid-session → the per-card session-card
  *     auth banner safety net.
  *
  * Pure read of the stores ([L02]/[L24]) — `authStore`, the deck, the transport
@@ -63,7 +63,7 @@ import "./tug-setup.css";
 // TEMP dev affordance (dev builds only): flip to a state to force the wizard
 // while signed in, so it can be iterated under HMR. Leave `false`; the
 // `import.meta.env.DEV` guard folds it out of production.
-const DEV_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | false =
+const SESSION_FORCE_SETUP: "claude_missing" | "logged_out" | "open_session" | false =
   false;
 
 /**
@@ -159,7 +159,7 @@ export function TugSetup(): ReactElement {
   const cardCount = deckState.cards.length;
   const [openedFirstSession, setOpenedFirstSession] = useState(false);
 
-  const forced = import.meta.env.DEV ? DEV_FORCE_SETUP : false;
+  const forced = import.meta.env.DEV ? SESSION_FORCE_SETUP : false;
   const forcedLoggedIn = forced === "open_session";
   const forcedReason =
     forced === "claude_missing"
@@ -186,7 +186,7 @@ export function TugSetup(): ReactElement {
 
   // The "open your first session" step claims the empty deck only on a
   // genuine first run. A set-up user whose deck goes empty mid-life (last
-  // card closed, or a relaunch with an empty layout) gets TugCreateDevCard —
+  // card closed, or a relaunch with an empty layout) gets TugCreateSessionCard —
   // the lightweight sibling app-modal — not the full wizard.
   const needsFirstSession =
     firstRun && effectiveLoggedIn && cardCount === 0 && !openedFirstSession;
@@ -238,7 +238,7 @@ export function TugSetup(): ReactElement {
     getConnection()?.sendControlFrame("claude_sign_in");
   };
   const handleOpenSession = (): void => {
-    deck.addCard("dev");
+    deck.addCard("session");
     setOpenedFirstSession(true);
   };
 
@@ -319,8 +319,8 @@ export function TugSetup(): ReactElement {
         key: "open",
         status: "active",
         label: "Start a Claude Code session",
-        detail: "Open a Dev card to get started",
-        cta: { label: "Open a Dev Card", onClick: handleOpenSession },
+        detail: "Open a Session card to get started",
+        cta: { label: "Open a Session Card", onClick: handleOpenSession },
       }
     : // Pending (logged-out) preview: with cards already open — the
       // logout-with-work case — this reads "Continue working" and re-login

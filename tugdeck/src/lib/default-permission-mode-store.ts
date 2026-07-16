@@ -1,6 +1,6 @@
 /**
  * DefaultPermissionModeStore — subscribable store for the *global* default
- * permission mode the Settings card's "Dev Card" tab edits.
+ * permission mode the Settings card's "Session Card" tab edits.
  *
  * Unlike the per-card mode (`use-permission-mode.ts`), this is a single
  * deck-wide value: the mode a brand-new card adopts on mount when it has

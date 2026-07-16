@@ -6,7 +6,7 @@
  * pipeline, and the `TugEditorContextMenu` render across four surfaces: the
  * editor host (`tug-text-editor`), the markdown view (`tug-markdown-view`), the
  * native-input responder (`use-text-input-responder`), and the transcript cells
- * (`dev-card-transcript`). The consumer's `TextSelectionAdapter` is query-only
+ * (`session-card-transcript`). The consumer's `TextSelectionAdapter` is query-only
  * (`hasRangedSelection` / `getSelectedText` / `selectAll`); this hook owns the
  * React-side wiring that's identical across them.
  *

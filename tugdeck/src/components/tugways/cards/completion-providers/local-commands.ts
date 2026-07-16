@@ -2,11 +2,11 @@
  * local-commands.ts — slash-completion provider for the local-command
  * registry, plus a small provider-merge helper.
  *
- * The dev card's `/` completion comes from claude (skills, agents,
+ * The session card's `/` completion comes from claude (skills, agents,
  * claude's own slash commands) via
  * `SessionMetadataStore.getCommandCompletionProvider()`. Locally-handled
  * commands ([D23], `lib/slash-commands.ts`) are *not* claude's, so they
- * are not in that set — the dev card merges them in at its composition
+ * are not in that set — the session card merges them in at its composition
  * layer (where the `/` provider is already assembled and wrapped with
  * `wrapPositionZero`). Doing the merge here, not inside
  * `SessionMetadataStore`, keeps the store generic and keeps local
@@ -83,10 +83,10 @@ export function localCommandCompletionProvider(
 
 /**
  * Wrap a command provider, dropping items whose command name (the item
- * `label`) fails `keep`. The dev card uses this to apply the [D14] allowlist
+ * `label`) fails `keep`. The session card uses this to apply the [D14] allowlist
  * over claude's reported commands — hiding the known-unsupported set
  * ([#step-13a]) — at the composition layer, so the generic
- * `SessionMetadataStore` stays free of dev-card command policy (the same
+ * `SessionMetadataStore` stays free of session-card command policy (the same
  * reasoning that keeps the local-command merge out of the store).
  *
  * Synchronous only, matching the command providers it wraps.

@@ -1,9 +1,9 @@
 /**
- * `api-retry` — pure classification for the dev-card retry notice.
+ * `api-retry` — pure classification for the session-card retry notice.
  *
  * Claude Code's SDK retries retryable API failures itself (≤10 attempts,
  * exponential backoff) and announces each attempt on the stream as a
- * `system` event with `subtype: "api_retry"`. The dev card only *mirrors*
+ * `system` event with `subtype: "api_retry"`. The session card only *mirrors*
  * that announcement — it never decides to retry and never inspects status
  * codes on its own.
  *

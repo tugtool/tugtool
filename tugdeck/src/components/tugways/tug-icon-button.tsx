@@ -17,8 +17,8 @@
  *  - Targeted dispatch via `useControlDispatch()` — payload-carrying
  *    `ActionEvent` reaches the parent responder, not the first responder.
  *  - Standard hover / focus / active styling via the underlying
- *    `TugButton`'s emphasis-role tokens (see [tugplan-dev-picker-redesign
- *    §D16](../../roadmap/tugplan-dev-picker-redesign.md#d16-tug-icon-button)).
+ *    `TugButton`'s emphasis-role tokens (see [tugplan-session-picker-redesign
+ *    §D16](../../roadmap/tugplan-session-picker-redesign.md#d16-tug-icon-button)).
  *
  * Why this primitive exists. Per `tuglaws/responder-chain.md` §Focus
  * acceptance, a button that takes browser focus but not chain promotion (or
@@ -85,7 +85,7 @@
  *  - [L19] component authoring guide.
  *  - [L20] no new tokens; styling delegates to `tug-button.css`.
  *
- * Decisions: [tugplan-dev-picker-redesign D16].
+ * Decisions: [tugplan-session-picker-redesign D16].
  *
  * @module components/tugways/tug-icon-button
  */

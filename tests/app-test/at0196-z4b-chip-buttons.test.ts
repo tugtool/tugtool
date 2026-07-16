@@ -9,11 +9,11 @@
  * `TugBadge`s. They are now `TugPushButton`s, joining the Project / Mode /
  * Model / Effort controls beside them ([D13]):
  *
- *   - **Claude Code** (`dev-route-indicator-badge`): a left click opens
+ *   - **Claude Code** (`session-route-indicator-badge`): a left click opens
  *     Anthropic's Claude Code changelog in the system browser
  *     (`openUrlInOS` → `window.open`); a right click opens the version /
- *     drift report popover (`dev-route-indicator-badge-report`).
- *   - **Session** (`dev-session-id-badge`): a click opens the session's
+ *     drift report popover (`session-route-indicator-badge-report`).
+ *   - **Session** (`session-id-badge`): a click opens the session's
  *     on-disk JSONL directory in Finder (`openPathInOS` →
  *     `webkit.messageHandlers.openPath`, a `~/.claude/projects/…` folder).
  *
@@ -35,17 +35,17 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const CLAUDE_CHIP =
-  '[data-card-id="A"] [data-slot="dev-route-indicator-badge"]';
+  '[data-card-id="A"] [data-slot="session-route-indicator-badge"]';
 const SESSION_CHIP =
-  '[data-card-id="A"] [data-slot="dev-session-id-badge"]';
-const REPORT_SELECTOR = '[data-slot="dev-route-indicator-badge-report"]';
+  '[data-card-id="A"] [data-slot="session-id-badge"]';
+const REPORT_SELECTOR = '[data-slot="session-route-indicator-badge-report"]';
 
 const CHANGELOG_URL =
   "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md";
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -113,7 +113,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           // Both chips render and have mounted as real <button> elements.

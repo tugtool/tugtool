@@ -3,7 +3,7 @@
  *
  * The `/model` command and the Z4B model chip both change the session's
  * model through one shared sheet. {@link useModelPicker} owns that sheet once
- * at the card level (mirroring {@link usePermissionSheet}): the dev card wires
+ * at the card level (mirroring {@link usePermissionSheet}): the session card wires
  * `openModelPicker` to the chip's `onOpenPicker` AND to its `model`
  * `RUN_SLASH_COMMAND` handler, and renders `renderModelPicker` in its content
  * region — so the chip press and the slash command present the *same* sheet
@@ -15,7 +15,7 @@
  * no `initialize` list), else the single honest Default placeholder — never
  * a hardcoded list. See {@link resolvePickerModels}.
  * Picking a row sends a `model_change` control frame via {@link
- * DevControlSender}; the chip reflects the new model on the next
+ * SessionControlSender}; the chip reflects the new model on the next
  * `system_metadata` round-trip ([D03]), matching the plan's round-trip model.
  *
  * Compositional component — composes `TugSheet`, `TugListView`, `TugListRow`,

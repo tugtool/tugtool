@@ -29,7 +29,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
-const SID = "test-session-A"; // bindDevSession default
+const SID = "test-session-A"; // bindSession default
 const WORK_CELL = '[data-slot="tug-status-cell"][data-priority="work"]';
 
 let projectDir = "";
@@ -46,7 +46,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -73,7 +73,7 @@ describe.skipIf(!SHOULD_RUN)(
           testName: "at0197-scheduled-survives-respawn",
         });
         const ingest = (decoded: unknown) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
             decoded,
@@ -89,12 +89,12 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 30_000 },
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A", { timeoutMs: 30_000 });
 
           // A turn in which claude schedules a wakeup (the loop-pacing
           // shape: ScheduleWakeup tool call + its result echo).
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "send",
             text: "loop please",
             atoms: [],

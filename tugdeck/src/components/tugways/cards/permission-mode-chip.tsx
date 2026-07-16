@@ -8,9 +8,9 @@
  * tinted to family with the neighbor two-line `sm` `agent` badges (Project,
  * Session) — the unified two-line scale lands `sm` at the same height. Pushing it opens a `TugSheet` whose behavior options
  * ([PERMISSION_MODE_MENU]) live in a `TugListView`; picking one calls
- * `onSelectMode`. The `Shift+Tab` cycle (handled on the dev card's
+ * `onSelectMode`. The `Shift+Tab` cycle (handled on the session card's
  * card-content responder) and the `/permissions` slash command remain the
- * other two ways to change the mode; all three funnel through the dev card's
+ * other two ways to change the mode; all three funnel through the session card's
  * single `setMode`.
  *
  * Data sources ([L02] — external state enters through `useSyncExternalStore`
@@ -75,7 +75,7 @@ export interface PermissionModeChipProps {
   /** Metadata store supplying the live `permissionMode`. */
   sessionMetadataStore: ReadableMetadataStore;
   /**
-   * Open the shared permission sheet. Wired by the dev card to the single
+   * Open the shared permission sheet. Wired by the session card to the single
    * opener from {@link usePermissionSheet} — the same opener the `/permissions`
    * slash command routes to, so the chip and the command present one sheet.
    */
@@ -84,7 +84,7 @@ export interface PermissionModeChipProps {
    *  is inapplicable). Forwarded to the composed {@link TugPushButton}. */
   disabled?: boolean;
   /** Author the chip into a focus group ([P02]) — forwarded to the composed
-   *  {@link TugPushButton}. The dev card passes its cycle group so the chip
+   *  {@link TugPushButton}. The session card passes its cycle group so the chip
    *  becomes a keyboard-focus-cycling stop; omitted elsewhere. */
   focusGroup?: string;
   /** Order within {@link focusGroup}. */
@@ -94,7 +94,7 @@ export interface PermissionModeChipProps {
 /**
  * Display-only Z4B chip: a two-line `TugPushButton` showing the session's
  * current permission mode under a `/PERMISSIONS` caption. The chip owns no
- * sheet — clicking it calls `onOpenSheet`, the shared opener the dev card
+ * sheet — clicking it calls `onOpenSheet`, the shared opener the session card
  * also routes the `/permissions` slash command to ([#step-1c]).
  */
 export function PermissionModeChip({

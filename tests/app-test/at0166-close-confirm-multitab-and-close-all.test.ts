@@ -8,7 +8,7 @@
  * X button uses:
  *
  *  1. **Cmd-W on a multi-tab pane** removes only the active card. When
- *     that card opts into `confirmClose` (the Dev card) a single-card
+ *     that card opts into `confirmClose` (the Session card) a single-card
  *     "Close Card?" popover guards the removal; a non-opt-in active card
  *     (gallery-input) is removed immediately with no popover.
  *
@@ -96,8 +96,8 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({ testName: "at0166-cmdw-confirm" });
         try {
           await app.enableDeckTrace(true);
-          // Active card A is a Dev card (confirmClose: true); B is gallery-input.
-          await app.seedDeckState({ state: twoCardPane("dev"), focusCardId: "A" });
+          // Active card A is a Session card (confirmClose: true); B is gallery-input.
+          await app.seedDeckState({ state: twoCardPane("session"), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );
@@ -165,8 +165,8 @@ describe.skipIf(!SHOULD_RUN)(
         const app = await launchTugApp({ testName: "at0166-closeall-confirm" });
         try {
           await app.enableDeckTrace(true);
-          // A Dev card lives in the pane → any-card-opts-in → confirm.
-          await app.seedDeckState({ state: twoCardPane("dev"), focusCardId: "A" });
+          // A Session card lives in the pane → any-card-opts-in → confirm.
+          await app.seedDeckState({ state: twoCardPane("session"), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
           );

@@ -254,10 +254,10 @@ export const TUG_ACTIONS = {
   //                 native beep.
   // JUMP_TO_TAB:    payload — `value: number` (1-based tab index).
   //                 Card-level: switch to the Nth tab. Used by ⌘1..9.
-  // CYCLE_PERMISSION_MODE: payload — none. Advance the dev-card's
+  // CYCLE_PERMISSION_MODE: payload — none. Advance the session-card's
   //                 permission mode one step (default → acceptEdits →
   //                 plan → auto → default). Bound to ⇧⌘P, scoped
-  //                 `scope: "key-card"`, handled by the dev card's
+  //                 `scope: "key-card"`, handled by the session card's
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op
   //                 (`preventDefaultOnMatch` suppresses the macOS beep).
@@ -266,7 +266,7 @@ export const TUG_ACTIONS = {
   //                 The Session ▸ Permission Mode submenu's control-frame
   //                 round-trip (Both category): Swift sends
   //                 `set-permission-mode {mode}`, action-dispatch
-  //                 re-dispatches key-card-scoped, and the dev card's
+  //                 re-dispatches key-card-scoped, and the session card's
   //                 card-content responder commits through the same
   //                 mode-set path the permission chip uses (frame +
   //                 optimistic metadata + per-card persistence). Non-dev
@@ -274,7 +274,7 @@ export const TUG_ACTIONS = {
   //                 the menu's validation gate.
   // INTERRUPT_SESSION: payload — none. Stop the in-flight turn:
   //                 Session ▸ Stop's control-frame round-trip (Both
-  //                 category). The dev card's card-content responder
+  //                 category). The session card's card-content responder
   //                 calls `codeSessionStore.interrupt()`. Deliberately
   //                 NOT Escape's CANCEL_DIALOG walk — the menu item
   //                 always means interrupt; enablement (`canInterrupt`,
@@ -282,7 +282,7 @@ export const TUG_ACTIONS = {
   // CYCLE_FOCUS_MODE: payload — none. Toggle a text-first card's
   //                 keyboard-focus-cycling mode on/off — the mode in which
   //                 Tab circulates the card's chrome zones instead of feeding
-  //                 the editor (the dev card is the first consumer). Bound to
+  //                 the editor (the session card is the first consumer). Bound to
   //                 ⌥⇥, scoped `scope: "key-card"`; the trigger / Escape exit
   //                 back to the editor caret. The handler (a per-card cycle
   //                 focus-scope) lands with the cycle-mode mechanism; until then
@@ -294,7 +294,7 @@ export const TUG_ACTIONS = {
   //                 slash command + any trailing args). The prompt entry
   //                 dispatches it key-card-scoped when a typed `/command`
   //                 matches the local registry (`lib/slash-commands.ts`);
-  //                 the dev card's card-content responder handles it by
+  //                 the session card's card-content responder handles it by
   //                 opening the command's graphical surface ([D23]).
   //                 Transport-independent — not gated on send-readiness.
   //                 A host with no handler leaves it unhandled, so the
@@ -304,13 +304,13 @@ export const TUG_ACTIONS = {
   //                 `"unsupported"` (a real Claude Code command with no meaning
   //                 over the bridge — the hidden set). The prompt entry
   //                 dispatches it key-card-scoped for a typed `/command` that
-  //                 the dev card will not run; the card-content responder
+  //                 the session card will not run; the card-content responder
   //                 presents a `TugAlertSheet` with reason-appropriate text
   //                 instead of silently dropping it or burning a turn
   //                 ([#step-13a]). For `unknown`, a host with no handler leaves
   //                 it unhandled so the prompt entry falls through to claude;
   //                 a hidden command is never sent to claude regardless.
-  // PREVIOUS_TURN / NEXT_TURN: payload — none. Step the dev card's
+  // PREVIOUS_TURN / NEXT_TURN: payload — none. Step the session card's
   //                 transcript one turn (one entry) backward / forward,
   //                 pinning the target turn's top flush to the viewport
   //                 top. Bound to ⌥⌘↑ / ⌥⌘↓, `scope: "key-card"`, so the
@@ -321,12 +321,12 @@ export const TUG_ACTIONS = {
   //                 PageUp/PageDown pager, which only fires when the
   //                 transcript holds focus. ⌥↑/⌥↓ are deliberately NOT
   //                 used (they are editor word-movement). The handler
-  //                 drives `DevTranscriptHandle.pageByEntry`.
-  // FIRST_TURN / LAST_TURN: payload — none. Jump the dev card's
+  //                 drives `SessionTranscriptHandle.pageByEntry`.
+  // FIRST_TURN / LAST_TURN: payload — none. Jump the session card's
   //                 transcript to the very top / very bottom (Home /
   //                 End). Bound to ⌥⇧⌘↑ / ⌥⇧⌘↓, `scope: "key-card"`,
   //                 same card-wide routing as PREVIOUS_TURN/NEXT_TURN.
-  //                 FIRST_TURN drives `DevTranscriptHandle.scrollToTop`
+  //                 FIRST_TURN drives `SessionTranscriptHandle.scrollToTop`
   //                 (disengages follow-bottom); LAST_TURN drives
   //                 `scrollToBottom` (re-engages follow-bottom at the
   //                 live edge).
@@ -547,8 +547,8 @@ export const TUG_ACTIONS = {
   //                         sender — auto-derived stable id from the
   //                         emitting `TugIconButton`; rarely matters
   //                         because the `sessionId` payload disambiguates.
-  //                         See [tugplan-dev-picker-redesign §D14](
-  //                         ../../../roadmap/tugplan-dev-picker-redesign.md#d14-no-per-cell-popovers).
+  //                         See [tugplan-session-picker-redesign §D14](
+  //                         ../../../roadmap/tugplan-session-picker-redesign.md#d14-no-per-cell-popovers).
   REQUEST_TRASH_SESSION: "request-trash-session",
 
   // REQUEST_TRASH_RECENT:  payload — `{ path: string }`. Dispatched by the

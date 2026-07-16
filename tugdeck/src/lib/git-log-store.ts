@@ -2,7 +2,7 @@
  * GitLogStore — a single shared, request-correlated store for the Git History
  * Lens section, over the GIT_LOG feeds.
  *
- * Git History shows one project at a time (the followed dev card's), so unlike
+ * Git History shows one project at a time (the followed session card's), so unlike
  * the per-entry `GitDiffStore` fan-out this is one module-level store over one
  * shared `FeedStore(conn, [GIT_LOG])`. `requestLog(projectDir)` sends a
  * `GIT_LOG_QUERY` (0x26) carrying the project dir as `root` plus a correlating

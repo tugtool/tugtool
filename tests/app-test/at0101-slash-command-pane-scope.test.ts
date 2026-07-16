@@ -12,7 +12,7 @@
  * pane B: A's command dismissed/replaced B's open sheet and A got nothing.
  *
  * The fix routes the command via `manager.sendToTarget(localCommandTargetId)`
- * — the host (the dev card) hands the prompt entry its own card-content
+ * — the host (the session card) hands the prompt entry its own card-content
  * responder id, and the command is delivered there by structural identity,
  * independent of first responder. (A parent-targeted control dispatch can't
  * reach card-content: it's a registry *sibling* of the prompt entry's chain,
@@ -74,8 +74,8 @@ afterAll(() => {
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "dev", title: "Dev A", closable: true },
-      { id: "B", componentId: "dev", title: "Dev B", closable: true },
+      { id: "A", componentId: "session", title: "Session A", closable: true },
+      { id: "B", componentId: "session", title: "Session B", closable: true },
     ],
     panes: [
       {
@@ -128,9 +128,9 @@ describe.skipIf(!SHOULD_RUN)(
             text: string,
           ) =>
             (async () => {
-              await app.driveDevSession(cardId, { op: "send", text });
+              await app.driveSession(cardId, { op: "send", text });
               const frame = (decoded: Record<string, unknown>) =>
-                app.driveDevSession(cardId, {
+                app.driveSession(cardId, {
                   op: "ingestFrame",
                   feedId: FEED_CODE_OUTPUT,
                   decoded: { tug_session_id: sid, ...decoded },
@@ -152,9 +152,9 @@ describe.skipIf(!SHOULD_RUN)(
               await frame({ type: "turn_complete", msg_id: msgId, result: "success" });
             })();
 
-          await app.bindDevSession("A", { tugSessionId: SID_A, projectDir: dirA });
+          await app.bindSession("A", { tugSessionId: SID_A, projectDir: dirA });
           await app.awaitEngineReady("A");
-          await app.bindDevSession("B", { tugSessionId: SID_B, projectDir: dirB });
+          await app.bindSession("B", { tugSessionId: SID_B, projectDir: dirB });
           await app.awaitEngineReady("B");
 
           await drive("A", SID_A, "a-uuid-1", "a-m1", "first A");

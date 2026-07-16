@@ -23,7 +23,7 @@ import { normalizeLensAnchorSide } from "@/lib/lens-store/types";
 import { TugBox } from "../tug-box";
 import { TugChoiceGroup } from "../tug-choice-group";
 import { useResponderForm } from "../use-responder-form";
-// Reuse the General/Dev-Card group layout (bordered TugBox + legend inset).
+// Reuse the General/Session-Card group layout (bordered TugBox + legend inset).
 import "./settings-general-body.css";
 import "./settings-lens-body.css";
 

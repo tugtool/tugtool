@@ -6,13 +6,13 @@
  * ## Why this exists
  *
  * `/permissions` is the first live consumer of the local slash-command
- * dispatch layer ([#step-1c]) and the first dev-card surface that reads and
+ * dispatch layer ([#step-1c]) and the first session-card surface that reads and
  * writes the on-disk permission **rules** ([#step-1-6]). This test exercises
  * the whole chain end to end against the real app:
  *
  *   1. Typing `/permissions` and submitting opens the card-scoped editor sheet
  *      (the raw-text local-command path: submit → `matchLocalSlashCommand` →
- *      key-card `RUN_SLASH_COMMAND` → the dev card's surface).
+ *      key-card `RUN_SLASH_COMMAND` → the session card's surface).
  *   2. The editor shows the five terminal tabs and switches between them.
  *   3. Adding a rule writes it to `<cwd>/.claude/settings.local.json` through
  *      the `/api/permissions/rule` endpoint (the real Rust handler + file IO);
@@ -64,7 +64,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -121,7 +121,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { projectDir });
+          await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A");
 
           // 1. Open the editor via the real submit path. Type `/permissions`,

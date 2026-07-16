@@ -7,7 +7,7 @@
  * `handleCopy`), the actual `selectionToTranscriptMarkdown` fragment
  * serializer, and the actual clipboard write. It mounts the real
  * DOM-producing components — `TugMarkdownBlock` (streaming),
- * `BlockChrome`, `DevThinkingBlock` — in the same body shape
+ * `BlockChrome`, `SessionThinkingBlock` — in the same body shape
  * `AssistantTurnCell` renders, over a static streaming store.
  *
  * **Two cells, two responder scopes.** Cell A interleaves markdown
@@ -29,7 +29,7 @@ import React from "react";
 
 import { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
-import { DevThinkingBlock } from "@/components/tugways/chrome/dev-thinking-block";
+import { SessionThinkingBlock } from "@/components/tugways/chrome/session-thinking-block";
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
 import { ToolUseIdContext } from "@/components/tugways/blocks/collapse-context";
 import {
@@ -173,21 +173,21 @@ export function GalleryTranscriptCopy(): React.ReactElement {
             <TugMarkdownBlock
               streamingStore={streamingStore}
               streamingPath={PATH_A}
-              className="dev-card-transcript-code-body"
+              className="session-card-transcript-code-body"
             />
             <ToolUseIdContext.Provider value={TOOL_USE_ID}>
               <BlockChrome toolName="Bash" argsSummary={<code>ls -la</code>} status="ready">
                 <pre>file1.txt{"\n"}file2.txt</pre>
               </BlockChrome>
             </ToolUseIdContext.Provider>
-            <DevThinkingBlock
+            <SessionThinkingBlock
               streamingStore={streamingStore}
               streamingPath={PATH_THINK}
             />
             <TugMarkdownBlock
               streamingStore={streamingStore}
               streamingPath={PATH_B}
-              className="dev-card-transcript-code-body"
+              className="session-card-transcript-code-body"
             />
           </div>
         </div>
@@ -206,7 +206,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
             <TugMarkdownBlock
               streamingStore={streamingStore}
               streamingPath={PATH_MULTI}
-              className="dev-card-transcript-code-body"
+              className="session-card-transcript-code-body"
             />
           </div>
         </div>
@@ -226,7 +226,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
             <TugMarkdownBlock
               streamingStore={streamingStore}
               streamingPath={PATH_RICH}
-              className="dev-card-transcript-code-body"
+              className="session-card-transcript-code-body"
             />
           </div>
         </div>
@@ -248,7 +248,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
             <TugMarkdownBlock
               streamingStore={streamingStore}
               streamingPath={PATH_CMD}
-              className="dev-card-transcript-code-body"
+              className="session-card-transcript-code-body"
               isKnownSlashCommand={isKnownSlashCommandForFixture}
             />
           </div>

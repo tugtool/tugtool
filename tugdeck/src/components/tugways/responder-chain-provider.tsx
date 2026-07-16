@@ -360,7 +360,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // the Claude Code TUI, where Shift-Tab cycles the permission mode — in a
     // GUI, Shift-Tab must move focus to the previous control. Permission-mode
     // cycling lives on ⇧⌘P (key-card scope, in the keybinding map) plus the
-    // dev card's Mode chip / sheet and the /permissions command.
+    // session card's Mode chip / sheet and the /permissions command.
     function focusWalkListener(event: KeyboardEvent): void {
       if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
         return;
@@ -875,7 +875,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // stray modal-scrim click (the common path).
     const CARD_MODAL_SCRIM_SELECTOR = '[data-inline-dialog-pending="true"]';
     const DIALOG_ISLAND_SELECTOR =
-      ".dev-question-dialog, .dev-permission-dialog";
+      ".session-question-dialog, .session-permission-dialog";
 
     function modalScrimRedirectTarget(target: EventTarget | null): Element | null {
       const el =

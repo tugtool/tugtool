@@ -1,6 +1,6 @@
 /**
  * DefaultEffortStore — subscribable store for the *global* default reasoning
- * effort the Settings card's "Dev Card" tab edits.
+ * effort the Settings card's "Session Card" tab edits.
  *
  * Unlike the per-card effort (`use-effort.ts`), this is a single deck-wide
  * value: the level a brand-new card adopts on mount when it has nothing

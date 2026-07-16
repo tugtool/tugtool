@@ -15,7 +15,7 @@
  *     default action (Rewind), which keeps its ring the whole time
  *     (`persistentDefaultRing`).
  *
- * Reuses at0097's deterministic 3-turn `driveDevSession` setup (no live claude).
+ * Reuses at0097's deterministic 3-turn `driveSession` setup (no live claude).
  * The keystrokes are dispatched as real `keydown` events on the focused element
  * (at0141's pattern): they travel the SAME document-capture pipeline a hardware
  * key does — the engine's act dispatch, the list's arrow handler, and the
@@ -34,13 +34,13 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
-const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
+const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 const LIST = `${SHEET} [data-slot="tug-list-view"]`;
 const REWIND_APPLY = `${SHEET} [data-testid="rewind-apply"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -62,12 +62,12 @@ async function buildTurn(app: App, i: number): Promise<void> {
   const uuid = `uuid-${i}`;
   const msgId = `m-${i}`;
   const frame = (decoded: Record<string, unknown>) =>
-    app.driveDevSession("A", {
+    app.driveSession("A", {
       op: "ingestFrame",
       feedId: FEED_CODE_OUTPUT,
       decoded: { tug_session_id: SID, ...decoded },
     });
-  await app.driveDevSession("A", { op: "send", text: `prompt ${i}` });
+  await app.driveSession("A", { op: "send", text: `prompt ${i}` });
   await frame({ type: "prompt_anchor", promptUuid: uuid });
   await frame({ type: "content_block_start", msg_id: msgId, block_index: 0, kind: "text" });
   await frame({ type: "assistant_text", msg_id: msgId, block_index: 0, text: `reply ${i}`, is_partial: false });
@@ -105,7 +105,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { tugSessionId: SID });
+          await app.bindSession("A", { tugSessionId: SID });
           await app.awaitEngineReady("A");
 
           // Build a 3-turn anchored transcript (valid rewind targets: 2 + 3).
@@ -174,7 +174,7 @@ describe.skipIf(!SHOULD_RUN)(
           // the default action (Rewind). The sheet sends `session_rewind`; inject
           // the ack so the local truncation runs and assert turn 3 dropped.
           await pressKey(app, "Enter");
-          await app.driveDevSession("A", {
+          await app.driveSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: {

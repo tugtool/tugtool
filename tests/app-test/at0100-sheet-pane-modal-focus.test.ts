@@ -31,7 +31,7 @@ const SHEET = '[data-slot="tug-sheet"]';
 function deckShape() {
   return {
     cards: [
-      { id: "A", componentId: "dev", title: "Dev", closable: true },
+      { id: "A", componentId: "session", title: "Session", closable: true },
       { id: "B", componentId: "gallery-sheet", title: "Sheet Gallery", closable: true },
     ],
     panes: [
@@ -73,15 +73,15 @@ describe.skipIf(!SHOULD_RUN)("AT0100: a sheet is pane-modal — no cross-pane fo
 
         // Card A: a live dev session with a committed turn, so its prompt entry
         // is present (an unbound card would show its own picker sheet instead).
-        await app.bindDevSession("A", { tugSessionId: SID_A });
+        await app.bindSession("A", { tugSessionId: SID_A });
         await app.awaitEngineReady("A");
         const frame = (decoded: Record<string, unknown>) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: { tug_session_id: SID_A, ...decoded },
           });
-        await app.driveDevSession("A", { op: "send", text: "hello" });
+        await app.driveSession("A", { op: "send", text: "hello" });
         await frame({ type: "content_block_start", msg_id: "m1", block_index: 0, kind: "text" });
         await frame({ type: "assistant_text", msg_id: "m1", block_index: 0, text: "hi", is_partial: false });
         await frame({ type: "turn_complete", msg_id: "m1", result: "success" });

@@ -1,5 +1,5 @@
 /* @tug-pairings: none — layout only. The sheet chrome comes from the composed
-   TugSheet; the rows from the reused session cells (`dev-card-picker-session-*`,
+   TugSheet; the rows from the reused session cells (`session-card-picker-session-*`,
    already styled by the project picker). This file only sizes the list. No
    color-setting rules, so no `@tug-renders-on` surfaces ([L16]). */
 

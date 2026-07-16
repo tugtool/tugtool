@@ -1,5 +1,5 @@
 /**
- * Public types for `CodeSessionStore` — the per-Dev-card L02 store that
+ * Public types for `CodeSessionStore` — the per-Session-card L02 store that
  * owns Claude Code turn state.
  *
  * [D03] three-identifier model
@@ -41,7 +41,7 @@ export type { CardSessionMode } from "../card-session-binding-store";
  * by the `handleTextDelta` / `handleTurnComplete` guards. The bracket
  * mirrors the replay pattern but uses claude's existing `turn_complete`
  * as the implicit close (no `wake_complete` frame on the wire).
- * See `roadmap/tugplan-dev-session-wake.md` [D01].
+ * See `roadmap/tugplan-session-wake.md` [D01].
  */
 export type CodeSessionPhase =
   | "idle"
@@ -521,7 +521,7 @@ export interface CostSnapshot {
  * Live retry state, set from an `api_retry` frame and cleared at the
  * next turn boundary (`cost_update` / `turn_complete`). Claude's SDK
  * owns the retry loop; this is purely the in-flight announcement the
- * dev-card banner mirrors.
+ * session-card banner mirrors.
  *
  * `deadline` is epoch-ms (`arrival + retry_delay_ms`), computed in the
  * impure store wrapper so the reducer stays time-free. `error` is the
@@ -609,7 +609,7 @@ export interface ContextBreakdownCategory {
 
 /**
  * Reducer projection of the most-recent `context_breakdown` wire
- * frame. Drives the Dev card's Context popover when present. The
+ * frame. Drives the Session card's Context popover when present. The
  * popover paints the categories in array order; `contextMax` is the
  * model's context-window cap (so the renderer can compute the
  * free-space remainder).
@@ -756,7 +756,7 @@ export interface CodeSessionSnapshot {
    * and never changes thereafter; a re-bind (close + reopen) builds
    * a fresh services bag with a fresh store.
    *
-   * Consumed today by `deriveDevCardBannerSpec` to suppress the
+   * Consumed today by `deriveSessionCardBannerSpec` to suppress the
    * "Loading session…" banner during the JSONL replay round-trip
    * for new sessions (where there is no JSONL to replay). Branch 1
    * (the cold-boot preflight beat) is gated upstream — only resume
@@ -819,7 +819,7 @@ export interface CodeSessionSnapshot {
    * matching `TurnEntry` commits to `transcript`
    * (`turn_complete(success)` / `turn_complete(error)` / interrupt).
    *
-   * Drives every in-flight row in the Dev card transcript: the data
+   * Drives every in-flight row in the Session card transcript: the data
    * source iterates `activeTurn.messages` the same way it iterates
    * `turn.messages` for committed turns — one substrate, two lifecycle
    * slots ([D07]).
@@ -890,7 +890,7 @@ export interface CodeSessionSnapshot {
   /**
    * Live API-retry announcement, or `null` when no retry is in flight.
    * Set from an `api_retry` frame and cleared at the next turn boundary.
-   * The dev-card banner derives its tone + countdown from this.
+   * The session-card banner derives its tone + countdown from this.
    */
   apiRetry: ApiRetryState | null;
   /**
@@ -925,7 +925,7 @@ export interface CodeSessionSnapshot {
    * Tool calls denied during this session — by a permission rule or the
    * auto-mode classifier — accumulated across turns from each `cost_update`'s
    * `permission_denials`, most-recent last, deduped by `toolUseId`. Feeds the
-   * dev card's `/permissions` Recently-denied tab. Empty until a denial lands;
+   * session card's `/permissions` Recently-denied tab. Empty until a denial lands;
    * runtime-only (not persisted), so a fresh / resumed session starts empty.
    */
   permissionDenials: readonly PermissionDenial[];
@@ -994,7 +994,7 @@ export interface CodeSessionSnapshot {
    * readers can distinguish a clean replay from each error variant by
    * `kind` alone.
    *
-   * The `DevRestoring` placeholder reads this for the timeout-state
+   * The `SessionRestoring` placeholder reads this for the timeout-state
    * copy (`kind === "replay_timeout"`); cleared back to `null` on the
    * next `replay_started` so the field always reflects the most
    * recent window's outcome rather than accumulating history.

@@ -1,5 +1,5 @@
 /**
- * use-model.ts — the dev-card's model set path plus its per-card persistence
+ * use-model.ts — the session-card's model set path plus its per-card persistence
  * and mount-restore, factored out of the model picker (mirroring
  * [use-permission-mode.ts] / [use-effort.ts]).
  *

@@ -4,7 +4,7 @@
 //! One process-level feed (delivered like USAGE/PULSE, registered once in
 //! `main.rs`, fanned out to every deck), replacing the per-workspace
 //! `ChangesetFeed`. On each recompute it enumerates the current
-//! `WorkspaceRegistry` entries (the open dev cards + bootstrap) and composes
+//! `WorkspaceRegistry` entries (the open session cards + bootstrap) and composes
 //! one [`ProjectChangeset`] per project: a git working tree goes through the
 //! shared [`compose_snapshot`] building block; a non-repo dir yields a
 //! `no_repo: true` element the card renders with an "Initialize git"
@@ -13,7 +13,7 @@
 //! Recompute triggers: a process-global `Notify` ("global bump") that the
 //! attribution intercept fires (via `ChangesetBumper`) after each file-event
 //! write, and that `WorkspaceRegistry::get_or_create`/`release` fire when a
-//! project's first/last dev card opens/closes — plus a poll fallback that
+//! project's first/last session card opens/closes — plus a poll fallback that
 //! catches hand edits. Emission is diff-suppressed.
 
 use std::sync::Arc;

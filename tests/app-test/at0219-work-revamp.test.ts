@@ -2,7 +2,7 @@
  * at0219-work-revamp.test.ts — the WORK-cell revamp end-to-end
  * ([AT0219]).
  *
- * Drives a bound dev card through the four composed behaviors of the
+ * Drives a bound session card through the four composed behaviors of the
  * revamp and asserts them against the real app's DOM:
  *
  *  - **Aggregate active count.** The Z2 WORK cell reports ONE number
@@ -40,7 +40,7 @@ const SID = "b7c0d1ea-0000-4000-8000-0000000019aa";
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -75,9 +75,9 @@ describe.skipIf(!SHOULD_RUN)("AT0219: WORK revamp", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           { timeoutMs: 15_000 },
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-card-id="A"] [data-slot="dev-telemetry-status-row"]') !== null`,
+          `document.querySelector('[data-card-id="A"] [data-slot="session-telemetry-status-row"]') !== null`,
           { timeoutMs: 8000 },
         );
 
@@ -88,30 +88,30 @@ describe.skipIf(!SHOULD_RUN)("AT0219: WORK revamp", () => {
           `((document.querySelector('${WORK_LABEL}')||{}).textContent||"").trim() === ${JSON.stringify(value)}`;
 
         // ---- Turn 1: two pending tasks, nothing else ------------------
-        await app.driveDevSession("A", { op: "send", text: "plan the work" });
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", { op: "send", text: "plan the work" });
+        await app.driveSession("A", f({
           type: "assistant_text", msg_id: "m1", text: "Planning.",
           is_partial: true, rev: 0, seq: 0,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m1", tool_use_id: "tc-1",
           tool_name: "TaskCreate",
           input: { subject: "Wire the aggregate count" }, seq: 1,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "tc-1",
           output: "Task #1 created successfully: Wire the aggregate count",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m1", tool_use_id: "tc-2",
           tool_name: "TaskCreate",
           input: { subject: "Land the linger" }, seq: 2,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "tc-2",
           output: "Task #2 created successfully: Land the linger",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "turn_complete", msg_id: "m1", result: "success",
         }));
 
@@ -121,33 +121,33 @@ describe.skipIf(!SHOULD_RUN)("AT0219: WORK revamp", () => {
         // ---- Turn 2 opens with NO Task* frame — the checklist must
         // persist. Pre-fix the turn-gate would collapse this to "None";
         // reaching "2" here is the flicker regression guard.
-        await app.driveDevSession("A", { op: "send", text: "keep going" });
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", { op: "send", text: "keep going" });
+        await app.driveSession("A", f({
           type: "assistant_text", msg_id: "m2", text: "Working.",
           is_partial: true, rev: 0, seq: 0,
         }));
         await app.waitForCondition<boolean>(workIs("2"), { timeoutMs: 8000 });
 
         // ---- A running background job + a RemoteTrigger routine -------
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m2", tool_use_id: "job-1",
           tool_name: "Bash",
           input: { command: "make release", run_in_background: true }, seq: 2,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "task_started", task_id: "bg1", tool_use_id: "job-1",
           description: "Release build (background)", task_type: "local_bash",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "job-1", output: "launched",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m2", tool_use_id: "rt-1",
           tool_name: "RemoteTrigger",
           input: { action: "create", body: { schedule: "0 9 * * *", prompt: "Daily digest" } },
           seq: 3,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "rt-1",
           output: '{"id":"rtn-42","enabled":true}\nNext run tomorrow at 9am',
         }));
@@ -173,7 +173,7 @@ describe.skipIf(!SHOULD_RUN)("AT0219: WORK revamp", () => {
           const popup = document.querySelector('${POPUP}');
           return {
             groups: Array.from(popup.querySelectorAll('.tug-popup-list-group-label')).map(e => (e.textContent||'').trim()),
-            kinds: Array.from(popup.querySelectorAll('.dev-jobs-popover-kind')).map(e => (e.textContent||'').trim()),
+            kinds: Array.from(popup.querySelectorAll('.session-jobs-popover-kind')).map(e => (e.textContent||'').trim()),
           };
         })())`);
         const probe = JSON.parse(probeRaw);

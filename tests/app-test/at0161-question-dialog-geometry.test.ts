@@ -35,12 +35,12 @@ const SID = "at0161-session";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
-const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const RAIL = `${DIALOG} .dev-question-dialog-rail`;
-const PANEL = `${DIALOG} [data-slot="dev-question-dialog-panel"]`;
+const DIALOG = `${CARD} [data-slot="session-question-dialog"]`;
+const RAIL = `${DIALOG} .session-question-dialog-rail`;
+const PANEL = `${DIALOG} [data-slot="session-question-dialog-panel"]`;
 // Back/Next live in the top action bar; they are the only outlined-action
 // buttons, so this selects exactly [Back, Next] for clickNav([0]=Back, [1]=Next).
-const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
+const NAV_BUTTONS = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-outlined-action`;
 const CURRENT_ROW = `${DIALOG} .question-summary-row[data-status="current"]`;
 
 function controlRequestForward(): Record<string, unknown> {
@@ -104,12 +104,12 @@ async function ingestQuestion(
   app: App,
   forward: Record<string, unknown>,
 ): Promise<void> {
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: toolUseFor(forward),
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: forward,
@@ -166,7 +166,7 @@ function expectSameGeometry(step: string, a: Geometry, b: Geometry): void {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -194,11 +194,11 @@ describe.skipIf(!SHOULD_RUN)("AT0161: question wizard geometry is constant", () 
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        await app.driveDevSession("A", { op: "send", text: "ask me" });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", { op: "send", text: "ask me" });
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {

@@ -1,0 +1,426 @@
+/* @tug-pairings:
+   - --tugx-list-view-* / --tugx-list-row-*  (TugListView / TugListRow own the
+     option list rows)
+   - --tugx-question-current-bg | --tugx-block-bg   (highlight tone behind the panel)
+   `QuestionWizard` renders inside the host block's `BlockChrome`. The rail is
+   the shared `QuestionSummaryList` (`--tugx-qrow-*`); the option list is a
+   `TugListView` of `TugListRow`s. The remaining `--tugx-question-*` slots here
+   cover only the stationary options panel (its tint + heading).
+*/
+
+/**
+ * session-question-dialog.css — master–detail wizard chrome for
+ * `QuestionDialog`.
+ *
+ * The dialog renders a *rail* (a `TugListView` of `TugListRow`s, one
+ * summary row per question) above a stationary options *panel*. Each
+ * rail row stamps `data-status` — `done` / `recommended` / `current` /
+ * `pending` — which gates only the marker tone here; the row chrome
+ * (padding, hover, the current row's `selected` fill) belongs to
+ * `TugListRow`.
+ *
+ * **Constant geometry.** Every rail row reserves its one-line
+ * `→ answer` slot in every status (hidden via `data-empty`, clamped to
+ * one ellipsized line), so a status change never changes the rail's
+ * height. The panel is a one-cell CSS grid: one hidden, inert *sizer*
+ * per question stacks under the live face, so the panel holds the
+ * tallest question's natural height in every wizard state — including
+ * review — with no JS measurement.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] no React state for visual state — `data-status` gates the
+ *    marker tone, `data-empty` gates the answer slot's visibility,
+ *    and the panel floor is grid-intrinsic; CSS owns appearance.
+ *  - [L16] every colour-only rule names its rendering surface via a
+ *    `@tug-renders-on` annotation.
+ *  - [L17] every `--tugx-question-*` slot resolves to a `--tug-*` /
+ *    `--tug7-*` base token in one hop.
+ *  - [L19] component-authoring guide — file pair, module docstring,
+ *    `data-slot` on each container.
+ *  - [L20] component-token sovereignty — owns `--tugx-question-*`;
+ *    composes no other component's token family (the list-view gap /
+ *    padding writes below are sanctioned instance overrides on the
+ *    rail's own scope).
+ */
+
+/* ---- Component-tier aliases — question-dialog layout only [L17] ---- */
+
+body {
+  /* The rail itself is the shared `QuestionSummaryList` (its own
+   * `--tugx-qrow-*` family); the tokens here cover only the PANEL — the
+   * working surface below the rail.
+   *
+   * Panel heading typography — the full dialog-title treatment (0.875 rem,
+   * semibold) marks the working surface (a notch above the rail rows). */
+  --tugx-question-heading-size:    0.875rem;
+  --tugx-question-heading-weight:  var(--tug-font-weight-semibold);
+  --tugx-question-heading-leading: 1.4;
+
+  /* The stationary options panel — the highlight tone marks it as the active
+   * surface (the rail's current row carries the same tint, [--tugx-qrow-*]). */
+  --tugx-question-current-bg:    var(--tug7-surface-highlight-primary-normal-active-rest);
+  --tugx-question-panel-padding: var(--tug-space-md);
+  --tugx-question-panel-radius:  var(--tug-radius-sm);
+
+  /* Number prefix in the panel heading. Reserved width is enough for a
+   * two-digit number ("##.") with tabular numerals; the trailing gap
+   * separates the prefix from the question text. */
+  --tugx-question-number-w:   1.5ch;
+  --tugx-question-number-gap: 0.4ch;
+}
+
+/* ---- Wizard frame (inside the host BlockChrome body) ----
+ *
+ * `QuestionWizard` renders frameless: the host `AskUserQuestionToolBlock`'s
+ * `BlockChrome` is the frame (header + dot + full transcript width). So this
+ * is a PLAIN full-width container — no card background, border, radius, or
+ * width cap — just the vertical stack (an optional description, the body, and
+ * the foot action row). Flattening it is what makes the live wizard and the
+ * answered Q→A record share one width and treatment, so submit only removes
+ * the option/button chrome with no shift, and the options run the block's
+ * full width (no truncation). The `--tugx-idialog-*` reads are read-only
+ * cross-references for action-button metrics ([L20] — the wizard owns
+ * `--tugx-question-*`). */
+.session-question-dialog-frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.session-question-dialog-headline-description {
+  font-size: var(--tugx-idialog-description-size, 0.8125rem);
+  line-height: var(--tugx-idialog-description-leading, 1.4);
+  font-weight: var(--tug-font-weight-medium);
+}
+
+.session-question-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* ---- Top action bar (summary · controls) ----
+ *
+ * One row at the head of the body: the multi-question progress summary
+ * (`{N} questions · {M} answered`) on the leading edge, the control cluster
+ * on the trailing edge — left→right Cancel · Back · Next · Submit (Back /
+ * Next multi-question only), or Back · Reply in decline mode. There is no
+ * separate foot action row. A small bottom margin sets it off from the rail
+ * below; the buttons share a uniform width and an even gap. */
+.session-question-dialog-actionbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  width: 100%;
+  /* Breathing room below the block header above and the rail below. */
+  margin-block-start: var(--tug-space-md);
+  margin-block-end: var(--tug-space-md);
+}
+
+/* Progress summary — indented so its left edge aligns with the rail's status
+ * markers below it (the rail rows place their marker at the list-row inline
+ * padding plus the leading gutter from the row's edge). */
+.session-question-dialog-nav-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline-start: calc(
+    var(--tugx-list-row-padding-inline, 14px) +
+    var(--tugx-list-row-indicator-gutter, 0.2rem)
+  );
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  opacity:     var(--tugx-idialog-description-opacity);
+  text-align: left;
+}
+
+/* The control cluster — pushed to the trailing edge; each button a uniform
+ * width with a comfortable gap so the four read as a balanced set. The
+ * trailing margin aligns the cluster's right edge with the question rows'
+ * right edge (their inline padding) and gives Submit air off the block edge. */
+.session-question-dialog-actionbar-buttons {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--tug-space-sm);
+  margin-inline-start: auto;
+  margin-inline-end: var(--tugx-list-row-padding-inline, 14px);
+}
+
+.session-question-dialog-actionbar-buttons .tug-button {
+  width: var(--tugx-idialog-action-w, 5rem);
+}
+
+/* ---- Wizard rail ----
+ *
+ * The rail IS the shared `QuestionSummaryList` (its rows + box model live in
+ * `question-summary-list.css`); this class is only a hook for any
+ * rail-specific tuning. The shared list isn't a `.tug-list-view`, so the
+ * transcript's `--tugx-list-view-*` overrides never reach it. */
+.session-question-dialog-rail {
+  width: 100%;
+}
+
+/* ---- Rail / panel separator ----
+ *
+ * The quiet structural cut between the index (rail) and the working
+ * surface (panel): a full-width hairline, no box. The lead-in above
+ * the rule stays tight (the rail's own row gap already supplies air);
+ * the default block margin remains below. */
+.session-question-dialog-separator {
+  width: 100%;
+}
+
+.session-question-dialog-separator.tug-separator-horizontal {
+  margin-block-start: var(--tug-space-xs);
+}
+
+/* ---- Stationary options panel ----
+ *
+ * A one-cell grid: every sizer and the live face share `1 / 1`, so
+ * the panel's height is the tallest stacked child — the layout floor
+ * is grid-intrinsic, with the sizers rendering at exactly the panel's
+ * content width (same cell), so their wrap math always matches the
+ * live face's. */
+/* @tug-renders-on: --tugx-idialog-bg */
+.session-question-dialog-panel {
+  display: grid;
+  /* `start`, NOT the grid default `stretch`: the component writes a
+   * ratcheted `min-height` floor onto this box, and a stretched row
+   * would follow that min-height, stretch the face with it, and feed
+   * the next measurement — a runaway. With `start` the row is sized
+   * by its items alone, so the floor pads the box without ever
+   * changing what gets measured. `border-box` for the same reason:
+   * the floor is measured from the border box, so a content-box
+   * min-height would re-add the padding on every measurement. */
+  align-content: start;
+  box-sizing: border-box;
+  /* The working surface (the current question + its options) sits at 90% of
+   * the dialog width, centered, so the options read as inset rather than
+   * running the full block edge-to-edge. */
+  width: 90%;
+  margin-inline: auto;
+  padding: var(--tugx-question-panel-padding);
+  border-radius: var(--tugx-question-panel-radius);
+  background: var(--tugx-question-current-bg);
+}
+
+.session-question-dialog-panel-sizer,
+.session-question-dialog-panel-face {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+/* Sizers keep their layout box (`visibility`, not `display`) but are
+ * invisible, inert, and unfocusable. */
+.session-question-dialog-panel-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The panel heading repeats the current question (number + text) so
+ * the options always sit directly under the question they answer. */
+.session-question-dialog-panel-heading {
+  font-size: var(--tugx-question-heading-size);
+  font-weight: var(--tugx-question-heading-weight);
+  line-height: var(--tugx-question-heading-leading);
+}
+
+/* Number prefix ("1.", "2.", …) in the panel heading — tabular numerals at a
+ * fixed inline-block width so the question text starts at the same x as the
+ * rail rows' text above. */
+.session-question-dialog-panel-heading-number {
+  display: inline-block;
+  width: var(--tugx-question-number-w);
+  margin-right: var(--tugx-question-number-gap);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.session-question-dialog-panel-options {
+  margin-top: var(--tug-space-sm);
+}
+
+/* The review state's face — the wizard's closing CTA, bold and
+ * centered on BOTH axes of the held panel space (the sizers hold the
+ * height; review never collapses the panel), so the reserved area
+ * reads as a deliberate stage for the prompt rather than leftover
+ * emptiness. */
+/* @tug-renders-on: --tugx-question-current-bg */
+.session-question-dialog-panel-review {
+  display: grid;
+  place-content: center;
+  height: 100%;
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  font-weight: var(--tug-font-weight-semibold);
+  text-align:  center;
+}
+
+/* ---- Free-text answer field ([P01]) ----
+ *
+ * A multi-line TugTextarea (three rows) below the options, present for every
+ * question so a user can answer in prose instead of picking. Always rendered
+ * (and mirrored in the panel sizers) so the panel's height is constant
+ * across questions ([L06] constant geometry) and the field is a stable
+ * focus stop / spatial-grid node. The top margin matches the panel
+ * options' lead-in so the field reads as the row below the options. */
+.session-question-dialog-freetext {
+  margin-top: var(--tug-space-sm);
+  width: 100%;
+}
+
+.session-question-dialog-freetext .session-question-dialog-freetext-field {
+  width: 100%;
+}
+
+/* ---- Editor font for user-typing fields ([P08]) ----
+ *
+ * The free-text answer field and the chat-about reply field carry the SAME
+ * font the prompt-entry editor uses — the user's configured editor font — so
+ * they read as "the user typing" rather than UI chrome. `TugTextarea` sets
+ * `font-family: inherit` on its textarea; the descendant selectors here win
+ * on specificity and bind family + size + line-height + letter-spacing to the
+ * editor tokens (each with a literal fallback). [L20] cascade-scoped instance
+ * override — the fields keep their own component sizing/colour tokens
+ * otherwise. */
+.session-question-dialog-freetext .session-question-dialog-freetext-field,
+.session-question-dialog-decline .session-question-dialog-decline-field {
+  font-family:    var(--tug-font-family-editor, inherit);
+  line-height:    var(--tug-line-height-editor, 1.4);
+  letter-spacing: var(--tug-letter-spacing-editor, normal);
+}
+
+/* Both user-typing fields read a notch smaller than the editor default —
+ * typed text and placeholder alike — so they sit as quiet input surfaces
+ * rather than shouting. */
+.session-question-dialog-freetext .session-question-dialog-freetext-field,
+.session-question-dialog-decline .session-question-dialog-decline-field {
+  font-size: calc(var(--tug-font-size-editor, 14px) - 2px);
+}
+
+/* ---- Decline mode ([P02], `Chat about this`) ----
+ *
+ * The freeform reply field swaps in for the working surface below the rail
+ * (the multi-question options panel, or the single question's options), so it
+ * sits at the SAME 90%-centered position the panel holds — entering decline
+ * relayouts only this area, not the rail above. A multiline TugTextarea over a
+ * keyboard-hint foot row; `Back` / `Reply` live in the top action bar. */
+.session-question-dialog-decline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  width: 90%;
+  margin-inline: auto;
+  /* No top margin — the body's own row gap supplies the lead-in, exactly as
+   * for the panel this replaces, so the reply sits where the panel was. */
+}
+
+.session-question-dialog-decline-field {
+  width: 100%;
+}
+
+.session-question-dialog-decline-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+}
+
+/* @tug-renders-on: --tugx-idialog-bg */
+.session-question-dialog-decline-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size:   var(--tugx-idialog-description-size);
+  line-height: var(--tugx-idialog-description-leading);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- `Chat about this` entry ----
+ *
+ * A quiet (ghost) control at the foot of the wizard that switches into
+ * decline mode. Sits below the rail/panel with a small lead-in. */
+.session-question-dialog-chat-about {
+  display: flex;
+  justify-content: center;
+  margin-block: var(--tug-space-md) var(--tug-space-xl);
+}
+
+/* In decline mode the entry stays put as the active mode toggle: lit
+ * (`tinted`) + disabled. Override the disabled dimming so it reads as
+ * "selected / on" rather than greyed-out, while staying non-clickable. */
+.session-question-dialog-chat-about[data-active="true"] .tug-button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+/* ---- Options ---- */
+
+/* The options are a flush `TugListView` (mirrors the model / effort picker
+ * sheets) — the `session-question-dialog-options-list` class is on the
+ * `.tug-list-view` root itself (so the selector is a compound, NOT a descendant).
+ * Size it to its rows (every option shows, no inner scroll — the whole dialog
+ * scrolls in the transcript), run the rows + dividers flush to the list frame,
+ * and drop the list's block-axis breathing pseudo-elements so the rows sit tight.
+ * On open the list holds the key view and wears its perimeter ring (the picker
+ * shape — the cursor-row ring marks the cursor inside it). The rows keep their
+ * own internal text padding ([L20] cascade-scoped instance override). */
+.session-question-dialog-options-list.tug-list-view {
+  height: auto;
+  padding-inline: 0;
+  /* Round the perimeter ring to match the question panel (no frame border —
+     the options are borderless on the panel surface). Same self-frame radius
+     token the dev picker uses, so the ring shape is consistent app-wide. */
+  --tugx-list-view-radius: var(--tugx-question-panel-radius);
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-block-start: 0;
+  --tugx-list-view-padding-block-end: 0;
+  --tugx-list-view-row-gap: 0;
+}
+
+/* The options keep the base `TugListView` appearance — the cursor-row fill tint,
+ * hover fill, and the selected-row fill — so a question reads with the same
+ * tint/hover/select language as every other list in the app (the four-level
+ * single-blue ramp lives in `tug-list-row.css` / `tug-list-view.css`, tuned at
+ * the theme level). The leading glyph (radio dot / checkbox) adds the selection
+ * affordance on top; the container's perimeter ring marks that the list holds the
+ * keyboard. The commit-advance flash (see the dialog's flash effect) blinks each
+ * selected row's tint. */
+
+/* The dialog renders inside `.session-card-transcript`, whose own list-view rule
+ * (`session-card.css`) sets a large inter-TURN `--tugx-list-view-row-gap` and a 24px
+ * bottom `--tugx-list-view-padding-block-end`. Those custom properties target
+ * every `.tug-list-view` descendant — including this nested option list — and the
+ * bottom spacer in particular padded an empty band INSIDE the option list's
+ * frame, under the last row. Re-assert ALL the flush spacing values (block,
+ * row-gap, and BOTH block-end / block-start) one level more specific so the list
+ * hugs its rows with no gap. */
+.session-card-transcript .session-question-dialog-options-list.tug-list-view {
+  --tugx-list-view-padding-block: 0;
+  --tugx-list-view-padding-block-start: 0;
+  --tugx-list-view-padding-block-end: 0;
+  --tugx-list-view-row-gap: 0;
+  /* The transcript forces `overflow-y: scroll` on every list-view so a
+     scrollbar's arrival never reflows the column. But this option list is
+     `height: auto` and never scrolls (the whole dialog scrolls in the
+     transcript), so that reserved gutter is dead space on the right — the
+     selection fill and rows stop short of the frame. Opt out: no scroll
+     container, no reserved gutter, so rows + fill run flush to the right edge. */
+  overflow-y: visible;
+}
+
+/* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */
+/* Mirrors the PermissionDialog treatment. The dialog is card-modal: inline
+ * display, trapped focus, archetype-decomposed controls. The focused action
+ * button (Cancel / Submit / Back / Next) promotes to its filled, role-coloured
+ * style + role ring — a first-class TugPushButton capability
+ * (`internal/tug-button.css`), so no bespoke copy lives here; Submit additionally
+ * carries `persistentDefaultRing`. The current question's options are a flush
+ * `TugListView` authored into the trap as one item-group stop: it owns its own
+ * focus treatment (the perimeter ring on the list when it holds the key view, the
+ * cursor-row fill on the movement cursor inside it). There is no full-width
+ * focusable scope wrapper anymore, so clicking inert chrome establishes no focus
+ * state ([P18]). */

@@ -4,17 +4,17 @@
  *
  * Scenario:
  *
- *   Seed a Dev card, bind a fake session so the prompt editor mounts,
+ *   Seed a Session card, bind a fake session so the prompt editor mounts,
  *   and read its CodeMirror line-wrap state (the `cm-lineWrapping`
  *   class on `.cm-content`). Open the Settings card via the same
  *   `show-card` control action the Swift Settings… (⌘,) menu item
- *   sends, click the **Line wrap** switch in the Dev Card tab, and
- *   verify the Dev card's editor flips its wrap state.
+ *   sends, click the **Line wrap** switch in the Session Card tab, and
+ *   verify the Session card's editor flips its wrap state.
  *
  *   This exercises the full cross-instance path: the Settings card's
  *   own `EditorSettingsStore` persists to the global tugbank domain
  *   (`dev.tugtool.editor`), tugcast pushes the DEFAULTS frame, and the
- *   Dev card's store instance picks it up via `onDomainChanged` — no
+ *   Session card's store instance picks it up via `onDomainChanged` — no
  *   shared store instance anywhere.
  *
  *   The initial wrap state is read, not assumed: the test tugbank may
@@ -33,17 +33,17 @@ import { launchTugApp } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
-const DEV_CM_CONTENT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
+const SESSION_CM_CONTENT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const LINE_WRAP_SWITCH =
   '[data-testid="settings-general"] [data-slot="tug-switch"]';
 
 /** Expression: whether the Dev editor's CodeMirror content wraps lines. */
-const DEV_WRAP_STATE = `(() => {
-  const el = document.querySelector(${JSON.stringify(DEV_CM_CONTENT)});
+const SESSION_WRAP_STATE = `(() => {
+  const el = document.querySelector(${JSON.stringify(SESSION_CM_CONTENT)});
   return el !== null && el.classList.contains("cm-lineWrapping");
 })()`;
 
-describe.skipIf(!SHOULD_RUN)("at0155: Settings Dev Card edits reach open Dev cards", () => {
+describe.skipIf(!SHOULD_RUN)("at0155: Settings Session Card edits reach open Dev cards", () => {
   test("toggling Line wrap in Settings flips the Dev editor's wrap state", async () => {
     const app = await launchTugApp({ testName: "at0155-settings-propagation" });
     try {
@@ -51,11 +51,11 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Dev Card edits reach open Dev car
       // by default, so enable it before the engine mounts.
       await app.enableDeckTrace(true);
 
-      // ---- Seed a Dev card and bind a fake session so the editor mounts.
+      // ---- Seed a Session card and bind a fake session so the editor mounts.
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "dev", title: "Dev A", closable: true },
+            { id: "A", componentId: "session", title: "Session A", closable: true },
           ],
           panes: [
             {
@@ -76,12 +76,12 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Dev Card edits reach open Dev car
       await app.waitForCondition<boolean>(
         `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
       );
-      await app.bindDevSession("A");
+      await app.bindSession("A");
       await app.awaitEngineReady("A");
       await app.waitForCondition<boolean>(
-        `document.querySelector(${JSON.stringify(DEV_CM_CONTENT)}) !== null`,
+        `document.querySelector(${JSON.stringify(SESSION_CM_CONTENT)}) !== null`,
       );
-      const initialWrap = await app.evalJS<boolean>(DEV_WRAP_STATE);
+      const initialWrap = await app.evalJS<boolean>(SESSION_WRAP_STATE);
 
       // ---- Open the Settings card (same control action as ⌘,).
       await app.evalJS(
@@ -97,15 +97,15 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Dev Card edits reach open Dev car
         `document.querySelector(${JSON.stringify(LINE_WRAP_SWITCH)}) !== null`,
       );
 
-      // ---- Click Line wrap (the first switch in the Dev Card tab) and
+      // ---- Click Line wrap (the first switch in the Session Card tab) and
       //      wait for the Dev editor to flip.
       await app.nativeClickAtElement(LINE_WRAP_SWITCH);
-      await app.waitForCondition<boolean>(`${DEV_WRAP_STATE} === ${!initialWrap}`);
-      expect(await app.evalJS<boolean>(DEV_WRAP_STATE)).toBe(!initialWrap);
+      await app.waitForCondition<boolean>(`${SESSION_WRAP_STATE} === ${!initialWrap}`);
+      expect(await app.evalJS<boolean>(SESSION_WRAP_STATE)).toBe(!initialWrap);
 
       // ---- Flip back, restoring the run's starting state.
       await app.nativeClickAtElement(LINE_WRAP_SWITCH);
-      await app.waitForCondition<boolean>(`${DEV_WRAP_STATE} === ${initialWrap}`);
+      await app.waitForCondition<boolean>(`${SESSION_WRAP_STATE} === ${initialWrap}`);
     } finally {
       await app.close();
     }

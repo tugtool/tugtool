@@ -20,8 +20,8 @@ import { analyze } from "../../../scripts/fast-refresh-sweep";
  * trigger a full page reload. Extend this list when a file is cleaned.
  */
 const FROZEN_BOUNDARIES: readonly string[] = [
-  "src/components/tugways/cards/dev-card.tsx",
-  "src/components/tugways/cards/dev-card-transcript.tsx",
+  "src/components/tugways/cards/session-card.tsx",
+  "src/components/tugways/cards/session-card-transcript.tsx",
 ];
 
 describe("fast-refresh boundary oracle", () => {

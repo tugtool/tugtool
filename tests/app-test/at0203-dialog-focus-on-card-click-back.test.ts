@@ -40,20 +40,20 @@ const FEED_CODE_OUTPUT = 0x40;
 const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const CARD_A = '[data-card-id="A"]';
-const CARD_A_ROOT = `${CARD_A} [data-slot="dev-card"]`;
-const Q_DIALOG = `${CARD_A} [data-slot="dev-question-dialog"]`;
-const Q_OPTIONS = `${Q_DIALOG} .dev-question-dialog-options-list`;
-const P_DIALOG = `${CARD_A} [data-slot="dev-permission-dialog"]`;
+const CARD_A_ROOT = `${CARD_A} [data-slot="session-card"]`;
+const Q_DIALOG = `${CARD_A} [data-slot="session-question-dialog"]`;
+const Q_OPTIONS = `${Q_DIALOG} .session-question-dialog-options-list`;
+const P_DIALOG = `${CARD_A} [data-slot="session-permission-dialog"]`;
 const P_ALLOW = `${P_DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 
 function paneTitleSelectorFor(paneId: string): string {
   return `[data-pane-id="${paneId}"] [data-testid="tug-pane-title"]`;
 }
 
-const twoDevPanes = {
+const twoSessionPanes = {
   cards: [
-    { id: "A", componentId: "dev", title: "Dev A", closable: true },
-    { id: "B", componentId: "dev", title: "Dev B", closable: true },
+    { id: "A", componentId: "session", title: "Session A", closable: true },
+    { id: "B", componentId: "session", title: "Session B", closable: true },
   ],
   panes: [
     {
@@ -92,21 +92,21 @@ function activeElementInCard(cardId: string): string {
 async function launchAndSeed(testName: string): Promise<App> {
   const app = await launchTugApp({ testName });
   await app.enableDeckTrace(true);
-  await app.seedDeckState({ state: twoDevPanes, focusCardId: "A" });
+  await app.seedDeckState({ state: twoSessionPanes, focusCardId: "A" });
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A") && window.__tug.assertHostRootRegistered("B")`,
   );
-  await app.bindDevSession("A", { tugSessionId: "at0203-session-a" });
+  await app.bindSession("A", { tugSessionId: "at0203-session-a" });
   await app.awaitEngineReady("A");
-  await app.bindDevSession("B");
+  await app.bindSession("B");
   await app.awaitEngineReady("B");
   return app;
 }
 
 async function presentQuestion(app: App): Promise<void> {
   const sid = "at0203-session-a";
-  await app.driveDevSession("A", { op: "send", text: "ask me" });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", { op: "send", text: "ask me" });
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {
@@ -135,7 +135,7 @@ async function presentQuestion(app: App): Promise<void> {
       ],
     },
   };
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {
@@ -148,7 +148,7 @@ async function presentQuestion(app: App): Promise<void> {
       seq: 1,
     },
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: forward,
@@ -161,8 +161,8 @@ async function presentQuestion(app: App): Promise<void> {
 
 async function presentPermission(app: App): Promise<void> {
   const sid = "at0203-session-a";
-  await app.driveDevSession("A", { op: "send", text: "count lines" });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", { op: "send", text: "count lines" });
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {
@@ -175,7 +175,7 @@ async function presentPermission(app: App): Promise<void> {
       seq: 0,
     },
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: {

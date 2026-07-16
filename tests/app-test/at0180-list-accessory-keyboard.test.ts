@@ -38,7 +38,7 @@
  * ## Why the Recents list (not Sessions)
  *
  * Both lists author their trash buttons identically (one shared focus-group
- * constant in `dev-picker-cells.tsx`). The Recents trash flow commits through
+ * constant in `session-picker-cells.tsx`). The Recents trash flow commits through
  * an optimistic in-process tugbank write (`setLocalValue`), so the
  * delete-while-descended journey is fully real in the bare harness; the
  * Sessions trash needs a live ledger backend the harness lacks.
@@ -67,14 +67,14 @@ import { launchTugApp } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
-const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
-const SESSIONS = '[data-tug-focus-key="dev-picker-cycle:2"]';
-const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
-const PATH = '[data-tug-focus-key="dev-picker-cycle:0"]';
+const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
+const SESSIONS = '[data-tug-focus-key="session-picker-cycle:2"]';
+const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
+const PATH = '[data-tug-focus-key="session-picker-cycle:0"]';
 // The native "Browse…" folder button sits between PATH and RECENTS in the walk.
-const BROWSE = '[data-tug-focus-key="dev-picker-cycle:0.5"]';
-const PICKER_FORM = ".dev-card-picker-form";
-const RECENTS_LIST = ".dev-card-picker-recents-list";
+const BROWSE = '[data-tug-focus-key="session-picker-cycle:0.5"]';
+const PICKER_FORM = ".session-card-picker-form";
+const RECENTS_LIST = ".session-card-picker-recents-list";
 const POPOVER = ".tug-confirm-popover";
 
 // Real directories on the macOS test host, so the path seed leaves Open
@@ -102,7 +102,7 @@ const CURSORED_RECENT = `(function(){
 
 // The trash button of the row carrying `data-recent-path=<path>`.
 function rowTrash(path: string): string {
-  return `document.querySelector('${RECENTS_LIST} [data-recent-path=' + ${JSON.stringify(JSON.stringify(path))} + '] .dev-card-picker-recent-trash')`;
+  return `document.querySelector('${RECENTS_LIST} [data-recent-path=' + ${JSON.stringify(JSON.stringify(path))} + '] .session-card-picker-recent-trash')`;
 }
 
 // Computed opacity of a row's trailing slot, by recent path. Returns null when
@@ -165,7 +165,7 @@ async function tabUntil(
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",

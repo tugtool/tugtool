@@ -986,7 +986,7 @@ body {
 
   /* TugListView — windowed list primitive. Layout-only tokens; the
      primitive paints no contrast pairings of its own. Consumers customize
-     per-instance via cascade scoping (e.g. `.dev-card-transcript
+     per-instance via cascade scoping (e.g. `.session-card-transcript
      .tug-list-view { --tugx-list-view-row-gap: ... }`); they never reach
      into the primitive's CSS. Per-card-subtree uniqueness of the
      `data-tug-scroll-key` attribute is the consumer's concern via the
@@ -1013,14 +1013,14 @@ body {
   /* `--tugx-md-*` slots live in tug-markdown-view.css's body{} block per
    * tuglaws/token-naming.md. */
 
-  /* ---- Thinking block (DevThinkingBlock per Table T07) ----
+  /* ---- Thinking block (SessionThinkingBlock per Table T07) ----
    * Inline collapsible chrome at the top of a Dev code row that
    * surfaces the assistant's reasoning stream. Tinted just enough
    * to read as a related-but-supplementary surface; muted prose
    * inside the body keeps the answer (rendered below) the visual
    * focus.
    */
-  /* `--tugx-thinking-*` slots live in dev-thinking-block.css's body{}
+  /* `--tugx-thinking-*` slots live in session-thinking-block.css's body{}
    * block per tuglaws/token-naming.md. */
 
   /* ---- Terminal block (TerminalBlock per Table T07) ----

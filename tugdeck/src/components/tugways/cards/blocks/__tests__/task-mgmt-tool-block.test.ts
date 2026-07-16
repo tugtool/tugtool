@@ -23,7 +23,7 @@ import {
   deriveTaskMgmtVerb,
   narrowTaskMgmtInput,
 } from "../task-mgmt-tool-block";
-import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-registrations";
+import { BESPOKE_FACTORY_BY_NAME } from "../../session-assistant-renderer-registrations";
 
 // ---------------------------------------------------------------------------
 // narrowTaskMgmtInput

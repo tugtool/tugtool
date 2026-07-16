@@ -4,7 +4,7 @@
  * The effort chip ([effort-chip.tsx]) and a future `/effort` slash command both
  * change the session's reasoning effort through one shared sheet.
  * {@link useEffortPicker} owns that sheet once at the card level (mirroring
- * {@link useModelPicker} / {@link usePermissionSheet}): the dev card wires
+ * {@link useModelPicker} / {@link usePermissionSheet}): the session card wires
  * `openEffortPicker` to the chip's `onOpenPicker`, and renders the picker in
  * its content region — so the chip press and the command present the *same*
  * sheet ([#step-4], [D15]).
@@ -75,7 +75,7 @@ export interface UseEffortPickerArgs {
   /** Metadata store supplying the active model's supported levels + current. */
   sessionMetadataStore: ReadableMetadataStore;
   /**
-   * Apply the chosen level — wired by the dev card to {@link useEffort}'s
+   * Apply the chosen level — wired by the session card to {@link useEffort}'s
    * `setEffort`, which reflects it optimistically, persists it per card, and
    * sends the `effort_change` frame.
    */

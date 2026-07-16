@@ -33,7 +33,7 @@ import { dirname, resolve, relative } from "node:path";
 
 const SRC = resolve(import.meta.dir, "..", "src");
 const ENTRY = resolve(SRC, "main.tsx");
-const DEFAULT_FOCUS = resolve(SRC, "components/tugways/cards/dev-card-transcript.tsx");
+const DEFAULT_FOCUS = resolve(SRC, "components/tugways/cards/session-card-transcript.tsx");
 
 const EXTS = [".tsx", ".ts", ".jsx", ".js"];
 export type Kind = "component" | "value" | "type";

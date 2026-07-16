@@ -51,7 +51,7 @@ const PNG_1X1_BASE64 =
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -75,7 +75,7 @@ async function launchAndSeed(testName: string): Promise<App> {
   await app.waitForCondition<boolean>(
     `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
   );
-  await app.bindDevSession("A");
+  await app.bindSession("A");
   await app.awaitEngineReady("A");
   return app;
 }

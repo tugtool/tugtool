@@ -128,7 +128,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -264,10 +264,10 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
         await submitLine(app, "/shell echo oneshot-shell-probe");
         await app.waitForCondition<boolean>(
           `(() => {
-            const rows = document.querySelectorAll('[data-slot="dev-transcript-shell-row"]');
+            const rows = document.querySelectorAll('[data-slot="session-transcript-shell-row"]');
             if (rows.length === 0) return false;
             const row = rows[rows.length - 1];
-            const foot = row.querySelector('[data-slot="dev-z1b-end-state"]');
+            const foot = row.querySelector('[data-slot="session-z1b-end-state"]');
             return foot !== null && (foot.textContent || '').includes('exit') &&
               (row.textContent || '').includes('oneshot-shell-probe');
           })()`,

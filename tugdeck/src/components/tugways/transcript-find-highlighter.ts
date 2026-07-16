@@ -1,6 +1,6 @@
 /**
  * transcript-find-highlighter — the imperative Custom-Highlight painter for the
- * Dev card's Find route.
+ * Session card's Find route.
  *
  * The authoritative match set lives in the `FindSession` + `TranscriptFind
  * Engine` (computed over the whole-transcript index). This painter is the

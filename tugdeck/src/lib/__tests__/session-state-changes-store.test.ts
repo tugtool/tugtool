@@ -20,9 +20,9 @@ import {
   publishLocalSessionStateChange,
 } from "@/lib/session-state-changes-local-events";
 import {
-  _resetDevSessionLedgerEventsForTest,
+  _resetSessionLedgerEventsForTest,
   publishListSessionStateChangesOk,
-} from "@/lib/dev-session-ledger-events";
+} from "@/lib/session-ledger-events";
 import type { TugConnection } from "@/connection";
 import { FeedId, type FeedIdValue } from "@/protocol";
 
@@ -55,13 +55,13 @@ async function flushMicrotasks(): Promise<void> {
 
 beforeEach(() => {
   _resetLocalSessionStateChangeForTest();
-  _resetDevSessionLedgerEventsForTest();
+  _resetSessionLedgerEventsForTest();
   _resetSessionStateChangesStoreForTest();
 });
 
 afterEach(() => {
   _resetLocalSessionStateChangeForTest();
-  _resetDevSessionLedgerEventsForTest();
+  _resetSessionLedgerEventsForTest();
   _resetSessionStateChangesStoreForTest();
 });
 

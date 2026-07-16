@@ -12,7 +12,7 @@ import {
   formatWakeSchedule,
   scheduledCancelEnabled,
   wakeBadgeText,
-} from "@/components/tugways/cards/dev-card-telemetry-popovers";
+} from "@/components/tugways/cards/session-card-telemetry-popovers";
 import { STALE_THRESHOLD_MS } from "@/lib/code-session-store/select-scheduled-work";
 import type { JobItem } from "@/lib/code-session-store/select-jobs";
 

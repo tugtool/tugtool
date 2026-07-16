@@ -31,9 +31,9 @@ const codeStyle: React.CSSProperties = {
 
 const SHORT_COMMAND = `cd tugdeck && bun run build`;
 
-const LONG_COMMAND = `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck/src/components/tugways/cards && ls blocks/ && echo "---DISPATCH HEAD---" && sed -n '1,60p' cards/dev-assistant-renderer-dispatch.ts 2>/dev/null || find . -name "dev-assistant-renderer-dispatch.ts" && echo "---" && grep -rn "KIND_RENDERERS" . --include="*.ts" | head -40 && echo "done scanning the dispatch table for permission renderers"`;
+const LONG_COMMAND = `cd /Users/kocienda/Mounts/u/src/tugtool/tugdeck/src/components/tugways/cards && ls blocks/ && echo "---DISPATCH HEAD---" && sed -n '1,60p' cards/session-assistant-renderer-dispatch.ts 2>/dev/null || find . -name "session-assistant-renderer-dispatch.ts" && echo "---" && grep -rn "KIND_RENDERERS" . --include="*.ts" | head -40 && echo "done scanning the dispatch table for permission renderers"`;
 
-const LONG_PROSE = `The shape is fixed upstream by Claude Code — one to four questions, two to four options per question, a hard minimum of two, not just "at most four", failing with an InputValidationError before Tug ever sees it. This is not a constraint Tug can relax by editing anything here. The Dev card renders any number of options with no cap of its own; the limit lives only in Claude Code upstream. If a call somehow exceeds four, the tool block detects the validation error and mounts a salvage path so the user can still answer. Overflow is therefore graceful, but a well-formed call stays within the two-to-four band so the round-trip is never wasted.`;
+const LONG_PROSE = `The shape is fixed upstream by Claude Code — one to four questions, two to four options per question, a hard minimum of two, not just "at most four", failing with an InputValidationError before Tug ever sees it. This is not a constraint Tug can relax by editing anything here. The Session card renders any number of options with no cap of its own; the limit lives only in Claude Code upstream. If a call somehow exceeds four, the tool block detects the validation error and mounts a salvage path so the user can still answer. Overflow is therefore graceful, but a well-formed call stays within the two-to-four band so the round-trip is never wasted.`;
 
 // ---------------------------------------------------------------------------
 // GalleryTugClamp

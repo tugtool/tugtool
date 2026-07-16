@@ -51,7 +51,7 @@ identifiers, or secrets, and that the content is acceptable to ship.
 ```ts
 import { seedFixtureSession } from "./fixtures/resolve";
 
-const seeded = await seedFixtureSession("dev-transcript-basic", "my-test");
+const seeded = await seedFixtureSession("session-transcript-basic", "my-test");
 try {
   // seeded.sessionId / seeded.projectDir are listable in the picker;
   // resume through the real flow, then assert.
@@ -64,4 +64,4 @@ try {
 
 | File | Turns | Source | What it exercises |
 |------|-------|--------|-------------------|
-| `sessions/dev-transcript-basic.jsonl` | 4 | a real tugtool dev session | a scrollable multi-turn transcript: user prompts, assistant thinking + text, tool_use/tool_result pairs, attachments — enough to scroll, restore, and verify no-slam |
+| `sessions/session-transcript-basic.jsonl` | 4 | a real tugtool dev session | a scrollable multi-turn transcript: user prompts, assistant thinking + text, tool_use/tool_result pairs, attachments — enough to scroll, restore, and verify no-slam |

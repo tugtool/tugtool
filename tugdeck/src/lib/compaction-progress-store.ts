@@ -4,7 +4,7 @@
  * Native `/compact` dispatches as a stream-json user message and compacts in
  * place (same session, same JSONL). It is a ~20 s opaque run with no streamed
  * volume to meter, so the sheet is pane-modal and **indeterminate**: the run is
- * either in flight or settled. This singleton is the seam between the dev-card
+ * either in flight or settled. This singleton is the seam between the session-card
  * handler that opens the run (`begin`) and drives it off `codeSessionStore`
  * snapshots (`succeed` / `cancel` / `fail`), and the sheet that renders off the
  * same store. The card watches the terminal `outcome` to raise the closing

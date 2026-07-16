@@ -508,7 +508,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// Refresh the Dev picker's "initial project path" hint so a first-
+    /// Refresh the Session picker's "initial project path" hint so a first-
     /// time user (no Recent Project Paths yet) has a sensible default
     /// they can hit Open on without typing. Debug builds point at the
     /// repo source tree; release builds point at `$HOME`. Written every
@@ -605,7 +605,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // a submenu. The debug-only gallery / hello-world / active-pane
         // creators live in the app-maker menu, gated at compile time on
         // BuildInfo.profile.
-        fileMenu.addItem(NSMenuItem(title: "New Dev Card", action: #selector(newDevCard(_:)), keyEquivalent: "n").identified("file.newDevCard"))
+        fileMenu.addItem(NSMenuItem(title: "New Session Card", action: #selector(newSessionCard(_:)), keyEquivalent: "n").identified("file.newSessionCard"))
 
         // Text-card section: New Text Card / Open File… form their own group
         // under a divider, distinct from the card creators above.
@@ -669,7 +669,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
         // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
         // updateMenuState only while a Text card is frontmost; a
-        // static ⇧⌘S would eat the Dev card's Shell-route chord.
+        // static ⇧⌘S would eat the Session card's Shell-route chord.
         fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
         fileMenu.addItem(fileSaveAsMenuItem)
         // Save a Copy… (⌥⇧⌘S) and the revert/reload verbs collide with
@@ -681,8 +681,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         fileMenu.addItem(NSMenuItem.separator())
 
-        // Export Transcript… — the dev card's `/export` surface, reached
-        // through the generic run-card-command round-trip. Dev-card-gated
+        // Export Transcript… — the session card's `/export` surface, reached
+        // through the generic run-card-command round-trip. Session-card-gated
         // in validateMenuItem(_:).
         let exportItem = NSMenuItem(title: "Export Transcript…", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("file.exportTranscript")
         exportItem.representedObject = "export"
@@ -728,7 +728,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // from the selection and writes the plain text to the clipboard;
         // enablement reuses the copy gate (MenuState.edit.copy) since both
         // need a selection.
-        // ⌥⇧⌘C — moved off ⇧⌘C, which is now the Dev card's Code route
+        // ⌥⇧⌘C — moved off ⇧⌘C, which is now the Session card's Code route
         // shortcut (SELECT_ROUTE `❯`). AppKit owns the chord at the menu bar,
         // so the extra ⌥ frees ⇧⌘C to reach the web route keymap.
         editMenu.addItem(NSMenuItem(title: "Copy as Plain Text", action: #selector(performCopyAsPlainText(_:)), keyEquivalent: "c", modifierMask: [.command, .shift, .option]).identified("edit.copyAsPlainText"))
@@ -745,8 +745,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
 
-        // Copy Last Response — the dev card's `/copy` surface. Gated on a
-        // dev card being frontmost AND its transcript holding an
+        // Copy Last Response — the session card's `/copy` surface. Gated on a
+        // session card being frontmost AND its transcript holding an
         // assistant message (validateMenuItem).
         let copyLastItem = NSMenuItem(title: "Copy Last Response", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("edit.copyLastResponse")
         copyLastItem.representedObject = "copy"
@@ -769,9 +769,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         findMenu.addItem(NSMenuItem(title: "Find Previous", action: #selector(performFindPrevious(_:)), keyEquivalent: "g", modifierMask: [.command, .shift]).identified("edit.findPrevious"))
         editMenu.addItem(findMenuItem)
 
-        // Session Menu - position 3. The dev card's command surfaces,
+        // Session Menu - position 3. The session card's command surfaces,
         // first-class in the menu bar. The menu is always present and its
-        // items validate to disabled without a frontmost dev card
+        // items validate to disabled without a frontmost session card
         // (stable bars with disabled items beat vanishing menus for
         // discoverability); most items are run-card-command round-trips
         // into the card's slash-command surface map.
@@ -804,7 +804,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // menu-reachable, matching the chip's Shift-Tab cycle). Titles
         // are hardcoded for label parity with formatPermissionMode; the
         // mode string rides representedObject. Checkmarks refresh in
-        // validateMenuItem from MenuState.dev.permissionMode.
+        // validateMenuItem from MenuState.session.permissionMode.
         let permissionModeItem = NSMenuItem(title: "Permission Mode", action: nil, keyEquivalent: "").identified("session.permissionMode")
         let permissionModeMenu = NSMenu(title: "Permission Mode")
         permissionModeItem.submenu = permissionModeMenu
@@ -886,7 +886,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.windowsMenu = wMenu
 
         // Maker Menu - position 6. Tooling for makers *of* the app —
-        // "dev" stays free to mean the Dev card's domain. Hidden (not
+        // "session" stays free to mean the Session card's domain. Hidden (not
         // disabled) behind the maker-mode gate: a *mode*, not a focus
         // state, so hide-on-gate is the right shape here.
         makerMenu = NSMenuItem()
@@ -919,8 +919,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
         helpMenuItem.submenu = helpMenu
-        // Keyboard Shortcuts & Commands — the dev card's `/help` sheet via
-        // run-card-command. Dev-card-gated in validateMenuItem(_:).
+        // Keyboard Shortcuts & Commands — the session card's `/help` sheet via
+        // run-card-command. Session-card-gated in validateMenuItem(_:).
         let shortcutsItem = NSMenuItem(title: "Keyboard Shortcuts & Commands", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("help.shortcuts")
         shortcutsItem.representedObject = "help"
         helpMenu.addItem(shortcutsItem)
@@ -1046,8 +1046,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("show-card", params: ["component": "hello"])
     }
 
-    @objc private func newDevCard(_ sender: Any) {
-        sendControl("show-card", params: ["component": "dev"])
+    @objc private func newSessionCard(_ sender: Any) {
+        sendControl("show-card", params: ["component": "session"])
     }
 
     @objc private func openFileInEditor(_ sender: Any) {
@@ -1133,7 +1133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("close-all")
     }
 
-    /// One selector for every menu item whose action is a dev-card local
+    /// One selector for every menu item whose action is a session-card local
     /// slash command: the command name rides `representedObject`, and the
     /// frame re-enters the card's slash-command surface map key-card-scoped
     /// in tugdeck — byte-identical to typing the command. Items send no
@@ -1393,11 +1393,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         menuState.focusedPane?.closable ?? false
     }
 
-    /// Whether the focused pane's active card is a dev card — the
-    /// card-type gate for the dev-card command surfaces (Session items,
+    /// Whether the focused pane's active card is a session card — the
+    /// card-type gate for the session-card command surfaces (Session items,
     /// Copy Last Response, Export Transcript, Help shortcuts).
-    private var devCardFrontmost: Bool {
-        menuState.activeCard?.component == "dev"
+    private var sessionCardFrontmost: Bool {
+        menuState.activeCard?.component == "session"
     }
 
     /// Auto-enable hook (`autoenablesItems` is on by default). Consulted
@@ -1408,14 +1408,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// capability (Cut / Copy / Paste / Delete / Select All / Undo / Redo
     /// and the Find items, from the focused responder's edit block — undo
     /// and redo carry the focused editor's history depth), card type
-    /// (dev-card command surfaces), and session state (transcript facts
-    /// from the dev block). Anything without a predicate here stays
+    /// (session-card command surfaces), and session state (transcript facts
+    /// from the session block). Anything without a predicate here stays
     /// enabled.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard let id = menuItem.identifier?.rawValue else { return true }
 
-        // Session menu: every item needs a frontmost dev card (card-type
-        // tier); below that, Focus Prompt works on any dev card, Stop
+        // Session menu: every item needs a frontmost session card (card-type
+        // tier); below that, Focus Prompt works on any session card, Stop
         // needs an interruptible turn, Rewind needs a bound session with
         // committed turns, and everything else needs a bound session.
         if id.hasPrefix("session.") {
@@ -1426,27 +1426,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             // mechanism; no menuNeedsUpdate rebuild is involved.
             if id.hasPrefix("session.permissionMode."),
                let mode = menuItem.representedObject as? String {
-                menuItem.state = (mode == menuState.dev?.permissionMode) ? .on : .off
+                menuItem.state = (mode == menuState.session?.permissionMode) ? .on : .off
             }
-            guard devCardFrontmost else { return false }
+            guard sessionCardFrontmost else { return false }
             // The Mode control must not change mid-turn. The whole Permission
             // Mode submenu — the parent item, every radio, and Cycle (whose
             // ⇧⌘P key equivalent is validated even while the menu is closed) —
             // gates on the same `canChangeSettings` (canSubmit) the Z4B chips
             // do, so a disabled item beeps instead of racing the running turn.
             if id.hasPrefix("session.permissionMode") {
-                return (menuState.dev?.sessionBound ?? false)
-                    && (menuState.dev?.canChangeSettings ?? false)
+                return (menuState.session?.sessionBound ?? false)
+                    && (menuState.session?.canChangeSettings ?? false)
             }
             switch id {
             case "session.focusPrompt":
                 return true
             case "session.stop":
-                return menuState.dev?.canInterrupt ?? false
+                return menuState.session?.canInterrupt ?? false
             case "session.rewind":
-                return (menuState.dev?.sessionBound ?? false) && (menuState.dev?.hasTurns ?? false)
+                return (menuState.session?.sessionBound ?? false) && (menuState.session?.hasTurns ?? false)
             default:
-                return menuState.dev?.sessionBound ?? false
+                return menuState.session?.sessionBound ?? false
             }
         }
 
@@ -1557,10 +1557,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return menuState.edit.findPrevious
         // Card-type tier.
         case "file.exportTranscript", "help.shortcuts":
-            return devCardFrontmost
+            return sessionCardFrontmost
         // Card-type + session-state tiers.
         case "edit.copyLastResponse":
-            return devCardFrontmost && (menuState.dev?.hasAssistantMessage ?? false)
+            return sessionCardFrontmost && (menuState.session?.hasAssistantMessage ?? false)
         default:
             return true
         }
@@ -2070,8 +2070,8 @@ struct MenuState {
         let closable: Bool
     }
 
-    /// Dev-card session state; nil unless the active card is a dev card.
-    struct Dev {
+    /// Session-card session state; nil unless the active card is a session card.
+    struct Session {
         let cardId: String
         let sessionBound: Bool
         let canInterrupt: Bool
@@ -2145,7 +2145,7 @@ struct MenuState {
 
     var panes: [Pane] = []
     var activeCard: ActiveCard?
-    var dev: Dev?
+    var session: Session?
     var file: File?
     var edit: Edit = .disabled
     /// Recent-document paths (newest first) for File ▸ Open Recent. The
@@ -2190,18 +2190,18 @@ struct MenuState {
                 closable: rawActive["closable"] as? Bool ?? false
             )
         }
-        if let rawDev = payload["dev"] as? [String: Any],
-           let cardId = rawDev["cardId"] as? String {
-            dev = Dev(
+        if let rawSession = payload["session"] as? [String: Any],
+           let cardId = rawSession["cardId"] as? String {
+            session = Session(
                 cardId: cardId,
-                sessionBound: rawDev["sessionBound"] as? Bool ?? false,
-                canInterrupt: rawDev["canInterrupt"] as? Bool ?? false,
+                sessionBound: rawSession["sessionBound"] as? Bool ?? false,
+                canInterrupt: rawSession["canInterrupt"] as? Bool ?? false,
                 // Fail open: a parse miss keeps the submenu enabled (its prior
                 // behavior) rather than stranding a dead Permission Mode menu.
-                canChangeSettings: rawDev["canChangeSettings"] as? Bool ?? true,
-                permissionMode: rawDev["permissionMode"] as? String ?? "default",
-                hasAssistantMessage: rawDev["hasAssistantMessage"] as? Bool ?? false,
-                hasTurns: rawDev["hasTurns"] as? Bool ?? false
+                canChangeSettings: rawSession["canChangeSettings"] as? Bool ?? true,
+                permissionMode: rawSession["permissionMode"] as? String ?? "default",
+                hasAssistantMessage: rawSession["hasAssistantMessage"] as? Bool ?? false,
+                hasTurns: rawSession["hasTurns"] as? Bool ?? false
             )
         }
         if let rawFile = payload["file"] as? [String: Any],

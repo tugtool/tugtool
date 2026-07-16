@@ -109,7 +109,7 @@ export const tugTextCardEditorTheme: Extension = EditorView.theme({
   ".cm-panels": {
     display: "none",
   },
-  // Mirrors the Dev card's transcript-find paint exactly: faint accent wash
+  // Mirrors the Session card's transcript-find paint exactly: faint accent wash
   // on other matches, full-strength solid accent (+ on-accent text) on the
   // current one — no outline; the landing emphasis is the one-shot ring
   // flash the delegate draws on navigation.

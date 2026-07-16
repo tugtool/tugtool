@@ -20,10 +20,10 @@ import Foundation
 /// The override is **gated on the app-test harness marker**
 /// (`TUGAPP_TEST_SOCKET`), and deliberately so. Every running Tug
 /// instance exports its own `TUG_INSTANCE_ID` into the environment of
-/// its tugcast child, which propagates it to every Dev-card shell (see
+/// its tugcast child, which propagates it to every Session-card shell (see
 /// `ProcessManager.startProcess`). `open` then propagates the caller's
 /// environment to whatever app it launches — so a `just app-debug`
-/// run from inside a release-main Dev card would otherwise launch a
+/// run from inside a release-main Session card would otherwise launch a
 /// brand-new worktree/debug bundle that silently adopts `release-main`,
 /// colliding with the very instance that spawned it (exit-73, the
 /// "Another release-main instance is already running" dialog). A built
@@ -64,7 +64,7 @@ enum InstanceConfig {
     /// The bundle's baked-in `BuildInfo.instanceId` is authoritative.
     /// An inherited `TUG_INSTANCE_ID` is honored only under the
     /// app-test harness (`TUGAPP_TEST_SOCKET` present) — see the type
-    /// doc for why an ungated override would make Dev-card-launched
+    /// doc for why an ungated override would make Session-card-launched
     /// builds adopt the launching instance's identity.
     static let instanceId: String = {
         let env = ProcessInfo.processInfo.environment

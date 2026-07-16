@@ -22,7 +22,7 @@
  *      asserts that optimistic update (the observable effect of the set path).
  *
  * The chip reads its own `SESSION_METADATA` FeedStore — unreachable by the
- * `driveDevSession`/`ingestFrame` (CodeSessionStore) path — so capabilities are
+ * `driveSession`/`ingestFrame` (CodeSessionStore) path — so capabilities are
  * injected via the `ingestSessionMetadata` surface seam; no live claude
  * handshake needed. The respawn-with-resume round-trip itself ([R07]) is an
  * integration concern (live tugcode), out of this UI test's reach.
@@ -91,7 +91,7 @@ function noEffortCapabilities() {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -141,7 +141,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           // The effort chip is a permanent Z4B fixture (like Mode / Model), so
@@ -287,7 +287,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A");
+          await app.bindSession("A");
           await app.awaitEngineReady("A");
 
           // Simulate a resumed session: its model id arrives via

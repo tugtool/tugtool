@@ -116,7 +116,7 @@ export function ToolFileRef({
     // pane activation): suppress WebKit's mousedown focus default for the
     // primary open gesture so the click never pulls DOM focus onto this
     // transcript. Same guard the transcript's cwd click uses (see
-    // `dev-card-transcript`). Modified/secondary clicks fall through so
+    // `session-card-transcript`). Modified/secondary clicks fall through so
     // text-selection gestures over the header still work.
     if (event.button !== 0 || event.metaKey || event.shiftKey) return;
     event.preventDefault();

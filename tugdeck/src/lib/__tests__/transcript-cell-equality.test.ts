@@ -15,8 +15,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   sameTranscriptRowData,
   transcriptCellPropsEqual,
-  type DevRowDescriptor,
-} from "@/lib/dev-transcript-data-source";
+  type SessionRowDescriptor,
+} from "@/lib/session-transcript-data-source";
 import {
   resetRowParseCounters,
   snapshotRowParseCounters,
@@ -27,7 +27,7 @@ afterEach(() => {
   resetRowParseCounters();
 });
 
-function committedRow(turnKey: string): DevRowDescriptor {
+function committedRow(turnKey: string): SessionRowDescriptor {
   const turn = turnEntry({
     turnKey,
     msgId: `msg-${turnKey}`,
@@ -41,14 +41,14 @@ describe("sameTranscriptRowData", () => {
     const row = committedRow("t1");
     // A second descriptor over the SAME TurnEntry reference — what a
     // fresh snapshot produces for an untouched committed row.
-    const again: DevRowDescriptor = { ...row };
+    const again: SessionRowDescriptor = { ...row };
     expect(sameTranscriptRowData(row, again)).toBe(true);
   });
 
   test("the streaming→finalized flip compares unequal (turn appears)", () => {
-    const inflight: DevRowDescriptor = {
+    const inflight: SessionRowDescriptor = {
       kind: "assistant",
-      activeTurn: { turnKey: "t1" } as DevRowDescriptor["activeTurn"],
+      activeTurn: { turnKey: "t1" } as SessionRowDescriptor["activeTurn"],
       turnKey: "t1",
     };
     const committed = committedRow("t1");
@@ -56,14 +56,14 @@ describe("sameTranscriptRowData", () => {
   });
 
   test("a fresh activeTurn projection compares unequal (live row stays live)", () => {
-    const a: DevRowDescriptor = {
+    const a: SessionRowDescriptor = {
       kind: "assistant",
-      activeTurn: { turnKey: "t1" } as DevRowDescriptor["activeTurn"],
+      activeTurn: { turnKey: "t1" } as SessionRowDescriptor["activeTurn"],
       turnKey: "t1",
     };
-    const b: DevRowDescriptor = {
+    const b: SessionRowDescriptor = {
       ...a,
-      activeTurn: { turnKey: "t1" } as DevRowDescriptor["activeTurn"],
+      activeTurn: { turnKey: "t1" } as SessionRowDescriptor["activeTurn"],
     };
     expect(sameTranscriptRowData(a, b)).toBe(false);
   });

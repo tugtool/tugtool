@@ -2,7 +2,7 @@
  * at0097-rewind-sheet.test.ts — `/rewind` turn picker + restore confirm,
  * end-to-end through the real sheet ([#step-7-3]).
  *
- * Drives a deterministic 3-turn dev session via `driveDevSession` (no live
+ * Drives a deterministic 3-turn dev session via `driveSession` (no live
  * claude — each turn is `send` + an injected `prompt_anchor` + `turn_complete`,
  * so the committed turns carry the rewind anchor). Then:
  *   1. Open `/rewind` via the real submit path (type, dismiss completion,
@@ -31,13 +31,13 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
-const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
+const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 const PICKER_ROWS = `${SHEET} [data-prompt-uuid]`;
 const REWIND_APPLY = `${SHEET} [data-testid="rewind-apply"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -59,12 +59,12 @@ async function buildTurn(app: App, i: number): Promise<void> {
   const uuid = `uuid-${i}`;
   const msgId = `m-${i}`;
   const frame = (decoded: Record<string, unknown>) =>
-    app.driveDevSession("A", {
+    app.driveSession("A", {
       op: "ingestFrame",
       feedId: FEED_CODE_OUTPUT,
       decoded: { tug_session_id: SID, ...decoded },
     });
-  await app.driveDevSession("A", { op: "send", text: `prompt ${i}` });
+  await app.driveSession("A", { op: "send", text: `prompt ${i}` });
   await frame({ type: "prompt_anchor", promptUuid: uuid });
   await frame({ type: "content_block_start", msg_id: msgId, block_index: 0, kind: "text" });
   await frame({ type: "assistant_text", msg_id: msgId, block_index: 0, text: `reply ${i}`, is_partial: false });
@@ -86,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)("AT0097: /rewind sheet — picker + conversation re
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Build a 3-turn anchored transcript.
@@ -132,7 +132,7 @@ describe.skipIf(!SHOULD_RUN)("AT0097: /rewind sheet — picker + conversation re
         // Rewind → the sheet sends `session_rewind` (conversation by default);
         // simulate the backend ack so the local L26-safe truncation runs.
         await app.nativeClickAtElement(REWIND_APPLY);
-        await app.driveDevSession("A", {
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {

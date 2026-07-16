@@ -995,7 +995,7 @@ export function TugPane({
     if (currentCards && currentCards.length > 1 && currentActiveId) {
       // Multi-tab: Cmd-W removes only the active card. Honour that
       // card's own `confirmClose` policy — pop a single-card confirm
-      // before discarding an opt-in card (e.g. the Dev card), remove
+      // before discarding an opt-in card (e.g. the Session card), remove
       // immediately otherwise. (The whole-pane "Close N Tabs?" guard
       // belongs to the X button and the close-all command, not to the
       // single-tab close Cmd-W performs here.)
@@ -1138,7 +1138,7 @@ export function TugPane({
         const targetId = event.value;
         // The tab × is a close gesture like the pane X — it must honour the
         // target card's close guard rather than destroy a dirty manual File
-        // card silently. A card that opts out (e.g. the Dev card's
+        // card silently. A card that opts out (e.g. the Session card's
         // picker-cancel) registers none and closes directly. A dirty
         // background tab is VISITED (activated) before its sheet, so the
         // decision is made looking at the buffer it concerns.
@@ -1184,7 +1184,7 @@ export function TugPane({
     : meta;
 
   // Per-card title override (cardTitleStore). When a card publishes an
-  // override (e.g. the Dev card publishes its bound project path once a
+  // override (e.g. the Session card publishes its bound project path once a
   // session is picked), the title bar composes it as
   // `"<base> : <override>"`. A card with no static base title (e.g. the
   // About card, whose title *is* its dynamic identity) declares an
@@ -1201,7 +1201,7 @@ export function TugPane({
 
   // Resolve the active card's bound resource for the Cmd-click title
   // path menu. Read live at click time (paths re-bind), keyed on the
-  // active card id — Dev card → project dir, Text card → edited file.
+  // active card id — Session card → project dir, Text card → edited file.
   const resolveResourcePath = useCallback(
     () => resolveCardResourcePath(activeCardId ?? null),
     [activeCardId],

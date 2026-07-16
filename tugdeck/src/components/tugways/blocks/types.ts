@@ -2,7 +2,7 @@
  * Shared types for the Dev assistant-rendering tool-block layer.
  *
  * These contracts are consumed by:
- *   - `dev-assistant-renderer-dispatch.ts` — the registry + dispatch logic
+ *   - `session-assistant-renderer-dispatch.ts` — the registry + dispatch logic
  *   - every per-tool block in `./blocks/*.tsx`
  *   - every body-kind primitive under `../body-kinds/*.tsx`
  *

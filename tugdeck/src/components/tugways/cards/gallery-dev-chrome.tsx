@@ -1,7 +1,7 @@
 /**
  * gallery-dev-chrome.tsx — visual fixture for the per-card chrome
- * surfaces shipped in [#step-29] and earlier: `DevSessionInitBanner`,
- * `DevErrorBlock`, and `DevCautionBadge`.
+ * surfaces shipped in [#step-29] and earlier: `SessionInitBanner`,
+ * `SessionErrorBlock`, and `SessionCautionBadge`.
  *
  * Each component stacks 3-5 mock variants:
  *
@@ -27,9 +27,9 @@
 
 import React from "react";
 
-import { DevSessionInitBanner } from "@/components/tugways/chrome/dev-session-init-banner";
-import { DevErrorBlock } from "@/components/tugways/chrome/dev-error-block";
-import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { SessionInitBanner } from "@/components/tugways/chrome/session-init-banner";
+import { SessionErrorBlock } from "@/components/tugways/chrome/session-error-block";
+import { SessionCautionBadge } from "@/components/tugways/chrome/session-caution-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 
@@ -62,7 +62,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — first observation (no previous metadata)
         </TugLabel>
-        <DevSessionInitBanner
+        <SessionInitBanner
           input={{ kind: "system_metadata", metadata: META_BASE }}
         />
       </div>
@@ -74,7 +74,7 @@ export function GalleryDevChrome(): React.ReactElement {
           SessionInitBanner — identical repeat (renders null; nothing
           visible below this label)
         </TugLabel>
-        <DevSessionInitBanner
+        <SessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_BASE,
@@ -89,7 +89,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — model changed
         </TugLabel>
-        <DevSessionInitBanner
+        <SessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_MODEL_CHANGED,
@@ -104,7 +104,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — permission-mode changed
         </TugLabel>
-        <DevSessionInitBanner
+        <SessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: META_PERMISSION_CHANGED,
@@ -119,7 +119,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           SessionInitBanner — with drift caution chip
         </TugLabel>
-        <DevSessionInitBanner
+        <SessionInitBanner
           input={{
             kind: "system_metadata",
             metadata: { ...META_BASE, version: "2.2.0" },
@@ -137,7 +137,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — recoverable (Retry button wired)
         </TugLabel>
-        <DevErrorBlock
+        <SessionErrorBlock
           input={{
             kind: "error",
             message: "Network hiccup — request timed out after 30s.",
@@ -155,7 +155,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — recoverable (no Retry handler; status-only)
         </TugLabel>
-        <DevErrorBlock
+        <SessionErrorBlock
           input={{
             kind: "error",
             message: "Rate limit reached; auto-retry will fire in 15s.",
@@ -170,7 +170,7 @@ export function GalleryDevChrome(): React.ReactElement {
         <TugLabel className="cg-section-title">
           ErrorBlock — non-recoverable (Copy-error button)
         </TugLabel>
-        <DevErrorBlock
+        <SessionErrorBlock
           input={{
             kind: "error",
             message:
@@ -187,9 +187,9 @@ export function GalleryDevChrome(): React.ReactElement {
           CautionBadge — unknown_tool / unknown_shape / version_drift
         </TugLabel>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <DevCautionBadge caution={{ reason: "unknown_tool", detail: "ZzzMystery" }} />
-          <DevCautionBadge caution={{ reason: "unknown_shape", detail: "Read: file: missing" }} />
-          <DevCautionBadge caution={{ reason: "version_drift", detail: "2.2.0 ≠ 2.1.148" }} />
+          <SessionCautionBadge caution={{ reason: "unknown_tool", detail: "ZzzMystery" }} />
+          <SessionCautionBadge caution={{ reason: "unknown_shape", detail: "Read: file: missing" }} />
+          <SessionCautionBadge caution={{ reason: "version_drift", detail: "2.2.0 ≠ 2.1.148" }} />
         </div>
       </div>
     </div>

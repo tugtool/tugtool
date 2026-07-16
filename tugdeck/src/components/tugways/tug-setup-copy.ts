@@ -1,7 +1,7 @@
 /**
  * tug-setup-copy — pure copy helpers for TugSetup, split out from the component
  * so the wording rules are unit-testable without importing the CSS-bearing
- * `.tsx` (mirrors the `dev-card-banner-spec` pattern). [D106]
+ * `.tsx` (mirrors the `session-card-banner-spec` pattern). [D106]
  *
  * @module components/tugways/tug-setup-copy
  */
@@ -43,7 +43,7 @@ export function subscriptionLabel(
  * those cards. A zero-card deck keeps the first-run wording. [P04]/[D106]
  *
  * Pure so the branch is unit-testable without the CSS-bearing `.tsx`. Only the
- * pending (logged-out) copy varies here; the logged-in "Open a Dev Card" active
+ * pending (logged-out) copy varies here; the logged-in "Open a Session Card" active
  * step is owned by the component.
  */
 export function pendingOpenStepCopy(cardCount: number): {

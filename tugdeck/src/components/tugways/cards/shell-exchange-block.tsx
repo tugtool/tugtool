@@ -8,7 +8,7 @@
  * a right-aligned Share + Copy affordance cluster, and an embedded
  * `TerminalBlock` body for the combined output. The exchange's exit status and
  * duration are NOT drawn inside the block — they ride the Z1B end-state row
- * below it (`DevZ1B participant="shell"`), the same place a Claude turn shows
+ * below it (`SessionZ1B participant="shell"`), the same place a Claude turn shows
  * its OK/Error badge + timing.
  *
  * The block carries no tool NAME in its header: the containing

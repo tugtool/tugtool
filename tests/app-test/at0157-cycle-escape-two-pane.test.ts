@@ -8,7 +8,7 @@
  * Two cases, one principle (cycle-with-surface-open is `[…, cycle, surfaceTrap]`
  * on the engine's mode stack; Escape pops the top entry):
  *
- *   - **Same-pane (hard pin, current behavior):** a dev card cycling with one of
+ *   - **Same-pane (hard pin, current behavior):** a session card cycling with one of
  *     its Z2 status popovers open. The FIRST Escape closes only the popover and
  *     the ring returns to the originating cell — the card is STILL cycling
  *     (at0140 step 6 already pins this half). The SECOND Escape — the new axis —
@@ -35,7 +35,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const ROOT = `${CARD} [data-testid="dev-card"]`;
+const ROOT = `${CARD} [data-testid="session-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
 const ROUTE = `${CARD} button[aria-label="Route"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
@@ -50,7 +50,7 @@ function hasKeyView(selector: string): string {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -67,7 +67,7 @@ function deckShape() {
   };
 }
 
-// `data-cycling` on the dev-card root, or null.
+// `data-cycling` on the session-card root, or null.
 const CYCLING = `(function(){
   var el = document.querySelector(${JSON.stringify(ROOT)});
   return el ? el.getAttribute("data-cycling") : null;
@@ -90,7 +90,7 @@ const POPOVER_OPEN = `(document.querySelector('[data-slot="tug-popover"]') !== n
 
 // Effort-capable model payload. The EFFORT chip disables itself (and drops out
 // of the Tab cycle) when the bound model lacks effort support; a synthetic
-// `bindDevSession` seeds no model, so the documented route → … → Effort → … →
+// `bindSession` seeds no model, so the documented route → … → Effort → … →
 // TIME walk would overshoot TIME by one stop. Seeding restores Effort as a live
 // stop so the Tab count lands on the TIME cell. (Mirrors at0096/at0140.)
 function effortModelCapabilities() {
@@ -126,7 +126,7 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A");
+        await app.bindSession("A");
         await app.awaitEngineReady("A");
         // Seed an effort-capable model so the EFFORT chip is an enabled Tab
         // stop; otherwise the route → … → Effort → … → TIME walk overshoots.

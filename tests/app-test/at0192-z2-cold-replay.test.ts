@@ -181,7 +181,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -212,15 +212,15 @@ describe.skipIf(!SHOULD_RUN)(
         // resolved model). TOKENS shows the last committed turn's signed
         // per-turn window delta.
         const CTX_USED_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="context"] .dev-telemetry-status-context-numerator');
+          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="context"] .session-telemetry-status-context-numerator');
           return el ? (el.textContent || '').trim() : '';
         })()`;
         const CTX_MAX_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="context"] .dev-telemetry-status-context-denominator');
+          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="context"] .session-telemetry-status-context-denominator');
           return el ? (el.textContent || '').trim() : '';
         })()`;
         const TOKENS_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="tokens"] .dev-telemetry-status-value');
+          const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="tokens"] .session-telemetry-status-value');
           return el ? (el.textContent || '').trim() : '';
         })()`;
         const MODEL_JS = `(() => {
@@ -315,15 +315,15 @@ describe.skipIf(!SHOULD_RUN)(
             };
             return {
               hasCard: !!card,
-              picker: q('[data-slot="dev-card-picker"]'),
-              restoring: q('[data-slot="dev-card-restoring"]'),
-              body: q('[data-slot="dev-card"]'),
-              statusBar: q('[data-slot="dev-card-status-bar"]'),
-              statusRow: q('[data-slot="dev-telemetry-status-row"]'),
-              spawnError: q('[data-testid="dev-card-spawn-error-retry"]'),
-              ctxUsed: txt('[data-priority="context"] .dev-telemetry-status-context-numerator'),
-              ctxMax: txt('[data-priority="context"] .dev-telemetry-status-context-denominator'),
-              tokens: txt('[data-priority="tokens"] .dev-telemetry-status-value'),
+              picker: q('[data-slot="session-card-picker"]'),
+              restoring: q('[data-slot="session-card-restoring"]'),
+              body: q('[data-slot="session-card"]'),
+              statusBar: q('[data-slot="session-card-status-bar"]'),
+              statusRow: q('[data-slot="session-telemetry-status-row"]'),
+              spawnError: q('[data-testid="session-card-spawn-error-retry"]'),
+              ctxUsed: txt('[data-priority="context"] .session-telemetry-status-context-numerator'),
+              ctxMax: txt('[data-priority="context"] .session-telemetry-status-context-denominator'),
+              tokens: txt('[data-priority="tokens"] .session-telemetry-status-value'),
               model: txt('[data-slot="model-value"]'),
               cardHtmlHead: card ? (card.outerHTML || '').slice(0, 1200) : null,
             };

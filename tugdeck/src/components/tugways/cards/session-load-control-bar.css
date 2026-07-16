@@ -1,0 +1,188 @@
+/**
+ * session-load-control-bar.css — the dev transcript's Z0 surfaces.
+ *
+ * Two homes now (see the `.tsx` module docstring):
+ *   - `.session-transcript-top-row` — the permanent Z0 row, rendered as the
+ *     list's leading content so it scrolls WITH the transcript. A quiet
+ *     chrome strip (borrows the Z2 status surface) at constant height, with
+ *     the metadata laid out flush-left / flush-right.
+ *   - `.session-load-overlay` — the load progress band + modal scrim, an
+ *     ABSOLUTE overlay over the transcript area. The band itself is owned by
+ *     tug-control-bar.css (surface, scrim, `data-visible` show/hide); this
+ *     file only positions the overlay and lays out the progress row.
+ *
+ * Two tunable knobs live here:
+ *   --tugx-control-bar-track-width  — the progress track length.
+ *   --tugx-control-bar-label-size   — the strip's label text size.
+ */
+
+.session-transcript-top-row,
+.session-load-control-bar-loading {
+  /* ▼▼ TUNE ▼▼ */
+  --tugx-control-bar-track-width: 220px;
+  --tugx-control-bar-label-size: var(--tug-font-size-md);
+  --tugx-control-bar-label-nudge: -1px;
+  /* ▲▲ TUNE ▲▲ */
+}
+
+/* ---- Permanent Z0 row (the list's leading content) ---- */
+
+/* A quiet chrome strip that reads as the transcript's first row: a distinct
+   Z2-borrowed surface, a constant height (never changes, so the content
+   never hops), and a divider below it from the turns. It scrolls with the
+   content — off-screen when scrolled down, the first thing at the top. */
+.session-transcript-top-row {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  /* Full-bleed, positioned to match the load overlay exactly. The scroll
+     container insets its content by `--tug-space-md` (and reserves a
+     scrollbar gutter, which is nothing on macOS overlay scrollbars); cancel
+     that inset with a negative inline margin so the strip's surface spans
+     edge-to-edge like the absolute overlay band, then re-inset the text by
+     the SAME `md` the band uses — so the resting row and the loading band
+     place their text at the identical x, and the heights already match
+     (both 2.5rem). */
+  margin-inline: calc(-1 * var(--tug-space-md));
+  padding-inline: var(--tug-space-md);
+  /* The list's top breathing room is zeroed (session-card.css) so this strip is
+     flush at the top; restore that breathing BELOW the strip instead, so the
+     first turn isn't cramped against the divider. */
+  margin-block-end: var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  font-size: 0.85em;
+  user-select: none;
+}
+
+/* Gutter cap — fills the reserved scrollbar gutter with the Z0 surface when
+   the transcript has no scrollbar, so the resting strip reads edge-to-edge.
+   The strip itself lives inside the scroll container's clip and can't paint
+   into the gutter (the gutter sits outside the padding box); this cap is on
+   the transcript root, OUTSIDE that clip. It shows only when the host marks
+   `data-z0-fill` — set exactly when no scrollbar is present, with the measured
+   gutter width in `--tugx-z0-gutter` (see session-card-transcript.tsx). With a
+   scrollbar present the attribute is absent and the scrollbar fills the gutter
+   as before. Same surface + bottom border as the strip; height matches its
+   resting `min-height`. A hair of overlap onto the strip is invisible (same
+   color). [L06] appearance via CSS keyed off a DOM attribute. */
+.session-card-transcript[data-z0-fill]::after {
+  content: "";
+  position: absolute;
+  /* Match the strip exactly: it is `box-sizing: border-box; min-height:
+     2.5rem` with the divider inside that box, so its bottom border sits at
+     y=2.5rem. Border-box here lands this cap's bottom border at the same y —
+     content-box would push it 1px lower and leave a step at the seam. */
+  box-sizing: border-box;
+  top: 0;
+  right: 0;
+  width: var(--tugx-z0-gutter, 0);
+  height: 2.5rem;
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  pointer-events: none;
+}
+
+/* The metadata row spans the strip: session-created flush left, the turns
+   status + load action flush right. */
+.session-load-control-bar-metadata {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-md);
+  width: 100%;
+}
+
+/* The two ends of the metadata row; each keeps its own items tight. The
+   left collapses to nothing when the created anchor is unknown (a brand-new
+   session), leaving the right end flush-right via `space-between`. */
+.session-load-control-bar-meta-left,
+.session-load-control-bar-meta-right {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* The "·" between the turns readout and the load action. */
+.session-load-control-bar-meta-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- Load overlay (absolute, over the transcript area) ---- */
+
+/* The overlay layers the load band + its region scrim over the transcript
+   without taking layout space, so locking-while-loading never shifts the
+   content. The wrapper is inert to pointers (the band re-enables its own;
+   the region scrim, owned by tug-control-bar.css, handles the lock below). */
+.session-load-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.session-load-overlay .tug-control-bar {
+  pointer-events: auto;
+}
+
+/* The loading row spans the band; the progress indicator (below) centers its
+   own content. Hidden until the band's `data-mode` selects it. */
+.session-load-control-bar-loading {
+  display: none;
+}
+
+.tug-control-bar[data-mode="loading"] .session-load-control-bar-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  width: 100%;
+}
+
+/* The bar-variant indicator is `width: 100%` (its own CSS), so it fills the
+   row; center its [label][track][readout] group within that width instead of
+   leaving it at the leading edge. (Label muting is owned by the `proposal`
+   TugLabel emphasis, so no opacity here.) */
+.session-load-control-bar-bar {
+  justify-content: center;
+}
+
+/* The bar variant renders its track in the glyph slot — fix it to the tuned
+   track width. The selector must out-specify the indicator's own
+   `.tug-progress-indicator[data-variant="bar"] .tug-progress-indicator-glyph`
+   (which sets `flex: 1 1 auto; width: 100%`); the extra ancestor + the
+   `[data-variant]` match push this past it. */
+.tug-control-bar .session-load-control-bar-bar[data-variant="bar"] .tug-progress-indicator-glyph {
+  flex: 0 0 var(--tugx-control-bar-track-width);
+  width: var(--tugx-control-bar-track-width);
+}
+
+/* Strip labels read at the tuned size; the `proposal` emphasis still supplies
+   the small-caps / weight / muted color. Scoped to beat the emphasis class's
+   own font-size (two classes vs one). `line-height: 1` centers the small-caps
+   optically — at the default 1.4 the caps (no ascenders/descenders) sit low
+   in the line-box and read as bottom-heavy. Applies in both Z0 homes. */
+.session-transcript-top-row .session-load-control-bar-label,
+.session-transcript-top-row .session-load-control-bar-actions-label,
+.tug-control-bar .session-load-control-bar-label,
+.tug-control-bar .session-load-control-bar-actions-label,
+.tug-control-bar .tug-progress-indicator-label-active {
+  font-size: calc(var(--tugx-control-bar-label-size) + 1px);
+  line-height: 1;
+  /* `.tug-label` aligns text to flex-start; center it, then nudge up by the
+     tunable amount to optically center the small-caps (which sit low on the
+     baseline within the line-box). */
+  align-items: center;
+  position: relative;
+  top: var(--tugx-control-bar-label-nudge);
+}
+
+/* The "Load N" control rides a hair smaller than its `sm` default (12px → the
+   xs-button 11px) so it sits in scale with the now-smaller strip labels around
+   it. Two classes beat the button's own single-class size font-size. */
+.session-load-control-bar-meta-right .tug-push-button {
+  font-size: var(--tug-button-xs-font-size);
+}

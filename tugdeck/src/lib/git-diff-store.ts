@@ -175,7 +175,7 @@ export interface GitDiffScope {
  * A discriminated diff request ([P19], Spec S08). Two flavors:
  *
  * - `head` — `git diff HEAD [-- <paths…>]` in the project at `root`
- *   (sessions / unattributed / the dev card's `/diff`). Equivalent to the
+ *   (sessions / unattributed / the session card's `/diff`). Equivalent to the
  *   legacy {@link GitDiffScope}.
  * - `range` — the dash view: committed rounds past `base` **plus** worktree
  *   dirt, resolved as `merge-base(base, branch)` diffed against the worktree
@@ -226,7 +226,7 @@ function isRangeDescriptor(
 
 /**
  * Store-instance counter baked into every `requestId` so concurrent
- * requests from different stores (a dev card's `/diff` and the changeset
+ * requests from different stores (a session card's `/diff` and the changeset
  * card's scoped diff) can never correlate to each other's responses —
  * the GIT_DIFF response is a broadcast every client sees.
  */

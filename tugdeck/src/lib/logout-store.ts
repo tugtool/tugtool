@@ -2,7 +2,7 @@
  * logout-store — a one-shot "log out was requested" signal ([L02]).
  *
  * Logout is app-level (it stops every session and reopens TugSetup), so it
- * can't hang off a Dev card the way per-card slash surfaces do. Both triggers —
+ * can't hang off a Session card the way per-card slash surfaces do. Both triggers —
  * the File-menu "Log out…" control action and the `/logout` slash command —
  * call {@link requestLogout}, which bumps a monotonic nonce; the app-level
  * `TugLogout` orchestrator watches it and runs the confirm → logout flow. A

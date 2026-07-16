@@ -368,7 +368,7 @@ pub struct ProjectChangeset {
 /// the CHANGESET_ALL feed (0x24) — one frame carrying every open project.
 ///
 /// Composed by the aggregate feed over the current `WorkspaceRegistry` entries
-/// (one per open dev card, plus the bootstrap project); mirrored in
+/// (one per open session card, plus the bootstrap project); mirrored in
 /// `tugdeck/src/lib/changeset-types.ts` and guarded by the shared golden
 /// fixture `tugdeck/src/__tests__/fixtures/workspaces-changeset-snapshot.golden.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -7,7 +7,7 @@
  * blurbs, reference labels, faux turn frames, prose sizing, the group
  * spacing between quiet lines, and `.gtr-current-*`, which replicates the
  * CURRENT transcript treatment (the wake-trigger line) so the "before" is
- * faithful without importing the whole `dev-card.css` stylesheet.
+ * faithful without importing the whole `session-card.css` stylesheet.
  *
  * Tokens only — every value resolves to a `--tug7-*` semantic token or a
  * `--tug-*` scale token in one hop.
@@ -88,7 +88,7 @@
 }
 
 /* ===========================================================================
-   CURRENT background line — replicates `.dev-card-transcript-wake-trigger`
+   CURRENT background line — replicates `.session-card-transcript-wake-trigger`
    as it was BEFORE this rollout (opacity-carried de-emphasis + one trailing
    rule) so the reference zone shows what the Quiet line replaced.
    ======================================================================== */

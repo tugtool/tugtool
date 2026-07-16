@@ -4,7 +4,7 @@
  * elements at each `U+FFFC` position.
  *
  * Consumed by the transcript user-message row (`UserMessageCell` in
- * `dev-card-transcript.tsx`). Each atom chip is built via the shared
+ * `session-card-transcript.tsx`). Each atom chip is built via the shared
  * `bakeAtomChipDataUri` helper, so the transcript's chips and the
  * editor's atom widgets are pixel-identical: same bake, same theme
  * tokens, same baseline offset.

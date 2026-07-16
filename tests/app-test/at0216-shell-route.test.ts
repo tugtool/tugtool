@@ -13,7 +13,7 @@
  *      chip ([P10]) and the following `pwd` proves the shell session is
  *      stateful across exchanges.
  *   2. **Non-context styling hook** — every shell row renders inside
- *      `[data-slot="dev-transcript-shell-row"]` with
+ *      `[data-slot="session-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
  *      visual-distinctness anchor).
  *   3. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
@@ -53,7 +53,7 @@ const ROUTE_TRIGGER = `${TOOLBAR} button[aria-label="Route"]`;
 // Width-stabilized trigger holds a hidden alternate label too — read the
 // active variant for the live route label.
 const ROUTE_LABEL = `${ROUTE_TRIGGER} [data-tug-stable="active"]`;
-const SHELL_ROWS = `${CARD} [data-slot="dev-transcript-shell-row"]`;
+const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
 const ENTRIES = `${CARD} [data-slot="tug-transcript-entry"]`;
 const CWD_CHIP = `${CARD} [data-slot="cwd-chip"]`;
 
@@ -141,7 +141,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev A", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session A", closable: true }],
     panes: [
       {
         id: "p1",
@@ -175,7 +175,7 @@ async function shellRowFacts(
     `Array.from(document.querySelectorAll(${JSON.stringify(SHELL_ROWS)})).map(function(row){
        var cmd = row.querySelector(".shell-exchange-command-text");
        var out = row.querySelector(".tugx-term-content");
-       var foot = row.querySelector('[data-slot="dev-z1b-end-state"]');
+       var foot = row.querySelector('[data-slot="session-z1b-end-state"]');
        return {
          command: cmd ? cmd.textContent.trim() : "",
          output: out ? out.textContent : "",
@@ -202,7 +202,7 @@ async function execAndSettle(
     `(function(){
       var rows = document.querySelectorAll(${JSON.stringify(SHELL_ROWS)});
       if (rows.length !== ${expectedIndex + 1}) return false;
-      var foot = rows[${expectedIndex}].querySelector('[data-slot="dev-z1b-end-state"]');
+      var foot = rows[${expectedIndex}].querySelector('[data-slot="session-z1b-end-state"]');
       return foot !== null && foot.textContent.indexOf("exit") !== -1;
     })()`,
     { timeoutMs: 20_000 },
@@ -222,13 +222,13 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          await app.bindDevSession("A", { tugSessionId: SID, projectDir });
+          await app.bindSession("A", { tugSessionId: SID, projectDir });
           await app.awaitEngineReady("A");
 
           // --- A committed Claude turn, mirroring the reload fixture. ---
-          await app.driveDevSession("A", { op: "send", text: "hello" });
+          await app.driveSession("A", { op: "send", text: "hello" });
           const frame = (decoded: Record<string, unknown>) =>
-            app.driveDevSession("A", {
+            app.driveSession("A", {
               op: "ingestFrame",
               feedId: FEED_CODE_OUTPUT,
               decoded: { tug_session_id: SID, ...decoded },
@@ -292,7 +292,7 @@ describe.skipIf(!SHOULD_RUN)(
           // collapses the output. The first disclosure in the card belongs to
           // the first shell row (the `hello` Claude turn ran no tools): a
           // click unmounts its terminal body, a second click brings it back.
-          const FIRST_DISCLOSURE = `${CARD} [data-slot="dev-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]`;
+          const FIRST_DISCLOSURE = `${CARD} [data-slot="session-transcript-shell-row"] [data-slot="tool-call-header-disclosure"]`;
           const firstRowTermCount = () =>
             app.evalJS<number>(
               `document.querySelectorAll(${JSON.stringify(SHELL_ROWS)})[0]

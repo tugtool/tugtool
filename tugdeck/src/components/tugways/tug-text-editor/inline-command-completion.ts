@@ -3,7 +3,7 @@
  * inline ghost completion.
  *
  * A slash command runs only when it leads the message. Typed anywhere else
- * (`hello /rewi…`) it is plain text that will never run, so the Dev card does
+ * (`hello /rewi…`) it is plain text that will never run, so the Session card does
  * not open the full descriptive popup there. It instead mirrors the terminal:
  * a single muted **ghost suffix** of the best-matching command, painted after
  * the caret, that the user accepts with Tab or → to fill in as ordinary text —

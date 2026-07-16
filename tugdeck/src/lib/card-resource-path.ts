@@ -3,11 +3,11 @@
  * bound to, for the Cmd-click title path menu.
  *
  * Keyed purely on `cardId`, so the title bar needs no `componentId`
- * plumbing: a Dev card exposes its project directory through the
+ * plumbing: a Session card exposes its project directory through the
  * session-binding store; a Text card exposes its edited file through
  * the open-file registry. The first that yields a path wins (a card is
  * only ever one kind), and the kind tags whether the leaf segment is a
- * directory (Dev card project) or a file (Text card).
+ * directory (Session card project) or a file (Text card).
  *
  * @module lib/card-resource-path
  */
@@ -18,7 +18,7 @@ import { getOpenTextCard } from "./text-card-open-registry";
 export interface CardResourcePath {
   /** Absolute path to the bound resource. */
   path: string;
-  /** Whether the leaf is a directory (Dev card) or a file (Text card). */
+  /** Whether the leaf is a directory (Session card) or a file (Text card). */
   kind: "dir" | "file";
 }
 

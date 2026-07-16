@@ -37,7 +37,7 @@ import {
   dispatchToolCallState,
   registerToolBlock,
   resolveToolBlock,
-} from "../../dev-assistant-renderer-dispatch";
+} from "../../session-assistant-renderer-dispatch";
 import {
   AGENT_MAX_DEPTH,
   shouldCollapseAgentDepth,

@@ -8,7 +8,7 @@
  * bindings do not.
  *
  * Connection + lifecycle singletons are mocked the same way
- * `session-session-restore-transport-settled.test.ts` does — those
+ * `session-restore-transport-settled.test.ts` does — those
  * singletons aren't initialized in the test environment, but
  * `cardServicesStore._construct` early-returns null without them.
  *
@@ -66,7 +66,7 @@ afterAll(() => setTugbankClient(null));
 import * as actualSettingsApi from "@/settings-api";
 mock.module("@/settings-api", () => ({
   ...actualSettingsApi,
-  putDevRecentProjects: (_paths: string[]) => {},
+  putSessionRecentProjects: (_paths: string[]) => {},
 }));
 
 // Imports must come AFTER the mock.module calls so the modules pick
@@ -167,7 +167,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-resume";
     const tugSessionId = "sess-r1c-resume";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "session" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -200,7 +200,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-new";
     const tugSessionId = "sess-r1c-new";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "session" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -230,7 +230,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const cardId = "r1c-card-rebind";
     const tugSessionId = "sess-r1c-rebind";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "session" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager
@@ -248,7 +248,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
 
     // Re-add and re-bind. The store reconstructs services and runs a
     // second dispatch.
-    fakeDeck.setCards([{ id: cardId, componentId: "dev" }]);
+    fakeDeck.setCards([{ id: cardId, componentId: "session" }]);
     bindResume(cardId, tugSessionId);
     expect(cardServicesStore.getServices(cardId)).not.toBeNull();
 
@@ -269,7 +269,7 @@ describe("cardServicesStore._construct — request_replay dispatch ([D12])", () 
     const sessionA = "sess-r1c-A";
     const sessionB = "sess-r1c-B";
 
-    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "dev" }]);
+    const fakeDeck = createFakeDeck([{ id: cardId, componentId: "session" }]);
     cardServicesStore.attachDeckManager(
       fakeDeck as unknown as Parameters<
         typeof cardServicesStore.attachDeckManager

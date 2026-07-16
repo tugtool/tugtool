@@ -1,5 +1,5 @@
 /**
- * effort.ts — pure helpers for the dev-card reasoning-effort chip.
+ * effort.ts — pure helpers for the session-card reasoning-effort chip.
  *
  * No React, no DOM, no I/O — every export is a pure function or constant, so
  * the level ordering and label logic is unit-testable without a store or a
@@ -208,7 +208,7 @@ export const EFFORT_DOMAIN = "dev.effort";
 /**
  * tugbank domain/key for the *global* default effort level — the level a
  * brand-new card (one with nothing persisted under {@link EFFORT_DOMAIN})
- * adopts on mount. Set from the Settings card's "Dev Card" tab; distinct from
+ * adopts on mount. Set from the Settings card's "Session Card" tab; distinct from
  * the per-card domain so changing the global default never disturbs an open
  * card that already carries its own remembered level. Mirrors the
  * permission-mode default domain.

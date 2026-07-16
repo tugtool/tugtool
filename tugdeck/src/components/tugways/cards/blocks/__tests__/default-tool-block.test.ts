@@ -27,8 +27,8 @@ import {
   DefaultToolBlock,
   pickOutputBody,
 } from "../default-tool-block";
-import { dispatchToolCallState } from "../../dev-assistant-renderer-dispatch";
-import { defaultIntentToolNames } from "../../dev-tool-visibility-policy";
+import { dispatchToolCallState } from "../../session-assistant-renderer-dispatch";
+import { defaultIntentToolNames } from "../../session-tool-visibility-policy";
 import type { ToolUseMessage } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ describe("dispatch → DefaultToolBlock", () => {
       detail: "ZzzUnknown",
     });
     // The caution is also threaded onto the wrapper's props so the
-    // chrome can paint the inline `DevCautionBadge`.
+    // chrome can paint the inline `SessionCautionBadge`.
     expect(result.props.caution).toEqual({
       reason: "unknown_tool",
       detail: "ZzzUnknown",

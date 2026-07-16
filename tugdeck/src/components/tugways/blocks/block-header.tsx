@@ -48,13 +48,13 @@ import "./block-header.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
-import { DevCautionBadge } from "@/components/tugways/chrome/dev-caution-badge";
+import { SessionCautionBadge } from "@/components/tugways/chrome/session-caution-badge";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import {
   useLiveTick,
   formatTimeMinutesSeconds,
-} from "@/components/tugways/cards/dev-card-telemetry-renderers";
+} from "@/components/tugways/cards/session-card-telemetry-renderers";
 import { useToolCallMeta } from "./collapse-context";
 
 /**
@@ -379,7 +379,7 @@ export const BlockHeader = React.forwardRef<
           emits nothing on the wire until it returns), frozen to the
           recorded wall time once it lands. See {@link HeaderTiming}. */}
       <HeaderTiming phase={phase} />
-      {caution !== undefined ? <DevCautionBadge caution={caution} /> : null}
+      {caution !== undefined ? <SessionCautionBadge caution={caution} /> : null}
       <span className="tool-call-header-actions">
         {/* Body-specific, expanded-only controls (Find, view-mode,
             expand-all) portal into this slot, sitting LEFT of the

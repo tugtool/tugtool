@@ -8,7 +8,7 @@
  * focus-language archetypes inside the trap: Cancel / Submit (and Back / Next on
  * multi-question payloads) are leaf buttons; the current question's options are a
  * single item-group stop (Tab to the group, arrows move a cursor, Space/Enter
- * pick). The old full-width `dev-question-dialog-scope` dead-zone is gone.
+ * pick). The old full-width `session-question-dialog-scope` dead-zone is gone.
  *
  * Driven with a single MULTI-select question (no auto-advance, so the sequence
  * is deterministic): the options group seeds as the key view; ArrowDown moves
@@ -29,19 +29,19 @@ const SID = "at0146-session";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
-const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
-const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
-const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
+const CARD_ROOT = `${CARD} [data-slot="session-card"]`;
+const DIALOG = `${CARD} [data-slot="session-question-dialog"]`;
+const SUBMIT = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-primary-action`;
 // The current question's options are a flush TugListView authored into the
 // trap as one item-group stop: the list holds the key view; the movement
 // cursor (`data-key-cursor`) lands on a `.tug-list-view-cell`; the committed
 // selection (`data-selected`) lands on the `TugListRow` inside it. Scoped to
 // the options-list class so it never matches the multi-question RAIL (also a
 // TugListView).
-const OPTIONS = `${DIALOG} .dev-question-dialog-options-list`;
+const OPTIONS = `${DIALOG} .session-question-dialog-options-list`;
 const OPTION_CELLS = `${OPTIONS} .tug-list-view-cell`;
 const OPTION_ROWS = `${OPTIONS} [data-slot="tug-list-row"]`;
-const OLD_DEADZONE = `${CARD} [data-slot="dev-question-dialog-scope"]`;
+const OLD_DEADZONE = `${CARD} [data-slot="session-question-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 // Single- and multi-select options are the SAME flush TugListView now (the
@@ -49,12 +49,12 @@ const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 // alias the list-view group + its cells; only the leading glyph (radio dot vs
 // checkbox) differs. The action row carries Cancel (outlined-danger) + Submit
 // (primary). All controls now share one top action bar.
-const CANCEL = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-danger`;
+const CANCEL = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-outlined-danger`;
 const RADIO = OPTIONS;
 const RADIO_ITEMS = OPTION_CELLS;
 // Wizard-nav buttons (multi-question): Back then Next, both outlined-action,
 // sharing the top action bar with Cancel + Submit.
-const NAV_BUTTONS = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
+const NAV_BUTTONS = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-outlined-action`;
 
 function controlRequestForward(): Record<string, unknown> {
   return {
@@ -155,12 +155,12 @@ async function ingestQuestion(
   app: App,
   forward: Record<string, unknown>,
 ): Promise<void> {
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: toolUseFor(forward),
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: forward,
@@ -210,7 +210,7 @@ function nthHasAttr(
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -240,11 +240,11 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        await app.driveDevSession("A", { op: "send", text: "ask me something" });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", { op: "send", text: "ask me something" });
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {
@@ -340,10 +340,10 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        await app.driveDevSession("A", { op: "send", text: "ask me something" });
+        await app.driveSession("A", { op: "send", text: "ask me something" });
         await ingestQuestion(app, controlRequestForwardSingle());
 
         await app.waitForCondition<boolean>(
@@ -355,7 +355,7 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         // (1) On open a single-select question seeds the key view on the
         //     OPTIONS group — answering is the task — with the cursor on the
         //     first option (`seedFocusKey` → QUESTION_OPTIONS_ORDER, see
-        //     dev-question-dialog.tsx). The seam below starts from there.
+        //     session-question-dialog.tsx). The seam below starts from there.
         await app.waitForCondition<boolean>(
           `(function(){var el=document.querySelector(${JSON.stringify(OPTIONS)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
           { timeoutMs: 4000 },
@@ -439,9 +439,9 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
-        await app.driveDevSession("A", { op: "send", text: "ask me something" });
+        await app.driveSession("A", { op: "send", text: "ask me something" });
         await ingestQuestion(app, controlRequestForwardMultiQuestion());
 
         await app.waitForCondition<boolean>(
@@ -500,9 +500,9 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
-        await app.driveDevSession("A", { op: "send", text: "ask me something" });
+        await app.driveSession("A", { op: "send", text: "ask me something" });
         await ingestQuestion(app, controlRequestForwardMultiQuestion());
 
         await app.waitForCondition<boolean>(

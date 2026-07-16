@@ -228,7 +228,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.nativeClickAtElement(paneCloseButtonSelector("p1"));
 
           // Per-card policy: a single-tab pane confirms on close ONLY when its card
-          // type opts in (`confirmClose: true`, e.g. the Dev card). `gallery-input`
+          // type opts in (`confirmClose: true`, e.g. the Session card). `gallery-input`
           // does not, so a plain X click closes the pane immediately — no popover.
           // (Multi-tab panes always confirm — see case 2.)
           await app.waitForCondition<boolean>(

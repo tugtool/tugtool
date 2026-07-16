@@ -8,7 +8,7 @@
  * scroll position, selection, and any DOM-resident state stay intact ([L26],
  * the complement to [L23]).
  *
- * The canonical L26 regression here (per `dev-card-transcript.tsx`) is the
+ * The canonical L26 regression here (per `session-card-transcript.tsx`) is the
  * cell wrapper unmounting on a transcript mutation, which "silently clamped
  * `scrollTop` to 0" and discarded selection. So this test asserts the
  * user-visible guarantees the plan names: a text selection in a surviving
@@ -33,14 +33,14 @@ const FEED_CODE_OUTPUT = 0x40;
 const TURNS = 8;
 
 const CARD = '[data-card-id="A"]';
-const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
+const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 // The scrollable element is the TugListView viewport, keyed by its
 // `scrollKey` — NOT the `data-slot` wrapper around it.
-const TRANSCRIPT = `${CARD} [data-tug-scroll-key="dev-card-transcript"]`;
+const TRANSCRIPT = `${CARD} [data-tug-scroll-key="session-card-transcript"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -63,12 +63,12 @@ async function buildTurn(app: App, i: number): Promise<void> {
   const msgId = `m-${i}`;
   const reply = `reply ${i} — ${"lorem ipsum dolor sit amet ".repeat(12)}`;
   const frame = (decoded: Record<string, unknown>) =>
-    app.driveDevSession("A", {
+    app.driveSession("A", {
       op: "ingestFrame",
       feedId: FEED_CODE_OUTPUT,
       decoded: { tug_session_id: SID, ...decoded },
     });
-  await app.driveDevSession("A", { op: "send", text: `prompt number ${i}` });
+  await app.driveSession("A", { op: "send", text: `prompt number ${i}` });
   await frame({ type: "prompt_anchor", promptUuid: uuid });
   await frame({ type: "content_block_start", msg_id: msgId, block_index: 0, kind: "text" });
   await frame({ type: "assistant_text", msg_id: msgId, block_index: 0, text: reply, is_partial: false });
@@ -86,7 +86,7 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         for (let i = 1; i <= TURNS; i += 1) await buildTurn(app, i);
@@ -130,7 +130,7 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
 
         // Apply a conversation rewind to the LAST turn — drops only turn 8,
         // keeps turns 1–7. Driven by the ack (the truncation is store-driven).
-        await app.driveDevSession("A", {
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {
@@ -170,7 +170,7 @@ describe.skipIf(!SHOULD_RUN)("AT0098: /rewind local truncation preserves survivo
         // remount collapses the selection.
         expect(after.selText).toContain("prompt number 1");
         // Scroll is healthy (not clamped to 0 — the documented remount
-        // regression in dev-card-transcript.tsx). It settles at the new bottom
+        // regression in session-card-transcript.tsx). It settles at the new bottom
         // because the list's `followBottom` re-anchors to the retained tip
         // after the drop; that is scroll POLICY, distinct from the L26
         // no-remount guarantee the selection above pins.

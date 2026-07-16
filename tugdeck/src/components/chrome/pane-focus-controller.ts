@@ -155,7 +155,7 @@ export function usePaneFocusController(
     // placement belongs to `transferFocusForActivation` — the browser's
     // mousedown focus default must not clobber it: on card content with no
     // focusable ancestor under the click, WebKit clears focus to body,
-    // which strips the caret the transfer just placed (e.g. the dev card's
+    // which strips the caret the transfer just placed (e.g. the session card's
     // prompt entry after a click on transcript prose). Matches the Mac
     // first-click-activates convention: the click that brings a background
     // card forward activates it and does not also place a caret or start a

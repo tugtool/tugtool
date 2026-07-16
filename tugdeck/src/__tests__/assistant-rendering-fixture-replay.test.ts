@@ -5,7 +5,7 @@
  * ## Why this is a `.ts`, not the `.tsx` Spec S06 describes
  *
  * Spec S06 ([#s06-fixture-replay]) was written when fake-DOM unit
- * tests were possible: it describes mounting a Dev card per fixture
+ * tests were possible: it describes mounting a Session card per fixture
  * and asserting against the *rendered DOM* ("no `[object Object]`",
  * "no raw JSON bleed", "exactly one `-tool-block` element"). Since
  * then `happy-dom` was deleted and the project's testing policy is
@@ -49,7 +49,7 @@ import {
   dispatchToolCallState,
   registerToolBlock,
   resolveToolBlock,
-} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+} from "@/components/tugways/cards/session-assistant-renderer-dispatch";
 import { BashToolBlock } from "@/components/tugways/cards/blocks/bash-tool-block";
 import { ReadToolBlock } from "@/components/tugways/cards/blocks/read-tool-block";
 import { EditToolBlock } from "@/components/tugways/cards/blocks/edit-tool-block";
@@ -113,7 +113,7 @@ function toolCallFromEvent(ev: Record<string, unknown>): ToolUseMessage {
 
 // ---------------------------------------------------------------------------
 // Hermetic registry — bun shares module state across test files, and
-// `dev-assistant-renderer-dispatch.test.ts` resets the registry in its
+// `session-assistant-renderer-dispatch.test.ts` resets the registry in its
 // own `beforeEach`. Re-establish the real registrations so this file's
 // routing assertions are deterministic regardless of file order.
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ describe("assistant-rendering fixture replay — shipped wrapper coverage", () =
       detail: "ZzzSyntheticUnknownTool",
     });
     // The caution is threaded onto the wrapper props so the chrome
-    // paints the inline `DevCautionBadge`.
+    // paints the inline `SessionCautionBadge`.
     expect(result.props.caution).toEqual(result.caution);
   });
 });

@@ -69,7 +69,7 @@ export interface SessionMetadataSnapshot {
   /**
    * Claude Code's stream-json format version (`system_metadata.version`,
    * e.g. `"2.1.105"`). `null` before the metadata event lands. Read by
-   * the Dev card's drift-caution surface to compare against the pinned
+   * the Session card's drift-caution surface to compare against the pinned
    * catalog version.
    */
   version: string | null;
@@ -602,7 +602,7 @@ export class SessionMetadataStore {
    * payload as if it had landed on the feed, bypassing the connection. The
    * effort-chip app-test drives the Z4B chip with this via the `__tug` surface
    * (`ingestSessionMetadata`) — the chip reads its own `SESSION_SIDEBAND`
-   * FeedStore, which the `driveDevSession`/`ingestFrame` (CodeSessionStore)
+   * FeedStore, which the `driveSession`/`ingestFrame` (CodeSessionStore)
    * path does not reach.
    *
    * @internal — reached only through the DEV-gated `window.__tug` test surface.
@@ -618,7 +618,7 @@ export class SessionMetadataStore {
    * `--permission-mode` flag and forwards `set_permission_mode` to claude
    * — but claude answers with a `control_response`, not a fresh
    * `system_metadata`, so there is no round-trip to await. The terminal
-   * updates its mode banner optimistically and so do we: the dev card's
+   * updates its mode banner optimistically and so do we: the session card's
    * `Shift+Tab` / `/permissions` paths call this right after sending the
    * frame so the Z4B chip reflects the change immediately.
    *

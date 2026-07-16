@@ -2,9 +2,9 @@
  * at0099-resume-command.test.ts — the `/resume` focused sessions overlay
  * ([#step-8]).
  *
- * With a live, bound dev session (a turn driven via `driveDevSession` — no live
+ * With a live, bound dev session (a turn driven via `driveSession` — no live
  * claude), typing `/resume` and submitting opens a CARD-SCOPED sessions overlay
- * — distinct from the full-card `DevProjectPicker`: it shows the sessions list
+ * — distinct from the full-card `SessionProjectPicker`: it shows the sessions list
  * but NOT the project-path entry / recents chrome (it's a same-project
  * live-session rebind). Cancel dismisses the overlay and leaves the live
  * session intact — the card is not closed and its transcript survives.
@@ -30,9 +30,9 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
-const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
-const SHEET_SESSIONS = `${SHEET} .dev-card-picker-sessions-list`;
-const SHEET_RECENTS = `${SHEET} .dev-card-picker-recents-host`;
+const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
+const SHEET_SESSIONS = `${SHEET} .session-card-picker-sessions-list`;
+const SHEET_RECENTS = `${SHEET} .session-card-picker-recents-host`;
 const RESUME_CANCEL = `${SHEET} [data-testid="resume-cancel"]`;
 
 let projectDir = "";
@@ -50,7 +50,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -78,17 +78,17 @@ describe.skipIf(!SHOULD_RUN)("AT0099: /resume focused sessions overlay", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID, projectDir });
+        await app.bindSession("A", { tugSessionId: SID, projectDir });
         await app.awaitEngineReady("A");
 
         // Drive one committed turn so the card is a live, non-empty session.
         const frame = (decoded: Record<string, unknown>) =>
-          app.driveDevSession("A", {
+          app.driveSession("A", {
             op: "ingestFrame",
             feedId: FEED_CODE_OUTPUT,
             decoded: { tug_session_id: SID, ...decoded },
           });
-        await app.driveDevSession("A", { op: "send", text: "hello there" });
+        await app.driveSession("A", { op: "send", text: "hello there" });
         await frame({ type: "prompt_anchor", promptUuid: "uuid-1" });
         await frame({ type: "content_block_start", msg_id: "m1", block_index: 0, kind: "text" });
         await frame({ type: "assistant_text", msg_id: "m1", block_index: 0, text: "hi", is_partial: false });

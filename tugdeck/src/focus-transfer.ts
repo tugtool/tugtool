@@ -315,7 +315,7 @@ export function resolveBagFocus(
   if (focus === undefined || focus === null || focus.kind === "none") {
     // No saved focus. Default-focus walk inside the card root for
     // DOM-authority cards; engine resolution for engine-bearing
-    // cards — a content-owning + engine card (a dev card) has one
+    // cards — a content-owning + engine card (a session card) has one
     // text-entry surface, so "no saved focus" still resolves to the
     // engine.
     const card = store.getSnapshot().cards.find((c) => c.id === cardId);
@@ -875,7 +875,7 @@ export function transferFocusAfterMove(
  *   3. Single-channel dispatch via {@link applyBagFocus} with
  *      `preventScroll: true` ([L23] — preserve user-visible scroll
  *      across cmd-tab return; the default `focus()` semantics scroll
- *      the focused element into view, which in a dev-card
+ *      the focused element into view, which in a session-card
  *      (transcript above + editor below) drags the transcript
  *      downward whenever the editor re-claims focus on cmd-tab
  *      return).

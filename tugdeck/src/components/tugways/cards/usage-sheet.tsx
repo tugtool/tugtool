@@ -43,7 +43,7 @@ import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   formatDurationMs,
   formatTokensCaps,
-} from "@/components/tugways/cards/dev-card-telemetry-renderers";
+} from "@/components/tugways/cards/session-card-telemetry-renderers";
 import type { UsageStore } from "@/lib/usage-store";
 import type {
   UsageData,

@@ -12,14 +12,14 @@ import type { App } from "../_harness";
 import type { SeededCorpusSession } from "./resolve";
 import type { SelectedSnapshot } from "./harvest";
 
-export const PICKER_FORM = ".dev-card-picker-form";
-export const RECENTS = '[data-tug-focus-key="dev-picker-cycle:1"]';
-export const OPEN = '[data-tug-focus-key="dev-picker-cycle:5"]';
+export const PICKER_FORM = ".session-card-picker-form";
+export const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
+export const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
 export const USER_ROWS =
-  '[data-card-id="A"] [data-testid="dev-card-transcript-user-body"]';
+  '[data-card-id="A"] [data-testid="session-card-transcript-user-body"]';
 export const TRANSCRIPT =
-  '[data-card-id="A"] [data-testid="dev-card-transcript"]';
-export const RESTORING = '[data-testid="dev-card-restoring"]';
+  '[data-card-id="A"] [data-testid="session-card-transcript"]';
+export const RESTORING = '[data-testid="session-card-restoring"]';
 
 export const rowSel = (id: string): string => `[data-session-id="${id}"]`;
 
@@ -57,7 +57,7 @@ export function budgetsFor(snap: SelectedSnapshot): ClassBudgets {
 
 export function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -93,7 +93,7 @@ export function clickElement(app: App, selector: string): Promise<boolean> {
 // affordance leg had been probing the retired testid — and so counting a
 // visible determinate progress bar as a blank screen — ever since.
 export const PROGRESS_STRIP =
-  '[data-slot="dev-load-overlay"] .tug-control-bar[data-visible="true"]';
+  '[data-slot="session-load-overlay"] .tug-control-bar[data-visible="true"]';
 
 export interface UiSample {
   restoring: boolean;
@@ -311,12 +311,12 @@ export async function openSeededSession(
   expect(
     await clickElement(
       app,
-      `.dev-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
+      `.session-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
     ),
   ).toBe(true);
   await app.waitForCondition<boolean>(
     `(function(){
-      var el = document.querySelector(".dev-card-picker-form input");
+      var el = document.querySelector(".session-card-picker-form input");
       return el !== null && el.value === ${JSON.stringify(seeded.projectDir)};
     })()`,
     { timeoutMs: 8000 },

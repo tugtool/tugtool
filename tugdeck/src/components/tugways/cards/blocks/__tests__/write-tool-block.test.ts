@@ -27,7 +27,7 @@ import {
   narrowWriteInput,
   narrowWriteStructured,
 } from "../write-tool-block";
-import { BESPOKE_FACTORY_BY_NAME } from "../../dev-assistant-renderer-registrations";
+import { BESPOKE_FACTORY_BY_NAME } from "../../session-assistant-renderer-registrations";
 
 // ---------------------------------------------------------------------------
 // narrowWriteInput / narrowWriteStructured

@@ -614,7 +614,7 @@ const tugDropCaretTheme = EditorView.baseTheme({
 
 /**
  * Convert a `DownsampleError` into a calm, user-facing string for the
- * host's attachment-error notice (the Dev card raises a pane bulletin).
+ * host's attachment-error notice (the Session card raises a pane bulletin).
  * The discriminated shape lets us tailor copy per failure mode; each
  * message names the file so the user knows exactly what didn't attach.
  *
@@ -879,7 +879,7 @@ function setDropActive(host: HTMLElement | null, state: DropActiveState): void {
  *
  * `onAttachmentError(message)` hands a downsample-rejection message
  * to the host, which surfaces it as a calm card-scoped notice (the
- * Dev card raises a pane bulletin); tests can pass a spy.
+ * Session card raises a pane bulletin); tests can pass a spy.
  *
  * A host-supplied `getDropHandler()` still wins over the default —
  * the gallery card uses that escape hatch to inject deterministic

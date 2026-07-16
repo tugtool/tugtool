@@ -26,11 +26,11 @@ const SID = "at0147-session";
 const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
-const DIALOG = `${CARD} [data-slot="dev-question-dialog"]`;
+const DIALOG = `${CARD} [data-slot="session-question-dialog"]`;
 // Back/Next share the top action bar with Cancel + Submit; both are the only
 // outlined-action buttons, so this selects exactly [Back, Next].
-const NAV = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-outlined-action`;
-const SUBMIT = `${DIALOG} .dev-question-dialog-actionbar-buttons .tug-button-primary-action`;
+const NAV = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-outlined-action`;
+const SUBMIT = `${DIALOG} .session-question-dialog-actionbar-buttons .tug-button-primary-action`;
 const CURRENT_HEADING = `${DIALOG} .question-summary-row[data-status="current"] .question-summary-row-heading`;
 
 function controlRequestForward(): Record<string, unknown> {
@@ -68,12 +68,12 @@ async function ingestQuestion(
   app: App,
   forward: Record<string, unknown>,
 ): Promise<void> {
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: toolUseFor(forward),
   });
-  await app.driveDevSession("A", {
+  await app.driveSession("A", {
     op: "ingestFrame",
     feedId: FEED_CODE_OUTPUT,
     decoded: forward,
@@ -114,7 +114,7 @@ async function tabUntil(app: App, predicate: () => Promise<boolean>, max = 6): P
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -142,11 +142,11 @@ describe.skipIf(!SHOULD_RUN)("AT0147: question wizard nav keeps focus on Back/Ne
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        await app.driveDevSession("A", { op: "send", text: "ask me" });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", { op: "send", text: "ask me" });
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {

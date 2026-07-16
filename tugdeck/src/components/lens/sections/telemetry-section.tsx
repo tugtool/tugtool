@@ -2,7 +2,7 @@
  * telemetry-section.tsx — the Lens **Telemetry** section.
  *
  * Follows the **last non-lens key card** ([P11]): the Lens is always
- * present chrome, so "the dev card I'm working in" is the natural
+ * present chrome, so "the session card I'm working in" is the natural
  * subject. Because focusing the Lens itself makes *it* the key card, the
  * section remembers the previous key card that is not the Lens rather
  * than the literal current one. It resolves that card's services,
@@ -69,7 +69,7 @@ function TelemetrySectionBody(): React.ReactElement {
   if (info === null) {
     return (
       <div className="lens-telemetry-empty" data-testid="lens-telemetry-empty">
-        No dev card in focus.
+        No session card in focus.
       </div>
     );
   }

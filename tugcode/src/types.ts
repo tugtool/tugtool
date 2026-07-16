@@ -553,7 +553,7 @@ export interface CostUpdate {
    * Tool calls the turn denied — by a permission rule OR the auto-mode
    * classifier — lifted verbatim from the `result` event's
    * `permission_denials` (`{ tool_name, tool_use_id, tool_input }` each).
-   * Empty/omitted for a turn with no denials. The dev card accumulates these
+   * Empty/omitted for a turn with no denials. The session card accumulates these
    * per session for its `/permissions` Recently-denied tab. Captured shape:
    * `roadmap/transport-exploration.md`.
    */
@@ -620,7 +620,7 @@ export interface ActivityDelta {
  * and a typed `/compact`, which dispatches over the stream-json bridge as a
  * plain user message and compacts in place under the same session id.
  * `trigger` / `pre_tokens` carry claude's `compactMetadata` when present so
- * the dev-card divider can show the pre-compaction context size.
+ * the session-card divider can show the pre-compaction context size.
  */
 export interface CompactBoundary {
   type: "compact_boundary";
@@ -853,7 +853,7 @@ export interface ApiRetry {
  * Model-refusal fallback. Claude Code's SDK retried a turn on a *different*
  * model after the originally-selected one declined (a non-fatal recovery —
  * `trigger: "refusal"`, `direction: "retry"`, e.g. `claude-fable-5` →
- * `claude-opus-4-8`). Display-only: the dev card surfaces it as a one-shot
+ * `claude-opus-4-8`). Display-only: the session card surfaces it as a one-shot
  * notice so the silent model swap is visible.
  */
 export interface ModelRefusalFallback {
@@ -868,7 +868,7 @@ export interface ModelRefusalFallback {
 /**
  * Output truncation. An assistant message closed with `stop_reason:
  * "max_tokens"` — the response hit the output-token ceiling and was cut off,
- * not a clean `end_turn`. Display-only: the dev card surfaces it as a one-shot
+ * not a clean `end_turn`. Display-only: the session card surfaces it as a one-shot
  * notice so a truncated turn doesn't read as a silent stop.
  */
 export interface OutputTruncated {
@@ -1006,7 +1006,7 @@ export interface ResumeFailed {
  * holds whatever synthesized opener id it minted ([D13]); that id is
  * translator-internal and never reaches the wire on this frame.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D14] (activeMsgId
+ * See `roadmap/tugplan-session-wake.md` [D14] (activeMsgId
  * tracking), [D15] (add_<kind> naming), and `#spec-wire-frames` for
  * the canonical wire-shape definition.
  */
@@ -1050,7 +1050,7 @@ export interface AddUserMessage {
    * Absent on the never-drop synthetic path (the tugcast journal does
    * not store claude's prompt uuid) and on the steady-state LIVE path
    * (which emits no `add_user_message` — the live anchor rides
-   * {@link PromptAnchor} instead). The dev-card stores it on the
+   * {@link PromptAnchor} instead). The session-card stores it on the
    * opening user `Message` and sends it back on a {@link RewindPreview}
    * / {@link SessionRewind}.
    */
@@ -1086,7 +1086,7 @@ export interface AddUserMessage {
  * (`frameToEvent`) mints it on frame receipt, mirroring the
  * `add_user_message` pattern.
  *
- * See `roadmap/tugplan-dev-session-wake.md` [D02] for the detector
+ * See `roadmap/tugplan-session-wake.md` [D02] for the detector
  * rationale and [Q01] for the empirical capture this contract is
  * pinned against.
  */
@@ -1271,7 +1271,7 @@ export interface ReplayComplete {
 
 /**
  * Outbound result of a {@link RewindPreview} ([#step-7-1]). Relays the
- * `rewind_files{dry_run:true}` control-response back to the dev-card so
+ * `rewind_files{dry_run:true}` control-response back to the session-card so
  * the `/rewind` picker can render the turn's code diff-stat badge.
  *
  * `canRewind:false` is the "how far back you can restore" limit — the
@@ -1281,7 +1281,7 @@ export interface ReplayComplete {
  * `filesChanged`/`insertions`/`deletions` populate the badge
  * (`+N −M`, or "No code changes" when the arrays are empty).
  *
- * `promptUuid` echoes the request's anchor so the dev-card can match
+ * `promptUuid` echoes the request's anchor so the session-card can match
  * the result to the picker row that asked for it (the bridge supports
  * concurrent single-anchor lazy queries — [#step-7-3]'s N+1 discipline).
  */
@@ -1317,10 +1317,10 @@ export interface RewindPreviewResult {
  * JSONL truncate + silent `--resume` respawn (no `rewind_files` control
  * request). When `fork` was requested, the respawn loads a truncated COPY
  * under a freshly-minted claude session id; `newSessionId` carries that id
- * so the dev-card can rebind the card→session binding (and persist it, so a
+ * so the session-card can rebind the card→session binding (and persist it, so a
  * cold-boot resumes the fork rather than the original). Absent for the
  * destructive in-place variant (same id) and for the pure-code dimension.
- * `scope` echoes the request so the dev-card knows which dimensions were
+ * `scope` echoes the request so the session-card knows which dimensions were
  * applied.
  */
 export interface RewindResult {
@@ -1340,7 +1340,7 @@ export interface RewindResult {
  * (`--replay-user-messages`), during the active turn.
  *
  * Why a dedicated frame rather than {@link AddUserMessage.promptUuid}:
- * the steady-state live path emits NO `add_user_message` (the dev-card
+ * the steady-state live path emits NO `add_user_message` (the session-card
  * minted the turn locally at `handleSend`, keyed by `turnKey`). A live
  * `add_user_message` would duplicate-mint the turn. `prompt_anchor`
  * carries only the anchor; the reducer ([#step-7-3]) attaches it to the

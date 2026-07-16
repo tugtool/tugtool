@@ -38,7 +38,7 @@ const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -94,7 +94,7 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⇧⌘P, never on Shift+Tab", () 
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // The Mode chip starts at Default (what tugcode spawns with).

@@ -8,7 +8,7 @@ import {
   projectDeckState,
   registerEditCapsRefresher,
   requestEditMenuStateRefresh,
-  type MenuStateDevBlock,
+  type MenuStateSessionBlock,
   type MenuStateEditBlock,
   type MenuStateFileBlock,
   type MenuStatePayload,
@@ -19,7 +19,7 @@ import type { CardState, DeckState, TugPaneState } from "../../layout-tree";
 function card(id: string, overrides: Partial<CardState> = {}): CardState {
   return {
     id,
-    componentId: "dev",
+    componentId: "session",
     title: `Card ${id}`,
     closable: true,
     ...overrides,
@@ -100,11 +100,11 @@ describe("projectDeckState", () => {
 
   test("activeCard reflects the focused pane's active card component", () => {
     const state = deck(
-      [card("a", { componentId: "git" }), card("b", { componentId: "dev", closable: false })],
+      [card("a", { componentId: "git" }), card("b", { componentId: "session", closable: false })],
       [pane("p1", ["a"]), pane("p2", ["b"])],
     );
     expect(projectDeckState(state).activeCard).toEqual({
-      component: "dev",
+      component: "session",
       closable: false,
     });
   });
@@ -134,7 +134,7 @@ describe("HostMenuStatePublisher", () => {
     await settle();
     expect(posted).toHaveLength(1);
     expect(posted[0].panes[0].id).toBe("p1");
-    expect(posted[0].dev).toBeNull();
+    expect(posted[0].session).toBeNull();
   });
 
   test("coalesces multiple same-tick updates into one post", async () => {
@@ -160,7 +160,7 @@ describe("HostMenuStatePublisher", () => {
     expect(posted).toHaveLength(1);
   });
 
-  const devBlock = (cardId: string): MenuStateDevBlock => ({
+  const sessionBlock = (cardId: string): MenuStateSessionBlock => ({
     cardId,
     sessionBound: true,
     canInterrupt: false,
@@ -170,26 +170,26 @@ describe("HostMenuStatePublisher", () => {
     hasTurns: false,
   });
 
-  test("attaches the dev block only for the focused pane's active dev card", async () => {
+  test("attaches the session block only for the focused pane's active session card", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "dev" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "session" })], [pane("p1", ["a"])])),
     );
-    publisher.setDevBlock("a", devBlock("a"));
+    publisher.setSessionBlock("a", sessionBlock("a"));
     await settle();
     expect(posted).toHaveLength(1);
-    expect(posted[0].dev).toEqual(devBlock("a"));
+    expect(posted[0].session).toEqual(sessionBlock("a"));
   });
 
-  test("non-dev active card rides with dev: null even when a block exists", async () => {
+  test("non-session active card rides with session: null even when a block exists", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
-    publisher.setDevBlock("b", devBlock("b"));
+    publisher.setSessionBlock("b", sessionBlock("b"));
     publisher.setDeckProjection(
       projectDeckState(
         deck(
-          [card("a", { componentId: "git" }), card("b", { componentId: "dev" })],
+          [card("a", { componentId: "git" }), card("b", { componentId: "session" })],
           [pane("p2", ["b"]), pane("p1", ["a"])],
         ),
       ),
@@ -197,34 +197,34 @@ describe("HostMenuStatePublisher", () => {
     await settle();
     expect(posted).toHaveLength(1);
     expect(posted[0].activeCard?.component).toBe("git");
-    expect(posted[0].dev).toBeNull();
+    expect(posted[0].session).toBeNull();
   });
 
-  test("a dev block for a non-active card does not ride the payload", async () => {
+  test("a session block for a non-active card does not ride the payload", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
-    publisher.setDevBlock("other", devBlock("other"));
+    publisher.setSessionBlock("other", sessionBlock("other"));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "dev" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "session" })], [pane("p1", ["a"])])),
     );
     await settle();
-    expect(posted[0].dev).toBeNull();
+    expect(posted[0].session).toBeNull();
   });
 
-  test("clearing the dev block reverts the payload to dev: null", async () => {
+  test("clearing the session block reverts the payload to session: null", async () => {
     const posted: MenuStatePayload[] = [];
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "dev" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "session" })], [pane("p1", ["a"])])),
     );
-    publisher.setDevBlock("a", devBlock("a"));
+    publisher.setSessionBlock("a", sessionBlock("a"));
     await settle();
-    publisher.clearDevBlock("a");
+    publisher.clearSessionBlock("a");
     await settle();
     expect(posted).toHaveLength(2);
-    expect(posted[1].dev).toBeNull();
+    expect(posted[1].session).toBeNull();
     // Clearing an unknown card is a no-op (no extra post).
-    publisher.clearDevBlock("a");
+    publisher.clearSessionBlock("a");
     await settle();
     expect(posted).toHaveLength(2);
   });
@@ -255,7 +255,7 @@ describe("HostMenuStatePublisher", () => {
     const publisher = new HostMenuStatePublisher((p) => posted.push(p));
     publisher.setFileBlock("b", fileBlock("b"));
     publisher.setDeckProjection(
-      projectDeckState(deck([card("a", { componentId: "dev" })], [pane("p1", ["a"])])),
+      projectDeckState(deck([card("a", { componentId: "session" })], [pane("p1", ["a"])])),
     );
     await settle();
     expect(posted[0].file).toBeNull();

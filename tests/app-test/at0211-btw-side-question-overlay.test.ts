@@ -46,8 +46,8 @@ const SIDE_Q_ANSWER = '.side-question-answer';
 // The `/btw` body inside the shared Z2 placard — its presence means the btw
 // placard is open.
 const SIDE_Q_BODY = '[data-card-id="A"] [data-slot="side-question-body"]';
-const BTW_CELL = '[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"]';
-const TIME_CELL = '[data-card-id="A"] .dev-telemetry-status-cell[data-priority="time"]';
+const BTW_CELL = '[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"]';
+const TIME_CELL = '[data-card-id="A"] .session-telemetry-status-cell[data-priority="time"]';
 const POPUP_LIST = '[data-card-id="A"] [data-slot="tug-popup-list"]';
 
 let dir = "";
@@ -63,7 +63,7 @@ afterAll(() => {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev A", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session A", closable: true }],
     panes: [
       {
         id: "p1",
@@ -96,13 +96,13 @@ describe.skipIf(!SHOULD_RUN)(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
 
-          await app.bindDevSession("A", { tugSessionId: SID, projectDir: dir });
+          await app.bindSession("A", { tugSessionId: SID, projectDir: dir });
           await app.awaitEngineReady("A");
 
           // One committed turn so the transcript has entries to count.
-          await app.driveDevSession("A", { op: "send", text: "hello" });
+          await app.driveSession("A", { op: "send", text: "hello" });
           const frame = (decoded: Record<string, unknown>) =>
-            app.driveDevSession("A", {
+            app.driveSession("A", {
               op: "ingestFrame",
               feedId: FEED_CODE_OUTPUT,
               decoded: { tug_session_id: SID, ...decoded },
@@ -138,7 +138,7 @@ describe.skipIf(!SHOULD_RUN)(
           // The Z2 BTW cell reads the `/btw` count — an em-dash before any ask.
           const btwCellValue = () =>
             app.evalJS<string | null>(
-              `(() => { const el = document.querySelector('[data-card-id="A"] .dev-telemetry-status-cell[data-priority="btw"] .dev-telemetry-status-value'); return el ? el.textContent : null; })()`,
+              `(() => { const el = document.querySelector('[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"] .session-telemetry-status-value'); return el ? el.textContent : null; })()`,
             );
           expect(await btwCellValue()).toBe("—");
 
@@ -179,7 +179,7 @@ describe.skipIf(!SHOULD_RUN)(
           } | null>(
             `(() => {
                const pane = document.querySelector('.tug-placard');
-               const z2 = document.querySelector('[data-card-id="A"] [data-slot="dev-card-status-bar"]');
+               const z2 = document.querySelector('[data-card-id="A"] [data-slot="session-card-status-bar"]');
                if (!pane || !z2) return null;
                const p = pane.getBoundingClientRect();
                const s = z2.getBoundingClientRect();

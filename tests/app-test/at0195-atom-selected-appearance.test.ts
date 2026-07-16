@@ -40,11 +40,11 @@ const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const COMPLETION_MENU = '[data-slot="tug-completion-menu"]';
 const ATOM_IMG = `${CARD} [data-slot="tug-text-editor"] img[data-atom-type]`;
-const USER_ROWS = `${CARD} [data-testid="dev-card-transcript-user-body"]`;
+const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -64,12 +64,12 @@ function deckShape() {
 async function buildTurn(app: App, i: number): Promise<void> {
   const msgId = `m-${i}`;
   const frame = (decoded: Record<string, unknown>) =>
-    app.driveDevSession("A", {
+    app.driveSession("A", {
       op: "ingestFrame",
       feedId: FEED_CODE_OUTPUT,
       decoded: { tug_session_id: SID, ...decoded },
     });
-  await app.driveDevSession("A", { op: "send", text: `prompt ${i}` });
+  await app.driveSession("A", { op: "send", text: `prompt ${i}` });
   await frame({ type: "prompt_anchor", promptUuid: `uuid-${i}` });
   await frame({ type: "content_block_start", msg_id: msgId, block_index: 0, kind: "text" });
   await frame({ type: "assistant_text", msg_id: msgId, block_index: 0, text: `reply ${i}`, is_partial: false });
@@ -103,7 +103,7 @@ describe.skipIf(!SHOULD_RUN)("AT0195: a selection-covered atom chip paints with 
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Two anchored turns so `/rewind` is a valid (offered) local command.

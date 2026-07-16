@@ -10,7 +10,7 @@
  *   - the per-resume waterfall (list latency, ingest folds/commits,
  *     row-parse counters) via `window.__tug.getSessionPerf`, and
  *   - the REVEAL CHAIN, sampled from the harness in a tight RPC loop:
- *     when the `DevRestoring` placeholder is visible, when the
+ *     when the `SessionRestoring` placeholder is visible, when the
  *     transcript host first exists, when the first user row mounts,
  *     when the [DT10] `data-replaying` gate drops — plus every
  *     main-thread stall (a sampling gap: a frozen page cannot answer

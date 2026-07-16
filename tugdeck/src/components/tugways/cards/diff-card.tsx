@@ -1,6 +1,6 @@
 /**
  * diff-card.tsx — a standalone Diff card: one {@link TugDiffDocument} popped
- * out of the changeset card (or the dev card's diff) into its own resizable
+ * out of the changeset card (or the session card's diff) into its own resizable
  * card ([P20]).
  *
  * The card carries a {@link DiffDescriptor} (head or range) instead of a file

@@ -37,7 +37,7 @@
  *    `{ action, phase: "discrete" }` via the responder chain. When
  *    `target` is set, route via `manager.sendToTarget(target, …)`;
  *    otherwise, fall through to `useControlDispatch().dispatch`. Future
- *    callers wanting chain dispatch (e.g. a DevThinkingBlock cue
+ *    callers wanting chain dispatch (e.g. a SessionThinkingBlock cue
  *    dispatching `revealThinking` to the card) get it without a custom
  *    handler.
  *  - **Direct-action mode** (`onClick` prop): callback fires on click.

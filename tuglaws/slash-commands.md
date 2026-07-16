@@ -1,16 +1,16 @@
-# Slash commands in the Dev card
+# Slash commands in the Session card
 
 *How Claude Code slash commands flow through Tug end-to-end, and the procedure for
 supporting a new one — mapping it, surfacing it, hiding it, or writing it.*
 
-The Dev card talks to `claude` over a stream-json / print-mode bridge (tugcode).
+The Session card talks to `claude` over a stream-json / print-mode bridge (tugcode).
 Everything about slash-command policy — which commands appear in the `/` popup,
 which open a graphical surface, which are swallowed — is decided **client-side, in
 tugdeck, at submit time**. tugcode never parses or intercepts a slash command; it
 forwards user text verbatim and supplies the command *catalog*. This document is
 the single source of truth for how that works and how to change it.
 
-Companion: [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md)
+Companion: [session-card-unsupported-slash-commands.md](session-card-unsupported-slash-commands.md)
 is the maintained mirror of the hidden set — the user-facing answer to "why isn't
 `/vim` in the popup?". This document is the engineering doctrine behind it.
 
@@ -21,7 +21,7 @@ Every typed `/name` is classified by `classifySlashCommand()` in
 
 | Tier | Meaning | On submit |
 |------|---------|-----------|
-| `supported-local` | Registered in `LOCAL_SLASH_COMMANDS` (`tugdeck/src/lib/slash-commands.ts`) — the command has a Tug graphical surface | Dispatches `RUN_SLASH_COMMAND`; the Dev card's `slashCommandSurfaces` map opens the surface. **Never sent to claude.** |
+| `supported-local` | Registered in `LOCAL_SLASH_COMMANDS` (`tugdeck/src/lib/slash-commands.ts`) — the command has a Tug graphical surface | Dispatches `RUN_SLASH_COMMAND`; the Session card's `slashCommandSurfaces` map opens the surface. **Never sent to claude.** |
 | `hidden` | In `HIDDEN_SLASH_COMMANDS` (`slash-supported.ts`) — the command does nothing useful over the bridge, or is deferred feature work | Dispatches `SHOW_SLASH_COMMAND_NOTICE` (a "Command not available" alert). **Never sent to claude.** |
 | `pass-through` | Everything else — **the safe default** | Sent to claude verbatim as user text; claude expands it and runs a real turn. |
 
@@ -77,7 +77,7 @@ entries so both forms work and neither trips the unknown-command alert.
 `mergeCommandProviders()` merges local + remote with local-first-wins dedup
 (providers in
 `tugdeck/src/components/tugways/cards/completion-providers/local-commands.ts`,
-wired in `use-dev-card-services.ts`). Consequence: **unhiding a catalogued command
+wired in `use-session-card-services.ts`). Consequence: **unhiding a catalogued command
 makes it appear in the popup with zero popup plumbing.**
 
 ## Mapping an existing Claude Code command: the decision procedure {#decision-procedure}
@@ -140,7 +140,7 @@ prevent — classify on evidence, not on guesswork (see the probe discipline bel
    (`{name, description, takesArgs?}`). The name auto-joins `SUPPORTED_LOCAL` in
    `slash-supported.ts` — no second edit.
 2. Wire the surface in `slashCommandSurfaces` in
-   `tugdeck/src/components/tugways/cards/dev-card.tsx`. The map is a
+   `tugdeck/src/components/tugways/cards/session-card.tsx`. The map is a
    `Record<LocalCommandName, …>` keyed on the registry's literal union, so a
    registry entry without a wired surface is a **compile error** — the two edits
    cannot drift.
@@ -152,7 +152,7 @@ prevent — classify on evidence, not on guesswork (see the probe discipline bel
    `slash-supported.ts`, in the group whose comment states the reason. Aliases
    need their own entries (the set has no alias mechanism).
 2. Mirror it, with the reason, in
-   [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md).
+   [session-card-unsupported-slash-commands.md](session-card-unsupported-slash-commands.md).
 
 **Pass a command through**: do nothing — but run a probe first (below) and check
 the output path: command results come back as `<local-command-stdout>` scaffolding
@@ -207,7 +207,7 @@ CLI version in `capabilities/LATEST`.**
 ## What this document is not {#non-scope}
 
 - The hidden list itself lives in code (`HIDDEN_SLASH_COMMANDS`) and is mirrored
-  in [dev-card-unsupported-slash-commands.md](dev-card-unsupported-slash-commands.md)
+  in [session-card-unsupported-slash-commands.md](session-card-unsupported-slash-commands.md)
   — not here.
 - `AskUserQuestion`'s 1–4 question / 2–4 option shape is a Claude Code schema
   constraint documented in the repository `CLAUDE.md`, not a slash-command

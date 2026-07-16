@@ -1,5 +1,5 @@
 /**
- * `useLifecycleState` — subscribes a dev-card component to its
+ * `useLifecycleState` — subscribes a session-card component to its
  * `CodeSessionStore` and projects the matrix-row lifecycle
  * snapshot. Every zone that coordinates on lifecycle (Z5's submit
  * button, the transcript-replay paint gate, Z2 / Z4) reads this one
@@ -33,7 +33,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 
 import {
   deriveLifecycleSnapshot,
-  type DevLifecycleSnapshot,
+  type SessionLifecycleSnapshot,
 } from "../lifecycle-state";
 
 /**
@@ -45,7 +45,7 @@ import {
  */
 export function useLifecycleState(
   store: CodeSessionStore,
-): DevLifecycleSnapshot {
+): SessionLifecycleSnapshot {
   const storeSnapshot = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
@@ -55,7 +55,7 @@ export function useLifecycleState(
   // ref during render is sound here: the value is a pure function of
   // the render's inputs, so a double-invoked render recomputes the
   // identical result.
-  const previousRef = useRef<DevLifecycleSnapshot | undefined>(undefined);
+  const previousRef = useRef<SessionLifecycleSnapshot | undefined>(undefined);
   const snapshot = deriveLifecycleSnapshot(storeSnapshot, previousRef.current);
   previousRef.current = snapshot;
   return snapshot;

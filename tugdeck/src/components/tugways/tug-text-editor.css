@@ -195,13 +195,13 @@ body {
  *   This suppresses the scrollbar flash that CM6's default `overflow-y: auto`
  *   paints during the one-layout-pass lag while the editor auto-grows a new
  *   row below the cap. A host can
- *   override this cap from its own scoped rule — the Dev card caps the
+ *   override this cap from its own scoped rule — the Session card caps the
  *   scroller at a fraction of the card height (`cqh`) instead, so the prompt
- *   scrolls rather than pushing its toolbar off the card (see `dev-card.css`).
+ *   scrolls rather than pushing its toolbar off the card (see `session-card.css`).
  *
  * - `min-height` from `--tug-text-editor-min-height` — the optional *default*
  *   height: the editor opens at least this tall even when its content is
- *   shorter (the Dev card sets 200px). Defaults to 0 — no floor — so other
+ *   shorter (the Session card sets 200px). Defaults to 0 — no floor — so other
  *   hosts keep the pure auto-grow-from-one-row behavior. */
 .tug-text-editor > .cm-editor > .cm-scroller {
   max-height: calc(var(--tug-text-editor-max-rows, 8) * 1lh + 16px);

@@ -24,7 +24,7 @@
  *   `TUG_ACTIONS.CLOSE`. The Swift side calls `sendControl("close")`
  *   (etc.) with the same string.
  *
- * Phase 0: DevNotificationRef dependency removed, card handlers removed.
+ * Phase 0: SessionNotificationRef dependency removed, card handlers removed.
  * Phase 2: Added gallerySetterRef and show-component-gallery handler.
  * Phase 5b3 (Step 6): Removed gallerySetterRef and registerGallerySetter.
  *   show-component-gallery now dispatches through the responder chain
@@ -54,8 +54,8 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
 import { requestLogout } from "./lib/logout-store";
-import { devSpawnErrorStore } from "./lib/dev-spawn-error-store";
-import { notifySpawnRejected } from "./lib/dev-session-restore";
+import { sessionSpawnErrorStore } from "./lib/session-spawn-error-store";
+import { notifySpawnRejected } from "./lib/session-restore";
 import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
@@ -81,7 +81,7 @@ import {
   publishTrashProjectDirSessionsErr,
   publishListSessionStateChangesOk,
   publishListSessionStateChangesErr,
-} from "./lib/dev-session-ledger-events";
+} from "./lib/session-ledger-events";
 
 /**
  * Ordered list of all shipped themes.
@@ -479,10 +479,10 @@ export function initActionDispatch(
 
   // show-card: Show a card by componentId. The Swift app menu sends
   // show-card for "settings" / "about" (app-level singletons) and for
-  // "dev" (New Dev Card, ⌘N). Singleton components reuse an existing
+  // "dev" (New Session Card, ⌘N). Singleton components reuse an existing
   // card of that type (raising it to z-top) instead of spawning a
   // duplicate; every other component — notably "dev" — adds a fresh
-  // card each time, so ⌘N always opens a new dev card. The about
+  // card each time, so ⌘N always opens a new session card. The about
   // invocation additionally carries the app's build identity (version,
   // build, commit, branch, profile, copyright), parked in appInfoStore
   // for the About card to read.
@@ -722,7 +722,7 @@ export function initActionDispatch(
 
   // run-card-command: a Session/File/Edit/Help menu item carrying a
   // local slash-command name (`payload.name`, optional `payload.args`).
-  // Re-enters the dev card's RUN_SLASH_COMMAND surface map via the
+  // Re-enters the session card's RUN_SLASH_COMMAND surface map via the
   // key-card scope — byte-identical to typing the command, with zero
   // per-command plumbing here. An unknown name relies on the dev
   // card's defensive surface-map lookup (silent no-op).
@@ -748,7 +748,7 @@ export function initActionDispatch(
   // round-trip. The mode is validated against the four-mode set the
   // native submenu offers (`bypassPermissions` is deliberately not
   // menu-reachable, matching the ⇧⌘P cycle) so a malformed frame can
-  // never reach the send path; the dev card's handler commits through
+  // never reach the send path; the session card's handler commits through
   // the chip's mode-set path.
   registerAction(TUG_ACTIONS.SET_PERMISSION_MODE, (payload) => {
     const mode = payload.mode;
@@ -824,7 +824,7 @@ export function initActionDispatch(
   // session_updated: tugcast supervisor broadcasts these on every
   // ledger write (`record_spawn`, `record_turn`, `mark_closed`,
   // `mark_failed`, `trash`). Routed through the
-  // `dev-session-ledger-events` bus so the picker's session-ledger
+  // `session-ledger-events` bus so the picker's session-ledger
   // store (step 4) can patch its in-memory cache without re-fetching.
   registerAction("session_updated", (payload) => {
     const decoded = decodeSessionUpdated(payload);
@@ -892,11 +892,11 @@ export function initActionDispatch(
       return;
     }
     const detail = payload.detail;
-    devSpawnErrorStore.set(cardId, {
+    sessionSpawnErrorStore.set(cardId, {
       reason: typeof detail === "string" ? detail : "unknown",
     });
     // A rejection during the startup restore pass leaves a
-    // `devRestoreRegistry` hold in place — the zero-turn fresh-spawn
+    // `sessionRestoreRegistry` hold in place — the zero-turn fresh-spawn
     // path arms one so the card doesn't flash the picker mid-bind.
     // Drop it so the card falls through to the picker, where the
     // banner set above is shown.
@@ -930,7 +930,7 @@ export function initActionDispatch(
   });
 
   // list_card_bindings_ok / _err: response to a startup/reconnect
-  // request from `restoreDevSessions`.
+  // request from `restoreSessions`.
   registerAction("list_card_bindings_ok", (payload) => {
     const bindings = payload.bindings;
     if (!Array.isArray(bindings)) {

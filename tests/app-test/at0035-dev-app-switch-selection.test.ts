@@ -1,13 +1,13 @@
 /**
  * at0035-dev-app-switch-selection.test.ts — selection survives the
  * app-resign / app-become-active round-trip (cmd-tab away + back)
- * for the **dev-card** specifically.
+ * for the **session-card** specifically.
  *
  * ## Why a dev-specific variant
  *
  * The user-reported bug at the heart of [AT0035]
- * reproduces ONLY with dev-card; gallery-prompt-entry doesn't
- * exhibit the intermittent collapse. Dev-card has TWO redundant
+ * reproduces ONLY with session-card; gallery-prompt-entry doesn't
+ * exhibit the intermittent collapse. Session-card has TWO redundant
  * focus paths on activation — its own `useCardDelegate({
  * cardDidActivate })` legacy hook plus TugPromptEntry's
  * framework-driven `onCardActivated` — and the back-to-back focus
@@ -16,9 +16,9 @@
  * dev-specific test is the only one that exercises the actual
  * race the fix addresses.
  *
- * ## Why the harness can render dev-card
+ * ## Why the harness can render session-card
  *
- * Dev-card's content factory gates on `feedsReady` — its
+ * Session-card's content factory gates on `feedsReady` — its
  * `cardFeedIds: [CODE_INPUT, CODE_OUTPUT, SESSION_METADATA,
  * FILETREE]` would otherwise block mount until a live
  * tugcast/tugcode backend populated frames. In test mode
@@ -33,7 +33,7 @@
  *
  * Pre-fix repro required multi-second blur dwell to expose the
  * race; the test ran 10 iterations × 2-second dwell to nail down
- * the bug. Post-fix (drop dev-card's `cardWillDeactivate → .blur()`),
+ * the bug. Post-fix (drop session-card's `cardWillDeactivate → .blur()`),
  * the path is deterministic, so the test is right-sized to 3
  * iterations × 300ms dwell — enough to gate against regression
  * without burning wall-clock time on every CI run.
@@ -50,8 +50,8 @@ const PROMPT_INPUT_SELECTOR = '[data-slot="tug-text-editor"] .cm-content';
 
 const STRESS_ITERATIONS = 3;
 
-describe.skipIf(!SHOULD_RUN)("at0035-dev: dev-card selection survives app resign + become-active", () => {
-  test("cmd-tab away + back preserves \"llo\" selection on dev-card", async () => {
+describe.skipIf(!SHOULD_RUN)("at0035-dev: session-card selection survives app resign + become-active", () => {
+  test("cmd-tab away + back preserves \"llo\" selection on session-card", async () => {
     const app = await launchTugApp({ testName: "at0035-dev-app-switch" });
     let lastIteration = -1;
     try {
@@ -60,7 +60,7 @@ describe.skipIf(!SHOULD_RUN)("at0035-dev: dev-card selection survives app resign
       await app.seedDeckState({
         state: {
           cards: [
-            { id: "A", componentId: "dev", title: "Dev A", closable: true },
+            { id: "A", componentId: "session", title: "Session A", closable: true },
           ],
           panes: [
             {
@@ -83,9 +83,9 @@ describe.skipIf(!SHOULD_RUN)("at0035-dev: dev-card selection survives app resign
         `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
       );
 
-      // Dev-card mounts its picker by default (no session bound).
-      // Bind a fake session so DevCardBody renders the editor.
-      await app.bindDevSession("A");
+      // Session-card mounts its picker by default (no session bound).
+      // Bind a fake session so SessionCardBody renders the editor.
+      await app.bindSession("A");
 
       await app.awaitEngineReady("A");
 

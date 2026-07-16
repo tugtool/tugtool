@@ -45,7 +45,7 @@ import {
   _resetToolBlockRegistryForTests,
   registerToolBlock,
   resolveToolBlock,
-} from "../../dev-assistant-renderer-dispatch";
+} from "../../session-assistant-renderer-dispatch";
 
 // ---------------------------------------------------------------------------
 // Synthetic fixtures — the catalog has no Grep probe, so [#step-16]

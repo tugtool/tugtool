@@ -211,7 +211,7 @@ export interface CancelReplay {
 
 /**
  * `/rewind` diff-stat preview ([#step-7-1]). `promptUuid` is claude's
- * user-prompt-record uuid — the rewind anchor, not the dev-card `msgId`.
+ * user-prompt-record uuid — the rewind anchor, not the session-card `msgId`.
  */
 export interface RewindPreview {
   type: "rewind_preview";

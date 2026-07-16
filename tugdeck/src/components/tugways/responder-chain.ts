@@ -224,7 +224,7 @@ export interface ResponderNode<Extra extends string = never> {
    * tabbable descendant. Generic responders (text inputs, buttons,
    * generic containers) omit the callback and the DOM walk Just Works.
    *
-   * Per `tugplan-dev-popup-bindings.md` [D03] (#focus-contract). The
+   * Per `tugplan-session-popup-bindings.md` [D03] (#focus-contract). The
    * callback is captured at registration; like `canHandle` /
    * `validateAction` / `kind`, it is a structural property of the
    * responder's identity. Changing it mid-life would require
@@ -544,7 +544,7 @@ export class ResponderChainManager {
    * needs the keyboard caret to land on the newly-promoted responder
    * (cross-card activation via Cmd-tab).
    *
-   * Algorithm per `tugplan-dev-popup-bindings.md` [D04] (#focus-contract):
+   * Algorithm per `tugplan-session-popup-bindings.md` [D04] (#focus-contract):
    *
    *   1. If `id` is not registered → no-op (and dev-mode warn). Tolerant
    *      of races where the captured target was unregistered between

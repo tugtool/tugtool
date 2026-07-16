@@ -12,7 +12,7 @@
  * wraps within them ([#cfrunloop-model] trapped mode + `advance`'s modular
  * wrap); the editor is in the base mode and is untouched until restore.
  *
- * This is the general mechanism (the dev card is the first consumer). It adds no
+ * This is the general mechanism (the session card is the first consumer). It adds no
  * new engine projection — it drives the existing focus-mode stack
  * (`pushFocusMode` / `popFocusMode` / `focusFirstInMode` / `focusKeyView`), so
  * it is the [P04] behavior carve-out via [P09], appearance untouched.
@@ -65,7 +65,7 @@ function toggleableCommitDisposition(commit: FocusCommit): CycleDisposition {
 
 export interface UseCycleModeOptions {
   /**
-   * Whether the card is eligible to cycle right now (e.g. a dev card only when
+   * Whether the card is eligible to cycle right now (e.g. a session card only when
    * connected, not while the picker is up). When `false`, `toggle` is inert and
    * the mode is never pushed. Defaults to `true`.
    */
@@ -80,7 +80,7 @@ export interface UseCycleModeOptions {
   dispositionAfterCommit?: (commit: FocusCommit) => CycleDisposition;
   /**
    * Land the resting caret when the cycle is relinquished — the card's resting
-   * focus destination (a dev card's prompt entry). Called when `cycling` flips
+   * focus destination (a session card's prompt entry). Called when `cycling` flips
    * false by any non-pointer path: ⌥⇥ toggle-off, the editor text-stop's
    * Return-descend, or a sub-surface commit that relinquishes the cycle ([P15] —
    * {@link FocusContext.relinquishFocusMode}). Skipped on a mouse exit (the click

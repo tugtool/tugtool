@@ -60,7 +60,7 @@ pub fn run_changes(
         Some(s) => s,
         None => {
             eprintln!(
-                "error: no session id — run inside a Dev-card session (which sets \
+                "error: no session id — run inside a Session-card session (which sets \
                  $TUG_SESSION_ID) or pass --session <id>"
             );
             return Ok(2);

@@ -43,7 +43,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "app.about" },
   { id: "app.settings", key: ",", mods: MOD.command },
   // File
-  { id: "file.newDevCard", key: "n", mods: MOD.command },
+  { id: "file.newSessionCard", key: "n", mods: MOD.command },
   { id: "file.closeCard", key: "w", mods: MOD.command },
   { id: "file.closeAllCardTabs", key: "w", mods: MOD.command | MOD.option },
   { id: "file.exportTranscript", key: "" },
@@ -169,10 +169,10 @@ describe.skipIf(!SHOULD_RUN)("AT0168: menu structure contract", () => {
         const tabbing = flat.filter((i) => i.action !== undefined && TABBING_ACTIONS.has(i.action));
         expect(tabbing.length, "no automatic window-tabbing items remain").toBe(0);
 
-        // File is flat: New Dev Card sits directly inside a top-level
+        // File is flat: New Session Card sits directly inside a top-level
         // menu (bar item depth 0 → menu item depth 1), not behind a
         // New submenu shell.
-        expect(byId.get("file.newDevCard")!.depth, "File menu is flattened").toBe(1);
+        expect(byId.get("file.newSessionCard")!.depth, "File menu is flattened").toBe(1);
 
         // Maker is hidden under default app-test prefs (empty tugbank
         // → maker mode off under the harness). The gate lives on the

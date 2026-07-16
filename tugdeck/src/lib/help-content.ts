@@ -60,10 +60,10 @@ export const HELP_SHORTCUTS: readonly HelpShortcut[] = [
 /**
  * Path (relative to the project root) of the user-facing list of slash
  * commands that have no useful behavior over the bridge. The General tab links
- * to it; the dev card resolves it against the bound project dir to open it.
+ * to it; the session card resolves it against the bound project dir to open it.
  */
 export const UNSUPPORTED_COMMANDS_DOC_PATH =
-  "tuglaws/dev-card-unsupported-slash-commands.md";
+  "tuglaws/session-card-unsupported-slash-commands.md";
 
 // ---------------------------------------------------------------------------
 // Command projection — the Commands + Custom-commands tab lists
@@ -92,7 +92,7 @@ export interface HelpCommandEntry {
  *   `/agents` sheet lists those).
  * - Only commands we **have help text for** are listed — an entry with no
  *   description is dropped. The [D23] registry always carries curated copy, so
- *   in practice this is the set of commands the dev card actually implements;
+ *   in practice this is the set of commands the session card actually implements;
  *   claude's description-less catalog built-ins (`/clear`, `/init`, `/compact`,
  *   …) are left to the slash popup rather than listed here blank.
  *

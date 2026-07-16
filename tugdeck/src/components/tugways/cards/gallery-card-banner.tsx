@@ -269,7 +269,7 @@ export function GalleryCardBanner() {
             tone="caution"
             icon="alert-triangle"
             label="Unsupported event"
-            message={'This dev-card build doesn’t understand event "future_telemetry" yet. The session is unaffected.'}
+            message={'This session-card build doesn’t understand event "future_telemetry" yet. The session is unaffected.'}
             footer={
               <TugPushButton
                 size="sm"

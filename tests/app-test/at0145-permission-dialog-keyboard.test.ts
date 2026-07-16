@@ -17,7 +17,7 @@
  * The test seeds a pending Bash permission request carrying one allow-scoped
  * suggestion (so the scope choices render "Allow once" + "Allow for this
  * project"), then asserts the target behavior:
- *   - the dead-zone is gone (the old `dev-permission-dialog-scope` wrapper does
+ *   - the dead-zone is gone (the old `session-permission-dialog-scope` wrapper does
  *     not exist);
  *   - the card root carries the `data-inline-dialog-pending` scrim signal;
  *   - on open the key view is seeded on Allow (the recommended default), so it
@@ -46,8 +46,8 @@ const FEED_CODE_OUTPUT = 0x40;
 const REQUEST_ID = "at0145-perm-1";
 
 const CARD = '[data-card-id="A"]';
-const CARD_ROOT = `${CARD} [data-slot="dev-card"]`;
-const DIALOG = `${CARD} [data-slot="dev-permission-dialog"]`;
+const CARD_ROOT = `${CARD} [data-slot="session-card"]`;
+const DIALOG = `${CARD} [data-slot="session-permission-dialog"]`;
 const ALLOW = `${DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 const DENY = `${DIALOG} .tug-inline-dialog-actions .tug-button-outlined-danger`;
 const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
@@ -57,7 +57,7 @@ const SCOPE = `${DIALOG} [data-slot="tug-radio-group"]`;
 const SCOPE_CHECKED = `${SCOPE} [data-slot="tug-radio-item"][data-state="checked"]`;
 // The scope row currently wearing the movement cursor (the ring), checked or not.
 const SCOPE_CURSOR = `${SCOPE} [data-slot="tug-radio-item"][data-key-cursor]`;
-const OLD_DEADZONE = `${CARD} [data-slot="dev-permission-dialog-scope"]`;
+const OLD_DEADZONE = `${CARD} [data-slot="session-permission-dialog-scope"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 function controlRequestForward(): Record<string, unknown> {
@@ -101,7 +101,7 @@ function textOf(app: App, selector: string): Promise<string | null> {
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -131,14 +131,14 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
         await app.waitForCondition<boolean>(
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
         // Drive a turn, start a live assistant turn (so the transcript has a
         // live cell to host the inline permission slot), then ingest the
         // permission request → pendingApproval.
-        await app.driveDevSession("A", { op: "send", text: "count lines with tokei" });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", { op: "send", text: "count lines with tokei" });
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: {
@@ -151,7 +151,7 @@ describe.skipIf(!SHOULD_RUN)("AT0145: PermissionDialog is card-modal", () => {
             seq: 0,
           },
         });
-        await app.driveDevSession("A", {
+        await app.driveSession("A", {
           op: "ingestFrame",
           feedId: FEED_CODE_OUTPUT,
           decoded: controlRequestForward(),

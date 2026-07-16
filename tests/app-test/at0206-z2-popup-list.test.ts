@@ -2,7 +2,7 @@
  * at0206-z2-popup-list.test.ts — the Z2 status popups on the shared
  * `TugPopupList` vocabulary ([AT0206]).
  *
- * Drives a bound dev card through two committed turns, a three-row
+ * Drives a bound session card through two committed turns, a three-row
  * background-jobs ledger (running / completed / failed), and a
  * two-task list, then opens each Z2 popup (WORK / TIME /
  * STATE / TOKENS) by clicking its status cell and pins the rework's
@@ -45,7 +45,7 @@ const SID = "b7c0d1ea-0000-4000-8000-00000000beef";
 
 function deckShape() {
   return {
-    cards: [{ id: "A", componentId: "dev", title: "Dev", closable: true }],
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
     panes: [
       {
         id: "p1",
@@ -80,15 +80,15 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
           `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           { timeoutMs: 15_000 },
         );
-        await app.bindDevSession("A", { tugSessionId: SID });
+        await app.bindSession("A", { tugSessionId: SID });
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-card-id="A"] [data-slot="dev-telemetry-status-row"]') !== null`,
+          `document.querySelector('[data-card-id="A"] [data-slot="session-telemetry-status-row"]') !== null`,
           { timeoutMs: 8000 },
         );
 
         // ---- Turn 1: tasks created + a background job launched --------
-        await app.driveDevSession("A", { op: "send", text: "set up the popup rework" });
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", { op: "send", text: "set up the popup rework" });
+        await app.driveSession("A", f({
           type: "assistant_text", msg_id: "m1", text: "Working on it.",
           is_partial: true, rev: 0, seq: 0,
         }));
@@ -101,64 +101,64 @@ describe.skipIf(!SHOULD_RUN)("AT0206: Z2 popups on TugPopupList", () => {
         // the rest finish as an alternating done/failed mix.
         const JOB_COUNT = 28;
         for (let n = 1; n <= JOB_COUNT; n++) {
-          await app.driveDevSession("A", f({
+          await app.driveSession("A", f({
             type: "tool_use", msg_id: "m1", tool_use_id: `job-tool-${n}`,
             tool_name: "Bash",
             input: { command: `make dmg ${n}`, run_in_background: true },
             seq: 2 + n,
           }));
-          await app.driveDevSession("A", f({
+          await app.driveSession("A", f({
             type: "task_started", task_id: `bg${n}`, tool_use_id: `job-tool-${n}`,
             description: `Background probe run ${n} (background)`,
             task_type: "local_bash",
           }));
-          await app.driveDevSession("A", f({
+          await app.driveSession("A", f({
             type: "tool_result", tool_use_id: `job-tool-${n}`,
             output: "launched",
           }));
           if (n > 1) {
-            await app.driveDevSession("A", f({
+            await app.driveSession("A", f({
               type: "task_updated", task_id: `bg${n}`,
               status: n % 5 === 0 ? "failed" : "completed",
             }));
           }
         }
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "turn_complete", msg_id: "m1", result: "success",
         }));
 
         // ---- Turn 2: TaskCreates (the task-list gate reads the LATEST
         // turn's Task* activity) + a second committed turn for TIME/TOKENS.
-        await app.driveDevSession("A", { op: "send", text: "and a second turn please" });
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", { op: "send", text: "and a second turn please" });
+        await app.driveSession("A", f({
           type: "assistant_text", msg_id: "m2", text: "Done.",
           is_partial: true, rev: 0, seq: 0,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m2", tool_use_id: "tc-1",
           tool_name: "TaskCreate",
           input: { subject: "Fix TugButton radius defaults", description: "Proportional corner radii for 2xs/xs buttons." },
           seq: 1,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "tc-1",
           output: "Task #1 created successfully: Fix TugButton radius defaults",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_use", msg_id: "m2", tool_use_id: "tc-2",
           tool_name: "TaskCreate",
           input: { subject: "Migrate JOBS popover onto TugPopupList" },
           seq: 2,
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "tool_result", tool_use_id: "tc-2",
           output: "Task #2 created successfully: Migrate JOBS popover onto TugPopupList",
         }));
-        await app.driveDevSession("A", f({
+        await app.driveSession("A", f({
           type: "turn_complete", msg_id: "m2", result: "success",
         }));
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll('[data-card-id="A"] [data-testid="dev-card-transcript-user-body"]').length === 2`,
+          `document.querySelectorAll('[data-card-id="A"] [data-testid="session-card-transcript-user-body"]').length === 2`,
           { timeoutMs: 8000 },
         );
 

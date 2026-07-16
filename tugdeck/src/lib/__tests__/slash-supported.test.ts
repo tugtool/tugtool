@@ -84,7 +84,7 @@ describe("set integrity", () => {
   });
 
   test("/copy is not hidden — it becomes a local command in a later sub-step", () => {
-    // The audit's SKIP set lists /copy as a *command*, but the dev card adds
+    // The audit's SKIP set lists /copy as a *command*, but the session card adds
     // it to the [D23] registry; guard against re-hiding it here.
     expect(HIDDEN_SLASH_COMMANDS.has("copy")).toBe(false);
   });

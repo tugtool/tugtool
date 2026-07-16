@@ -1,12 +1,12 @@
 /**
- * transcript-find-engine — the Dev card's {@link FindEngineDelegate}: the
+ * transcript-find-engine — the Session card's {@link FindEngineDelegate}: the
  * store→index search over a virtualized transcript.
  *
  * The engine owns what is transcript-specific about find: the segmented
  * search index, the ordered match set, and the active index. The shared
  * {@link FindSession} drives it through the delegate protocol and owns
  * everything engine-independent (query, options, wrap bookkeeping, the
- * cluster face). The transcript HOST (`dev-card-transcript`) consumes the
+ * cluster face). The transcript HOST (`session-card-transcript`) consumes the
  * engine's own store surface ([L02]) to paint matches via the
  * Custom-Highlight painter and to reveal the active match — painting is the
  * host's affordance, not the engine's semantics.

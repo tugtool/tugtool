@@ -1,6 +1,6 @@
 /**
  * transcript-search-index — the query-independent store→text index behind the
- * Dev card's Find route.
+ * Session card's Find route.
  *
  * The transcript is a virtualized list: almost every row is unmounted at any
  * moment (`OVERSCAN_COUNT = 3`), so a whole-transcript match count cannot come
@@ -54,7 +54,7 @@ import { parseGitCommit } from "@/components/tugways/body-kinds/commit-block";
 import {
   extractTextOutput,
   resolveToolBlock,
-} from "@/components/tugways/cards/dev-assistant-renderer-dispatch";
+} from "@/components/tugways/cards/session-assistant-renderer-dispatch";
 import {
   BashToolBlock,
   composeTerminalData,
@@ -71,12 +71,12 @@ import type { ToolBlockExpansionState } from "@/components/tugways/blocks/expans
 import type { ToolUseMessage } from "@/lib/code-session-store/types";
 import type { PropertyStore } from "@/components/tugways/property-store";
 import type {
-  DevRowDescriptor,
-  DevTranscriptDataSource,
-} from "@/lib/dev-transcript-data-source";
+  SessionRowDescriptor,
+  SessionTranscriptDataSource,
+} from "@/lib/session-transcript-data-source";
 
 /** A row's message slice, from a committed turn or the in-flight turn. */
-type RowMessages = NonNullable<DevRowDescriptor["turn"]>["messages"];
+type RowMessages = NonNullable<SessionRowDescriptor["turn"]>["messages"];
 
 // Reused scratch element for HTML→text reduction (entities decoded, tags
 // dropped). Created lazily so importing this module never touches the DOM —
@@ -140,7 +140,7 @@ function markdownToText(
 
 /**
  * Strip the `>` Code route prefix from a user body the way the user row's
- * renderer does (`stripUserBodyPrefix` in `dev-card-transcript.tsx`) — the
+ * renderer does (`stripUserBodyPrefix` in `session-card-transcript.tsx`) — the
  * projection must match the DISPLAYED text, not the wire text.
  */
 function stripUserBodyPrefix(text: string): string {
@@ -336,7 +336,7 @@ function userBodyParts(
  * that gap to keep the gate binary). Shell rows default expanded.
  */
 function shellSegments(
-  descriptor: DevRowDescriptor,
+  descriptor: SessionRowDescriptor,
   expansion: ToolBlockExpansionState,
 ): RowSegment[] {
   const message = descriptor.turn?.messages[0];
@@ -367,7 +367,7 @@ function domSegments(parts: string[]): RowSegment[] {
 
 /** Ordered search segments of one transcript row. */
 function rowSegments(
-  descriptor: DevRowDescriptor,
+  descriptor: SessionRowDescriptor,
   streamingStore: PropertyStore,
   expansion: ToolBlockExpansionState,
 ): RowSegment[] {
@@ -415,7 +415,7 @@ function rowSegments(
  * `row` is a valid `scrollToIndex` target.
  */
 export function buildTranscriptSearchSegments(
-  dataSource: DevTranscriptDataSource,
+  dataSource: SessionTranscriptDataSource,
   streamingStore: PropertyStore,
   expansion: ToolBlockExpansionState,
 ): RowSegment[][] {

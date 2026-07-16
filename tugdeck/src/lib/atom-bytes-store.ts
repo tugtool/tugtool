@@ -1,5 +1,5 @@
 /**
- * `atom-bytes-store` — per-dev-card side-table of base64 bytes for
+ * `atom-bytes-store` — per-session-card side-table of base64 bytes for
  * inline image atoms (drop / paste).
  *
  * ## What lives here, and why a separate store
@@ -20,7 +20,7 @@
  *
  * ## Lifetimes
  *
- * One instance per `CodeSessionStore` (per-dev-card scope). The
+ * One instance per `CodeSessionStore` (per-session-card scope). The
  * store is created in the `CodeSessionStore` constructor and disposed
  * when the store is disposed. Entries live from `put()` until
  * `delete()` or store disposal; state preservation (`snapshot()` →
@@ -28,7 +28,7 @@
  * boot.
  *
  * Why per-card and not per-session: a single Tug session can host
- * multiple cards (the dev card surface is the primary one but
+ * multiple cards (the session card surface is the primary one but
  * future cards may attach the same session). Each card has its own
  * editor and drop / paste affordances, so each card's bytes are
  * scoped to its own store. This keeps cross-card paste of identities

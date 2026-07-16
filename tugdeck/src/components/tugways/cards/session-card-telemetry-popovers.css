@@ -1,0 +1,281 @@
+/**
+ * session-card-telemetry-popovers.css — session-card-specific styling for the
+ * six Z2 status-row popups (STATE / TIME / TOKENS / CONTEXT / TASKS /
+ * JOBS).
+ *
+ * The frame / log-grid / item-row / footer vocabulary lives in
+ * `tug-popup-list.css`; this file carries only what is dev-specific:
+ * the turn-address links, the request-preview label, the state-log
+ * column grid, the context gauge + legend body, the completed-task
+ * strikethrough, and the jobs meta-line accents.
+ *
+ * Tuglaw cross-check:
+ *  - [L06] every visible state lives on CSS class / data-attribute
+ *    selectors (context swatches key on `data-arc-tone`; completed
+ *    tasks on `data-status`). No inline style for appearance.
+ *  - [L19] file pair with the popovers module.
+ *  - [L20] consumers only — composed primitives (TugPopupList,
+ *    TugBadge, TugArcGauge, TugProgressIndicator) keep their own
+ *    tokens; the swatch aliases below read the arc gauge's published
+ *    `--tugx-arc-gauge-segment-*` slots (single-writer, many-reader).
+ *
+ * @tug-pairings {
+ *   --tug7-element-global-text-normal-muted-rest    | --tug7-surface-popover-primary-normal-default-rest | content
+ *   --tug7-element-global-text-normal-default-rest  | --tug7-surface-popover-primary-normal-default-rest | content
+ *   --tug7-element-global-border-normal-default-rest | --tug7-surface-popover-primary-normal-default-rest | content
+ * }
+ *
+ * @tug-pairings
+ * | Element                                           | Surface                                            | Role    | Context                                 |
+ * |---------------------------------------------------|----------------------------------------------------|---------|-----------------------------------------|
+ * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-popover-primary-normal-default-rest | content | .session-state-log-time etc. (color)        |
+ * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-popover-primary-normal-default-rest | content | .session-state-log-phase etc. (color)       |
+ * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-popover-primary-normal-default-rest | content | .session-context-popover-grid-divider (border) |
+ *
+ * @module components/tugways/cards/session-card-telemetry-popovers
+ */
+
+/* ============================================================================
+   Turn-address links (Time / Tokens / Jobs meta lines)
+   ========================================================================= */
+
+/* The `#uN · #aN` entry-number pair occupying a per-turn row's label
+   cell — two click targets plus a muted separator dot. */
+.session-popover-turn-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-popover-turn-pair-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Turn-number entry rendered as a click target — scrolls the
+   transcript to that entry's row. Reset to inherit the row-label's
+   muted mono treatment, but carry a faint underline AT REST so every
+   number reads as clickable (not just the hovered one); hover / focus
+   brightens both the text and the underline. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-popover-row-turn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  vertical-align: baseline;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--tug7-element-global-text-normal-muted-rest);
+  text-underline-offset: 2px;
+  transition:
+    color 80ms ease,
+    text-decoration-color 80ms ease;
+}
+
+.session-popover-row-turn:hover,
+.session-popover-row-turn:focus-visible {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-decoration-color: currentColor;
+}
+
+.session-popover-row-turn:focus-visible {
+  outline: none;
+}
+
+/* The preview TugLabel — match the popup's mono row rhythm rather
+   than the label primitive's default size token ([L20] cascade-
+   scoped override; the `muted` color + `mono` props carry the rest). */
+.tug-popup-list-row .session-popover-row-request {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* ============================================================================
+   Context popup body
+   ========================================================================= */
+
+.session-context-popover-body {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--tug-space-lg);
+}
+
+.session-context-popover-gauge {
+  width: 180px;
+  flex: 0 0 auto;
+}
+
+.session-context-popover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  column-gap: var(--tug-space-md);
+  row-gap: 4px;
+  align-items: baseline;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Drop the legend down so its first row sits at the gauge's
+     tick-mark band rather than at the gauge's tip; the summary
+     rows then extend below the gauge's bottom edge, balancing
+     the popup visually. */
+  padding-top: 18px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-legend-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  display: flex;
+  align-items: center;
+}
+
+.session-context-popover-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  flex: 0 0 auto;
+}
+
+/* Legend swatch color keys on the segment's tone via `data-arc-tone`
+   ([L06]) and reads the arc gauge's published segment slots — the
+   swatch and its arc slice cannot disagree. */
+.session-context-popover-swatch[data-arc-tone="input"] { background-color: var(--tugx-arc-gauge-segment-input-color); }
+.session-context-popover-swatch[data-arc-tone="cache-read"] { background-color: var(--tugx-arc-gauge-segment-cache-read-color); }
+.session-context-popover-swatch[data-arc-tone="cache-creation"] { background-color: var(--tugx-arc-gauge-segment-cache-creation-color); }
+.session-context-popover-swatch[data-arc-tone="output"] { background-color: var(--tugx-arc-gauge-segment-output-color); }
+.session-context-popover-swatch[data-arc-tone="remainder"] { background-color: var(--tugx-arc-gauge-segment-remainder-color); }
+.session-context-popover-swatch[data-arc-tone="system_prompt"] { background-color: var(--tugx-arc-gauge-segment-system_prompt-color); }
+.session-context-popover-swatch[data-arc-tone="system_tools"] { background-color: var(--tugx-arc-gauge-segment-system_tools-color); }
+.session-context-popover-swatch[data-arc-tone="custom_agents"] { background-color: var(--tugx-arc-gauge-segment-custom_agents-color); }
+.session-context-popover-swatch[data-arc-tone="memory_files"] { background-color: var(--tugx-arc-gauge-segment-memory_files-color); }
+.session-context-popover-swatch[data-arc-tone="skills"] { background-color: var(--tugx-arc-gauge-segment-skills-color); }
+.session-context-popover-swatch[data-arc-tone="messages"] { background-color: var(--tugx-arc-gauge-segment-messages-color); }
+.session-context-popover-swatch[data-arc-tone="autocompact_buffer"] { background-color: var(--tugx-arc-gauge-segment-autocompact_buffer-color); }
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-legend-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-legend-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-grid-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-block: 4px;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-summary-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-summary-percent {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-context-popover-summary-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  text-align: right;
+}
+
+/* Usage-ratio signal parity with the CONTEXT status cell: when the total
+   crosses the caution/danger thresholds the cell paints its numerator, the
+   popup echoes the same tone on the two places that show that same total —
+   the dial's center readout (via the gauge's published value-text hook) and
+   the `used` summary value. The category legend keeps its per-tone colors;
+   only the total picks up the warning. */
+.session-context-popover-body[data-context-threshold="caution"] .session-context-popover-gauge {
+  --tugx-gauge-value-text-color: var(--tug7-element-global-text-normal-caution-rest);
+}
+.session-context-popover-body[data-context-threshold="danger"] .session-context-popover-gauge {
+  --tugx-gauge-value-text-color: var(--tug7-element-global-text-normal-danger-rest);
+}
+.session-context-popover-body[data-context-threshold="caution"] .session-context-popover-summary-value-used {
+  color: var(--tug7-element-global-text-normal-caution-rest);
+}
+.session-context-popover-body[data-context-threshold="danger"] .session-context-popover-summary-value-used {
+  color: var(--tug7-element-global-text-normal-danger-rest);
+}
+
+/* ============================================================================
+   State-change log — 5-column row grid inside the shared scroller
+   ========================================================================= */
+
+.session-state-log-grid {
+  display: grid;
+  grid-template-columns:
+    max-content max-content max-content max-content max-content;
+  column-gap: var(--tug-space-xl);
+  row-gap: 4px;
+  align-items: center;
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-state-log-time {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-state-log-phase {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-state-log-transport {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-state-log-interrupt {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ============================================================================
+   Tasks — completed-row strikethrough
+   ========================================================================= */
+
+/* Completed rows: strikethrough the label so the "done" reading is
+   reinforced beyond the success-colored dot. Presentation-only cue on
+   the item's primary slot; the indicator's own appearance is owned by
+   the component via its `state` prop. */
+.session-tasks-popover-item[data-status="completed"] .tug-popup-list-item-primary {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   Jobs — meta-line accents
+   ========================================================================= */
+
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-jobs-popover-meta-sep {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  opacity: 0.6;
+}
+
+/* The running agent's most recent tool (from `task_progress`). Tinted
+   to read as live activity against the muted meta line, and clipped so
+   a long tool name never widens the row.
+   @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-jobs-popover-progress {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

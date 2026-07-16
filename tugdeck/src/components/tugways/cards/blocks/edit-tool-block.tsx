@@ -52,7 +52,7 @@
  *
  * Registration:
  *
- *   `dev-assistant-renderer-dispatch.ts` imports this module and calls
+ *   `session-assistant-renderer-dispatch.ts` imports this module and calls
  *   `registerToolBlock("edit", EditToolBlock)` from its own
  *   bottom-of-file initialization — the `multiedit` alias resolves
  *   there too. Routing registration through dispatch (rather than
