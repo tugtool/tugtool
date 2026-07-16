@@ -34,6 +34,18 @@ The fix is a single Block header primitive shared by all altitudes. The transcri
 - Altitude is expressed as a **token scale** keyed on a `data-altitude` attribute, resolving `--tug*` in one hop ([L17]); the shared component owns the structure, per-altitude CSS owns the sizes.
 - Each phase is independently shippable and ends with an integration checkpoint. The refactor is regression-first: Phase 1 proves the extraction is inert before any altitude divergence.
 
+#### Milestones {#milestones}
+
+The four phases are the plan's milestones; each maps to a step group closed by an integration checkpoint.
+
+**Milestone M01: Extraction (no visual change)** {#m01-extraction} — #step-1 (and the inert token scaffold in #step-2).
+
+**Milestone M02: Sections as blocks** {#m02-sections-as-blocks} — #step-3, #step-4, closed by #step-5.
+
+**Milestone M03: Entry altitude + tag fold** {#m03-entry-tag} — #step-6, #step-7, closed by #step-8.
+
+**Milestone M04: FLIP drag visuals** {#m04-flip-drag} — #step-9, closed by #step-10.
+
 #### Success Criteria (Measurable) {#success-criteria}
 
 > Make these falsifiable. Avoid "works well".
@@ -218,6 +230,16 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. A
 
 **Implications:** Mid-drag state is inline `transform`/`data-*`; the store commit and FocusManager `setGroupOrder` re-sync remain drop-time only (unchanged from today's [L22] contract).
 
+#### [P09] Section-altitude strip pins at `top: 0`; band height publishes on the section body (DECIDED) {#p09-pin-stack}
+
+**Decision:** The section-altitude strip pins with an explicit `top: 0` (a `[data-altitude="section"]` override of the leaf strip's `top: var(--tugx-pin-stack-top, 0)`), and the measured band height is written as `--tugx-pin-stack-top` onto the section **body** element (`.lens-section-body`), not the section root the strip reads from.
+
+**Rationale:**
+- `BlockStrip` inherits leaf `block-header.css` where `.tool-call-header` pins at `top: var(--tugx-pin-stack-top, 0)`. Today the band pins at a literal `top: 0` while the section *root* publishes `--tugx-pin-stack-top` = measured band height for nested content — and `lens-section-band.css` explicitly warns that folding the variable onto one element is a dependency cycle.
+- Rebuilding the band on the strip without this override makes the strip **read the very variable its own measured height writes on an ancestor**: the band would pin ~40px low and creep as the ResizeObserver fires. This decision breaks that self-reference by making the section band always the outermost pin (`top: 0`) and moving the producer (measured height) onto the body, whose nested sticky content inherits it cleanly.
+
+**Implications:** The `ResizeObserver` in `LensSection` writes `--tugx-pin-stack-top` on `bodyRef` (the `.lens-section-body` element) instead of the section root; a collapsed section (no body) publishes nothing, which is correct (no nested content to clear). The static first-frame CSS fallback moves with it. The no-synchronous-seed O(n²) discipline (#header-dom-seam) is preserved verbatim.
+
 ---
 
 ### Deep Dives (Optional) {#deep-dives}
@@ -275,7 +297,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 | Per-entry Sessions collapse (`sessionsEntryCollapseStore`) | local-data | module store + `useSyncExternalStore` | [L02], [L24] |
 | Session tag in entry title | external state | `sessionTagStore` via `useSyncExternalStore` | [L02] |
 | FocusManager group order | structure | `contextFor(cardId).setGroupOrder(...)` off the store | [L22] |
-| Section band height → `--tugx-pin-stack-top` | appearance | `ResizeObserver` + DOM var write in `useLayoutEffect` (no sync seed) | [L03], [L06] |
+| Section band height → `--tugx-pin-stack-top` (written on `.lens-section-body`, [P09]) | appearance | `ResizeObserver` + DOM var write in `useLayoutEffect` (no sync seed) | [L03], [L06] |
 
 ---
 
@@ -306,7 +328,8 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 | `LensSectionDefinition.headerActions` | field | `lens/lens-section-registry.ts` | Optional `(host) => ReactNode`. |
 | `sessionsEntryCollapseStore` | store | `lib/sessions-entry-collapse-store.ts` | `subscribe`/`isCollapsed`/`toggle`/`expandAll`/`collapseAll`. |
 | `sessionEntryTitle` | fn | `lib/session-name.ts` | `(displayName, ownerId, tag) => string`; name → tag → hash. |
-| `EntryIdentity` | component | `lens/sections/sessions-section.tsx` | Subscribe to `sessionTagStore`; render `sessionEntryTitle`. |
+| `EntryIdentity` | component | `lens/sections/sessions-section.tsx` | Render `SessionEntryTitle` for session items; raw `itemTitle` for dash/unattributed. |
+| `SessionEntryTitle` | component | `lens/sections/sessions-section.tsx` | New child; unconditionally subscribes to `sessionTagStore`; renders `sessionEntryTitle` ([L02] hook-safe). |
 | `SessionsEntryBlock` | component | `lens/sections/sessions-section.tsx` | Pass `altitude="entry"` to `BlockChrome`. |
 | `registerSessionsSection` | fn | `lens/sections/sessions-section.tsx` | Supply `headerActions` (Expand/Collapse-all). |
 | `useBlockReorder` | hook | `lens/block-reorder.ts` | FLIP drag; replaces inline `onGripPointerDown`. |
@@ -413,7 +436,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 
 **Commit:** `lens(section): rebuild section band on BlockStrip at section altitude`
 
-**References:** [P01] BlockStrip root, [P02] section-strip, [P04] BlockGrip, (#flip-spec, #header-dom-seam). Laws [L02], [L03], [L06], [L19].
+**References:** [P01] BlockStrip root, [P02] section-strip, [P04] BlockGrip, [P09] pin-stack, (#flip-spec, #header-dom-seam, #p09-pin-stack). Laws [L02], [L03], [L06], [L17], [L19].
 
 **Artifacts:**
 - New `affordances/block-grip.tsx` + `.css`.
@@ -423,9 +446,10 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 - [ ] Create `BlockGrip` wrapping `GripVertical` (size 14) with `data-testid="lens-section-grip"` support, grab/grabbing cursor, `touch-action: none`, forwarding `onPointerDown`.
 - [ ] Rebuild `LensSection` to render `BlockStrip altitude="section"` with: `grip` = `BlockGrip` (wired to `onGripPointerDown`), `leading` = `def.glyph`, `name` = `def.title`, `detail`/`trailing` = the live `collapsedSummary` when collapsed (else a spacer), `actions` = `[def.headerActions?.(host)] + <BlockFoldCue collapsed={collapsed} onToggle={toggle}…>`.
 - [ ] Toggle collapse via `lensStore.setCollapsed(def.kind, !collapsed)` inside the `BlockFoldCue.onToggle` ([L02]).
-- [ ] Preserve the section root `<section data-lens-section data-collapsed>` and its `--tugx-pin-stack-top` `ResizeObserver` (measured off the strip band, no synchronous seed — see #header-dom-seam). The strip is the measured band.
+- [ ] **Break the pin self-reference ([P09]).** `BlockStrip` inherits leaf `block-header.css`'s `.tool-call-header { top: var(--tugx-pin-stack-top, 0) }`; add a `[data-altitude="section"]` override pinning the section strip at `top: 0` (it is always the outermost pin). Move the `ResizeObserver`'s `--tugx-pin-stack-top` write from the section root onto the `.lens-section-body` element (a `bodyRef`), so the producer of the measured height is never the element the strip reads from. Keep the no-synchronous-seed discipline (#header-dom-seam); the static first-frame CSS fallback moves to `.lens-section-body`.
+- [ ] Preserve the section root `<section data-lens-section data-collapsed>`. The strip is the measured band; a collapsed section (no body) writes no pin var, which is correct (nothing nested to clear).
 - [ ] Preserve `data-testid="lens-section-band"` / `lens-section-body` / `lens-section-summary` so app-tests keep resolving.
-- [ ] Delete the obsolete `.lens-section-band` header layout rules from `lens-section-band.css` (grip/glyph/title/summary now come from the strip); keep only section-root + body rules (pin stack, border). Remove the `TugIconButton` chevron and its import.
+- [ ] Delete the obsolete `.lens-section-band` header layout rules from `lens-section-band.css` (grip/glyph/title/summary now come from the strip); keep only section-root + body rules (the [P09] body-side pin write, border). Remove the `TugIconButton` chevron and its import.
 
 **Tests:**
 - [ ] Build green; the four sections (Telemetry, Log, Sessions, Git History) still register and render.
@@ -433,7 +457,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build` succeeds.
 - [ ] `just app-test` — the Lens mounts; `[data-testid="lens-section-band"]` resolves for each section; collapse toggles hide/show the body.
-- [ ] `just run` — section bands read as slightly-larger tool headers (grip · glyph · title · summary · chevron), not the oversized old band.
+- [ ] `just run` + scroll the Lens — each section band pins flush at the scroller top (no ~40px low-pin or creep, [P09]) and reads as a slightly-larger tool header (grip · glyph · title · summary · chevron), not the oversized old band.
 
 ---
 
@@ -454,6 +478,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 - [ ] Add `headerActions?: (host: LensSectionHost) => React.ReactNode` to `LensSectionDefinition`; `LensSection` renders it left of the chevron (already wired in #step-3's actions slot).
 - [ ] Create `sessionsEntryCollapseStore`: `subscribe(listener)`, `isCollapsed(id): boolean`, `toggle(id, next)`, `expandAll()`, `collapseAll()`, with an internal seen-id set so `collapseAll` covers the whole seen set (mirrors the current `seenSectionsRef` behavior). Absent id ⇒ open (open-once default).
 - [ ] Refactor `SessionsSectionBody` to read per-entry collapse from the store (`useSyncExternalStore`) instead of local `collapsedEntries` state; feed each `SessionsEntryBlock`'s `collapsed`/`onToggle` from the store; register each snapshot's ids as seen.
+- [ ] **Intended behavior change:** per-entry collapse now persists across a section collapse/expand and a Lens close/reopen (the module store outlives the body's mount, unlike today's body-local `useState` which reset on unmount). This is desired — a user's per-entry fold should survive toggling the section. Keyed by stable entry id, so a recomputed snapshot restores each entry's fold.
 - [ ] In `registerSessionsSection`, add `headerActions` returning the two `TugPushButton emphasis="ghost" role="action" size="2xs"` controls (`data-testid="sessions-expand-all"` / `sessions-collapse-all`) wired to `sessionsEntryCollapseStore.expandAll/collapseAll`.
 - [ ] Delete the `.sessions-head` / `.sessions-toolbar` / `.sessions-toolbar-spacer` markup and CSS.
 
@@ -526,7 +551,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 
 **Tasks:**
 - [ ] Add `sessionEntryTitle(displayName, ownerId, tag)` to `session-name.ts`: return `tag ?? displayName` when `displayName === ownerId.slice(0, 8)`, else `displayName`.
-- [ ] In `EntryIdentity`, for `item.kind === "session"`, subscribe to `sessionTagStore` for `item.entry.owner_id` (`useSyncExternalStore`) and render `sessionEntryTitle(item.entry.display_name, item.entry.owner_id, tag)` instead of raw `itemTitle(item)`. Dash/unattributed titles unchanged.
+- [ ] Adopt the tag **without a conditional hook** ([L02] — hooks run unconditionally). Extract a dedicated `SessionEntryTitle` child component that `EntryIdentity` renders only for `item.kind === "session"`; that child *unconditionally* subscribes to `sessionTagStore` for the session's `owner_id` (`useSyncExternalStore`) and renders `sessionEntryTitle(displayName, ownerId, tag)`. `EntryIdentity` keeps rendering raw `itemTitle(item)` for dash/unattributed items (no tag path), so no hook is ever gated behind an `item.kind` branch inside a single component.
 
 **Tests:**
 - [ ] `session-name.test.ts` — hash display_name + tag ⇒ tag; named display_name + tag ⇒ name; no tag + hash ⇒ hash.
@@ -574,6 +599,7 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 - [ ] Keep the commit drop-only: `lensStore.setSectionOrder([...newVisible, ...hiddenTail])`; keep the FocusManager `setGroupOrder` re-sync at drop ([L22]).
 - [ ] Escape mid-drag aborts without committing (clear inline styles + caret); do not let the Lens `CANCEL_DIALOG` responder swallow it.
 - [ ] `BlockDropCaret`: a positioned ~2px accent hairline using a `--tug` accent token; created/removed by the handler (DOM, not React state).
+- [ ] **Watch-item — sticky vs. transform.** FLIP applies `translateY` to `.lens-section` roots whose bands are `position: sticky` ([P09] pins them at `top: 0`). A band that is *stuck* mid-scroll computes its sticky offset before the transform and can pop during the drag. If observed during tuning, suspend stickiness for the duration of a live drag — set the dragged/animating sections to `position: relative` while `data-dragging` (or a container `data-reordering`) is set, restoring on drop. Drags typically start from an unstuck grip, so treat this as a tuning step, not a redesign.
 
 **Tests:**
 - [ ] `just app-test` — a grip pointer-drag (with settle delays) shows `.block-drop-caret` mid-drag and lands the section; post-drop `lensStore.getSnapshot().sectionOrder` matches the new order.
