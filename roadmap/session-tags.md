@@ -1,8 +1,8 @@
 <!-- devise-skeleton v4 -->
 
-## Session Tags — mnemonic names fronting Dev card sessions {#session-tags}
+## Session Tags — mnemonic names fronting Session card sessions {#session-tags}
 
-**Purpose:** Give every Dev card session a human-friendly mnemonic **tag** — an `adjective-noun` pair like `azure-heron` — that fronts the session in the UI and is typable to address it, layered *on top of* (never replacing) the client-minted UUID and the `/rename` custom name. Tags mint client-side "from the drop", are stored authoritatively in the tugcast ledger, and are unique per machine.
+**Purpose:** Give every Session card session a human-friendly mnemonic **tag** — an `adjective-noun` pair like `azure-heron` — that fronts the session in the UI and is typable to address it, layered *on top of* (never replacing) the client-minted UUID and the `/rename` custom name. Tags mint client-side "from the drop", are stored authoritatively in the tugcast ledger, and are unique per machine.
 
 ---
 
@@ -21,7 +21,7 @@
 
 #### Context {#context}
 
-A Dev card session is identified by a `tugSessionId` — a UUID the client mints with `crypto.randomUUID()` and passes to the `claude` subprocess as `--session-id`. UUIDs are a solid join key but poor for humans: you cannot recall or say `a4c7946c-…`. The existing `/rename` feature (ledger `sessions.name` + `name_user_set`, surfaced by `sessionChipDisplay`/`sessionRowTitle`) lets a user name a session, but only after the fact and only by hand. This plan adds a curated mnemonic that is present the instant a session is born.
+A Session card session is identified by a `tugSessionId` — a UUID the client mints with `crypto.randomUUID()` and passes to the `claude` subprocess as `--session-id`. UUIDs are a solid join key but poor for humans: you cannot recall or say `a4c7946c-…`. The existing `/rename` feature (ledger `sessions.name` + `name_user_set`, surfaced by `sessionChipDisplay`/`sessionRowTitle`) lets a user name a session, but only after the fact and only by hand. This plan adds a curated mnemonic that is present the instant a session is born.
 
 The lexicon is **already built and committed** — `tugdeck/src/lib/session-tag-lexicon.ts` (`8a84a02e0`) exports `TAG_ADJECTIVES` (512 words, 4–6 letters), `TAG_NOUNS` (1024 words, 4–5 letters), and `TAG_COMBINATIONS` (524,288). The two pools are disjoint (a tag never doubles a word) and curated for tone. This plan **consumes** that module; it must not regenerate or edit it.
 
@@ -213,7 +213,7 @@ The tag reuses the exact end-to-end machinery `/rename` already established: a n
 
 The tag follows the identical path `card_id`/`permission_mode` already travel:
 
-1. **Client** mints `tugSessionId` (`crypto.randomUUID()`) and a provisional tag, then calls `sendSpawnSession(...)` → `encodeSpawnSession(...)` → a `spawn_session` CONTROL frame (`CONTROL_ACTION_SPAWN_SESSION`). Mint sites: `dev-card.tsx` (the `submitWith` new-session path near the two `crypto.randomUUID()` calls, and the `/clear` path that mints `newSessionId`), `dev-session-restore.ts` (the restore-as-new mint and the resume path that reuses an existing id), `resume-sheet.tsx` (the resume-as-new mint).
+1. **Client** mints `tugSessionId` (`crypto.randomUUID()`) and a provisional tag, then calls `sendSpawnSession(...)` → `encodeSpawnSession(...)` → a `spawn_session` CONTROL frame (`CONTROL_ACTION_SPAWN_SESSION`). Mint sites: `session-card.tsx` (the `submitWith` new-session path near the two `crypto.randomUUID()` calls, and the `/clear` path that mints `newSessionId`), `session-restore.ts` (the restore-as-new mint and the resume path that reuses an existing id), `resume-sheet.tsx` (the resume-as-new mint). Both `session-card.tsx` and `session-restore.ts` were rewritten by the `session-card` rename sweep (`1ea6b1f04`); re-locate these line-level anchors in the current files before wiring — the branches survive, the landmarks may have moved.
 2. **Supervisor** (`agent_supervisor.rs`): `parse_spawn_session_payload` extracts `tug_session_id`/`project_dir`/`permission_mode` — add `tag` here. `do_spawn_session` builds/updates the in-memory `LedgerEntry` (keyed by `TugSessionId`); it sets `entry.permission_mode` on the fresh path — set `entry.tag` the same way (once on fresh insert, preserved across reconnect). `LedgerEntry::new` initializes `permission_mode: None` — add `tag: None`.
 3. **Bridge** (`agent_bridge.rs`): at `session_init`, the promote block constructs `SessionRecord { session_id: record_id, workspace_key, project_dir, card_id }` and calls `sessions_recorder.record(...)`. Add `tag` to `SessionRecord` and pass `entry.tag` here (the entry is in scope in `relay_session_io`). Note the ledger row is keyed by the **claude** session id (`record_id`), which equals the tug id for un-forked sessions.
 4. **Ledger** (`session_ledger.rs`): `LedgerSessionsRecorder::record` calls `record_spawn(...)`; add the `tag` argument. `record_spawn` performs `INSERT … ON CONFLICT(session_id) DO UPDATE`; the tag is set on fresh insert (claim-or-suffix, Spec S02) and `COALESCE`d on the conflict branch ([P06]).
@@ -221,7 +221,7 @@ The tag follows the identical path `card_id`/`permission_mode` already travel:
 
 #### Precedence + store shape (mirror of `/rename`) {#precedence-store}
 
-`sessionNameStore` (`session-name-store.ts`) is a `Map<session_id, string>` fed from three `action-dispatch` sites: the optimistic `/rename` echo, the `session_updated` push, and `list_sessions_ok` rows. The chip (`DevSessionIdBadge`) subscribes by id and calls `sessionChipDisplay(name, tugSessionId)`; the picker row (`dev-picker-cells.tsx`) calls `sessionRowTitle(row.name, fullPrompt ?? "")`.
+`sessionNameStore` (`session-name-store.ts`) is a `Map<session_id, string>` fed from three `action-dispatch` sites: the optimistic `/rename` echo, the `session_updated` push, and `list_sessions_ok` rows. The chip (`SessionIdBadge`, `chrome/session-id-badge.tsx`) subscribes by id and calls `sessionChipDisplay(name, tugSessionId)`; the picker row (`session-picker-cells.tsx`) calls `sessionRowTitle(row.name, fullPrompt ?? "")`.
 
 The tag store is the exact same shape as `sessionNameStore` — a `Map<session_id, string>` with `subscribe`/`getTag`/`setTag` and no-op-when-unchanged. No reverse map in v1; the deferred typed-command adds one when it needs it ([Q02]):
 
@@ -286,9 +286,9 @@ The tag store is the exact same shape as `sessionNameStore` — a `Map<session_i
 | `sendSpawnSession` | fn | `session-lifecycle.ts` | add `tag` param → `encodeSpawnSession` |
 | `sessionChipDisplay`, `sessionRowTitle` | fn | `session-name.ts` | add `tag` tier ([P01]) |
 | `session_updated` / `list_sessions_ok` / bindings handlers | fn | `action-dispatch.ts` | set `sessionTagStore` (3 sites) |
-| `DevSessionIdBadge` | component | `dev-session-id-badge.tsx` | subscribe `sessionTagStore`; pass tag to `sessionChipDisplay`; include tag in `copyValue` |
-| picker/resume row + `/resume` filter | component | `dev-picker-cells.tsx`, `resume-sheet.tsx` | pass `row.tag`; add tag-matching filter |
-| spawn mint sites | call sites | `dev-card.tsx`, `dev-session-restore.ts`, `resume-sheet.tsx` | mint provisional tag; optimistic store set; thread through `sendSpawnSession` |
+| `SessionIdBadge` | component | `chrome/session-id-badge.tsx` | subscribe `sessionTagStore`; pass tag to `sessionChipDisplay`; include tag in `copyValue` |
+| picker/resume row + `/resume` filter | component | `session-picker-cells.tsx`, `resume-sheet.tsx` | pass `row.tag`; add tag-matching filter |
+| spawn mint sites | call sites | `session-card.tsx`, `session-restore.ts`, `resume-sheet.tsx` | mint provisional tag; optimistic store set; thread through `sendSpawnSession` |
 
 ---
 
@@ -433,7 +433,7 @@ The tag store is the exact same shape as `sessionNameStore` — a `Map<session_i
 
 **Tasks:**
 - [ ] In `action-dispatch.ts`, set `sessionTagStore` from `row.tag` at the `session_updated`, `list_sessions_ok`, and card-bindings handlers (beside the existing `sessionNameStore.setName` calls).
-- [ ] At each spawn mint site — `dev-card.tsx` (`submitWith` new + `/clear`), `dev-session-restore.ts` (restore-as-new + resume), `resume-sheet.tsx` (resume-as-new) — mint a provisional tag via `mintTag(known)` where `known` is the set of tags currently in `sessionTagStore`; set it optimistically; pass it through `sendSpawnSession`. On a resume whose row already has a tag, reuse that tag rather than minting; on a legacy tagless resume, mint one ([P06]).
+- [ ] At each spawn mint site — `session-card.tsx` (`submitWith` new + `/clear`), `session-restore.ts` (restore-as-new + resume), `resume-sheet.tsx` (resume-as-new) — mint a provisional tag via `mintTag(known)` where `known` is the set of tags currently in `sessionTagStore`; set it optimistically; pass it through `sendSpawnSession`. On a resume whose row already has a tag, reuse that tag rather than minting; on a legacy tagless resume, mint one ([P06]). Note: `session-card.tsx` and `session-restore.ts` were rewritten by the `session-card` rename sweep (`1ea6b1f04`) — re-locate the `crypto.randomUUID()` / `/clear` / restore-branch anchors in the current files before wiring.
 
 **Tests:**
 - [ ] App-test: spawning a new card yields a tag on its chip (short interaction).
@@ -450,11 +450,11 @@ The tag store is the exact same shape as `sessionNameStore` — a `Map<session_i
 
 **References:** [P01] Precedence, [P05] Addressing, [Q04] Chip display, Spec S01 (`matchesTagQuery`), [L03] responders, (#state-zone-mapping)
 
-**Artifacts:** `DevSessionIdBadge` tag; picker/resume row tag; `/resume` overlay filter matching tag/name/prompt.
+**Artifacts:** `SessionIdBadge` tag; picker/resume row tag; `/resume` overlay filter matching tag/name/prompt.
 
 **Tasks:**
-- [ ] In `dev-session-id-badge.tsx` subscribe `sessionTagStore` by `tugSessionId` and pass the tag to `sessionChipDisplay(name, tag, tugSessionId)`; include the tag in `copyValue` (the addressable handle).
-- [ ] In `dev-picker-cells.tsx` pass `row.tag` to `sessionRowTitle`; render the tag on each row (compose an existing `Tug*` element — do not hand-roll).
+- [ ] In `chrome/session-id-badge.tsx` subscribe `sessionTagStore` by `tugSessionId` and pass the tag to `sessionChipDisplay(name, tag, tugSessionId)`; include the tag in `copyValue` (the addressable handle).
+- [ ] In `session-picker-cells.tsx` pass `row.tag` to `sessionRowTitle`; render the tag on each row (compose an existing `Tug*` element — do not hand-roll).
 - [ ] Add a filter field to the `/resume` overlay (`resume-sheet.tsx`) composing the **same `Tug*` text field the `/rename` sheet uses** (`rename-session-sheet.tsx`) so it inherits the substrate responders ([L03] — CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO; a hand-rolled `<input>` would go dead on Cmd-A/C/X/V/Z). Hold the query in `useState`; filter the listed rows via `matchesTagQuery` (tag/name/prompt). A non-matching query shows an empty list and fires nothing.
 
 **Tests:**
@@ -488,7 +488,7 @@ The tag store is the exact same shape as `sessionNameStore` — a `Map<session_i
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** Every new Dev card session is fronted by a unique, mnemonic `adjective-noun` tag — shown on the chip and in the session lists, typable to filter/address the session in `/resume`, stored authoritatively in the ledger, and layered non-destructively over the UUID and the `/rename` name.
+**Deliverable:** Every new Session card session is fronted by a unique, mnemonic `adjective-noun` tag — shown on the chip and in the session lists, typable to filter/address the session in `/resume`, stored authoritatively in the ledger, and layered non-destructively over the UUID and the `/rename` name.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
