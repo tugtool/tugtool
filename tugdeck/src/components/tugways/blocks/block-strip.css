@@ -1,0 +1,62 @@
+/* @tug-pairings:
+   - --tugx-toolheader-name-size / --tugx-toolheader-name-weight  (the altitude scale overrides, block-header.css owns the leaf values)
+   - --tug-font-size-sm / --tug-font-weight-bold / --tug-space-*  (the scale is built from these primitives)
+*/
+
+/**
+ * block-strip.css — the altitude token scale for the shared Block header
+ * shell ({@link BlockStrip}).
+ *
+ * The strip's ROW LAYOUT (flex, one-line boxes, pipe separators, clamp,
+ * sticky pin) lives in `block-header.css`, keyed on the `tool-call-header`
+ * class every altitude carries. This file adds only the per-altitude
+ * TOKEN overrides keyed on `data-altitude`: `leaf` inherits the base values
+ * untouched (no rule here), while `entry` and `section` bump the
+ * `--tugx-toolheader-*` family so the family reads as one component at three
+ * declarative sizes ([P03]).
+ *
+ * Tuglaws: [L06] appearance via the `data-altitude` attribute + CSS; [L17]
+ * `--tugx-toolheader-*` resolves to `--tug*` in one hop; [L19] file pair,
+ * docstring, `data-slot`; [L20] owns the altitude scale of the
+ * `--tugx-toolheader-*` family.
+ */
+
+/* leaf — no overrides. The base `body {}` values in block-header.css are the
+   leaf altitude, so a leaf strip is pixel-identical to today's tool header. */
+
+/* entry — leaf type sizes, a touch more vertical padding so a session-entry
+   card reads one step above the file rows nested in its body. Overriding
+   `--tugx-block-strip-padding` on the strip element only: `.tool-call-header`
+   is the sole consumer, and its descendants (the header spans) never read it,
+   so the roomier padding never leaks into the entry's leaf file rows (a
+   sibling subtree under `.tool-block-chrome`). */
+.tool-call-header[data-altitude="entry"] {
+  --tugx-block-strip-padding: var(--tug-space-sm) var(--tug-space-md);
+}
+
+/* section — the Lens band altitude ([P03]): slightly larger and bold name,
+   a touch taller line box, and the same roomier padding. Only *slightly*
+   above leaf — the section reads as a scaled tool header, not the oversized
+   old band. */
+.tool-call-header[data-altitude="section"] {
+  --tugx-toolheader-name-size: calc(var(--tug-font-size-sm) * 1.12);
+  --tugx-toolheader-name-weight: var(--tug-font-weight-bold);
+  --tugx-toolheader-line: calc(var(--tug-font-size-sm) * 1.75);
+  --tugx-block-strip-padding: var(--tug-space-sm) var(--tug-space-md);
+}
+
+/* [P09] — the section band is always the OUTERMOST pin, so it pins at an
+   explicit `top: 0`, overriding the leaf `.tool-call-header`'s
+   `top: var(--tugx-pin-stack-top, 0)`. This breaks the self-reference: the
+   band's measured height is published on the section BODY (see
+   `lens-section-band.css`), never on an ancestor the strip would read from. */
+.tool-call-header[data-altitude="section"] {
+  top: 0;
+}
+
+/* The section's detail column carries the live collapsed summary (prose,
+   not code), so it reads in the sans UI face rather than the mono detail
+   font a tool header's command wants. */
+.tool-call-header[data-altitude="section"] .tool-call-header-detail {
+  font-family: var(--tug-font-family-sans);
+}

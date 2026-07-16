@@ -30,7 +30,8 @@ const TEST_TIMEOUT_MS = 60_000;
 const SECTIONS = ".lens-sections .lens-section[data-lens-section]";
 const sectionSel = (kind: string): string =>
   `.lens-section[data-lens-section="${kind}"]`;
-const gripSel = (kind: string): string => `${sectionSel(kind)} .lens-section-grip`;
+const gripSel = (kind: string): string =>
+  `${sectionSel(kind)} [data-testid="lens-section-grip"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
   await app.evalJS<void>(
@@ -110,6 +111,82 @@ describe.skipIf(!SHOULD_RUN)(
             // dropped above.
             const after = await domOrder(app);
             expect(after.indexOf(second)).toBeLessThan(after.indexOf(first));
+
+            const persisted = tugbankRead<string[]>(
+              tugbankPath,
+              "dev.tugtool.lens",
+              "sectionOrder",
+            );
+            const order = persisted?.value ?? [];
+            expect(order.indexOf(second)).toBeLessThan(order.indexOf(first));
+          } finally {
+            await app.close();
+          }
+        } finally {
+          rmTempTugbank(tugbankPath);
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a held drag ghosts the band + shows the drop caret, then lands on release",
+      async () => {
+        const tugbankPath = mkTempTugbank();
+        try {
+          seedTugbankForLaunch(tugbankPath);
+          const app = await launchTugApp({
+            testName: "at0233-lens-flip",
+            env: { TUGBANK_PATH: tugbankPath },
+            persistInTestMode: true,
+          });
+          try {
+            await dispatch(app, "toggle-lens");
+            await app.waitForCondition<boolean>(
+              `document.querySelectorAll(${JSON.stringify(SECTIONS)}).length >= 2`,
+              { timeoutMs: 3_000 },
+            );
+            const before = await domOrder(app);
+            const [first, second] = before;
+
+            const firstBounds = await app.getElementBounds(sectionSel(first));
+            const target = {
+              x: Math.round(firstBounds.x + firstBounds.width / 2),
+              y: Math.round(firstBounds.y + 4),
+            };
+
+            // Press + drag the second grip toward the top of the first, HOLDING
+            // (no release) so the mid-drag FLIP visuals can be observed.
+            await app.nativeDragElementWithoutRelease(gripSel(second), target);
+
+            // Mid-drag: the dragged band is ghosted (`data-dragging`) and the
+            // drop caret is revealed in the opened gap ([P08]).
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(
+                `${sectionSel(second)}[data-dragging="true"]`,
+              )}) !== null &&
+               document.querySelector('.lens-sections .block-drop-caret[data-visible="true"]') !== null`,
+              { timeoutMs: 3_000 },
+            );
+
+            // Release — the section lands and the reorder commits to the store.
+            await app.nativeMouseUp(target);
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var els = Array.from(document.querySelectorAll(${JSON.stringify(SECTIONS)}));
+                return els.length >= 2 && els[0].getAttribute("data-lens-section") === ${JSON.stringify(second)};
+              })()`,
+              { timeoutMs: 3_000 },
+            );
+            const after = await domOrder(app);
+            expect(after.indexOf(second)).toBeLessThan(after.indexOf(first));
+
+            // The caret is gone once the drag ends.
+            expect(
+              await app.evalJS<boolean>(
+                `document.querySelector('.lens-sections .block-drop-caret[data-visible="true"]') === null`,
+              ),
+            ).toBe(true);
 
             const persisted = tugbankRead<string[]>(
               tugbankPath,

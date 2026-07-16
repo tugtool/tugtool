@@ -211,6 +211,19 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-session-card filte
           { timeoutMs: 10_000 },
         );
 
+        // (0) Bulk-collapse controls now live in the section BAND (the
+        // right-aligned header actions), not a body toolbar ([P05]/[P06]): the
+        // Expand-all control resolves inside the Sessions band's actions
+        // cluster while the section is expanded.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(
+              `${SECTION} [data-testid="lens-section-band"] [data-testid="sessions-expand-all"]`,
+            )}) !== null`,
+          ),
+          "Expand-all resolves inside the Sessions section band",
+        ).toBe(true);
+
         // (1) Filter: the section settles on EXACTLY the two open dev cards'
         // sessions (one row each). The bootstrap source-tree is registered but
         // unbound to any session card here, so none of its sessions appear.

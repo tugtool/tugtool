@@ -150,6 +150,7 @@ function HeaderTiming({
 }
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
+import { BlockStrip, type BlockAltitude } from "./block-strip";
 import {
   TOOL_CALL_PHASE_LABELS,
   toolCallPhaseVisual,
@@ -269,6 +270,12 @@ export interface BlockHeaderProps {
    * their affordances into the header.
    */
   actionsSlotRef?: (node: HTMLDivElement | null) => void;
+  /**
+   * Altitude tier forwarded to {@link BlockStrip} as `data-altitude`
+   * ([P03]). `leaf` (default) is today's tool header, pixel-unchanged;
+   * `entry` scales a session-entry card, `section` a Lens band.
+   */
+  altitude?: BlockAltitude;
   /** Forwarded class name. */
   className?: string;
 }
@@ -292,6 +299,7 @@ export const BlockHeader = React.forwardRef<
     disclosure,
     actions,
     actionsSlotRef,
+    altitude = "leaf",
     className,
   },
   ref,
@@ -305,62 +313,48 @@ export const BlockHeader = React.forwardRef<
   // "block" for a verb-less row (a changeset file block).
   const ariaSubject = toolName ?? NEUTRAL_BLOCK_LABEL;
 
-  return (
-    <div
-      ref={ref}
-      data-slot="tool-call-header"
-      data-phase={phase}
-      data-collapsed={collapsed ? "true" : undefined}
-      className={cn("tool-call-header", className)}
-    >
-      {/* Leftmost slot: a caller-supplied `leading` glyph (a file row's
-          commit checkbox) IN PLACE of the lifecycle dot, or the dot itself.
-          The two are mutually exclusive and share the same box width
-          (`DOT_SIZE`), so the identity row's left edge aligns identically. */}
-      {leading !== undefined ? (
-        <span
-          className="tool-call-header-leading"
-          data-slot="tool-call-header-leading"
-        >
-          {leading}
-        </span>
-      ) : (
-        <TugProgressIndicator
-          variant="pulsing-dot"
-          size={DOT_SIZE}
-          phase={phase}
-          phaseVisual={toolCallPhaseVisual}
-          aria-label={TOOL_CALL_PHASE_LABELS[phase]}
-          className="tool-call-header-dot"
-        />
-      )}
-      {/* The verb — omitted entirely for a verb-less row (a changeset file
-          block), where the identity leads instead. An empty name would also
-          collapse via CSS, but a verb-less caller passes no `toolName` at
-          all, so the span simply isn't rendered. */}
-      {toolName !== undefined ? (
-        <span className="tool-call-header-name">{toolName}</span>
-      ) : null}
-      {/* The detail column is always present — it holds the target (chip
-          or wrapping command) and otherwise serves as the flexible spacer
-          that pushes the trailing result + actions to the right edge. */}
-      <span className="tool-call-header-detail">{target}</span>
-      {/* Result summary — the quiet one-line "what did this do?" (N lines,
-          a diff stat, a match count, an exit code) in its OWN
-          pipe-delimited section. Shown whenever a summary exists, in BOTH
-          the in-flight and landed states, so a streaming Write's growing
-          line count reads LEFT of the live clock rather than waiting for
-          the call to land. Rendered identically collapsed/expanded. The
-          summary's role still carries pass/fail signal: nonzero exit reads
-          danger, exit 0 success, every other kind neutral `inherit`. */}
+  // Leftmost slot: a caller-supplied `leading` glyph (a file row's commit
+  // checkbox) IN PLACE of the lifecycle dot, or the dot itself. The two are
+  // mutually exclusive and share the same box width (`DOT_SIZE`), so the
+  // identity row's left edge aligns identically. Composed here and passed to
+  // the strip verbatim.
+  const leadingNode =
+    leading !== undefined ? (
+      <span
+        className="tool-call-header-leading"
+        data-slot="tool-call-header-leading"
+      >
+        {leading}
+      </span>
+    ) : (
+      <TugProgressIndicator
+        variant="pulsing-dot"
+        size={DOT_SIZE}
+        phase={phase}
+        phaseVisual={toolCallPhaseVisual}
+        aria-label={TOOL_CALL_PHASE_LABELS[phase]}
+        className="tool-call-header-dot"
+      />
+    );
+
+  // Trailing pipe-sections — the result summary, the live/frozen timing, and
+  // the caution badge. Each carries its own `tool-call-header-*` class so the
+  // pipe-separator CSS keeps matching. Shown in BOTH states so a streaming
+  // Write's growing line count reads LEFT of the live clock rather than
+  // waiting for the call to land; the summary's role still carries pass/fail
+  // signal (nonzero exit danger, exit 0 success, else neutral `inherit`).
+  const trailingNode = (
+    <>
       {summary !== undefined ? (
-        <span className="tool-call-header-summary" data-slot="tool-call-header-summary">
+        <span
+          className="tool-call-header-summary"
+          data-slot="tool-call-header-summary"
+        >
           {summary.kind === "diff" ? (
-            // Diff stat — two ghost badges (`emphasis="ghost" role="inherit"`)
-            // that take the header's own text color, no green/red tint, so the
-            // pair reads as plain metadata (the house monochrome +N −M
-            // doctrine, [P27]). See {@link DiffSummaryBadges}. Each badge
-            // copies its own value on right-click.
+            // Diff stat — two ghost badges that take the header's own text
+            // color, no green/red tint, so the pair reads as plain metadata
+            // (the house monochrome +N −M doctrine, [P27]). Each badge copies
+            // its own value on right-click.
             <DiffSummaryBadges summary={summary} />
           ) : (
             <TugBadge
@@ -373,68 +367,88 @@ export const BlockHeader = React.forwardRef<
           )}
         </span>
       ) : null}
-      {/* Timing — its own pipe-delimited section at the trailing edge. A
-          LIVE elapsed clock while the call is in flight (the only honest
-          "still working" signal for a long silent tool — a 3-minute Bash
-          emits nothing on the wire until it returns), frozen to the
-          recorded wall time once it lands. See {@link HeaderTiming}. */}
+      {/* A LIVE elapsed clock while in flight (the only honest "still working"
+          signal for a long silent tool), frozen to the recorded wall time
+          once it lands. See {@link HeaderTiming}. */}
       <HeaderTiming phase={phase} />
       {caution !== undefined ? <SessionCautionBadge caution={caution} /> : null}
-      <span className="tool-call-header-actions">
-        {/* Body-specific, expanded-only controls (Find, view-mode,
-            expand-all) portal into this slot, sitting LEFT of the
-            header-owned Copy + chevron. Present only when expanded (the
-            body is mounted); the published node lets a body kind's
-            `createPortal` find a target on its first render. The header
-            owns Copy + whole-block fold, so body kinds no longer portal
-            those — see the body-kind affordance composition. */}
-        {!collapsed ? (
-          <div
-            ref={actionsSlotRef}
-            className="tool-call-header-actions-slot"
-            data-slot="tool-block-actions"
-          >
-            {actions}
-          </div>
-        ) : null}
-        {/* Copy + Expand are the two standard header affordances —
-            icon-only (the `icon` subtype of the shared `BlockCopyButton`
-            / `BlockFoldCue`) and both at the `xs` scale so they read as a
-            matched pair and stay quiet across a run of blocks. The
-            icon+text forms of the same components serve the body kinds'
-            expanded controls. */}
-        {hasCopy ? (
-          <BlockCopyButton
-            subtype="icon"
-            size="xs"
-            getText={
-              typeof copyText === "function" ? copyText : () => copyText ?? ""
-            }
-            aria-label={`Copy ${ariaSubject} command and result`}
-            data-slot="tool-call-header-copy"
-          />
-        ) : null}
-        {collapsible ? (
-          <BlockFoldCue
-            collapsed={collapsed}
-            onToggle={(next) => disclosure?.onToggle(next)}
-            collapsedLabel="Expand"
-            expandedLabel="Collapse"
-            ariaLabelExpand={`Expand ${ariaSubject} tool call`}
-            ariaLabelCollapse={`Collapse ${ariaSubject} tool call`}
-            size="xs"
-            subtype="icon"
-            disabled={disclosure?.disabled === true}
-            // Whole-block collapse uses the same scroll machinery as every
-            // body-fold cue (the default `stabilizeScroll`): release the
-            // host's follow-bottom lock before the toggle so the cell-height
-            // ResizeObserver flush finds `shouldAutoPin` false and does not
-            // slam to the bottom, and position-stabilize the clicked header
-            // so it holds its viewport position across the height change.
-            data-slot="tool-call-header-disclosure"
-          />
-        ) : null}
-      </span>
-    </div>
+    </>
+  );
+
+  // The trailing actions cluster contents — the strip owns the wrapping
+  // `tool-call-header-actions` span; this is what sits inside it.
+  const actionsNode = (
+    <>
+      {/* Body-specific, expanded-only controls (Find, view-mode, expand-all)
+          portal into this slot, sitting LEFT of the header-owned Copy +
+          chevron. Present only when expanded (the body is mounted); the
+          published node lets a body kind's `createPortal` find a target on
+          its first render. The header owns Copy + whole-block fold, so body
+          kinds no longer portal those. */}
+      {!collapsed ? (
+        <div
+          ref={actionsSlotRef}
+          className="tool-call-header-actions-slot"
+          data-slot="tool-block-actions"
+        >
+          {actions}
+        </div>
+      ) : null}
+      {/* Copy + Expand are the two standard header affordances — icon-only
+          (the `icon` subtype of the shared `BlockCopyButton` / `BlockFoldCue`)
+          and both at the `xs` scale so they read as a matched pair and stay
+          quiet across a run of blocks. */}
+      {hasCopy ? (
+        <BlockCopyButton
+          subtype="icon"
+          size="xs"
+          getText={
+            typeof copyText === "function" ? copyText : () => copyText ?? ""
+          }
+          aria-label={`Copy ${ariaSubject} command and result`}
+          data-slot="tool-call-header-copy"
+        />
+      ) : null}
+      {collapsible ? (
+        <BlockFoldCue
+          collapsed={collapsed}
+          onToggle={(next) => disclosure?.onToggle(next)}
+          collapsedLabel="Expand"
+          expandedLabel="Collapse"
+          ariaLabelExpand={`Expand ${ariaSubject} tool call`}
+          ariaLabelCollapse={`Collapse ${ariaSubject} tool call`}
+          size="xs"
+          subtype="icon"
+          disabled={disclosure?.disabled === true}
+          // Whole-block collapse uses the same scroll machinery as every
+          // body-fold cue (the default `stabilizeScroll`): release the host's
+          // follow-bottom lock before the toggle so the cell-height
+          // ResizeObserver flush finds `shouldAutoPin` false and does not slam
+          // to the bottom, and position-stabilize the clicked header so it
+          // holds its viewport position across the height change.
+          data-slot="tool-call-header-disclosure"
+        />
+      ) : null}
+    </>
+  );
+
+  return (
+    <BlockStrip
+      ref={ref}
+      altitude={altitude}
+      dataSlot="tool-call-header"
+      dataPhase={phase}
+      dataCollapsed={collapsed}
+      className={cn("tool-call-header", className)}
+      leading={leadingNode}
+      // The verb — omitted for a verb-less row (a changeset file block), where
+      // the identity leads instead; the strip renders no name span.
+      name={toolName}
+      // The detail column — the target (chip or wrapping command); the strip's
+      // flexible spacer when empty.
+      detail={target}
+      trailing={trailingNode}
+      actions={actionsNode}
+    />
   );
 });

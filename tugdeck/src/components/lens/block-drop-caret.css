@@ -1,0 +1,24 @@
+/*
+ * block-drop-caret.css — the section-reorder drop indicator ([P08]).
+ *
+ * A ~2px accent hairline spanning the section column, absolutely positioned
+ * within `.lens-sections`. Hidden by default; the drag handler reveals it via
+ * `data-visible="true"` and sets its `top` inline. It sits above the shifting
+ * siblings but below the lifted dragged band (z-index tiers in
+ * `lens-section-band.css`).
+ */
+
+.block-drop-caret {
+  position: absolute;
+  inset-inline: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tug7-element-tone-border-normal-accent-rest, currentColor);
+  pointer-events: none;
+  z-index: 2;
+  display: none;
+}
+
+.block-drop-caret[data-visible="true"] {
+  display: block;
+}

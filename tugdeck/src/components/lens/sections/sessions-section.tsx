@@ -73,6 +73,9 @@ import {
   type ToolBlockCollapseHandle,
 } from "@/components/tugways/blocks/collapse-context";
 import { useChangesetAll } from "@/lib/changeset-all-store";
+import { sessionsEntryCollapseStore } from "@/lib/sessions-entry-collapse-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
+import { sessionEntryTitle } from "@/lib/session-name";
 import {
   useChangesetCommit,
   useChangesetGitInit,
@@ -813,6 +816,26 @@ function SessionsFileBlock({
 // ---------------------------------------------------------------------------
 
 /**
+ * A session entry's title with the mnemonic tag folded in ([P07]). A dedicated
+ * child so the tag subscription is a single UNCONDITIONAL hook ([L02] — hooks
+ * never gate behind an `item.kind` branch): it always subscribes to
+ * `sessionTagStore` for this session's `owner_id`, and `sessionEntryTitle`
+ * resolves name → tag → id-hash. Mirrors how `SessionIdBadge` reads the tag
+ * store client-side. Only session items render this; dash/unattributed titles
+ * take the raw `itemTitle` path (no tag).
+ */
+function SessionEntryTitle({
+  entry,
+}: {
+  entry: SessionChangesetEntry;
+}): React.ReactElement {
+  const tag = useSyncExternalStore(sessionTagStore.subscribe, () =>
+    sessionTagStore.getTag(entry.owner_id),
+  );
+  return <>{sessionEntryTitle(entry.display_name, entry.owner_id, tag)}</>;
+}
+
+/**
  * The entry's header identity (the `target` slot): title over the
  * project · branch · id context, with the spelled-out ahead/behind tooltip.
  */
@@ -824,7 +847,11 @@ function EntryIdentity({ item }: { item: SectionItem }) {
           item.kind === "unattributed" ? " sessions-entry-title-muted" : ""
         }`}
       >
-        {itemTitle(item)}
+        {item.kind === "session" ? (
+          <SessionEntryTitle entry={item.entry} />
+        ) : (
+          itemTitle(item)
+        )}
       </span>
       <span
         className="sessions-entry-context"
@@ -880,6 +907,10 @@ function SessionsEntryBlock({
       >
         <BlockChrome
           variant="tool"
+          // Entry altitude ([P03]/[P06]): the entry card reads one step above
+          // its leaf file rows and one below the section band. The file-row
+          // BlockChromes inside EntryBody stay leaf (the default).
+          altitude="entry"
           phase="idle"
           leading={<ItemGlyph item={item} />}
           identity={<EntryIdentity item={item} />}
@@ -1708,43 +1739,29 @@ function SessionsSectionBody(): React.ReactElement {
     sweepEntryDiffStores(new Set(items.map((item) => item.id)));
   }, [items]);
 
-  // Per-entry collapse ([L24]): the set of COLLAPSED entry ids, fed to each
-  // entry block's collapse provider. Inverted from an open-list so open-once
-  // is the default: an id a snapshot introduces is simply never in the set,
-  // and a user's collapse persists across recomputes because the set is
-  // keyed by (stable) entry id.
-  const [collapsedEntries, setCollapsedEntries] = useState<ReadonlySet<string>>(
-    new Set(),
+  // Per-entry collapse ([P05]/[L02]/[L24]): the COLLAPSED entry ids come from
+  // the module `sessionsEntryCollapseStore`, shared with the section band's
+  // Expand/Collapse-all header actions (a sibling subtree). Absent id ⇒ open
+  // (open-once default); the fold now persists across a section collapse or a
+  // Lens close/reopen because the store outlives this body's mount.
+  const collapsedEntries = useSyncExternalStore(
+    sessionsEntryCollapseStore.subscribe,
+    sessionsEntryCollapseStore.getSnapshot,
   );
 
   const entryIds = useMemo(() => items.map((item) => item.id), [items]);
 
-  // Every id the card has seen. "Collapse all" covers the whole seen set —
-  // not just the current snapshot — so an entry that is absent when the user
-  // collapses everything comes back collapsed rather than popping open.
-  const seenSectionsRef = useRef<Set<string>>(new Set());
+  // Register the on-screen ids as seen so the header's "Collapse all" reaches
+  // the whole seen set — an entry absent when the user collapses everything
+  // still comes back collapsed rather than popping open.
   useEffect(() => {
-    entryIds.forEach((id) => seenSectionsRef.current.add(id));
+    sessionsEntryCollapseStore.markSeen(entryIds);
   }, [entryIds]);
 
   // The collapse handle's `toggle(next)` carries the NEXT collapsed value.
   const toggleEntry = useCallback((id: string, nextCollapsed: boolean) => {
-    setCollapsedEntries((prev) => {
-      const next = new Set(prev);
-      if (nextCollapsed) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+    sessionsEntryCollapseStore.toggle(id, nextCollapsed);
   }, []);
-
-  const expandAll = useCallback(() => {
-    entryIds.forEach((id) => seenSectionsRef.current.add(id));
-    setCollapsedEntries(new Set());
-  }, [entryIds]);
-  const collapseAll = useCallback(() => {
-    entryIds.forEach((id) => seenSectionsRef.current.add(id));
-    setCollapsedEntries(new Set(seenSectionsRef.current));
-  }, [entryIds]);
 
   if (items.length === 0) {
     return (
@@ -1754,33 +1771,11 @@ function SessionsSectionBody(): React.ReactElement {
     );
   }
 
-  // The band supplies the title + the live "N sessions · M dirty files"
-  // summary ([Q04]); the body opens with the bulk-collapse buttons only.
+  // The band supplies the title, the live "N sessions · M dirty files"
+  // summary, AND the Expand/Collapse-all header actions ([P05]/[P06]); the
+  // body is now just the entry list.
   return (
     <div data-slot="sessions-card" className="sessions-card">
-      <div className="sessions-head">
-        <div className="sessions-toolbar">
-          <span className="sessions-toolbar-spacer" />
-          <TugPushButton
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            onClick={expandAll}
-            data-testid="sessions-expand-all"
-          >
-            Expand all
-          </TugPushButton>
-          <TugPushButton
-            emphasis="ghost"
-            role="action"
-            size="2xs"
-            onClick={collapseAll}
-            data-testid="sessions-collapse-all"
-          >
-            Collapse all
-          </TugPushButton>
-        </div>
-      </div>
       <div className="sessions-scroll">
         <div className="sessions-sections">
           {items.map((item) => (
@@ -1797,6 +1792,39 @@ function SessionsSectionBody(): React.ReactElement {
       </div>
       {renderSheet()}
     </div>
+  );
+}
+
+/**
+ * The Sessions band's right-aligned header actions ([P05]/[P06]): Expand-all
+ * / Collapse-all, driving the shared `sessionsEntryCollapseStore` the body
+ * reads. They are plain action buttons — no local state, no subscription (the
+ * body re-renders off the store). Rendered by `LensSection` in the band's
+ * actions cluster, LEFT of the fold chevron, only while the section is
+ * expanded.
+ */
+function SessionsHeaderActions(): React.ReactElement {
+  return (
+    <>
+      <TugPushButton
+        emphasis="ghost"
+        role="action"
+        size="2xs"
+        onClick={() => sessionsEntryCollapseStore.expandAll()}
+        data-testid="sessions-expand-all"
+      >
+        Expand all
+      </TugPushButton>
+      <TugPushButton
+        emphasis="ghost"
+        role="action"
+        size="2xs"
+        onClick={() => sessionsEntryCollapseStore.collapseAll()}
+        data-testid="sessions-collapse-all"
+      >
+        Collapse all
+      </TugPushButton>
+    </>
   );
 }
 
@@ -1817,6 +1845,7 @@ export function registerSessionsSection(): void {
     title: "Sessions",
     glyph: <GitBranch size={14} />,
     collapsedSummary: () => <SessionsCollapsedSummary />,
+    headerActions: () => <SessionsHeaderActions />,
     body: () => <SessionsSectionBody />,
   });
 }

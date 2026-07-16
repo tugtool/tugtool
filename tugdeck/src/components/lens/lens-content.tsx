@@ -27,7 +27,6 @@
  */
 
 import React, {
-  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -43,12 +42,13 @@ import { useFocusManager } from "@/components/tugways/use-focusable";
 import {
   getRegisteredLensSections,
   resolveSectionRenderOrder,
-  moveInArray,
   sectionFocusGroup,
   type LensSectionDefinition,
   type LensSectionHost,
 } from "./lens-section-registry";
 import { LensSection } from "./lens-section-band";
+import { useBlockReorder } from "./block-reorder";
+import { BlockDropCaret } from "./block-drop-caret";
 import {
   LensFollowedCardContext,
   useTrackLastNonLensKeyCard,
@@ -73,6 +73,7 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
   const collapsed = new Set(lens.collapsedSections);
 
   const sectionsRef = useRef<HTMLDivElement | null>(null);
+  const caretRef = useRef<HTMLDivElement | null>(null);
   const focusManager = useFocusManager();
 
   // The card the Lens is contextually about — tracked once here (mounted
@@ -140,83 +141,27 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey, focusManager, cardId]);
 
-  // Drag-reorder from a section grip. The live preview is DOM-only (flex
-  // `order` on the section elements); only the drop commits the store.
-  const onGripPointerDown = useCallback(
-    (kind: string, event: React.PointerEvent) => {
-      const container = sectionsRef.current;
-      if (container === null) return;
-      event.preventDefault();
-
-      const visible = resolveSectionRenderOrder(
+  // Drag-reorder from a section grip: FLIP visuals (ghost + close-up + drop
+  // caret + settle), DOM/CSS only, committing the store on drop ([P08]).
+  const { onGripPointerDown } = useBlockReorder({
+    containerRef: sectionsRef,
+    caretRef,
+    getVisibleOrder: () =>
+      resolveSectionRenderOrder(
         [...getRegisteredLensSections().keys()],
         lensStore.getSnapshot().sectionOrder,
         lensStore.getSnapshot().hiddenSections,
-      );
-      const dragIndex = visible.indexOf(kind);
-      if (dragIndex < 0) return;
-
-      const elByKind = new Map<string, HTMLElement>();
-      for (const el of Array.from(
-        container.querySelectorAll<HTMLElement>(".lens-section[data-lens-section]"),
-      )) {
-        const k = el.getAttribute("data-lens-section");
-        if (k !== null) elByKind.set(k, el);
-      }
-      const midpoints = visible.map((k) => {
-        const el = elByKind.get(k);
-        if (!el) return Number.POSITIVE_INFINITY;
-        const r = el.getBoundingClientRect();
-        return r.top + r.height / 2;
-      });
-
-      const dragged = elByKind.get(kind);
-      dragged?.setAttribute("data-dragging", "true");
-
-      let targetIndex = dragIndex;
-
-      const applyPreview = (idx: number): void => {
-        const preview = moveInArray(visible, dragIndex, idx);
-        preview.forEach((k, pos) => {
-          const el = elByKind.get(k);
-          if (el) el.style.order = String(pos);
-        });
-      };
-
-      const onMove = (ev: PointerEvent): void => {
-        let idx = visible.length - 1;
-        for (let i = 0; i < midpoints.length; i++) {
-          if (ev.clientY < midpoints[i]) {
-            idx = i;
-            break;
-          }
-        }
-        targetIndex = idx;
-        applyPreview(idx);
-      };
-
-      const onUp = (): void => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        dragged?.removeAttribute("data-dragging");
-        for (const el of elByKind.values()) el.style.order = "";
-        if (targetIndex !== dragIndex) {
-          const newVisible = moveInArray(visible, dragIndex, targetIndex);
-          const registered = new Set(getRegisteredLensSections().keys());
-          // Preserve currently-hidden kinds after the visible order so
-          // their arrangement isn't lost when they're shown again.
-          const hiddenTail = lensStore
-            .getSnapshot()
-            .hiddenSections.filter((k) => registered.has(k) && !newVisible.includes(k));
-          lensStore.setSectionOrder([...newVisible, ...hiddenTail]);
-        }
-      };
-
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      ),
+    commit: (newVisible) => {
+      const registered = new Set(getRegisteredLensSections().keys());
+      // Preserve currently-hidden kinds after the visible order so their
+      // arrangement isn't lost when they're shown again.
+      const hiddenTail = lensStore
+        .getSnapshot()
+        .hiddenSections.filter((k) => registered.has(k) && !newVisible.includes(k));
+      lensStore.setSectionOrder([...newVisible, ...hiddenTail]);
     },
-    [],
-  );
+  });
 
   // Escape inside the Lens focuses back out: re-dispatch FOCUS_LENS via
   // the registry (the same path Cmd-L-again takes), which the deck-canvas
@@ -245,6 +190,9 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
         tabIndex={-1}
       >
         <div className="lens-sections" data-testid="lens-sections" ref={sectionsRef}>
+          {/* The reorder drop indicator — a persistently-mounted hairline the
+              drag handler positions imperatively ([P08]); hidden at rest. */}
+          <BlockDropCaret ref={caretRef} />
           {order.map((kind) => {
             const def = sections.get(kind);
             if (!def) return null;

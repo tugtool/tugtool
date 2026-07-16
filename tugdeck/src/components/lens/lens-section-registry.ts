@@ -43,6 +43,14 @@ export interface LensSectionDefinition {
   collapsedSummary: (host: LensSectionHost) => React.ReactNode;
   /** The section body. Host-agnostic — imports nothing from `lens/`. */
   body: (host: LensSectionHost) => React.ReactNode;
+  /**
+   * Optional right-aligned controls contributed to the band's actions
+   * cluster, LEFT of the fold-cue chevron ([P06]) — the registry-driven
+   * equivalent of the transcript's body-kind actions portal. Sessions
+   * supplies Expand-all / Collapse-all; the other sections supply none
+   * (chevron only).
+   */
+  headerActions?: (host: LensSectionHost) => React.ReactNode;
 
   // Reserved capability hooks — declared, not implemented ([P07]).
   findSegments?: unknown;

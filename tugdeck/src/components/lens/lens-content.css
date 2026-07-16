@@ -20,6 +20,9 @@
 }
 
 .lens-sections {
+  /* The offset parent for the absolutely-positioned reorder drop caret
+     ([P08]); the caret's `top` is a content-relative offset. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--tugx-lens-gap);

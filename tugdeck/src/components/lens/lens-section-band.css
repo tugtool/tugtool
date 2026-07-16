@@ -1,87 +1,47 @@
 /*
- * lens-section-band.css — the sticky Lens section band ([L06]).
+ * lens-section-band.css — the Lens section root + body ([L06]).
  *
- * The band is a sticky title row that pins at the top of the Lens
- * scroller; as the user scrolls, each section's band replaces the
- * previous one (a telescoping pin stack). The section root publishes its
- * measured band height as `--tugx-pin-stack-top` so nested sticky
- * content (a future changeset section) clears the band — the same
- * clearance-capture pair used by `.changeset-entry-block` ([P06]).
+ * The band itself is a `BlockStrip` at `altitude="section"` ([P02]): its
+ * layout is `block-header.css` (the shared `tool-call-header` shell), its
+ * sizes the `block-strip.css` altitude scale. This file owns only what the
+ * strip does not — the section root (the stacking + between-section rule),
+ * the drag-state cursor, and the section body (which publishes the band's
+ * measured height as `--tugx-pin-stack-top` so nested sticky content clears
+ * it, [P09]).
  */
 
 .lens-section {
-  /* Static first-frame fallback until the ResizeObserver writes the
-     measured band height. */
-  --tugx-pin-stack-top: 36px;
   display: flex;
   flex-direction: column;
   border-block-end: 1px solid var(--tug-border-subtle, rgba(128, 128, 128, 0.2));
 }
 
-.lens-section-band {
-  position: sticky;
-  /* Pin at the inherited offset (0 at the top level; a nested container
-     would raise it). */
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  background: var(--tug-surface, inherit);
-  font: var(--tug-font-ui, inherit);
-  font-weight: 600;
-}
-
-.lens-section-grip {
-  display: inline-flex;
-  align-items: center;
-  opacity: 0.4;
-  cursor: grab;
-  touch-action: none;
-}
-
+/* Drag ghost — the dragged section lifts while a reorder is live ([P08]):
+   dimmed, raised above its siblings + the drop caret, and click-through so
+   it never intercepts the pointer mid-drag. The follow-the-pointer + settle
+   transforms are inline (the handler owns them); the scale nudge composes in
+   the inline transform. */
 .lens-section[data-dragging="true"] {
+  position: relative;
+  z-index: 3;
   opacity: 0.6;
+  pointer-events: none;
 }
 
-.lens-section[data-dragging="true"] .lens-section-grip {
+/* The grip shows the grabbing cursor while its section is being dragged. */
+.lens-section[data-dragging="true"] .block-grip {
   cursor: grabbing;
 }
 
-.lens-section-glyph {
-  display: inline-flex;
-  align-items: center;
-}
-
-.lens-section-title {
-  flex: 0 0 auto;
-}
-
-.lens-section-summary {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 400;
-  opacity: 0.7;
-}
-
-/* Keeps the chevron right-aligned when expanded (no summary present). */
-.lens-section-summary-spacer {
-  flex: 1 1 auto;
-}
-
 .lens-section-body {
+  /* Static first-frame fallback until the ResizeObserver writes the measured
+     band height here ([P09]). The band publishes its height onto the BODY,
+     not the section root, so the section strip (which pins at `top: 0`) never
+     reads the variable its own height produces — no dependency cycle. Nested
+     sticky content inside the body inherits this offset and pins BELOW the
+     band. */
+  --tugx-pin-stack-top: 36px;
   display: flex;
   flex-direction: column;
   min-block-size: 0;
-  /* The section root carries `--tugx-pin-stack-top` = measured band
-     height; the body inherits it, so any nested sticky header a section
-     renders pins BELOW the band (`top: var(--tugx-pin-stack-top)`). When
-     M3b introduces genuinely nested sticky content it adds the
-     `.changeset-entry-block` two-element clearance-capture pair (a
-     separate intermediate var — folding onto `--tugx-pin-stack-top` on
-     one element would be a dependency cycle). */
 }

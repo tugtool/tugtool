@@ -1,0 +1,158 @@
+/**
+ * `BlockStrip` — the one header shell every Block altitude wears.
+ *
+ * The shared layout skeleton behind the tool-call header (`BlockHeader`,
+ * altitude `leaf`), the session-entry cards (`BlockChrome`, altitude
+ * `entry`), and the Lens section bands (`LensSection`, altitude
+ * `section`). One calm row of slots:
+ *
+ *   [grip?] leading  name?  detail …  trailing…  | actions
+ *
+ * The strip owns only the row STRUCTURE and the three span wrappers it is
+ * the sole author of — the name span, the detail span, and the actions
+ * span (all stamped with their `tool-call-header-*` class names so the
+ * proven `block-header.css` layout — flex, one-line boxes, pipe
+ * separators, clamp — keeps matching untouched). Every other slot node
+ * (the lifecycle dot or leading glyph, the trailing pipe-sections, the
+ * actions cluster contents) is composed by the caller and passed through
+ * verbatim, so a caller keeps full control of the tool-specific bits while
+ * the family shares one skeleton.
+ *
+ * Altitude is a token scale keyed on `data-altitude` ([P03]): `leaf`
+ * inherits `block-header.css`'s values unchanged; `entry` / `section`
+ * override the `--tugx-toolheader-*` family in `block-strip.css`. The
+ * structure is shared; the sizes are declarative per altitude ([L17]/[L20]).
+ *
+ * Laws:
+ *  - [L06] appearance via `data-altitude` / `data-phase` / `data-collapsed`
+ *    attributes + CSS; no React state drives the strip's look.
+ *  - [L19] file pair (`.tsx` + `.css`), docstring, `data-slot`.
+ *  - [L20] owns the `--tugx-toolheader-*` token family via the altitude
+ *    scale; reuses the shared `--tugx-block-*` tones from `block-header.css`.
+ *
+ * @module components/tugways/blocks/block-strip
+ */
+
+import "./block-strip.css";
+
+import React from "react";
+
+/** The three altitudes of the Block header family. */
+export type BlockAltitude = "leaf" | "entry" | "section";
+
+export interface BlockStripProps {
+  /**
+   * Altitude token tier, stamped as `data-altitude` on the root. `leaf`
+   * (default) inherits `block-header.css` unchanged; `entry` / `section`
+   * pick up the `block-strip.css` overrides.
+   */
+  altitude?: BlockAltitude;
+  /**
+   * Leftmost slot — a drag grip ({@link BlockGrip}), rendered left of
+   * `leading`. Absent (the leaf/entry default) ⇒ nothing in the row, so
+   * the left edge aligns identically to a strip with no grip.
+   */
+  grip?: React.ReactNode;
+  /**
+   * The pre-composed leading node — the lifecycle dot
+   * (`tool-call-header-dot`) or a caller-wrapped leading glyph span
+   * (`tool-call-header-leading`). Passed through verbatim so the two forms
+   * stay mutually exclusive and share the dot's box width.
+   */
+  leading: React.ReactNode;
+  /**
+   * The bold identity text. When provided the strip wraps it in the
+   * `tool-call-header-name` span; when absent (a verb-less file row) no
+   * name span renders and the identity leads via `detail`.
+   */
+  name?: React.ReactNode;
+  /**
+   * The detail column — the target (a chip, a command, a section's live
+   * summary) and, when empty, the flexible spacer that pushes the trailing
+   * cluster to the right edge. Always wrapped in the `tool-call-header-detail`
+   * span.
+   */
+  detail?: React.ReactNode;
+  /**
+   * The trailing pipe-sections — the result summary, timing, caution —
+   * pre-composed by the caller with their own `tool-call-header-summary` /
+   * `tool-call-header-timing` classes so the pipe-separator CSS keeps
+   * matching. Rendered between `detail` and `actions`.
+   */
+  trailing?: React.ReactNode;
+  /**
+   * The contents of the trailing actions cluster (a body-kind portal slot,
+   * Copy, the fold cue, a section's header actions). The strip wraps these
+   * in the `tool-call-header-actions` span so the cluster carries the same
+   * pipe rule + gap discipline at every altitude.
+   */
+  actions?: React.ReactNode;
+  /**
+   * Root `className`. The caller supplies the base class the layout CSS
+   * keys on — `tool-call-header` for the tool header and the section band —
+   * so `block-header.css` matches without the strip stamping its own class.
+   */
+  className?: string;
+  /** `data-slot` on the root (e.g. `"tool-call-header"`). Omitted when unset. */
+  dataSlot?: string;
+  /** `data-testid` on the root (e.g. a section band's `"lens-section-band"`). */
+  dataTestid?: string;
+  /** Value for `data-phase` on the root (the lifecycle dot's phase). */
+  dataPhase?: string;
+  /** When `true`, stamps `data-collapsed="true"` on the root. */
+  dataCollapsed?: boolean;
+}
+
+/**
+ * The Block header shell — one row of slots. `ref` targets the root strip
+ * so a chrome can measure it with a `ResizeObserver` for telescoping-pin
+ * height.
+ */
+export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
+  function BlockStrip(
+    {
+      altitude = "leaf",
+      grip,
+      leading,
+      name,
+      detail,
+      trailing,
+      actions,
+      className,
+      dataSlot,
+      dataTestid,
+      dataPhase,
+      dataCollapsed,
+    },
+    ref,
+  ) {
+    return (
+      <div
+        ref={ref}
+        data-slot={dataSlot}
+        data-testid={dataTestid}
+        data-altitude={altitude}
+        data-phase={dataPhase}
+        data-collapsed={dataCollapsed ? "true" : undefined}
+        className={className}
+      >
+        {/* Leftmost drag grip ([P04]); absent at leaf/entry. */}
+        {grip}
+        {/* The lifecycle dot or a caller-wrapped leading glyph. */}
+        {leading}
+        {/* The bold identity — omitted for a verb-less row. */}
+        {name !== undefined ? (
+          <span className="tool-call-header-name">{name}</span>
+        ) : null}
+        {/* The detail column / flexible spacer — always present. */}
+        <span className="tool-call-header-detail">{detail}</span>
+        {/* Trailing pipe-sections (summary · timing · caution), composed
+            by the caller with their own classes. */}
+        {trailing}
+        {/* Trailing actions cluster — the strip owns the span so the pipe
+            rule + gap discipline is shared at every altitude. */}
+        <span className="tool-call-header-actions">{actions}</span>
+      </div>
+    );
+  },
+);

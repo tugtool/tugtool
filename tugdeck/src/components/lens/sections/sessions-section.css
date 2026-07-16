@@ -24,26 +24,6 @@
   font-size: 0.875rem;
 }
 
-/* ---- Toolbar: the section body's first row (Expand/Collapse all, [Q04]) ---- */
-
-.sessions-head {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px 14px 8px;
-}
-
-.sessions-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sessions-toolbar-spacer {
-  flex: 1 1 auto;
-}
-
 /* ---- Entry sections. No inner scroll ([P08]): the Lens content scroll
    (`.lens-content`) owns scrolling, so this is a plain padded block — an
    inner `overflow` would resolve the entry headers' sticky offsets against

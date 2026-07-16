@@ -101,6 +101,7 @@ import { BlockFoldSuppressedContext } from "@/components/tugways/body-kinds/affo
 
 import { ToolBlockCollapseContext, ToolUseIdContext } from "./collapse-context";
 import { BlockHeader } from "./block-header";
+import type { BlockAltitude } from "./block-strip";
 import { BlockNoticeBand, type BlockNotice } from "./block-notice";
 import type { ToolResultSummary } from "./tool-result-summary";
 import type { CautionFlag, ToolBlockStatus } from "./types";
@@ -185,6 +186,14 @@ export interface BlockChromeProps {
    * so CSS can scope the `--tugx-block-*` overrides.
    */
   variant?: "tool" | "receipt";
+  /**
+   * Altitude tier for the header shell ([P03]), forwarded to
+   * {@link BlockHeader} → {@link BlockStrip} as `data-altitude`. `leaf`
+   * (default) is the tool-call header, pixel-unchanged; a session-entry card
+   * passes `entry` for a marginally roomier strip. `section` is the Lens band
+   * (composed directly on `BlockStrip`, not through the chrome).
+   */
+  altitude?: BlockAltitude;
   /**
    * Args summary — typically the most-relevant single field of the
    * tool input rendered as a one-liner (e.g. the shell command, the
@@ -300,6 +309,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   footerBadges,
   notice,
   variant = "tool",
+  altitude = "leaf",
   children,
   rootSlot = "tool-block-chrome",
   copyText,
@@ -446,6 +456,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
     >
       <BlockHeader
         ref={headerRef}
+        altitude={altitude}
         phase={phase ?? statusToPhase(status)}
         toolName={toolName}
         leading={leading}

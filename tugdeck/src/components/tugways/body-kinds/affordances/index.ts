@@ -39,6 +39,9 @@ export type { BlockCopyButtonProps } from "./block-copy-button";
 export { BlockFoldCue } from "./block-fold-cue";
 export type { BlockFoldCueProps } from "./block-fold-cue";
 
+export { BlockGrip } from "./block-grip";
+export type { BlockGripProps } from "./block-grip";
+
 export { useBlockFoldState } from "./use-block-fold-state";
 export type {
   BlockFoldState,

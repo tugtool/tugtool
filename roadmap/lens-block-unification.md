@@ -363,16 +363,16 @@ Timings: 120–160ms ease for close-up/settle; the ghost is instantaneous. All s
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extract `BlockStrip`; refactor `BlockHeader` (no visual change) | pending | — |
-| #step-2 | Add altitude token scale + `BlockChrome.altitude` | pending | — |
-| #step-3 | `BlockGrip` + rebuild `LensSection` on `BlockStrip` at section altitude | pending | — |
-| #step-4 | `headerActions` factory + relocate Sessions Expand/Collapse-all | pending | — |
-| #step-5 | Phase 2 integration checkpoint | pending | — |
-| #step-6 | Session-entry cards → `altitude="entry"` | pending | — |
-| #step-7 | Fold session tag into entry titles | pending | — |
-| #step-8 | Phase 3 integration checkpoint | pending | — |
-| #step-9 | FLIP drag: ghost + close-up + drop caret + settle | pending | — |
-| #step-10 | Phase 4 integration checkpoint + phase exit | pending | — |
+| #step-1 | Extract `BlockStrip`; refactor `BlockHeader` (no visual change) | done | cc68a2064 |
+| #step-2 | Add altitude token scale + `BlockChrome.altitude` | done | 1a3f9daef |
+| #step-3 | `BlockGrip` + rebuild `LensSection` on `BlockStrip` at section altitude | done | c6e5bb61e |
+| #step-4 | `headerActions` factory + relocate Sessions Expand/Collapse-all | done | fc5d0d002 |
+| #step-5 | Phase 2 integration checkpoint | done | N/A (verification: vite build + 4391 unit + 83/83 app-test) |
+| #step-6 | Session-entry cards → `altitude="entry"` | done | bc5cbb38a |
+| #step-7 | Fold session tag into entry titles | done | fed2c18f9 |
+| #step-8 | Phase 3 integration checkpoint | done | N/A (verification: vite build + 4395 unit + at0228 app-test) |
+| #step-9 | FLIP drag: ghost + close-up + drop caret + settle | done | 5545c559e |
+| #step-10 | Phase 4 integration checkpoint + phase exit | done | N/A (verification: package.json unchanged + vite build + 4395 unit + 83/83 app-test) |
 
 ---
 

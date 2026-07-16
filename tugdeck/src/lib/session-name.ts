@@ -76,6 +76,32 @@ export function sessionChipDisplay(
 }
 
 /**
+ * The Lens Sessions entry title, precedence name → tag → id-hash ([P07]).
+ *
+ * The changeset feed's `display_name` is already `"name when user-set, else
+ * the 8-char id hash"` and carries no tag. So "no custom name" is detectable
+ * by exact equality against the id-hash fallback: when
+ * `displayName === ownerId.slice(0, 8)` there is no user name, and the tag (a
+ * mnemonic adjective-noun) is the friendlier face — `tag ?? displayName` (the
+ * hash remains the last resort for a legacy tagless session). When the names
+ * differ, `display_name` is a real user name and wins outright.
+ *
+ * Pure — the tag is resolved client-side from `sessionTagStore` by the caller
+ * ([Q03]); a server-side consolidation into the feed is a noted follow-on
+ * ([R02]).
+ */
+export function sessionEntryTitle(
+  displayName: string,
+  ownerId: string,
+  tag: string | null,
+): string {
+  if (displayName === ownerId.slice(0, SESSION_ID_TRUNCATE)) {
+    return tag ?? displayName;
+  }
+  return displayName;
+}
+
+/**
  * The session chooser row's title, precedence name → tag → `fallback`: the name
  * when set, else the mnemonic tag, else the `last_user_prompt`-derived
  * `fallback` (the existing title). Blank name/tag are treated as unset.
