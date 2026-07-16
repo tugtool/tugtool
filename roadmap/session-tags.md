@@ -34,7 +34,7 @@ The tag reuses the exact end-to-end machinery `/rename` already established: a n
 - **Client mints; the ledger enforces uniqueness.** The lexicon lives only in TypeScript. The client mints a candidate tag and re-rolls it against the tags it already knows (from cached `SessionRow`s); the ledger's `UNIQUE` index is the atomic backstop, resolving the rare true race with a deterministic numeric suffix ([P03]). No lexicon is duplicated into Rust.
 - **From the drop, corrected on echo.** The client shows a provisional tag immediately (optimistic), the server claims-or-suffixes it authoritatively at `record_spawn`, and the final tag rides back on the existing `session_updated` broadcast — the same optimistic-echo pattern `/rename` uses. No new control verb.
 - **Pure logic isolated and unit-tested.** Minting and tag→session resolution live in a new React/DOM-free `session-tag.ts`, authored like the existing pure `session-name.ts`.
-- **Addressability = display + resolve + one filter.** Every session row and the Z4B chip show the tag; a new filter field on the `/resume` overlay matches tags (and names/prompts); a pure `resolveTag` + a reverse map back any future typed command.
+- **Addressability = display + filter now, exact-resolve later.** Every session row and the Z4B chip show the tag; a new filter field on the `/resume` overlay matches tags (and names/prompts) via a `matchesTagQuery` substring predicate. An exact-match `resolveTag` + a `tag → session_id` reverse map are deferred to the typed-command follow-on that consumes them ([Q02]).
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -50,7 +50,7 @@ The tag reuses the exact end-to-end machinery `/rename` already established: a n
 1. Ledger: `sessions.tag` column (+ unique index), self-healing migration, and `record_spawn` tag claim-or-suffix with resume-preserve/backfill.
 2. Supervisor/bridge/protocol (Rust): carry the tag on `LedgerEntry`, parse it off the `spawn_session` frame, thread it into `SessionRecord`/`record_spawn`, and emit it on `SessionRow` + `session_updated`.
 3. Wire (TS): `SessionRow.tag`, `normalizeSessionRow`, `encodeSpawnSession`/`sendSpawnSession` tag field, `session_updated` passthrough.
-4. Pure logic (TS): `session-tag.ts` (`mintTag`, `resolveTag`), `session-tag-store.ts`, and the name→tag→UUID precedence in `session-name.ts`.
+4. Pure logic (TS): `session-tag.ts` (`mintTag`, `matchesTagQuery`), `session-tag-store.ts`, and the name→tag→UUID precedence in `session-name.ts`.
 5. Ingestion + mint wiring (TS): consume the tag at the three `action-dispatch` sites; mint a provisional tag at every client spawn site and thread it through `sendSpawnSession`.
 6. Display + addressing (TS): tag on the Z4B chip and session rows; a tag-matching filter on the `/resume` overlay.
 
@@ -127,7 +127,7 @@ The tag reuses the exact end-to-end machinery `/rename` already established: a n
 **Risk R01: Tag-unique conflict crashes the spawn record** {#r01-tag-unique}
 
 - **Risk:** A fresh `INSERT` whose tag already exists raises a constraint error that `ON CONFLICT(session_id) DO UPDATE` does not absorb (different conflict target), aborting the ledger write.
-- **Mitigation:** Wrap the insert in a bounded retry that, on the tag-unique extended error code, rewrites the tag with the next `-N` suffix and retries ([P03], Spec S02). Client-side re-roll makes this path almost never execute.
+- **Mitigation:** Wrap the **whole `INSERT … ON CONFLICT` statement** in a bounded retry that, on the tag-unique extended error code, rewrites the candidate tag with the next `-N` suffix and re-runs — covering both a fresh-insert collision and a resume-backfill collision ([P03], Spec S02). Client-side re-roll makes this path almost never execute.
 - **Residual risk:** Under a pathological suffix cascade the loop caps out; treated as a logged degenerate case (the session still gets *a* tag or falls back to no tag, never a failed spawn).
 
 ---
@@ -185,7 +185,7 @@ The tag reuses the exact end-to-end machinery `/rename` already established: a n
 - No new reverse-lookup endpoint — the data is already on the client.
 - `resume-sheet.tsx` has no filter today; a single filter field is the smallest real typed-entry surface and also improves name/prompt search.
 
-**Implications:** New `resolveTag(typed, rows)` in `session-tag.ts`; the tag store keeps a `tag → session_id` reverse map; the `/resume` overlay composes a `Tug*` text field and filters its list on tag/name/prompt.
+**Implications:** v1 adds a `matchesTagQuery` substring predicate (Spec S01) and a `Tug*` filter field on the `/resume` overlay filtering its list on tag/name/prompt. The exact-match `resolveTag` and the store's `tag → session_id` reverse map are deferred to the typed-command follow-on ([Q02]) that consumes them — v1 ships no unused API.
 
 #### [P06] No eager backfill; lazy tag-on-resume (DECIDED) {#p06-backfill}
 
@@ -223,15 +223,17 @@ The tag follows the identical path `card_id`/`permission_mode` already travel:
 
 `sessionNameStore` (`session-name-store.ts`) is a `Map<session_id, string>` fed from three `action-dispatch` sites: the optimistic `/rename` echo, the `session_updated` push, and `list_sessions_ok` rows. The chip (`DevSessionIdBadge`) subscribes by id and calls `sessionChipDisplay(name, tugSessionId)`; the picker row (`dev-picker-cells.tsx`) calls `sessionRowTitle(row.name, fullPrompt ?? "")`.
 
-The tag store is the exact same shape plus a reverse map for resolution:
+The tag store is the exact same shape as `sessionNameStore` — a `Map<session_id, string>` with `subscribe`/`getTag`/`setTag` and no-op-when-unchanged. No reverse map in v1; the deferred typed-command adds one when it needs it ([Q02]):
 
 **Spec S01: `session-tag.ts` pure API** {#s01-session-tag-api}
 - `mintTag(known: ReadonlySet<string>, rng?: () => number): string` — pick `TAG_ADJECTIVES[i]` + `"-"` + `TAG_NOUNS[j]`; if the result is in `known`, re-roll up to a small cap (e.g. 8); if still colliding, return the last candidate (the server suffixes it). `rng` defaults to `Math.random` and is injectable for tests.
-- `resolveTag(typed: string, rows: readonly SessionRow[]): string | null` — return the `session_id` of the row whose `tag` equals `typed` (exact match; case-insensitive trim), else `null`.
+- `matchesTagQuery(row: SessionRow, query: string): boolean` — the `/resume` filter predicate: case-insensitive substring match of `query` against the row's `tag`, `name`, and `last_user_prompt`. This is all v1's addressing needs.
+- **(Deferred, [Q02])** an exact-match `resolveTag(typed, rows)` and a `tag → session_id` reverse map on the store are **not built in v1** — they land with the typed-`/resume <tag>` command follow-on that actually consumes them, so v1 ships no unused API.
 
 **Spec S02: `record_spawn` tag claim-or-suffix** {#s02-claim-or-suffix}
-- Fresh insert: attempt with the provided `tag`. On the SQLite tag-unique extended error (`SQLITE_CONSTRAINT_UNIQUE` naming `sessions_tag`), rewrite `tag → "{base}-{n}"` (n from 2) and retry, bounded (e.g. 50 tries) — then give up to `NULL` rather than fail the spawn.
-- Conflict-on-`session_id` branch (resume/respawn): `tag = COALESCE(sessions.tag, excluded.tag)` — a set tag is preserved, a NULL one is backfilled ([P06]). The `DO UPDATE` never triggers the unique index because the row's own tag is unchanged.
+- The claim-or-suffix retry wraps the **entire** `INSERT … ON CONFLICT(session_id) DO UPDATE` statement, not just the insert clause: run it with the candidate `tag`; on the SQLite tag-unique extended error (`SQLITE_CONSTRAINT_UNIQUE` naming `sessions_tag`), rewrite the **candidate** `tag → "{base}-{n}"` (n from 2) and re-run the whole statement, bounded (e.g. 50 tries) — then give up to `NULL` rather than fail the spawn.
+- Fresh insert: the candidate lands as the new row's tag.
+- Conflict-on-`session_id` (resume/respawn): `tag = COALESCE(sessions.tag, excluded.tag)`. A **set** tag is preserved untouched (no index hit — the row's tag is unchanged). But a **NULL tag being backfilled** ([P06]) sets `tag` to `excluded.tag`, which **can collide** with another row's tag and raise the unique error **on the `DO UPDATE`**. This is precisely why the retry wraps the whole statement: a colliding backfill re-runs with a suffixed `excluded.tag` until it lands. (This overturns an earlier draft claim that the `DO UPDATE` "never triggers the unique index" — it does, on backfill.)
 
 ---
 
@@ -248,7 +250,7 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| `sessionTagStore` (`session_id → tag`, plus `tag → session_id` reverse) | external data | module-singleton store + `useSyncExternalStore` | [L02] |
+| `sessionTagStore` (`session_id → tag`) | external data | module-singleton store + `useSyncExternalStore` | [L02] |
 | Tag rendered in Z4B chip / session rows | derived render | read store/`SessionRow` via `useSyncExternalStore`; plain text content (not a CSS class) | [L02] (not [L06]) |
 | `/resume` overlay filter query text | transient local UI | `useState` in the overlay component | local-data (useState) |
 
@@ -260,8 +262,8 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 | File | Purpose |
 |------|---------|
-| `tugdeck/src/lib/session-tag.ts` | Pure `mintTag` + `resolveTag` (Spec S01). No React/DOM. |
-| `tugdeck/src/lib/session-tag-store.ts` | `sessionTagStore`: `session_id → tag` + reverse map, `useSyncExternalStore`-compatible (mirror `session-name-store.ts`). |
+| `tugdeck/src/lib/session-tag.ts` | Pure `mintTag` + `matchesTagQuery` (Spec S01). No React/DOM. (`resolveTag` deferred, [Q02].) |
+| `tugdeck/src/lib/session-tag-store.ts` | `sessionTagStore`: `session_id → tag`, `useSyncExternalStore`-compatible — a faithful clone of `session-name-store.ts`. No reverse map in v1 ([Q02]). |
 
 #### Symbols to add / modify {#symbols}
 
@@ -278,6 +280,7 @@ The tag store is the exact same shape plus a reverse map for resolution:
 | `build_session_updated_frame` | fn | `agent_supervisor.rs` | serialize `tag` |
 | `SessionRecord { … }` construction | call site | `agent_bridge.rs` | pass `entry.tag` |
 | `SessionRow.tag` / `normalizeSessionRow` | interface + fn | `protocol.ts` | `string \| null`; default `null` for older tugcast |
+| `do_list_card_bindings` + `CardBinding.tag` | fn + wire shape | `agent_supervisor.rs`, `protocol.ts` | add `tag` to the bindings row (its SELECT already carries `name`) so the chip shows the tag on card rebind — restore parity with `name` |
 | `encodeSpawnSession` | fn | `protocol.ts` | optional `tag` in payload |
 | `decodeSessionUpdated` | fn | `protocol.ts` | `tag` flows through `fields` |
 | `sendSpawnSession` | fn | `session-lifecycle.ts` | add `tag` param → `encodeSpawnSession` |
@@ -296,7 +299,7 @@ The tag store is the exact same shape plus a reverse map for resolution:
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (Rust)** | `record_spawn` tag claim, suffix-on-collision, COALESCE-preserve-on-resume, backfill-NULL-on-resume | `session_ledger.rs` tests, real sqlite |
-| **Unit (TS)** | `mintTag` re-roll + suffix-free grammar, `resolveTag` hit/miss, `sessionChipDisplay`/`sessionRowTitle` precedence, `normalizeSessionRow` default | pure modules, no DOM |
+| **Unit (TS)** | `mintTag` re-roll + suffix-free grammar, `matchesTagQuery` hit/miss, `sessionChipDisplay`/`sessionRowTitle` precedence, `normalizeSessionRow` default | pure modules, no DOM |
 | **Contract** | `session_updated`/`list_sessions_ok` carry `tag` end to end (Rust build → TS decode) | supervisor round-trip test |
 | **App-test** | A newly spawned card shows a tag chip; the `/resume` filter narrows the list | `just app-test`, short interactions only |
 
@@ -333,13 +336,15 @@ The tag store is the exact same shape plus a reverse map for resolution:
 **Tasks:**
 - [ ] Add `tag TEXT` to the `sessions` `CREATE TABLE` and `CREATE UNIQUE INDEX IF NOT EXISTS sessions_tag ON sessions(tag)` (both the fresh-DB path and via migration).
 - [ ] Add `migrate_sessions_add_tag` mirroring `migrate_sessions_add_name_user_set` (self-healing `table_columns` guard → `ALTER TABLE sessions ADD COLUMN tag TEXT`, then create the unique index); call it beside the other `migrate_sessions_*` calls.
-- [ ] Add `pub tag: Option<String>` to `SessionRow`; add `tag` to every SELECT column list that builds a `SessionRow`.
-- [ ] Add a `tag: Option<&str>` parameter to `record_spawn`; set it on fresh insert with the claim-or-suffix loop (Spec S02); `COALESCE(sessions.tag, excluded.tag)` on the `ON CONFLICT(session_id)` branch.
+- [ ] Add `pub tag: Option<String>` to `SessionRow` **as the last field**; append `tag` as the **last column** in every SELECT that builds a `SessionRow` (the `record_spawn`-adjacent reads, the list read, and the `list_card_bindings` read). The decode is positional (`name` is `row.get(9)`, `name_user_set` is `row.get(10)`), so read `tag` at the new trailing index `row.get(11)` — appending last avoids shifting any existing index.
+- [ ] Add a `tag: Option<&str>` parameter to `record_spawn`; `COALESCE(sessions.tag, excluded.tag)` on the `ON CONFLICT(session_id)` branch; wrap the whole `INSERT … ON CONFLICT` statement in the claim-or-suffix retry (Spec S02) so **both** a fresh-insert collision and a resume-backfill collision are resolved by suffixing the candidate.
+- [ ] Update every existing `record_spawn` caller/test to pass the new `tag` arg (compile-enforced by `-D warnings`).
 
 **Tests:**
 - [ ] `record_spawn` inserts a live row carrying the given tag.
 - [ ] Inserting a second session with a taken tag yields a `-2` suffix (unique index holds).
 - [ ] Respawn preserves an existing tag; resuming a NULL-tag row backfills the provided tag.
+- [ ] Resuming a NULL-tag row whose provided tag is **already taken** by another row backfills a **suffixed** tag (the `DO UPDATE` collision path, Spec S02).
 - [ ] Two NULL-tag rows coexist (NULLs distinct in the unique index).
 
 **Checkpoint:**
@@ -351,14 +356,15 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 **Commit:** `tugcast(session-tags): carry tag on LedgerEntry and emit on SessionRow`
 
-**References:** [P04] Optimistic echo, [P07] Tug-side only, (#flow-spawn-to-ledger)
+**References:** [P04] Optimistic echo, [P06] Lazy backfill, [P07] Tug-side only, (#flow-spawn-to-ledger)
 
-**Artifacts:** `LedgerEntry.tag`, `SessionRecord.tag`, `parse_spawn_session_payload` tag, `do_spawn_session` set, `build_session_updated_frame` tag, `agent_bridge` pass-through.
+**Artifacts:** `LedgerEntry.tag`, `SessionRecord.tag`, `parse_spawn_session_payload` tag, `do_spawn_session` set, `build_session_updated_frame` tag, `CardBinding.tag` in `do_list_card_bindings`, `agent_bridge` pass-through.
 
 **Tasks:**
 - [ ] Add `tag: Option<String>` to `LedgerEntry` (`LedgerEntry::new` → `None`); parse `tag` in `parse_spawn_session_payload`; in `do_spawn_session` set `entry.tag` on the fresh path and leave it on reconnect (mirror `permission_mode`).
 - [ ] Add `tag: Option<&str>` to `SessionRecord`; in `agent_bridge.rs`'s `session_init` promote block pass `entry.tag.as_deref()` into the `SessionRecord`, threaded to `record_spawn`.
 - [ ] Add `tag` to `build_session_updated_frame`'s serialized fields.
+- [ ] Add `tag` to the `CardBinding` row emitted by `do_list_card_bindings` (its SELECT already carries `name`/`name_user_set`) so a rebinding card can show the tag on restore — parity with how `name` restores. This is a distinct wire shape from `SessionRow`; it needs its own field.
 - [ ] Do **not** forward the tag into the child spawn args ([P07]).
 
 **Tests:**
@@ -380,6 +386,7 @@ The tag store is the exact same shape plus a reverse map for resolution:
 **Tasks:**
 - [ ] Add `tag: string | null` to the `SessionRow` interface (with the lockstep doc comment); default it to `null` in `normalizeSessionRow` (older tugcast omits it).
 - [ ] Add an optional `tag` to `encodeSpawnSession`'s payload (mirror `permission_mode`) and a `tag` param to `sendSpawnSession`.
+- [ ] Add `tag: string | null` to the TS `CardBinding` type (matching the Rust `list_card_bindings_ok` row addition in #step-2).
 - [ ] Confirm `decodeSessionUpdated` carries `tag` through `fields` via `normalizeSessionRow` (no separate handling needed).
 
 **Tests:**
@@ -388,7 +395,7 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] `cd tugdeck && bun test session` (or the repo's unit runner for these modules)
+- [ ] `cd tugdeck && bun test` (pure `bun:test` units for `protocol` normalize/encode)
 
 #### Step 4: TS pure logic — mint, resolve, store, precedence {#step-4}
 
@@ -398,21 +405,21 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 **References:** [P01] Precedence, [P03] Mint ownership, [P05] Addressing, Spec S01, (#precedence-store), (#state-zone-mapping)
 
-**Artifacts:** `session-tag.ts` (`mintTag`, `resolveTag`), `session-tag-store.ts`, updated `sessionChipDisplay`/`sessionRowTitle`.
+**Artifacts:** `session-tag.ts` (`mintTag`, `matchesTagQuery`), `session-tag-store.ts`, updated `sessionChipDisplay`/`sessionRowTitle`.
 
 **Tasks:**
-- [ ] Create `session-tag.ts` consuming `TAG_ADJECTIVES`/`TAG_NOUNS`: `mintTag(known, rng?)` (re-roll ≤ cap, else last candidate) and `resolveTag(typed, rows)` (Spec S01).
-- [ ] Create `session-tag-store.ts` mirroring `session-name-store.ts` — a `Map<session_id, string>` plus a `tag → session_id` reverse map, `subscribe`/`getTag`/`setTag`, no-op-when-unchanged.
+- [ ] Create `session-tag.ts` consuming `TAG_ADJECTIVES`/`TAG_NOUNS`: `mintTag(known, rng?)` (re-roll ≤ cap, else last candidate) and the `matchesTagQuery(row, query)` filter predicate (Spec S01). No `resolveTag`/reverse map in v1 ([Q02]).
+- [ ] Create `session-tag-store.ts` as a faithful clone of `session-name-store.ts` — a `Map<session_id, string>`, `subscribe`/`getTag`/`setTag`, no-op-when-unchanged. No reverse map.
 - [ ] Add a `tag` parameter to `sessionChipDisplay` and `sessionRowTitle` in `session-name.ts` implementing name → tag → fallback ([P01]); update the doc comments.
 
 **Tests:**
 - [ ] `mintTag` returns grammar-valid tags and re-rolls away from a `known` set (seeded `rng`).
-- [ ] `resolveTag` returns the matching `session_id` and `null` on miss (case/trim-insensitive).
+- [ ] `matchesTagQuery` matches tag, name, and prompt substrings (case-insensitive) and rejects a non-match.
 - [ ] `sessionChipDisplay`/`sessionRowTitle` precedence: name wins; tag when unnamed; UUID/prompt when tagless.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] unit tests for the three pure modules pass.
+- [ ] `cd tugdeck && bun test` (pure units for `session-tag`, `session-tag-store`, `session-name`)
 
 #### Step 5: TS ingestion + client mint wiring {#step-5}
 
@@ -441,14 +448,14 @@ The tag store is the exact same shape plus a reverse map for resolution:
 
 **Commit:** `tugdeck(session-tags): show tag on chip/rows + /resume filter`
 
-**References:** [P01] Precedence, [P05] Addressing, [Q04] Chip display, (#state-zone-mapping)
+**References:** [P01] Precedence, [P05] Addressing, [Q04] Chip display, Spec S01 (`matchesTagQuery`), [L03] responders, (#state-zone-mapping)
 
 **Artifacts:** `DevSessionIdBadge` tag; picker/resume row tag; `/resume` overlay filter matching tag/name/prompt.
 
 **Tasks:**
 - [ ] In `dev-session-id-badge.tsx` subscribe `sessionTagStore` by `tugSessionId` and pass the tag to `sessionChipDisplay(name, tag, tugSessionId)`; include the tag in `copyValue` (the addressable handle).
 - [ ] In `dev-picker-cells.tsx` pass `row.tag` to `sessionRowTitle`; render the tag on each row (compose an existing `Tug*` element — do not hand-roll).
-- [ ] Add a filter field to the `/resume` overlay (`resume-sheet.tsx`) composing an existing `Tug*` text input (`useState` for the query, [L06]/substrate responders as needed); filter the listed rows on tag (and name/prompt). A non-matching query shows an empty list and fires nothing.
+- [ ] Add a filter field to the `/resume` overlay (`resume-sheet.tsx`) composing the **same `Tug*` text field the `/rename` sheet uses** (`rename-session-sheet.tsx`) so it inherits the substrate responders ([L03] — CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO; a hand-rolled `<input>` would go dead on Cmd-A/C/X/V/Z). Hold the query in `useState`; filter the listed rows via `matchesTagQuery` (tag/name/prompt). A non-matching query shows an empty list and fires nothing.
 
 **Tests:**
 - [ ] App-test: the `/resume` filter narrows the list when a tag substring is typed.
