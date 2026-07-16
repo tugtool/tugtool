@@ -40,7 +40,7 @@ export function registerLensCard(): void {
     family: "lens",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
-    defaultMeta: { title: "Lens", closable: true },
+    defaultMeta: { title: "Lens", closable: true, squareCorners: true },
     hidden: true,
     sizePolicy: {
       min: { width: MIN_LENS_WIDTH_PX, height: 240 },

@@ -84,6 +84,14 @@ export interface CardMeta {
    * this to `true` and pay the two-step close as a guard.
    */
   confirmClose?: boolean;
+  /**
+   * Square off the pane's corners instead of the default rounded
+   * `--tug-radius-md`. Anchored cards (the Lens rail) pin flush to a
+   * viewport edge, where rounded corners read as a floating window that
+   * has drifted rather than a fixed rail — squaring the corners matches
+   * the anchored geometry. Defaults to `false` (rounded).
+   */
+  squareCorners?: boolean;
 }
 
 /**

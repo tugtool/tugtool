@@ -1986,6 +1986,7 @@ export function TugPane({
       data-pane-id={id}
       data-collapsed={collapsed ? "true" : "false"}
       {...(anchored ? { "data-anchored": "true" } : {})}
+      {...(effectiveMeta.squareCorners ? { "data-square-corners": "true" } : {})}
       style={{
         position: "absolute",
         // An anchored rail pins to the right edge, spans the full height,

@@ -64,14 +64,14 @@ class LensStore {
     const client = getTugbankClient();
     if (!client) return;
     const widthPx = readNumber(client.get(LENS_DOMAIN, LENS_KEYS.WIDTH_PX));
-    const sectionOrder = readStringArray(
-      client.get(LENS_DOMAIN, LENS_KEYS.SECTION_ORDER),
+    const sectionOrder = migrateKinds(
+      readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.SECTION_ORDER)),
     );
-    const hiddenSections = readStringArray(
-      client.get(LENS_DOMAIN, LENS_KEYS.HIDDEN_SECTIONS),
+    const hiddenSections = migrateKinds(
+      readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.HIDDEN_SECTIONS)),
     );
-    const collapsedSections = readStringArray(
-      client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS),
+    const collapsedSections = migrateKinds(
+      readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS)),
     );
     this._dispatch(
       {
@@ -195,6 +195,33 @@ function readNumber(entry: TaggedValue | undefined): number | undefined {
     return entry.value;
   }
   return undefined;
+}
+
+/**
+ * Section-`kind` renames applied on hydrate so a user's persisted
+ * arrangement state (order / hidden / collapsed) survives a section
+ * being renamed. Maps old kind → new kind; unknown kinds pass through.
+ * The remapped state re-persists on the next mutation, self-healing the
+ * stored value.
+ */
+const KIND_MIGRATIONS: Readonly<Record<string, string>> = {
+  changeset: "sessions",
+};
+
+function migrateKinds(
+  kinds: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (kinds === undefined) return undefined;
+  let changed = false;
+  const out = kinds.map((kind) => {
+    const to = KIND_MIGRATIONS[kind];
+    if (to !== undefined && to !== kind) {
+      changed = true;
+      return to;
+    }
+    return kind;
+  });
+  return changed ? out : kinds;
 }
 
 /**

@@ -1,5 +1,5 @@
 /**
- * Changeset section — the Lens `kind: "changeset"` registrant ([P07]): the
+ * Sessions section — the Lens `kind: "sessions"` registrant ([P07]): the
  * account-global view of every open session's dirty state as a reorderable/
  * collapsible Lens section, one entry per session plus per-project dash and
  * unattributed pseudo-entries. Supersedes the retired standalone changeset
@@ -36,10 +36,10 @@
  *       CSS, [L11] controls emit actions, [L20] composed children keep
  *       their own tokens.
  *
- * @module components/lens/sections/changeset-section
+ * @module components/lens/sections/sessions-section
  */
 
-import "./changeset-section.css";
+import "./sessions-section.css";
 
 import React, {
   useCallback,
@@ -130,7 +130,7 @@ interface UnattributedItem {
   files: UnattributedFile[];
 }
 
-type ChangesetItem = SessionItem | DashItem | UnattributedItem;
+type SectionItem = SessionItem | DashItem | UnattributedItem;
 
 /**
  * Join the aggregate snapshot with the open dev cards. Projects narrow to
@@ -144,7 +144,7 @@ type ChangesetItem = SessionItem | DashItem | UnattributedItem;
 function buildItems(
   data: WorkspacesChangesetSnapshot,
   bindings: ReadonlyMap<string, CardSessionBinding>,
-): ChangesetItem[] {
+): SectionItem[] {
   const workspaceKeys = new Set<string>();
   const boundSessionIds = new Set<string>();
   for (const binding of bindings.values()) {
@@ -152,7 +152,7 @@ function buildItems(
     boundSessionIds.add(binding.tugSessionId);
   }
 
-  const items: ChangesetItem[] = [];
+  const items: SectionItem[] = [];
   for (const project of data.projects) {
     if (!workspaceKeys.has(project.workspace_key)) continue;
 
@@ -248,11 +248,11 @@ function aheadBehindTitle(project: ProjectChangeset): string | undefined {
   return parts.length > 0 ? parts.join(", ") : undefined;
 }
 
-function itemTitle(item: ChangesetItem): string {
+function itemTitle(item: SectionItem): string {
   return item.kind === "unattributed" ? "Unattributed" : item.entry.display_name;
 }
 
-function itemSubtitle(item: ChangesetItem): string {
+function itemSubtitle(item: SectionItem): string {
   switch (item.kind) {
     case "session":
       return `${projectContext(item.project)} · id ${item.entry.owner_id.slice(0, 8)}`;
@@ -267,12 +267,12 @@ function itemSubtitle(item: ChangesetItem): string {
   }
 }
 
-function itemFileCount(item: ChangesetItem): number {
+function itemFileCount(item: SectionItem): number {
   return item.kind === "unattributed" ? item.files.length : item.entry.files.length;
 }
 
 /** The trailing status hint for an entry's TOC row. */
-function itemStatusHint(item: ChangesetItem): { text: string; caution: boolean } {
+function itemStatusHint(item: SectionItem): { text: string; caution: boolean } {
   if (item.kind === "session" && item.project.no_repo) {
     return { text: "not a git repo", caution: false };
   }
@@ -284,24 +284,24 @@ function itemStatusHint(item: ChangesetItem): { text: string; caution: boolean }
 }
 
 /** The entry's leading glyph: session live-dot, dash mark, or dashed circle. */
-function ItemGlyph({ item }: { item: ChangesetItem }) {
+function ItemGlyph({ item }: { item: SectionItem }) {
   switch (item.kind) {
     case "session":
       return (
         <span
-          className={`changeset-live-dot ${item.entry.live ? "changeset-live-dot-on" : ""}`}
+          className={`sessions-live-dot ${item.entry.live ? "sessions-live-dot-on" : ""}`}
           aria-hidden="true"
         />
       );
     case "dash":
       return (
-        <span className="changeset-dash-mark" aria-hidden="true">
+        <span className="sessions-dash-mark" aria-hidden="true">
           ⌁
         </span>
       );
     case "unattributed":
       return (
-        <CircleDashed size={12} className="changeset-unattributed-mark" aria-hidden="true" />
+        <CircleDashed size={12} className="sessions-unattributed-mark" aria-hidden="true" />
       );
   }
 }
@@ -312,17 +312,17 @@ function ItemGlyph({ item }: { item: ChangesetItem }) {
 
 /** Tone class for a git-status glyph (first significant letter wins). */
 function statusToneClass(gitStatus: string): string {
-  if (gitStatus.startsWith("??")) return "changeset-status-untracked";
+  if (gitStatus.startsWith("??")) return "sessions-status-untracked";
   const letter = gitStatus.replace(/[.\s]/g, "").charAt(0);
   switch (letter) {
     case "A":
-      return "changeset-status-added";
+      return "sessions-status-added";
     case "D":
-      return "changeset-status-deleted";
+      return "sessions-status-deleted";
     case "R":
-      return "changeset-status-renamed";
+      return "sessions-status-renamed";
     default:
-      return "changeset-status-modified";
+      return "sessions-status-modified";
   }
 }
 
@@ -380,7 +380,7 @@ function FilePathLink({
 
   if (isDeleted(op, gitStatus) || !projectRoot) {
     return (
-      <span className="changeset-file-path" title={path}>
+      <span className="sessions-file-path" title={path}>
         {path}
       </span>
     );
@@ -394,8 +394,8 @@ function FilePathLink({
       ]}
     >
       <span
-        className="changeset-file-path changeset-file-path--link"
-        data-slot="changeset-file-ref"
+        className="sessions-file-path sessions-file-path--link"
+        data-slot="sessions-file-ref"
         title={path}
         data-tug-focus="refuse"
         data-no-activate=""
@@ -434,7 +434,7 @@ function PopOutDiffButton({
       role="action"
       title="Open diff in a card"
       aria-label={label}
-      data-testid="changeset-diff-popout"
+      data-testid="sessions-diff-popout"
       onClick={() =>
         dispatchAction({ action: TUG_ACTIONS.OPEN_DIFF, descriptor })
       }
@@ -461,7 +461,7 @@ const DIFF_NOOP_SUBSCRIBE = (): (() => void) => () => {};
  * dash range (rounds + worktree dirt) for dashes. `null` when there is
  * nothing to diff (a non-repo project, or no file has a HEAD side).
  */
-function entryDiffDescriptor(item: ChangesetItem): DiffDescriptor | null {
+function entryDiffDescriptor(item: SectionItem): DiffDescriptor | null {
   const root = item.project.project_dir;
   if (item.kind === "dash") {
     return {
@@ -486,7 +486,7 @@ function entryDiffDescriptor(item: ChangesetItem): DiffDescriptor | null {
  * a dash file has no HEAD side, so it pops out the whole dash range (the
  * server can't scope a range diff to one path).
  */
-function fileDiffDescriptor(item: ChangesetItem, file: GitDiffFileRef): DiffDescriptor | null {
+function fileDiffDescriptor(item: SectionItem, file: GitDiffFileRef): DiffDescriptor | null {
   if (item.kind === "dash") return entryDiffDescriptor(item);
   if (item.project.no_repo || !hasHeadDiff(file.git_status)) return null;
   return { kind: "head", root: item.project.project_dir, paths: [file.path] };
@@ -503,7 +503,7 @@ interface GitDiffFileRef {
  * the shared unfiltered GIT_DIFF feed; `ensureRequested` fires the entry's
  * descriptor once per distinct scope (a superseding scope re-requests).
  */
-function useEntryDiff(item: ChangesetItem): {
+function useEntryDiff(item: SectionItem): {
   snapshot: GitDiffSnapshot;
   ensureRequested: () => void;
 } {
@@ -540,14 +540,14 @@ function fileBlockBody(
   if (!canDiff) return null;
   if (snapshot.phase === "error") {
     return (
-      <p className="changeset-file-block-notice" role="alert">
+      <p className="sessions-file-block-notice" role="alert">
         {snapshot.error ?? "Couldn't load the diff."}
       </p>
     );
   }
   if (snapshot.phase === "loading" || snapshot.payload === null) {
     return (
-      <p className="changeset-file-block-notice" role="status">
+      <p className="sessions-file-block-notice" role="status">
         Loading diff…
       </p>
     );
@@ -555,14 +555,14 @@ function fileBlockBody(
   const file = snapshot.payload.files.find((f) => f.path === path);
   if (file === undefined) {
     return (
-      <p className="changeset-file-block-notice" role="status">
+      <p className="sessions-file-block-notice" role="status">
         No diff for this file.
       </p>
     );
   }
   if (file.binary) {
     return (
-      <p className="changeset-file-block-notice" role="note">
+      <p className="sessions-file-block-notice" role="note">
         Binary file — no textual diff.
       </p>
     );
@@ -601,7 +601,7 @@ function FileSelectCheckbox({
       senderId={senderId}
       disabled={disabled}
       aria-label={`Include ${path} in the commit`}
-      data-testid="changeset-file-select"
+      data-testid="sessions-file-select"
       data-path={path}
     />
   );
@@ -673,8 +673,8 @@ function FileIdentity({
         ? file.op
         : `${file.op} · ${file.origin}`;
   return (
-    <span className="changeset-file-identity">
-      <span className={`changeset-file-status ${statusToneClass(file.git_status)}`}>
+    <span className="sessions-file-identity">
+      <span className={`sessions-file-status ${statusToneClass(file.git_status)}`}>
         {statusGlyph(file.git_status)}
       </span>
       <FilePathLink
@@ -684,13 +684,13 @@ function FileIdentity({
         projectRoot={projectRoot}
       />
       {file.ambiguous ? (
-        <span className="changeset-badge changeset-badge-ambiguous">ambiguous</span>
+        <span className="sessions-badge sessions-badge-ambiguous">ambiguous</span>
       ) : null}
       {file.shared ? (
-        <span className="changeset-badge changeset-badge-shared">shared</span>
+        <span className="sessions-badge sessions-badge-shared">shared</span>
       ) : null}
       {provenance !== null ? (
-        <span className="changeset-file-provenance">{provenance}</span>
+        <span className="sessions-file-provenance">{provenance}</span>
       ) : null}
     </span>
   );
@@ -711,7 +711,7 @@ function FileIdentity({
  * side (`canDiff` false → `children={null}`), so the chrome auto-disables the
  * chevron.
  */
-function ChangesetFileBlock({
+function SessionsFileBlock({
   item,
   file,
   projectRoot,
@@ -720,7 +720,7 @@ function ChangesetFileBlock({
   collapsed,
   onToggle,
 }: {
-  item: ChangesetItem;
+  item: SectionItem;
   file: FileBlockData;
   projectRoot: string;
   selection?: RowSelection;
@@ -752,8 +752,8 @@ function ChangesetFileBlock({
   return (
     <ToolBlockCollapseContext.Provider value={handle}>
       <div
-        className="changeset-file-block"
-        data-testid="changeset-file-block"
+        className="sessions-file-block"
+        data-testid="sessions-file-block"
         data-path={file.path}
       >
         <BlockChrome
@@ -797,18 +797,18 @@ function ChangesetFileBlock({
  * The entry's header identity (the `target` slot): title over the
  * project · branch · id context, with the spelled-out ahead/behind tooltip.
  */
-function EntryIdentity({ item }: { item: ChangesetItem }) {
+function EntryIdentity({ item }: { item: SectionItem }) {
   return (
-    <span className="changeset-entry-identity">
+    <span className="sessions-entry-identity">
       <span
-        className={`changeset-entry-title${
-          item.kind === "unattributed" ? " changeset-entry-title-muted" : ""
+        className={`sessions-entry-title${
+          item.kind === "unattributed" ? " sessions-entry-title-muted" : ""
         }`}
       >
         {itemTitle(item)}
       </span>
       <span
-        className="changeset-entry-context"
+        className="sessions-entry-context"
         title={item.kind === "dash" ? undefined : aheadBehindTitle(item.project)}
       >
         {itemSubtitle(item)}
@@ -834,13 +834,13 @@ function EntryIdentity({ item }: { item: ChangesetItem }) {
  * entry costs nothing. The wrapper carries the entry's test identity
  * (`data-entry-id` / `data-project-dir` / `data-session-id`).
  */
-function ChangesetEntryBlock({
+function SessionsEntryBlock({
   item,
   collapsed,
   onToggle,
   children,
 }: {
-  item: ChangesetItem;
+  item: SectionItem;
   collapsed: boolean;
   onToggle: (next: boolean) => void;
   children: React.ReactNode;
@@ -853,8 +853,8 @@ function ChangesetEntryBlock({
   return (
     <ToolBlockCollapseContext.Provider value={handle}>
       <div
-        className="changeset-entry"
-        data-testid="changeset-entry"
+        className="sessions-entry"
+        data-testid="sessions-entry"
         data-entry-id={item.id}
         data-project-dir={item.project.project_dir}
         data-session-id={item.kind === "session" ? item.entry.owner_id : undefined}
@@ -865,7 +865,7 @@ function ChangesetEntryBlock({
           leading={<ItemGlyph item={item} />}
           identity={<EntryIdentity item={item} />}
           resultSummary={{ kind: "text", text: hint.text }}
-          className="changeset-entry-block"
+          className="sessions-entry-block"
         >
           {children}
         </BlockChrome>
@@ -878,8 +878,8 @@ function ChangesetEntryBlock({
 function NonRepoBody({ projectDir }: { projectDir: string }) {
   const { phase, error, init } = useChangesetGitInit(projectDir);
   return (
-    <div className="changeset-non-repo" role="group" data-testid="changeset-non-repo">
-      <div className="changeset-non-repo-message">
+    <div className="sessions-non-repo" role="group" data-testid="sessions-non-repo">
+      <div className="sessions-non-repo-message">
         This directory is not a git repository.
       </div>
       <TugPushButton
@@ -887,12 +887,12 @@ function NonRepoBody({ projectDir }: { projectDir: string }) {
         role="accent"
         onClick={init}
         disabled={phase === "pending"}
-        data-testid="changeset-git-init"
+        data-testid="sessions-git-init"
       >
         Initialize git
       </TugPushButton>
       {error !== null && (
-        <div className="changeset-non-repo-error" role="alert">
+        <div className="sessions-non-repo-error" role="alert">
           {error}
         </div>
       )}
@@ -902,7 +902,7 @@ function NonRepoBody({ projectDir }: { projectDir: string }) {
 
 /** The maintained draft for an entry (Spec S10): session/dash on the entry,
  *  unattributed on the project. */
-function entryDraft(item: ChangesetItem): ChangesetDraft | undefined {
+function entryDraft(item: SectionItem): ChangesetDraft | undefined {
   return item.kind === "unattributed"
     ? item.project.unattributed_draft
     : item.entry.draft;
@@ -967,16 +967,16 @@ function DashActions({ item }: { item: DashItem }) {
   // ---- Resolve overlay (takes precedence while a resolve is in flight) ----
   if (resolve.phase === "resolving") {
     return (
-      <div className="changeset-dash-resolve" data-testid="changeset-dash-resolving">
-        <div className="changeset-dash-resolve-head">Resolving conflicts…</div>
+      <div className="sessions-dash-resolve" data-testid="sessions-dash-resolving">
+        <div className="sessions-dash-resolve-head">Resolving conflicts…</div>
         {resolve.progress.map((p) => (
-          <div key={p.path} className="changeset-dash-resolve-file">
-            <span className="changeset-dash-resolve-path">{p.path}</span>
-            <span className="changeset-dash-resolve-rung">
+          <div key={p.path} className="sessions-dash-resolve-file">
+            <span className="sessions-dash-resolve-path">{p.path}</span>
+            <span className="sessions-dash-resolve-rung">
               {p.rung} · {p.status}
             </span>
             {p.text.length > 0 ? (
-              <pre className="changeset-dash-resolve-stream">{p.text}</pre>
+              <pre className="sessions-dash-resolve-stream">{p.text}</pre>
             ) : null}
           </div>
         ))}
@@ -985,24 +985,24 @@ function DashActions({ item }: { item: DashItem }) {
   }
   if (resolve.phase === "resolved") {
     return (
-      <div className="changeset-dash-actions" data-testid="changeset-dash-resolved">
-        <div className="changeset-dash-resolve-summary">
+      <div className="sessions-dash-actions" data-testid="sessions-dash-resolved">
+        <div className="sessions-dash-resolve-summary">
           Resolved {resolve.resolved.length} file
           {resolve.resolved.length === 1 ? "" : "s"}
           {resolve.shape === "replay" ? " (replayed rounds)" : ""}:
         </div>
-        <ul className="changeset-dash-resolved-list">
+        <ul className="sessions-dash-resolved-list">
           {resolve.resolved.map((r) => (
             <li key={r.path}>
-              <span className="changeset-dash-resolve-path">{r.path}</span>
-              <span className="changeset-dash-rung-badge">{r.resolvedBy}</span>
+              <span className="sessions-dash-resolve-path">{r.path}</span>
+              <span className="sessions-dash-rung-badge">{r.resolvedBy}</span>
             </li>
           ))}
         </ul>
         {join.phase === "pending" ? (
-          <div className="changeset-dash-working">Joining…</div>
+          <div className="sessions-dash-working">Joining…</div>
         ) : (
-          <div className="changeset-dash-action-row">
+          <div className="sessions-dash-action-row">
             <TugPushButton
               size="sm"
               emphasis="outlined"
@@ -1016,7 +1016,7 @@ function DashActions({ item }: { item: DashItem }) {
                   candidate: resolve.candidateCommit,
                 })
               }
-              data-testid="changeset-dash-join-candidate"
+              data-testid="sessions-dash-join-candidate"
             >
               Join
             </TugPushButton>
@@ -1035,17 +1035,17 @@ function DashActions({ item }: { item: DashItem }) {
   }
   if (resolve.phase === "partial") {
     return (
-      <div className="changeset-dash-actions" data-testid="changeset-dash-partial">
-        <div className="changeset-dash-resolve-summary">
+      <div className="sessions-dash-actions" data-testid="sessions-dash-partial">
+        <div className="sessions-dash-resolve-summary">
           Resolved {resolve.resolved.length}; {resolve.unresolved.length} still
           conflicting:
         </div>
-        <ul className="changeset-dash-conflict-list">
+        <ul className="sessions-dash-conflict-list">
           {resolve.unresolved.map((p) => (
             <li key={p}>{p}</li>
           ))}
         </ul>
-        <div className="changeset-dash-hint">
+        <div className="sessions-dash-hint">
           Resolve the rest in the dash worktree, then Join again.
         </div>
         <TugPushButton
@@ -1061,8 +1061,8 @@ function DashActions({ item }: { item: DashItem }) {
   }
   if (resolve.phase === "error") {
     return (
-      <div className="changeset-dash-actions">
-        <div className="changeset-dash-error">Resolve failed: {resolve.error}</div>
+      <div className="sessions-dash-actions">
+        <div className="sessions-dash-error">Resolve failed: {resolve.error}</div>
         <TugPushButton
           size="sm"
           emphasis="ghost"
@@ -1077,25 +1077,25 @@ function DashActions({ item }: { item: DashItem }) {
 
   // ---- Join preview / execute ----
   if (join.phase === "pending") {
-    return <div className="changeset-dash-working">Working…</div>;
+    return <div className="sessions-dash-working">Working…</div>;
   }
   if (join.phase === "preview" && join.conflicts.length === 0) {
     return (
       <div
-        className="changeset-dash-actions"
-        data-testid="changeset-dash-preview-clean"
+        className="sessions-dash-actions"
+        data-testid="sessions-dash-preview-clean"
       >
-        <div className="changeset-dash-preview-msg">
+        <div className="sessions-dash-preview-msg">
           Joins cleanly into {base}.
         </div>
-        <div className="changeset-dash-action-row">
+        <div className="sessions-dash-action-row">
           <TugPushButton
             size="sm"
             emphasis="outlined"
             role="accent"
             widthStabilize={{ alternateLabel: "Joining…" }}
             onClick={() => join.join(projectRoot, dashName, { preview: false })}
-            data-testid="changeset-dash-confirm-join"
+            data-testid="sessions-dash-confirm-join"
           >
             Confirm join
           </TugPushButton>
@@ -1117,25 +1117,25 @@ function DashActions({ item }: { item: DashItem }) {
   ) {
     return (
       <div
-        className="changeset-dash-actions"
-        data-testid="changeset-dash-preview-conflicts"
+        className="sessions-dash-actions"
+        data-testid="sessions-dash-preview-conflicts"
       >
-        <div className="changeset-dash-preview-msg">
+        <div className="sessions-dash-preview-msg">
           Conflicts in {join.conflicts.length} file
           {join.conflicts.length === 1 ? "" : "s"}:
         </div>
-        <ul className="changeset-dash-conflict-list">
+        <ul className="sessions-dash-conflict-list">
           {join.conflicts.map((p) => (
             <li key={p}>{p}</li>
           ))}
         </ul>
-        <div className="changeset-dash-action-row">
+        <div className="sessions-dash-action-row">
           <TugPushButton
             size="sm"
             emphasis="outlined"
             role="accent"
             onClick={() => resolve.resolve()}
-            data-testid="changeset-dash-resolve"
+            data-testid="sessions-dash-resolve"
           >
             Resolve conflicts
           </TugPushButton>
@@ -1153,8 +1153,8 @@ function DashActions({ item }: { item: DashItem }) {
   }
   if (join.phase === "error") {
     return (
-      <div className="changeset-dash-actions">
-        <div className="changeset-dash-error">Join failed: {join.error}</div>
+      <div className="sessions-dash-actions">
+        <div className="sessions-dash-error">Join failed: {join.error}</div>
         <TugPushButton
           size="sm"
           emphasis="ghost"
@@ -1173,14 +1173,14 @@ function DashActions({ item }: { item: DashItem }) {
 
   // ---- Idle: Join / Release ----
   return (
-    <div className="changeset-dash-actions" data-testid="changeset-dash-idle">
-      <div className="changeset-dash-action-row">
+    <div className="sessions-dash-actions" data-testid="sessions-dash-idle">
+      <div className="sessions-dash-action-row">
         <TugPushButton
           size="sm"
           emphasis="outlined"
           role="accent"
           onClick={() => join.join(projectRoot, dashName, { preview: true })}
-          data-testid="changeset-dash-join"
+          data-testid="sessions-dash-join"
         >
           Join
         </TugPushButton>
@@ -1196,7 +1196,7 @@ function DashActions({ item }: { item: DashItem }) {
                 release.release(projectRoot, dashName);
                 setConfirmingRelease(false);
               }}
-              data-testid="changeset-dash-release-confirm"
+              data-testid="sessions-dash-release-confirm"
             >
               Discard dash
             </TugPushButton>
@@ -1215,14 +1215,14 @@ function DashActions({ item }: { item: DashItem }) {
             emphasis="ghost"
             role="action"
             onClick={() => setConfirmingRelease(true)}
-            data-testid="changeset-dash-release"
+            data-testid="sessions-dash-release"
           >
             Release
           </TugPushButton>
         )}
       </div>
       {release.phase === "error" ? (
-        <div className="changeset-dash-error">Release failed: {release.error}</div>
+        <div className="sessions-dash-error">Release failed: {release.error}</div>
       ) : null}
     </div>
   );
@@ -1232,7 +1232,7 @@ function EntryBody({
   item,
   onError,
 }: {
-  item: ChangesetItem;
+  item: SectionItem;
   onError?: (title: string, message: string) => void;
 }) {
   const projectRoot = item.project.project_dir;
@@ -1388,7 +1388,7 @@ function EntryBody({
   const entryDiffActionsRow = () => {
     if (entryDescriptor === null || diffablePaths.length === 0) return null;
     return (
-      <div className="changeset-entry-actions">
+      <div className="sessions-entry-actions">
         {diffablePaths.length > 1 ? (
           <>
             <TugPushButton
@@ -1396,7 +1396,7 @@ function EntryBody({
               role="action"
               size="2xs"
               onClick={() => setExpandedFiles(new Set(diffablePaths))}
-              data-testid="changeset-entry-expand-all"
+              data-testid="sessions-entry-expand-all"
             >
               Expand All
             </TugPushButton>
@@ -1405,7 +1405,7 @@ function EntryBody({
               role="action"
               size="2xs"
               onClick={() => setExpandedFiles(new Set())}
-              data-testid="changeset-entry-collapse-all"
+              data-testid="sessions-entry-collapse-all"
             >
               Collapse All
             </TugPushButton>
@@ -1441,7 +1441,7 @@ function EntryBody({
   const showReceipt = phase === "done" && receipt !== null;
   const commitComposer =
     !(hasCommit || draftText !== null || drafting || isDraftable) ? null : (
-      <div className="changeset-commit" data-testid="changeset-commit-controls">
+      <div className="sessions-commit" data-testid="sessions-commit-controls">
         <BlockChrome
           variant="tool"
           toolName={item.kind === "dash" ? "Join message" : "Commit message"}
@@ -1472,7 +1472,7 @@ function EntryBody({
                     setPinned(false);
                     draftOverlay.requestDraft();
                   }}
-                  data-testid="changeset-generate-draft"
+                  data-testid="sessions-generate-draft"
                 >
                   Generate message
                 </TugPushButton>
@@ -1492,7 +1492,7 @@ function EntryBody({
                   emphasis="ghost"
                   role="action"
                   onClick={useLatestDraft}
-                  data-testid="changeset-use-latest-draft"
+                  data-testid="sessions-use-latest-draft"
                 >
                   Use latest draft
                 </TugPushButton>
@@ -1512,18 +1512,18 @@ function EntryBody({
                 }
                 widthStabilize={{ alternateLabel: "Committing…" }}
                 onClick={() => commit(projectRoot, selectedPaths, message.trim())}
-                data-testid="changeset-commit-button"
+                data-testid="sessions-commit-button"
               >
                 {phase === "pending" ? "Committing…" : "Commit"}
               </TugPushButton>
             ) : undefined
           }
-          className="changeset-commit-composer"
+          className="sessions-commit-composer"
         >
           {showReceipt ? (
-            <div className="changeset-commit-receipt" data-testid="changeset-commit-receipt">
-              <div className="changeset-commit-receipt-head">
-                <span className="changeset-commit-receipt-sha">
+            <div className="sessions-commit-receipt" data-testid="sessions-commit-receipt">
+              <div className="sessions-commit-receipt-head">
+                <span className="sessions-commit-receipt-sha">
                   Committed {sha === null ? "" : sha.slice(0, 10)}
                 </span>
                 <TugPushButton
@@ -1531,12 +1531,12 @@ function EntryBody({
                   emphasis="ghost"
                   role="action"
                   onClick={clear}
-                  data-testid="changeset-commit-receipt-dismiss"
+                  data-testid="sessions-commit-receipt-dismiss"
                 >
                   Dismiss
                 </TugPushButton>
               </div>
-              <pre className="changeset-commit-receipt-body">{receipt}</pre>
+              <pre className="sessions-commit-receipt-body">{receipt}</pre>
             </div>
           ) : (
             <TugMessageEditor
@@ -1563,7 +1563,7 @@ function EntryBody({
                   : undefined
               }
               aria-label="Commit message"
-              data-testid="changeset-commit-message"
+              data-testid="sessions-commit-message"
             />
           )}
         </BlockChrome>
@@ -1575,11 +1575,11 @@ function EntryBody({
       <CommitScope>
         <div
           ref={commitRef as (el: HTMLDivElement | null) => void}
-          className="changeset-file-list"
-          data-testid="changeset-unattributed"
+          className="sessions-file-list"
+          data-testid="sessions-unattributed"
         >
           {item.files.map((file) => (
-            <ChangesetFileBlock
+            <SessionsFileBlock
               key={file.path}
               item={item}
               file={unattributedFileData(file)}
@@ -1600,7 +1600,7 @@ function EntryBody({
   if (files === null || files.length === 0) {
     return (
       <>
-        <div className="changeset-clean" role="status">
+        <div className="sessions-clean" role="status">
           <CircleCheck size={14} />
           {item.kind === "dash" ? "No files past base" : "No changes from this session"}
         </div>
@@ -1613,10 +1613,10 @@ function EntryBody({
     <CommitScope>
       <div
         ref={commitRef as (el: HTMLDivElement | null) => void}
-        className="changeset-file-list"
+        className="sessions-file-list"
       >
         {files.map((file) => (
-          <ChangesetFileBlock
+          <SessionsFileBlock
             key={file.path}
             item={item}
             file={changesetFileData(file)}
@@ -1636,12 +1636,12 @@ function EntryBody({
 }
 
 // ---------------------------------------------------------------------------
-// Changeset section — body + collapsed summary
+// Sessions section — body + collapsed summary
 // ---------------------------------------------------------------------------
 
 /** The joined item list, from the same app-level singletons the section reads
  *  ([L02]). Shared by the body and the collapsed summary so they agree. */
-function useChangesetItems(): ChangesetItem[] {
+function useSessionsItems(): SectionItem[] {
   const data = useChangesetAll();
   const bindings = useOpenBindings();
   return useMemo(() => buildItems(data, bindings), [data, bindings]);
@@ -1649,7 +1649,7 @@ function useChangesetItems(): ChangesetItem[] {
 
 /** Total dirty files across the shown entries: session/unattributed file
  *  lists, plus a dash's range files. */
-function countDirtyFiles(items: readonly ChangesetItem[]): number {
+function countDirtyFiles(items: readonly SectionItem[]): number {
   let n = 0;
   for (const item of items) {
     n += item.kind === "unattributed" ? item.files.length : item.entry.files.length;
@@ -1659,8 +1659,8 @@ function countDirtyFiles(items: readonly ChangesetItem[]): number {
 
 /** The Lens band's live collapsed summary ([P07]): "N sessions · M dirty
  *  files" — the count that lets the collapsed section beat a dead title. */
-function ChangesetCollapsedSummary(): React.ReactElement {
-  const items = useChangesetItems();
+function SessionsCollapsedSummary(): React.ReactElement {
+  const items = useSessionsItems();
   const sessions = items.filter((item) => item.kind === "session").length;
   const dirty = countDirtyFiles(items);
   return (
@@ -1670,8 +1670,8 @@ function ChangesetCollapsedSummary(): React.ReactElement {
   );
 }
 
-function ChangesetSectionBody(): React.ReactElement {
-  const items = useChangesetItems();
+function SessionsSectionBody(): React.ReactElement {
+  const items = useSessionsItems();
 
   // Verb failures (commit, scribe) and scribe summaries surface as a
   // pane-modal TugAlert sheet. Diffs render inline in the entries ([P20]),
@@ -1729,7 +1729,7 @@ function ChangesetSectionBody(): React.ReactElement {
 
   if (items.length === 0) {
     return (
-      <div data-slot="changeset-card" className="changeset-card changeset-card-empty">
+      <div data-slot="sessions-card" className="sessions-card sessions-card-empty">
         No open sessions
       </div>
     );
@@ -1738,16 +1738,16 @@ function ChangesetSectionBody(): React.ReactElement {
   // The band supplies the title + the live "N sessions · M dirty files"
   // summary ([Q04]); the body opens with the bulk-collapse buttons only.
   return (
-    <div data-slot="changeset-card" className="changeset-card">
-      <div className="changeset-head">
-        <div className="changeset-toolbar">
-          <span className="changeset-toolbar-spacer" />
+    <div data-slot="sessions-card" className="sessions-card">
+      <div className="sessions-head">
+        <div className="sessions-toolbar">
+          <span className="sessions-toolbar-spacer" />
           <TugPushButton
             emphasis="ghost"
             role="action"
             size="2xs"
             onClick={expandAll}
-            data-testid="changeset-expand-all"
+            data-testid="sessions-expand-all"
           >
             Expand all
           </TugPushButton>
@@ -1756,23 +1756,23 @@ function ChangesetSectionBody(): React.ReactElement {
             role="action"
             size="2xs"
             onClick={collapseAll}
-            data-testid="changeset-collapse-all"
+            data-testid="sessions-collapse-all"
           >
             Collapse all
           </TugPushButton>
         </div>
       </div>
-      <div className="changeset-scroll">
-        <div className="changeset-sections">
+      <div className="sessions-scroll">
+        <div className="sessions-sections">
           {items.map((item) => (
-            <ChangesetEntryBlock
+            <SessionsEntryBlock
               key={item.id}
               item={item}
               collapsed={collapsedEntries.has(item.id)}
               onToggle={(next) => toggleEntry(item.id, next)}
             >
               <EntryBody item={item} onError={presentNotice} />
-            </ChangesetEntryBlock>
+            </SessionsEntryBlock>
           ))}
         </div>
       </div>
@@ -1782,22 +1782,22 @@ function ChangesetSectionBody(): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
-// registerChangesetSection
+// registerSessionsSection
 // ---------------------------------------------------------------------------
 
 /**
- * Register the Changeset Lens section ([P07]). Called once at boot from
+ * Register the Sessions Lens section ([P07]). Called once at boot from
  * `main.tsx`, beside `registerLogSection` / `registerTelemetrySection`. The
  * body reads the app-level `useChangesetAll` singleton directly (no host feed
  * wiring), so it is host-agnostic — nothing imported from `lens/` beyond the
  * registry entry point.
  */
-export function registerChangesetSection(): void {
+export function registerSessionsSection(): void {
   registerLensSection({
-    kind: "changeset",
-    title: "Changeset",
+    kind: "sessions",
+    title: "Sessions",
     glyph: <GitBranch size={14} />,
-    collapsedSummary: () => <ChangesetCollapsedSummary />,
-    body: () => <ChangesetSectionBody />,
+    collapsedSummary: () => <SessionsCollapsedSummary />,
+    body: () => <SessionsSectionBody />,
   });
 }

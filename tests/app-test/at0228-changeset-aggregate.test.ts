@@ -151,11 +151,11 @@ afterAll(() => {
   }
 });
 
-// The changeset content now lives in the Lens `kind: "changeset"` section
+// The changeset content now lives in the Lens `kind: "sessions"` section
 // (the standalone card is retired). We seed just the two dev cards, open +
 // focus the Lens (`focus-lens`, the same path Swift's menu takes), and scope
 // every selector under the section band.
-const SECTION = '.lens-section[data-lens-section="changeset"]';
+const SECTION = '.lens-section[data-lens-section="sessions"]';
 
 async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: string): Promise<void> {
   await app.evalJS<void>(
@@ -178,13 +178,13 @@ function deckShape() {
   };
 }
 
-const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${SECTION} [data-testid="changeset-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
+const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${SECTION} [data-testid="sessions-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
 
 function nonRepoProbe(sid: string): string {
   return `(function(){
-    var entry = document.querySelector('${SECTION} [data-testid="changeset-entry"][data-entry-id="session:${sid}"]');
+    var entry = document.querySelector('${SECTION} [data-testid="sessions-entry"][data-entry-id="session:${sid}"]');
     if (!entry) return { present: false, nonRepo: false };
-    return { present: true, nonRepo: entry.querySelector('[data-testid="changeset-non-repo"]') !== null };
+    return { present: true, nonRepo: entry.querySelector('[data-testid="sessions-non-repo"]') !== null };
   })()`;
 }
 
@@ -199,7 +199,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
           await app.spawnSessionResume(s.cardId, { tugSessionId: s.sid, projectDir: s.dir });
         }
 
-        // Open + focus the Lens so the Changeset section mounts and its
+        // Open + focus the Lens so the Sessions section mounts and its
         // commit-flow responders are in the active chain (R01). The section
         // defaults to shown + expanded, so its body renders straight away.
         await dispatch(app, "focus-lens");
@@ -234,7 +234,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
           "the non-repo session entry shows the Init affordance",
         ).toBe(true);
         await app.click(
-          `${SECTION} [data-testid="changeset-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="changeset-git-init"]`,
+          `${SECTION} [data-testid="sessions-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="sessions-git-init"]`,
         );
         await app.waitForCondition<boolean>(
           `(function(){ var p = ${nonRepoProbe(NON_REPO.sid)}; return p.present && !p.nonRepo; })()`,
@@ -248,11 +248,11 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         // mounts the file's embedded `DiffBlock` in the block body carrying the
         // added line's marker; a second click unmounts it (collapse-by-unmount)
         // so the later commit leg reads a clean file list.
-        const UNATTRIBUTED = `${SECTION} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
-        const FILE_BLOCK = `${UNATTRIBUTED} [data-testid="changeset-file-block"][data-path="committed.txt"]`;
+        const UNATTRIBUTED = `${SECTION} [data-testid="sessions-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
+        const FILE_BLOCK = `${UNATTRIBUTED} [data-testid="sessions-file-block"][data-path="committed.txt"]`;
         const DISCLOSURE = `${FILE_BLOCK} [data-slot="tool-call-header-disclosure"]`;
         const FILE_BODY = `${FILE_BLOCK} [data-slot="tool-block-body"]`;
-        const UNTRACKED_DISCLOSURE = `${UNATTRIBUTED} [data-testid="changeset-file-block"][data-path="${DIRTY_FILE}"] [data-slot="tool-call-header-disclosure"]`;
+        const UNTRACKED_DISCLOSURE = `${UNATTRIBUTED} [data-testid="sessions-file-block"][data-path="${DIRTY_FILE}"] [data-slot="tool-call-header-disclosure"]`;
         await app.waitForCondition<boolean>(
           `document.querySelector('${DISCLOSURE}') !== null`,
           { timeoutMs: 20_000 },
@@ -283,15 +283,15 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         // selected file (numstat receipt names it; the other two dirty paths
         // survive on disk), and the aggregate recompute drops the committed
         // row from the entry.
-        await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="committed.txt"]`);
-        await app.click(`${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="${DIRTY_FILE}"]`);
+        await app.click(`${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="committed.txt"]`);
+        await app.click(`${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="${DIRTY_FILE}"]`);
         // The commit field is now the CM6 `TugMessageEditor` ([P26]/[P28]): its
         // document has no `<textarea>.value`, so `app.type` can't drive it. Use
         // the house CM6-typing pattern — focus the field's `.cm-content` and
         // `execCommand("insertText", …)` — scoped under the composer block.
         await app.evalJS<boolean>(
           `(function(){
-            var el = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-message"] .cm-content');
+            var el = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-message"] .cm-content');
             if (el === null) return false;
             el.focus();
             // Replace any pre-filled draft so the message is exactly ours.
@@ -302,15 +302,15 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         );
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-message"] .cm-content');
+            var el = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-message"] .cm-content');
             return el !== null && (el.textContent || "").indexOf("at0228 card commit") !== -1;
           })()`,
           { timeoutMs: 8000 },
         );
-        await app.click(`${UNATTRIBUTED} [data-testid="changeset-commit-button"]`);
+        await app.click(`${UNATTRIBUTED} [data-testid="sessions-commit-button"]`);
         await app.waitForCondition<boolean>(
           `(function(){
-            var receipt = document.querySelector('${UNATTRIBUTED} [data-testid="changeset-commit-receipt"]');
+            var receipt = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-receipt"]');
             return receipt !== null && (receipt.textContent || "").indexOf("other.txt") !== -1;
           })()`,
           { timeoutMs: 20_000 },
@@ -329,14 +329,14 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
         expect(porcelain).toContain(`?? ${DIRTY_FILE}`);
         // The committed row leaves the entry on the next recompute.
         await app.waitForCondition<boolean>(
-          `document.querySelector('${UNATTRIBUTED} [data-testid="changeset-file-select"][data-path="other.txt"]') === null`,
+          `document.querySelector('${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="other.txt"]') === null`,
           { timeoutMs: 20_000 },
         );
 
         // (5) File click: the repo's untracked file lands in the project's
         // Unattributed entry as a link; clicking it opens the file in a Text
         // card.
-        const FILE_LINK = `${SECTION} [data-testid="changeset-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="changeset-file-ref"][title="${DIRTY_FILE}"]`;
+        const FILE_LINK = `${SECTION} [data-testid="sessions-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="sessions-file-ref"][title="${DIRTY_FILE}"]`;
         await app.waitForCondition<boolean>(
           `document.querySelector('${FILE_LINK}') !== null`,
           { timeoutMs: 20_000 },
@@ -369,7 +369,7 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-dev-card filter, I
               `${SECTION} [data-testid="lens-section-band"]`,
             )});
             var header = document.querySelector(${JSON.stringify(
-              `${SECTION} [data-testid="changeset-entry"] .tool-call-header`,
+              `${SECTION} [data-testid="sessions-entry"] .tool-call-header`,
             )});
             if (!content || !band || !header) return null;
             content.scrollTop = content.scrollHeight;

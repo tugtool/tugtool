@@ -149,6 +149,14 @@ body {
   box-shadow: var(--tugx-pane-shadow-inactive);
 }
 
+/* Square corners for panes that opt in via `CardMeta.squareCorners`
+   (the anchored Lens rail). The frame carries `data-square-corners`;
+   squaring the chrome also squares the title bar's top corners, which
+   are only rounded because the chrome clips them. */
+.tug-pane[data-square-corners="true"] .tug-pane-chrome {
+  border-radius: 0;
+}
+
 /* ============================================================================
    Body wrapper -- holds accessory + content below the title bar [D07]
    ========================================================================= */

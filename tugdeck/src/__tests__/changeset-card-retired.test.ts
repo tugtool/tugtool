@@ -1,6 +1,6 @@
 /**
  * changeset-card-retired.test.ts — the graceful-degrade path for the retired
- * Changeset card (now a Lens `kind: "changeset"` section).
+ * Changeset card (now the Lens `kind: "sessions"` section).
  *
  * A persisted deck blob written before the retirement may still name a
  * `componentId: "changeset"` card. With `registerChangesetCard` gone, that

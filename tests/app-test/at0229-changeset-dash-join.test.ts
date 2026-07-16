@@ -130,8 +130,8 @@ afterAll(() => {
   }
 });
 
-// The changeset content lives in the Lens `kind: "changeset"` section now.
-const SECTION = '.lens-section[data-lens-section="changeset"]';
+// The changeset content lives in the Lens `kind: "sessions"` section now.
+const SECTION = '.lens-section[data-lens-section="sessions"]';
 
 async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: string): Promise<void> {
   await app.evalJS<void>(
@@ -153,7 +153,7 @@ function deckShape() {
 }
 
 const dashEntry = (name: string) =>
-  `${SECTION} [data-testid="changeset-entry"][data-entry-id="dash:${REPO.dir}:tugdash/${name}"]`;
+  `${SECTION} [data-testid="sessions-entry"][data-entry-id="dash:${REPO.dir}:tugdash/${name}"]`;
 
 function branchExists(name: string): boolean {
   const r = Bun.spawnSync(["git", "-C", REPO.dir, "branch", "--list", `tugdash/${name}`]);
@@ -169,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)("AT0229: changeset card — dash Join preview + cle
         await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
         await app.spawnSessionResume("B", { tugSessionId: SID, projectDir: REPO.dir });
 
-        // Open + focus the Lens so the Changeset section (and its dash
+        // Open + focus the Lens so the Sessions section (and its dash
         // Join/Confirm responders) mount in the active chain.
         await dispatch(app, "focus-lens");
         await app.waitForCondition<boolean>(
@@ -182,20 +182,20 @@ describe.skipIf(!SHOULD_RUN)("AT0229: changeset card — dash Join preview + cle
 
         // Both dash entries appear (the project is open via the dev card).
         await app.waitForCondition<boolean>(
-          `document.querySelector('${dashEntry("clean")} [data-testid="changeset-dash-join"]') !== null &&
-           document.querySelector('${dashEntry("clash")} [data-testid="changeset-dash-join"]') !== null`,
+          `document.querySelector('${dashEntry("clean")} [data-testid="sessions-dash-join"]') !== null &&
+           document.querySelector('${dashEntry("clash")} [data-testid="sessions-dash-join"]') !== null`,
           { timeoutMs: 40_000 },
         );
 
         // (1) Conflicting dash: Join → the structured conflict list, naming foo.txt.
-        await app.click(`${dashEntry("clash")} [data-testid="changeset-dash-join"]`);
+        await app.click(`${dashEntry("clash")} [data-testid="sessions-dash-join"]`);
         await app.waitForCondition<boolean>(
-          `document.querySelector('${dashEntry("clash")} [data-testid="changeset-dash-preview-conflicts"]') !== null`,
+          `document.querySelector('${dashEntry("clash")} [data-testid="sessions-dash-preview-conflicts"]') !== null`,
           { timeoutMs: 20_000 },
         );
         expect(
           await app.evalJS<boolean>(
-            `(document.querySelector('${dashEntry("clash")} [data-testid="changeset-dash-preview-conflicts"]').textContent || "").indexOf("foo.txt") !== -1`,
+            `(document.querySelector('${dashEntry("clash")} [data-testid="sessions-dash-preview-conflicts"]').textContent || "").indexOf("foo.txt") !== -1`,
           ),
           "the conflict list names foo.txt",
         ).toBe(true);
@@ -203,12 +203,12 @@ describe.skipIf(!SHOULD_RUN)("AT0229: changeset card — dash Join preview + cle
         // (2) Clean dash: Join → clean-bill preview → Confirm → squash-lands and
         // tears down the branch (verified against real git).
         expect(branchExists("clean"), "clean dash branch exists before join").toBe(true);
-        await app.click(`${dashEntry("clean")} [data-testid="changeset-dash-join"]`);
+        await app.click(`${dashEntry("clean")} [data-testid="sessions-dash-join"]`);
         await app.waitForCondition<boolean>(
-          `document.querySelector('${dashEntry("clean")} [data-testid="changeset-dash-preview-clean"]') !== null`,
+          `document.querySelector('${dashEntry("clean")} [data-testid="sessions-dash-preview-clean"]') !== null`,
           { timeoutMs: 20_000 },
         );
-        await app.click(`${dashEntry("clean")} [data-testid="changeset-dash-confirm-join"]`);
+        await app.click(`${dashEntry("clean")} [data-testid="sessions-dash-confirm-join"]`);
 
         // The join verb lands and tears the branch down.
         await waitFor(() => !branchExists("clean"), 30_000);

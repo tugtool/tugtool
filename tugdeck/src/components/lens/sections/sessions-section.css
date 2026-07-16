@@ -9,14 +9,14 @@
    glyphs and badges tint via tone *text* tokens, so no @tug-renders-on
    ([L16]). */
 
-.changeset-card {
+.sessions-card {
   display: flex;
   flex-direction: column;
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-.changeset-card-empty {
+.sessions-card-empty {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
@@ -26,7 +26,7 @@
 
 /* ---- Toolbar: the section body's first row (Expand/Collapse all, [Q04]) ---- */
 
-.changeset-head {
+.sessions-head {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -34,13 +34,13 @@
   padding: 4px 14px 8px;
 }
 
-.changeset-toolbar {
+.sessions-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.changeset-toolbar-spacer {
+.sessions-toolbar-spacer {
   flex: 1 1 auto;
 }
 
@@ -49,11 +49,11 @@
    inner `overflow` would resolve the entry headers' sticky offsets against
    the wrong ancestor. ---- */
 
-.changeset-scroll {
+.sessions-scroll {
   padding: 8px 14px 12px;
 }
 
-.changeset-sections {
+.sessions-sections {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -64,7 +64,7 @@
    entry's test hooks (`data-entry-id` / `data-project-dir` /
    `data-session-id`). */
 
-.changeset-entry {
+.sessions-entry {
   min-width: 0;
 }
 
@@ -80,19 +80,19 @@
    on purpose: folding into `--tugx-pin-stack-top` on one element is a
    dependency cycle (guaranteed-invalid, nested headers would pin at 0 and
    collide with the entry header). */
-.changeset-entry-block {
-  --changeset-entry-pin-clearance: calc(
+.sessions-entry-block {
+  --sessions-entry-pin-clearance: calc(
     var(--tugx-pin-stack-top, 0px) + var(--tugx-block-header-height, 0px)
   );
 }
 
-.changeset-entry-block > [data-slot="tool-block-body"] {
-  --tugx-pin-stack-top: var(--changeset-entry-pin-clearance);
+.sessions-entry-block > [data-slot="tool-block-body"] {
+  --tugx-pin-stack-top: var(--sessions-entry-pin-clearance);
 }
 
 /* The header identity: title + trailing project · branch context, riding
    the block header's flexible target column. */
-.changeset-entry-identity {
+.sessions-entry-identity {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -101,20 +101,20 @@
   font-size: 0.875rem;
 }
 
-.changeset-entry-title {
+.sessions-entry-title {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.changeset-entry-title-muted {
+.sessions-entry-title-muted {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Trailing project · branch context on the header line, pushed toward the
    status-hint summary at the header's trailing edge. */
-.changeset-entry-context {
+.sessions-entry-context {
   flex-shrink: 0;
   margin-left: auto;
   font-size: 0.75rem;
@@ -127,7 +127,7 @@
 
 /* Session liveness: a dot that lights via the success tone when the owning
    session has a live relay. Appearance only — no React state ([L06]). */
-.changeset-live-dot {
+.sessions-live-dot {
   flex-shrink: 0;
   width: 7px;
   height: 7px;
@@ -136,26 +136,26 @@
   opacity: 0.45;
 }
 
-.changeset-live-dot-on {
+.sessions-live-dot-on {
   background: var(--tug7-element-tone-text-normal-success-rest);
   opacity: 1;
 }
 
-.changeset-dash-mark {
+.sessions-dash-mark {
   flex-shrink: 0;
   font-size: 0.8125rem;
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
 /* Unattributed pseudo-entry glyph — a quiet dashed circle. */
-.changeset-unattributed-mark {
+.sessions-unattributed-mark {
   flex-shrink: 0;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ---- File rows (read-only: no tabindex, no hover affordance) ---- */
 
-.changeset-file-list {
+.sessions-file-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -165,13 +165,13 @@
 /* Each changeset file is a BlockChrome ([P25]/[P29]) — the block owns its own
    chrome/header styling; this wrapper only carries the per-file test hooks
    (`data-testid` + `data-path`). */
-.changeset-file-block {
+.sessions-file-block {
   min-width: 0;
 }
 
 /* The header identity ([P29]): status glyph + path link + provenance section,
    riding the block header's flexible detail column. */
-.changeset-file-identity {
+.sessions-file-identity {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -181,40 +181,40 @@
 }
 
 /* A file block's body notice (loading / error / binary / missing diff). */
-.changeset-file-block-notice {
+.sessions-file-block-notice {
   margin: 4px 0;
   padding: 0 8px;
   font-size: 0.8125rem;
   opacity: 0.7;
 }
 
-.changeset-file-status {
+.sessions-file-status {
   flex-shrink: 0;
   width: 2ch;
   white-space: pre;
 }
 
-.changeset-status-added {
+.sessions-status-added {
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
 
-.changeset-status-deleted {
+.sessions-status-deleted {
   color: var(--tug7-element-tone-text-normal-danger-rest);
 }
 
-.changeset-status-modified {
+.sessions-status-modified {
   color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
-.changeset-status-renamed {
+.sessions-status-renamed {
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
-.changeset-status-untracked {
+.sessions-status-untracked {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.changeset-file-path {
+.sessions-file-path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -222,18 +222,18 @@
 
 /* Clickable path → opens the file in a Text card. Appearance only ([L06]):
    the interaction is wired in the component; here we only signal it. */
-.changeset-file-path--link {
+.sessions-file-path--link {
   cursor: pointer;
 }
 
-.changeset-file-path--link:hover {
+.sessions-file-path--link:hover {
   text-decoration: underline;
 }
 
 /* Provenance — `op · origin`, a muted pipe-delimited section trailing the path
    in the file block's header identity ([P29]). The leading rule reuses the
    block-header divider convention (a left pipe with breathing room). */
-.changeset-file-provenance {
+.sessions-file-provenance {
   flex-shrink: 0;
   padding-left: var(--tug-space-md);
   border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
@@ -244,7 +244,7 @@
 
 /* Per-entry action row ([P29]): Expand All / Collapse All over the file blocks
    plus the whole-entry pop-out. */
-.changeset-entry-actions {
+.sessions-entry-actions {
   display: flex;
   justify-content: flex-end;
   gap: 4px;
@@ -256,16 +256,16 @@
 /* The commit composer is ONE BlockChrome: the lifecycle dot is the drafting
    indicator, the CM6 `TugMessageEditor` is the body, and the Commit button
    rides the block footer. This wrapper only spaces it below the file blocks and
-   carries the `changeset-commit-controls` test hook. */
-.changeset-commit {
+   carries the `sessions-commit-controls` test hook. */
+.sessions-commit {
   padding-top: 6px;
 }
 
-.changeset-commit-composer {
+.sessions-commit-composer {
   min-width: 0;
 }
 
-.changeset-commit-receipt {
+.sessions-commit-receipt {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -274,7 +274,7 @@
   border-radius: var(--tug-radius-sm, 6px);
 }
 
-.changeset-commit-receipt-head {
+.sessions-commit-receipt-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -284,7 +284,7 @@
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
 
-.changeset-commit-receipt-body {
+.sessions-commit-receipt-body {
   margin: 0;
   font-size: 0.75rem;
   font-family: var(--tug-font-family-mono);
@@ -295,7 +295,7 @@
 
 /* Ambiguous / shared marks: text-tone chips whose rows start deselected —
    the checkbox is the explicit opt-in ([P15]). */
-.changeset-badge {
+.sessions-badge {
   flex-shrink: 0;
   font-size: 0.625rem;
   font-family: var(--tug-font-family-sans);
@@ -307,17 +307,17 @@
   border: 1px solid currentColor;
 }
 
-.changeset-badge-ambiguous {
+.sessions-badge-ambiguous {
   color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
-.changeset-badge-shared {
+.sessions-badge-shared {
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
 /* ---- Empty state ---- */
 
-.changeset-clean {
+.sessions-clean {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -327,7 +327,7 @@
 
 /* ---- Non-repo project: "Initialize git" affordance ---- */
 
-.changeset-non-repo {
+.sessions-non-repo {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -335,19 +335,19 @@
   padding: 8px 0;
 }
 
-.changeset-non-repo-message {
+.sessions-non-repo-message {
   font-size: 0.8125rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.changeset-non-repo-error {
+.sessions-non-repo-error {
   font-size: 0.75rem;
   color: var(--tug7-element-tone-text-normal-danger-rest);
 }
 
 /* ---- Dash entry actions: Join / Release / resolve ([P14]/[P31]/[P32]) ---- */
 
-.changeset-dash-actions {
+.sessions-dash-actions {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -355,37 +355,37 @@
   padding: 8px 0 2px;
 }
 
-.changeset-dash-action-row {
+.sessions-dash-action-row {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 8px;
 }
 
-.changeset-dash-working {
+.sessions-dash-working {
   padding: 8px 0 2px;
   font-size: 0.8125rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.changeset-dash-preview-msg,
-.changeset-dash-resolve-summary {
+.sessions-dash-preview-msg,
+.sessions-dash-resolve-summary {
   font-size: 0.8125rem;
   color: var(--tug7-element-global-text-normal-normal-rest);
 }
 
-.changeset-dash-hint {
+.sessions-dash-hint {
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.changeset-dash-error {
+.sessions-dash-error {
   font-size: 0.75rem;
   color: var(--tug7-element-tone-text-normal-danger-rest);
 }
 
-.changeset-dash-conflict-list,
-.changeset-dash-resolved-list {
+.sessions-dash-conflict-list,
+.sessions-dash-resolved-list {
   margin: 0;
   padding-left: 18px;
   display: flex;
@@ -395,11 +395,11 @@
   color: var(--tug7-element-global-text-normal-normal-rest);
 }
 
-.changeset-dash-resolve-path {
+.sessions-dash-resolve-path {
   font-family: var(--tug-font-mono, monospace);
 }
 
-.changeset-dash-rung-badge {
+.sessions-dash-rung-badge {
   margin-left: 8px;
   padding: 0 6px;
   border-radius: 4px;
@@ -411,30 +411,30 @@
 }
 
 /* The /btw-style resolve progress overlay. */
-.changeset-dash-resolve {
+.sessions-dash-resolve {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 8px 0 2px;
 }
 
-.changeset-dash-resolve-head {
+.sessions-dash-resolve-head {
   font-size: 0.8125rem;
   color: var(--tug7-element-global-text-normal-normal-rest);
 }
 
-.changeset-dash-resolve-file {
+.sessions-dash-resolve-file {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.changeset-dash-resolve-rung {
+.sessions-dash-resolve-rung {
   font-size: 0.6875rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.changeset-dash-resolve-stream {
+.sessions-dash-resolve-stream {
   margin: 2px 0 0;
   max-height: 160px;
   overflow: auto;
