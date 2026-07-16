@@ -70,6 +70,25 @@ function dispatchTurnCompleteSuccess(
   });
 }
 
+/**
+ * Open a wake bracket — the spontaneous resume claude fires when an
+ * async deferred completion (a background task, a scheduled wake)
+ * lands while the card is idle. Drives `idle → waking`.
+ */
+function dispatchWakeStarted(conn: TestFrameChannel, taskId: string): void {
+  conn.dispatchDecoded(FeedId.CODE_OUTPUT, {
+    type: "wake_started",
+    tug_session_id: FIXTURE_IDS.TUG_SESSION_ID,
+    wake_trigger: {
+      task_id: taskId,
+      tool_use_id: "",
+      status: "completed",
+      summary: "background task done",
+      output_file: "",
+    },
+  });
+}
+
 function userMessageFrames(
   conn: TestFrameChannel,
 ): Array<{ text: string }> {
@@ -222,6 +241,47 @@ describe("CodeSessionStore — queue flush via turn_complete(success) collapse (
     expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
       "bravo",
       "charlie",
+    ]);
+  });
+});
+
+describe("CodeSessionStore — queue flush when a wake settles", () => {
+  it("flushes a send queued during a wake instead of stranding it at idle", () => {
+    const conn = new TestFrameChannel();
+    const store = constructStore(conn);
+
+    // A normal turn runs and settles to idle with an empty queue.
+    store.send("first", []);
+    driveToStreaming(conn, store, FIXTURE_IDS.MSG_ID_N(1));
+    dispatchTurnCompleteSuccess(conn, FIXTURE_IDS.MSG_ID_N(1));
+    expect(store.getSnapshot().phase).toBe("idle");
+
+    // A background completion fires a wake — the card goes busy again
+    // with no user submission of its own.
+    dispatchWakeStarted(conn, "bg-task-1");
+    expect(store.getSnapshot().phase).toBe("waking");
+
+    // The user submits a follow-up while the wake is in flight; it
+    // queues (a wake is a non-idle phase, so `send` parks it).
+    store.send("during-wake", []);
+    expect(store.getSnapshot().phase).toBe("waking");
+    expect(store.getSnapshot().queuedSends.map((q) => q.text)).toEqual([
+      "during-wake",
+    ]);
+    // Nothing has gone to the wire yet — only the opening "first".
+    expect(userMessageFrames(conn).map((f) => f.text)).toEqual(["first"]);
+
+    // The wake completes. The queued send drains in the same dispatch:
+    // phase collapses to `submitting` (not a transient idle), the ghost
+    // clears, and the message finally goes out on the wire.
+    dispatchTurnCompleteSuccess(conn, FIXTURE_IDS.MSG_ID_N(2));
+
+    const snap = store.getSnapshot();
+    expect(snap.phase).toBe("submitting");
+    expect(snap.queuedSends.length).toBe(0);
+    expect(userMessageFrames(conn).map((f) => f.text)).toEqual([
+      "first",
+      "during-wake",
     ]);
   });
 });

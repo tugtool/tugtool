@@ -2717,6 +2717,94 @@ function buildTurnEntry(
   };
 }
 
+/**
+ * Flush the head of `queuedSends` into a new `submitting` turn at a
+ * turn-boundary commit. Shared by every terminal branch that settles a
+ * turn while a queued send is waiting — the normal `turn_complete`
+ * success collapse AND the `waking` branch (a wake settling with a
+ * pending user message is a turn boundary too, so the queue drains here
+ * rather than stranding at idle with no later trigger). Mirrors
+ * `handleSend`'s per-turn telemetry reset so the flushed turn measures
+ * its deltas from this point; the just-ended turn's closed pause
+ * segments are discarded (the new turn's intervals start empty).
+ * `priorEffects` are the just-ended turn's commit effects
+ * (append-transcript / clear-inflight / telemetry); the flush's
+ * `send-frame` is appended after them. `extraState` carries any
+ * per-branch overrides (e.g. the wake branch clears `wakeTrigger`).
+ */
+function flushQueuedHeadResult(
+  state: CodeSessionState,
+  scratch: ReadonlyMap<string, ScratchEntry>,
+  committedMsgIds: Set<string>,
+  sessionInitTokens: number | null,
+  priorEffects: Effect[],
+  extraState: Partial<CodeSessionState>,
+): { state: CodeSessionState; effects: Effect[] } {
+  const [next, ...rest] = state.queuedSends;
+  const flushedSubmitAt = Date.now();
+  // Mint the flushed turn's `UserMessage` directly from the queued
+  // entry's already-synthesized substrate — no re-synthesis at flush
+  // time. Bytes-store entries minted at the original queueing `send`
+  // stayed live across the queue gap (the bytes-store is per-card-mount).
+  const flushedUserMessage: UserMessage = {
+    kind: "user_message",
+    messageKey: userMessageKey(next.turnKey),
+    createdAt: flushedSubmitAt,
+    text: next.text,
+    attachments: next.atoms,
+    submitAt: flushedSubmitAt,
+  };
+  return {
+    state: {
+      ...state,
+      phase: "submitting",
+      activeMsgId: null,
+      scratch: withScratchEntry(
+        scratch,
+        next.turnKey,
+        newScratchEntry(next.turnKey, [flushedUserMessage]),
+      ),
+      toolUseStartedAt: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      pendingTurn: {
+        turnKey: next.turnKey,
+        submitAt: flushedSubmitAt,
+        origin: "user",
+      },
+      queuedSends: rest,
+      lastError: null,
+      committedMsgIds,
+      sessionInitTokens,
+      // Queue-flush IS the next `handleSend` for telemetry purposes, so
+      // apply the same per-turn reset. The closed-segment push from the
+      // just-ended turn is discarded — the new turn's intervals start
+      // empty.
+      ...resetPerTurnTelemetry(),
+      awaitingApprovalIntervals: [],
+      transportDowntimeIntervals: [],
+      interruptInFlightIntervals: [],
+      interruptInFlightSegmentStartedAt: null,
+      costAtSubmit: state.lastCost,
+      ...extraState,
+    },
+    effects: [
+      ...priorEffects,
+      {
+        kind: "send-frame",
+        msg: {
+          type: "user_message",
+          // The queued entry carries the wire content blocks built at
+          // queue time by `buildWirePayload`. We pass them through
+          // verbatim — the reducer never re-reads the bytes-store.
+          content: next.content,
+        },
+      },
+    ],
+  };
+}
+
 function handleTurnComplete(
   state: CodeSessionState,
   event: TurnCompleteEvent,
@@ -2952,12 +3040,33 @@ function handleTurnComplete(
   // `messages` carries no `user_message` Message — that absence IS
   // the substrate's wake discriminator under [D07] (consumers that
   // need to gate on user-row presence inline-check
-  // `turn.messages[0]?.kind === "user_message"`). Queue-flush is
-  // skipped (a queued send arriving during a wake would land in
-  // `queuedSends`; the wake's commit does not flush it — the user's
-  // queued message gets its own turn after the wake settles to idle
-  // in the normal way).
+  // `turn.messages[0]?.kind === "user_message"`).
   if (state.phase === "waking") {
+    // Wake-close commit effects — identical to the normal branch below.
+    // Wakes are live turns, so per-turn telemetry is persisted the same
+    // way.
+    const wakeCommitEffects: Effect[] = [
+      { kind: "append-transcript", entry },
+      { kind: "clear-inflight" },
+      ...(event.telemetry === undefined
+        ? [buildRecordTelemetryEffect(entry, sessionInitTokens)]
+        : []),
+    ];
+    // A wake settling with a queued send is a turn boundary too: drain
+    // the queue here (same single-tick collapse as the success branch),
+    // otherwise the message strands at idle with no later trigger to
+    // flush it — nothing drives the "gets its own turn" the old comment
+    // assumed. `wakeTrigger` is cleared as the wake closes.
+    if (state.queuedSends.length > 0) {
+      return flushQueuedHeadResult(
+        state,
+        scratch,
+        committedMsgIds,
+        sessionInitTokens,
+        wakeCommitEffects,
+        { wakeTrigger: null },
+      );
+    }
     return {
       state: {
         ...state,
@@ -2980,99 +3089,36 @@ function handleTurnComplete(
         ...resetPerTurnTelemetry(),
         ...closedPauseSegments,
       },
-      effects: [
-        { kind: "append-transcript", entry },
-        { kind: "clear-inflight" },
-        // Persist per-turn telemetry via the supervisor's SessionLedger
-        // — wakes are live turns, same as user-initiated ones.
-        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
-      ],
+      effects: wakeCommitEffects,
     };
   }
 
   // Single-tick collapse: a queued send on a successful turn flushes
   // in the same dispatch as the commit, so observers see the final
-  // phase as `submitting`, not a transient `idle`.
+  // phase as `submitting`, not a transient `idle`. Persist the per-turn
+  // telemetry block via the supervisor's SessionLedger so the next
+  // resume can inline it onto the replayed `turn_complete`. Live path
+  // only — the replaying branch above returns before reaching here, and
+  // inlined event.telemetry on a non-replay event would be an upstream
+  // bug (the wire shape's replay-only contract is enforced by tugcast's
+  // supervisor; defensively, only persist when there was no inline
+  // source).
   if (isSuccess && state.queuedSends.length > 0) {
-    const [next, ...rest] = state.queuedSends;
-    const flushedSubmitAt = Date.now();
-    // Mint the flushed turn's `UserMessage` directly from the
-    // queued entry's already-synthesized substrate — no re-synthesis
-    // at flush time. Bytes-store entries minted at the original
-    // queueing `send` stayed live across the queue gap (the
-    // bytes-store is per-card-mount). Per [Step 5c].
-    const flushedUserMessage: UserMessage = {
-      kind: "user_message",
-      messageKey: userMessageKey(next.turnKey),
-      createdAt: flushedSubmitAt,
-      text: next.text,
-      attachments: next.atoms,
-      submitAt: flushedSubmitAt,
-    };
-    return {
-      state: {
-        ...state,
-        phase: "submitting",
-        activeMsgId: null,
-        scratch: withScratchEntry(
-          scratch,
-          next.turnKey,
-          newScratchEntry(next.turnKey, [flushedUserMessage]),
-        ),
-        toolUseStartedAt: new Map(),
-        pendingApproval: null,
-        pendingQuestion: null,
-        prevPhase: null,
-        pendingTurn: {
-          turnKey: next.turnKey,
-          submitAt: flushedSubmitAt,
-          origin: "user",
-        },
-        queuedSends: rest,
-        lastError: null,
-        committedMsgIds,
-        sessionInitTokens,
-        // Queue-flush starts the next turn synchronously. Reset
-        // per-turn telemetry as if `handleSend` had just run, then
-        // snapshot the post-completion `lastCost` so the next turn's
-        // delta is measured from this point.
-        ...resetPerTurnTelemetry(),
-        // Queue-flush IS the next `handleSend` for telemetry purposes,
-        // so apply the same per-turn interval-array reset that
-        // `handleSend` does. The closed-segment push from the
-        // just-ended turn is discarded — the new turn's intervals
-        // start empty.
-        awaitingApprovalIntervals: [],
-        transportDowntimeIntervals: [],
-        interruptInFlightIntervals: [],
-        interruptInFlightSegmentStartedAt: null,
-        costAtSubmit: state.lastCost,
-      },
-      effects: [
-        { kind: "append-transcript", entry },
-        { kind: "clear-inflight" },
-        // Persist the per-turn telemetry block via the supervisor's
-        // SessionLedger so the next resume can inline it onto the
-        // replayed `turn_complete`. Live path only — the replaying
-        // branch above returns before reaching here, and inlined
-        // event.telemetry on a non-replay event would be an upstream
-        // bug (the wire shape's replay-only contract is enforced by
-        // tugcast's supervisor; defensively, only persist when there
-        // was no inline source).
-        ...(event.telemetry === undefined ? [buildRecordTelemetryEffect(entry, sessionInitTokens)] : []),
-        {
-          kind: "send-frame",
-          msg: {
-            type: "user_message",
-            // The queued entry carries the wire content blocks built
-            // at queue time by `buildWirePayload`. We pass them
-            // through verbatim — the reducer never re-reads the
-            // bytes-store. Per [Step 5c].
-            content: next.content,
-          },
-        },
-      ],
-    };
+    const successCommitEffects: Effect[] = [
+      { kind: "append-transcript", entry },
+      { kind: "clear-inflight" },
+      ...(event.telemetry === undefined
+        ? [buildRecordTelemetryEffect(entry, sessionInitTokens)]
+        : []),
+    ];
+    return flushQueuedHeadResult(
+      state,
+      scratch,
+      committedMsgIds,
+      sessionInitTokens,
+      successCommitEffects,
+      {},
+    );
   }
 
   return {
