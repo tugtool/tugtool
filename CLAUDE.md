@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Tugtool is a developer tool suite. Its centerpiece is the **Dev card** — a graphical surface where shell commands and AI interactions coexist in one UI, replacing the terminal. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (agentless skills), and Tug.app (macOS host).
+Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a graphical surface where shell commands and AI interactions coexist in one UI, replacing the terminal. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (agentless skills), and Tug.app (macOS host).
 
 ## Git Policy
 
@@ -20,7 +20,7 @@ Tugtool is a developer tool suite. Its centerpiece is the **Dev card** — a gra
 | `tugrust/` | Rust crates (tugcast, tugutil, tugdash, tugexec, tugbank, tugcore, and supporting libraries) |
 | `tugproto/` | Shared protocol / message types (TypeScript) |
 | `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
-| `tugdeck/` | Web frontend (the Dev card lives here) |
+| `tugdeck/` | Web frontend (the Session card lives here) |
 | `tugapp/` | Swift macOS app (Tug.app host) |
 | `tugplug/` | Claude Code plugin (agentless skills: devise/implement/dash/vet/audit/commit) |
 | `tuglaws/` | Architecture laws + design decisions — the curated durable doc surface |
@@ -48,13 +48,13 @@ Theme tokens live in `tugdeck/styles/themes/*.css` — `brio`/`nocturne`/`bravur
 
 ## AskUserQuestion — shape and affordances
 
-`AskUserQuestion`'s shape is fixed **upstream by Claude Code's own schema**, not by Tug: **1–4 questions per call, 2–4 options per question** (a hard minimum of 2 and maximum of 4 options). A call outside those bounds fails with an `InputValidationError` inside Claude Code *before* the request is ever forwarded to the Dev card — so this is not a constraint Tug can relax by editing anything here.
+`AskUserQuestion`'s shape is fixed **upstream by Claude Code's own schema**, not by Tug: **1–4 questions per call, 2–4 options per question** (a hard minimum of 2 and maximum of 4 options). A call outside those bounds fails with an `InputValidationError` inside Claude Code *before* the request is ever forwarded to the Session card — so this is not a constraint Tug can relax by editing anything here.
 
 When generating an `AskUserQuestion` call:
 - Give each question **2–4 options**.
 - If you have more candidate choices, split them across multiple questions (up to 4 questions per call) — the per-question cap is real, the per-call question count gives you room.
 
-Two rows the terminal renders below the options — **`Type something`** (a free-text answer) and **`Chat about this`** (dismiss the questions and reply in prose) — are harness *affordances*, not options, and don't count against the 2–4 cap. On the answer side they come back as the free-text answer value and the optional top-level `response` field respectively. The Dev card's `QuestionDialog` is where Tug renders these (see `chrome/dev-question-dialog.tsx`).
+Two rows the terminal renders below the options — **`Type something`** (a free-text answer) and **`Chat about this`** (dismiss the questions and reply in prose) — are harness *affordances*, not options, and don't count against the 2–4 cap. On the answer side they come back as the free-text answer value and the optional top-level `response` field respectively. The Session card's `QuestionDialog` is where Tug renders these (see `chrome/session-question-dialog.tsx`).
 
 Tug-side handling: the `QuestionDialog` renders **any** number of options with no cap of its own — the 2–4 limit lives only in Claude Code upstream. If a call somehow exceeds 4 (e.g. a drifted or hand-crafted payload), `AskUserQuestionToolBlock` detects the `InputValidationError` and mounts a salvage path so the user can still answer. Overflow is therefore graceful, but generate within 2–4 so the round-trip isn't wasted.
 
