@@ -1,8 +1,8 @@
 /**
  * CardServicesStore — deck-manager wiring tests.
  *
- * Pins the contract: when the deck transitions a card from
- * present → absent, the store sends a `close_session` frame for any
+ * Pins the contract: when the deck fires `cardWillBeginDestruction`
+ * for a card, the store sends a `close_session` frame for any
  * binding that card holds, then disposes services through the
  * binding-clear → reconcile path. The deck-canvas does NOT call into
  * the store directly (per [L10] — one responsibility per layer).
@@ -26,23 +26,32 @@ interface FakeDeckSnapshot {
 
 /**
  * Minimal fake DeckManager — just the surface CardServicesStore reads:
- * `subscribe(callback) → unsubscribe` and `getSnapshot() → { cards }`.
+ * `observeCardWillBeginDestruction(null, cb) → unsubscribe` and
+ * `getSnapshot() → { cards }`. `setCards` mirrors the real deck's
+ * removal order: destruction fires before the card leaves the snapshot.
  * Concrete `DeckManager` carries much more state we don't need here.
  */
 function createFakeDeck(initial: FakeCard[]) {
   let snapshot: FakeDeckSnapshot = { cards: initial };
-  const listeners = new Set<() => void>();
+  const destructionObservers = new Set<(cardId: string) => void>();
   return {
-    subscribe(cb: () => void): () => void {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
+    observeCardWillBeginDestruction(
+      _cardId: string | null,
+      cb: (cardId: string) => void,
+    ): () => void {
+      destructionObservers.add(cb);
+      return () => destructionObservers.delete(cb);
     },
     getSnapshot(): FakeDeckSnapshot {
       return snapshot;
     },
     setCards(cards: FakeCard[]): void {
+      const next = new Set(cards.map((c) => c.id));
+      for (const card of snapshot.cards) {
+        if (next.has(card.id)) continue;
+        for (const cb of destructionObservers) cb(card.id);
+      }
       snapshot = { cards };
-      for (const l of listeners) l();
     },
   };
 }
@@ -73,7 +82,7 @@ afterEach(() => {
 // in this test environment — `_closeCardInternal`'s no-connection
 // fallback clears the binding locally and skips the frame. The
 // test assertion focuses on the state transition that follows.
-describe("CardServicesStore — deck-manager subscription", () => {
+describe("CardServicesStore — deck-manager destruction observer", () => {
   beforeEach(() => {
     // No-op: each test attaches a fresh fake deck.
   });

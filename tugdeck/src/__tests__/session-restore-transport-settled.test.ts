@@ -92,18 +92,25 @@ interface FakeCard {
 
 function createFakeDeck(cards: FakeCard[]) {
   let snapshot = { cards };
-  const listeners = new Set<() => void>();
+  const destructionObservers = new Set<(cardId: string) => void>();
   return {
-    subscribe(cb: () => void): () => void {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
+    observeCardWillBeginDestruction(
+      _cardId: string | null,
+      cb: (cardId: string) => void,
+    ): () => void {
+      destructionObservers.add(cb);
+      return () => destructionObservers.delete(cb);
     },
     getSnapshot(): { cards: FakeCard[] } {
       return snapshot;
     },
     setCards(next: FakeCard[]): void {
+      const staying = new Set(next.map((c) => c.id));
+      for (const card of snapshot.cards) {
+        if (staying.has(card.id)) continue;
+        for (const cb of destructionObservers) cb(card.id);
+      }
       snapshot = { cards: next };
-      for (const l of listeners) l();
     },
   };
 }

@@ -166,7 +166,6 @@ class CardServicesStore {
   /** The attached deck, read at construct time for the saved scroll anchor
    *  (faithful restore window sizing, #step-6). */
   private _deckManager: DeckManager | null = null;
-  private _knownCardIds = new Set<string>();
   private _initialized = false;
 
   /**
@@ -185,13 +184,15 @@ class CardServicesStore {
   }
 
   /**
-   * Wire the store to a `DeckManager` so it can detect card-removal
-   * events and send `close_session` for any binding the removed card
+   * Wire the store to a `DeckManager` so it can detect card teardown
+   * and send `close_session` for any binding the destroyed card
    * holds. Called once from `main.tsx` after the deck-manager is
-   * constructed. The deck-manager is the source of truth for
-   * "card present in layout" — when a card transitions from
-   * present → absent, this store reacts (per [L24]: structure-zone
-   * stores observe layout changes that affect their own state).
+   * constructed. The wire is the card-lifecycle pipe's
+   * `cardWillBeginDestruction` channel — the same pipe that owns the
+   * card's existence, fired synchronously by every removal path
+   * (`removeCard`, pane close) before the card leaves the store
+   * (per [L24]: structure-zone stores observe layout changes that
+   * affect their own state).
    *
    * Without this wire, the wire `close_session` frame would have to
    * be sent by the deck-canvas's user-close handler — but that
@@ -219,30 +220,17 @@ class CardServicesStore {
       this._deckUnsub();
       this._deckUnsub = null;
     }
-    // Seed the known set with whatever the deck currently has so the
-    // first diff doesn't fire "removed" for cards that were already
-    // present at attach time.
-    this._knownCardIds = new Set(
-      deckManager.getSnapshot().cards.map((c) => c.id),
+    // If the destroyed card holds a binding, send `close_session` for
+    // it; the binding clear triggers `_reconcile`'s dispose path.
+    this._deckUnsub = deckManager.observeCardWillBeginDestruction(
+      null,
+      (cardId) => {
+        logSessionLifecycle("services_store.deck_removed_card", {
+          card_id: cardId,
+        });
+        this._closeCardInternal(cardId);
+      },
     );
-    this._deckUnsub = deckManager.subscribe(() => {
-      const current = new Set(
-        deckManager.getSnapshot().cards.map((c) => c.id),
-      );
-      // Diff: any cardId that was known last time but isn't present
-      // now has been removed by the deck. If that card holds a
-      // binding, send `close_session` for it; the binding clear
-      // triggers `_reconcile`'s dispose path.
-      for (const id of this._knownCardIds) {
-        if (!current.has(id)) {
-          logSessionLifecycle("services_store.deck_removed_card", {
-            card_id: id,
-          });
-          this._closeCardInternal(id);
-        }
-      }
-      this._knownCardIds = current;
-    });
   }
 
   /**
@@ -686,8 +674,8 @@ class CardServicesStore {
   /**
    * Test seam — exposes `_closeCardInternal` so unit tests can
    * directly assert the close behavior without spinning up a
-   * real `DeckManager`. NOT for production use; the deck-manager
-   * subscription is the only path that should fire close in
+   * real `DeckManager`. NOT for production use; the deck-manager's
+   * destruction observer is the only path that should fire close in
    * production.
    * @internal
    */

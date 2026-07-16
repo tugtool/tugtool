@@ -6,12 +6,12 @@
  * card; the entry subtree (`EntryBody` and its blocks, the commit composer)
  * moved here verbatim.
  *
- * Renders the aggregate CHANGESET_ALL feed (0x24) joined against the open
- * dev cards (the card-session binding store). Each entry is a session bound
- * to an open session card — the feed emits a (possibly fileless) entry for every
- * live session, titled by the chooser's rule (name → prompt snippet → id
- * prefix) — or a session with attributed dirty files, plus one entry per
- * dash worktree and an "Unattributed" entry per project with unclaimed dirty
+ * The row set is the open session cards, nothing else: one entry per
+ * binding in the card-session binding store, so the list is a pure
+ * projection of the deck. The aggregate CHANGESET_ALL feed (0x24) only
+ * decorates those rows — title (chooser's rule: name → prompt snippet → id
+ * prefix), live dot, attributed dirty files — plus one entry per dash
+ * worktree and an "Unattributed" entry per project with unclaimed dirty
  * files. Each entry is a `BlockChrome` section in one plain scroll — sticky
  * headers are the wayfinding; file rows carry a commit-selection checkbox, a
  * git-status glyph, op/origin provenance, ambiguous/shared badges, and a
@@ -133,65 +133,73 @@ interface UnattributedItem {
 type SectionItem = SessionItem | DashItem | UnattributedItem;
 
 /**
- * Join the aggregate snapshot with the open dev cards. Projects narrow to
- * those with at least one bound card; within a project, session entries show
- * when they have files OR belong to a bound session (so every open session
- * gets a row, and a closed session's dirty files stay visible). A bound
- * session the feed hasn't emitted yet gets a synthesized fileless entry, so
- * a fresh card appears immediately. Dash entries always show; unattributed
- * files form one trailing pseudo-entry per project.
+ * A minimal project shell for a binding whose project the feed hasn't
+ * emitted yet — enough identity to render the row immediately; the feed's
+ * next frame supplies the real project.
+ */
+function placeholderProject(binding: CardSessionBinding): ProjectChangeset {
+  const dir = binding.projectDir;
+  return {
+    workspace_key: binding.workspaceKey,
+    project_dir: dir,
+    display_name: dir.slice(dir.lastIndexOf("/") + 1) || dir,
+    no_repo: false,
+    branch: "",
+    ahead: 0,
+    behind: 0,
+    head_sha: "",
+    head_message: "",
+    changesets: [],
+    unattributed: [],
+  };
+}
+
+/**
+ * One row per open session card — `cardSessionBindingStore` is the sole row
+ * source, so the list tracks the deck exactly: a row appears when a card's
+ * session binds and vanishes when the card closes, dirty files or not. The
+ * feed only decorates: a binding's matching feed entry supplies its title,
+ * live dot, and file list; a binding the feed hasn't emitted yet gets a
+ * synthesized fileless entry so a fresh card appears immediately. Dash
+ * entries and the unattributed pseudo-entry still show for every project
+ * with at least one open card.
  */
 function buildItems(
   data: WorkspacesChangesetSnapshot,
   bindings: ReadonlyMap<string, CardSessionBinding>,
 ): SectionItem[] {
-  const workspaceKeys = new Set<string>();
-  const boundSessionIds = new Set<string>();
+  const projectsByKey = new Map<string, ProjectChangeset>();
+  for (const project of data.projects) {
+    projectsByKey.set(project.workspace_key, project);
+  }
+
+  // Bindings grouped by workspace in binding order, deduped by session id.
+  const groups = new Map<string, CardSessionBinding[]>();
+  const seenSessions = new Set<string>();
   for (const binding of bindings.values()) {
-    workspaceKeys.add(binding.workspaceKey);
-    boundSessionIds.add(binding.tugSessionId);
+    if (seenSessions.has(binding.tugSessionId)) continue;
+    seenSessions.add(binding.tugSessionId);
+    const group = groups.get(binding.workspaceKey);
+    if (group) group.push(binding);
+    else groups.set(binding.workspaceKey, [binding]);
   }
 
   const items: SectionItem[] = [];
-  for (const project of data.projects) {
-    if (!workspaceKeys.has(project.workspace_key)) continue;
+  for (const [workspaceKey, group] of groups) {
+    const project =
+      projectsByKey.get(workspaceKey) ?? placeholderProject(group[0]);
 
-    const seenSessions = new Set<string>();
-    const dashes: DashItem[] = [];
+    const feedEntries = new Map<string, SessionChangesetEntry>();
     for (const entry of project.changesets) {
-      if (entry.kind === "session") {
-        seenSessions.add(entry.owner_id);
-        if (entry.files.length === 0 && !boundSessionIds.has(entry.owner_id)) {
-          continue;
-        }
-        items.push({
-          kind: "session",
-          id: `session:${entry.owner_id}`,
-          project,
-          entry,
-        });
-      } else {
-        dashes.push({
-          kind: "dash",
-          id: `dash:${project.project_dir}:${entry.owner_id}`,
-          project,
-          entry,
-        });
-      }
+      if (entry.kind === "session") feedEntries.set(entry.owner_id, entry);
     }
-    for (const binding of bindings.values()) {
-      if (
-        binding.workspaceKey !== project.workspace_key ||
-        seenSessions.has(binding.tugSessionId)
-      ) {
-        continue;
-      }
-      seenSessions.add(binding.tugSessionId);
+
+    for (const binding of group) {
       items.push({
         kind: "session",
         id: `session:${binding.tugSessionId}`,
         project,
-        entry: {
+        entry: feedEntries.get(binding.tugSessionId) ?? {
           kind: "session",
           owner_id: binding.tugSessionId,
           display_name: binding.tugSessionId.slice(0, 8),
@@ -200,7 +208,16 @@ function buildItems(
         },
       });
     }
-    items.push(...dashes);
+    for (const entry of project.changesets) {
+      if (entry.kind === "dash") {
+        items.push({
+          kind: "dash",
+          id: `dash:${project.project_dir}:${entry.owner_id}`,
+          project,
+          entry,
+        });
+      }
+    }
     if (project.unattributed.length > 0) {
       items.push({
         kind: "unattributed",
@@ -225,9 +242,11 @@ function useOpenBindings(): ReadonlyMap<string, CardSessionBinding> {
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
-/** `project · branch ↑a ↓b`, or the non-repo phrase. */
+/** `project · branch ↑a ↓b`, or the non-repo phrase. A placeholder project
+ *  (feed not yet emitted) has no branch and shows the name alone. */
 function projectContext(project: ProjectChangeset): string {
   if (project.no_repo) return `${project.display_name} · not a git repository`;
+  if (project.branch === "") return project.display_name;
   let context = `${project.display_name} · ${project.branch}`;
   if (project.ahead > 0) context += ` ↑${project.ahead}`;
   if (project.behind > 0) context += ` ↓${project.behind}`;
