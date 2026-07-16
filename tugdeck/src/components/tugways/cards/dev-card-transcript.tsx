@@ -813,6 +813,13 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
 
   const elements: React.ReactNode[] = [];
   const lastMessage = messages[messages.length - 1];
+  // A compaction turn's assistant reply is Claude Code's canned "Compacted"
+  // acknowledgement — redundant beside the quiet "Session compacted" line and
+  // the Compaction Summary block the compact note renders. Suppress it so the
+  // compaction point reads once, not twice.
+  const hasCompactNote = messages.some(
+    (m) => m.kind === "system_note" && m.source === "compact",
+  );
   for (const message of messages) {
     if (message.kind === "user_message") {
       // Rendered separately by the user row — skip in the assistant body.
@@ -901,6 +908,9 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       continue;
     }
     if (message.kind === "assistant_text") {
+      if (hasCompactNote && message.text.trim() === "Compacted") {
+        continue;
+      }
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
       elements.push(
         <StreamedTextGate
