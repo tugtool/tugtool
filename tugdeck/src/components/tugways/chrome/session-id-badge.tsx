@@ -49,8 +49,7 @@ export interface SessionIdBadgeProps {
    * `projectDir`.
    */
   sessionMetadataStore?: SessionMetadataStore;
-  /** Dim + disable the chip (e.g. on the Shell route, where the Code
-   *  session id is inapplicable). Forwarded to {@link TugPushButton}. */
+  /** Dim + disable the chip. Forwarded to {@link TugPushButton}. */
   disabled?: boolean;
   /** Author the chip into a focus group ([P02]) — forwarded to the composed
    *  {@link TugPushButton}. The session card passes its cycle group so the chip

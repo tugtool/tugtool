@@ -22,16 +22,21 @@ describe("routeChipKeys — Table T01", () => {
     ]);
   });
 
-  it("shell (`$`) shows identity · project · cwd (no Claude-session chips)", () => {
-    expect(routeChipKeys("$")).toEqual(["identity", "project", "cwd"]);
+  it("shell (`$`) shows identity · session · project · cwd", () => {
+    expect(routeChipKeys("$")).toEqual([
+      "identity",
+      "session",
+      "project",
+      "cwd",
+    ]);
   });
 
   it("btw (`?`) shows identity · session · project", () => {
     expect(routeChipKeys("?")).toEqual(["identity", "session", "project"]);
   });
 
-  it("find (`⌕`) shows project · find (drops identity; the search cluster replaces the session chips)", () => {
-    expect(routeChipKeys("⌕")).toEqual(["project", "find"]);
+  it("find (`⌕`) shows session · project · find (drops identity; the search cluster replaces the model chrome)", () => {
+    expect(routeChipKeys("⌕")).toEqual(["session", "project", "find"]);
   });
 
   it("identity always leads (never unmounts across a flip)", () => {

@@ -6,9 +6,9 @@
  * Table T01 — route → visible chips (the identity badge always leads):
  *
  *   ❯ code  : identity(Claude Code) · Session · Project · Mode · Model · Effort
- *   $ shell : identity(Shell)       · Project · Cwd
+ *   $ shell : identity(Shell)       · Session · Project · Cwd
  *   ? btw   : identity(Claude Code) · Session · Project
- *   ⌕ find  : Project · Find-cluster (Case/Word/Grep + count)
+ *   ⌕ find  : Session · Project · Find-cluster (Case/Word/Grep + count)
  *
  * The occupant of the Z4B centred-floating slot is a layout decision, not a
  * contract ([D97]) — swapping it on an explicit route gesture is the slot
@@ -58,20 +58,20 @@ export type RouteChipKey =
  * without mounting. An unknown/null route falls back to the code set.
  */
 export function routeChipKeys(route: string | null): RouteChipKey[] {
-  if (route === ROUTE_SHELL) return ["identity", "project", "cwd"];
+  if (route === ROUTE_SHELL) return ["identity", "session", "project", "cwd"];
   if (route === ROUTE_BTW) return ["identity", "session", "project"];
-  // Find replaces the session/model chrome with its own search controls — the
+  // Find replaces the model chrome with its own search controls — the
   // transcript, not the Claude session, is what Find operates on, so the
-  // identity badge drops out here. The Project chip stays: it names which
-  // transcript is being searched.
-  if (route === ROUTE_FIND) return ["project", "find"];
+  // identity badge drops out here. The Session and Project chips stay: they
+  // name which session's transcript is being searched.
+  if (route === ROUTE_FIND) return ["session", "project", "find"];
   return ["identity", "session", "project", "mode", "model", "effort"];
 }
 
 export interface SessionRouteChromeManifestProps {
   /** Always-present identity badge — never unmounts across a route flip. */
   identityBadge: React.ReactNode;
-  /** Claude-session chips — shown on code + btw, absent on shell. */
+  /** Claude-session chip — shown on every route. */
   session: React.ReactNode;
   /** Project chip — shown on every route. */
   project: React.ReactNode;
@@ -109,8 +109,8 @@ export function SessionRouteChromeManifest({
     find,
   };
   // Stable keys preserve mount identity for a chip that survives a route flip
-  // (Project on every route, Session on code + btw); chips a route drops
-  // unmount, and the focus cycle skips them for free.
+  // (Session and Project on every route); chips a route drops unmount, and the
+  // focus cycle skips them for free.
   return (
     <>
       {routeChipKeys(route).map((key) => (
