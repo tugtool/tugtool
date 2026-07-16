@@ -4,9 +4,12 @@
  * Telemetry).
  *
  * Scenarios:
- *   1. Drag the Telemetry section's grip above Log; assert the DOM order
- *      flips and `dev.tugtool.lens/sectionOrder` persists the new order.
- *   2. Focus the Lens (its Log section gives it real focusable content),
+ *   1. Drag the second rail section's grip above the first; assert the
+ *      two swap in the DOM and `dev.tugtool.lens/sectionOrder` persists
+ *      the new relative order. The section kinds and their default order
+ *      are read from the live rail — nothing is hardcoded, so the test
+ *      survives changes to the default section order.
+ *   2. Focus the Lens (its sections give it real focusable content),
  *      then Escape; assert the previously-focused card is restored (the
  *      deck-canvas CANCEL_DIALOG focus-out, [P05]).
  */
@@ -25,8 +28,9 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
 const SECTIONS = ".lens-sections .lens-section[data-lens-section]";
-const LOG = `.lens-section[data-lens-section="log"]`;
-const TELEMETRY_GRIP = `.lens-section[data-lens-section="telemetry"] .lens-section-grip`;
+const sectionSel = (kind: string): string =>
+  `.lens-section[data-lens-section="${kind}"]`;
+const gripSel = (kind: string): string => `${sectionSel(kind)} .lens-section-grip`;
 
 async function dispatch(app: App, action: string): Promise<void> {
   await app.evalJS<void>(
@@ -82,25 +86,30 @@ describe.skipIf(!SHOULD_RUN)(
               `document.querySelectorAll(${JSON.stringify(SECTIONS)}).length >= 2`,
               { timeoutMs: 3_000 },
             );
-            // Default (registration) order: log, telemetry.
-            expect(await domOrder(app)).toEqual(["log", "telemetry"]);
+            // Read the live default order — the top two sections, whatever
+            // they currently are.
+            const before = await domOrder(app);
+            const [first, second] = before;
 
-            // Drag Telemetry's grip to just below the top of the Log
-            // section so it lands at index 0.
-            const logBounds = await app.getElementBounds(LOG);
-            await app.nativeDragElement(TELEMETRY_GRIP, {
-              x: Math.round(logBounds.x + logBounds.width / 2),
-              y: Math.round(logBounds.y + 4),
+            // Drag the second section's grip to just below the top of the
+            // first section so it lands at index 0, above `first`.
+            const firstBounds = await app.getElementBounds(sectionSel(first));
+            await app.nativeDragElement(gripSel(second), {
+              x: Math.round(firstBounds.x + firstBounds.width / 2),
+              y: Math.round(firstBounds.y + 4),
             });
 
             await app.waitForCondition<boolean>(
               `(function(){
                 var els = Array.from(document.querySelectorAll(${JSON.stringify(SECTIONS)}));
-                return els.length >= 2 && els[0].getAttribute("data-lens-section") === "telemetry";
+                return els.length >= 2 && els[0].getAttribute("data-lens-section") === ${JSON.stringify(second)};
               })()`,
               { timeoutMs: 3_000 },
             );
-            expect(await domOrder(app)).toEqual(["telemetry", "log"]);
+            // Invariant: the dragged section now precedes the one it was
+            // dropped above.
+            const after = await domOrder(app);
+            expect(after.indexOf(second)).toBeLessThan(after.indexOf(first));
 
             const persisted = tugbankRead<string[]>(
               tugbankPath,
@@ -108,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)(
               "sectionOrder",
             );
             const order = persisted?.value ?? [];
-            expect(order.indexOf("telemetry")).toBeLessThan(order.indexOf("log"));
+            expect(order.indexOf(second)).toBeLessThan(order.indexOf(first));
           } finally {
             await app.close();
           }

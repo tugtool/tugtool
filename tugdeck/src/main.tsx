@@ -264,10 +264,12 @@ if (!container) {
   // restores its layout, so the anchored rail survives reload
   // (`filterRegisteredCards` drops panes whose only card is unregistered).
   registerLensCard();
-  registerLogSection();
-  registerTelemetrySection();
+  // Registration order is the DEFAULT Lens section order — the fallback
+  // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerSessionsSection();
   registerGitHistorySection();
+  registerLogSection();
+  registerTelemetrySection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();
