@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a graphical surface where shell commands and AI interactions coexist in one UI, replacing the terminal. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tugutil (project management CLI), tugdeck (browser frontend), tugplug (agentless skills), and Tug.app (macOS host).
+Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a graphical surface where shell commands and AI interactions coexist in one UI, replacing the terminal. The suite includes tugcast (WebSocket multiplexer), tugcode (Claude Code bridge), tug (the unified developer CLI — changes & commits, dashes, host plumbing), tugdeck (browser frontend), tugplug (agentless skills), and Tug.app (macOS host).
 
 ## Git Policy
 
@@ -11,13 +11,13 @@ Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a
 **Exceptions:**
 - The `/tugplug:commit` skill: when the user invokes it, commit immediately without asking for confirmation.
 - Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/tugplug:commit` skill. Report each commit hash and message.
-- The `implement` and `dash` skills commit on their **`tugdash` worktree** (never on `main`) via `tugdash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugdash join`.
+- The `implement` and `dash` skills commit on their **dash worktree** (never on `main`) via `tug dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tug dash join`.
 
 ## Repository Structure
 
 | Directory | Description |
 |-----------|-------------|
-| `tugrust/` | Rust crates (tugcast, tugutil, tugdash, tugexec, tugbank, tugcore, and supporting libraries) |
+| `tugrust/` | Rust crates (tugcast, tug, tugexec, tugbank, tugcore, the `*-core` libraries — tugutil-core/tugdash-core/tugmark-core — and supporting libraries) |
 | `tugproto/` | Shared protocol / message types (TypeScript) |
 | `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
 | `tugdeck/` | Web frontend (the Session card lives here) |

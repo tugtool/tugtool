@@ -101,10 +101,10 @@ describe("parseShellCommandLine — accepts known tool + subcommand", () => {
   const accepted = [
     ["just target", "just launch-debug"],
     ["just target (logs)", "just logs-debug"],
-    ["tugutil subcommand", "tugutil state-dir"],
-    ["tugmark subcommand", "tugmark changes"],
-    ["tugdash subcommand with flag", "tugdash join --preview"],
-    ["tugdash subcommand with arg", "tugdash join canonical-path-identity"],
+    ["tug host subcommand", "tug host state-dir"],
+    ["tug subcommand", "tug changes"],
+    ["tug dash subcommand with flag", "tug dash join --preview"],
+    ["tug dash subcommand with arg", "tug dash join canonical-path-identity"],
   ] as const;
 
   for (const [label, input] of accepted) {
@@ -125,7 +125,7 @@ describe("parseShellCommandLine — rejects non-commands", () => {
     ["empty string", ""],
     ["whitespace only", "   "],
     ["bare tool name, no subcommand", "just"],
-    ["bare tool name + trailing space", "tugdash "],
+    ["bare tool name + trailing space", "tug "],
     ["unknown tool", "cargo build"],
     ["tool name is a prefix of a longer word", "justice served"],
     ["multi-line span (inline commands are single-line)", "just a\nline"],

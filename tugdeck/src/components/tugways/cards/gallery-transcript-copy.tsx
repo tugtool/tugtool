@@ -80,16 +80,16 @@ const SOURCE_RICH = [
 ].join("\n");
 // Command-bearing message ([enhance-commands]): inline `<code>` spans that
 // `enhanceCommands` tags as clickable commands — two project shell commands
-// (`just` / `tugdash`) and one known slash command (`/diff`). Cell D passes
+// (`just` / `tug`) and one known slash command (`/diff`). Cell D passes
 // `isKnownSlashCommand` so the enhancer actually runs, giving at0237 real
 // `.tugx-md-cmd` spans to right-click.
 const SOURCE_CMD =
-  "Run `just launch-debug` to start, `tugdash join --preview` to preview, and `/diff HEAD` to inspect.";
+  "Run `just launch-debug` to start, `tug dash join --preview` to preview, and `/diff HEAD` to inspect.";
 
 /**
  * Known-command predicate for cell D — only `diff` among the slash
  * commands (so `/diff HEAD` tags and an arbitrary `/whatever` would not).
- * Shell commands (`just` / `tugutil` / `tugdash`) need no predicate; the
+ * Shell commands (`just` / `tug`) need no predicate; the
  * leading tool name is their whole gate.
  */
 function isKnownSlashCommandForFixture(name: string): boolean {

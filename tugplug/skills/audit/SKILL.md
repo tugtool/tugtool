@@ -35,10 +35,10 @@ files — this is a read-and-judge pass, not a fixup pass.
 ### 1. Establish what was actually built
 
 Read the plan (and its **Step Status Ledger**) to know what was intended, then read
-the **actual implementation**. Pull the diff — use `tugmark log` and
-`tugmark diff --range <base>..tugdash/<name>` for the relevant commits (the ledger
-records commit hashes; `tugmark log --range <base>..tugdash/<name>` lists the dash's
-commits, and `tugmark diff --range …` gives the per-file change set), and read the
+the **actual implementation**. Pull the diff — use `tug log` and
+`tug diff --range <base>..tugdash/<name>` for the relevant commits (the ledger
+records commit hashes; `tug log --range <base>..tugdash/<name>` lists the dash's
+commits, and `tug diff --range …` gives the per-file change set), and read the
 changed files in full, not just the hunks. Audit the code as it stands, against what
 the plan promised.
 

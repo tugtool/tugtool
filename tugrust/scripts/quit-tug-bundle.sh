@@ -50,11 +50,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 
 # 3. Belt-and-suspenders: if a registry entry still exists for this
-#    instance ID, send a direct SIGTERM via tugutil. Either tugcast
+#    instance ID, send a direct SIGTERM via tug. Either tugcast
 #    is the straggler (GUI died before reaching ProcessManager.stop),
-#    or `tugutil instance stop` is a no-op (no registry entry).
+#    or `tug host instance stop` is a no-op (no registry entry).
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-TUGUTIL="$REPO_ROOT/tugrust/target/debug/tugutil"
+TUGUTIL="$REPO_ROOT/tugrust/target/debug/tug"
 if [ -x "$TUGUTIL" ]; then
-    "$TUGUTIL" instance stop "$INSTANCE_ID" --timeout "$TIMEOUT" >/dev/null 2>&1 || true
+    "$TUGUTIL" host instance stop "$INSTANCE_ID" --timeout "$TIMEOUT" >/dev/null 2>&1 || true
 fi

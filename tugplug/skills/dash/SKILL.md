@@ -11,7 +11,7 @@ disallowed-tools: Task
 
 `dash` is the lightweight path for a quick task — a bug fix, a spike, a small
 feature, a prototype — that doesn't warrant a full plan. Like `implement`, it
-runs on an isolated `tugdash` worktree and **you — the main conversation — do the
+runs on an isolated dash worktree and **you — the main conversation — do the
 work directly**. No plan, no steps, no drift detection, and **no sub-agent**: you
 execute the user's instruction in-thread, commit each round, and stop before merge.
 
@@ -39,7 +39,7 @@ execute the user's instruction in-thread, commit each round, and stop before mer
 ### Create / continue
 
 ```bash
-tugdash create <name> --description "<first ~100 chars of the instruction>" --json
+tug dash create <name> --description "<first ~100 chars of the instruction>" --json
 ```
 Idempotent — returns the existing active dash if `<name>` already exists. **Capture the
 absolute `worktree` path** and `branch` from the response. `create` hydrates the fresh
@@ -58,12 +58,12 @@ pure-logic tests (`bun test <scope>` / `cargo nextest run`), and real-app tests 
 pipeline; `just app-test` ends in a greppable `VERDICT: PASS|FAIL` line). **Warnings
 are errors.** Then commit the round:
 ```bash
-tugdash commit <name> --message "<conventional commit>" --json <<'EOF'
+tug dash commit <name> --message "<conventional commit>" --json <<'EOF'
 {"instruction":"<the instruction>","summary":"<what you did + how verified>"}
 EOF
 ```
 One command: git commit + a line in the per-project dash-log (the verbatim
-instruction; `tugmark log` on the dash branch reads the commits back). A follow-up
+instruction; `tug log` on the dash branch reads the commits back). A follow-up
 instruction for the same dash is just another commit — do it and commit again.
 
 ### Build (when there's something to see)
@@ -78,31 +78,31 @@ don't merge.
 ### Join (only on the user's word)
 
 ```bash
-tugdash join <name> --preview --json
-tugdash join <name> [--message "…"]
+tug dash join <name> --preview --json
+tug dash join <name> [--message "…"]
 ```
 Preview first: `--preview` runs the merge in memory and lists any conflicted paths
 without touching a tree. The plain form squash-merges `tugdash/<name>` into the base
 branch and cleans up the worktree + branch. The preflight only blocks on base dirt that
 intersects the dash's changed files; a join interrupted mid-teardown resumes with
-`tugdash join <name> --continue`.
+`tug dash join <name> --continue`.
 
 ### Release
 
 ```bash
-tugdash release <name>
+tug dash release <name>
 ```
 Discards the dash (worktree + branch) without merging.
 
 ### Status
 
-`tugdash show <name> --json` for one dash; `tugdash list --json` for all.
+`tug dash show <name> --json` for one dash; `tug dash list --json` for all.
 
 ## Guardrails
 
 - **No sub-agents.** You do the work in-thread.
 - **Never commit to the base branch.** All commits go to the dash worktree via
-  `tugdash commit`; `dash join` is the only path back, and only on the user's
+  `tug dash commit`; `dash join` is the only path back, and only on the user's
   say-so.
 - **Verify before every commit.** Warnings are errors.
 - **Right test, never a banned one.** Real-app tests via `just app-test` (never a

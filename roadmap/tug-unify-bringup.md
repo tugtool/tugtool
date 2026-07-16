@@ -290,12 +290,12 @@ Exact sites the sweep must hit (line numbers are indicative — match on content
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| 1 | Create the unified `tug` crate; delete the three bins | pending | — |
-| 2 | Retarget the justfile | pending | — |
-| 3 | Retarget distribution scripts + app bundle | pending | — |
-| 4 | Swift host: ProcessManager takeover kill | pending | — |
-| 5 | Skills, frontend allowlist, hook, app-test harness | pending | — |
-| 6 | Integration checkpoint + residual-reference sweep | pending | — |
+| 1 | Create the unified `tug` crate; delete the three bins | done | `00df42b5c` |
+| 2 | Retarget the justfile | done | `8634d96cf` |
+| 3 | Retarget distribution scripts + app bundle | done | `fe62e65b6` |
+| 4 | Swift host: ProcessManager takeover kill | done | `c7add9bd2` |
+| 5 | Skills, frontend allowlist, hook, app-test harness | done | `59708c341` |
+| 6 | Integration checkpoint + residual-reference sweep | done | `aeeef9439` |
 
 ### Step 1 — Create the unified `tug` crate; delete the three bins {#step-1}
 

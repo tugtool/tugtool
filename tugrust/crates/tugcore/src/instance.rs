@@ -27,7 +27,7 @@ pub const ENV_INSTANCE_ID: &str = "TUG_INSTANCE_ID";
 pub const ENV_BUNDLE_PATH: &str = "TUG_BUNDLE_PATH";
 
 /// File name of the per-instance bundle-path marker. The marker
-/// anchors `tugutil instance prune`'s orphan detection: a data dir
+/// anchors `tug host instance prune`'s orphan detection: a data dir
 /// is reachable iff `cat <data-dir>/<MARKER>` points at an extant
 /// bundle.
 pub const BUNDLE_PATH_MARKER: &str = "bundle-path";
@@ -107,7 +107,7 @@ pub fn tmux_bin() -> String {
 /// outlives it. tmux's "no server"/"no session" errors when the instance never
 /// launched an app are expected and ignored.
 ///
-/// Shared home for the reaper so both `tugutil instance` and `tugdash`'s
+/// Shared home for the reaper so both `tug host instance` and `tug dash`'s
 /// worktree teardown drive the exact same identity math.
 pub fn reap_instance_tmux(instance_id: &str) {
     let label = tmux_socket_label_for(instance_id);
@@ -208,7 +208,7 @@ pub fn notify_socket_path() -> PathBuf {
 ///
 /// Tugcast writes the absolute path of its containing app bundle to
 /// this file on first launch when `TUG_BUNDLE_PATH` is set in the
-/// environment. `tugutil instance prune` later compares the marker
+/// environment. `tug host instance prune` later compares the marker
 /// against the live filesystem to identify orphaned data dirs whose
 /// bundles have been moved or removed.
 ///
@@ -245,7 +245,7 @@ pub enum MarkerWrite {
 /// `TUG_INSTANCE_ID` and `TUG_BUNDLE_PATH` are set.
 ///
 /// Tugcast calls this once at startup, after creating the per-instance
-/// data dir, so `tugutil instance prune` (Step 14) has an anchor to
+/// data dir, so `tug host instance prune` (Step 14) has an anchor to
 /// detect orphaned data dirs whose owning bundle has been moved or
 /// removed.
 ///

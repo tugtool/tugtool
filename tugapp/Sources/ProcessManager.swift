@@ -321,7 +321,7 @@ class ProcessManager {
     }
 
     /// Resolve a CLI tool shipped alongside the app executable in
-    /// `Contents/MacOS/` (tugcast, tugutil, …). Returns nil if absent.
+    /// `Contents/MacOS/` (tugcast, tug, …). Returns nil if absent.
     private func resolveBundledTool(_ name: String) -> URL? {
         guard let executableURL = Bundle.main.executableURL else { return nil }
         let url = executableURL.deletingLastPathComponent().appendingPathComponent(name)
@@ -909,20 +909,20 @@ class ProcessManager {
     }
 
     /// Stop the same-identity incumbent, then respawn tugcast onto the
-    /// port it releases. Delegates the kill to the bundled `tugutil
+    /// port it releases. Delegates the kill to the bundled `tug host
     /// instance stop`, which already does the graceful host-app SIGTERM
     /// → SIGKILL escalation, the PID-reuse identity guards, and the
     /// tmux-session reap — and, crucially, polls until the processes
     /// are *gone* (not merely signalled), so the port is free by the
-    /// time we respawn. If tugutil is missing or the stop fails, the
+    /// time we respawn. If tug is missing or the stop fails, the
     /// respawn simply re-collides and re-prompts; we never silently
     /// loop or kill the wrong process.
     private func takeOverFromIncumbent() {
         let id = InstanceConfig.instanceId
-        if let tugutil = resolveBundledTool("tugutil") {
+        if let tug = resolveBundledTool("tug") {
             let proc = Process()
-            proc.executableURL = tugutil
-            proc.arguments = ["instance", "stop", id, "--timeout", "5"]
+            proc.executableURL = tug
+            proc.arguments = ["host", "instance", "stop", id, "--timeout", "5"]
             var env = ProcessInfo.processInfo.environment
             env["PATH"] = ProcessManager.shellPATH // tmux / ps lookups
             proc.environment = env
@@ -933,11 +933,11 @@ class ProcessManager {
                 proc.waitUntilExit()
                 NSLog("ProcessManager: takeover stop of '%@' exited %d", id, proc.terminationStatus)
             } catch {
-                NSLog("ProcessManager: takeover stop failed to launch tugutil: %@",
+                NSLog("ProcessManager: takeover stop failed to launch tug: %@",
                       error.localizedDescription)
             }
         } else {
-            NSLog("ProcessManager: takeover requested but bundled tugutil not found")
+            NSLog("ProcessManager: takeover requested but bundled tug not found")
         }
         // Respawn regardless: if the incumbent is gone we bind cleanly;
         // if it survived, tugcast re-collides and re-prompts.

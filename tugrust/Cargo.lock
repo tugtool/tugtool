@@ -2247,6 +2247,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tug"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "libc",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "tugcore",
+ "tugdash-core",
+ "tugmark-core",
+ "tugutil-core",
+ "ureq",
+]
+
+[[package]]
 name = "tugbank"
 version = "0.8.0"
 dependencies = [
@@ -2346,17 +2370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugdash"
-version = "0.8.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
- "tugdash-core",
- "tugutil-core",
-]
-
-[[package]]
 name = "tugdash-core"
 version = "0.8.0"
 dependencies = [
@@ -2396,19 +2409,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tugmark"
-version = "0.8.0"
-dependencies = [
- "assert_cmd",
- "clap",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tugmark-core",
-]
-
-[[package]]
 name = "tugmark-core"
 version = "0.8.0"
 dependencies = [
@@ -2428,26 +2428,6 @@ dependencies = [
  "libc",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "tugutil"
-version = "0.8.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.18",
- "toml",
- "tugcore",
- "tugutil-core",
- "ureq",
 ]
 
 [[package]]

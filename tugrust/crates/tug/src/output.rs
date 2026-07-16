@@ -43,6 +43,14 @@ impl<T> JsonResponse<T> {
     }
 }
 
+/// Print a successful `--json` envelope to stdout (pretty-printed). The shared
+/// path the changes/commits and dash verbs use so every `--json` payload is the
+/// same `{schema_version, command, status, data, issues}` shape.
+pub fn print_ok<T: Serialize>(command: &str, data: T) {
+    let response = JsonResponse::ok(command, data);
+    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+}
+
 /// Issue object structure for `tug` JSON output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonIssue {
@@ -79,23 +87,6 @@ pub struct InitCheckData {
     pub initialized: bool,
     /// Path to .tug directory
     pub path: String,
-}
-
-/// Data payload for `tug resolve --json`
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResolveData {
-    /// Resolved plan path (relative to project root), present on success
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    /// Extracted slug (name portion without prefix/extension), present on success
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<String>,
-    /// Which cascade stage matched (exact, filename, slug, prefix, auto), present on success
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stage: Option<String>,
-    /// List of candidate paths (present on error: ambiguous or not-found)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub candidates: Option<Vec<String>>,
 }
 
 /// Data payload for tell command

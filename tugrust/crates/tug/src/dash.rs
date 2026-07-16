@@ -1,153 +1,25 @@
-//! `tugdash` — the standalone CLI for git-worktree work units (dashes).
-//!
-//! A dash *is* a branch (`tugdash/<name>`) plus a worktree; its lifecycle and
-//! status derive from git, not a database. This binary is a thin presentation
-//! shell over [`tugdash_core::ops`]: it parses arguments, reads the commit
-//! round-metadata from stdin, calls the typed library API, and formats the
-//! outcome as `--json` (the `{schema_version, command, status, data, issues}`
-//! envelope the skills parse) or a plain human read-out.
+//! Dashes — worktree-isolated work units (`tug dash …`). A thin shell over
+//! [`tugdash_core::ops`]: parse arguments, read commit round-metadata from stdin,
+//! call the typed library API, and format the outcome as `--json` (the shared
+//! envelope) or a plain human read-out.
 
-use clap::{Parser, Subcommand, ValueEnum};
-use serde::Serialize;
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
 
+use serde::Serialize;
+
 use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, ops, resolve};
 
-const SCHEMA_VERSION: &str = "1";
+use crate::cli::DashCommands;
+use crate::output::print_ok;
 
-/// The `--json` envelope — identical shape to `tugutil`'s `JsonResponse`, so
-/// the commit/implement skills parse `tugdash --json` exactly as they parsed
-/// `tugdash --json`.
-#[derive(Serialize)]
-struct JsonResponse<T> {
-    schema_version: String,
-    command: String,
-    status: String,
-    data: T,
-    issues: Vec<serde_json::Value>,
-}
-
-impl<T: Serialize> JsonResponse<T> {
-    fn ok(command: &str, data: T) -> Self {
-        Self {
-            schema_version: SCHEMA_VERSION.to_string(),
-            command: command.to_string(),
-            status: "ok".to_string(),
-            data,
-            issues: vec![],
-        }
-    }
-}
-
-fn print_json<T: Serialize>(command: &str, data: T) {
-    let response = JsonResponse::ok(command, data);
-    println!("{}", serde_json::to_string_pretty(&response).unwrap());
-}
-
-#[derive(Parser)]
-#[command(
-    name = "tugdash",
-    version,
-    about = "tugdash — standalone git-worktree work units",
-    long_about = "tugdash — lightweight, worktree-isolated work units driven entirely on git.\n\nA dash is a branch (tugdash/<name>) plus a worktree under .tug/worktrees/. Its\nbase branch and description live in git config; its activity is recorded in the\nper-project append-only dash-log. There is no database."
-)]
-struct Cli {
-    /// Emit machine-readable JSON.
-    #[arg(long, global = true)]
-    json: bool,
-
-    /// Suppress human-readable output (no effect on `--json`).
-    #[arg(long, global = true)]
-    quiet: bool,
-
-    #[command(subcommand)]
-    command: Command,
-}
-
-/// Clap-facing mirror of {@link JoinStrategy}.
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum CliStrategy {
-    Squash,
-    Merge,
-    Rebase,
-}
-
-impl From<CliStrategy> for JoinStrategy {
-    fn from(s: CliStrategy) -> Self {
-        match s {
-            CliStrategy::Squash => JoinStrategy::Squash,
-            CliStrategy::Merge => JoinStrategy::Merge,
-            CliStrategy::Rebase => JoinStrategy::Rebase,
-        }
-    }
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Create a new dash (branch + worktree, hydrated via the post_create hook).
-    Create {
-        /// Dash name (lowercase letters, digits, hyphens; 2+ chars).
-        name: String,
-        /// Description of the work.
-        #[arg(long)]
-        description: Option<String>,
-    },
-    /// Commit the dash worktree (if dirty) and append a dash-log line.
-    ///
-    /// Reads round metadata (instruction/summary) from stdin as JSON.
-    Commit {
-        /// Dash name.
-        name: String,
-        /// Git commit message (the conventional-commit subject).
-        #[arg(long)]
-        message: String,
-    },
-    /// Join a dash into its base branch, then tear down ([P14]).
-    Join {
-        /// Dash name.
-        name: String,
-        /// Custom commit message (default: the maintained draft, else the
-        /// dash description).
-        #[arg(long)]
-        message: Option<String>,
-        /// Integration strategy.
-        #[arg(long, value_enum, default_value_t = CliStrategy::Squash)]
-        strategy: CliStrategy,
-        /// Report conflicts in-memory (git merge-tree) without touching anything.
-        #[arg(long)]
-        preview: bool,
-        /// Resume an interrupted join's teardown from the journal.
-        #[arg(long = "continue")]
-        continue_join: bool,
-        /// Run the conflict resolution ladder ([P31]) — replay probe, rerere,
-        /// re-merge, and a structured-merge driver — then land the result.
-        #[arg(long)]
-        resolve: bool,
-    },
-    /// Release a dash: discard its worktree + branch without merging.
-    Release {
-        /// Dash name.
-        name: String,
-    },
-    /// List every active dash, derived from git.
-    List,
-    /// Show one dash's metadata, rounds, and worktree dirt.
-    Show {
-        /// Dash name.
-        name: String,
-    },
-}
-
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let json = cli.json;
-    let quiet = cli.quiet;
-
-    let result: Result<(), String> = match cli.command {
-        Command::Create { name, description } => run_create(&name, description, json, quiet),
-        Command::Commit { name, message } => run_commit(&name, &message, json, quiet),
-        Command::Join {
+/// Dispatch a `dash` subcommand, mapping a `Result<(), String>` to an exit code
+/// (exit 1 on any error, matching the former standalone tugdash binary).
+pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
+    let result: Result<(), String> = match cmd {
+        DashCommands::Create { name, description } => run_create(&name, description, json, quiet),
+        DashCommands::Commit { name, message } => run_commit(&name, &message, json, quiet),
+        DashCommands::Join {
             name,
             message,
             strategy,
@@ -155,7 +27,7 @@ fn main() -> ExitCode {
             continue_join,
             resolve,
         } if resolve => run_join_resolve(&name, message, strategy.into(), json, quiet),
-        Command::Join {
+        DashCommands::Join {
             name,
             message,
             strategy,
@@ -174,9 +46,9 @@ fn main() -> ExitCode {
             json,
             quiet,
         ),
-        Command::Release { name } => run_release(&name, json, quiet),
-        Command::List => run_list(json, quiet),
-        Command::Show { name } => run_show(&name, json, quiet),
+        DashCommands::Release { name } => run_release(&name, json, quiet),
+        DashCommands::List => run_list(json, quiet),
+        DashCommands::Show { name } => run_show(&name, json, quiet),
     };
 
     match result {
@@ -196,7 +68,7 @@ fn run_create(
 ) -> Result<(), String> {
     let data = ops::create(name, description)?;
     if json {
-        print_json("dash create", &data);
+        print_ok("dash create", &data);
     } else if !quiet {
         if data.created {
             println!("Created dash '{}'", data.name);
@@ -232,7 +104,7 @@ fn run_commit(name: &str, message: &str, json: bool, quiet: bool) -> Result<(), 
 
     let data = ops::commit(name, message, round_meta)?;
     if json {
-        print_json("dash commit", &data);
+        print_ok("dash commit", &data);
     } else if !quiet {
         if data.committed {
             println!("Committed changes to dash '{}'", name);
@@ -249,7 +121,7 @@ fn run_commit(name: &str, message: &str, json: bool, quiet: bool) -> Result<(), 
 fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<(), String> {
     let data = ops::join(name, opts)?;
     if json {
-        print_json("dash join", &data);
+        print_ok("dash join", &data);
     } else if !quiet {
         if data.previewed {
             if data.conflicts.is_empty() {
@@ -301,7 +173,7 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
     Ok(())
 }
 
-/// `tugdash join --resolve`: run the resolution ladder, then land the candidate
+/// `tug dash join --resolve`: run the resolution ladder, then land the candidate
 /// ([P31]). No AI rung from the CLI (the scribe lives in tugcast) — the ladder's
 /// algorithmic rungs only.
 fn run_join_resolve(
@@ -316,7 +188,7 @@ fn run_join_resolve(
     let Some(candidate) = outcome.candidate_commit.clone() else {
         // Some files could not be resolved algorithmically.
         if json {
-            print_json("dash join --resolve", &outcome);
+            print_ok("dash join --resolve", &outcome);
         } else if !quiet {
             println!(
                 "Could not fully resolve dash '{}': {} file(s) still conflict:",
@@ -349,7 +221,7 @@ fn run_join_resolve(
 
     if json {
         // Report the ladder outcome and the landed join together.
-        print_json(
+        print_ok(
             "dash join --resolve",
             serde_json::json!({ "resolve": outcome, "join": landed }),
         );
@@ -374,7 +246,7 @@ fn run_join_resolve(
 fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
     let data = ops::release(name)?;
     if json {
-        print_json("dash release", &data);
+        print_ok("dash release", &data);
     } else if !quiet {
         println!("Released dash '{}'", data.name);
         for warning in &data.warnings {
@@ -384,8 +256,7 @@ fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The list `--json` payload — `{ "dashes": [...] }`, matching the shape
-/// `tugdash list --json` emitted.
+/// The list `--json` payload — `{ "dashes": [...] }`.
 #[derive(Serialize)]
 struct ListPayload {
     dashes: Vec<tugdash_core::DashListItem>,
@@ -394,7 +265,7 @@ struct ListPayload {
 fn run_list(json: bool, quiet: bool) -> Result<(), String> {
     let items = ops::list()?;
     if json {
-        print_json("dash list", ListPayload { dashes: items });
+        print_ok("dash list", ListPayload { dashes: items });
     } else if !quiet {
         if items.is_empty() {
             println!("No dashes found");
@@ -415,7 +286,7 @@ fn run_list(json: bool, quiet: bool) -> Result<(), String> {
 fn run_show(name: &str, json: bool, quiet: bool) -> Result<(), String> {
     let data = ops::show(name)?;
     if json {
-        print_json("dash show", &data);
+        print_ok("dash show", &data);
     } else if !quiet {
         println!("Dash: {}", data.name);
         if let Some(desc) = &data.description {

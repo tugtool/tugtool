@@ -1,6 +1,6 @@
 //! tuglog — shared tracing initialization for Tug binaries.
 //!
-//! All Tug Rust binaries (tugcast, tugexec, tugutil, etc.) call [`init`] at
+//! All Tug Rust binaries (tugcast, tugexec, tug, etc.) call [`init`] at
 //! startup. Tracing output is written to a rolling log file under:
 //!
 //! ```text

@@ -7,7 +7,7 @@ default:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugmark -p tugrelaunch -p tugbank
+    cd tugrust && cargo build -p tugcast -p tugexec -p tug -p tugrelaunch -p tugbank
     cd ..
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
@@ -17,7 +17,10 @@ build:
     # down. A linked worktree's --git-dir differs from its --git-common-dir.
     if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]; then
         mkdir -p ~/.local/bin
-        for bin in tugcast tugexec tugutil tugdash tugmark tugcode tugpulse tugrelaunch tugbank; do
+        # The tugutil/tugdash/tugmark binaries are gone (folded into tug); drop
+        # any stale symlinks so they don't dangle after this rebuild.
+        rm -f ~/.local/bin/tugutil ~/.local/bin/tugdash ~/.local/bin/tugmark
+        for bin in tugcast tugexec tug tugcode tugpulse tugrelaunch tugbank; do
             ln -sf "$(pwd)/tugrust/target/debug/$bin" ~/.local/bin/"$bin"
         done
     else
@@ -270,8 +273,8 @@ app-debug: build wasm
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Non-blocking orphan-detection preamble so users get a nudge to
     # clean up bundle-less data dirs without ever failing the build.
-    if tugrust/target/debug/tugutil instance prune --json 2>/dev/null | grep -q instance_id; then
-        echo "[warn] orphaned per-instance data dirs detected. Run 'tugutil instance prune' to clean up." >&2
+    if tugrust/target/debug/tug host instance prune --json 2>/dev/null | grep -q instance_id; then
+        echo "[warn] orphaned per-instance data dirs detected. Run 'tug host instance prune' to clean up." >&2
     fi
     # Seed the per-instance source-tree-path so the first launch knows
     # where to find tugdeck/, tugcode, etc. AppDelegate also falls
@@ -396,7 +399,7 @@ stop:
         [ -n "$ID" ] || continue
         # Derive bundle ID from the bundle path's Info.plist when
         # available — that's the source of truth for a running app.
-        # Fall back to plain `tugutil instance stop` if the plist
+        # Fall back to plain `tug host instance stop` if the plist
         # can't be read (registry entry without a live bundle).
         BUNDLE_ID=""
         if [ -n "$BUNDLE_PATH" ] && [ -f "$BUNDLE_PATH/Contents/Info.plist" ]; then
@@ -405,14 +408,14 @@ stop:
         if [ -n "$BUNDLE_ID" ]; then
             bash tugrust/scripts/quit-tug-bundle.sh "$BUNDLE_ID" "$ID"
         else
-            tugrust/target/debug/tugutil instance stop "$ID" --timeout 5 || true
+            tugrust/target/debug/tug host instance stop "$ID" --timeout 5 || true
         fi
-    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2)
+    done < <(tugrust/target/debug/tug host instance list 2>/dev/null | tail -n +2)
 
-# One-line wrapper around `tugutil instance list`. Forwards any extra
+# One-line wrapper around `tug host instance list`. Forwards any extra
 # args (e.g. `--json`).
 instances *FLAGS:
-    tugrust/target/debug/tugutil instance list {{FLAGS}}
+    tugrust/target/debug/tug host instance list {{FLAGS}}
 
 # Tail today's debug-instance log.
 logs-debug:
@@ -467,7 +470,7 @@ worktree-remove WORKTREE *FLAGS:
     echo "==> worktree-remove: $WORKTREE"
     echo "    branch:      $BRANCH"
     echo "    instance ID: $INSTANCE_ID"
-    tugrust/target/debug/tugutil instance remove "$INSTANCE_ID" $FLAGS
+    tugrust/target/debug/tug host instance remove "$INSTANCE_ID" $FLAGS
     git worktree remove --force "$WORKTREE"
     echo "==> Removed worktree $WORKTREE and its instance state ($INSTANCE_ID)."
 
@@ -491,7 +494,7 @@ tail-replay:
 
 # Remedial resource cleanup — diagnose and release resources leaked by
 # crashed runs or out-of-band worktree deletion (`git worktree remove` /
-# `rm -rf` instead of `tugdash join|release` / `instance remove`).
+# `rm -rf` instead of `tug dash join|release` / `instance remove`).
 #
 # Everything released is cross-referenced against the LIVE instance
 # registry (a tmux server/session is kept iff one of its `cc-<id>`
@@ -507,7 +510,7 @@ tail-replay:
 #
 # Reports only (NOT released — removal deletes the possibly-shared app
 # bundle, so run it deliberately):
-#   - orphaned data dirs whose bundle is gone → `tugutil instance prune`
+#   - orphaned data dirs whose bundle is gone → `tug host instance prune`
 #
 # Subsumes the former `zombies` / `zombie-cleanup` recipes — the PID-1
 # process reap is the "processes" section here, now cross-referenced and
@@ -525,18 +528,18 @@ reap *MODE:
     set -uo pipefail
     DRY=1; [ "{{MODE}}" = "apply" ] && DRY=0
 
-    # tugutil is the source of truth for which instances are LIVE. Without
+    # tug host instance is the source of truth for which instances are LIVE. Without
     # it we cannot tell an orphan from a running instance, so it is a hard
     # dependency — build it if absent rather than risk reaping live state.
-    TUGUTIL="tugrust/target/debug/tugutil"
+    TUGUTIL="tugrust/target/debug/tug"
     if [ ! -x "$TUGUTIL" ]; then
-        echo "==> building tugutil (needed to identify live instances)…"
-        (cd tugrust && cargo build -p tugutil) || { echo "error: could not build tugutil" >&2; exit 1; }
+        echo "==> building tug (needed to identify live instances)…"
+        (cd tugrust && cargo build -p tug) || { echo "error: could not build tug" >&2; exit 1; }
     fi
     # A read failure here must abort: reaping against an empty/unknown live
     # set would treat every running instance as an orphan.
-    if ! LIST="$("$TUGUTIL" instance list 2>/dev/null)"; then
-        echo "error: 'tugutil instance list' failed — refusing to reap blind" >&2
+    if ! LIST="$("$TUGUTIL" host instance list 2>/dev/null)"; then
+        echo "error: 'tug host instance list' failed — refusing to reap blind" >&2
         exit 1
     fi
     LIVE_IDS="$(printf '%s\n' "$LIST" | awk 'NR>1 && $1!="" {print $1}')"
@@ -609,17 +612,17 @@ reap *MODE:
     fi
 
     # 4. data dirs — REPORT ONLY, both modes. Removing a data dir goes
-    #    through `tugutil instance remove`, which also unregisters and can
+    #    through `tug host instance remove`, which also unregisters and can
     #    `rm -rf` the (possibly shared) app bundle — far too heavy to fold
     #    into a routine reap. Surface the count and defer to the dedicated,
     #    deliberately-run command.
     new_section "data dirs"
-    ORPHANS="$("$TUGUTIL" instance prune --json 2>/dev/null | grep -oE '"instance_id": *"[^"]*"' | sed -E 's/.*"([^"]*)"$/\1/')"
+    ORPHANS="$("$TUGUTIL" host instance prune --json 2>/dev/null | grep -oE '"instance_id": *"[^"]*"' | sed -E 's/.*"([^"]*)"$/\1/')"
     if [ -n "$ORPHANS" ]; then
         n="$(printf '%s\n' "$ORPHANS" | grep -c .)"
         printf '%s\n' "$ORPHANS" | head -n "$CAP" | sed 's/^/   orphaned data dir: /'
         [ "$n" -gt "$CAP" ] && echo "   … (+$((n - CAP)) more)"
-        echo "   → $n orphaned data dir(s) — remove deliberately with: tugutil instance prune"
+        echo "   → $n orphaned data dir(s) — remove deliberately with: tug host instance prune"
     else
         echo "   (none)"
     fi
@@ -790,7 +793,7 @@ setup-dev-signing:
 # manually re-issuing the Developer ID cert in Xcode).
 #
 # The sentinel lives in the per-project runtime-state dir (out of the
-# repo), resolved via `tugutil state-dir`.
+# repo), resolved via `tug host state-dir`.
 #
 # Does NOT touch the Developer ID cert in the login keychain — that's
 # the user's Apple-issued identity, not project-specific.
@@ -800,7 +803,7 @@ setup-dev-signing:
 teardown-dev-signing:
     #!/usr/bin/env bash
     set -euo pipefail
-    SENTINEL_FILE="$(tugutil state-dir 2>/dev/null || tugrust/target/debug/tugutil state-dir)/code-sign-fingerprint"
+    SENTINEL_FILE="$(tug host state-dir 2>/dev/null || tugrust/target/debug/tug host state-dir)/code-sign-fingerprint"
     if [ -f "$SENTINEL_FILE" ]; then
         rm -f "$SENTINEL_FILE"
         echo "✓ Sentinel $SENTINEL_FILE cleared."
@@ -854,7 +857,7 @@ build-app:
     )"
 
     echo "==> [1/5] Rust debug binaries"
-    (cd tugrust && cargo build -p tugcast -p tugexec -p tugutil -p tugdash -p tugmark -p tugrelaunch -p tugbank)
+    (cd tugrust && cargo build -p tugcast -p tugexec -p tug -p tugrelaunch -p tugbank)
     bun build --compile tugcode/src/main.ts --outfile tugrust/target/debug/tugcode
     bun build --compile tugcode/src/pulse/main-pulse.ts --outfile tugrust/target/debug/tugpulse
 
@@ -918,7 +921,7 @@ build-app:
     # tolerates both the `# designated => ...` form (ad-hoc) and the
     # `designated => identifier "..." and anchor apple generic ...`
     # form (Developer ID).
-    SENTINEL_DIR="$(tugutil state-dir 2>/dev/null || tugrust/target/debug/tugutil state-dir)"
+    SENTINEL_DIR="$(tug host state-dir 2>/dev/null || tugrust/target/debug/tug host state-dir)"
     SENTINEL_FILE="${SENTINEL_DIR}/code-sign-fingerprint"
     CURRENT_DR="$(codesign -d -r- "$APP_DIR" 2>&1 | sed -nE 's/^#?[[:space:]]*designated[[:space:]]+=>[[:space:]]+(.*)$/\1/p' | head -1)"
     if [ -z "$CURRENT_DR" ]; then
@@ -950,7 +953,7 @@ build-app:
 # sockets / private tmux server, and `apptest-<wtslug>-<uuid>`
 # per-launch runtime state whose destructive sweeps match only this
 # worktree's prefix. Whole invocations are serialized machine-wide by
-# a port gate (`tugutil gate --name apptest`) — native input and app
+# a port gate (`tug host gate --name apptest`) — native input and app
 # activation are login-session singletons, so only one app-test run
 # ever drives them at a time; a second invocation queues with a
 # visible "held by <worktree>" message. AX is granted once via
@@ -998,18 +1001,18 @@ app-test *FILES:
     # input, app activation, and key-window status are login-session
     # singletons — two concurrent runs would interleave each other's
     # gestures no matter how well files and ports are namespaced. The
-    # gate is a localhost port bind (tugutil gate; kernel-released on
+    # gate is a localhost port bind (tug host gate; kernel-released on
     # any death, no lock file): the whole invocation — clean slate,
     # build-if-missing, dist refresh, every file, exit cleanup — runs
     # under it, so one run completes before the next begins. A waiting
     # invocation prints who holds the gate and since when.
     if [ "${TUG_APPTEST_GATED:-}" != "1" ]; then
-        if [ ! -x tugrust/target/debug/tugutil ]; then
-            echo "==> building tugutil (needed for the app-test gate)…"
-            (cd tugrust && cargo build -p tugutil >/dev/null)
+        if [ ! -x tugrust/target/debug/tug ]; then
+            echo "==> building tug (needed for the app-test gate)…"
+            (cd tugrust && cargo build -p tug >/dev/null)
         fi
         export TUG_APPTEST_GATED=1
-        exec tugrust/target/debug/tugutil gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}
+        exec tugrust/target/debug/tug host gate run --name apptest --label "$WTSLUG" -- just app-test {{FILES}}
     fi
     echo "==> app-test instance prefix: $TUG_APPTEST_ID_PREFIX"
 
@@ -1060,9 +1063,9 @@ app-test *FILES:
     rm -rf "$HOME/Library/Application Support/Tug/instances/${TUG_APPTEST_ID_PREFIX}-"* 2>/dev/null || true
     while read -r ID; do
         case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
-            tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+            tugrust/target/debug/tug host instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
         esac
-    done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+    done < <(tugrust/target/debug/tug host instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
     sleep 0.3
 
     # Reap orphaned per-instance tmux servers from ungracefully-killed
@@ -1117,9 +1120,9 @@ app-test *FILES:
         # is never signalled).
         while read -r ID; do
             case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
-                tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+                tugrust/target/debug/tug host instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
-        done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+        done < <(tugrust/target/debug/tug host instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
         # Reap any private tmux servers (and stale socket files) the
         # stopped apptest instances left behind, so a run leaves nothing.
         reap_orphan_tmux_servers
@@ -1196,9 +1199,9 @@ app-test *FILES:
         # where a test panics before reaching `close`.
         while read -r ID; do
             case "$ID" in "${TUG_APPTEST_ID_PREFIX}-"*)
-                tugrust/target/debug/tugutil instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
+                tugrust/target/debug/tug host instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
-        done < <(tugrust/target/debug/tugutil instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+        done < <(tugrust/target/debug/tug host instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
         sleep 0.3
     done
 

@@ -13,7 +13,7 @@
  *      chip ([P10]) and the following `pwd` proves the shell session is
  *      stateful across exchanges. A final `echo "$TUG_SESSION_ID"` proves
  *      the shell child inherits the card's session id (parity with the
- *      agent bridge's env export) — the value `tugmark changes` reads.
+ *      agent bridge's env export) — the value `tug changes` reads.
  *   2. **Non-context styling hook** — every shell row renders inside
  *      `[data-slot="session-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
@@ -264,7 +264,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // --- Four real exchanges through the live shell backend. The last
           // reads $TUG_SESSION_ID: the shell child must inherit the card's
-          // session id (parity with the agent bridge), so `tugmark changes`
+          // session id (parity with the agent bridge), so `tug changes`
           // run from this route resolves the session against the ledger. ---
           await execAndSettle(app, "echo hello-from-shell", 0);
           await execAndSettle(app, "cd sub", 1);

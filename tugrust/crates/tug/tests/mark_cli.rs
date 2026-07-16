@@ -1,4 +1,4 @@
-//! Integration tests for the `tugmark` CLI, driving the built binary against a
+//! Integration tests for the `tug` CLI, driving the built binary against a
 //! real temp git repo and a seeded `sessions.db`.
 //!
 //! The library resolves `sessions.db` via `tugcore::instance::sessions_db_path`,
@@ -77,9 +77,9 @@ fn seed_home(repo_root: &Path) -> tempfile::TempDir {
     home
 }
 
-/// A `tugmark` command with `HOME` pointed at `home` and no instance id.
-fn tugmark(home: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("tugmark").unwrap();
+/// A `tug` command with `HOME` pointed at `home` and no instance id.
+fn tug(home: &Path) -> Command {
+    let mut cmd = Command::cargo_bin("tug").unwrap();
     cmd.env("HOME", home);
     cmd.env_remove("TUG_INSTANCE_ID");
     cmd.env_remove("TUG_SESSION_ID");
@@ -108,7 +108,7 @@ fn project_arg(repo: &Path) -> Vec<String> {
 fn changes_json_emits_envelope_with_the_changed_file() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["changes", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
@@ -128,7 +128,7 @@ fn changes_json_emits_envelope_with_the_changed_file() {
 fn context_json_matches_s02_shape() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["context", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
@@ -154,7 +154,7 @@ fn context_json_matches_s02_shape() {
 fn commit_json_stages_the_session_file_and_matches_numstat() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["commit", "--json", "--session", "work", "--message", "add feature"]);
     cmd.args(project_arg(&root));
 
@@ -187,7 +187,7 @@ fn commit_json_stages_the_session_file_and_matches_numstat() {
 fn log_json_emits_envelope() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.current_dir(&root);
     cmd.args(["log", "--json", "--limit", "5"]);
 
@@ -206,7 +206,7 @@ fn diff_json_emits_envelope() {
     let home = seed_home(&root);
     // Modify a tracked file so the working-tree diff is non-empty.
     std::fs::write(root.join("base.rs"), "base\nmore\n").unwrap();
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["diff", "--json"]);
     cmd.args(project_arg(&root));
 
@@ -224,7 +224,7 @@ fn unknown_session_exits_two_valid_empty_exits_zero() {
     let home = seed_home(&root);
 
     // Unknown session → exit 2.
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["changes", "--session", "ghost"]);
     cmd.args(project_arg(&root));
     let (code, _, stderr) = run(cmd);
@@ -232,7 +232,7 @@ fn unknown_session_exits_two_valid_empty_exits_zero() {
     assert!(stderr.contains("unknown"), "stderr: {stderr}");
 
     // Known-but-empty session → exit 0, no files listed.
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["changes", "--session", "empty"]);
     cmd.args(project_arg(&root));
     let (code, stdout, _) = run(cmd);
@@ -244,7 +244,7 @@ fn unknown_session_exits_two_valid_empty_exits_zero() {
 fn no_session_id_exits_two() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
-    let mut cmd = tugmark(home.path());
+    let mut cmd = tug(home.path());
     cmd.args(["changes"]);
     cmd.args(project_arg(&root));
     let (code, _, stderr) = run(cmd);

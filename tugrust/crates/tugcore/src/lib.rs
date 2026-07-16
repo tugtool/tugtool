@@ -2,7 +2,7 @@
 //!
 //! This crate is the foundation other Tug crates build on. It holds
 //! identity, path, port-allocation, and registry helpers — code that
-//! the tugcast, tugbank, tuglog, tugutil, and Swift-bridged binaries
+//! the tugcast, tugbank, tuglog, tug, and Swift-bridged binaries
 //! all need to agree on but that does not belong inside any single
 //! binary.
 //!
@@ -14,7 +14,7 @@ pub mod registry;
 
 /// Resolve the per-instance data directory for `instance_id` without
 /// consulting the environment. Mirrors `instance::data_dir` but with
-/// an explicit ID — used by external CLIs (e.g. `tugutil instance
+/// an explicit ID — used by external CLIs (e.g. `tug host instance
 /// remove`) operating on instances that are not the caller.
 pub fn instance_data_dir_for(instance_id: &str) -> std::path::PathBuf {
     instances_root().join(instance_id)

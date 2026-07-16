@@ -1,4 +1,4 @@
-//! `tugutil instance` — per-instance discovery + lifecycle management.
+//! `tug host instance` — per-instance discovery + lifecycle management.
 //!
 //! Backed by `tugcore::registry`, which `tugcast` writes when it
 //! binds. The subcommands here read that registry (plus the on-disk
@@ -43,7 +43,7 @@ pub enum InstanceCommands {
 
     /// Surgically remove all on-disk state for one instance.
     ///
-    /// 1. Stop the running process if any (`tugutil instance stop`).
+    /// 1. Stop the running process if any (`tug host instance stop`).
     /// 2. Resolve the bundle path via the per-instance
     ///    `<data-dir>/bundle-path` marker.
     /// 3. If the bundle exists: `lsregister -u <bundle>` then

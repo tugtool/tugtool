@@ -79,7 +79,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$DERIVED_DATA" "$STAGING_DIR"
 
 # Step 1: Build the shared release inputs — the optimized Rust binaries
-# (tugcast/tugdash/tugmark/tugexec/tugutil/tugrelaunch), the bun-compiled
+# (tugcast/tug/tugexec/tugrelaunch), the bun-compiled
 # tugcode/tugpulse, and the tugdeck static assets. Shared with `just app-release`
 # via one script so the two release paths can't drift on which binaries or flags
 # they build. The Tug Xcode copy phase requires all of these in target/release.
@@ -111,7 +111,7 @@ cp -R "$XCODE_APP" "$STAGING_APP"
 echo "==> Copying Rust binaries to Contents/MacOS/"
 mkdir -p "$STAGING_APP/Contents/MacOS"
 cp "$TUGCODE_DIR/target/release/tugcast" "$STAGING_APP/Contents/MacOS/"
-cp "$TUGCODE_DIR/target/release/tugutil" "$STAGING_APP/Contents/MacOS/"
+cp "$TUGCODE_DIR/target/release/tug" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugexec" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugcode" "$STAGING_APP/Contents/MacOS/"
 

@@ -398,7 +398,7 @@ impl ChildSpawner for TugcodeSpawner {
                 // forwards its environment to Bash tool calls — so a
                 // skill or CLI run inside this session can read
                 // `$TUG_SESSION_ID` to know which session it is. This is
-                // load-bearing for `tugmark changes`, which keys the
+                // load-bearing for `tug changes`, which keys the
                 // file-event query on it. The value is the tug session id
                 // (also passed as claude's `--session-id`, so the two
                 // coincide).
@@ -2711,7 +2711,7 @@ mod tests {
     #[tokio::test]
     async fn tugcode_spawn_exports_tug_session_id_to_the_child_env() {
         // The env chain that lets a skill / CLI inside the session self-
-        // identify (and `tugmark changes` scope its query) starts here:
+        // identify (and `tug changes` scope its query) starts here:
         // tugcast must set TUG_SESSION_ID on the tugcode spawn. Drive the
         // real `TugcodeSpawner::spawn_child` against a stand-in "tugcode"
         // that ignores its argv and echoes the variable, then read it back

@@ -3520,7 +3520,7 @@ export class SessionManager {
     // here — it rides through `scrubbedEnv` to claude, which forwards its
     // environment to Bash tool calls. This is the chain that lets a skill
     // or CLI run inside the session read `$TUG_SESSION_ID` and self-
-    // identify; `tugmark changes` keys its file-event query on it. If the
+    // identify; `tug changes` keys its file-event query on it. If the
     // auth-scrub destructure ever grows, keep this variable out of it.
 
     // Enable file checkpointing so the session-card's `/rewind` can restore the

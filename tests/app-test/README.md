@@ -65,7 +65,7 @@ for the contract.
 ### Concurrency: one invocation at a time
 
 Whole `just app-test` invocations are serialized machine-wide by a
-port gate (`tugutil gate run --name apptest`): native CGEvent input
+port gate (`tug host gate run --name apptest`): native CGEvent input
 and app activation are login-session singletons, so only one run may
 drive them at a time. Invoking `just app-test` while another worktree
 (or another terminal) holds the gate prints

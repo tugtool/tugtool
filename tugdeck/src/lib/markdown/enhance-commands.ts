@@ -13,7 +13,7 @@
  *    click seeds the command as a ready-to-run prompt draft.
  *
  *  - **Shell commands** — a span whose text begins with a known project
- *    CLI tool (`just` / `tugutil` / `tugdash` / `tugmark`) followed by a subcommand,
+ *    CLI tool (`just` / `tug`) followed by a subcommand,
  *    matched by {@link parseShellCommandLine}. Tagged with
  *    {@link COMMAND_CLASS} + `data-shell-command` (the whole command
  *    line); a click seeds it into the Code route as a one-shot `/shell`
@@ -78,7 +78,7 @@ const SLASH_COMMAND_RE =
  * as a shell command; there is no per-subcommand catalog — the leading
  * tool name is the whole gate.
  */
-const SHELL_COMMAND_TOOLS = ["just", "tugutil", "tugdash", "tugmark"] as const;
+const SHELL_COMMAND_TOOLS = ["just", "tug"] as const;
 
 /**
  * The shell-command grammar: a known tool name, then whitespace, then at
@@ -105,7 +105,7 @@ export function parseSlashCommandLine(text: string): ParsedSlashCommand | null {
 
 /**
  * Parse an inline code span's text as a project shell-command line.
- * Returns the trimmed command line (`just launch-debug`, `tugdash join
+ * Returns the trimmed command line (`just launch-debug`, `tug dash join
  * --preview`) when it begins with a known tool + subcommand, or `null`
  * otherwise. Pure — no DOM, no store. The returned string is what a
  * click seeds into the Code route as `/shell <command>`.

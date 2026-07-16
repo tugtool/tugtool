@@ -109,7 +109,7 @@ The fingerprint sentinel at `.tugtool/code-sign-fingerprint` is now **belt-and-s
 Per Apple's macOS 13+ guidance, any bundle with heterogeneous nested binaries must be signed **inside-out**. `sign-bundle.sh` enforces the order:
 
 ```
-1. Rust helpers          (tugcast, tugutil, tugexec, tugrelaunch, tugbank)
+1. Rust helpers          (tugcast, tug, tugexec, tugrelaunch, tugbank)
                          — no custom entitlements
 
 2. Swift debug dylibs    (Tug.debug.dylib, __preview.dylib — Debug builds only)

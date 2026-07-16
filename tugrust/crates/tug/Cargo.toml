@@ -1,13 +1,13 @@
 [package]
-name = "tugutil"
+name = "tug"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Tug utility — project management, state tracking, and developer tools"
+description = "tug — the unified Tug developer CLI (changes & commits, dashes, host plumbing)"
 
 [[bin]]
-name = "tugutil"
+name = "tug"
 path = "src/main.rs"
 
 [dependencies]
@@ -19,11 +19,15 @@ toml.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 regex.workspace = true
+chrono.workspace = true
 tugcore.workspace = true
 tugutil-core.workspace = true
-chrono.workspace = true
+tugdash-core.workspace = true
+tugmark-core.workspace = true
 ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true
+assert_cmd.workspace = true
+rusqlite.workspace = true
 serial_test = "3"

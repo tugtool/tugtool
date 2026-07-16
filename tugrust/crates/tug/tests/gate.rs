@@ -1,7 +1,7 @@
-//! Process-level tests for `tugutil gate run` — exclusivity, exit-code
+//! Process-level tests for `tug host gate run` — exclusivity, exit-code
 //! propagation, and kernel-owned release on holder death.
 //!
-//! Every test gates on its own scratch port via the `TUGUTIL_GATE_PORT`
+//! Every test gates on its own scratch port via the `TUG_GATE_PORT`
 //! hook so the suite can never contend with a real `apptest` gate (or
 //! with itself across parallel test threads).
 
@@ -9,7 +9,7 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-const BIN: &str = env!("CARGO_BIN_EXE_tugutil");
+const BIN: &str = env!("CARGO_BIN_EXE_tug");
 
 /// Find a free port by binding an ephemeral listener and dropping it.
 /// Racy in principle; fine for a test that uses it immediately.
@@ -22,8 +22,8 @@ fn scratch_port() -> u16 {
 
 fn gate_cmd(port: u16, extra: &[&str], command: &[&str]) -> Command {
     let mut cmd = Command::new(BIN);
-    cmd.env("TUGUTIL_GATE_PORT", port.to_string())
-        .args(["gate", "run", "--name", "apptest"])
+    cmd.env("TUG_GATE_PORT", port.to_string())
+        .args(["host", "gate", "run", "--name", "apptest"])
         .args(extra)
         .arg("--")
         .args(command)

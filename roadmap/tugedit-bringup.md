@@ -29,7 +29,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 
 - **Keep block mode the default.** This plan does not add a PTY, a terminal emulator, or a long-running tunnel. It removes an arbitrary cap and adds one narrow, non-terminal editor handoff.
 - **Rung 1 first (unblocks everything):** delete the wall-clock `EXEC_TIMEOUT`; the existing out-of-band `kill` frame is the user's stop control. This is what makes a blocking `tugedit --wait` (and long builds) safe.
-- **Reuse existing transport:** `tugedit` talks to tugcast over **loopback HTTP** (like `tugutil tell`), and the `--wait` round-trip mirrors `/api/eval` (a `pending_edits` oneshot map resolved by an `edit-done` action). No WebSocket, no auth token, no new feed.
+- **Reuse existing transport:** `tugedit` talks to tugcast over **loopback HTTP** (like `tug host tell`), and the `--wait` round-trip mirrors `/api/eval` (a `pending_edits` oneshot map resolved by an `edit-done` action). No WebSocket, no auth token, no new feed.
 - **Reuse existing deck UI:** the editor is the existing Text card (`openFileInCard`); the handoff just seeds a request id and reports closure.
 - **Rung 2 is deck-only polish:** a "parked on editor" exchange state is rendered from the deck's shell store, driven by the same round-trip — no wake-up plumbing back into the blocked shell task.
 - **Fail loud, never silently elsewhere:** if Tug isn't reachable or no window is connected, `tugedit` exits non-zero so `git commit` aborts (the user retries), rather than silently editing in a fallback.
@@ -65,7 +65,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 #### Dependencies / Prerequisites {#dependencies}
 
 - A running Tug.app / tugcast instance with a connected deck (browser/WKWebView) for the handoff to complete.
-- `tugcore::registry` (`find_by_id`, `find_for_cwd`, `list_live`) for port discovery from an external terminal — the same functions `tugutil`'s `resolve_port` uses (`tugrust/crates/tugutil/src/commands/tell.rs`).
+- `tugcore::registry` (`find_by_id`, `find_for_cwd`, `list_live`) for port discovery from an external terminal — the same functions `tug`'s `resolve_port` uses (`tugrust/crates/tug/src/commands/tell.rs`).
 - The existing `/api/eval` pending-oneshot pattern (`tugrust/crates/tugcast/src/server.rs`, `router.pending_evals`, and the `eval-response` arm in `tugrust/crates/tugcast/src/actions.rs`) as the template.
 
 #### Constraints {#constraints}
@@ -73,7 +73,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 - **WARNINGS ARE ERRORS** (`tugrust/.cargo/config.toml`, `-D warnings`). Rust builds/tests fail on any warning.
 - tugcast HTTP is **loopback-only**; `/api/edit` must reject non-loopback connections exactly like `tell_handler` / `eval_handler` (`server.rs`).
 - Tugdeck laws: external state enters React via `useSyncExternalStore` only ([L02]); lifecycle registrations in `useLayoutEffect` ([L03]); appearance via CSS/DOM, not React state ([L06]). Cross-check `tuglaws/tuglaws.md` before deck work.
-- `tugedit`'s `--wait` HTTP request must use **no (or a very long) read timeout** — editing is unbounded — unlike `tugutil tell`'s default ureq timeouts.
+- `tugedit`'s `--wait` HTTP request must use **no (or a very long) read timeout** — editing is unbounded — unlike `tug host tell`'s default ureq timeouts.
 - Never commit AI attribution; commit style follows `/tugplug:commit`.
 
 #### Assumptions {#assumptions}
@@ -130,7 +130,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 | No deck connected → `tugedit --wait` hangs forever | med | med | Server fast-fails when CONTROL has 0 receivers (R01) | Hang reports |
 | `edit-done` fires before disk flush → git reads stale message | high | med | Await flush before posting `edit-done` (R02, [P05]) | Wrong commit message observed |
 | Removing the cap lets a wedged silent command hang the session | med | low | `kill` button is the stop control; [Q01] backstop deferred | Wedged-session reports |
-| External terminal targets the wrong / ambiguous Tug instance | med | low | Registry resolution mirrors `tugutil`; ambiguous → error (R04) | Multi-instance misfires |
+| External terminal targets the wrong / ambiguous Tug instance | med | low | Registry resolution mirrors `tug`; ambiguous → error (R04) | Multi-instance misfires |
 
 **Risk R01: No connected deck** {#r01-no-deck}
 - **Risk:** `tugedit --wait` posts `/api/edit`, but no browser/WKWebView is subscribed to CONTROL, so the `open-file` frame is dropped and `edit-done` never arrives.
@@ -144,7 +144,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 
 **Risk R04: Instance ambiguity from an external terminal** {#r04-instance-ambiguity}
 - **Risk:** With several Tug instances running, a `tugedit` invoked outside the `$` shell can't tell which to target.
-- **Mitigation:** Resolution order (Spec S05) mirrors `tugutil`: explicit `--port`/`--instance`, then `TUG_TUGCAST_PORT` (injected inside `$`), then registry `TUG_INSTANCE_ID`/cwd/sole; ambiguous → error listing instances.
+- **Mitigation:** Resolution order (Spec S05) mirrors `tug`: explicit `--port`/`--instance`, then `TUG_TUGCAST_PORT` (injected inside `$`), then registry `TUG_INSTANCE_ID`/cwd/sole; ambiguous → error listing instances.
 
 ---
 
@@ -185,7 +185,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 
 **Decision:** `tugedit` is an HTTP client to `http://127.0.0.1:<port>/api/edit` and `/api/tell`. Port resolution order per Spec S05.
 
-**Rationale:** Matches `tugutil tell` (`ureq` POST to `/api/tell`), reuses `tugcore::registry` discovery, and needs no cookie/token.
+**Rationale:** Matches `tug host tell` (`ureq` POST to `/api/tell`), reuses `tugcore::registry` discovery, and needs no cookie/token.
 
 **Implications:** `tugedit` depends on `ureq`, `clap`, `serde_json`, `tugcore`. Inside the `$` route, resolution is a direct env read (Step 2 injects `TUG_TUGCAST_PORT`, and `TUG_SESSION_ID` for the rung-2 parked marker); outside, it walks the registry and sends no `tug_session_id`.
 
