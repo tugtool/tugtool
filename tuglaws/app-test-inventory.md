@@ -451,7 +451,7 @@ Phase E.6 of `roadmap/tide-assistant-rendering.md` — the framework extension t
 #### [AT0080] Session-card focus lands on the prompt entry after card-switch
 - **Status:** ✅ shipped at Phase E.12 — the card-switch gate for the single-text-entry rule (#phase-e-12).
 - **Tests:** `at0080-dev-focus-card-switch.test.ts`.
-- **Summary:** Two dev cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
+- **Summary:** Two session cards (A + B) in one pane, both bound to fake sessions. Click into A's contenteditable, type "hello", click B's tab (focus lands on B's contenteditable), click A's tab. Asserts `document.activeElement` is A's `tug-prompt-entry` contenteditable — the activation focus has one destination.
 
 #### [AT0081] Session-card focus lands on the prompt entry after Maker > Reload
 - **Status:** ✅ shipped at Phase E.12 — the cold-boot / reload gate for the single-text-entry rule (#phase-e-12). Exercises the `deferred-engine` settle (the one late-mount focus path that survives Phase E.12's retirement of the `deferred-dom` focus-retry branch).

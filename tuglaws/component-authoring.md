@@ -1099,7 +1099,7 @@ Cell renderers in `TugListView` are pure render functions. The contract is enfor
 | Trailing icon actions (trash, more, info) | Dispatch a chain action via `TugIconButton` (`dispatch={...}`); the responder handles the action |
 | Cell DOM ref (e.g. for `IntersectionObserver`) | The list view itself owns the ref; cells render markup only |
 
-**Anti-patterns:** raw `<button>` for trailing actions (use `TugIconButton`), per-cell `TugConfirmPopover` instances (hoist to the form, address by data id), `useState` for popover-open visual styling (drive `data-*` attributes from upstream state). The Dev picker's session-forget flow is the case study and reference implementation — see [tugplan-tide-picker-redesign §D17](../roadmap/tugplan-tide-picker-redesign.md#d17-pure-renderer-rule).
+**Anti-patterns:** raw `<button>` for trailing actions (use `TugIconButton`), per-cell `TugConfirmPopover` instances (hoist to the form, address by data id), `useState` for popover-open visual styling (drive `data-*` attributes from upstream state). The session picker's session-forget flow is the case study and reference implementation — see [tugplan-tide-picker-redesign §D17](../roadmap/tugplan-tide-picker-redesign.md#d17-pure-renderer-rule).
 
 ---
 
