@@ -43,7 +43,6 @@ import {
 } from "@/lib/route-constants";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
-import { TugShade } from "../tug-shade";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
 import { SessionHistoryView } from "./session-history/session-history-view";
@@ -3595,29 +3594,17 @@ export function SessionCardBody({
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
-                <TugShade
-                  persistKey="session-card"
-                  title="Changes"
-                  grabberLabel="Resize the Changes view"
-                >
-                  <SessionChangesView
-                    projectDir={projectDir}
-                    changesController={changesController}
-                    codeSessionStore={codeSessionStore}
-                  />
-                </TugShade>
+                <SessionChangesView
+                  projectDir={projectDir}
+                  changesController={changesController}
+                  codeSessionStore={codeSessionStore}
+                />
               </div>
               <div className="session-view-pane" data-view="history">
-                <TugShade
-                  persistKey="session-card"
-                  title="History"
-                  grabberLabel="Resize the History view"
-                >
-                  <SessionHistoryView
-                    projectDir={projectDir}
-                    active={activeView === "history"}
-                  />
-                </TugShade>
+                <SessionHistoryView
+                  projectDir={projectDir}
+                  active={activeView === "history"}
+                />
               </div>
             </div>
             <FindWrapOverlay findSession={findSession} cardRef={sessionCardRootRef} />

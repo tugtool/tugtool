@@ -74,6 +74,7 @@ import type {
 } from "@/lib/changeset-types";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import { TugShade } from "@/components/tugways/tug-shade";
 
 // ---------------------------------------------------------------------------
 // Item model — one entry (session / unattributed / dash) the ported
@@ -515,22 +516,31 @@ function diffablePathsOf(item: ChangesFileEntry): string[] {
   return files.filter((f) => hasHeadDiff(f.git_status)).map((f) => f.path);
 }
 
+/** The view-level expand key for one file of one entry. */
+function fileExpandKey(entryId: string, path: string): string {
+  return `${entryId}|${path}`;
+}
+
 /**
- * A session/unattributed entry's file list with commit-selection checkboxes,
- * per-file diff expansion (eager `git diff` on mount for the `+N −M` badges),
- * and Expand/Collapse All + whole-entry pop-out.
+ * A session/unattributed entry's file list with commit-selection checkboxes
+ * and per-file diff expansion (eager `git diff` on mount for the `+N −M`
+ * badges). Collapse state is CONTROLLED from the view (`expandedKeys`) so the
+ * Expand All / Collapse All / Diff controls can live once in the Shade banner
+ * and act across every entry; this component only fetches + renders.
  */
 function ChangesEntryFiles({
   item,
   rowSelection,
+  expandedKeys,
+  onToggleFile,
 }: {
   item: ChangesFileEntry;
   rowSelection: (path: string) => RowSelection;
+  expandedKeys: ReadonlySet<string>;
+  onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
 }) {
   const projectRoot = item.project.project_dir;
-  const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
-  const entryDescriptor = useMemo(() => entryDiffDescriptor(item), [item]);
   useEffect(() => {
     ensureRequested();
   }, [ensureRequested]);
@@ -538,20 +548,10 @@ function ChangesEntryFiles({
   // card's stores are untouched — unlike the Lens's global sweep).
   useEffect(() => () => releaseEntryDiffStore(item.id), [item.id]);
 
-  const toggleFile = useCallback((path: string, nextCollapsed: boolean) => {
-    setExpandedFiles((prev) => {
-      const next = new Set(prev);
-      if (nextCollapsed) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
-
   const files =
     item.kind === "unattributed"
       ? item.files.map(unattributedFileData)
       : item.entry.files.map(changesetFileData);
-  const diffablePaths = diffablePathsOf(item);
 
   return (
     <div className="session-changes-file-list">
@@ -563,40 +563,10 @@ function ChangesEntryFiles({
           projectRoot={projectRoot}
           selection={rowSelection(file.path)}
           diffSnapshot={diffSnapshot}
-          collapsed={!expandedFiles.has(file.path)}
-          onToggle={(next) => toggleFile(file.path, next)}
+          collapsed={!expandedKeys.has(fileExpandKey(item.id, file.path))}
+          onToggle={(next) => onToggleFile(item.id, file.path, next)}
         />
       ))}
-      {entryDescriptor !== null && diffablePaths.length > 0 ? (
-        <div className="session-changes-entry-actions">
-          {diffablePaths.length > 1 ? (
-            <>
-              <TugPushButton
-                emphasis="ghost"
-                role="action"
-                size="2xs"
-                onClick={() => setExpandedFiles(new Set(diffablePaths))}
-                data-testid="session-changes-expand-all"
-              >
-                Expand All
-              </TugPushButton>
-              <TugPushButton
-                emphasis="ghost"
-                role="action"
-                size="2xs"
-                onClick={() => setExpandedFiles(new Set())}
-                data-testid="session-changes-collapse-all"
-              >
-                Collapse All
-              </TugPushButton>
-            </>
-          ) : null}
-          <PopOutDiffButton
-            descriptor={entryDescriptor}
-            label="Open the whole diff in a card"
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1055,18 +1025,49 @@ export function SessionChangesView({
     disabled: commitPending,
   });
 
-  if (project.no_repo) {
-    return (
+  // Per-file collapse state is owned HERE (view scope), keyed by
+  // `${entryId}|${path}`, so the Expand All / Collapse All / Diff controls
+  // live once in the Shade banner and act across every head entry.
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(new Set());
+  const onToggleFile = useCallback(
+    (entryId: string, path: string, collapsed: boolean) => {
+      setExpandedKeys((prev) => {
+        const next = new Set(prev);
+        const key = fileExpandKey(entryId, path);
+        if (collapsed) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const shell = (
+    children: React.ReactNode,
+    headerActions?: React.ReactNode,
+  ): React.ReactElement => (
+    <TugShade
+      persistKey="session-card"
+      title="Changes"
+      grabberLabel="Resize the Changes view"
+      headerActions={headerActions}
+    >
       <div
         className="session-changes-view"
         data-slot="session-changes-view"
         data-tug-focus="refuse"
       >
-        <NonRepoBody
-          projectDir={projectDir ?? project.project_dir}
-          turnInProgress={turnInProgress}
-        />
+        {children}
       </div>
+    </TugShade>
+  );
+
+  if (project.no_repo) {
+    return shell(
+      <NonRepoBody
+        projectDir={projectDir ?? project.project_dir}
+        turnInProgress={turnInProgress}
+      />,
     );
   }
 
@@ -1088,50 +1089,108 @@ export function SessionChangesView({
     !hasSessionFiles && unattributedItem === null && snap.dashes.length === 0;
   const showReceipt = commit.phase === "done" && commit.receipt !== null;
 
-  return (
-    <div
-      className="session-changes-view"
-      data-slot="session-changes-view"
-      data-tug-focus="refuse"
-    >
-      <ResponderScope>
-        <div
-          ref={responderRef as (el: HTMLDivElement | null) => void}
-          className="session-changes-view-body"
-        >
-          {empty && !showReceipt ? (
-            <div className="session-changes-clean" role="status">
-              <CircleCheck size={14} />
-              No changes
-            </div>
-          ) : null}
-          {showReceipt ? (
-            <CommitReceipt
-              sha={commit.sha}
-              receipt={commit.receipt as string}
-              onDismiss={commit.clear}
-            />
-          ) : null}
-          {sessionItem !== null && hasSessionFiles ? (
-            <ChangesEntryFiles item={sessionItem} rowSelection={rowSelection} />
-          ) : null}
-          {unattributedItem !== null ? (
-            <ChangesEntryFiles item={unattributedItem} rowSelection={rowSelection} />
-          ) : null}
-          {snap.dashes.map((entry) => (
-            <ChangesDashEntry
-              key={entry.owner_id}
-              item={{
-                kind: "dash",
-                id: `dash:${project.project_dir}:${entry.owner_id}`,
-                project,
-                entry,
-              }}
-              turnInProgress={turnInProgress}
-            />
-          ))}
-        </div>
-      </ResponderScope>
-    </div>
+  // The head entries (session + unattributed) the banner controls act on —
+  // dashes keep their own range diff + read-only lists, so they are not in
+  // the combined set. Every diffable file across them yields one expand key;
+  // the whole-view Diff pop-out is a `head` diff over their union of paths.
+  const headEntries: ChangesFileEntry[] = [
+    ...(sessionItem !== null && hasSessionFiles ? [sessionItem] : []),
+    ...(unattributedItem !== null ? [unattributedItem] : []),
+  ];
+  const combinedKeys: string[] = headEntries.flatMap((entry) =>
+    diffablePathsOf(entry).map((path) => fileExpandKey(entry.id, path)),
+  );
+  const combinedDiffPaths: string[] = headEntries.flatMap((entry) =>
+    diffablePathsOf(entry),
+  );
+  const combinedDescriptor: DiffDescriptor | null =
+    combinedDiffPaths.length > 0
+      ? { kind: "head", root: project.project_dir, paths: combinedDiffPaths }
+      : null;
+
+  const headerActions =
+    combinedKeys.length > 0 || combinedDescriptor !== null ? (
+      <>
+        {combinedKeys.length > 1 ? (
+          <>
+            <TugPushButton
+              emphasis="ghost"
+              role="action"
+              size="2xs"
+              onClick={() => setExpandedKeys(new Set(combinedKeys))}
+              data-testid="session-changes-expand-all"
+            >
+              Expand All
+            </TugPushButton>
+            <TugPushButton
+              emphasis="ghost"
+              role="action"
+              size="2xs"
+              onClick={() => setExpandedKeys(new Set())}
+              data-testid="session-changes-collapse-all"
+            >
+              Collapse All
+            </TugPushButton>
+          </>
+        ) : null}
+        {combinedDescriptor !== null ? (
+          <PopOutDiffButton
+            descriptor={combinedDescriptor}
+            label="Open the whole diff in a card"
+          />
+        ) : null}
+      </>
+    ) : undefined;
+
+  return shell(
+    <ResponderScope>
+      <div
+        ref={responderRef as (el: HTMLDivElement | null) => void}
+        className="session-changes-view-body"
+      >
+        {empty && !showReceipt ? (
+          <div className="session-changes-clean" role="status">
+            <CircleCheck size={14} />
+            No changes
+          </div>
+        ) : null}
+        {showReceipt ? (
+          <CommitReceipt
+            sha={commit.sha}
+            receipt={commit.receipt as string}
+            onDismiss={commit.clear}
+          />
+        ) : null}
+        {sessionItem !== null && hasSessionFiles ? (
+          <ChangesEntryFiles
+            item={sessionItem}
+            rowSelection={rowSelection}
+            expandedKeys={expandedKeys}
+            onToggleFile={onToggleFile}
+          />
+        ) : null}
+        {unattributedItem !== null ? (
+          <ChangesEntryFiles
+            item={unattributedItem}
+            rowSelection={rowSelection}
+            expandedKeys={expandedKeys}
+            onToggleFile={onToggleFile}
+          />
+        ) : null}
+        {snap.dashes.map((entry) => (
+          <ChangesDashEntry
+            key={entry.owner_id}
+            item={{
+              kind: "dash",
+              id: `dash:${project.project_dir}:${entry.owner_id}`,
+              project,
+              entry,
+            }}
+            turnInProgress={turnInProgress}
+          />
+        ))}
+      </div>
+    </ResponderScope>,
+    headerActions,
   );
 }

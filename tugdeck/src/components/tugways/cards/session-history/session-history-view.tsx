@@ -32,6 +32,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type React from "react";
 
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import { TugShade } from "@/components/tugways/tug-shade";
 import {
   gitLogStore,
   type GitLogCommit,
@@ -105,13 +106,19 @@ export function SessionHistoryView({
   }, [active, projectDir, snapshot.requestedRoot, snapshot.phase]);
 
   const shell = (children: React.ReactNode): React.ReactElement => (
-    <div
-      className="session-history-view"
-      data-slot="session-history-view"
-      data-tug-focus="refuse"
+    <TugShade
+      persistKey="session-card"
+      title="History"
+      grabberLabel="Resize the History view"
     >
-      {children}
-    </div>
+      <div
+        className="session-history-view"
+        data-slot="session-history-view"
+        data-tug-focus="refuse"
+      >
+        {children}
+      </div>
+    </TugShade>
   );
 
   if (projectDir === null) {

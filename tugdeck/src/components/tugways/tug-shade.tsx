@@ -93,6 +93,12 @@ export interface TugShadeProps extends React.ComponentPropsWithoutRef<"div"> {
    */
   title?: string;
   /**
+   * Controls rendered right-aligned in the banner, opposite the centered
+   * title (e.g. the Changes view's Expand All / Collapse All / Diff). Only
+   * rendered when `title` is set.
+   */
+  headerActions?: React.ReactNode;
+  /**
    * Pixel floor for the Shade's height — it can never be dragged shorter.
    * Applied as a CSS `min-height`. @default 160
    */
@@ -107,6 +113,7 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
     {
       persistKey,
       title,
+      headerActions,
       minHeight = 160,
       grabberLabel = "Resize",
       className,
@@ -190,6 +197,9 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
             <TugLabel className="tug-shade-title" emphasis="proposal">
               {title}
             </TugLabel>
+            {headerActions !== undefined && headerActions !== null ? (
+              <div className="tug-shade-banner-actions">{headerActions}</div>
+            ) : null}
           </div>
         ) : null}
         <div className="tug-shade-content">{children}</div>

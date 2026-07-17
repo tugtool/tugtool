@@ -66,6 +66,7 @@ body {
    labels use, so weight / muted color / small-caps come from the component,
    not from here. */
 .tug-shade-banner {
+  position: relative;
   flex: 0 0 auto;
   box-sizing: border-box;
   min-height: 2.5rem;
@@ -76,6 +77,18 @@ body {
   background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
   user-select: none;
+}
+
+/* Header actions — right-aligned, absolutely positioned so the title stays
+   optically centered in the full banner width regardless of the actions'
+   width. Vertically centered against the banner. */
+.tug-shade-banner-actions {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--tug-space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
 }
 
 /* Title size matches the transcript strip's tuned label size (md + 1px, the

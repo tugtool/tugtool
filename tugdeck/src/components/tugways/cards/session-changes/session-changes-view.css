@@ -98,13 +98,6 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.session-changes-entry-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding-top: 4px;
-}
-
 /* ---- Commit receipt ([P05]) ---- */
 
 .session-changes-commit-receipt {
