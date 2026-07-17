@@ -287,6 +287,28 @@ body {
   cursor: grabbing;
 }
 
+/* One-shot activation flash ([P04]): a Lens Sessions row click fronts the
+   bound card and pulses an accent ring around its border. The class is added
+   on dispatch (on the pane root) and removed on `animationend` (see
+   `flashPaneBorder` in action-dispatch.ts); the ring is an inset box-shadow on
+   the bordered `.tug-pane-chrome` (its `overflow: clip` keeps it crisp). The
+   accent holds for most of the animation, then fades, so it reads clearly.
+   Appearance only ([L06]). */
+@keyframes tug-pane-border-flash {
+  0% {
+    box-shadow: inset 0 0 0 2px var(--tug7-element-global-border-normal-accent-rest);
+  }
+  70% {
+    box-shadow: inset 0 0 0 2px var(--tug7-element-global-border-normal-accent-rest);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+.tug-pane-flash .tug-pane-chrome {
+  animation: tug-pane-border-flash 1100ms ease-out;
+}
+
 /* ============================================================================
    Title bar title
    ========================================================================= */

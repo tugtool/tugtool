@@ -45,6 +45,21 @@ describe("routeChipKeys — Table T01", () => {
     expect(routeChipKeys("⌕")).toEqual(["session", "project", "find"]);
   });
 
+  it("changes (`±`) shows session · project · cwd (drops identity — a commit, not a Claude turn)", () => {
+    expect(routeChipKeys("±")).toEqual(["session", "project", "cwd"]);
+  });
+
+  it("history (`↺`) mirrors the code chrome (it sends an on-record Claude turn)", () => {
+    expect(routeChipKeys("↺")).toEqual([
+      "identity",
+      "session",
+      "project",
+      "mode",
+      "model",
+      "effort",
+    ]);
+  });
+
   it("identity always leads (never unmounts across a flip)", () => {
     for (const route of ["❯", "$", "?", null, "weird"]) {
       expect(routeChipKeys(route)[0]).toBe("identity");

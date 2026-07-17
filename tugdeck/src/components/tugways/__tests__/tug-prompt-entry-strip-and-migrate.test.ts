@@ -53,6 +53,23 @@ describe("routeAwareSubmitButtonMode", () => {
   it("`$` + in-flight → stop (fires kill, ignoring the Claude mode)", () => {
     expect(routeAwareSubmitButtonMode("$", claude, true)).toEqual({ kind: "stop" });
   });
+
+  it("`±` (Changes) → plain submit, disjoint from the Claude lifecycle", () => {
+    expect(routeAwareSubmitButtonMode("±", claude, false)).toEqual({
+      kind: "submit",
+      disabled: false,
+    });
+    // A shell exchange in flight elsewhere must not leak into the commit button.
+    expect(routeAwareSubmitButtonMode("±", claude, true)).toEqual({
+      kind: "submit",
+      disabled: false,
+    });
+  });
+
+  it("`↺` (History) follows the Claude lifecycle (a question is a turn)", () => {
+    expect(routeAwareSubmitButtonMode("↺", claude, false)).toBe(claude);
+    expect(routeAwareSubmitButtonMode("↺", claude, true)).toBe(claude);
+  });
 });
 
 // ---------------------------------------------------------------------------

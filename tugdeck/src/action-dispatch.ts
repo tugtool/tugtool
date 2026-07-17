@@ -100,6 +100,30 @@ export const SHIPPED_THEME_NAMES: readonly string[] = [
   "vivace", // light
 ];
 
+/**
+ * One-shot flash of a pane's BORDER ([P04]). Toggles a CSS class on the pane
+ * root, which pulses an accent ring (box-shadow) and removes it on
+ * `animationend` — pure appearance, never React state ([L06]). A mid-flash
+ * re-request restarts the animation (remove → reflow → add). No-op if the pane
+ * element isn't in the DOM.
+ */
+function flashPaneBorder(paneId: string): void {
+  const paneEl = document.querySelector(
+    `.tug-pane[data-pane-id="${CSS.escape(paneId)}"]`,
+  );
+  if (!(paneEl instanceof HTMLElement)) return;
+  const FLASH_CLASS = "tug-pane-flash";
+  paneEl.classList.remove(FLASH_CLASS);
+  // Force a reflow so re-adding the class restarts the keyframes.
+  void paneEl.offsetWidth;
+  paneEl.classList.add(FLASH_CLASS);
+  const onEnd = (): void => {
+    paneEl.classList.remove(FLASH_CLASS);
+    paneEl.removeEventListener("animationend", onEnd);
+  };
+  paneEl.addEventListener("animationend", onEnd);
+}
+
 /** Handler function for an action */
 export type ActionHandler = (payload: Record<string, unknown>) => void;
 
@@ -476,6 +500,35 @@ export function initActionDispatch(
       store: deckManager,
       commitMutation: () => deckManager.activateCard(incomingCardId),
     });
+  });
+
+  // focus-session-card: activate a specific card (front its pane + promote the
+  // responder chain) and flash its title bar once. Dispatched by a Lens
+  // Sessions monitor row on click ([P04]). Like `focus-pane` it routes through
+  // `transferFocusForActivation` so the activation fires the full
+  // will/didDeactivate + will/didActivate transition; the flash is pure
+  // appearance (a CSS class toggled on the pane header DOM, removed on
+  // `animationend`), never React state ([L06]).
+  registerAction("focus-session-card", (payload) => {
+    const cardId = payload.cardId;
+    if (typeof cardId !== "string") {
+      console.warn("focus-session-card: missing or invalid cardId", payload);
+      return;
+    }
+    const pane = deckManager
+      .getSnapshot()
+      .panes.find((p) => p.cardIds.includes(cardId));
+    if (!pane) {
+      console.warn(`focus-session-card: no pane holds card "${cardId}"`);
+      return;
+    }
+    transferFocusForActivation({
+      outgoingCardId: deckManager.getFirstResponderCardId(),
+      incomingCardId: cardId,
+      store: deckManager,
+      commitMutation: () => deckManager.activateCard(cardId),
+    });
+    flashPaneBorder(pane.id);
   });
 
   // show-card: Show a card by componentId. The Swift app menu sends

@@ -134,6 +134,16 @@ export function attachChangesetDraftStore(conn: TugConnection): ChangesetDraftSt
   return _activeStore;
 }
 
+/**
+ * The attached draft store singleton, or null before boot / in fixtures.
+ * Mirrors `getChangesetVerbStore` — the imperative peer of the
+ * `useChangesetDraft` hook, for non-React callers (the
+ * `ChangesRouteController`).
+ */
+export function getChangesetDraftStore(): ChangesetDraftStore | null {
+  return _activeStore;
+}
+
 /** Test-only: detach the singleton between cases. */
 export function _resetChangesetDraftStoreForTest(): void {
   _activeStore?.dispose();

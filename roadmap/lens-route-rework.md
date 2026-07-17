@@ -101,7 +101,15 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Read the tugcast GIT_DIFF handler during Step 8; test with a sha pair in the running app. If refs-only, ship the HistoryView without inline diff bodies (subject/author/date/sha still render) and add sha support as a follow-on.
 
-**Resolution:** OPEN (resolved by #step-8).
+**Resolution:** RESOLVED (refs-only) in #step-8. The `range` descriptor's
+server path (`build_dash_diff_snapshot` → `fetch_dash_diff`,
+`tugcast/src/feeds/git.rs`) is **dash-shaped**: it resolves the diff through a
+worktree + `merge-base(base, branch)`, not a two-dot `<sha>~1..<sha>` commit
+diff. Feeding raw shas would only work via a fragile "pass a non-existent
+worktree so it falls to the three-dot branch" hack. So per the resolution plan
+the HistoryView ships **metadata-only** commit blocks (subject · author · date ·
+full sha); inline per-commit diff bodies move to (#roadmap), which needs a
+dedicated backend descriptor that runs `git diff <sha>~1..<sha>` directly.
 
 #### [Q02] Where does `tugdash commit` learn the session display name? (DECIDED — see [P09]) {#q02-dash-session-name}
 
@@ -462,19 +470,19 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Hoist RouteLifecycle to the Session card | pending | — |
-| #step-2 | Define the two view-routes (selector, keys, chrome, submit modes) | pending | — |
-| #step-3 | Route-driven transcript slot (empty views) | pending | — |
-| #step-4 | ChangesRouteController + services wiring | pending | — |
-| #step-5 | ChangesView (files, diffs, selection, dash join, git-init) | pending | — |
-| #step-6 | Changes composer: commit submit + Generate draft | pending | — |
-| #step-7 | Integration checkpoint: Changes route end-to-end | pending | — |
-| #step-8 | HistoryView (per-commit blocks) | pending | — |
-| #step-9 | History submit + /tugplug:history skill | pending | — |
-| #step-10 | Trailers: changeset_commit path | pending | — |
-| #step-11 | Trailers: tugdash commit + join paths | pending | — |
-| #step-12 | Slim the Lens: monitor rows + delete Git History section | pending | — |
-| #step-13 | Integration checkpoint: full phase | pending | — |
+| #step-1 | Hoist RouteLifecycle to the Session card | done | 00bb31e1a |
+| #step-2 | Define the two view-routes (selector, keys, chrome, submit modes) | done | b44a3cff9 |
+| #step-3 | Route-driven transcript slot (empty views) | done | f0134d2a7 |
+| #step-4 | ChangesRouteController + services wiring | done | 526d909bb |
+| #step-5 | ChangesView (files, diffs, selection, dash join, git-init) | done | 78ca8efc9 |
+| #step-6 | Changes composer: commit submit + Generate draft | done | 61192ebfb |
+| #step-7 | Integration checkpoint: Changes route end-to-end | deferred | live verify at phase-3 build |
+| #step-8 | HistoryView (per-commit blocks) | done | e8b0b5438 |
+| #step-9 | History submit + /tugplug:history skill | done | 65afeeaa4 |
+| #step-10 | Trailers: changeset_commit path | done | 71d1fc528 |
+| #step-11 | Trailers: tugdash commit + join paths | done | 238b941cd |
+| #step-12 | Slim the Lens: monitor rows + delete Git History section | done | 7aeae7e22 |
+| #step-13 | Integration checkpoint: full phase | done | N/A (verify-only) |
 
 #### Step 1: Hoist RouteLifecycle to the Session card {#step-1}
 

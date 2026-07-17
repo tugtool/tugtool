@@ -201,6 +201,7 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
       hooksInventoryStore: services.hooksInventoryStore,
       sideQuestionStore: services.sideQuestionStore,
       shellSessionStore: services.shellSessionStore,
+      changesController: services.changesController,
       pendingContextStore: services.pendingContextStore,
       entryDelegateRef,
     };

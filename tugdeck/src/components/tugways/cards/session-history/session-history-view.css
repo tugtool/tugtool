@@ -1,0 +1,45 @@
+/* HistoryView — the `↺` route's per-commit blocks ([P10]). Appearance only
+   ([L06]). */
+
+.session-history-view-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 12px;
+}
+
+.session-history-empty {
+  margin: auto;
+  padding: var(--tug-space-4, 16px);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 13px;
+  text-align: center;
+}
+
+.session-history-commit {
+  min-width: 0;
+}
+
+.session-history-commit-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+}
+
+.session-history-commit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 8px 4px;
+}
+
+.session-history-commit-sha {
+  margin: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

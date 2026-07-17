@@ -35,7 +35,17 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
+import { RouteLifecycle } from "@/lib/route-lifecycle";
+import {
+  DEFAULT_ROUTE,
+  ROUTE_CHANGES,
+  ROUTE_HISTORY,
+} from "@/lib/route-constants";
+import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
+import { SessionChangesView } from "./session-changes/session-changes-view";
+import { SessionHistoryView } from "./session-history/session-history-view";
 import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
 import { SessionRouteIndicatorBadge } from "../chrome/session-route-indicator-badge";
@@ -245,6 +255,8 @@ const SESSION_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
   "$": "Run a shell command",
   "?": "Ask a question or say something to Claude as an aside",
   "⌕": "Find in transcript",
+  "±": "Commit message",
+  "↺": "Ask about commits, files, prior work",
 };
 
 /**
@@ -447,6 +459,8 @@ export interface SessionCardServices {
   sideQuestionStore: SideQuestionStore;
   /** `$`-route shell session store — session state + exchange ingest ([P12]). */
   shellSessionStore: ShellSessionStore;
+  /** `±`-route Changes controller — selection + commit/draft triggers ([P07]). */
+  changesController: ChangesRouteController;
   /** Staged shell / `/btw` context queue — consumed at send, surfaced to the
    *  composer + rows (Add-to-context, VISIBILITY toggle). */
   pendingContextStore: PendingContextStore;
@@ -2118,7 +2132,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -2143,6 +2157,33 @@ export function SessionCardBody({
   // (the transcript is a split-pane sibling of the prompt entry, so
   // the gesture can't bubble through the DOM).
   const transcriptRef = useRef<SessionTranscriptHandle | null>(null);
+  // [P02] The card owns the prompt entry's RouteLifecycle so it can read
+  // the route (via useSyncExternalStore, added when the view slot lands)
+  // to swap the transcript slot. Constructed once with `DEFAULT_ROUTE`,
+  // exactly as `TugPromptEntry` does when no host provides one; the entry
+  // remains the sole writer of `setRoute` (persist/restore untouched,
+  // Risk R01). A lazy `useRef` keeps the instance stable for the card's
+  // lifetime ([D01]).
+  const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
+  if (routeLifecycleRef.current === null) {
+    routeLifecycleRef.current = new RouteLifecycle(DEFAULT_ROUTE);
+  }
+  const routeLifecycle = routeLifecycleRef.current;
+  // [L02] The card reads the route off the shared lifecycle via
+  // `useSyncExternalStore` to pick which transcript-slot view is active
+  // ([P01]/[P02]). The view-routes (`±` Changes / `↺` History) swap the
+  // slot content; every other route shows the transcript. All three panes
+  // stay mounted — only visibility flips, via CSS ([L26]/[L06]).
+  const activeRoute = useSyncExternalStore(
+    routeLifecycle.subscribe,
+    routeLifecycle.getRoute,
+  );
+  const activeView: "transcript" | "changes" | "history" =
+    activeRoute === ROUTE_CHANGES
+      ? "changes"
+      : activeRoute === ROUTE_HISTORY
+        ? "history"
+        : "transcript";
   // Captured by the JSX's composed ref below for the first-mount
   // fade-in animation. Read by a useLayoutEffect with empty deps —
   // the effect runs once when this card first acquires services
@@ -3332,22 +3373,26 @@ export function SessionCardBody({
     ),
   );
 
+  // The current branch, for the `<project>/<session> (<branch>)` title (dropped
+  // on `main`). Read from the aggregate so the Lens monitor row and this title
+  // bar share one source and read identically.
+  const sessionBranch = useSessionBranch(projectDir);
+
   // Publish the session's identity to the pane chrome's title bar via
-  // `cardTitleStore`. The title bar composes it as `"Session : <override>"`,
-  // where the override is `"<project-leaf> <session name → tag>"`. Cleared on
-  // unmount or when the binding goes away so the title bar falls back to the
-  // registry default.
+  // `cardTitleStore` — the shared `<project>/<session> (<branch>)` label.
+  // Cleared on unmount or when the binding goes away so the title bar falls
+  // back to the registry default.
   useEffect(() => {
     cardTitleStore.set(
       cardId,
       projectDir !== null
-        ? sessionCardTitleOverride(projectDir, sessionName, sessionTag)
+        ? sessionCardTitleOverride(projectDir, sessionName, sessionTag, sessionBranch)
         : "Session",
     );
     return () => {
       cardTitleStore.clear(cardId);
     };
-  }, [cardId, projectDir, sessionName, sessionTag]);
+  }, [cardId, projectDir, sessionName, sessionTag, sessionBranch]);
 
   const projectChipText =
     projectDir !== null ? formatPathChipText(projectDir) : null;
@@ -3521,17 +3566,42 @@ export function SessionCardBody({
             >
               {effectiveHeaderContent}
             </div>
-            <SessionTranscriptHost
-              ref={transcriptRef}
-              cardId={cardId}
-              codeSessionStore={codeSessionStore}
-              shellSessionStore={shellSessionStore}
-              pendingContextStore={pendingContextStore}
-              sessionMetadataStore={sessionMetadataStore}
-              responseStore={responseStore}
-              findSession={findSession}
-              renderTurnTrailing={effectiveRenderTurnTrailing}
-            />
+            {/*
+              Route-driven view slot ([P01]/[P02]). The transcript, the
+              Changes view, and the History view are ALL mounted; CSS hides
+              the inactive panes via `data-active-view` ([L06]) so scroll
+              position, in-progress selection, and streaming state survive a
+              route flip and the transcript's mount identity stays stable
+              ([L26]). The find overlay, Z2 status bar, and PULSE strip stay
+              OUTSIDE the slot — Find is a target-route over the transcript.
+            */}
+            <div className="session-view-slot" data-active-view={activeView}>
+              <div className="session-view-pane" data-view="transcript">
+                <SessionTranscriptHost
+                  ref={transcriptRef}
+                  cardId={cardId}
+                  codeSessionStore={codeSessionStore}
+                  shellSessionStore={shellSessionStore}
+                  pendingContextStore={pendingContextStore}
+                  sessionMetadataStore={sessionMetadataStore}
+                  responseStore={responseStore}
+                  findSession={findSession}
+                  renderTurnTrailing={effectiveRenderTurnTrailing}
+                />
+              </div>
+              <div className="session-view-pane" data-view="changes">
+                <SessionChangesView
+                  projectDir={projectDir}
+                  changesController={changesController}
+                />
+              </div>
+              <div className="session-view-pane" data-view="history">
+                <SessionHistoryView
+                  projectDir={projectDir}
+                  active={activeView === "history"}
+                />
+              </div>
+            </div>
             <FindWrapOverlay findSession={findSession} cardRef={sessionCardRootRef} />
             <PaneBulletinAnchor ref={paneBulletinRef} />
             </TugPaneBulletinProvider>
@@ -3630,6 +3700,14 @@ export function SessionCardBody({
             <TugPromptEntry
               ref={entryDelegateRef}
               id={`${cardId}-entry`}
+              routeLifecycle={routeLifecycle}
+              // The Session card is the view-route host ([P03]): it offers
+              // Changes (`±`) and History (`↺`) in the selector and honors
+              // ⇧⌘E / ⇧⌘Y. History needs only the code session store, already
+              // present; the Changes route's commit/draft plumbing rides
+              // `changesController` ([P07]).
+              viewRoutes
+              changesController={changesController}
               // The editor stands down (read-only + caret off + dimmed)
               // while an inline dialog owns the keyboard and while cycling
               // (the cycling-mode indicator, [P12] revised: reuse the

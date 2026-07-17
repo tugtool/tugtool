@@ -81,6 +81,57 @@
   min-width: 0;
 }
 
+/* Route-driven view slot ([P01]/[P02]). Sits between Z0 (header) and Z2
+   (status bar) inside `.session-card-top-column`, taking over the flex-grow
+   role the transcript host held directly. All three panes (transcript /
+   changes / history) are mounted at once; only the one named by
+   `data-active-view` is displayed, so scroll, selection, and streaming
+   state survive a route flip ([L26]) and appearance changes go through CSS,
+   never React state ([L06]). */
+.session-view-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.session-view-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.session-view-slot[data-active-view="transcript"]
+  .session-view-pane:not([data-view="transcript"]),
+.session-view-slot[data-active-view="changes"]
+  .session-view-pane:not([data-view="changes"]),
+.session-view-slot[data-active-view="history"]
+  .session-view-pane:not([data-view="history"]) {
+  display: none;
+}
+
+/* Changes / History slot views. Each fills its pane and scrolls its own
+   body; the placeholder empty-state is centered and muted until the real
+   file rows / commit blocks land. */
+.session-changes-view,
+.session-history-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.session-changes-view-empty,
+.session-history-view-empty {
+  margin: auto;
+  padding: var(--tug-space-4, 16px);
+  color: var(--tug-text-muted, #888);
+  font-size: 13px;
+  text-align: center;
+}
+
 /* Prompt-entry region — sibling of the transcript column, ALWAYS pinned to
    the bottom (last flex child; the transcript column above is `flex: 1 1 0`
    and absorbs the slack).

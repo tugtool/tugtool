@@ -19,7 +19,7 @@
  * @module lib/changeset-all-store
  */
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import type { TugConnection } from "../connection";
 import { FeedId } from "../protocol";
@@ -116,4 +116,25 @@ export function useChangesetAll(): WorkspacesChangesetSnapshot {
     () => _activeStore?.getSnapshot() ?? IDLE_SNAPSHOT,
     () => IDLE_SNAPSHOT,
   );
+}
+
+/** The current branch for a project dir in the aggregate, or null if unknown. */
+export function branchForProject(
+  data: WorkspacesChangesetSnapshot,
+  projectDir: string | null,
+): string | null {
+  if (projectDir === null) return null;
+  const project = data.projects.find((p) => p.project_dir === projectDir);
+  const branch = project?.branch ?? "";
+  return branch.length > 0 ? branch : null;
+}
+
+/**
+ * React hook: the current branch for a project dir, read from the aggregate
+ * ([L02]). Memoized to the branch string so a consumer re-renders only when
+ * the branch actually changes.
+ */
+export function useSessionBranch(projectDir: string | null): string | null {
+  const data = useChangesetAll();
+  return useMemo(() => branchForProject(data, projectDir), [data, projectDir]);
 }

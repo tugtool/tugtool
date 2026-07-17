@@ -1,13 +1,6 @@
-/* @tug-pairings:
-   - --tug7-element-tone-text-normal-success-rest  (added status, live dot)
-   - --tug7-element-tone-text-normal-danger-rest   (deleted status)
-   - --tug7-element-tone-text-normal-caution-rest  (modified status, ambiguous badge)
-   - --tug7-element-tone-text-normal-accent-rest   (renamed status, shared badge)
-
-   Text-color-only on the card's inherited surface: entry sections come from
-   the composed BlockChrome, which keeps its own tokens ([L20]). Status
-   glyphs and badges tint via tone *text* tokens, so no @tug-renders-on
-   ([L16]). */
+/* The Lens Sessions section — a read-only session monitor ([P12]). One row per
+   open session: phase dot · name/context · latest pulse line · sparkline.
+   Appearance only ([L06]); the row click dispatches `focus-session-card`. */
 
 .sessions-card {
   display: flex;
@@ -24,405 +17,74 @@
   font-size: 0.875rem;
 }
 
-/* ---- Entry sections. No inner scroll ([P08]): the Lens content scroll
-   (`.lens-content`) owns scrolling, so this is a plain padded block — an
-   inner `overflow` would resolve the entry headers' sticky offsets against
-   the wrong ancestor. ---- */
-
+/* No inner scroll ([P08]): the Lens content scroll (`.lens-content`) owns
+   scrolling, so this is a plain padded block. */
 .sessions-scroll {
   padding: 8px 14px 12px;
 }
 
-.sessions-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* ---- Entry blocks (one BlockChrome section per entry) ----
-   The block owns its own chrome/header styling; the wrapper carries the
-   entry's test hooks (`data-entry-id` / `data-project-dir` /
-   `data-session-id`). */
-
-.sessions-entry {
-  min-width: 0;
-}
-
-/* Telescoping pin stack ([P08]): entry headers stick beneath the Lens
-   section band (the chrome header pins at `--tugx-pin-stack-top`, which the
-   `LensSection` band writes so entry headers clear it); file-block headers
-   inside the entry body stack BELOW the stuck entry header. Mirrors the
-   `.tugx-agent` /
-   `.tugx-agent-entries` clearance-capture pair: the clearance is computed
-   on the entry-block root — a non-cyclic read of the inherited pin offset
-   plus the chrome's measured `--tugx-block-header-height` — and republished
-   on the body wrapper AS the subtree's `--tugx-pin-stack-top`. Two elements
-   on purpose: folding into `--tugx-pin-stack-top` on one element is a
-   dependency cycle (guaranteed-invalid, nested headers would pin at 0 and
-   collide with the entry header). */
-.sessions-entry-block {
-  --sessions-entry-pin-clearance: calc(
-    var(--tugx-pin-stack-top, 0px) + var(--tugx-block-header-height, 0px)
-  );
-}
-
-.sessions-entry-block > [data-slot="tool-block-body"] {
-  --tugx-pin-stack-top: var(--sessions-entry-pin-clearance);
-}
-
-/* The header identity: title + trailing project · branch context, riding
-   the block header's flexible target column. */
-.sessions-entry-identity {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 0.875rem;
-}
-
-.sessions-entry-title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sessions-entry-title-muted {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Trailing project · branch context on the header line, pushed toward the
-   status-hint summary at the header's trailing edge. */
-.sessions-entry-context {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 55%;
-}
-
-/* Session liveness: a dot that lights via the success tone when the owning
-   session has a live relay. Appearance only — no React state ([L06]). */
-.sessions-live-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--tug7-element-global-text-normal-muted-rest);
-  opacity: 0.45;
-}
-
-.sessions-live-dot-on {
-  background: var(--tug7-element-tone-text-normal-success-rest);
-  opacity: 1;
-}
-
-.sessions-dash-mark {
-  flex-shrink: 0;
-  font-size: 0.8125rem;
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-
-/* Unattributed pseudo-entry glyph — a quiet dashed circle. */
-.sessions-unattributed-mark {
-  flex-shrink: 0;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* ---- File rows (read-only: no tabindex, no hover affordance) ---- */
-
-.sessions-file-list {
+.sessions-monitor-rows {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px 0;
 }
 
-/* Each changeset file is a BlockChrome ([P25]/[P29]) — the block owns its own
-   chrome/header styling; this wrapper only carries the per-file test hooks
-   (`data-testid` + `data-path`). */
-.sessions-file-block {
+/* Width of the leading dot column — the pulse line indents by this so it
+   left-aligns under the session name on the line above. Sized to the 12px dot
+   plus the primary line's gap. */
+.sessions-monitor-row {
+  --sessions-dot-col: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
-}
-
-/* The header identity ([P29]): status glyph + path link + provenance section,
-   riding the block header's flexible detail column. */
-.sessions-file-identity {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-family: var(--tug-font-family-mono);
-  font-size: 0.8125rem;
-}
-
-/* A file block's body notice (loading / error / binary / missing diff). */
-.sessions-file-block-notice {
-  margin: 4px 0;
-  padding: 0 8px;
-  font-size: 0.8125rem;
-  opacity: 0.7;
-}
-
-.sessions-file-status {
-  flex-shrink: 0;
-  width: 2ch;
-  white-space: pre;
-}
-
-.sessions-status-added {
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-
-.sessions-status-deleted {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-
-.sessions-status-modified {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
-}
-
-.sessions-status-renamed {
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-
-.sessions-status-untracked {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.sessions-file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Clickable path → opens the file in a Text card. Appearance only ([L06]):
-   the interaction is wired in the component; here we only signal it. */
-.sessions-file-path--link {
+  padding: 5px 6px;
+  border-radius: var(--tug-radius-sm, 6px);
   cursor: pointer;
 }
 
-.sessions-file-path--link:hover {
-  text-decoration: underline;
+.sessions-monitor-row:hover {
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
 
-/* Provenance — `op · origin`, a muted pipe-delimited section trailing the path
-   in the file block's header identity ([P29]). The leading rule reuses the
-   block-header divider convention (a left pipe with breathing room). */
-.sessions-file-provenance {
-  flex-shrink: 0;
-  padding-left: var(--tug-space-md);
-  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
-  font-size: 0.6875rem;
-  font-family: var(--tug-font-family-sans);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* Per-entry action row ([P29]): Expand All / Collapse All over the file blocks
-   plus the whole-entry pop-out. */
-.sessions-entry-actions {
+.sessions-monitor-line {
   display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding-top: 4px;
-}
-
-/* ---- Commit composer ([P28]) ---- */
-
-/* The commit composer is ONE BlockChrome: the lifecycle dot is the drafting
-   indicator, the CM6 `TugMessageEditor` is the body, and the Commit button
-   rides the block footer. This wrapper only spaces it below the file blocks and
-   carries the `sessions-commit-controls` test hook. */
-.sessions-commit {
-  padding-top: 6px;
-}
-
-.sessions-commit-composer {
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
-.sessions-commit-receipt {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm, 6px);
-}
-
-.sessions-commit-receipt-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-
-.sessions-commit-receipt-body {
-  margin: 0;
-  font-size: 0.75rem;
-  font-family: var(--tug-font-family-mono);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  white-space: pre;
-  overflow-x: auto;
-}
-
-/* Ambiguous / shared marks: text-tone chips whose rows start deselected —
-   the checkbox is the explicit opt-in ([P15]). */
-.sessions-badge {
+/* Primary line — the phase dot (fixed-width leading glyph) beside the name. */
+.sessions-monitor-line-primary > .tug-progress-indicator {
   flex-shrink: 0;
-  font-size: 0.625rem;
-  font-family: var(--tug-font-family-sans);
+}
+
+.sessions-monitor-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0 4px;
-  border-radius: 3px;
-  border: 1px solid currentColor;
 }
 
-.sessions-badge-ambiguous {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
+/* Secondary line — indented to clear the dot column so the pulse text starts
+   under the name; the sparkline rides the far end (like `session-pulse-strip`). */
+.sessions-monitor-line-pulse {
+  padding-left: var(--sessions-dot-col);
 }
 
-.sessions-badge-shared {
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-
-/* ---- Empty state ---- */
-
-.sessions-clean {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.875rem;
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-
-/* ---- Non-repo project: "Initialize git" affordance ---- */
-
-.sessions-non-repo {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 0;
-}
-
-.sessions-non-repo-message {
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.sessions-non-repo-error {
-  font-size: 0.75rem;
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-
-/* ---- Dash entry actions: Join / Release / resolve ([P14]/[P31]/[P32]) ---- */
-
-.sessions-dash-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 0 2px;
-}
-
-.sessions-dash-action-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
-.sessions-dash-working {
-  padding: 8px 0 2px;
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.sessions-dash-preview-msg,
-.sessions-dash-resolve-summary {
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-normal-rest);
-}
-
-.sessions-dash-hint {
-  font-size: 0.75rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.sessions-dash-error {
-  font-size: 0.75rem;
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-
-.sessions-dash-conflict-list,
-.sessions-dash-resolved-list {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.75rem;
-  color: var(--tug7-element-global-text-normal-normal-rest);
-}
-
-.sessions-dash-resolve-path {
-  font-family: var(--tug-font-mono, monospace);
-}
-
-.sessions-dash-rung-badge {
-  margin-left: 8px;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.12));
-}
-
-/* The /btw-style resolve progress overlay. */
-.sessions-dash-resolve {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 2px;
-}
-
-.sessions-dash-resolve-head {
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-normal-rest);
-}
-
-.sessions-dash-resolve-file {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sessions-dash-resolve-rung {
+.sessions-monitor-pulse {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.6875rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.sessions-dash-resolve-stream {
-  margin: 2px 0 0;
-  max-height: 160px;
-  overflow: auto;
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-family: var(--tug-font-mono, monospace);
-  font-size: 0.6875rem;
-  white-space: pre-wrap;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+.sessions-monitor-spark {
+  flex-shrink: 0;
 }

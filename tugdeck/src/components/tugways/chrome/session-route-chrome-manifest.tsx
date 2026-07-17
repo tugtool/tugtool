@@ -5,10 +5,12 @@
  *
  * Table T01 — route → visible chips (the identity badge always leads):
  *
- *   ❯ code  : identity(Claude Code) · Session · Project · Mode · Model · Effort
- *   $ shell : identity(Shell)       · Session · Project · Cwd · Visibility
- *   ? btw   : identity(Claude Code) · Session · Project · Visibility
- *   ⌕ find  : Session · Project · Find-cluster (Case/Word/Grep + count)
+ *   ❯ code    : identity(Claude Code) · Session · Project · Mode · Model · Effort
+ *   $ shell   : identity(Shell)       · Session · Project · Cwd · Visibility
+ *   ? btw     : identity(Claude Code) · Session · Project · Visibility
+ *   ⌕ find    : Session · Project · Find-cluster (Case/Word/Grep + count)
+ *   ± changes : Session · Project · Cwd  (a commit, not a Claude turn)
+ *   ↺ history : identity(Claude Code) · Session · Project · Mode · Model · Effort
  *
  * The occupant of the Z4B centred-floating slot is a layout decision, not a
  * contract ([D97]) — swapping it on an explicit route gesture is the slot
@@ -36,10 +38,13 @@ import { Fragment } from "react";
 import type React from "react";
 
 import { useRoute } from "@/lib/route-lifecycle";
-
-const ROUTE_SHELL = "$";
-const ROUTE_BTW = "?";
-const ROUTE_FIND = "⌕";
+import {
+  ROUTE_BTW,
+  ROUTE_CHANGES,
+  ROUTE_FIND,
+  ROUTE_HISTORY,
+  ROUTE_SHELL,
+} from "@/lib/route-constants";
 
 /** The Z4B chip slots the manifest can place, keyed by identity. */
 export type RouteChipKey =
@@ -66,6 +71,14 @@ export function routeChipKeys(route: string | null): RouteChipKey[] {
   // identity badge drops out here. The Session and Project chips stay: they
   // name which session's transcript is being searched.
   if (route === ROUTE_FIND) return ["session", "project", "find"];
+  // Changes commits the workspace — it is not a Claude turn, so it drops
+  // the identity badge (like Find) and names the session + project (+ its
+  // working directory) the commit lands in.
+  if (route === ROUTE_CHANGES) return ["session", "project", "cwd"];
+  // History sends an on-record Claude turn (`/tugplug:history`), so it
+  // carries the full Claude chrome exactly like the code route.
+  if (route === ROUTE_HISTORY)
+    return ["identity", "session", "project", "mode", "model", "effort"];
   return ["identity", "session", "project", "mode", "model", "effort"];
 }
 

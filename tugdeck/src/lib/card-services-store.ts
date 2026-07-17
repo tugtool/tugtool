@@ -37,6 +37,7 @@ import { ResponseSettingsStore } from "./response-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { GitDiffStore } from "./git-diff-store";
+import { ChangesRouteController } from "./changes-route-controller";
 import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
@@ -119,6 +120,13 @@ export interface CardServices {
    */
   readonly shellSessionStore: ShellSessionStore;
   readonly shellSessionFeedStore: FeedStore;
+  /**
+   * The `±`-route Changes controller ([P07]) — a filtered, selection-aware
+   * projection over the app-level `ChangesetAllStore` (0x24) scoped to this
+   * card's workspace + session. Opens NO feed of its own; `dispose`
+   * unsubscribes it from the singleton.
+   */
+  readonly changesController: ChangesRouteController;
   /**
    * The per-card queue of shell / `/btw` interactions staged to ride the next
    * `❯` submission as attributed `<tug-context>` context. Consumed by
@@ -504,6 +512,16 @@ class CardServicesStore {
       pendingContextStore,
     );
 
+    // `±`-route Changes controller ([P07]): a filtered projection over the
+    // app-level `ChangesetAllStore` singleton — NO new FeedStore (the
+    // per-workspace CHANGESET feed 0x23 is retired). Scoped to this card's
+    // workspace + session; disposed below (unsubscribes from the singleton).
+    const changesController = new ChangesRouteController({
+      tugSessionId: binding.tugSessionId,
+      workspaceKey: binding.workspaceKey,
+      projectDir: binding.projectDir,
+    });
+
     // Bind success → prepend this card's project path to the dev
     // recent-projects list (dedup, cap). Done here rather than in a
     // React effect so the side effect is co-located with services
@@ -600,6 +618,7 @@ class CardServicesStore {
       sideQuestionFeedStore,
       shellSessionStore,
       shellSessionFeedStore,
+      changesController,
       pendingContextStore,
       fileCompletionProvider,
     };
@@ -626,6 +645,7 @@ class CardServicesStore {
     services.sideQuestionFeedStore.dispose();
     services.shellSessionStore.dispose();
     services.shellSessionFeedStore.dispose();
+    services.changesController.dispose();
     services.pendingContextStore.dispose();
   }
 

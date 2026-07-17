@@ -41,7 +41,6 @@ import {
 import { BASE_THEME_NAME } from "./theme-constants";
 import { registerHelloWorldCard } from "./components/tugways/cards/hello-world-card";
 import { registerSessionsSection } from "./components/lens/sections/sessions-section";
-import { registerGitHistorySection } from "./components/lens/sections/git-history-section";
 import { registerSessionCard } from "./components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
@@ -267,7 +266,6 @@ if (!container) {
   // Registration order is the DEFAULT Lens section order — the fallback
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerSessionsSection();
-  registerGitHistorySection();
   registerLogSection();
   registerTelemetrySection();
   registerTextCard();

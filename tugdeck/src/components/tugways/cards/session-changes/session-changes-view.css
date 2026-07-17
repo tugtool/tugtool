@@ -1,0 +1,272 @@
+/* ChangesView — the `±` route's file surface ([P05]). Ported from the Lens
+   Sessions section's file-row / dash-action / receipt styling, renamed under
+   the `session-changes-` prefix. Appearance only ([L06]); the interactions are
+   wired in the component. */
+
+.session-changes-view-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 12px;
+}
+
+.session-changes-entry-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-entry-heading-context {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.session-changes-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.session-changes-file-block {
+  min-width: 0;
+}
+
+.session-changes-file-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+}
+
+.session-changes-file-block-notice {
+  margin: 4px 0;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.session-changes-file-status {
+  flex-shrink: 0;
+  width: 2ch;
+  white-space: pre;
+}
+
+.session-changes-status-added {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.session-changes-status-deleted {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.session-changes-status-modified {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+.session-changes-status-renamed {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+.session-changes-status-untracked {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-changes-file-path--link {
+  cursor: pointer;
+}
+.session-changes-file-path--link:hover {
+  text-decoration: underline;
+}
+
+.session-changes-file-provenance {
+  flex-shrink: 0;
+  padding-left: var(--tug-space-md);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  font-size: 0.6875rem;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+/* ---- Commit receipt ([P05]) ---- */
+
+.session-changes-commit-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm, 6px);
+}
+
+.session-changes-commit-receipt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+.session-changes-commit-receipt-body {
+  margin: 0;
+  font-size: 0.75rem;
+  font-family: var(--tug-font-family-mono);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ---- Ambiguous / shared badges ---- */
+
+.session-changes-badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+.session-changes-badge-ambiguous {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+.session-changes-badge-shared {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* ---- Empty state ---- */
+
+.session-changes-clean {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+/* ---- Non-repo project: "Initialize git" affordance ---- */
+
+.session-changes-non-repo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.session-changes-non-repo-message {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-non-repo-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+/* ---- Dash entry actions: Join / Release / resolve ---- */
+
+.session-changes-dash-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0 2px;
+}
+.session-changes-dash-action-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.session-changes-dash-working {
+  padding: 8px 0 2px;
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-dash-preview-msg,
+.session-changes-dash-resolve-summary {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+.session-changes-dash-hint {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-dash-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.session-changes-dash-conflict-list,
+.session-changes-dash-resolved-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+.session-changes-dash-resolve-path {
+  font-family: var(--tug-font-mono, monospace);
+}
+.session-changes-dash-rung-badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.12));
+}
+.session-changes-dash-resolve {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 2px;
+}
+.session-changes-dash-resolve-head {
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-normal-rest);
+}
+.session-changes-dash-resolve-file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.session-changes-dash-resolve-rung {
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-dash-resolve-stream {
+  margin: 2px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-family: var(--tug-font-mono, monospace);
+  font-size: 0.6875rem;
+  white-space: pre-wrap;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}

@@ -1,13 +1,14 @@
 /**
- * session-card-title.ts — the pane title-bar override for a Session card.
+ * session-card-title.ts — the shared session identity label.
  *
- * The pane chrome renders `"Session : <override>"`; this module builds the
- * `<override>` as `"<project-leaf> <session-label>"`, where the session label
- * follows the same name → tag precedence as the Z4B chip ({@link
- * sessionChipDisplay}): a `/rename` custom name wins, and the mnemonic tag
- * shows for the common un-renamed case. When the session has neither (a legacy
- * pre-tag session, or before the tag lands), the override is just the project
- * leaf.
+ * `<project-leaf>/<session-label> (<branch>)`, where the session label follows
+ * the same name → tag precedence as the Z4B chip ({@link sessionChipDisplay}):
+ * a `/rename` custom name wins, the mnemonic tag shows for the common un-renamed
+ * case, and the label is dropped when the session has neither. The `(<branch>)`
+ * suffix is omitted on `main` (the common case) and when the branch is unknown.
+ *
+ * This one label is used BOTH as the Session card's pane title-bar override AND
+ * as the Lens Sessions monitor row's name, so the two always read identically.
  *
  * Pure string logic — no React, no DOM, no store. Unit-testable in isolation.
  *
@@ -26,16 +27,21 @@ export function projectLeafName(dir: string): string {
 }
 
 /**
- * The Session card's title-bar override: the project leaf followed by the
- * session's label (name → tag). Falls back to just the project leaf when the
- * session has neither a name nor a tag. Blank name/tag are treated as unset.
+ * The shared session identity label: `<project>/<label> (<branch>)`. The label
+ * follows name → tag precedence; it is dropped when the session has neither
+ * (blank name/tag are unset). The `(<branch>)` suffix is omitted on `main` and
+ * when `branch` is null/blank. Used for both the card title bar and the Lens
+ * monitor row.
  */
 export function sessionCardTitleOverride(
   projectDir: string,
   name: string | null,
   tag: string | null,
+  branch: string | null,
 ): string {
   const project = projectLeafName(projectDir);
   const label = name?.trim() || tag?.trim() || "";
-  return label.length > 0 ? `Session: ${project}/${label}` : `Session: ${project}`;
+  const base = label.length > 0 ? `${project}/${label}` : project;
+  const b = branch?.trim() ?? "";
+  return b.length > 0 && b !== "main" ? `${base} (${b})` : base;
 }

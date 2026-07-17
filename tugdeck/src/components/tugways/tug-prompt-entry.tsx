@@ -56,6 +56,8 @@ import {
   Bot,
   ChevronDown,
   ChevronUp,
+  GitCommitHorizontal,
+  History as HistoryIcon,
   MessageSquareDashed,
   Plus,
   Search,
@@ -142,6 +144,17 @@ import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { RouteLifecycle, RouteLifecycleContext } from "@/lib/route-lifecycle";
+import {
+  DEFAULT_ROUTE,
+  ROUTE_BTW,
+  ROUTE_CHANGES,
+  ROUTE_FIND,
+  ROUTE_HISTORY,
+  ROUTE_SHELL,
+} from "@/lib/route-constants";
+import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import { useChangesetDraft } from "@/lib/changeset-draft-store";
+import { useChangesetCommit } from "@/lib/changeset-verb-store";
 import type { FindSession } from "@/lib/find-session";
 
 // ---------------------------------------------------------------------------
@@ -180,16 +193,41 @@ const ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
 ];
 
 /**
+ * The two *view-routes* ([P01], Table T01) — appended to the selector
+ * only on a host that opts in via `viewRoutes` ([P03]). Unlike the
+ * target-routes above they additionally swap the transcript slot for a
+ * purpose-built view (Changes / History), a swap the owning Session card
+ * drives off the shared `RouteLifecycle`.
+ */
+const VIEW_ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
+  { value: ROUTE_CHANGES, label: "Changes", icon: <GitCommitHorizontal size={14} />, shortcut: "⇧⌘E" },
+  { value: ROUTE_HISTORY, label: "History", icon: <HistoryIcon size={14} />,         shortcut: "⇧⌘Y" },
+];
+
+/** All routes a view-route host offers: the four targets plus the two views. */
+const ALL_ROUTE_ITEMS: ReadonlyArray<RouteItem> = [
+  ...ROUTE_ITEMS,
+  ...VIEW_ROUTE_ITEMS,
+];
+
+/** The widest label across an item list — the width-stabilize footprint. */
+function widestRouteLabel(items: ReadonlyArray<RouteItem>): string {
+  return items.reduce(
+    (widest, item) => (item.label.length > widest.length ? item.label : widest),
+    "",
+  );
+}
+
+/**
  * The widest route label, used to width-stabilize the popup trigger so it
  * never changes size as the route flips. `TugButton`'s `widthStabilize`
  * overlays the active cluster with an alternate sized to this label, so the
- * trigger always reserves the widest route's footprint. Derived from
- * `ROUTE_ITEMS` (longest label wins) so it tracks the labels automatically.
+ * trigger always reserves the widest route's footprint. One value per
+ * effective route list (target-only vs. with the view-routes) so the
+ * trigger tracks whichever set the host surfaces.
  */
-const WIDEST_ROUTE_LABEL = ROUTE_ITEMS.reduce(
-  (widest, item) => (item.label.length > widest.length ? item.label : widest),
-  "",
-);
+const WIDEST_ROUTE_LABEL = widestRouteLabel(ROUTE_ITEMS);
+const WIDEST_ROUTE_LABEL_ALL = widestRouteLabel(ALL_ROUTE_ITEMS);
 
 /**
  * Return-key semantics per route.
@@ -212,19 +250,18 @@ const RETURN_ACTION_BY_ROUTE: Readonly<Record<string, "submit" | "newline">> = {
   // Find mirrors `❯`: the submit gesture advances the match, newline stays
   // available for multi-line queries. Membership also admits ⇧⌘F SELECT_ROUTE.
   "⌕": "newline",
+  // View-routes ([P01], Table T01) use `newline` Return semantics: a
+  // commit body / a long-form history question can span lines, so the
+  // Z5 button (or Shift+Return) submits, matching `❯`. Membership also
+  // admits ⇧⌘E / ⇧⌘Y SELECT_ROUTE.
+  [ROUTE_CHANGES]: "newline",
+  [ROUTE_HISTORY]: "newline",
 };
 
-/**
- * Default route at initial mount when no persisted state restores a
- * prior selection. Prompt (`❯`) is the sensible default: it's the
- * most common conversation surface.
- */
-const DEFAULT_ROUTE = "❯";
-
-/** Canonical route values — shared by the dispatch and the route popup. */
-const ROUTE_SHELL = "$";
-const ROUTE_BTW = "?";
-const ROUTE_FIND = "⌕";
+// Route scalars (`DEFAULT_ROUTE`, `ROUTE_SHELL`, `ROUTE_BTW`,
+// `ROUTE_FIND`) are imported from `@/lib/route-constants` so the Session
+// card — which owns the `RouteLifecycle` ([P02]) — and this entry share
+// one set of literals.
 
 /** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
@@ -248,6 +285,15 @@ export function routeAwareSubmitButtonMode(
   // a down chevron; the click rides the SUBMIT action into `performSubmit`,
   // whose Find branch advances the match.
   if (route === ROUTE_FIND) return { kind: "submit", disabled: false };
+  // Changes: the Z5 button is the commit action ("Commit" / "Committing…").
+  // It is a plain submit, disjoint from the Claude turn lifecycle; the
+  // empty-selection / commit-pending disable gates ride the button-view
+  // layer where the controller's phase is in scope (step 6), not this
+  // pure route→mode map.
+  if (route === ROUTE_CHANGES) return { kind: "submit", disabled: false };
+  // History sends a Claude turn (`/tugplug:history`), so its Z5 follows the
+  // Claude session lifecycle exactly like `❯` / `?` — handled by the
+  // `route !== ROUTE_SHELL → claudeMode` fallthrough below.
   if (route !== ROUTE_SHELL) return claudeMode;
   return shellInflight ? { kind: "stop" } : { kind: "submit", disabled: false };
 }
@@ -659,6 +705,33 @@ export interface TugPromptEntryProps {
    */
   id: string;
   /**
+   * The route pipe for this entry ([P02]). When a host owns the
+   * lifecycle — the Session card, which reads the route to swap the
+   * transcript slot ([P01]) — it constructs one and passes it here so
+   * the object identity is shared. When absent (the gallery), the entry
+   * lazily constructs its own exactly as before. Route persistence,
+   * restore, and every `setRoute` trigger stay inside this entry
+   * regardless of who owns the object (Risk R01).
+   */
+  routeLifecycle?: RouteLifecycle;
+  /**
+   * Opt in to the two *view-routes* — Changes (`±`) and History (`↺`)
+   * ([P01]/[P03]). Only a host with the changeset/history plumbing (the
+   * Session card) should pass `true`; the gallery and other hosts leave
+   * it unset so the selector stays the four target-routes and the ⇧⌘E /
+   * ⇧⌘Y shortcuts are inert (offering a route whose submit dead-ends is
+   * worse than not offering it). The Changes route's commit/draft wiring
+   * arrives via `changesController`.
+   */
+  viewRoutes?: boolean;
+  /**
+   * The `±`-route Changes controller ([P07]) — the per-card selection +
+   * commit/draft store the Changes submit branch reads. Present only on a
+   * view-route host (the Session card); the commit wiring lands in a later
+   * step. When absent the Changes submit is a no-op.
+   */
+  changesController?: ChangesRouteController;
+  /**
    * Responder id that owns this entry's local slash commands — the
    * card's command-handling scope (typically `${cardId}-card-content`).
    * When a typed `/command` matches the local registry, the entry routes
@@ -974,6 +1047,9 @@ export const TugPromptEntry = React.forwardRef<
 >(function TugPromptEntry(props, ref) {
   const {
     id,
+    routeLifecycle: routeLifecycleProp,
+    viewRoutes = false,
+    changesController,
     localCommandTargetId,
     codeSessionStore,
     shellSessionStore,
@@ -1319,16 +1395,20 @@ export const TugPromptEntry = React.forwardRef<
   const routeIndicatorSenderId = `${id}-route-indicator`;
 
   // [D02] The route is owned by a per-prompt-entry RouteLifecycle, not
-  // React state. The instance is constructed once and stays stable for
-  // the component's lifetime ([D01]) — a `useRef` lazy-init is the
-  // canonical stable-instance pattern. Every route trigger (the popup
-  // pick, the SELECT_ROUTE keybinding, and restore) funnels through
-  // `routeLifecycle.setRoute`.
+  // React state. A host that must read the route outside this entry's
+  // subtree — the Session card swapping its transcript slot ([P02]) —
+  // constructs the lifecycle and passes it as `routeLifecycleProp`; the
+  // object identity is all that moves. Absent a prop (the gallery) the
+  // instance is constructed once here and stays stable for the
+  // component's lifetime ([D01]) via a `useRef` lazy-init. Either way
+  // every route trigger (the popup pick, the SELECT_ROUTE keybinding,
+  // and restore) still funnels through `routeLifecycle.setRoute` inside
+  // this entry (Risk R01).
   const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
   if (routeLifecycleRef.current === null) {
     routeLifecycleRef.current = new RouteLifecycle(DEFAULT_ROUTE);
   }
-  const routeLifecycle = routeLifecycleRef.current;
+  const routeLifecycle = routeLifecycleProp ?? routeLifecycleRef.current;
 
   // Shell share ([P08]). A Share click on an exchange row parks its
   // composed text on the shell store; this effect observes the slot,
@@ -1406,10 +1486,19 @@ export const TugPromptEntry = React.forwardRef<
     routeLifecycle.getRoute,
   );
 
+  // The routes this host actually offers ([P03]): a view-route host (the
+  // Session card, which passes `viewRoutes`) appends Changes / History;
+  // every other host keeps the four target-routes. Width-stabilization
+  // tracks the effective list so the trigger reserves the right footprint.
+  const routeItems = viewRoutes ? ALL_ROUTE_ITEMS : ROUTE_ITEMS;
+  const widestRouteLabelActive = viewRoutes
+    ? WIDEST_ROUTE_LABEL_ALL
+    : WIDEST_ROUTE_LABEL;
+
   // The route the Z4A popup trigger paints (icon + name). Falls back to
   // the first route if the stored value is somehow unknown.
   const currentRouteItem =
-    ROUTE_ITEMS.find((item) => item.value === route) ?? ROUTE_ITEMS[0];
+    routeItems.find((item) => item.value === route) ?? routeItems[0];
 
   // Route-aware Z5 submit-button mode ([P13]): Claude lifecycle on `❯`/`?`, a
   // shell-derived `submit`/`stop` on `$`. `resolveSubmitButtonView` (the pure
@@ -1425,6 +1514,62 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     submitButtonModeRef.current = submitButtonMode;
   }, [submitButtonMode]);
+
+  // ── Changes-route (±) reactive state ([P05]/[P06]) ─────────────────────────
+  // The commit composer IS this one prompt editor on the `±` route: the draft
+  // AI-generates and streams straight into it, and submit commits the head
+  // selection. All three read the per-card controller + app-level draft/commit
+  // stores through `useSyncExternalStore` ([L02]); hooks run unconditionally
+  // with empty-string keys when no controller is present (the gallery), where
+  // the stores answer idle.
+  const changesDraft = useChangesetDraft(
+    changesController?.projectDir ?? "",
+    "session",
+    changesController?.tugSessionId ?? "",
+  );
+  const changesCommit = useChangesetCommit(changesController?.entryKey ?? "");
+  const changesSelectedCount = useSyncExternalStore(
+    changesController?.subscribe ?? NOOP_SUBSCRIBE,
+    () => changesController?.getSnapshot().selectedPaths.size ?? 0,
+    () => 0,
+  );
+  const changesCommitPending = changesCommit.phase === "pending";
+  const changesDrafting = changesDraft.phase === "drafting";
+  // A running Claude turn makes the `±` route unavailable — committing must
+  // never overlap a turn. `canInterrupt` is true exactly while a turn can be
+  // stopped (one is running), so it is the turn-in-progress signal.
+  const turnInProgress = snap.canInterrupt === true;
+  // On `±` the Z5 button commits; it is disabled while the commit round-trip is
+  // pending or nothing is selected (the empty-message gate rides `data-empty`).
+  const changesCommitBlocked =
+    route === ROUTE_CHANGES &&
+    (changesCommitPending || changesSelectedCount === 0);
+
+  // Live refs so `performSubmit` (a stable callback) reads the current values
+  // without widening its dep list ([L07]).
+  const changesControllerRef = useRef(changesController);
+  changesControllerRef.current = changesController;
+  const changesCommitPendingRef = useRef(changesCommitPending);
+  changesCommitPendingRef.current = changesCommitPending;
+  const changesSelectedCountRef = useRef(changesSelectedCount);
+  changesSelectedCountRef.current = changesSelectedCount;
+  const turnInProgressRef = useRef(turnInProgress);
+  turnInProgressRef.current = turnInProgress;
+
+  // Stream a generated draft INTO the editor while it is generating ([P06], per
+  // the user's directive that the AI commit message flow into the prompt entry
+  // itself). `restoreState` is programmatic — it does not read as a user edit —
+  // so the deltas land as the editor's content; once the stream ends the user
+  // owns the text (edit freely, then submit to commit). Gated on the `±` route
+  // so a draft never seeds another route's editor. [L03] the overlay enters via
+  // the store hook; the seed runs as an effect off its committed text.
+  useLayoutEffect(() => {
+    if (route !== ROUTE_CHANGES || !changesDrafting) return;
+    const editor = textEditorRef.current;
+    editor?.restoreState(
+      buildEditingStateFromDraftRestore(changesDraft.text, []),
+    );
+  }, [route, changesDrafting, changesDraft.text]);
 
   // Per-route history providers. One provider per route — each holds
   // its own cursor + in-memory "return to draft" cache, so the user's
@@ -1928,6 +2073,89 @@ export const TugPromptEntry = React.forwardRef<
       // not lost.
     }
 
+    // Changes-route dispatch ([P05]/[P06]). On the `±` route the whole
+    // submission is the commit message for the head selection — a `/`-leading
+    // message must NOT run a slash command, so this intercepts BEFORE the
+    // local-command split and always `return`s (consuming the draft) rather
+    // than falling through. Gate: a running turn (defensive — the route is
+    // turn-exclusive), a pending commit, an empty selection, or an empty
+    // message is a no-op that leaves the draft intact (the Z5 button is
+    // disabled in those states; the Return path needs the same gate).
+    if ((routeLifecycle.getRoute() || null) === ROUTE_CHANGES) {
+      const controller = changesControllerRef.current;
+      if (controller !== undefined) {
+        const message = editor.captureState().text.trim();
+        if (
+          !turnInProgressRef.current &&
+          !changesCommitPendingRef.current &&
+          changesSelectedCountRef.current > 0 &&
+          message.length > 0
+        ) {
+          controller.commit(message);
+          const sessionId = snapRef.current.tugSessionId;
+          historyStore.push({
+            id: `${sessionId}-${Date.now()}`,
+            sessionId,
+            projectPath: "",
+            route: ROUTE_CHANGES,
+            text: message,
+            atoms: [],
+            timestamp: Date.now(),
+          });
+          editor.clear();
+          currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+          persistClearedDraft();
+        }
+        return;
+      }
+      // No controller (a view-route host without changeset plumbing) — fall
+      // through so the draft is not lost.
+    }
+
+    // History-route dispatch ([P10]/[P11]). On the `↺` route the submission is
+    // a question about prior work, wrapped in the `/tugplug:history` skill and
+    // sent ON the record. It runs the SAME send-readiness gates as the default
+    // `send()` path FIRST — a submit during replay / transport-settling must
+    // never leak a turn — then sends, records the RAW question, clears, and
+    // flips the card to the Code route so the answer streams in view ([P11]).
+    if ((routeLifecycle.getRoute() || null) === ROUTE_HISTORY) {
+      // Z5 disabled-mode gate (mirrors the default path below).
+      if (resolveSubmitButtonView(submitButtonModeRef.current).disabled) return;
+      const question = computeSideQuestionArg(
+        editor.captureState().text,
+        getAtomsInState(view.state),
+      );
+      // A bare submit (empty question) is a no-op — there is nothing to ask.
+      if (question.length === 0) return;
+      // Blocked submit: `replaying` drops, a settling transport defers (armed
+      // for the flush effect); a turn in flight is NOT blocked — `send()`
+      // queues it mid-turn.
+      if (!snap.canSubmit && !snap.canInterrupt) {
+        if (classifyBlockedSubmit(snap.phase, snap.sessionMode) === "defer") {
+          pendingSubmitRef.current = true;
+        }
+        return;
+      }
+      codeSessionStore.send(`/tugplug:history ${question}`, []);
+      const sessionId = snapRef.current.tugSessionId;
+      historyStore.push({
+        id: `${sessionId}-${Date.now()}`,
+        sessionId,
+        projectPath: "",
+        route: ROUTE_HISTORY,
+        text: question,
+        atoms: [],
+        timestamp: Date.now(),
+      });
+      editor.clear();
+      currentHistoryProviderRef.current.resetToDraft(EMPTY_EDIT_STATE);
+      persistClearedDraft();
+      // View-route exception to "route is a sticky preference": flip to Code so
+      // the transcript (where the answer streams) is visible ([P11]).
+      routeLifecycle.setRoute(DEFAULT_ROUTE);
+      return;
+    }
+
     // Slash-command interception ([D23], [#step-1c]). Accepting any
     // slash-command suggestion inserts a `type:"command"` atom and dismisses
     // the popup — uniform for every command. The local-vs-remote split is
@@ -1957,11 +2185,20 @@ export const TugPromptEntry = React.forwardRef<
       // runs the side question instead of being exec'd literally. Only these
       // registry-known local commands are intercepted; an arbitrary claude
       // slash command still falls through to the route's native handling (the
-      // `/` completion popup on non-Code routes still hides them, [line ~1841]
-      // — this is the submit intercept only). A non-command draft never
-      // matches the registry, so plain shell/prose input is untouched.
+      // `/` completion popup on non-Code routes still hides them) — this is the
+      // submit intercept only. A non-command draft never matches the registry,
+      // so plain shell/prose input is untouched.
+      //
+      // The view-routes (`±` / `↺`) are the exception: a commit message or a
+      // history question that leads with `/` is literal text. Those branches
+      // already `return` before this block; excluding them here keeps the
+      // invariant if `performSubmit` is ever reordered.
+      const activeRoute = routeLifecycle.getRoute() || DEFAULT_ROUTE;
+      const routeInterceptsLocal =
+        activeRoute !== ROUTE_CHANGES && activeRoute !== ROUTE_HISTORY;
       if (
         localCommand !== null &&
+        routeInterceptsLocal &&
         manager !== null &&
         targetId !== undefined &&
         // Guard the `sendToTarget` throw-on-unregistered contract, and
@@ -2304,6 +2541,10 @@ export const TugPromptEntry = React.forwardRef<
         const prevRoute = routeLifecycle.getRoute();
         const nextRoute = event.value;
         if (prevRoute === nextRoute) return;
+        // The `±` route is unavailable while a Claude turn runs — committing
+        // must never overlap a turn. Reject the switch; the menu item also
+        // renders disabled in that state.
+        if (nextRoute === ROUTE_CHANGES && turnInProgressRef.current) return;
         routeLifecycle.setRoute(nextRoute);
         // Focus restoration is owned by the popup's focus trap
         // (`onCloseAutoFocus`), NOT this handler: on close it returns focus
@@ -2322,6 +2563,17 @@ export const TugPromptEntry = React.forwardRef<
         if (typeof event.value !== "string") return;
         const nextRoute = event.value;
         if (!Object.prototype.hasOwnProperty.call(RETURN_ACTION_BY_ROUTE, nextRoute)) return;
+        // View-route shortcuts (⇧⌘E / ⇧⌘Y) are inert on a host that does
+        // not offer them ([P03]) — the keymap is global, so gate here too,
+        // matching the selector's conditional items.
+        if (
+          !viewRoutes &&
+          (nextRoute === ROUTE_CHANGES || nextRoute === ROUTE_HISTORY)
+        ) {
+          return;
+        }
+        // ⇧⌘E is inert while a turn runs — the `±` route is turn-exclusive.
+        if (nextRoute === ROUTE_CHANGES && turnInProgressRef.current) return;
         // `setRoute` is a no-op when `nextRoute` equals the current route.
         routeLifecycle.setRoute(nextRoute);
       },
@@ -2743,7 +2995,7 @@ export const TugPromptEntry = React.forwardRef<
                   subtype="icon-text"
                   icon={currentRouteItem.icon}
                   trailingIcon={<ChevronDown size={12} />}
-                  widthStabilize={{ alternateLabel: WIDEST_ROUTE_LABEL }}
+                  widthStabilize={{ alternateLabel: widestRouteLabelActive }}
                   aria-label="Route"
                   focusGroup={routeFocusGroup}
                   focusOrder={routeFocusOrder}
@@ -2751,12 +3003,16 @@ export const TugPromptEntry = React.forwardRef<
                   {currentRouteItem.label}
                 </TugButton>
               }
-              items={ROUTE_ITEMS.map((item) => ({
+              items={routeItems.map((item) => ({
                 id: item.value,
                 label: item.label,
                 icon: item.icon,
                 selected: item.value === route,
                 shortcut: item.shortcut,
+                // The `±` route is turn-exclusive: a commit must never overlap
+                // a running Claude turn, so the item is disabled while one is
+                // in flight (the keyboard + popup handlers reject it too).
+                disabled: item.value === ROUTE_CHANGES && turnInProgress,
               }))}
               onSelect={(nextRoute) => {
                 // Dispatch to this entry's own responder ([L11]) so the
@@ -2825,6 +3081,27 @@ export const TugPromptEntry = React.forwardRef<
               />
             )}
             {/*
+              Changes route: the Generate button, mounted to the left of the Z5
+              button ([P06]). It requests an on-demand AI commit draft; the
+              streamed text flows straight into this editor (see the seed effect
+              above). Width-stabilized so "Generating…" never resizes it;
+              disabled while a draft is streaming.
+            */}
+            {route === ROUTE_CHANGES && changesController !== undefined && (
+              <TugPushButton
+                className="tug-prompt-entry-generate-button"
+                emphasis="outlined"
+                role="action"
+                size="sm"
+                disabled={changesDrafting}
+                widthStabilize={{ alternateLabel: "Generating…" }}
+                onClick={() => changesControllerRef.current?.requestDraft()}
+                data-testid="changes-generate-draft"
+              >
+                {changesDrafting ? "Generating…" : "Generate"}
+              </TugPushButton>
+            )}
+            {/*
               ONE button node across every mode ([L26]) — only
               `data-mode` / `disabled` / `aria-label` / the icon glyph
               change. `data-mode` drives the per-mode visual via CSS
@@ -2841,8 +3118,16 @@ export const TugPromptEntry = React.forwardRef<
               focusGroup={submitFocusGroup}
               focusOrder={submitFocusOrder}
               role={submitView.danger ? "danger" : "action"}
-              disabled={submitView.disabled}
-              aria-label={route === ROUTE_FIND ? "Find next" : submitView.ariaLabel}
+              disabled={submitView.disabled || changesCommitBlocked}
+              aria-label={
+                route === ROUTE_FIND
+                  ? "Find next"
+                  : route === ROUTE_CHANGES
+                    ? changesCommitPending
+                      ? "Committing…"
+                      : "Commit"
+                    : submitView.ariaLabel
+              }
               icon={
                 route === ROUTE_FIND ? (
                   <ChevronDown size={18} strokeWidth={2.5} />
