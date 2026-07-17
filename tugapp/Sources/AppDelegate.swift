@@ -605,14 +605,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // a submenu. The debug-only gallery / hello-world / active-pane
         // creators live in the app-maker menu, gated at compile time on
         // BuildInfo.profile.
-        fileMenu.addItem(NSMenuItem(title: "New Session Card", action: #selector(newSessionCard(_:)), keyEquivalent: "n").identified("file.newSessionCard"))
+        fileMenu.addItem(NSMenuItem(title: "New Session", action: #selector(newSessionCard(_:)), keyEquivalent: "n").identified("file.newSessionCard"))
 
-        // Text-card section: New Text Card / Open File… form their own group
-        // under a divider, distinct from the card creators above.
+        // File section: New Text File through the save & revert verbs form one
+        // group under a divider, distinct from the session creator above.
         fileMenu.addItem(NSMenuItem.separator())
-        // New Text Card (⌥⌘N): a new untitled manual buffer — no file
+        // New Text File (⌥⌘N): a new untitled manual buffer — no file
         // exists until the first Save.
-        fileMenu.addItem(NSMenuItem(title: "New Text Card", action: #selector(newTextCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextCard"))
+        fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextCard"))
 
         // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
         // web layer reuses an existing Text card bound to the chosen
@@ -633,58 +633,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self.openRecentMenu = openRecentSubmenu
         fileMenu.addItem(openRecentItem)
 
-        fileMenu.addItem(NSMenuItem.separator())
-
-        // Close Card (⌘W): routes through the web view's responder chain
-        // rather than NSWindow.performClose. The custom selector sends a
-        // Control frame that action-dispatch.ts turns into a `close` chain
-        // dispatch, which lands on TugPane's registered handler. Without the
-        // round-trip, AppKit would swallow ⌘W at the menubar and the WKWebView
-        // would never see the keystroke. The web layer decides whether ⌘W
-        // closes the active card or the whole pane (single-card case); the
-        // label stays "Close Card" regardless.
-        closeMenuItem = NSMenuItem(title: "Close Card", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
-        // Stable identifier for native-menu introspection (test harness
-        // `menuItemState` / `menuSnapshot`).
-        closeMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeCard")
-        fileMenu.addItem(closeMenuItem)
-
-        // Close All Card Tabs (⌥⌘W): closes every tab in the focused pane via
-        // the same `close-all` responder-chain round-trip `close` uses. Enabled
-        // only when the focused pane holds more than one card — see
-        // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
-        // confirm when any hosted card opts into confirmClose.
-        closeAllCardTabsMenuItem = NSMenuItem(title: "Close All Card Tabs", action: #selector(closeAllCardTabs(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
-        closeAllCardTabsMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCardTabs")
-        fileMenu.addItem(closeAllCardTabsMenuItem)
-
-        fileMenu.addItem(NSMenuItem.separator())
-
         // Save (⌘S): flush the focused editor's pending edits to disk
         // now. Under the Text card's live autosave there is no dirty
         // state — this is "write immediately + checkpoint", routed as a
         // `save` Control frame → responder-chain SAVE dispatch. AppKit
         // swallows ⌘S at the menubar, so the menu item must carry the
         // chord; the web keybinding-map entry covers browser-only dev.
-        fileMenu.addItem(NSMenuItem(title: "Save", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
+        fileMenu.addItem(NSMenuItem(title: "Save…", action: #selector(saveActiveEditor(_:)), keyEquivalent: "s").identified("file.save"))
         // Save As… (⇧⌘S) — the key equivalent is assigned DYNAMICALLY in
         // updateMenuState only while a Text card is frontmost; a
         // static ⇧⌘S would eat the Session card's Shell-route chord.
         fileSaveAsMenuItem = NSMenuItem(title: "Save As…", action: #selector(saveAsActiveEditor(_:)), keyEquivalent: "").identified("file.saveAs")
         fileMenu.addItem(fileSaveAsMenuItem)
-        // Save a Copy… (⌥⇧⌘S) and the revert/reload verbs collide with
-        // nothing, so they stay statically bound.
-        fileMenu.addItem(NSMenuItem(title: "Save a Copy…", action: #selector(saveACopyActiveEditor(_:)), keyEquivalent: "s", modifierMask: [.command, .option, .shift]).identified("file.saveACopy"))
-        fileMenu.addItem(NSMenuItem.separator())
+        // Save a Copy… — no chord; the revert/reload verbs collide with
+        // nothing either, so they stay unbound.
+        fileMenu.addItem(NSMenuItem(title: "Save a Copy…", action: #selector(saveACopyActiveEditor(_:)), keyEquivalent: "").identified("file.saveACopy"))
         fileMenu.addItem(NSMenuItem(title: "Revert to Saved", action: #selector(revertActiveEditor(_:)), keyEquivalent: "").identified("file.revertToSaved"))
         fileMenu.addItem(NSMenuItem(title: "Reload from Disk", action: #selector(reloadActiveEditor(_:)), keyEquivalent: "").identified("file.reloadFromDisk"))
 
         fileMenu.addItem(NSMenuItem.separator())
 
-        // Export Transcript… — the session card's `/export` surface, reached
+        // Close (⌘W): routes through the web view's responder chain
+        // rather than NSWindow.performClose. The custom selector sends a
+        // Control frame that action-dispatch.ts turns into a `close` chain
+        // dispatch, which lands on TugPane's registered handler. Without the
+        // round-trip, AppKit would swallow ⌘W at the menubar and the WKWebView
+        // would never see the keystroke. The web layer decides whether ⌘W
+        // closes the active card or the whole pane (single-card case); the
+        // label stays "Close" regardless.
+        closeMenuItem = NSMenuItem(title: "Close", action: #selector(closeActiveCard(_:)), keyEquivalent: "w")
+        // Stable identifier for native-menu introspection (test harness
+        // `menuItemState` / `menuSnapshot`).
+        closeMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeCard")
+        fileMenu.addItem(closeMenuItem)
+
+        // Close All Tabs (⌥⌘W): closes every tab in the focused pane via
+        // the same `close-all` responder-chain round-trip `close` uses. Enabled
+        // only when the focused pane holds more than one card — see
+        // validateMenuItem(_:). The web layer pops the "Close N Tabs?"
+        // confirm when any hosted card opts into confirmClose.
+        closeAllCardTabsMenuItem = NSMenuItem(title: "Close All Tabs", action: #selector(closeAllCardTabs(_:)), keyEquivalent: "w", modifierMask: [.command, .option])
+        closeAllCardTabsMenuItem.identifier = NSUserInterfaceItemIdentifier("file.closeAllCardTabs")
+        fileMenu.addItem(closeAllCardTabsMenuItem)
+
+        fileMenu.addItem(NSMenuItem.separator())
+
+        // Export Session… — the session card's `/export` surface, reached
         // through the generic run-card-command round-trip. Session-card-gated
         // in validateMenuItem(_:).
-        let exportItem = NSMenuItem(title: "Export Transcript…", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("file.exportTranscript")
+        let exportItem = NSMenuItem(title: "Export Session…", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("file.exportTranscript")
         exportItem.representedObject = "export"
         fileMenu.addItem(exportItem)
 
