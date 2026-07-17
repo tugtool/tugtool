@@ -24,20 +24,54 @@
  * @module components/tugways/cards/side-question-overlay
  */
 
-import React, { useSyncExternalStore } from "react";
-import { Bot, User, X } from "lucide-react";
+import React, { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { Bot, Check, Plus, User, X } from "lucide-react";
 
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import type { SideQuestionStore, SideQuestionExchange } from "@/lib/side-question-store";
+import {
+  composeBtwContextBody,
+  type PendingContextStore,
+  type PendingContextSnapshot,
+} from "@/lib/pending-context-store";
 
 import "./side-question-overlay.css";
 
 export interface SideQuestionBodyProps {
   store: SideQuestionStore;
+  /**
+   * Clickability gate for inline command `<code>` spans in the answer
+   * markdown — the same predicate the main transcript passes to its
+   * {@link TugMarkdownBlock} so `/btw` answers get the identical command
+   * enhancement. Omit to render answers with no command chips.
+   */
+  isKnownSlashCommand?: (name: string) => boolean;
+  /**
+   * Staged-context queue. When set, each answered side question shows an
+   * Add-to-context toggle that stages the Q/A pair to ride the next `❯`
+   * submission (or un-stages it). Omitted in the gallery / fixtures.
+   */
+  pendingContextStore?: PendingContextStore;
 }
+
+/** Stable no-op store surface for the no-queue case (hook-order safety). */
+const EMPTY_PENDING_SNAPSHOT: PendingContextSnapshot = {
+  items: [],
+  shellContext: false,
+  btwContext: false,
+};
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+const NOOP_GET_PENDING = (): PendingContextSnapshot => EMPTY_PENDING_SNAPSHOT;
+
+/**
+ * When an in-place settle (an answer landing) happens, the pane only follows
+ * to the bottom if the user was already within this many pixels of it — so a
+ * settling answer never yanks the reader off an older exchange.
+ */
+const SIDE_QUESTION_NEAR_BOTTOM_PX = 48;
 
 /** Plain-text answer for a settled/loading/errored exchange (footer copy). */
 function exchangeAnswerText(ex: SideQuestionExchange): string {
@@ -63,9 +97,16 @@ function composeZoneCopyText(exchanges: readonly SideQuestionExchange[]): string
 function SideQuestionExchangeRow({
   exchange,
   onDismiss,
+  isKnownSlashCommand,
+  pendingContextStore,
+  staged,
 }: {
   exchange: SideQuestionExchange;
   onDismiss: (id: string) => void;
+  isKnownSlashCommand?: (name: string) => boolean;
+  pendingContextStore?: PendingContextStore;
+  /** Whether this exchange is currently staged for the next submission. */
+  staged: boolean;
 }): React.ReactElement {
   const answered = exchange.phase === "answered" && exchange.answer !== null;
   return (
@@ -106,6 +147,7 @@ function SideQuestionExchangeRow({
               // transition; a re-ask is a new exchange with a new id/key).
               initialText={exchange.answer ?? ""}
               className="side-question-markdown"
+              isKnownSlashCommand={isKnownSlashCommand}
             />
           ) : exchange.phase === "loading" ? (
             <TugProgressIndicator
@@ -133,6 +175,37 @@ function SideQuestionExchangeRow({
             aria-label="Copy this side question and answer"
             getText={() => `Q: ${exchange.question}\nA: ${exchangeAnswerText(exchange)}`}
           />
+          {pendingContextStore !== undefined ? (
+            <TugPushButton
+              subtype="icon-text"
+              emphasis="ghost"
+              role="action"
+              size="2xs"
+              data-tug-focus="refuse"
+              aria-pressed={staged}
+              aria-label={
+                staged
+                  ? "Remove this side question from the next submission's context"
+                  : "Add this side question to the next submission's context"
+              }
+              title={staged ? "Staged for the next submission" : "Add to context"}
+              onClick={() => {
+                if (staged) {
+                  pendingContextStore.unstageRef("btw", exchange.id);
+                } else {
+                  pendingContextStore.stage({
+                    source: "btw",
+                    ref: exchange.id,
+                    label: "side question",
+                    body: composeBtwContextBody(exchange.question, exchange.answer ?? ""),
+                  });
+                }
+              }}
+            >
+              {staged ? <Check size={12} strokeWidth={2} aria-hidden /> : <Plus size={12} strokeWidth={2} aria-hidden />}
+              {staged ? "In context" : "Add to context"}
+            </TugPushButton>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -146,13 +219,54 @@ function SideQuestionExchangeRow({
  * ([L02]); the placard chrome (open/close, anchoring, dismiss) lives in the
  * host, not here.
  */
-export function SideQuestionBody({ store }: SideQuestionBodyProps): React.ReactElement {
+export function SideQuestionBody({
+  store,
+  isKnownSlashCommand,
+  pendingContextStore,
+}: SideQuestionBodyProps): React.ReactElement {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const { exchanges } = snapshot;
+  // Re-render on staged-queue changes so each row's Add-to-context toggle
+  // reflects the live staged state ([L02]). Stable no-op surfaces keep the
+  // hook order fixed when there is no queue (gallery / fixtures).
+  const pendingSnapshot = useSyncExternalStore(
+    pendingContextStore?.subscribe ?? NOOP_SUBSCRIBE,
+    pendingContextStore?.getSnapshot ?? NOOP_GET_PENDING,
+  );
+  const stagedRefs = React.useMemo(
+    () =>
+      new Set(
+        pendingSnapshot.items.filter((it) => it.source === "btw").map((it) => it.ref),
+      ),
+    [pendingSnapshot],
+  );
+
+  // Auto-scroll the mini-transcript ([L06] — DOM scroll, not React state). A
+  // fresh ask (a new tail id) pins the newest submission into view at
+  // submission time; an in-place settle (an answer landing on an existing
+  // exchange) only follows the bottom if the reader was already near it, so it
+  // never yanks them off an older exchange they are reading.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const prevTailIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (body === null) return;
+    const tailId = exchanges.length > 0 ? exchanges[exchanges.length - 1].id : null;
+    const isNewTail = tailId !== null && tailId !== prevTailIdRef.current;
+    prevTailIdRef.current = tailId;
+    if (isNewTail) {
+      body.scrollTop = body.scrollHeight;
+      return;
+    }
+    const distanceFromBottom = body.scrollHeight - body.scrollTop - body.clientHeight;
+    if (distanceFromBottom < SIDE_QUESTION_NEAR_BOTTOM_PX) {
+      body.scrollTop = body.scrollHeight;
+    }
+  }, [exchanges]);
 
   return (
     <>
-      <div className="side-question-body" data-slot="side-question-body">
+      <div className="side-question-body" data-slot="side-question-body" ref={bodyRef}>
         {exchanges.length === 0 ? (
           <div className="side-question-empty">No side questions</div>
         ) : (
@@ -161,6 +275,9 @@ export function SideQuestionBody({ store }: SideQuestionBodyProps): React.ReactE
               key={ex.id}
               exchange={ex}
               onDismiss={(id) => store.dismiss(id)}
+              isKnownSlashCommand={isKnownSlashCommand}
+              pendingContextStore={pendingContextStore}
+              staged={stagedRefs.has(ex.id)}
             />
           ))
         )}

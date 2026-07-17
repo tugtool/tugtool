@@ -16,6 +16,7 @@ import {
   SideQuestionStore,
   parseSideQuestionAnswerPayload,
 } from "../side-question-store";
+import { PendingContextStore, splitLeadingContext } from "../pending-context-store";
 
 // A minimal FeedStore whose `emit` drives the store's feed subscription.
 class MockFeedStore {
@@ -39,14 +40,20 @@ class MockFeedStore {
   }
 }
 
-function newStore(): { store: SideQuestionStore; feed: MockFeedStore } {
+function newStore(): {
+  store: SideQuestionStore;
+  feed: MockFeedStore;
+  pendingContext: PendingContextStore;
+} {
   const feed = new MockFeedStore();
+  const pendingContext = new PendingContextStore();
   const store = new SideQuestionStore(
     feed as unknown as ConstructorParameters<typeof SideQuestionStore>[0],
     FeedId.CODE_OUTPUT,
     "sess-1",
+    pendingContext,
   );
-  return { store, feed };
+  return { store, feed, pendingContext };
 }
 
 function answerFrame(requestId: string, answer: string | null, synthetic = false) {
@@ -138,6 +145,42 @@ describe("SideQuestionStore feed correlation", () => {
     store.ask("q");
     feed.emit(FeedId.CODE_OUTPUT, answerFrame("btw-999", "nope"));
     expect(store.getSnapshot().exchanges[0].phase).toBe("loading");
+    store.dispose();
+  });
+});
+
+describe("SideQuestionStore — VISIBILITY=Context auto-stage ([P08])", () => {
+  test("Private (default): a settled answer does NOT auto-stage", () => {
+    const { store, feed, pendingContext } = newStore();
+    store.ask("what was that file?");
+    const id = store.getSnapshot().exchanges[0].id;
+    feed.emit(FeedId.CODE_OUTPUT, answerFrame(id, "config.toml", false));
+    expect(pendingContext.getSnapshot().items).toHaveLength(0);
+    store.dispose();
+  });
+
+  test("Context: a newly answered side question auto-stages a round-trippable Q/A block", () => {
+    const { store, feed, pendingContext } = newStore();
+    pendingContext.setContext("btw", true);
+    store.ask("what was that file?");
+    const id = store.getSnapshot().exchanges[0].id;
+    feed.emit(FeedId.CODE_OUTPUT, answerFrame(id, "config.toml", false));
+    const items = pendingContext.getSnapshot().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].source).toBe("btw");
+    const { blocks } = splitLeadingContext(pendingContext.takePrefix() ?? "");
+    expect(blocks[0].body).toContain("Side question:");
+    expect(blocks[0].body).toContain("config.toml");
+    store.dispose();
+  });
+
+  test("Context: a null (error) answer does not auto-stage", () => {
+    const { store, feed, pendingContext } = newStore();
+    pendingContext.setContext("btw", true);
+    store.ask("q");
+    const id = store.getSnapshot().exchanges[0].id;
+    feed.emit(FeedId.CODE_OUTPUT, answerFrame(id, null));
+    expect(pendingContext.getSnapshot().items).toHaveLength(0);
     store.dispose();
   });
 });

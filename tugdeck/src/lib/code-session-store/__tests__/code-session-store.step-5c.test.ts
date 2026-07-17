@@ -31,6 +31,7 @@ import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import { FeedId } from "@/protocol";
 import type { ContentBlock } from "@/protocol";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+import { PendingContextStore, splitLeadingContext } from "@/lib/pending-context-store";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -76,6 +77,65 @@ function dispatchTurnCompleteSuccess(
 // ---------------------------------------------------------------------------
 // handleSend — live path resolver wiring
 // ---------------------------------------------------------------------------
+
+describe("staged context — prepended to the outgoing user message ([P08])", () => {
+  function storeWithContext(conn: TestFrameChannel): {
+    store: CodeSessionStore;
+    pendingContext: PendingContextStore;
+  } {
+    const pendingContext = new PendingContextStore();
+    const store = new CodeSessionStore({
+      conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
+      tugSessionId: FIXTURE_IDS.TUG_SESSION_ID,
+      sessionMode: "new",
+      pendingContextStore: pendingContext,
+    });
+    return { store, pendingContext };
+  }
+
+  it("prepends the sentinel prefix ahead of the prose and clears the queue", () => {
+    const conn = new TestFrameChannel();
+    const { store, pendingContext } = storeWithContext(conn);
+    pendingContext.stage({
+      source: "shell",
+      ref: "sh-1",
+      label: "shell",
+      body: "```\n$ ls\nfoo\n[exit 0]\n```",
+    });
+
+    store.send("what is foo?", []);
+
+    const frame = lastUserMessageFrame(conn);
+    expect(frame).not.toBeNull();
+    const text = (frame!.content[0] as { type: "text"; text: string }).text;
+    const { blocks, rest } = splitLeadingContext(text);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].source).toBe("shell");
+    expect(blocks[0].body).toContain("$ ls");
+    expect(rest).toBe("what is foo?");
+    // The queue is consumed by the send.
+    expect(pendingContext.getSnapshot().items).toHaveLength(0);
+  });
+
+  it("a plain send with an empty queue is untouched (no sentinel)", () => {
+    const conn = new TestFrameChannel();
+    const { store } = storeWithContext(conn);
+    store.send("hello", []);
+    const frame = lastUserMessageFrame(conn);
+    const text = (frame!.content[0] as { type: "text"; text: string }).text;
+    expect(splitLeadingContext(text).blocks).toHaveLength(0);
+    expect(text).toBe("hello");
+  });
+
+  it("a suppressed (programmatic) send does NOT consume the queue", () => {
+    const conn = new TestFrameChannel();
+    const { store, pendingContext } = storeWithContext(conn);
+    pendingContext.stage({ source: "btw", ref: "b1", label: "side question", body: "q/a" });
+    store.send("/goal clear", [], { suppress: true });
+    expect(pendingContext.getSnapshot().items).toHaveLength(1);
+  });
+});
 
 describe("Step 5c — handleSend live-path integration", () => {
   it("one image atom: synthesized substrate, wire content blocks, bytes-store under editor id", () => {

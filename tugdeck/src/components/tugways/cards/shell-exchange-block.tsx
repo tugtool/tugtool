@@ -23,7 +23,11 @@
  */
 
 import type React from "react";
-import { ArrowDownToLine as shareIconNode } from "lucide";
+import {
+  ArrowDownToLine as shareIconNode,
+  Check as checkIconNode,
+  Plus as plusIconNode,
+} from "lucide";
 
 import { TerminalBlock } from "../body-kinds/terminal-block";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
@@ -60,13 +64,53 @@ function ShellShareButton({ onShare }: { onShare: () => void }): React.ReactElem
   );
 }
 
+/** Icon-only Add-to-context toggle — stage this exchange to ride the next `❯`
+ *  submission as attributed context, or un-stage it. Matches the Share/Copy
+ *  scale so the header actions read as one matched cluster. */
+function ShellAddToContextButton({
+  staged,
+  onToggle,
+}: {
+  staged: boolean;
+  onToggle: () => void;
+}): React.ReactElement {
+  return (
+    <TugPushButton
+      data-slot="shell-exchange-add-context"
+      aria-pressed={staged}
+      icon={
+        <TugSpriteIcon
+          name={staged ? "check" : "plus"}
+          node={(staged ? checkIconNode : plusIconNode) as LucideIconNode}
+        />
+      }
+      subtype="icon"
+      emphasis="ghost"
+      size="xs"
+      aria-label={
+        staged
+          ? "Remove this exchange from the next submission's context"
+          : "Add this exchange to the next submission's context"
+      }
+      title={staged ? "Staged for the next submission" : "Add to context"}
+      onClick={onToggle}
+    />
+  );
+}
+
 export function ShellExchangeBlock({
   message,
   onShare,
+  onToggleContext,
+  staged = false,
 }: {
   message: ShellExchangeMessage;
   /** Share gesture ([P08]) — omitted where no prompt entry can consume it. */
   onShare?: () => void;
+  /** Add-to-context toggle ([P08], staged variant) — omitted where no queue. */
+  onToggleContext?: () => void;
+  /** Whether this exchange is currently staged. */
+  staged?: boolean;
 }): React.ReactElement {
   const view = deriveShellExchangeView(message);
   const hasOutput = view.terminal.stdout.length > 0;
@@ -86,11 +130,22 @@ export function ShellExchangeBlock({
     </code>
   );
 
-  // Share is a settled-exchange gesture ([P08]) — an in-flight exchange has
-  // no output or exit to compose yet.
+  // Share + Add-to-context are settled-exchange gestures ([P08]) — an in-flight
+  // exchange has no output or exit to compose yet.
   const shareButton =
     onShare !== undefined && !view.inFlight ? (
       <ShellShareButton onShare={onShare} />
+    ) : null;
+  const addContextButton =
+    onToggleContext !== undefined && !view.inFlight ? (
+      <ShellAddToContextButton staged={staged} onToggle={onToggleContext} />
+    ) : null;
+  const headerActions =
+    shareButton !== null || addContextButton !== null ? (
+      <>
+        {addContextButton}
+        {shareButton}
+      </>
     ) : null;
 
   // Lifecycle: pulse while running, then success / danger from the exit.
@@ -119,7 +174,7 @@ export function ShellExchangeBlock({
       command={command}
       phase={phase}
       status={view.inFlight ? "streaming" : view.failed ? "error" : "ready"}
-      headerActions={shareButton}
+      headerActions={headerActions}
       // The header's built-in Copy writes the output; a no-output exchange
       // (`cd`) has nothing to copy, so no Copy renders there.
       copyText={hasOutput ? view.terminal.stdout : undefined}

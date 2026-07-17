@@ -41,6 +41,7 @@ import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
 import { ShellSessionStore } from "./shell-session-store";
+import { PendingContextStore } from "./pending-context-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
 import type { CompletionProvider } from "./tug-text-types";
@@ -118,6 +119,13 @@ export interface CardServices {
    */
   readonly shellSessionStore: ShellSessionStore;
   readonly shellSessionFeedStore: FeedStore;
+  /**
+   * The per-card queue of shell / `/btw` interactions staged to ride the next
+   * `❯` submission as attributed `<tug-context>` context. Consumed by
+   * `codeSessionStore.send`; surfaced to the composer (staged-count hint) and
+   * the shell / `/btw` rows (stage actions + queued badge).
+   */
+  readonly pendingContextStore: PendingContextStore;
   /**
    * The `@` file-completion provider. Captured once at construction
    * because each call to `FileTreeStore.getFileCompletionProvider()`
@@ -309,10 +317,16 @@ class CardServicesStore {
           )
         : DEFAULT_REPLAY_WINDOW_TURNS;
 
+    // The staged shell / `/btw` context queue. Constructed before the code
+    // session store so `send()` can consume it; also surfaced to the composer
+    // (staged-count hint) and the shell / `/btw` rows (stage actions + badge).
+    const pendingContextStore = new PendingContextStore();
+
     const codeSessionStore = new CodeSessionStore({
       conn: connection,
       lifecycle,
       tugSessionId: binding.tugSessionId,
+      pendingContextStore,
       // Thread the user's session-mode intent onto the store so
       // pure derivations (notably `deriveSessionCardBannerSpec`) can
       // suppress the JSONL-replay banner for new bindings without
@@ -463,6 +477,7 @@ class CardServicesStore {
       sideQuestionFeedStore,
       FeedId.CODE_OUTPUT,
       binding.tugSessionId,
+      pendingContextStore,
     );
 
     // `$`-route shell (Spec S01): a SHELL_OUTPUT feed narrowed to this
@@ -485,6 +500,7 @@ class CardServicesStore {
       binding.tugSessionId,
       binding.projectDir,
       codeSessionStore,
+      pendingContextStore,
     );
 
     // Bind success → prepend this card's project path to the dev
@@ -583,6 +599,7 @@ class CardServicesStore {
       sideQuestionFeedStore,
       shellSessionStore,
       shellSessionFeedStore,
+      pendingContextStore,
       fileCompletionProvider,
     };
   }
@@ -608,6 +625,7 @@ class CardServicesStore {
     services.sideQuestionFeedStore.dispose();
     services.shellSessionStore.dispose();
     services.shellSessionFeedStore.dispose();
+    services.pendingContextStore.dispose();
   }
 
   // ── Public API ───────────────────────────────────────────────────────────

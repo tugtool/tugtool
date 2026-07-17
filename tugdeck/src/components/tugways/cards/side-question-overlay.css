@@ -99,6 +99,16 @@
   --tugx-md-block-padding-x: 0px;
 }
 
+/* Anchor the per-block content to the mini-pane root scale, exactly as the
+   transcript anchors its markdown (`.session-card-transcript-code-body
+   .tugx-md-block { font-size: 1em }`). Headings, lists, fenced code, and
+   tables then render with the shared markdown rhythm — identical in shape to
+   the main transcript, just at the mini-pane's smaller root — instead of
+   inheriting the `.side-question-text` wrapper's flat sans scale. */
+.side-question-markdown .tugx-md-block {
+  font-size: 1em;
+}
+
 .side-question-markdown > :first-child {
   margin-top: 0;
 }

@@ -50,6 +50,7 @@ import { CardIdContext } from "@/lib/card-id-context";
 import { TugPlacard } from "@/components/tugways/tug-placard";
 import { TugStatusCell } from "@/components/tugways/tug-status-cell";
 import { SideQuestionBody } from "@/components/tugways/cards/side-question-overlay";
+import { useKnownSlashCommand } from "@/components/tugways/cards/transcript-host-helpers";
 import {
   TugProgressIndicator,
   type TugProgressIndicatorState,
@@ -82,6 +83,7 @@ import {
 } from "@/lib/model-context-max";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
+import type { PendingContextStore } from "@/lib/pending-context-store";
 import { useSessionStateChanges } from "@/lib/session-state-changes-store";
 
 import {
@@ -310,6 +312,12 @@ export interface SessionTelemetryStatusRowProps extends SessionTelemetryProps {
    * in the gallery / fixtures (the BTW cell is then inert).
    */
   sideQuestionStore?: SideQuestionStore;
+  /**
+   * Staged-context queue for the `/btw` overlay's Add-to-context action. When
+   * set, each answered side question shows a toggle to stage it (or un-stage
+   * it) for the next `❯` submission; omitted in the gallery / fixtures.
+   */
+  pendingContextStore?: PendingContextStore;
 }
 
 /**
@@ -561,7 +569,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   SessionTelemetryStatusRowHandle,
   SessionTelemetryStatusRowProps
 >(function SessionTelemetryStatusRow(
-  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore },
+  { codeSessionStore, sessionMetadataStore, onScrollToRow, focusGroup, focusOrderBase, focusPolicy, sideQuestionStore, pendingContextStore },
   ref,
 ) {
   // The Z2 detail surfaces render as ONE card-scoped TugPlacard, toggled open
@@ -577,6 +585,10 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   // Mirror the open key so the toggle can read it without a stale closure.
   const placardKeyRef = useRef<PlacardKind | null>(null);
   placardKeyRef.current = placard?.key ?? null;
+
+  // Command-span enhancement for the `/btw` answer markdown — the same known-
+  // command gate the main transcript passes to its `TugMarkdownBlock`.
+  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
 
   // On-trigger anchoring: the cell's CENTER within the placard's positioned
   // container — the `.session-card-status-bar` padding box (the placard's
@@ -986,7 +998,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
               : placard.key === "work"
                 ? workPopover
                 : sideQuestionStore !== undefined
-                  ? <SideQuestionBody store={sideQuestionStore} />
+                  ? <SideQuestionBody store={sideQuestionStore} isKnownSlashCommand={isKnownSlashCommand} pendingContextStore={pendingContextStore} />
                   : null;
 
   // Flat 5-cell flex row — STATE + TIME + TOKENS + CONTEXT + WORK as

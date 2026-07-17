@@ -45,6 +45,14 @@ export interface CommandBlockProps {
   message: ShellExchangeMessage;
   /** Share gesture ([P08]) — omitted where no prompt entry can consume it. */
   onShare?: () => void;
+  /**
+   * Add-to-context toggle ([P08], the staged variant): stage this exchange to
+   * ride the next `❯` submission as attributed context, or un-stage it.
+   * Omitted where no staged-context queue is available.
+   */
+  onToggleContext?: () => void;
+  /** Whether this exchange is currently staged (drives the toggle's pose). */
+  staged?: boolean;
 }
 
 export type CommandBlockRenderer = React.ComponentType<CommandBlockProps>;

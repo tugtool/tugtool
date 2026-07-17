@@ -32,7 +32,10 @@ import { useResponder } from "@/components/tugways/use-responder";
 import { useTextSurfaceContextMenu } from "@/components/tugways/use-text-surface-context-menu";
 import type { TugEditorContextMenuEntry } from "@/components/tugways/tug-editor-context-menu";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { SessionMetadataStore, SlashCommandInfo } from "@/lib/session-metadata-store";
+
+/** Stable empty catalog for the no-metadata-store case (keeps `useSyncExternalStore` snapshot identity). */
+const EMPTY_SLASH_COMMANDS: SlashCommandInfo[] = [];
 
 /**
  * Read the active model name from a `SessionMetadataStore` via
@@ -65,12 +68,16 @@ export function useSessionModelName(
  * yields a fresh predicate, which newly-mounting turn cells pick up.
  */
 export function useKnownSlashCommand(
-  sessionMetadataStore: SessionMetadataStore,
+  sessionMetadataStore: SessionMetadataStore | undefined,
 ): (name: string) => boolean {
   const catalog = useSyncExternalStore(
-    sessionMetadataStore.subscribe,
     useCallback(
-      () => sessionMetadataStore.getSnapshot().slashCommands,
+      (listener: () => void) =>
+        sessionMetadataStore ? sessionMetadataStore.subscribe(listener) : () => {},
+      [sessionMetadataStore],
+    ),
+    useCallback(
+      () => sessionMetadataStore?.getSnapshot().slashCommands ?? EMPTY_SLASH_COMMANDS,
       [sessionMetadataStore],
     ),
   );

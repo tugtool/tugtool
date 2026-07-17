@@ -111,6 +111,8 @@ import { SessionZ1B } from "@/components/tugways/cards/session-card-z1b";
 import { useFootHeightReservation } from "@/components/tugways/cards/session-card-transcript-foot-reservation";
 import { formatAtomTextForCopy } from "@/components/tugways/cards/tug-atom-text-body";
 import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdown-body";
+import { SessionContextAttachments } from "@/components/tugways/cards/session-context-attachments";
+import { splitLeadingContext } from "@/lib/pending-context-store";
 import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { formatModelLabel } from "@/lib/model-label";
@@ -170,6 +172,7 @@ import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./session-command-block-registry";
 import { composeShellShareText } from "./shell-exchange-view";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
+import type { PendingContextStore } from "@/lib/pending-context-store";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
@@ -294,7 +297,16 @@ const UserMessageCell = React.memo(function UserMessageCell({
   // out-of-range read.
   const userMessage = row.userMessage;
   const rawText = userMessage?.text ?? "";
-  const strippedText = stripUserBodyPrefix(rawText);
+  const strippedTextWithContext = stripUserBodyPrefix(rawText);
+  // Split any leading `<tug-context>` sentinel blocks (staged shell / `/btw`
+  // context that rode this submission) off the prose. The blocks render as
+  // attributed sub-rows above the body; the remaining prose keeps its
+  // atom↔U+FFFC alignment because a context block carries no atom char, so the
+  // N atoms still pair with the N object-replacement chars in `rest`. Runs on
+  // the live echo and a JSONL restore alike — the sentinel is in both.
+  const { blocks: contextBlocks, rest: strippedText } = splitLeadingContext(
+    strippedTextWithContext,
+  );
   // Parallel atoms array — N atoms in `attachments` pair with the
   // N `U+FFFC` characters in `text`. `stripUserBodyPrefix` only
   // strips the `>` route prefix; it never touches a `U+FFFC`, so
@@ -364,6 +376,9 @@ const UserMessageCell = React.memo(function UserMessageCell({
           address={address}
           body={
             <>
+              {/* Staged shell / `/btw` context that rode this submission,
+                  rendered as attributed sub-rows above the user's prose. */}
+              <SessionContextAttachments blocks={contextBlocks} />
               {/* The submitted prompt renders as markdown (like the
                   assistant body and the Claude Code TUI), with the
                   prompt's inline atom chips grafted back into the rendered
@@ -453,7 +468,9 @@ const GhostRowCell = React.memo(function GhostRowCell({
   // atom's bare `image-N` label. Hooks run unconditionally above the
   // defensive `queued === undefined` guard so the hook order is stable.
   const rawText = queued?.text ?? "";
-  const text = stripUserBodyPrefix(rawText);
+  const { blocks: contextBlocks, rest: text } = splitLeadingContext(
+    stripUserBodyPrefix(rawText),
+  );
   const atoms = queued?.atoms ?? EMPTY_ATOMS;
   const turnKey = queued?.turnKey ?? "";
   const imageAtoms = React.useMemo(
@@ -474,6 +491,7 @@ const GhostRowCell = React.memo(function GhostRowCell({
         identifier={USER_IDENTIFIER}
         body={
           <>
+            <SessionContextAttachments blocks={contextBlocks} />
             <TugAtomMarkdownBody
               className="session-card-transcript-user-markdown"
               data-testid="session-card-transcript-user-body"
@@ -516,13 +534,21 @@ interface ShellTurnCellProps {
   dataSource: SessionTranscriptDataSource;
   codeSessionStore: CodeSessionStore;
   shellSessionStore: ShellSessionStore;
+  pendingContextStore: PendingContextStore;
 }
 const ShellTurnCell = React.memo(function ShellTurnCell({
   index,
   row,
   dataSource,
   shellSessionStore,
+  pendingContextStore,
 }: ShellTurnCellProps) {
+  // Re-render on staged-queue changes so the Add-to-context toggle reflects
+  // the live staged state ([L02]).
+  const pendingSnapshot = useSyncExternalStore(
+    pendingContextStore.subscribe,
+    pendingContextStore.getSnapshot,
+  );
   // The `#s{n}` badge is its own session-wide shell counter ([P09]) —
   // `#s1`, `#s2`, … independent of the Claude `#u`/`#a` turn numbers
   // interleaved among the shell rows. The data source assigns it in
@@ -531,6 +557,13 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   const turn = row.turn;
   const message = turn?.messages[0];
   if (message === undefined || message.kind !== "shell_exchange") return null;
+  // The context dedup key is the stable `exchangeId` (not the display ordinal),
+  // so the row badge and the store-layer auto-stage (VISIBILITY=Context) agree
+  // on the same item.
+  const shellRef = message.exchangeId;
+  const staged = pendingSnapshot.items.some(
+    (it) => it.source === "shell" && it.ref === shellRef,
+  );
   // One row, no within-turn ordinal — `#s{n}` never grows a `.2` suffix.
   const address = { speaker: "shell" as const, turn: shellNumber };
   // Timestamp is the exec time (`startedAtMs`), the shell analog of the
@@ -599,6 +632,22 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
               onShare={() =>
                 shellSessionStore.requestShare(composeShellShareText(message))
               }
+              // Add-to-context ([P08], staged): stage / un-stage the same
+              // fenced text on the pending-context queue so it rides the next
+              // `❯` submission as attributed `#s{n}` context.
+              staged={staged}
+              onToggleContext={() => {
+                if (staged) {
+                  pendingContextStore.unstageRef("shell", shellRef);
+                } else {
+                  pendingContextStore.stage({
+                    source: "shell",
+                    ref: shellRef,
+                    label: `shell #s${shellNumber}`,
+                    body: composeShellShareText(message),
+                  });
+                }
+              }}
             />
           </ToolBlockHistoryCollapse>
         }
@@ -1435,6 +1484,9 @@ export interface SessionTranscriptHostProps {
   /** Per-card shell session — the shell rows' Share gesture parks its
    *  composed text here for the prompt entry to consume ([P08]). */
   shellSessionStore: ShellSessionStore;
+  /** Staged-context queue — the shell rows' Add-to-context toggle stages an
+   *  exchange to ride the next `❯` submission ([P08], staged variant). */
+  pendingContextStore: PendingContextStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
    * Per-card response-settings store. The host binds it to the
@@ -1537,6 +1589,7 @@ export const SessionTranscriptHost = forwardRef<
     cardId,
     codeSessionStore,
     shellSessionStore,
+    pendingContextStore,
     sessionMetadataStore,
     responseStore,
     findSession,
@@ -1787,10 +1840,11 @@ export const SessionTranscriptHost = forwardRef<
           row={row}
           codeSessionStore={codeSessionStore}
           shellSessionStore={shellSessionStore}
+          pendingContextStore={pendingContextStore}
         />
       );
     },
-    [codeSessionStore, shellSessionStore],
+    [codeSessionStore, shellSessionStore, pendingContextStore],
   );
   const cellRenderers = useMemo<
     Record<string, TugListViewCellRenderer<SessionTranscriptDataSource>>

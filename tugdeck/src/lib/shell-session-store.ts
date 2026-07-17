@@ -24,6 +24,8 @@ import { FeedId, type FeedIdValue } from "../protocol";
 import type { FeedStore } from "./feed-store";
 import { getConnection } from "./connection-singleton";
 import type { CodeSessionStore } from "./code-session-store";
+import type { PendingContextStore } from "./pending-context-store";
+import { composeShellShareText } from "./shell-share";
 
 /** A running exchange — drives the `stop` pose on the `$` route ([P13]). */
 export interface ShellInflight {
@@ -66,6 +68,7 @@ export class ShellSessionStore {
   private readonly _tugSessionId: string;
   private readonly _projectDir: string;
   private readonly _codeSessionStore: CodeSessionStore;
+  private readonly _pendingContextStore: PendingContextStore | undefined;
 
   constructor(
     feedStore: FeedStore,
@@ -73,12 +76,14 @@ export class ShellSessionStore {
     tugSessionId: string,
     projectDir: string,
     codeSessionStore: CodeSessionStore,
+    pendingContextStore?: PendingContextStore,
   ) {
     this._feedStore = feedStore;
     this._feedId = feedId;
     this._tugSessionId = tugSessionId;
     this._projectDir = projectDir;
     this._codeSessionStore = codeSessionStore;
+    this._pendingContextStore = pendingContextStore;
     // Seed cwd optimistically to the project dir so the chip reads something
     // before the first `shell_state` frame lands.
     this._snapshot = { ...EMPTY_SNAPSHOT, cwd: projectDir };
@@ -142,17 +147,35 @@ export class ShellSessionStore {
           inflight,
         });
         const startedAt = numberOr(p.started_at, Date.now());
+        const command = String(p.command ?? "");
+        const output = typeof p.output === "string" ? p.output : "";
+        const exitCode = typeof p.exit_code === "number" ? p.exit_code : null;
+        const settledAt = numberOr(p.settled_at, startedAt);
         this._codeSessionStore.ingestShellExchange({
           phase: "complete",
           exchangeId,
-          command: String(p.command ?? ""),
-          output: typeof p.output === "string" ? p.output : "",
-          exitCode: typeof p.exit_code === "number" ? p.exit_code : null,
+          command,
+          output,
+          exitCode,
           cwd: typeof p.cwd === "string" ? p.cwd : (cwdAfter ?? this._projectDir),
           cwdAfter,
           startedAtMs: startedAt,
-          settledAtMs: numberOr(p.settled_at, startedAt),
+          settledAtMs: settledAt,
         });
+        // VISIBILITY=Context ([P08], the submission-time variant): a newly
+        // settled exchange auto-stages onto the pending-context queue to ride
+        // the next `❯` submission. This fires only for LIVE completions —
+        // restore replays through `applyRestoredShellExchanges`, never here —
+        // so the backlog is never dumped, and `stage`'s source+exchangeId
+        // dedup makes a manual Add-to-context on the same row a no-op.
+        if (this._pendingContextStore?.isContext("shell")) {
+          this._pendingContextStore.stage({
+            source: "shell",
+            ref: exchangeId,
+            label: `$ ${command}`,
+            body: composeShellShareText({ command, output, exitCode, settledAtMs: settledAt }),
+          });
+        }
         break;
       }
       default:

@@ -41,6 +41,7 @@ import React, { useCallback, useMemo } from "react";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
+import type { PendingContextStore } from "@/lib/pending-context-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
@@ -228,6 +229,12 @@ export interface UseSessionPlacementSlotsInput {
    * placard open on the `/btw` body).
    */
   sideQuestionStore?: SideQuestionStore;
+  /**
+   * Forwarded to {@link SessionTelemetryStatusRow} → the `/btw` overlay body,
+   * feeding its Add-to-context action (stage a side question for the next
+   * `❯` submission).
+   */
+  pendingContextStore?: PendingContextStore;
 }
 
 /**
@@ -260,6 +267,7 @@ export function useSessionPlacementSlots(
     statusRowFocusGroup,
     statusRowFocusOrderBase,
     sideQuestionStore,
+    pendingContextStore,
   } = input;
 
   // Effective Z2 — explicit mapping wins, but a null / unset value
@@ -304,6 +312,7 @@ export function useSessionPlacementSlots(
               focusGroup={statusRowFocusGroup}
               focusOrderBase={statusRowFocusOrderBase}
               sideQuestionStore={sideQuestionStore}
+              pendingContextStore={pendingContextStore}
             />
           );
       }
@@ -316,6 +325,7 @@ export function useSessionPlacementSlots(
       statusRowFocusGroup,
       statusRowFocusOrderBase,
       sideQuestionStore,
+      pendingContextStore,
     ],
   );
 

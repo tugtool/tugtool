@@ -22,17 +22,23 @@ describe("routeChipKeys — Table T01", () => {
     ]);
   });
 
-  it("shell (`$`) shows identity · session · project · cwd", () => {
+  it("shell (`$`) shows identity · session · project · cwd · visibility", () => {
     expect(routeChipKeys("$")).toEqual([
       "identity",
       "session",
       "project",
       "cwd",
+      "visibility",
     ]);
   });
 
-  it("btw (`?`) shows identity · session · project", () => {
-    expect(routeChipKeys("?")).toEqual(["identity", "session", "project"]);
+  it("btw (`?`) shows identity · session · project · visibility", () => {
+    expect(routeChipKeys("?")).toEqual([
+      "identity",
+      "session",
+      "project",
+      "visibility",
+    ]);
   });
 
   it("find (`⌕`) shows session · project · find (drops identity; the search cluster replaces the model chrome)", () => {
@@ -61,6 +67,13 @@ describe("routeChipKeys — Table T01", () => {
     for (const route of ["❯", "$", "?", null, "weird"]) {
       expect(routeChipKeys(route)).not.toContain("find");
     }
+  });
+
+  it("the VISIBILITY toggle appears ONLY on the shell + btw routes", () => {
+    expect(routeChipKeys("$")).toContain("visibility");
+    expect(routeChipKeys("?")).toContain("visibility");
+    expect(routeChipKeys("❯")).not.toContain("visibility");
+    expect(routeChipKeys("⌕")).not.toContain("visibility");
   });
 });
 

@@ -6,8 +6,8 @@
  * Table T01 — route → visible chips (the identity badge always leads):
  *
  *   ❯ code  : identity(Claude Code) · Session · Project · Mode · Model · Effort
- *   $ shell : identity(Shell)       · Session · Project · Cwd
- *   ? btw   : identity(Claude Code) · Session · Project
+ *   $ shell : identity(Shell)       · Session · Project · Cwd · Visibility
+ *   ? btw   : identity(Claude Code) · Session · Project · Visibility
  *   ⌕ find  : Session · Project · Find-cluster (Case/Word/Grep + count)
  *
  * The occupant of the Z4B centred-floating slot is a layout decision, not a
@@ -50,6 +50,7 @@ export type RouteChipKey =
   | "mode"
   | "model"
   | "effort"
+  | "visibility"
   | "find";
 
 /**
@@ -58,8 +59,8 @@ export type RouteChipKey =
  * without mounting. An unknown/null route falls back to the code set.
  */
 export function routeChipKeys(route: string | null): RouteChipKey[] {
-  if (route === ROUTE_SHELL) return ["identity", "session", "project", "cwd"];
-  if (route === ROUTE_BTW) return ["identity", "session", "project"];
+  if (route === ROUTE_SHELL) return ["identity", "session", "project", "cwd", "visibility"];
+  if (route === ROUTE_BTW) return ["identity", "session", "project", "visibility"];
   // Find replaces the model chrome with its own search controls — the
   // transcript, not the Claude session, is what Find operates on, so the
   // identity badge drops out here. The Session and Project chips stay: they
@@ -83,6 +84,8 @@ export interface SessionRouteChromeManifestProps {
   model: React.ReactNode;
   /** Reasoning-effort chip — code route only. */
   effort: React.ReactNode;
+  /** VISIBILITY toggle (Context / Private) — shell + btw routes only. */
+  visibility: React.ReactNode;
   /** Find cluster (Case/Word/Grep + count) — find route only. */
   find: React.ReactNode;
 }
@@ -95,6 +98,7 @@ export function SessionRouteChromeManifest({
   mode,
   model,
   effort,
+  visibility,
   find,
 }: SessionRouteChromeManifestProps): React.ReactElement {
   const route = useRoute();
@@ -106,6 +110,7 @@ export function SessionRouteChromeManifest({
     mode,
     model,
     effort,
+    visibility,
     find,
   };
   // Stable keys preserve mount identity for a chip that survives a route flip

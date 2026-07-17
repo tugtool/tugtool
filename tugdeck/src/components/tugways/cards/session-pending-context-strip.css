@@ -1,0 +1,72 @@
+/**
+ * session-pending-context-strip.css — the composer-side staged-context reminder
+ * ([L06] appearance via CSS/DOM).
+ *
+ * A quiet, single-line strip at the top of the composer pane: a leading glyph +
+ * caption, then a wrapping row of removable chips, then a trailing Clear. Muted
+ * so it reads as a reminder, not a control the user must act on.
+ */
+
+.session-pending-context-strip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tug-space-xs) var(--tug-space-sm);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+
+.session-pending-context-strip-lead {
+  display: inline-flex;
+  align-items: center;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-pending-context-strip-caption {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.72rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-pending-context-strip-chips {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--tug-space-xs);
+  min-width: 0;
+}
+
+.session-pending-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 16ch;
+  padding: 1px var(--tug-space-xs);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 999px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.7rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.session-pending-context-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-pending-context-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+}
+
+.session-pending-context-chip-remove:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}

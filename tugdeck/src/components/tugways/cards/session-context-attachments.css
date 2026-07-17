@@ -1,0 +1,75 @@
+/**
+ * session-context-attachments.css — the subdued attached-context stack that
+ * rides above a user turn's prose ([L06] appearance via CSS/DOM).
+ *
+ * A frame that reads as "attached to, but quieter than, the user's own
+ * message": a muted left rule + inset, a small source heading, and the block
+ * body at the shared markdown scale. It sits between the user identifier line
+ * and the prose, so the reader sees what extra context Claude got before the
+ * words the user typed.
+ */
+
+.session-context-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  margin-bottom: var(--tug-space-sm);
+}
+
+.session-context-attachment {
+  border-left: 2px solid var(--tug7-element-global-border-normal-default-rest);
+  padding-left: var(--tug-space-sm);
+}
+
+.session-context-attachment-heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  margin-bottom: 2px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.72rem;
+}
+
+.session-context-attachment-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.session-context-attachment-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The trailing "context" pill — a whisper that this block is what Claude
+   received as extra context, not the user's own words. */
+.session-context-attachment-tag {
+  margin-left: auto;
+  padding: 0 var(--tug-space-xs);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: 999px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The block body renders at the shared markdown scale but slightly muted so
+   the user's own prose below stays the visual lead. */
+.session-context-attachment-body {
+  font-size: 0.86rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-md-block-padding-x: 0px;
+}
+
+.session-context-attachment-body .tugx-md-block {
+  font-size: 1em;
+}
+
+.session-context-attachment-body > :first-child {
+  margin-top: 0;
+}
+
+.session-context-attachment-body > :last-child {
+  margin-bottom: 0;
+}

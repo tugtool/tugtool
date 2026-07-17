@@ -60,6 +60,8 @@ import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
+import { VisibilityChip } from "./visibility-chip";
+import { SessionPendingContextStrip } from "./session-pending-context-strip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
@@ -116,6 +118,7 @@ import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
+import type { PendingContextStore } from "@/lib/pending-context-store";
 import { deriveSessionCardBannerSpec, humanizeErrorSummary } from "./session-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
 import { deriveColdRestoreActive } from "./session-card-restore-gate";
@@ -444,6 +447,9 @@ export interface SessionCardServices {
   sideQuestionStore: SideQuestionStore;
   /** `$`-route shell session store — session state + exchange ingest ([P12]). */
   shellSessionStore: ShellSessionStore;
+  /** Staged shell / `/btw` context queue — consumed at send, surfaced to the
+   *  composer + rows (Add-to-context, VISIBILITY toggle). */
+  pendingContextStore: PendingContextStore;
   /**
    * Delegate handle for the embedded `TugPromptEntry`. Owned by the
    * hook because the `/` completion provider's position-0 gate reads
@@ -2112,7 +2118,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -3404,6 +3410,8 @@ export function SessionCardBody({
     statusRowFocusOrderBase: SESSION_CYCLE_ORDER_STATUS_BASE,
     // BTW cell: its count + activation (toggling the shared `/btw` placard).
     sideQuestionStore,
+    // Staged-context queue: the `/btw` overlay's Add-to-context action.
+    pendingContextStore,
   });
   const effectiveHeaderContent = headerContent ?? experimentSlots.headerContent;
   const effectiveStatusBarContent =
@@ -3518,6 +3526,7 @@ export function SessionCardBody({
               cardId={cardId}
               codeSessionStore={codeSessionStore}
               shellSessionStore={shellSessionStore}
+              pendingContextStore={pendingContextStore}
               sessionMetadataStore={sessionMetadataStore}
               responseStore={responseStore}
               findSession={findSession}
@@ -3605,6 +3614,9 @@ export function SessionCardBody({
             disabled={sessionErrored}
             className="session-card-entry-pane"
           >
+            {/* Composer-side reminder of staged shell / `/btw` context that
+                will ride the next `❯` submission. Self-hides when empty. */}
+            <SessionPendingContextStrip pendingContextStore={pendingContextStore} />
             {/*
               CycleScope keys the prompt entry's authored focus stops
               into this card's cycle mode (not the base mode), so the
@@ -3716,6 +3728,16 @@ export function SessionCardBody({
                         sessionMetadataStore={sessionMetadataStore}
                         onOpenPicker={effortPicker.openEffortPicker}
                         disabled={!codeSnap.canSubmit}
+                        focusGroup={SESSION_CYCLE_GROUP}
+                        focusOrder={SESSION_CYCLE_ORDER_EFFORT}
+                      />
+                    }
+                    visibility={
+                      // Shell + btw routes only; reuses the effort slot's focus
+                      // order — the two never mount together (effort is a code-
+                      // route chip), so the cycle sees exactly one.
+                      <VisibilityChip
+                        pendingContextStore={pendingContextStore}
                         focusGroup={SESSION_CYCLE_GROUP}
                         focusOrder={SESSION_CYCLE_ORDER_EFFORT}
                       />

@@ -19,6 +19,7 @@ mock.module("../connection-singleton", () => ({
 
 import { FeedId } from "../../protocol";
 import { ShellSessionStore, applyRestoredShellExchanges } from "../shell-session-store";
+import { PendingContextStore, splitLeadingContext } from "../pending-context-store";
 import { CodeSessionStore } from "../code-session-store";
 import type { TugConnection } from "../../connection";
 import { ConnectionLifecycle } from "../connection-lifecycle";
@@ -55,14 +56,16 @@ function setup() {
     sessionMode: "new",
   });
   const feed = new MockFeedStore();
+  const pendingContext = new PendingContextStore();
   const store = new ShellSessionStore(
     feed as unknown as ConstructorParameters<typeof ShellSessionStore>[0],
     FeedId.SHELL_OUTPUT,
     "sess-1",
     "/proj",
     code,
+    pendingContext,
   );
-  return { store, feed, code };
+  return { store, feed, code, pendingContext };
 }
 
 function shellTurns(code: CodeSessionStore) {
@@ -71,6 +74,51 @@ function shellTurns(code: CodeSessionStore) {
 
 beforeEach(() => {
   sentFrames = [];
+});
+
+describe("ShellSessionStore — VISIBILITY=Context auto-stage ([P08])", () => {
+  function completeExchange(feed: MockFeedStore, id: string, command: string) {
+    feed.emit(FeedId.SHELL_OUTPUT, {
+      type: "exchange_complete",
+      exchange_id: id,
+      command,
+      output: "hi\n",
+      exit_code: 0,
+      cwd: "/proj",
+      cwd_after: "/proj",
+      started_at: 1000,
+      settled_at: 1050,
+    });
+  }
+
+  test("Private (default): a settled exchange does NOT auto-stage", () => {
+    const { feed, pendingContext } = setup();
+    completeExchange(feed, "e1", "ls");
+    expect(pendingContext.getSnapshot().items).toHaveLength(0);
+  });
+
+  test("Context: a newly settled exchange auto-stages with a round-trippable sentinel", () => {
+    const { feed, pendingContext } = setup();
+    pendingContext.setContext("shell", true);
+    completeExchange(feed, "e1", "ls");
+    const items = pendingContext.getSnapshot().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].source).toBe("shell");
+    expect(items[0].ref).toBe("e1");
+    const prefix = pendingContext.takePrefix();
+    const { blocks } = splitLeadingContext(prefix ?? "");
+    expect(blocks[0].body).toContain("$ ls");
+    expect(blocks[0].body).toContain("[exit 0]");
+  });
+
+  test("a manual stage and the auto-stage de-dupe on the same exchangeId", () => {
+    const { feed, pendingContext } = setup();
+    pendingContext.setContext("shell", true);
+    completeExchange(feed, "e1", "ls");
+    // A manual Add-to-context on the same row is a no-op (already staged).
+    pendingContext.stage({ source: "shell", ref: "e1", label: "shell #s1", body: "dup" });
+    expect(pendingContext.getSnapshot().items).toHaveLength(1);
+  });
 });
 
 describe("ShellSessionStore — fold + mirror", () => {

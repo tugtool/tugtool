@@ -23,6 +23,8 @@ import type { FeedStore } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
 import { FeedId } from "../protocol";
 import { getConnection } from "./connection-singleton";
+import type { PendingContextStore } from "./pending-context-store";
+import { composeBtwContextBody } from "./pending-context-store";
 
 // ── Wire type (mirror tugcode `SideQuestionAnswer`) ─────────────────────────
 
@@ -84,12 +86,19 @@ export class SideQuestionStore {
   private readonly _feedStore: FeedStore;
   private readonly _feedId: FeedIdValue;
   private readonly _tugSessionId: string;
+  private readonly _pendingContextStore: PendingContextStore | undefined;
   private _seq = 0;
 
-  constructor(feedStore: FeedStore, feedId: FeedIdValue, tugSessionId: string) {
+  constructor(
+    feedStore: FeedStore,
+    feedId: FeedIdValue,
+    tugSessionId: string,
+    pendingContextStore?: PendingContextStore,
+  ) {
     this._feedStore = feedStore;
     this._feedId = feedId;
     this._tugSessionId = tugSessionId;
+    this._pendingContextStore = pendingContextStore;
     this._unsubscribeFeed = feedStore.subscribe(() => this._onFeedUpdate());
   }
 
@@ -109,18 +118,34 @@ export class SideQuestionStore {
    */
   private _settle(parsed: SideQuestionAnswerPayload): void {
     let changed = false;
+    let settledAnswer: SideQuestionExchange | null = null;
     const exchanges = this._snapshot.exchanges.map((ex) => {
       if (ex.id !== parsed.request_id || ex.phase !== "loading") return ex;
       changed = true;
-      return {
+      const next = {
         ...ex,
         phase: parsed.answer === null ? ("error" as const) : ("answered" as const),
         answer: parsed.answer,
         synthetic: parsed.synthetic,
       };
+      if (next.phase === "answered") settledAnswer = next;
+      return next;
     });
     if (!changed) return;
     this._set({ exchanges });
+    // VISIBILITY=Context ([P08], the submission-time variant): a newly answered
+    // side question auto-stages onto the pending-context queue to ride the next
+    // `❯` submission. Fires once, on the live settle — a re-render never
+    // re-settles — so a manual un-stage afterwards is not clobbered.
+    if (settledAnswer !== null && this._pendingContextStore?.isContext("btw")) {
+      const ex: SideQuestionExchange = settledAnswer;
+      this._pendingContextStore.stage({
+        source: "btw",
+        ref: ex.id,
+        label: "side question",
+        body: composeBtwContextBody(ex.question, ex.answer ?? ""),
+      });
+    }
   }
 
   /**

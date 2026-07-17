@@ -40,6 +40,7 @@ import { FeedStore } from "@/lib/feed-store";
 import type { AtomSegment } from "./tug-atom-img";
 import { TUG_ATOM_CHAR } from "./tug-atom-img";
 import { hasLeadingCommandAtom } from "./command-atom";
+import type { PendingContextStore } from "./pending-context-store";
 import {
   createAtomBytesStore,
   type AtomBytesStore,
@@ -335,6 +336,15 @@ export interface CodeSessionStoreOptions {
    */
   restoreWindowTurns?: number;
   /**
+   * The per-card queue of shell / `/btw` interactions staged to ride the next
+   * code-route submission as attributed `<tug-context>` context. Consulted at
+   * {@link CodeSessionStore.send}: a non-suppressed, non-command submission
+   * consumes the queue and prepends the sentinel prefix to the outgoing user
+   * message. Optional — a store constructed without it (tests) simply never
+   * prepends context.
+   */
+  pendingContextStore?: PendingContextStore;
+  /**
    * Test seam — defaults to globalThis `setTimeout` / `clearTimeout`.
    * Production callers omit this. Tests inject a captured-table
    * timer source so they can advance time deterministically.
@@ -356,6 +366,7 @@ export class CodeSessionStore {
   private readonly sessionMode: CardSessionMode;
   private readonly restoreWindowTurns: number;
   private readonly feedStore: FeedStore;
+  private readonly pendingContextStore: PendingContextStore | undefined;
   private readonly timerSource: TimerSource;
   /**
    * Active replay-clock timers keyed by their effect `name`
@@ -438,6 +449,7 @@ export class CodeSessionStore {
     this.restoreWindowTurns =
       options.restoreWindowTurns ?? DEFAULT_REPLAY_WINDOW_TURNS;
     this.sessionMode = options.sessionMode;
+    this.pendingContextStore = options.pendingContextStore;
     this.timerSource = options.timerSource ?? DEFAULT_TIMER_SOURCE;
 
     // Per-card bytes side-table — populated at drop / paste, drained
@@ -772,6 +784,24 @@ export class CodeSessionStore {
     if (opts?.suppress !== true) {
       getPulseStore()?.clearScope(this.tugSessionId);
     }
+    // Staged shell / `/btw` context rides an ordinary user submission — [P08]
+    // "Claude never sees a shell exchange implicitly" made on-demand. The
+    // sentinel prefix is prepended so it travels *inside* the user message
+    // (→ wire content → JSONL → faithful restore) and Claude reads attributed
+    // context. Skipped for a suppressed programmatic send, and for a leading
+    // slash-command send (a command must stay at message start to expand) —
+    // which leaves the queue intact for the next plain submission. The prefix
+    // carries no `U+FFFC`, so the atom↔placeholder alignment below is
+    // untouched: every atom still pairs with the same object-replacement char.
+    let effText = text;
+    if (
+      opts?.suppress !== true &&
+      this.pendingContextStore !== undefined &&
+      !hasLeadingCommandAtom(text, atoms, TUG_ATOM_CHAR)
+    ) {
+      const prefix = this.pendingContextStore.takePrefix();
+      if (prefix !== null) effText = prefix + text;
+    }
     // `turnKey` is generated in the impure wrapper layer (not in the
     // reducer) so the reducer remains pure and time-independent —
     // mirrors how timers live outside the reducer.
@@ -789,7 +819,7 @@ export class CodeSessionStore {
     //     `thumbnailDataUrl` for every image block.
     // The reducer receives the synthesized substrate + the wire
     // content blocks and never touches the bytes-store.
-    const wire = buildWirePayload(text, atoms, this.atomBytesStore);
+    const wire = buildWirePayload(effText, atoms, this.atomBytesStore);
     // A leading command atom is sent as a clean `/name` for claude to
     // expand (no `@`-mention marker), so `wire.content` can't round-trip the
     // command-ness. Re-synthesizing from it would render plain `/name` text
@@ -798,8 +828,8 @@ export class CodeSessionStore {
     // the editor's full substrate for the optimistic echo so it already
     // matches the replayed chips — no flicker, no dropped command. (Replay
     // rebuilds the same substrate from the envelope via `detectCommandEcho`.)
-    const synth = hasLeadingCommandAtom(text, atoms, TUG_ATOM_CHAR)
-      ? { text, atoms, thumbnailBake: Promise.resolve() }
+    const synth = hasLeadingCommandAtom(effText, atoms, TUG_ATOM_CHAR)
+      ? { text: effText, atoms, thumbnailBake: Promise.resolve() }
       : synthesizeUserMessageFromBlocks(wire.content, this.atomBytesStore, {
           atomIdAt: wire.atomIdAt,
         });
