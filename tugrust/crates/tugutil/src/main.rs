@@ -1,4 +1,4 @@
-//! tug — the unified Tug developer CLI (changes & commits, dashes, host plumbing).
+//! tugutil — the unified Tug developer CLI (changes & commits, dashes, host plumbing).
 
 mod cli;
 mod commands;

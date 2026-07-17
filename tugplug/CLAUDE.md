@@ -9,7 +9,7 @@ The plugin ships **agentless, main-loop-driven** skills — there are no sub-age
 - **`devise`** — author an implementation plan in-thread against the
   devise skeleton (`tuglaws/devise-skeleton.md`). Writes to an explicit path
   (no assumed directory).
-- **`implement`** — drive a plan to a tested debug build on an isolated `tug dash`
+- **`implement`** — drive a plan to a tested debug build on an isolated `tugutil dash`
   worktree, committing per step, stopping for review before merge. Walks a single step,
   a step range, or the whole plan, tracked via the plan's Step Status Ledger.
   *(was `bake`; before that the old multi-agent `implement`.)*
@@ -25,17 +25,17 @@ The plugin ships **agentless, main-loop-driven** skills — there are no sub-age
 - **`commit`** — analyze the working changes, stage deliberately, and make a clean
   conventional commit immediately (no confirmation prompt).
 
-The lifecycle skills run in the main conversation and ride the `tug dash` CLI
+The lifecycle skills run in the main conversation and ride the `tugutil dash` CLI
 (`create` → `commit` per step/round → `join`). The flow is
 `/tugplug:devise` → `/tugplug:vet` → `/tugplug:implement` (or just `/tugplug:dash`) →
-`/tugplug:audit` → review → `tug dash join`.
+`/tugplug:audit` → review → `tugutil dash join`.
 
 **Location discipline (critical):** no skill assumes a plan directory — `roadmap/`,
 `.tugtool/`, and any other home are never hardcoded. A plan is always an explicit
-path; the working root is derived from that path and from `tug dash create`'s
+path; the working root is derived from that path and from `tugutil dash create`'s
 worktree response. Once a worktree exists it is the **only** working root — every
 operation uses an absolute path into it, and nothing (code, plan, ledger) is written
-to the base checkout until `tug dash join`.
+to the base checkout until `tugutil dash join`.
 
 The old multi-agent orchestration — a swarm of clarifier/author/critic/conformance/
 overviewer/architect/coder/committer/reviewer/auditor/dash agents — has been fully

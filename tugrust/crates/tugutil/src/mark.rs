@@ -1,4 +1,4 @@
-//! Changes & commits — the git surface of `tug` (`changes`, `context`, `commit`,
+//! Changes & commits — the git surface of `tugutil` (`changes`, `context`, `commit`,
 //! `log`, `diff`). A thin shell over [`tugmark_core`]: parse arguments, call the
 //! typed library API, and format the outcome as `--json` (the shared
 //! `{schema_version, command, status, data, issues}` envelope) or a plain read-out.

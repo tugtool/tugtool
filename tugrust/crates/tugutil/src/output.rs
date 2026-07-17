@@ -1,10 +1,10 @@
-//! JSON output formatting for `tug` CLI `--json` mode
+//! JSON output formatting for `tugutil` CLI `--json` mode
 
 use serde::{Deserialize, Serialize};
 
 const SCHEMA_VERSION: &str = "1";
 
-/// JSON response envelope for `tug` CLI `--json` output
+/// JSON response envelope for `tugutil` CLI `--json` output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonResponse<T> {
     /// Schema version for forward compatibility
@@ -51,7 +51,7 @@ pub fn print_ok<T: Serialize>(command: &str, data: T) {
     println!("{}", serde_json::to_string_pretty(&response).unwrap());
 }
 
-/// Issue object structure for `tug` JSON output
+/// Issue object structure for `tugutil` JSON output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonIssue {
     /// Error/warning code (e.g., "E001")

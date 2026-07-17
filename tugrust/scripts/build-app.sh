@@ -111,7 +111,7 @@ cp -R "$XCODE_APP" "$STAGING_APP"
 echo "==> Copying Rust binaries to Contents/MacOS/"
 mkdir -p "$STAGING_APP/Contents/MacOS"
 cp "$TUGCODE_DIR/target/release/tugcast" "$STAGING_APP/Contents/MacOS/"
-cp "$TUGCODE_DIR/target/release/tug" "$STAGING_APP/Contents/MacOS/"
+cp "$TUGCODE_DIR/target/release/tugutil" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugexec" "$STAGING_APP/Contents/MacOS/"
 cp "$TUGCODE_DIR/target/release/tugcode" "$STAGING_APP/Contents/MacOS/"
 

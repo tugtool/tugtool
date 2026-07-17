@@ -14,7 +14,7 @@
  *
  * Asserts:
  *  - **enhancer tagging**: a project shell command (`just launch-debug`,
- *    `tug dash join --preview`) gets `.tugx-md-cmd` + `data-shell-command`;
+ *    `tugutil dash join --preview`) gets `.tugx-md-cmd` + `data-shell-command`;
  *    a known slash command (`/diff HEAD`) gets `.tugx-md-cmd` +
  *    `data-slash-command` / `data-slash-args`;
  *  - **Copy** (rich): `text/plain` = the whole command in Markdown
@@ -154,9 +154,9 @@ describe.skipIf(!SHOULD_RUN)(
           expect(shellTag).toMatchObject({ hasClass: true, shell: "just launch-debug", slash: null });
 
           const shellTag2 = await app.evalJS<{ shell: string | null }>(
-            tagInfoScript("tug dash join --preview"),
+            tagInfoScript("tugutil dash join --preview"),
           );
-          expect(shellTag2.shell).toBe("tug dash join --preview");
+          expect(shellTag2.shell).toBe("tugutil dash join --preview");
 
           const slashTag = await app.evalJS<{ shell: string | null; slash: string | null; slashArgs: string | null }>(
             tagInfoScript("/diff HEAD"),

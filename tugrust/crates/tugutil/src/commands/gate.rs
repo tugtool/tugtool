@@ -1,4 +1,4 @@
-//! `tug host gate` — machine-wide mutual exclusion via a localhost port.
+//! `tugutil host gate` — machine-wide mutual exclusion via a localhost port.
 //!
 //! The mutex is a `TcpListener` bound to one well-known port
 //! (`tugcore::ports::gate_port`). Binding is exclusive by kernel
@@ -95,7 +95,7 @@ fn run_gated(name: &str, label: &str, no_wait: bool, command: &[String], json: b
         .ok()
         .and_then(|s| s.parse::<u16>().ok());
     let Some(port) = override_port.or_else(|| tugcore::ports::gate_port(name)) else {
-        eprintln!("tug host gate: unknown gate name '{name}' (known: apptest)");
+        eprintln!("tugutil host gate: unknown gate name '{name}' (known: apptest)");
         return EXIT_USAGE;
     };
 
@@ -124,14 +124,14 @@ fn run_gated(name: &str, label: &str, no_wait: bool, command: &[String], json: b
                     }
                     HolderProbe::Holder(other) => {
                         eprintln!(
-                            "tug host gate: port {port} is held by gate '{}' (expected '{name}') — refusing to wait",
+                            "tugutil host gate: port {port} is held by gate '{}' (expected '{name}') — refusing to wait",
                             other.gate
                         );
                         return 1;
                     }
                     HolderProbe::NotAGate(detail) => {
                         eprintln!(
-                            "tug host gate: port {port} is held by something that is not a tug gate ({detail}) — refusing to wait"
+                            "tugutil host gate: port {port} is held by something that is not a tugutil gate ({detail}) — refusing to wait"
                         );
                         return 1;
                     }
@@ -142,7 +142,7 @@ fn run_gated(name: &str, label: &str, no_wait: bool, command: &[String], json: b
                 }
             }
             Err(err) => {
-                eprintln!("tug host gate: bind 127.0.0.1:{port} failed: {err}");
+                eprintln!("tugutil host gate: bind 127.0.0.1:{port} failed: {err}");
                 return 1;
             }
         }
@@ -257,7 +257,7 @@ fn hold_and_run(listener: TcpListener, name: &str, label: &str, command: &[Strin
             }
         }
         Err(err) => {
-            eprintln!("tug host gate: failed to spawn '{program}': {err}");
+            eprintln!("tugutil host gate: failed to spawn '{program}': {err}");
             127
         }
     }

@@ -13,7 +13,7 @@ disallowed-tools: Task
 git worktree, **driven by you — the main conversation — directly**. There is no agent
 swarm, no drift-set ceremony, no conformance/critic/auditor gate, no inter-agent JSON
 contract. You read the plan, you do the work, you run the checkpoints, you commit each
-step. The worktree lifecycle rides the `tug dash` CLI; the plan is your checklist.
+step. The worktree lifecycle rides the `tugutil dash` CLI; the plan is your checklist.
 
 This replaces the old multi-agent orchestrator. The old way was too much ceremony for
 the value it returned. The new way keeps the user in a tight feedback loop and keeps
@@ -59,11 +59,11 @@ convention:
   starting from — read it, and find the project root by its `.tugtool/` marker (or via
   `tug`), not by assuming a layout.
 - The moment a dash worktree exists, **the worktree directory is the one and only
-  working root.** Capture its absolute path from `tug dash create … --json` and use
+  working root.** Capture its absolute path from `tugutil dash create … --json` and use
   **absolute paths into the worktree** for *every* read, write, edit, and test from
   then on.
 - **Never write to the base checkout once you're in a worktree.** Not code, not the
-  plan, not the ledger. The only path back is `tug dash join`. A stray write to the
+  plan, not the ledger. The only path back is `tugutil dash join`. A stray write to the
   base root will also block `join` (its preflight requires the base clean).
 - If the plan lived on the base branch, work on its **worktree copy** — read the
   original by path once, then edit only the copy inside the worktree.
@@ -74,7 +74,7 @@ convention:
 
 1. Read the **Step Status Ledger** (or apply the no-ledger fallback above) and resolve
    the step selector into a concrete list of steps to walk this run.
-2. Derive a short dash name from the plan slug. `tug dash create <name>
+2. Derive a short dash name from the plan slug. `tugutil dash create <name>
    --description "<one line>" --json`. **Capture the absolute `worktree` path** and
    `branch` from the response. If the dash already exists (resuming a later step
    range), `create` is idempotent and returns it. `create` hydrates the fresh worktree
@@ -115,12 +115,12 @@ Walk the resolved steps in dependency order. For each step:
   fix pre-existing ones you touch (don't punt them as "pre-existing").
 - Commit the step:
   ```bash
-  tug dash commit <name> --message "<conventional commit>" --json <<'EOF'
+  tugutil dash commit <name> --message "<conventional commit>" --json <<'EOF'
   {"instruction":"Step N: <title>","summary":"<what landed + how verified>","files_modified":[...],"files_created":[...]}
   EOF
   ```
   One command: it makes the git commit AND appends the verbatim instruction to the
-  per-project dash-log (`tug host state-dir`). Read progress back with `tug log` on
+  per-project dash-log (`tugutil host state-dir`). Read progress back with `tug log` on
   the dash branch.
 - **Update the Step Status Ledger** in the plan: flip the step from `pending` to
   `done` and record its commit. (Edit the plan in the worktree.)
@@ -208,14 +208,14 @@ Loop until the user is satisfied. A follow-up "now do Steps 6-8" is just another
 Do **not** merge until the user explicitly asks. When they do, preview the join first
 so any conflict surfaces without touching a tree:
 ```bash
-tug dash join <name> --preview --json
-tug dash join <name>
+tugutil dash join <name> --preview --json
+tugutil dash join <name>
 ```
 `--preview` runs the merge in memory (`git merge-tree`) and lists conflicted paths;
 the plain form squash-merges `tugdash/<name>` into the base branch (`main` for this
 repo) and cleans up the worktree + branch. The intersection-aware preflight only blocks
 on base dirt that overlaps the dash's changed files; if a join is interrupted mid-teardown,
-`tug dash join <name> --continue` resumes it. If preflight balks, tell the user to commit
+`tugutil dash join <name> --continue` resumes it. If preflight balks, tell the user to commit
 or stash their unrelated base-checkout changes first.
 
 ## Guardrails
@@ -226,7 +226,7 @@ or stash their unrelated base-checkout changes first.
   dependency. No ledger → fall back (walk from Step 1, infer done-state from dash
   rounds / git, confirm before skipping).
 - **Never commit to the base branch.** All commits go to the dash worktree via
-  `tug dash commit`. The user owns the base branch; `dash join` is the only path
+  `tugutil dash commit`. The user owns the base branch; `dash join` is the only path
   back, and only on their say-so.
 - **Keep the task list in lockstep.** One task per selected step, created up front;
   flip to in-progress when you start a step, complete when its ledger entry flips to
@@ -239,7 +239,7 @@ or stash their unrelated base-checkout changes first.
 - **No plan numbers in durable artifacts.** Never write step identifiers ("Step 4.5",
   "4i", "roadmap step X") into code, comments, docstrings, test names, or commit
   messages. Describe the behavior/reason directly. (The plan doc carries step numbers;
-  the code and commits do not — the `tug dash` round's `instruction` field is the
+  the code and commits do not — the `tugutil dash` round's `instruction` field is the
   one place "Step N" belongs, since it's bookkeeping, not a durable artifact.)
 - **Name the laws.** For tugdeck/tugways changes, cross-check the tuglaws and state which
   laws the change touches in the dash commit body.

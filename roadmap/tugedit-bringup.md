@@ -29,7 +29,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 
 - **Keep block mode the default.** This plan does not add a PTY, a terminal emulator, or a long-running tunnel. It removes an arbitrary cap and adds one narrow, non-terminal editor handoff.
 - **Rung 1 first (unblocks everything):** delete the wall-clock `EXEC_TIMEOUT`; the existing out-of-band `kill` frame is the user's stop control. This is what makes a blocking `tugedit --wait` (and long builds) safe.
-- **Reuse existing transport:** `tugedit` talks to tugcast over **loopback HTTP** (like `tug host tell`), and the `--wait` round-trip mirrors `/api/eval` (a `pending_edits` oneshot map resolved by an `edit-done` action). No WebSocket, no auth token, no new feed.
+- **Reuse existing transport:** `tugedit` talks to tugcast over **loopback HTTP** (like `tugutil host tell`), and the `--wait` round-trip mirrors `/api/eval` (a `pending_edits` oneshot map resolved by an `edit-done` action). No WebSocket, no auth token, no new feed.
 - **Reuse existing deck UI:** the editor is the existing Text card (`openFileInCard`); the handoff just seeds a request id and reports closure.
 - **Rung 2 is deck-only polish:** a "parked on editor" exchange state is rendered from the deck's shell store, driven by the same round-trip — no wake-up plumbing back into the blocked shell task.
 - **Fail loud, never silently elsewhere:** if Tug isn't reachable or no window is connected, `tugedit` exits non-zero so `git commit` aborts (the user retries), rather than silently editing in a fallback.
@@ -73,7 +73,7 @@ Separately, `git commit` currently opens the message in BBEdit because the user'
 - **WARNINGS ARE ERRORS** (`tugrust/.cargo/config.toml`, `-D warnings`). Rust builds/tests fail on any warning.
 - tugcast HTTP is **loopback-only**; `/api/edit` must reject non-loopback connections exactly like `tell_handler` / `eval_handler` (`server.rs`).
 - Tugdeck laws: external state enters React via `useSyncExternalStore` only ([L02]); lifecycle registrations in `useLayoutEffect` ([L03]); appearance via CSS/DOM, not React state ([L06]). Cross-check `tuglaws/tuglaws.md` before deck work.
-- `tugedit`'s `--wait` HTTP request must use **no (or a very long) read timeout** — editing is unbounded — unlike `tug host tell`'s default ureq timeouts.
+- `tugedit`'s `--wait` HTTP request must use **no (or a very long) read timeout** — editing is unbounded — unlike `tugutil host tell`'s default ureq timeouts.
 - Never commit AI attribution; commit style follows `/tugplug:commit`.
 
 #### Assumptions {#assumptions}
@@ -185,7 +185,7 @@ Anchors are explicit and kebab-case; steps carry `**References:**` and `**Depend
 
 **Decision:** `tugedit` is an HTTP client to `http://127.0.0.1:<port>/api/edit` and `/api/tell`. Port resolution order per Spec S05.
 
-**Rationale:** Matches `tug host tell` (`ureq` POST to `/api/tell`), reuses `tugcore::registry` discovery, and needs no cookie/token.
+**Rationale:** Matches `tugutil host tell` (`ureq` POST to `/api/tell`), reuses `tugcore::registry` discovery, and needs no cookie/token.
 
 **Implications:** `tugedit` depends on `ureq`, `clap`, `serde_json`, `tugcore`. Inside the `$` route, resolution is a direct env read (Step 2 injects `TUG_TUGCAST_PORT`, and `TUG_SESSION_ID` for the rung-2 parked marker); outside, it walks the registry and sends no `tug_session_id`.
 

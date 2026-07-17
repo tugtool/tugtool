@@ -1,4 +1,4 @@
-//! Process-level tests for `tug host gate run` — exclusivity, exit-code
+//! Process-level tests for `tugutil host gate run` — exclusivity, exit-code
 //! propagation, and kernel-owned release on holder death.
 //!
 //! Every test gates on its own scratch port via the `TUG_GATE_PORT`
@@ -149,7 +149,7 @@ fn non_gate_listener_is_rejected_not_waited_on() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("not a tug gate"),
+        stderr.contains("not a tugutil gate"),
         "stderr must explain the squatter, got: {stderr}"
     );
 }

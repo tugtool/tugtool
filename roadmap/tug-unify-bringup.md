@@ -8,8 +8,8 @@ changes**. Every capability the three tools expose today survives; only the inte
 changes:
 
 - `tugmark <verb>` → **`tug <verb>`** (top-level: `changes`, `context`, `commit`, `log`, `diff`).
-- `tugdash <verb>` → **`tug dash <verb>`** (`create`, `commit`, `join`, `release`, `list`, `show`).
-- `tugutil {instance,gate,state-dir,tell,init}` → **`tug host <verb>`** (a new `host` namespace for machine/project plumbing).
+- `tugdash <verb>` → **`tugutil dash <verb>`** (`create`, `commit`, `join`, `release`, `list`, `show`).
+- `tugutil {instance,gate,state-dir,tell,init}` → **`tugutil host <verb>`** (a new `host` namespace for machine/project plumbing).
 - `tugutil resolve` and `tugutil version` are **retired** — nothing calls them; `tug --version` (clap's built-in) covers the latter.
 
 The three `*-core` libraries (`tugutil-core`, `tugdash-core`, `tugmark-core`) are the
@@ -62,11 +62,11 @@ scripts, Swift, TS, skills, excluding `roadmap/archive/`):
 
 | Verb | Real automated dependents | Disposition |
 |---|---|---|
-| `instance` | justfile (~20 sites), `quit-tug-bundle.sh`, app-test `_harness/index.ts` (`spawnSync ["tugutil","instance","stop",…]`), **ProcessManager.swift** (`resolveBundledTool("tugutil")` → `instance stop`) | keep → `tug host instance` |
-| `gate` | justfile build mutex (app-test target) | keep → `tug host gate` |
-| `state-dir` | justfile, `implement` SKILL, `enhance-commands` | keep → `tug host state-dir` |
-| `tell` | no automated caller (hand wrapper over `POST /api/tell`) | keep → `tug host tell` |
-| `init` | no automated caller (human project bootstrap) | keep → `tug host init` |
+| `instance` | justfile (~20 sites), `quit-tug-bundle.sh`, app-test `_harness/index.ts` (`spawnSync ["tugutil","instance","stop",…]`), **ProcessManager.swift** (`resolveBundledTool("tugutil")` → `instance stop`) | keep → `tugutil host instance` |
+| `gate` | justfile build mutex (app-test target) | keep → `tugutil host gate` |
+| `state-dir` | justfile, `implement` SKILL, `enhance-commands` | keep → `tugutil host state-dir` |
+| `tell` | no automated caller (hand wrapper over `POST /api/tell`) | keep → `tugutil host tell` |
+| `init` | no automated caller (human project bootstrap) | keep → `tugutil host init` |
 | `resolve` | **zero callers anywhere**; `resolve_plan` lib only re-exported, never called outside its own tests | **retire the verb** (keep the lib) |
 | `version` | zero — every bin has `--version` | **retire the verb** |
 
@@ -89,10 +89,10 @@ green at every commit and only the final steps touch the app bundle:
 ### Success Criteria {#success-criteria}
 
 - `cargo build` and `cargo nextest run` are green for the whole workspace with `-D warnings`.
-- `tug --help` shows the three groups; `tug host --help` and `tug dash --help` reproduce today's `tugutil`/`tugdash` command sets (minus retired verbs); `tug` with no subcommand prints the splash.
+- `tug --help` shows the three groups; `tugutil host --help` and `tugutil dash --help` reproduce today's `tugutil`/`tugdash` command sets (minus retired verbs); `tug` with no subcommand prints the splash.
 - Every migrated verb's `--json` output is byte-identical to the pre-migration tool's (same envelope, same `command` label, same `data`).
-- `just build` produces a `tug` binary and a single `~/.local/bin/tug` symlink; `just instances`, `just reap`, `just app-test` (gate), and the sentinel/state-dir paths all work through `tug host …`.
-- `just app-debug` builds, signs, bundles, and launches; `Contents/MacOS/tug` is present and signed; the ProcessManager takeover kill uses the bundled `tug host instance stop`.
+- `just build` produces a `tug` binary and a single `~/.local/bin/tugutil` symlink; `just instances`, `just reap`, `just app-test` (gate), and the sentinel/state-dir paths all work through `tugutil host …`.
+- `just app-debug` builds, signs, bundles, and launches; `Contents/MacOS/tugutil` is present and signed; the ProcessManager takeover kill uses the bundled `tugutil host instance stop`.
 - `just app-test` ends `VERDICT: PASS`.
 - No live surface (code, justfile, scripts, skills, non-archive docs, CLAUDE.md) references `tugutil`/`tugdash`/`tugmark` as an *invoked binary* — only the `*-core` crate names and `roadmap/archive/**` history remain.
 
@@ -132,12 +132,12 @@ green at every commit and only the final steps touch the app bundle:
 
 ## Open Questions {#open-questions}
 
-- **[Q01] `command` label strings.** tugmark emits `"mark changes"` etc.; under `tug changes`
+- **[Q01] `command` label strings.** tugmark emits `"mark changes"` etc.; under `tugutil changes`
   the `"mark "` prefix is now cosmetically odd. **Resolved:** preserve every label verbatim
   ([P01]) — the skills consume `.data.*`, not `.command`, and a "no feature change" refactor
   must not risk a consumer that string-matches the label. A later cosmetic pass can revisit.
 - **[Q02] `host` splash / no-subcommand behavior.** `tug` (no args) keeps `tugutil`'s splash.
-  `tug host` (no sub) and `tug dash` (no sub) should print their subcommand help (clap default
+  `tugutil host` (no sub) and `tugutil dash` (no sub) should print their subcommand help (clap default
   when a subcommand group has no default) — acceptable, no special-casing. **Resolved:** default clap behavior.
 
 ## Risks {#risks}
@@ -151,11 +151,11 @@ green at every commit and only the final steps touch the app bundle:
 - **[R03] `~/.local/bin` dangling symlinks** from a dash worktree build (the justfile already
   guards this — only the main checkout owns `~/.local/bin`). Mitigation: keep the guard; when
   the dash builds, it skips the symlink step, so `tug` resolves via the main-checkout symlink
-  only after join. Noted so the implementer runs `tug` from `tugrust/target/debug/tug` inside
+  only after join. Noted so the implementer runs `tug` from `tugrust/target/debug/tugutil` inside
   the worktree, not via a stale `~/.local/bin/tugutil`.
 - **[R04] Swift/bundle step green but takeover-kill untested** (the takeover path is hard to
   force in app-test). Mitigation: assert the binary name + arg vector by code review and confirm
-  `Contents/MacOS/tug host instance stop --help` runs from the signed bundle.
+  `Contents/MacOS/tugutil host instance stop --help` runs from the signed bundle.
 - **[R05] Dead code from retiring `resolve`/`version` fails `-D warnings`.** Deleting
   `commands/resolve.rs` strands `output::ResolveData` (only `resolve` constructs it), and likely
   `JsonResponse::error` + `JsonIssue` (and the `ResolveResult`/`ResolveStage` re-exports) if no
@@ -254,15 +254,15 @@ mapping for `Changes/Context/Commit/Log/Diff`, the string→exit-1 mapping for `
 
 Exact sites the sweep must hit (line numbers are indicative — match on content):
 
-- **justfile:** `cargo build … -p tugutil -p tugdash -p tugmark …` (build + app-debug build, 2 lines) → `-p tug`; symlink loop `for bin in … tugutil tugdash tugmark …` → include `tug`, drop the three, **and `rm -f ~/.local/bin/{tugutil,tugdash,tugmark}` in the same main-checkout branch so no stale symlink dangles post-join** ([R06]); `tugrust/target/debug/tugutil instance …` (prune-warn 273/274, stop 408/410, remove 470, reap `TUGUTIL=` 531-539, kill loops 1063/1065/1120/1122/1199/1201) → `tugrust/target/debug/tug host instance …`; `tugutil gate …` (app-test gate 1007-1012, comments 953/1001) → `tug host gate …`; `tugutil state-dir` (803/921, comment 793) → `tug host state-dir`; the `just instances` wrapper (415) and `just instance-remove` (470); comment `tugdash join|release` (494) → `tug dash …`.
+- **justfile:** `cargo build … -p tugutil -p tugdash -p tugmark …` (build + app-debug build, 2 lines) → `-p tug`; symlink loop `for bin in … tugutil tugdash tugmark …` → include `tug`, drop the three, **and `rm -f ~/.local/bin/{tugutil,tugdash,tugmark}` in the same main-checkout branch so no stale symlink dangles post-join** ([R06]); `tugrust/target/debug/tugutil instance …` (prune-warn 273/274, stop 408/410, remove 470, reap `TUGUTIL=` 531-539, kill loops 1063/1065/1120/1122/1199/1201) → `tugrust/target/debug/tugutil host instance …`; `tugutil gate …` (app-test gate 1007-1012, comments 953/1001) → `tugutil host gate …`; `tugutil state-dir` (803/921, comment 793) → `tugutil host state-dir`; the `just instances` wrapper (415) and `just instance-remove` (470); comment `tugdash join|release` (494) → `tugutil dash …`.
 - **pbxproj** (`tugapp/Tug.xcodeproj/project.pbxproj`): input file list (220-225) + output file list (234-239) entries for `tugutil`/`tugdash`/`tugmark` → single `tug`; the copy-phase `shellScript` `for bin in tugcast tugcode tugutil tugdash tugmark tugexec tugrelaunch tugpulse` → replace the three with `tug`.
 - **sign-bundle.sh:** `RUST_BINS=(tugcast tugutil tugdash tugmark tugexec tugrelaunch tugbank)` → replace the three with `tug`; comment (21).
 - **build-release-inputs.sh:** `cargo build --release -p tugcast -p tugdash -p tugmark -p tugexec -p tugutil -p tugrelaunch` → `-p tug` (one, not three); comment (8).
 - **build-app.sh:** `cp …/release/tugutil …/MacOS/` (114) → `tug`; comment (82). (Note: this script currently copies only tugcast/tugutil/tugexec/tugcode — it never copied tugdash/tugmark; after unify it copies `tug`.)
 - **quit-tug-bundle.sh:** `TUGUTIL="$REPO_ROOT/tugrust/target/debug/tugutil"` + `"$TUGUTIL" instance stop …` (57-59) → `tug` + `host instance stop`; comments (53-55).
 - **ProcessManager.swift:** `resolveBundledTool("tugutil")` (922) → `"tug"`; the `proc` arg vector `["instance","stop",id,"--timeout",…]` → `["host","instance","stop",…]`; comments (324/912-940 mentioning tugutil).
-- **tugplug skills** (`SKILL.md`): `commit` (`tugmark context`/`tugmark commit`), `implement`/`dash` (`tugmark log`, `tugdash create|commit|join`, `tugutil state-dir`), `audit` (`tugmark log`, `tugmark diff --range`) → `tug …` / `tug dash …` / `tug host state-dir`.
-- **enhance-commands.ts:** `SHELL_COMMAND_TOOLS = ["just","tugutil","tugdash","tugmark"]` → `["just","tug"]`; doc comment (16); test fixtures in `__tests__/enhance-commands.test.ts` (104-107, 128) → `tug`/`tug host`/`tug dash` forms.
+- **tugplug skills** (`SKILL.md`): `commit` (`tugmark context`/`tugmark commit`), `implement`/`dash` (`tugmark log`, `tugdash create|commit|join`, `tugutil state-dir`), `audit` (`tugmark log`, `tugmark diff --range`) → `tug …` / `tugutil dash …` / `tugutil host state-dir`.
+- **enhance-commands.ts:** `SHELL_COMMAND_TOOLS = ["just","tugutil","tugdash","tugmark"]` → `["just","tug"]`; doc comment (16); test fixtures in `__tests__/enhance-commands.test.ts` (104-107, 128) → `tug`/`tugutil host`/`tugutil dash` forms.
 - **auto-approve-tug.sh:** the `case` arms `tugtool\ *|tugutil` and `tugmark\ *|tugmark` (25-26) → a single `tug\ *|tug) APPROVE=true` (keep the `tugtool` arm if it still means the repo umbrella; drop the tugutil/tugmark arms).
 - **app-test `_harness/index.ts`:** `spawnSync({cmd:["tugutil","instance","stop",id,"--timeout",…]})` (1770-1782) → `["tug","host","instance","stop",…]`; comments referencing `tugutil instance …`.
 - **CLAUDE.md / non-archive roadmap / tuglaws:** update prose that names the old binaries as commands.
@@ -275,14 +275,14 @@ Exact sites the sweep must hit (line numbers are indicative — match on content
   `assert_cmd::Command::cargo_bin("tug")` and prefix invocations: git verbs stay top-level,
   `gate`/`instance`/`state-dir`/`tell`/`init` gain `host`, dash gains `dash`. These are the
   byte-identical golden contract for the envelope + exit codes.
-- **`bun test`** for `enhance-commands` — the fixture table asserts the `tug`/`tug host`/`tug dash`
+- **`bun test`** for `enhance-commands` — the fixture table asserts the `tug`/`tugutil host`/`tugutil dash`
   command lines are recognized by the enhancer.
 - **`bunx vite build`** — the tugdeck change (allowlist) must survive the production rollup bundle.
-- **`just app-test`** (full sweep) — exercises instance lifecycle through `tug host instance` and
-  the app-test gate through `tug host gate`; ends `VERDICT: PASS`.
-- **Live end-to-end** (Step 6): from the worktree's `tugrust/target/debug/tug`, run `tug context`
-  → `tug commit --message …` and diff the receipt against `git show --numstat`; `tug dash list`;
-  `tug host instance list`; `tug host state-dir`.
+- **`just app-test`** (full sweep) — exercises instance lifecycle through `tugutil host instance` and
+  the app-test gate through `tugutil host gate`; ends `VERDICT: PASS`.
+- **Live end-to-end** (Step 6): from the worktree's `tugrust/target/debug/tugutil`, run `tugutil context`
+  → `tugutil commit --message …` and diff the receipt against `git show --numstat`; `tugutil dash list`;
+  `tugutil host instance list`; `tugutil host state-dir`.
 
 ## Execution Steps {#execution-steps}
 
@@ -338,7 +338,7 @@ the re-homed CLI tests pass; `cargo run -p tug -- --help`, `-- host --help`, `--
 `cargo run -p tug` (splash) render the expected shapes.
 
 **Checkpoint:** `cargo nextest run` reports zero failures with the three old bin crates gone and
-`crates/tug` present; `tug --help` lists `changes/context/commit/log/diff`, `dash`, `host`; `tug host --help`
+`crates/tug` present; `tug --help` lists `changes/context/commit/log/diff`, `dash`, `host`; `tugutil host --help`
 lists `instance/gate/state-dir/tell/init` (no `resolve`/`version`); `tug --version` prints `0.8.0 (<hash>)`.
 
 ### Step 2 — Retarget the justfile {#step-2}
@@ -355,20 +355,20 @@ lists `instance/gate/state-dir/tell/init` (no `resolve`/`version`); `tug --versi
    main-checkout-only guard, [R03]). In that **same** main-checkout branch, add
    `rm -f ~/.local/bin/{tugutil,tugdash,tugmark}` so the retired names don't dangle after a
    post-join `main` rebuild ([R06]).
-3. Rewrite every `tugrust/target/debug/tugutil instance …` → `tugrust/target/debug/tug host instance …`
+3. Rewrite every `tugrust/target/debug/tugutil instance …` → `tugrust/target/debug/tugutil host instance …`
    (prune-warn, stop, remove, the reap `TUGUTIL=` variable + its build fallback, all kill loops, the
    `just instances`/`just instance-remove` wrappers).
-4. Rewrite `tugutil gate …` → `tug host gate …` (the app-test gate `exec …/tug host gate run --name apptest …`
-   and its build fallback) and `tugutil state-dir` → `tug host state-dir` (sentinel-file + sentinel-dir
+4. Rewrite `tugutil gate …` → `tugutil host gate …` (the app-test gate `exec …/tug host gate run --name apptest …`
+   and its build fallback) and `tugutil state-dir` → `tugutil host state-dir` (sentinel-file + sentinel-dir
    resolution, both the PATH form and the `tugrust/target/debug/` fallback form).
 5. Update comments naming the old binaries as commands (incl. the `tugdash join|release` comment).
 
-**Tests:** `just build` green; `ls -l ~/.local/bin/tug` resolves into `tugrust/target/debug/tug`;
-`tug host instance list` and `just instances` succeed; `tug host state-dir` prints the project dir.
+**Tests:** `just build` green; `ls -l ~/.local/bin/tugutil` resolves into `tugrust/target/debug/tugutil`;
+`tugutil host instance list` and `just instances` succeed; `tugutil host state-dir` prints the project dir.
 
 **Checkpoint:** `just build` produces `tug` and its symlink (no `tugutil`/`tugdash`/`tugmark` symlink
 created, and any pre-existing ones removed), and `just instances` lists instances through
-`tug host instance list`.
+`tugutil host instance list`.
 
 ### Step 3 — Retarget distribution scripts + app bundle {#step-3}
 
@@ -390,15 +390,15 @@ created, and any pre-existing ones removed), and `just instances` lists instance
 5. **quit-tug-bundle.sh:** point `TUGUTIL` at `…/tug`, change the call to `host instance stop`, update comments.
 
 **Tests:** `just app-debug` from the worktree builds + signs + launches a `(debug, <branch>)` instance;
-`just instances` shows it; `codesign -dv "<bundle>/Contents/MacOS/tug"` verifies a valid signature;
-`"<bundle>/Contents/MacOS/tug" --version` runs.
+`just instances` shows it; `codesign -dv "<bundle>/Contents/MacOS/tugutil"` verifies a valid signature;
+`"<bundle>/Contents/MacOS/tugutil" --version` runs.
 
-**Checkpoint:** the debug bundle contains a signed `Contents/MacOS/tug`, no `tugutil`/`tugdash`/`tugmark`
+**Checkpoint:** the debug bundle contains a signed `Contents/MacOS/tugutil`, no `tugutil`/`tugdash`/`tugmark`
 binaries, and the app launches to a live instance.
 
 ### Step 4 — Swift host: ProcessManager takeover kill {#step-4}
 
-**Commit:** `tug(unify): ProcessManager takeover uses bundled tug host instance stop`
+**Commit:** `tug(unify): ProcessManager takeover uses bundled tugutil host instance stop`
 
 **Depends on:** #step-3
 
@@ -406,14 +406,14 @@ binaries, and the app launches to a live instance.
 
 **Tasks:**
 1. In `ProcessManager.swift`, change `resolveBundledTool("tugutil")` → `resolveBundledTool("tug")`
-   and prepend `"host"` to the argument vector so it invokes `tug host instance stop <id> --timeout …`.
+   and prepend `"host"` to the argument vector so it invokes `tugutil host instance stop <id> --timeout …`.
 2. Update the surrounding doc comments (`Contents/MacOS/` helper list, the takeover-kill comment) to name `tug`.
 
 **Tests:** `just app-debug` rebuilds the app (xcodebuild) green; the app launches; invoke
-`"<bundle>/Contents/MacOS/tug" host instance stop --help` from the signed bundle to confirm the arg path
+`"<bundle>/Contents/MacOS/tugutil" host instance stop --help` from the signed bundle to confirm the arg path
 resolves (the live takeover race is not app-testable, [R04]).
 
-**Checkpoint:** the app builds and launches with the Swift change; the bundled `tug host instance stop`
+**Checkpoint:** the app builds and launches with the Swift change; the bundled `tugutil host instance stop`
 help runs from `Contents/MacOS/`.
 
 ### Step 5 — Skills, frontend allowlist, hook, app-test harness {#step-5}
@@ -426,28 +426,28 @@ help runs from `Contents/MacOS/`.
 
 **Tasks:**
 1. **tugplug skills:** in `commit`, `implement`, `dash`, `audit` `SKILL.md`, rewrite `tugmark <verb>` →
-   `tug <verb>`, `tugdash <verb>` → `tug dash <verb>`, `tugutil state-dir` → `tug host state-dir`.
-   (The `dash join`/`create`/`commit` lifecycle references become `tug dash …`.)
+   `tug <verb>`, `tugdash <verb>` → `tugutil dash <verb>`, `tugutil state-dir` → `tugutil host state-dir`.
+   (The `dash join`/`create`/`commit` lifecycle references become `tugutil dash …`.)
 2. **enhance-commands.ts:** `SHELL_COMMAND_TOOLS` → `["just", "tug"]`; update the doc comment; in
-   `__tests__/enhance-commands.test.ts` rewrite the fixtures to `tug`/`tug host state-dir`/`tug dash join`
+   `__tests__/enhance-commands.test.ts` rewrite the fixtures to `tug`/`tugutil host state-dir`/`tugutil dash join`
    forms (incl. the bare-tool-name-plus-space case → `"tug "`).
 3. **auto-approve-tug.sh:** collapse the `tugutil`/`tugmark` `case` arms into one `tug\ *|tug) APPROVE=true`
    (retain the `tugtool` arm if it denotes the repo umbrella).
 4. **app-test `_harness/index.ts`:** change the `spawnSync` `cmd` from `["tugutil","instance","stop",…]`
    to `["tug","host","instance","stop",…]`; update comments. **Note the resolution caveat:** the
-   spawn uses the bare name (PATH-resolved), and a linked dash worktree creates no `~/.local/bin/tug`
+   spawn uses the bare name (PATH-resolved), and a linked dash worktree creates no `~/.local/bin/tugutil`
    symlink — so during this run's own `just app-test` the teardown spawn throws, is caught, and the
    existing SIGTERM+tmux fallback reclaims the instance (same best-effort contract as today's bare
-   `tugutil`). The `tug host instance stop` path gets real coverage from the post-join `main` run,
+   `tugutil`). The `tugutil host instance stop` path gets real coverage from the post-join `main` run,
    where the symlink exists. If true in-dash coverage is wanted, resolve the binary at the bundle's
-   `Contents/MacOS/tug` absolute path instead of the bare name — but that exceeds strict parity.
+   `Contents/MacOS/tugutil` absolute path instead of the bare name — but that exceeds strict parity.
 
 **Tests:** `bun test tugdeck/src/lib/markdown/__tests__/enhance-commands.test.ts` green; `bunx vite build`
-green (production rollup); `just app-test` full sweep → `VERDICT: PASS` (the `tug host instance` teardown
+green (production rollup); `just app-test` full sweep → `VERDICT: PASS` (the `tugutil host instance` teardown
 resolves post-join; in-dash it falls back to SIGTERM+tmux — either way the instance is reclaimed and the
-verdict passes; `tug host gate` is exercised directly as the app-test gate).
+verdict passes; `tugutil host gate` is exercised directly as the app-test gate).
 
-**Checkpoint:** the enhancer recognizes `tug`/`tug host`/`tug dash` command lines, the production bundle
+**Checkpoint:** the enhancer recognizes `tug`/`tugutil host`/`tugutil dash` command lines, the production bundle
 builds, and `just app-test` passes.
 
 ### Step 6 — Integration checkpoint + residual-reference sweep {#step-6}
@@ -465,9 +465,9 @@ builds, and `just app-test` passes.
    remaining command-form reference on a live surface (CLAUDE.md, non-archive `roadmap/**`, `tuglaws/**` if any).
 2. Update `CLAUDE.md`'s repository-structure / tooling prose to describe the single `tug` CLI.
 3. Full `cd tugrust && cargo nextest run` (whole workspace) green.
-4. Live end-to-end from `tugrust/target/debug/tug` (env-scrub `TUG_INSTANCE_ID`/`TUG_SESSION_ID` as
-   needed): `tug context` → `tug commit --message "<m>"` and diff the receipt vs `git show --numstat`;
-   `tug dash list`; `tug host instance list`; `tug host state-dir`. Confirm each `--json` matches the
+4. Live end-to-end from `tugrust/target/debug/tugutil` (env-scrub `TUG_INSTANCE_ID`/`TUG_SESSION_ID` as
+   needed): `tugutil context` → `tugutil commit --message "<m>"` and diff the receipt vs `git show --numstat`;
+   `tugutil dash list`; `tugutil host instance list`; `tugutil host state-dir`. Confirm each `--json` matches the
    pre-migration envelope shape ([R02]).
 5. `just app-test` full sweep → `VERDICT: PASS`.
 

@@ -177,7 +177,7 @@ interface ResolvedLaunch {
    * later launch reuses it — so teardown can reclaim its data dir
    * immediately. A caller-supplied id (cold-boot / continuity tests
    * that relaunch with the same id) must NOT have its data dir wiped
-   * between launches, so those are left for `tug host instance prune`.
+   * between launches, so those are left for `tugutil host instance prune`.
    */
   ephemeralInstanceId: boolean;
 }
@@ -1130,7 +1130,7 @@ export class App {
     // app (the parent) — not tugcast (the child) — is what actually
     // makes the window disappear. Doing it by PID is race-free: it
     // works even before tugcast has registered in the instance
-    // registry, which the registry-based `tug host instance stop` path
+    // registry, which the registry-based `tugutil host instance stop` path
     // (below) can miss for a fast test.
     if (this.hostPid > 0) {
       try {
@@ -1139,7 +1139,7 @@ export class App {
         // already dead
       }
     }
-    // Belt-and-suspenders: the wrapped kill runs `tug host instance
+    // Belt-and-suspenders: the wrapped kill runs `tugutil host instance
     // stop` (clears any stale registry entry + tugcast) and SIGTERMs
     // the `open -W` wrapper so its `.exited` resolves.
     try {
@@ -1283,7 +1283,7 @@ export async function launchTugApp(
   // call, so every teardown path below (including the version-skew
   // throw) can signal the app directly. Killing the app by PID is
   // race-free — it works before tugcast has registered in the instance
-  // registry, which the registry-based `tug host instance stop` can
+  // registry, which the registry-based `tugutil host instance stop` can
   // miss for a fast test. Best-effort: an app build without the
   // `getHostPid` verb leaves `hostPid` at 0 and teardown falls back to
   // the registry path.
@@ -1700,7 +1700,7 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
   // ## Kill semantics
   //
   // SIGTERM to the `open -W` wrapper doesn't reliably propagate to the
-  // launched app. We instead use `tug host instance stop <id>` (via
+  // launched app. We instead use `tugutil host instance stop <id>` (via
   // wrappedKill below) which signals only the apptest-* PID for this
   // launch — safe under multi-instance, untouched developer sessions.
   const bundlePath = resolved.appPath.replace(/\/Contents\/MacOS\/[^/]+$/, "");
@@ -1759,23 +1759,23 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
         };
       }
     ).Bun?.spawnSync;
-    // Targeted teardown via `tug host instance stop <id>`. The bare
+    // Targeted teardown via `tugutil host instance stop <id>`. The bare
     // `pkill -x Tug` approach is unsafe under multi-instance: it
     // would kill a developer's separately-running `just app-dev`
-    // session. `tug host instance stop` looks up the PID for this
+    // session. `tugutil host instance stop` looks up the PID for this
     // specific apptest-<uuid> in the registry and signals only it.
     // `--timeout` keeps the call short — we send SIGTERM then a
     // fast escalation to SIGKILL.
     //
     // Bare name (PATH-resolved). A linked dash worktree creates no
-    // ~/.local/bin/tug symlink, so in-dash this spawn throws and the
+    // ~/.local/bin/tugutil symlink, so in-dash this spawn throws and the
     // SIGTERM+tmux fallback below reclaims the instance; real coverage
     // of this path comes from the post-join main run (where the symlink
     // exists).
     try {
       spawnSync?.({
         cmd: [
-          "tug",
+          "tugutil",
           "host",
           "instance",
           "stop",
@@ -1825,7 +1825,7 @@ function spawnTugApp(resolved: ResolvedLaunch): SpawnedTugApp {
       try {
         spawnSync?.({
           cmd: [
-            "tug",
+            "tugutil",
             "host",
             "instance",
             "remove",

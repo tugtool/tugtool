@@ -1,4 +1,4 @@
-//! Dashes — worktree-isolated work units (`tug dash …`). A thin shell over
+//! Dashes — worktree-isolated work units (`tugutil dash …`). A thin shell over
 //! [`tugdash_core::ops`]: parse arguments, read commit round-metadata from stdin,
 //! call the typed library API, and format the outcome as `--json` (the shared
 //! envelope) or a plain human read-out.
@@ -173,7 +173,7 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
     Ok(())
 }
 
-/// `tug dash join --resolve`: run the resolution ladder, then land the candidate
+/// `tugutil dash join --resolve`: run the resolution ladder, then land the candidate
 /// ([P31]). No AI rung from the CLI (the scribe lives in tugcast) — the ladder's
 /// algorithmic rungs only.
 fn run_join_resolve(

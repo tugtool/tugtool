@@ -1,4 +1,4 @@
-//! CLI argument parsing for the unified `tug` binary.
+//! CLI argument parsing for the unified `tugutil` binary.
 //!
 //! One command tree over three surfaces: the top-level git verbs
 //! (`changes`/`context`/`commit`/`log`/`diff`, backed by `tugmark_core`), the
@@ -15,13 +15,13 @@ use crate::commands::{GateCommands, InstanceCommands};
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
 
-/// tug — the unified Tug developer CLI.
+/// tugutil — the unified Tug developer CLI.
 #[derive(Parser)]
-#[command(name = "tug")]
+#[command(name = "tugutil")]
 #[command(version = VERSION)]
-#[command(about = "tug — changes & commits, dashes, and host plumbing")]
+#[command(about = "tugutil — changes & commits, dashes, and host plumbing")]
 #[command(
-    long_about = "tug — the unified Tug developer CLI.\n\nTop-level verbs own this session's git surface: changes (which files this\nsession changed), context (one-shot commit context), commit (stage → commit →\nstructured receipt), log, and diff. `tug dash …` drives worktree-isolated work\nunits; `tug host …` is instance/project plumbing (instance, gate, state-dir,\ntell, init)."
+    long_about = "tugutil — the unified Tug developer CLI.\n\nTop-level verbs own this session's git surface: changes (which files this\nsession changed), context (one-shot commit context), commit (stage → commit →\nstructured receipt), log, and diff. `tugutil dash …` drives worktree-isolated work\nunits; `tugutil host …` is instance/project plumbing (instance, gate, state-dir,\ntell, init)."
 )]
 pub struct Cli {
     /// Increase output verbosity
@@ -197,12 +197,12 @@ pub enum DashCommands {
 
 #[derive(Subcommand)]
 pub enum HostCommands {
-    /// Initialize a tug project in current directory
+    /// Initialize a tugutil project in current directory
     ///
     /// Creates .tugtool/ directory with skeleton template and config.
     /// Idempotent: safe to run multiple times (creates only missing files).
     #[command(
-        long_about = "Initialize a tug project in current directory.\n\nCreates:\n  .tugtool/config.toml  Project configuration (dash hydration hook)\n\nIdempotent: if .tugtool/ already exists, creates only missing files without overwriting.\nWith --force, removes and recreates everything.\nWith --check, performs a lightweight verification of initialization status without side effects."
+        long_about = "Initialize a tugutil project in current directory.\n\nCreates:\n  .tugtool/config.toml  Project configuration (dash hydration hook)\n\nIdempotent: if .tugtool/ already exists, creates only missing files without overwriting.\nWith --force, removes and recreates everything.\nWith --check, performs a lightweight verification of initialization status without side effects."
     )]
     Init {
         /// Overwrite existing .tug directory
@@ -218,7 +218,7 @@ pub enum HostCommands {
     ///
     /// Posts a JSON action to the tugcast /api/tell endpoint.
     #[command(
-        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tug host tell restart\n  tug host tell show-card -p component=about\n  tug host tell set-maker-mode -p enabled=true"
+        long_about = "Send an action to tugcast via HTTP POST.\n\nPosts a JSON body to http://127.0.0.1:<port>/api/tell.\nThe body contains {\"action\": \"<ACTION>\", ...params}.\n\nParameters are specified with -p KEY=VALUE (repeatable).\nValues are auto-coerced: true/false -> bool, null -> null,\nintegers -> number, floats -> number, everything else -> string.\n\nExamples:\n  tugutil host tell restart\n  tugutil host tell show-card -p component=about\n  tugutil host tell set-maker-mode -p enabled=true"
     )]
     Tell {
         /// Action name (e.g., reload, show-card, set-maker-mode)

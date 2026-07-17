@@ -1,4 +1,4 @@
-//! Implementation of the `tug init` command
+//! Implementation of the `tugutil init` command
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -118,7 +118,7 @@ pub fn run_init(force: bool, check: bool, json_output: bool, quiet: bool) -> Res
         );
         println!("{}", serde_json::to_string_pretty(&response).unwrap());
     } else if !quiet {
-        println!("Initialized tug project in .tugtool/");
+        println!("Initialized tugutil project in .tugtool/");
         println!("  Created: config.toml");
     }
 

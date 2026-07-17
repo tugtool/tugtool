@@ -1,4 +1,4 @@
-//! Implementation of the `tug host state-dir` command.
+//! Implementation of the `tugutil host state-dir` command.
 //!
 //! Prints the per-project runtime-state directory (`project_state_dir`) so
 //! shell consumers — the `Justfile`, the host — resolve the path without

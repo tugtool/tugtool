@@ -209,7 +209,7 @@ smallest model). The tugbank override stays the knob; still no UI for it.
 | Bash bracketing adds a `git status` per Bash call | med | med | porcelain-v2 status is ~10ms on this repo; only Bash calls pay; reuse `is_within_git_worktree` gate to skip non-repos | status latency > 100ms observed |
 | Multi-session overlap misattributes Bash deltas | med | low | overlap → `ambiguous` flag, never a guess; ambiguous rows excluded from one-click commit ([P15]) | user reports wrong grouping |
 | Scribe (`claude -p`) slow or auth-broken headless | med | med | spawn with scrubbed env (subscription auth, same as tugcode); card shows in-flight state; hard 60s timeout with error surfaced | consistent timeouts |
-| `.tugtree` → `.tug/worktrees/` migration breaks live dashes | high | low | `git worktree move` only when worktree is clean and no tug instance holds it; otherwise print instructions and continue against old path | migration failure in the wild |
+| `.tugtree` → `.tug/worktrees/` migration breaks live dashes | high | low | `git worktree move` only when worktree is clean and no tugutil instance holds it; otherwise print instructions and continue against old path | migration failure in the wild |
 | Rust/TS wire-type drift for ChangesetSnapshot | med | med | golden contract fixture consumed by both a Rust test and a bun test ([P10]) | either test fails |
 
 **Risk R01: Fingerprint snapshot races** {#r01-fingerprint-races}

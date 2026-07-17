@@ -19,16 +19,16 @@ fn tug_binary() -> PathBuf {
 fn setup_test_project() -> tempfile::TempDir {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
-    // Run tug init
+    // Run tugutil init
     let output = Command::new(tug_binary())
         .arg("host").arg("init")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init");
+        .expect("failed to run tugutil init");
 
     assert!(
         output.status.success(),
-        "tug init failed: {:?}",
+        "tugutil init failed: {:?}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -43,7 +43,7 @@ fn test_init_creates_expected_files() {
         .arg("host").arg("init")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init");
+        .expect("failed to run tugutil init");
 
     assert!(output.status.success(), "init should succeed");
 
@@ -67,7 +67,7 @@ fn test_init_idempotent_on_existing_project() {
         .arg("host").arg("init")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init");
+        .expect("failed to run tugutil init");
 
     assert!(
         output.status.success(),
@@ -94,7 +94,7 @@ fn test_init_creates_missing_files() {
         .arg("host").arg("init")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init");
+        .expect("failed to run tugutil init");
 
     assert!(
         output.status.success(),
@@ -120,7 +120,7 @@ fn test_init_with_force_succeeds() {
         .arg("--force")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --force");
+        .expect("failed to run tugutil init --force");
 
     assert!(output.status.success(), "init --force should succeed");
 }
@@ -134,7 +134,7 @@ fn test_json_output_init() {
         .arg("--json")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --json");
+        .expect("failed to run tugutil init --json");
 
     assert!(output.status.success(), "init --json should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -156,7 +156,7 @@ fn test_init_check_uninitialized_project() {
         .arg("--check")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --check");
+        .expect("failed to run tugutil init --check");
 
     // Should return exit code 9 for uninitialized project
     assert_eq!(
@@ -175,7 +175,7 @@ fn test_init_check_initialized_project() {
         .arg("--check")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --check");
+        .expect("failed to run tugutil init --check");
 
     // Should return exit code 0 for initialized project
     assert!(
@@ -195,7 +195,7 @@ fn test_init_check_json_uninitialized() {
         .arg("--json")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --check --json");
+        .expect("failed to run tugutil init --check --json");
 
     assert_eq!(output.status.code(), Some(9));
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -219,7 +219,7 @@ fn test_init_check_json_initialized() {
         .arg("--json")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --check --json");
+        .expect("failed to run tugutil init --check --json");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -243,7 +243,7 @@ fn test_init_check_force_mutually_exclusive() {
         .arg("--force")
         .current_dir(temp.path())
         .output()
-        .expect("failed to run tug init --check --force");
+        .expect("failed to run tugutil init --check --force");
 
     // Should fail due to mutually exclusive flags
     assert!(

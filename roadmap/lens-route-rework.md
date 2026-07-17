@@ -32,7 +32,7 @@ This phase makes the Lens a monitor (glance state, click to go) and the Session 
 - **Reuse the shipping plumbing wholesale.** Changed files: the account-global `CHANGESET_ALL` aggregate (0x24) filtered to the card's workspace — the per-workspace `CHANGESET` feed (0x23) is **retired** (`tugcast-core/src/protocol.rs`, "never reuse 0x23") and must not be revived. Commit: `changeset_commit` CONTROL verb → `tugmark_core::commit`. AI draft: `changeset_draft_request` → draft engine → streamed `changeset_draft_delta` frames. Join: `changeset_join` → `tugdash_core::ops::join_in`. History: `GIT_LOG`/`GIT_LOG_QUERY`/`GIT_HEAD` feeds (0x25/0x26/0x27). Nothing new on the wire except optional trailer fields on `changeset_commit`.
 - **Build the card surfaces first, slim the Lens after** — no window where the commit flow exists nowhere.
 - **History questions ride the record.** The History route's submit is a normal `codeSessionStore.send()` invoking a new `/tugplug:history` skill that searches git context (tugmark, `git log --grep`) and answers. Claude sees everything.
-- **Commit trailers are the retrieval substrate.** `Tug-Session:` and `Tug-Dash:` trailers on every tug commit path make `git log --grep` session-scoped questions answerable. `Tug-Plan:` is deferred.
+- **Commit trailers are the retrieval substrate.** `Tug-Session:` and `Tug-Dash:` trailers on every tugutil commit path make `git log --grep` session-scoped questions answerable. `Tug-Plan:` is deferred.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -52,7 +52,7 @@ This phase makes the Lens a monitor (glance state, click to go) and the Session 
 3. ChangesView + changes-route composer semantics (commit, AI generate, dash join), backed by a per-card `ChangesRouteController`.
 4. HistoryView (per-commit blocks over GIT_LOG) + history-route submit → `/tugplug:history` skill (new).
 5. Slim Lens Sessions section to a read-only monitor; delete Lens Git History section.
-6. Commit trailers (`Tug-Session:`, `Tug-Dash:`) on all three tug commit paths.
+6. Commit trailers (`Tug-Session:`, `Tug-Dash:`) on all three tugutil commit paths.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -218,7 +218,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 #### [P08] Trailers are appended server-side / library-side, never client-side (DECIDED) {#p08-trailers-serverside}
 
-**Decision:** Machine-parseable git trailers ride every tug commit path, appended where the commit is made:
+**Decision:** Machine-parseable git trailers ride every tugutil commit path, appended where the commit is made:
 - **Deck commits:** the `changeset_commit` CONTROL payload gains optional `session_name` and `session_id` fields (sent by `ChangesRouteController.commit`, from the CHANGESET entry's `display_name` + `owner_id`; the Changeset card may adopt them later). `do_changeset_commit` (`tugrust/crates/tugcast/src/feeds/agent_supervisor.rs`) appends `Tug-Session: <name> (<id>)` to the message before `run_changeset_commit`.
 - **Dash round commits:** `tugdash_core::ops::commit()` appends `Tug-Session:` (from `TUG_SESSION_ID` env + a read-only `sessions.db` name lookup, per [P09]) and `Tug-Dash: <branch> onto <base>`.
 - **Dash join/squash:** `integrate_message()` output gains a body block with `Tug-Dash: <branch> onto <base>` (and `Tug-Session:` when resolvable).
@@ -805,7 +805,7 @@ Replies (`changeset_commit_ok`/`_err`) unchanged. Absent fields → today's beha
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The Lens is a read-only session monitor; the Session card gains working Changes and History view-routes (commit with AI-drafted messages, dash joins, per-commit history blocks, on-record history Q&A); every tug commit path emits `Tug-Session:`/`Tug-Dash:` trailers.
+**Deliverable:** The Lens is a read-only session monitor; the Session card gains working Changes and History view-routes (commit with AI-drafted messages, dash joins, per-commit history blocks, on-record history Q&A); every tugutil commit path emits `Tug-Session:`/`Tug-Dash:` trailers.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 

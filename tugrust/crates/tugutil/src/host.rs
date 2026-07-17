@@ -1,5 +1,5 @@
 //! Host plumbing — instance discovery, the build gate, project state, and the
-//! `tell` bridge (`tug host …`). Dispatches to the command modules, preserving
+//! `tell` bridge (`tugutil host …`). Dispatches to the command modules, preserving
 //! their `Result<i32, _>` → exit-code contract (the code the handler returns is
 //! the process exit code; any error is exit 1).
 

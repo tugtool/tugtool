@@ -1,4 +1,4 @@
-//! Splash screen display for tug CLI
+//! Splash screen display for tugutil CLI
 //!
 //! Shows a compact startup banner with ASCII spectacles logo and version info.
 

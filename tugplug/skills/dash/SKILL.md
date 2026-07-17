@@ -39,7 +39,7 @@ execute the user's instruction in-thread, commit each round, and stop before mer
 ### Create / continue
 
 ```bash
-tug dash create <name> --description "<first ~100 chars of the instruction>" --json
+tugutil dash create <name> --description "<first ~100 chars of the instruction>" --json
 ```
 Idempotent — returns the existing active dash if `<name>` already exists. **Capture the
 absolute `worktree` path** and `branch` from the response. `create` hydrates the fresh
@@ -58,7 +58,7 @@ pure-logic tests (`bun test <scope>` / `cargo nextest run`), and real-app tests 
 pipeline; `just app-test` ends in a greppable `VERDICT: PASS|FAIL` line). **Warnings
 are errors.** Then commit the round:
 ```bash
-tug dash commit <name> --message "<conventional commit>" --json <<'EOF'
+tugutil dash commit <name> --message "<conventional commit>" --json <<'EOF'
 {"instruction":"<the instruction>","summary":"<what you did + how verified>"}
 EOF
 ```
@@ -78,31 +78,31 @@ don't merge.
 ### Join (only on the user's word)
 
 ```bash
-tug dash join <name> --preview --json
-tug dash join <name> [--message "…"]
+tugutil dash join <name> --preview --json
+tugutil dash join <name> [--message "…"]
 ```
 Preview first: `--preview` runs the merge in memory and lists any conflicted paths
 without touching a tree. The plain form squash-merges `tugdash/<name>` into the base
 branch and cleans up the worktree + branch. The preflight only blocks on base dirt that
 intersects the dash's changed files; a join interrupted mid-teardown resumes with
-`tug dash join <name> --continue`.
+`tugutil dash join <name> --continue`.
 
 ### Release
 
 ```bash
-tug dash release <name>
+tugutil dash release <name>
 ```
 Discards the dash (worktree + branch) without merging.
 
 ### Status
 
-`tug dash show <name> --json` for one dash; `tug dash list --json` for all.
+`tugutil dash show <name> --json` for one dash; `tugutil dash list --json` for all.
 
 ## Guardrails
 
 - **No sub-agents.** You do the work in-thread.
 - **Never commit to the base branch.** All commits go to the dash worktree via
-  `tug dash commit`; `dash join` is the only path back, and only on the user's
+  `tugutil dash commit`; `dash join` is the only path back, and only on the user's
   say-so.
 - **Verify before every commit.** Warnings are errors.
 - **Right test, never a banned one.** Real-app tests via `just app-test` (never a

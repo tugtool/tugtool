@@ -84,7 +84,7 @@ const SOURCE_RICH = [
 // `isKnownSlashCommand` so the enhancer actually runs, giving at0237 real
 // `.tugx-md-cmd` spans to right-click.
 const SOURCE_CMD =
-  "Run `just launch-debug` to start, `tug dash join --preview` to preview, and `/diff HEAD` to inspect.";
+  "Run `just launch-debug` to start, `tugutil dash join --preview` to preview, and `/diff HEAD` to inspect.";
 
 /**
  * Known-command predicate for cell D — only `diff` among the slash

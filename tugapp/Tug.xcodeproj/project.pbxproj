@@ -219,7 +219,7 @@
 			inputPaths = (
 				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugcast",
 				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugcode",
-				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tug",
+				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugutil",
 				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugexec",
 				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugrelaunch",
 				"$(SRCROOT)/../tugrust/target/$(CONFIGURATION)/tugpulse",
@@ -231,7 +231,7 @@
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugcast",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugcode",
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tug",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugutil",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugexec",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugrelaunch",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/MacOS/tugpulse",

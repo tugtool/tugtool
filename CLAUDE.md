@@ -11,7 +11,7 @@ Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a
 **Exceptions:**
 - The `/tugplug:commit` skill: when the user invokes it, commit immediately without asking for confirmation.
 - Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/tugplug:commit` skill. Report each commit hash and message.
-- The `implement` and `dash` skills commit on their **dash worktree** (never on `main`) via `tug dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tug dash join`.
+- The `implement` and `dash` skills commit on their **dash worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
 
 ## Repository Structure
 

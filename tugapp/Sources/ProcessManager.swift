@@ -909,7 +909,7 @@ class ProcessManager {
     }
 
     /// Stop the same-identity incumbent, then respawn tugcast onto the
-    /// port it releases. Delegates the kill to the bundled `tug host
+    /// port it releases. Delegates the kill to the bundled `tugutil host
     /// instance stop`, which already does the graceful host-app SIGTERM
     /// → SIGKILL escalation, the PID-reuse identity guards, and the
     /// tmux-session reap — and, crucially, polls until the processes

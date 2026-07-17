@@ -101,7 +101,7 @@ pub(crate) async fn compose_snapshot(
 
     // Fold attribution events into per-owner buckets. Events are
     // oldest-first, so the latest event for a path wins op/origin while
-    // ambiguity ORs across all of them (same rule as `tug changes`).
+    // ambiguity ORs across all of them (same rule as `tugutil changes`).
     // Events whose file is no longer dirty (committed / reverted) drop out.
     // The `file_events` bucket key is canonical (the relay writes it through the
     // gateway), so query the canonical spelling of `project_dir`. Legacy rows
@@ -445,7 +445,7 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
 }
 
 /// Derive one dash entry per `refs/heads/tugdash/` branch, the same way
-/// `tug dash list` does (branch config `tugbase`, `rev-list --count`
+/// `tugutil dash list` does (branch config `tugbase`, `rev-list --count`
 /// rounds, worktree dirt) plus the `base...branch` name-status file list.
 /// Duplicated from the tug CLI until the dash core extracts into a
 /// shared crate.
