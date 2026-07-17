@@ -2,13 +2,12 @@
 //! real temp git repo and a seeded two-file ledger (`sessions.db` +
 //! `changes.db`).
 //!
-//! The library resolves the per-instance `sessions.db` via
-//! `tugcore::instance::sessions_db_path` (without `TUG_INSTANCE_ID` it falls
-//! back to `$HOME/Library/Application Support/Tug/sessions.db`) and the
-//! machine-global `changes.db` via `tugcore::instance::changes_db_path`.
-//! Each test overrides `HOME` on the child process (and scrubs the
-//! `TUG_CHANGES_DB` override) so both lookups land on seeded files, fully
-//! isolated from the developer's real ledger.
+//! Both ledgers are pointed at seeded temp files via explicit env overrides —
+//! `TUG_SESSIONS_DB` for the per-instance `sessions.db` and `TUG_CHANGES_DB`
+//! for the machine-global `changes.db`. This keeps the suite fully isolated
+//! from the developer's real ledger and platform-independent: `dirs::data_dir()`
+//! resolves differently on Linux (`XDG_DATA_HOME`) than macOS, so seeding via
+//! `HOME` alone would not survive CI (ubuntu).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -49,16 +48,15 @@ fn init_repo() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-/// A temp `$HOME` seeded with the two-file ledger the binary reads: the
+/// A temp dir seeded with the two-file ledger the binary reads: the
 /// per-instance `sessions.db` (the `sessions` table) and the machine-global
-/// `changes.db` (the `file_events` table, [D112]) — both under
-/// `Library/Application Support/Tug/`. Seeds `session` ("work", with a
-/// `feature.rs` created event) and an empty `empty` session row.
-fn seed_home(repo_root: &Path) -> tempfile::TempDir {
-    let home = tempfile::tempdir().unwrap();
-    let db_dir = home.path().join("Library/Application Support/Tug");
-    std::fs::create_dir_all(&db_dir).unwrap();
-    let sessions = Connection::open(db_dir.join("sessions.db")).unwrap();
+/// `changes.db` (the `file_events` table, [D112]). Seeds `session` ("work",
+/// with a `feature.rs` created event) and an empty `empty` session row. The
+/// returned dir is handed to [`tug`], which points `TUG_SESSIONS_DB` and
+/// `TUG_CHANGES_DB` at the two files.
+fn seed_ledger(repo_root: &Path) -> tempfile::TempDir {
+    let db_dir = tempfile::tempdir().unwrap();
+    let sessions = Connection::open(db_dir.path().join("sessions.db")).unwrap();
     sessions
         .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
         .unwrap();
@@ -68,7 +66,7 @@ fn seed_home(repo_root: &Path) -> tempfile::TempDir {
             [],
         )
         .unwrap();
-    let changes = Connection::open(db_dir.join("changes.db")).unwrap();
+    let changes = Connection::open(db_dir.path().join("changes.db")).unwrap();
     changes
         .execute_batch(
             "CREATE TABLE file_events (
@@ -88,16 +86,17 @@ fn seed_home(repo_root: &Path) -> tempfile::TempDir {
             ],
         )
         .unwrap();
-    home
+    db_dir
 }
 
-/// A `tug` command with `HOME` pointed at `home` and no instance id.
-fn tug(home: &Path) -> Command {
+/// A `tug` command with both ledgers pointed at the seeded `db_dir` via the
+/// `TUG_SESSIONS_DB` / `TUG_CHANGES_DB` overrides, and no instance id.
+fn tug(db_dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("tugutil").unwrap();
-    cmd.env("HOME", home);
     cmd.env_remove("TUG_INSTANCE_ID");
     cmd.env_remove("TUG_SESSION_ID");
-    cmd.env_remove("TUG_CHANGES_DB");
+    cmd.env("TUG_SESSIONS_DB", db_dir.join("sessions.db"));
+    cmd.env("TUG_CHANGES_DB", db_dir.join("changes.db"));
     cmd
 }
 
@@ -122,8 +121,8 @@ fn project_arg(repo: &Path) -> Vec<String> {
 #[test]
 fn changes_json_emits_envelope_with_the_changed_file() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args(["changes", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
@@ -142,8 +141,8 @@ fn changes_json_emits_envelope_with_the_changed_file() {
 #[test]
 fn context_json_matches_s02_shape() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args(["context", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
@@ -168,8 +167,8 @@ fn context_json_matches_s02_shape() {
 #[test]
 fn commit_json_stages_the_session_file_and_matches_numstat() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args([
         "commit",
         "--json",
@@ -208,8 +207,8 @@ fn commit_json_stages_the_session_file_and_matches_numstat() {
 #[test]
 fn log_json_emits_envelope() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.current_dir(&root);
     cmd.args(["log", "--json", "--limit", "5"]);
 
@@ -225,10 +224,10 @@ fn log_json_emits_envelope() {
 #[test]
 fn diff_json_emits_envelope() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
+    let ledger = seed_ledger(&root);
     // Modify a tracked file so the working-tree diff is non-empty.
     std::fs::write(root.join("base.rs"), "base\nmore\n").unwrap();
-    let mut cmd = tug(home.path());
+    let mut cmd = tug(ledger.path());
     cmd.args(["diff", "--json"]);
     cmd.args(project_arg(&root));
 
@@ -243,10 +242,10 @@ fn diff_json_emits_envelope() {
 #[test]
 fn unknown_session_exits_two_valid_empty_exits_zero() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
+    let ledger = seed_ledger(&root);
 
     // Unknown session → exit 2.
-    let mut cmd = tug(home.path());
+    let mut cmd = tug(ledger.path());
     cmd.args(["changes", "--session", "ghost"]);
     cmd.args(project_arg(&root));
     let (code, _, stderr) = run(cmd);
@@ -254,7 +253,7 @@ fn unknown_session_exits_two_valid_empty_exits_zero() {
     assert!(stderr.contains("unknown"), "stderr: {stderr}");
 
     // Known-but-empty session → exit 0, no files listed.
-    let mut cmd = tug(home.path());
+    let mut cmd = tug(ledger.path());
     cmd.args(["changes", "--session", "empty"]);
     cmd.args(project_arg(&root));
     let (code, stdout, _) = run(cmd);
@@ -265,8 +264,8 @@ fn unknown_session_exits_two_valid_empty_exits_zero() {
 #[test]
 fn no_session_id_exits_two() {
     let (_repo, root) = init_repo();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args(["changes"]);
     cmd.args(project_arg(&root));
     let (code, _, stderr) = run(cmd);
@@ -276,24 +275,22 @@ fn no_session_id_exits_two() {
 
 // --- Bucket surfacing + commit disposition (Steps 3–5) --------------------
 
-/// A temp `$HOME` seeding a `file_events` row per `(session, repo_relative_path)`
+/// A temp ledger dir seeding a `file_events` row per `(session, repo_relative_path)`
 /// (all `project_dir = repo_root`, `created`), registering each distinct session
 /// plus an empty `empty` session — the multi-session fixture the bucket tests
 /// need (the same path under two sessions makes it `shared` for both).
 /// `file_path` is stored repo-relative, the capture-time form the per-path
 /// contention query joins on.
-fn seed_home_events(repo_root: &Path, events: &[(&str, &str)]) -> tempfile::TempDir {
-    let home = tempfile::tempdir().unwrap();
-    let db_dir = home.path().join("Library/Application Support/Tug");
-    std::fs::create_dir_all(&db_dir).unwrap();
-    let sessions = Connection::open(db_dir.join("sessions.db")).unwrap();
+fn seed_ledger_events(repo_root: &Path, events: &[(&str, &str)]) -> tempfile::TempDir {
+    let db_dir = tempfile::tempdir().unwrap();
+    let sessions = Connection::open(db_dir.path().join("sessions.db")).unwrap();
     sessions
         .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
         .unwrap();
     sessions
         .execute("INSERT INTO sessions (session_id) VALUES ('empty')", [])
         .unwrap();
-    let changes = Connection::open(db_dir.join("changes.db")).unwrap();
+    let changes = Connection::open(db_dir.path().join("changes.db")).unwrap();
     changes
         .execute_batch(
             "CREATE TABLE file_events (
@@ -324,7 +321,7 @@ fn seed_home_events(repo_root: &Path, events: &[(&str, &str)]) -> tempfile::Temp
             )
             .unwrap();
     }
-    home
+    db_dir
 }
 
 /// `git status --porcelain` output at `root`.
@@ -342,8 +339,8 @@ fn status_porcelain(root: &Path) -> String {
 fn context_surfaces_an_unattributed_file_with_a_diff() {
     let (_repo, root) = init_repo();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args(["context", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
@@ -368,8 +365,8 @@ fn context_surfaces_an_unattributed_file_with_a_diff() {
 fn default_commit_refuses_unattributed_with_exit_three() {
     let (_repo, root) = init_repo();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args(["commit", "--session", "work", "--message", "m"]);
     cmd.args(project_arg(&root));
 
@@ -392,8 +389,8 @@ fn default_commit_refuses_unattributed_with_exit_three() {
 fn include_unattributed_commits_the_orphan_file() {
     let (_repo, root) = init_repo();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args([
         "commit",
         "--json",
@@ -424,8 +421,8 @@ fn include_unattributed_commits_the_orphan_file() {
 fn leave_unattributed_proceeds_and_records_left_behind() {
     let (_repo, root) = init_repo();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
-    let home = seed_home(&root);
-    let mut cmd = tug(home.path());
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
     cmd.args([
         "commit",
         "--json",
@@ -461,7 +458,7 @@ fn tree_commits_attributed_unattributed_and_shared() {
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
     // work claims feature.rs alone and both.rs jointly with `other` (so both.rs
     // is shared for work); orphan.rs has no rows.
-    let home = seed_home_events(
+    let ledger = seed_ledger_events(
         &root,
         &[
             ("work", "feature.rs"),
@@ -472,7 +469,7 @@ fn tree_commits_attributed_unattributed_and_shared() {
 
     // Default base excludes the shared file: without --all/--tree, a commit
     // that leaves the orphan behind commits feature.rs only.
-    let mut cmd = tug(home.path());
+    let mut cmd = tug(ledger.path());
     cmd.args([
         "commit",
         "--json",
@@ -502,7 +499,7 @@ fn tree_commits_attributed_unattributed_and_shared() {
     );
 
     // --tree then sweeps everything but foreign: shared + unattributed included.
-    let mut cmd = tug(home.path());
+    let mut cmd = tug(ledger.path());
     cmd.args([
         "commit",
         "--json",

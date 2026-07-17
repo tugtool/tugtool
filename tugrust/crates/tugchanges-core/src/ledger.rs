@@ -147,10 +147,15 @@ pub(crate) fn session_exists(conn: &Connection, session: &str) -> Result<bool, S
 }
 
 /// Resolve the on-disk `sessions.db` path, mirroring
-/// `tugcast::session_ledger::SessionLedger::default_path`: the per-instance
-/// location when `TUG_INSTANCE_ID` is set, else the legacy single-instance path
-/// under the platform data dir.
+/// `tugcast::session_ledger::SessionLedger::default_path`: the `TUG_SESSIONS_DB`
+/// override when set, else the per-instance location when `TUG_INSTANCE_ID` is
+/// set, else the legacy single-instance path under the platform data dir.
 pub(crate) fn resolve_sessions_db_path() -> Option<PathBuf> {
+    if let Some(p) =
+        std::env::var_os(tugcore::instance::ENV_SESSIONS_DB).filter(|v| !v.is_empty())
+    {
+        return Some(PathBuf::from(p));
+    }
     if let Some(p) = tugcore::instance::sessions_db_path() {
         return Some(p);
     }

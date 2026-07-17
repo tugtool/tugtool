@@ -176,6 +176,13 @@ pub fn tugbank_db_path() -> Option<PathBuf> {
     instance_id().map(|_| data_dir().join("tugbank.db"))
 }
 
+/// Environment variable overriding the per-instance session-ledger path.
+/// Set by test harnesses (the tugutil CLI suite) so isolated runs read a
+/// seeded `sessions.db` without depending on platform data-dir resolution
+/// (`dirs::data_dir()` keys off `XDG_DATA_HOME` on Linux, so a bare `HOME`
+/// override is not enough). Mirrors [`ENV_CHANGES_DB`].
+pub const ENV_SESSIONS_DB: &str = "TUG_SESSIONS_DB";
+
 /// Per-instance session ledger database path.
 ///
 /// Returns `Some(<data-dir>/sessions.db)` when `TUG_INSTANCE_ID`
