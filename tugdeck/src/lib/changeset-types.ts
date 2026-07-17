@@ -22,11 +22,9 @@ export interface ChangesetFile {
   git_status: string;
   /** Attribution operation: write | edit | notebook | created | modified | deleted | renamed. */
   op: string;
-  /** Attribution origin: exact | bash | replay | dash. */
+  /** Attribution origin: exact | bash | turn | replay | dash. */
   origin: string;
-  /** True when a concurrent session's Bash bracket overlapped this file. */
-  ambiguous: boolean;
-  /** True when more than one changeset owns this file. */
+  /** True when more than one changeset owns this file (per-file contention). */
   shared: boolean;
   /** Epoch milliseconds of the most recent attribution event for this file. */
   last_touched: number;
@@ -115,7 +113,6 @@ export function isChangesetFile(value: unknown): value is ChangesetFile {
     typeof value.git_status === "string" &&
     typeof value.op === "string" &&
     typeof value.origin === "string" &&
-    typeof value.ambiguous === "boolean" &&
     typeof value.shared === "boolean" &&
     typeof value.last_touched === "number"
   );

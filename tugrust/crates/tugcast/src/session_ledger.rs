@@ -483,12 +483,12 @@ pub struct FileEventRow {
     /// | `renamed` — the exact tools record their verb; Bash rows derive
     /// it from the working-tree status transition.
     pub op: String,
-    /// `exact` (tool input) | `bash` (bracket delta) | `replay`
-    /// (exact tool, backfilled on resume).
+    /// `exact` (tool input) | `bash` (bracket delta) | `turn` (turn-scoped
+    /// fallback delta) | `replay` (exact tool, backfilled on resume).
     pub origin: String,
-    /// Set when another session's Bash bracket on the same repo root
-    /// overlapped this one's window — the delta is recorded, never
-    /// guessed. Ambiguous rows are excluded from one-click commit.
+    /// Legacy column, always written `false` and read by nothing. Capture
+    /// records provenance only; the cross-session signal is per-file
+    /// contention, computed at read time from ledger rows ([D112]).
     pub ambiguous: bool,
     /// Set for subagent-issued calls (the `parent_tool_use_id` from the
     /// stream); `None` for top-level calls.
@@ -582,20 +582,47 @@ pub struct SessionLedger {
 }
 
 impl SessionLedger {
-    /// Open or create the ledger at `path`. Applies pragmas and runs the
-    /// idempotent schema bootstrap. Safe to call against an existing file.
-    /// Uses the default claude projects root (`~/.claude/projects/`).
+    /// Open or create the ledger at `path`, attached to the
+    /// **machine-global** changes ledger
+    /// (`tugcore::instance::changes_db_path()`, `TUG_CHANGES_DB`
+    /// overridable). Applies pragmas and runs the idempotent schema
+    /// bootstrap. Safe to call against an existing file. Uses the default
+    /// claude projects root (`~/.claude/projects/`). The production
+    /// constructor.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, LedgerError> {
-        Self::open_with_claude_root(path, default_claude_projects_root())
+        Self::open_full(
+            path,
+            Some(tugcore::instance::changes_db_path()),
+            default_claude_projects_root(),
+        )
     }
 
-    /// Open the ledger with an explicit `claude_projects_root`. Tests pass
-    /// a tempdir; production uses the default.
+    /// Open the ledger with an explicit `claude_projects_root`, attached to
+    /// a `<path>.changes` sibling file (never the machine-global one) —
+    /// the on-disk test constructor: per-file isolation with reopen
+    /// persistence. No production caller uses this; production is
+    /// [`SessionLedger::open`].
     pub fn open_with_claude_root(
         path: impl AsRef<Path>,
         claude_projects_root: PathBuf,
     ) -> Result<Self, LedgerError> {
+        let mut sibling = path.as_ref().as_os_str().to_owned();
+        sibling.push(".changes");
+        Self::open_full(path, Some(PathBuf::from(sibling)), claude_projects_root)
+    }
+
+    /// Core constructor: open `path`, attach the changes ledger at
+    /// `changes_db` (`None` attaches an in-memory changes database — used
+    /// by in-memory test ledgers), configure pragmas, bootstrap both
+    /// schemas, and migrate any legacy per-instance `file_events` rows into
+    /// the attached changes ledger.
+    fn open_full(
+        path: impl AsRef<Path>,
+        changes_db: Option<PathBuf>,
+        claude_projects_root: PathBuf,
+    ) -> Result<Self, LedgerError> {
         let conn = Connection::open(path)?;
+        Self::attach_changes(&conn, changes_db.as_deref())?;
         Self::configure(&conn)?;
         Ok(Self {
             db: Mutex::new(conn),
@@ -604,18 +631,46 @@ impl SessionLedger {
         })
     }
 
-    /// Open an in-memory ledger. Test-only convenience; never used by
-    /// production callers. Uses a placeholder claude root that no test
-    /// should write through (tests using trash should use
-    /// `open_with_claude_root` against a tempdir).
+    /// Open an in-memory ledger (with an in-memory changes attach).
+    /// Test-only convenience; never used by production callers. Uses a
+    /// placeholder claude root that no test should write through (tests
+    /// using trash should use `open_with_claude_root` against a tempdir).
     pub fn open_in_memory() -> Result<Self, LedgerError> {
         let conn = Connection::open_in_memory()?;
+        Self::attach_changes(&conn, None)?;
         Self::configure(&conn)?;
         Ok(Self {
             db: Mutex::new(conn),
             claude_projects_root: PathBuf::from("/tmp/tugcast-tests-no-trash"),
             sessions_changed: OnceLock::new(),
         })
+    }
+
+    /// Attach the shared changes ledger as schema `changes` ([D112]: one
+    /// machine-global `changes.db` regardless of app instance — the working
+    /// tree is machine-global, so per-instance attribution splits the
+    /// truth). `None` attaches an in-memory database. WAL + NORMAL sync on
+    /// the attached db so concurrent instances (multiple tugcast processes)
+    /// write safely; `busy_timeout` is per-connection and already applies.
+    fn attach_changes(conn: &Connection, changes_db: Option<&Path>) -> Result<(), LedgerError> {
+        match changes_db {
+            Some(path) => {
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                conn.execute(
+                    "ATTACH DATABASE ?1 AS changes",
+                    params![path.to_string_lossy()],
+                )?;
+                let db = rusqlite::DatabaseName::Attached("changes");
+                conn.pragma_update(Some(db), "journal_mode", "WAL")?;
+                conn.pragma_update(Some(db), "synchronous", "NORMAL")?;
+            }
+            None => {
+                conn.execute("ATTACH DATABASE ':memory:' AS changes", [])?;
+            }
+        }
+        Ok(())
     }
 
     /// Default on-disk location for the ledger:
@@ -753,7 +808,14 @@ impl SessionLedger {
         // whose drift was observed — and a future change to another
         // typed table can opt in with one more call.
         Self::rebuild_table_if_schema_drifted(conn, "turn_telemetry", Self::TURN_TELEMETRY_SCHEMA)?;
+        // Legacy per-instance file_events (pre-shared-ledger): guard its
+        // shape before the migration below copies it into `changes`.
         Self::rebuild_table_if_schema_drifted(conn, "file_events", Self::FILE_EVENTS_SCHEMA)?;
+        Self::rebuild_table_if_schema_drifted(
+            conn,
+            "changes.file_events",
+            Self::FILE_EVENTS_SCHEMA,
+        )?;
         Self::rebuild_table_if_schema_drifted(
             conn,
             "changeset_drafts",
@@ -1078,7 +1140,7 @@ impl SessionLedger {
             -- upserts with ON CONFLICT DO NOTHING, making the repeat a
             -- no-op. Cascade-on-DELETE mirrors the `turns` journal so
             -- evicting a `sessions` row takes its attribution with it.
-            CREATE TABLE IF NOT EXISTS file_events (
+            CREATE TABLE IF NOT EXISTS changes.file_events (
                 tug_session_id      TEXT NOT NULL,
                 tool_use_id         TEXT NOT NULL,
                 file_path           TEXT NOT NULL,
@@ -1092,15 +1154,13 @@ impl SessionLedger {
                 PRIMARY KEY (tug_session_id, tool_use_id, file_path)
             );
 
-            CREATE INDEX IF NOT EXISTS file_events_project
+            CREATE INDEX IF NOT EXISTS changes.file_events_project
                 ON file_events(project_dir, at);
 
-            CREATE TRIGGER IF NOT EXISTS file_events_cascade_delete_on_session
-            AFTER DELETE ON sessions
-            FOR EACH ROW
-            BEGIN
-                DELETE FROM file_events WHERE tug_session_id = OLD.session_id;
-            END;
+            -- Legacy cascade trigger from the per-instance file_events era:
+            -- a trigger cannot reach across databases, so eviction now
+            -- deletes changes.file_events rows explicitly.
+            DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
 
             CREATE TABLE IF NOT EXISTS changeset_drafts (
                 owner_kind   TEXT NOT NULL,
@@ -1113,6 +1173,40 @@ impl SessionLedger {
             );
             ",
         )?;
+        Self::migrate_instance_file_events_to_changes(conn)?;
+        Ok(())
+    }
+
+    /// One-shot migration to the shared changes ledger ([D112]): copy any
+    /// legacy per-instance `main.file_events` rows into
+    /// `changes.file_events` (the `(session, tool_use_id, file_path)` PK
+    /// makes the copy idempotent and cross-instance collision-free), then
+    /// drop the legacy table so evicted rows can never resurrect from it.
+    /// No-op when the legacy table is absent (fresh DBs never create it).
+    fn migrate_instance_file_events_to_changes(conn: &Connection) -> Result<(), LedgerError> {
+        let legacy_exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM main.sqlite_master
+             WHERE type = 'table' AND name = 'file_events'",
+            [],
+            |r| r.get(0),
+        )?;
+        if legacy_exists == 0 {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "
+            INSERT OR IGNORE INTO changes.file_events (
+                tug_session_id, tool_use_id, file_path,
+                tool_name, op, origin, ambiguous,
+                parent_tool_use_id, project_dir, at)
+            SELECT tug_session_id, tool_use_id, file_path,
+                   tool_name, op, origin, ambiguous,
+                   parent_tool_use_id, project_dir, at
+            FROM main.file_events;
+
+            DROP TABLE main.file_events;
+            ",
+        )?;
         Ok(())
     }
 
@@ -1121,8 +1215,14 @@ impl SessionLedger {
     /// table does not exist.
     fn table_columns(conn: &Connection, table: &str) -> Result<Vec<(String, String)>, LedgerError> {
         // `table` is a compile-time constant from `bootstrap_schema`,
-        // never caller input — the `format!` carries no injection risk.
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        // never caller input — the `format!` carries no injection risk. A
+        // schema-qualified name (`changes.file_events`) becomes the
+        // schema-qualified pragma form (`PRAGMA changes.table_info(...)`).
+        let pragma = match table.split_once('.') {
+            Some((schema, name)) => format!("PRAGMA {schema}.table_info({name})"),
+            None => format!("PRAGMA table_info({table})"),
+        };
+        let mut stmt = conn.prepare(&pragma)?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
         })?;
@@ -1688,6 +1788,12 @@ impl SessionLedger {
             "DELETE FROM sessions WHERE session_id = ?1",
             params![session_id],
         )?;
+        // Explicit attribution cascade (the legacy trigger cannot reach the
+        // attached changes db): an evicted session takes its rows with it.
+        tx.execute(
+            "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+            params![session_id],
+        )?;
         tx.commit()?;
         drop(conn);
 
@@ -1725,6 +1831,10 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                params![id],
+            )?;
         }
         tx.commit()?;
         drop(conn);
@@ -1830,6 +1940,10 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                params![id],
+            )?;
         }
         tx.commit()?;
         Ok(doomed)
@@ -1871,6 +1985,10 @@ impl SessionLedger {
         };
         for id in &doomed {
             tx.execute("DELETE FROM sessions WHERE session_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM changes.file_events WHERE tug_session_id = ?1",
+                params![id],
+            )?;
         }
         tx.commit()?;
         if !doomed.is_empty() {
@@ -2208,7 +2326,7 @@ impl SessionLedger {
     pub fn record_file_event(&self, row: &FileEventRow) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
-            "INSERT INTO file_events (
+            "INSERT INTO changes.file_events (
                 tug_session_id, tool_use_id, file_path,
                 tool_name, op, origin, ambiguous,
                 parent_tool_use_id, project_dir, at
@@ -2258,7 +2376,7 @@ impl SessionLedger {
         for rw in rewrites {
             let legacy: Option<(i64, i64)> = tx
                 .query_row(
-                    "SELECT ambiguous, at FROM file_events
+                    "SELECT ambiguous, at FROM changes.file_events
                      WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
                     params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
                     |r| Ok((r.get(0)?, r.get(1)?)),
@@ -2270,7 +2388,7 @@ impl SessionLedger {
 
             let survivor: Option<(i64, i64)> = tx
                 .query_row(
-                    "SELECT ambiguous, at FROM file_events
+                    "SELECT ambiguous, at FROM changes.file_events
                      WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
                     params![rw.tug_session_id, rw.tool_use_id, rw.new_file_path],
                     |r| Ok((r.get(0)?, r.get(1)?)),
@@ -2283,7 +2401,7 @@ impl SessionLedger {
                     // the legacy row.
                     let merged_ambiguous = i64::from(surv_ambiguous != 0 || legacy_ambiguous != 0);
                     tx.execute(
-                        "UPDATE file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
+                        "UPDATE changes.file_events SET ambiguous = ?4, at = ?5, project_dir = ?6
                          WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
                         params![
                             rw.tug_session_id,
@@ -2295,7 +2413,7 @@ impl SessionLedger {
                         ],
                     )?;
                     tx.execute(
-                        "DELETE FROM file_events
+                        "DELETE FROM changes.file_events
                          WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
                         params![rw.tug_session_id, rw.tool_use_id, rw.old_file_path],
                     )?;
@@ -2303,7 +2421,7 @@ impl SessionLedger {
                 }
                 None => {
                     tx.execute(
-                        "UPDATE file_events SET file_path = ?4, project_dir = ?5
+                        "UPDATE changes.file_events SET file_path = ?4, project_dir = ?5
                          WHERE tug_session_id = ?1 AND tool_use_id = ?2 AND file_path = ?3",
                         params![
                             rw.tug_session_id,
@@ -2333,7 +2451,7 @@ impl SessionLedger {
             "SELECT tug_session_id, tool_use_id, file_path,
                     tool_name, op, origin, ambiguous,
                     parent_tool_use_id, project_dir, at
-             FROM file_events
+             FROM changes.file_events
              WHERE tug_session_id = ?1
              ORDER BY at ASC, tool_use_id ASC, file_path ASC",
         )?;
@@ -2359,7 +2477,7 @@ impl SessionLedger {
                     fe.tool_name, fe.op, fe.origin, fe.ambiguous,
                     fe.parent_tool_use_id, fe.project_dir, fe.at,
                     s.name, s.name_user_set, s.state
-             FROM file_events fe
+             FROM changes.file_events fe
              LEFT JOIN sessions s ON s.session_id = fe.tug_session_id
              WHERE fe.project_dir = ?1
              ORDER BY fe.at ASC, fe.tool_use_id ASC, fe.file_path ASC",
@@ -4185,12 +4303,12 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         // First open seeds the schema.
-        let l1 = SessionLedger::open(&path).unwrap();
+        let l1 = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0), None)
             .unwrap();
         drop(l1);
         // Second open re-runs the idempotent DDL and finds the row intact.
-        let l2 = SessionLedger::open(&path).unwrap();
+        let l2 = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         let r = l2.get("s1").unwrap().expect("row survives reopen");
         assert_eq!(r.session_id, "s1");
     }
@@ -4250,8 +4368,9 @@ mod tests {
     // operations don't touch `~/.claude/projects/` on the dev machine.
 
     fn fresh_ledger_with_root(root: &Path) -> SessionLedger {
-        // Use an in-memory db but explicit claude root.
+        // Use an in-memory db (in-memory changes attach) but explicit claude root.
         let conn = Connection::open_in_memory().expect("open_in_memory");
+        SessionLedger::attach_changes(&conn, None).expect("attach");
         SessionLedger::configure(&conn).expect("configure");
         SessionLedger {
             db: Mutex::new(conn),
@@ -4687,7 +4806,7 @@ mod tests {
         }
         // Open via SessionLedger — bootstrap's guard sees the drift
         // and rebuilds the table.
-        let l = SessionLedger::open(&path).unwrap();
+        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         // A write that lists `session_init_tokens` now succeeds — it
         // would have failed against the stale 16-column shape.
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -4705,12 +4824,12 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         {
-            let l = SessionLedger::open(&path).unwrap();
+            let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
             seed_live(&l, "s1", "ws", "card-1", millis(0));
             l.record_turn_telemetry(&sample_telemetry("s1", "msg-A", 1_000))
                 .unwrap();
         }
-        let l = SessionLedger::open(&path).unwrap();
+        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 1);
     }
 
@@ -4994,6 +5113,72 @@ mod tests {
     }
 
     #[test]
+    fn legacy_instance_file_events_migrate_into_the_shared_changes_ledger() {
+        // A pre-shared-ledger instance db carries file_events in MAIN. Opening
+        // it copies the rows into the attached changes ledger (PK-idempotent)
+        // and drops the legacy table, so evicted rows can never resurrect.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("sessions.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE file_events (
+                    tug_session_id      TEXT NOT NULL,
+                    tool_use_id         TEXT NOT NULL,
+                    file_path           TEXT NOT NULL,
+                    tool_name           TEXT NOT NULL,
+                    op                  TEXT NOT NULL,
+                    origin              TEXT NOT NULL,
+                    ambiguous           INTEGER NOT NULL DEFAULT 0,
+                    parent_tool_use_id  TEXT,
+                    project_dir         TEXT NOT NULL,
+                    at                  INTEGER NOT NULL,
+                    PRIMARY KEY (tug_session_id, tool_use_id, file_path)
+                );
+                INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, project_dir, at)
+                VALUES ('legacy-sess', 'tu-1', 'a.rs', 'Write', 'write', 'exact', '/proj', 42);",
+            )
+            .unwrap();
+        }
+
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        let rows = l.file_events_for_session("legacy-sess").unwrap();
+        assert_eq!(rows.len(), 1, "the legacy row migrated into changes");
+        assert_eq!(rows[0].file_path, "a.rs");
+        assert_eq!(rows[0].at, 42);
+        drop(l);
+
+        // The legacy MAIN table is gone; a reopen neither errors nor
+        // resurrects anything.
+        {
+            let conn = Connection::open(&path).unwrap();
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='file_events'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 0, "legacy main.file_events dropped after migration");
+        }
+        let l2 = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        assert_eq!(
+            l2.file_events_for_session("legacy-sess").unwrap().len(),
+            1,
+            "the shared changes ledger persists across reopen"
+        );
+    }
+
+    #[test]
     fn opening_a_db_with_a_drifted_file_events_schema_rebuilds_it() {
         // file_events is advisory + fully rebuildable, so a stale on-disk
         // shape is DROPPED and recreated (never migrated) — the same guard
@@ -5028,7 +5213,7 @@ mod tests {
         }
         // Open via SessionLedger — the bootstrap guard sees the drift and
         // rebuilds the table with the current shape.
-        let l = SessionLedger::open(&path).unwrap();
+        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         // A write listing `parent_tool_use_id` now succeeds — it would have
         // failed against the stale shape.
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -5046,12 +5231,12 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         {
-            let l = SessionLedger::open(&path).unwrap();
+            let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
             seed_live(&l, "s1", "ws", "card-1", millis(0));
             l.record_file_event(&sample_file_event("s1", "tu-A", "/proj/a.rs"))
                 .unwrap();
         }
-        let l = SessionLedger::open(&path).unwrap();
+        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
     }
 
@@ -5137,7 +5322,7 @@ mod tests {
             )
             .unwrap();
         }
-        let l = SessionLedger::open(&path).unwrap();
+        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
         // A write listing `fingerprint` now succeeds; the stale row is gone.
         l.upsert_changeset_draft(&sample_draft("session", "s1", "/p", "fp", "msg"))
             .unwrap();

@@ -13,7 +13,7 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
 
 **Default: commit ONLY the files you changed in this session.** Other edits in the working tree are almost always inflight work the user has not finished — staging them would bundle unrelated changes into one commit. So unless told otherwise, commit only the files that *this conversation* created or modified, and leave everything else untouched. In your report, note that other working-tree changes were left as inflight on the current branch.
 
-**Override — "commit everything":** if the arguments to the skill ask for all changes (e.g. "commit everything", "everything", "all changes", "stage all", "whole working tree"), then commit the whole dirty tree with `tugutil commit --tree` (it commits `attributed ∪ unattributed ∪ ambiguous`, excluding only another live session's `foreign`-claimed paths) and let your message reflect the full set of changes, not just this session's. Do not hand-gather a `--paths` list for this — `--tree` owns it. Still hold back anything that looks like a secret, credential, or stray temp file (name it, use `--paths` to exclude it).
+**Override — "commit everything":** if the arguments to the skill ask for all changes (e.g. "commit everything", "everything", "all changes", "stage all", "whole working tree"), then commit the whole dirty tree with `tugutil commit --tree` (it commits `attributed ∪ unattributed ∪ shared`, excluding only another live session's `foreign`-claimed paths) and let your message reflect the full set of changes, not just this session's. Do not hand-gather a `--paths` list for this — `--tree` owns it. Still hold back anything that looks like a secret, credential, or stray temp file (name it, use `--paths` to exclude it).
 
 When the arguments are silent on scope, the default (session-only) applies — do not ask which one; just scope to this session's files, disposing of every `unattributed` file explicitly (see below).
 
@@ -38,9 +38,9 @@ silently dropped.
 ```jsonc
 { "session": "…", "project": "…", "repo_root": "…", "branch": "main", "head": "abc1234",
   "files": [ { "path": "tugdeck/src/foo.ts", "op": "edit", "origin": "exact",
-               "ambiguous": false, "git_status": " M", "diff": "…unified diff…" } ],
+               "shared": false, "git_status": " M", "diff": "…unified diff…" } ],
   "unattributed": [ { "path": "tugrust/src/bar.rs", "op": "unknown", "origin": "none",
-                      "ambiguous": false, "git_status": " M", "diff": "…" } ],
+                      "shared": false, "git_status": " M", "diff": "…" } ],
   "foreign": [ { "path": "x/lib.rs", "git_status": " M",
                  "sessions": ["<other tug_session_id>"], "diff": "…" } ],
   "recent_commits": [ { "sha": "abc1234", "subject": "…" } ] }
@@ -64,10 +64,11 @@ The three buckets — **you must dispose of every one of them explicitly:**
 - **`foreign`** — dirty, claimed only by **another** session (`sessions` lists whose). It is
   another session's work: **report it, never include it** without an explicit user ask. It
   never blocks your commit and is never in any default set (only `--paths` can reach it).
-- **`ambiguous: true`** (a flag on an `attributed` row) — an overlapping session had a
-  bracket open on this repo at the same time, so ownership is uncertain. `tugutil commit`
-  **excludes** ambiguous files by default. Do not auto-include one — call it out and include
-  it (via `--all` or `--paths`) only if the diff clearly shows it as this session's work.
+- **`shared: true`** (a flag on an `attributed` row, with `sessions` naming the claimants) —
+  another session **also** holds live ledger rows for this exact file, so ownership is
+  contended. `tugutil commit` **excludes** shared files by default. Do not auto-include one —
+  call it out and include it (via `--all` or `--paths`) only if the diff clearly shows it as
+  this session's work.
 
 **`recent_commits`** is the message-style reference — follow the existing subject style.
 Every listed path is a live change (the `git status` universe excludes committed/reverted
@@ -114,7 +115,7 @@ files by construction).
 
 4. **Commit**
    - Commit in one command. `tugutil commit` stages by construction — it commits exactly the
-     session's **non-ambiguous** attributed files (`git add -- <files>` then
+     session's **non-shared** attributed files (`git add -- <files>` then
      `git commit -m … -- <files>`), so anything else in the working tree stays out:
      ```
      tugutil commit --message "<message>" --json
@@ -125,11 +126,11 @@ files by construction).
        their diffs show them as this session's work).
      - `--leave-unattributed` — proceed without the unattributed files (use when they are the
        user's inflight work); the receipt's `left_behind` will name them.
-     - `--tree` — commit the whole dirty tree (`attributed ∪ unattributed ∪ ambiguous`,
+     - `--tree` — commit the whole dirty tree (`attributed ∪ unattributed ∪ shared`,
        except `foreign`) — the **"commit everything"** override.
-     - `--paths <p1> <p2> …` — an explicit subset: include a specific `ambiguous`/`foreign`
+     - `--paths <p1> <p2> …` — an explicit subset: include a specific `shared`/`foreign`
        file, or hold back a stray one. Overrides all other flags.
-     - `--all` — include ambiguous files wholesale.
+     - `--all` — include shared files wholesale.
    - **Exit 3 is the refusal signal.** If a default `tugutil commit` finds unattributed files
      with no disposition, it exits **3**, lists them on stderr, and commits **nothing**. This
      is never a reason to fall back to raw `git` — re-run `commit` with the right disposition
@@ -139,7 +140,7 @@ files by construction).
    - `tugutil commit --json` returns the structured receipt — `{ sha, branch, message,
      files:[{path,status,added,deleted}], aggregate, numstat, left_behind }` — which the
      Session card's commit receipt renders directly. **`left_behind`** (`{unattributed,
-     foreign, ambiguous}`) names every still-dirty file after the commit; surface anything it
+     foreign, shared}`) names every still-dirty file after the commit; surface anything it
      lists in your report. No separate `git show`/`--numstat` call is needed.
    - Do NOT use temp files, shell expansion (`$$`, `$(...)`), or heredocs — they trigger
      manual approval prompts.
@@ -150,8 +151,8 @@ files by construction).
 5. **Report**
    - Show the short hash (`sha`) and commit message from the receipt so the user can see what
      was committed. Name anything you held back: `unattributed` files left as inflight,
-     `ambiguous` files, `foreign` files (another session's work), and anything the receipt's
-     `left_behind` still lists.
+     `shared` files (contended with another session), `foreign` files (another session's
+     work), and anything the receipt's `left_behind` still lists.
 
 ## Examples of Good Commit Messages
 

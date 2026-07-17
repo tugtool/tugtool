@@ -275,6 +275,16 @@ impl TestTugcast {
         ] {
             command.env_remove(var);
         }
+        // Point the machine-global changes ledger at a per-process temp file
+        // so a spawned tugcast never writes attribution rows into the
+        // developer's real ~/Library/Application Support/Tug/changes.db.
+        command.env(
+            "TUG_CHANGES_DB",
+            std::env::temp_dir().join(format!(
+                "tugcast-test-changes-{}.db",
+                std::process::id()
+            )),
+        );
         let mut child = command.spawn().expect("failed to spawn tugcast");
         if let Some(stderr) = child.stderr.take() {
             tokio::spawn(async move {

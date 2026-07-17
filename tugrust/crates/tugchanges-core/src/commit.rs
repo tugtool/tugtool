@@ -9,7 +9,8 @@
 //! `left_behind` then names them), `tree` commits the whole dirty tree except
 //! foreign-claimed paths, and `paths` overrides everything with an explicit set
 //! (the Session card's commit button takes this path, so it never hits the
-//! refusal). `all` adds ambiguous files to the non-`--tree` sets.
+//! refusal). `all` adds shared files (paths other sessions also hold live
+//! rows for) to the non-`--tree` sets.
 //!
 //! Staging is by construction: `git add -- <files>` then
 //! `git commit -m <message> -- <files>` — never `git add .` — so anything else
@@ -29,7 +30,7 @@ use crate::git::{self, FileStat, repo_root_for};
 /// Options for [`commit`]. `message` is required. Disposition precedence
 /// ([P04], Table T01): `paths` > `tree` > (`include_unattributed` /
 /// `leave_unattributed` / `all`). Without `paths` or `tree`, the base set is the
-/// session's non-ambiguous attributed changes; `all` adds ambiguous ones;
+/// session's non-shared attributed changes; `all` adds shared ones;
 /// `include_unattributed` adds unattributed ones; `leave_unattributed`
 /// acknowledges unattributed files and proceeds without them.
 #[derive(Debug, Clone, Default)]
@@ -99,7 +100,7 @@ pub struct Aggregate {
 pub struct LeftBehind {
     pub unattributed: Vec<String>,
     pub foreign: Vec<String>,
-    pub ambiguous: Vec<String>,
+    pub shared: Vec<String>,
 }
 
 /// The structured commit receipt (Spec S03). `numstat` is the raw
@@ -140,7 +141,7 @@ pub fn commit(opts: CommitOptions) -> Result<CommitReceipt, CommitError> {
 /// Resolve the repo root and the repo-relative file set to commit, per the
 /// disposition matrix (Table T01). `paths` wins outright (bypasses bucketing).
 /// `tree` commits everything dirty but foreign. Otherwise the base is the
-/// session's non-ambiguous attributed files (`all` adds ambiguous);
+/// session's non-shared attributed files (`all` adds shared);
 /// `include_unattributed` folds unattributed in, and if unattributed files are
 /// present with neither `include_unattributed` nor `leave_unattributed`, refuse
 /// ([P03]) — even when the attributed set is empty.
@@ -165,7 +166,7 @@ fn derive_file_set(opts: &CommitOptions) -> Result<(PathBuf, Vec<String>), Commi
     let attributed: Vec<(String, bool)> = resolved
         .files
         .iter()
-        .map(|f| (f.path.clone(), f.ambiguous))
+        .map(|f| (f.path.clone(), f.shared))
         .collect();
     let unattributed: Vec<String> = resolved
         .unattributed
@@ -179,10 +180,10 @@ fn derive_file_set(opts: &CommitOptions) -> Result<(PathBuf, Vec<String>), Commi
 
 /// Apply the disposition matrix (Table T01) to already-classified buckets —
 /// pure flag precedence, no git or ledger. `attributed` pairs each path with its
-/// `ambiguous` bit; `foreign` is never passed (never committed except via
+/// `shared` bit; `foreign` is never passed (never committed except via
 /// explicit `--paths`, handled upstream). `--tree` takes the whole dirty set
-/// (attributed ∪ unattributed ∪ ambiguous); otherwise the base is non-ambiguous
-/// attributed (`all` adds ambiguous), `include_unattributed` folds unattributed
+/// (attributed ∪ unattributed ∪ shared); otherwise the base is non-shared
+/// attributed (`all` adds shared), `include_unattributed` folds unattributed
 /// in, and unattributed present with neither `include_unattributed` nor
 /// `leave_unattributed` is the [P03] refusal — even when the base set is empty.
 fn select_from_buckets(
@@ -198,7 +199,7 @@ fn select_from_buckets(
 
     let mut files: Vec<String> = attributed
         .iter()
-        .filter(|(_, ambiguous)| opts.all || !ambiguous)
+        .filter(|(_, shared)| opts.all || !shared)
         .map(|(p, _)| p.clone())
         .collect();
 
@@ -231,10 +232,10 @@ fn compute_left_behind(opts: &CommitOptions) -> LeftBehind {
                 .map(|c| c.path.clone())
                 .collect(),
             foreign: resolved.foreign.iter().map(|f| f.path.clone()).collect(),
-            ambiguous: resolved
+            shared: resolved
                 .files
                 .iter()
-                .filter(|f| f.ambiguous)
+                .filter(|f| f.shared)
                 .map(|f| f.path.clone())
                 .collect(),
         },
@@ -474,17 +475,17 @@ mod tests {
     }
 
     #[test]
-    fn default_commits_attributed_non_ambiguous_when_no_unattributed() {
-        let att = attributed(&[("a.rs", false), ("amb.rs", true)]);
+    fn default_commits_attributed_non_shared_when_no_unattributed() {
+        let att = attributed(&[("a.rs", false), ("shared.rs", true)]);
         let files = select_from_buckets(&att, &[], &opts_with(|_| {})).unwrap();
         assert_eq!(files, vec!["a.rs".to_string()]);
     }
 
     #[test]
-    fn all_adds_ambiguous_to_the_base() {
-        let att = attributed(&[("a.rs", false), ("amb.rs", true)]);
+    fn all_adds_shared_to_the_base() {
+        let att = attributed(&[("a.rs", false), ("shared.rs", true)]);
         let files = select_from_buckets(&att, &[], &opts_with(|o| o.all = true)).unwrap();
-        assert_eq!(files, vec!["a.rs".to_string(), "amb.rs".to_string()]);
+        assert_eq!(files, vec!["a.rs".to_string(), "shared.rs".to_string()]);
     }
 
     #[test]
@@ -507,13 +508,13 @@ mod tests {
     }
 
     #[test]
-    fn tree_takes_the_whole_dirty_set_including_ambiguous() {
-        let att = attributed(&[("a.rs", false), ("amb.rs", true)]);
+    fn tree_takes_the_whole_dirty_set_including_shared() {
+        let att = attributed(&[("a.rs", false), ("shared.rs", true)]);
         let un = vec!["u.rs".to_string()];
         let files = select_from_buckets(&att, &un, &opts_with(|o| o.tree = true)).unwrap();
         assert_eq!(
             files,
-            vec!["a.rs".to_string(), "amb.rs".to_string(), "u.rs".to_string()]
+            vec!["a.rs".to_string(), "shared.rs".to_string(), "u.rs".to_string()]
         );
     }
 

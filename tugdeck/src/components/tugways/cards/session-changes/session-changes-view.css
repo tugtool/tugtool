@@ -128,7 +128,7 @@
   overflow-x: auto;
 }
 
-/* ---- Ambiguous / shared badges ---- */
+/* ---- Shared badge ---- */
 
 .session-changes-badge {
   flex-shrink: 0;
@@ -141,11 +141,22 @@
   border-radius: 3px;
   border: 1px solid currentColor;
 }
-.session-changes-badge-ambiguous {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
-}
 .session-changes-badge-shared {
   color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* ---- Unattributed section label ---- */
+
+.session-changes-section-label {
+  font-size: 0.625rem;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+  border-top: 1px solid var(--tug7-element-tone-border-normal-neutral-rest);
+  margin-top: var(--tug-space-xs);
 }
 
 /* ---- Empty state ---- */

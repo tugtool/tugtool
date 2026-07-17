@@ -17,7 +17,8 @@
 //!   or input), the relay keeps a [`PendingCalls`] map populated at
 //!   `tool_use` time and consumed at `tool_result` time.
 //! - **Bash** — the one opaque mutator; handled by the working-tree
-//!   fingerprint bracket in Step 4, not here.
+//!   fingerprint bracket ([`OpenBracket`]), held relay-local by the relay
+//!   loop.
 //!
 //! The pending map is size-capped with oldest-entry eviction and is
 //! deliberately **not** cleared on `turn_complete`: a background agent's
@@ -26,15 +27,13 @@
 //! may already be over), and clearing at the boundary would orphan
 //! exactly the edits this feature exists to catch.
 
-// The bracket registry (Step 4) is authored ahead of its relay wiring;
-// suppress dead-code warnings for the not-yet-consumed surface the same
-// way `session_ledger.rs` and the rest of the crate do for phased
-// rollouts.
+// Parts of this surface (accessors, diagnostic helpers) are consumed only
+// by tests; suppress dead-code warnings the same way `session_ledger.rs`
+// and the rest of the crate do.
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex};
 use std::time::SystemTime;
 
 use serde::Deserialize;
@@ -291,12 +290,12 @@ pub struct FileState {
     pub mtime: Option<SystemTime>,
 }
 
-/// One open Bash bracket: the pre-command working-tree fingerprint, held
-/// from the Bash `tool_use` until its `tool_result` closes it and the delta
-/// is attributed. `saw_overlap` accumulates cross-session overlap on the
-/// same repo root (set whenever another session's bracket opens or is open
-/// on the root during this one's life) — the delta rows are flagged
-/// `ambiguous` when it is set, recorded but never guessed.
+/// One open fingerprint bracket: the pre-command working-tree fingerprint,
+/// held relay-local from open (Bash `tool_use`, or the turn's first
+/// `user_message`) until close (`tool_result` / `turn_complete`), when the
+/// delta is attributed. A bracket records provenance only — who, what, when
+/// — never a cross-session judgment; contention between sessions is a
+/// per-file fact the read side computes from ledger rows.
 #[derive(Debug, Clone)]
 pub struct OpenBracket {
     pub tug_session_id: String,
@@ -305,7 +304,6 @@ pub struct OpenBracket {
     pub opened_at: i64,
     pub repo_root: PathBuf,
     pub pre: HashMap<PathBuf, FileState>,
-    pub saw_overlap: bool,
 }
 
 impl OpenBracket {
@@ -313,9 +311,9 @@ impl OpenBracket {
     /// post-command snapshot. Each path whose state differs between `pre`
     /// and `post` becomes one row on `project_dir` (the owning session's
     /// checkout root, so a session's bracket and exact events share a project
-    /// bucket), tagged with the caller's `tool_name`/`origin` and `ambiguous`
-    /// from `saw_overlap`. A per-call Bash bracket passes `("Bash", "bash")`;
-    /// the turn-scoped fallback bracket ([P05]) passes `("Turn", "turn")`.
+    /// bucket), tagged with the caller's `tool_name`/`origin`. A per-call
+    /// Bash bracket passes `("Bash", "bash")`; the turn-scoped fallback
+    /// bracket ([P05]) passes `("Turn", "turn")`.
     ///
     /// `file_path` is stored repo-relative (stripped against the bracket's
     /// `repo_root`), matching the exact-tool path's capture-time projection.
@@ -350,7 +348,7 @@ impl OpenBracket {
                 tool_name: tool_name.to_owned(),
                 op: op.to_owned(),
                 origin: origin.to_owned(),
-                ambiguous: self.saw_overlap,
+                ambiguous: false,
                 parent_tool_use_id: self.parent_tool_use_id.clone(),
                 project_dir: project_dir.as_str().to_owned(),
                 at,
@@ -386,103 +384,6 @@ fn op_from_status(status: &str) -> &'static str {
         "renamed"
     } else {
         "modified"
-    }
-}
-
-/// Cross-relay registry of open Bash brackets keyed by canonical repo root.
-/// Owned by `AgentSupervisor` and cloned into every relay so brackets from
-/// different sessions on the same checkout can see (and flag) each other's
-/// overlap. Cheap to clone (an `Arc`).
-#[derive(Debug, Clone, Default)]
-pub struct BracketRegistry {
-    inner: Arc<StdMutex<HashMap<PathBuf, Vec<OpenBracket>>>>,
-}
-
-impl BracketRegistry {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Open a bracket for `tool_use_id` on `repo_root`. Any other session's
-    /// bracket already open on the same root cross-marks overlap in both
-    /// directions (existing ↔ new), so a `close` later flags the delta
-    /// ambiguous regardless of open/close ordering.
-    pub fn open(
-        &self,
-        repo_root: PathBuf,
-        tug_session_id: &str,
-        tool_use_id: &str,
-        parent_tool_use_id: Option<String>,
-        opened_at: i64,
-        pre: HashMap<PathBuf, FileState>,
-    ) {
-        let mut map = self.inner.lock().expect("bracket registry mutex");
-        let siblings = map.entry(repo_root.clone()).or_default();
-        let mut overlap = false;
-        for other in siblings.iter_mut() {
-            if other.tug_session_id != tug_session_id {
-                other.saw_overlap = true;
-                overlap = true;
-            }
-        }
-        siblings.push(OpenBracket {
-            tug_session_id: tug_session_id.to_owned(),
-            tool_use_id: tool_use_id.to_owned(),
-            parent_tool_use_id,
-            opened_at,
-            repo_root,
-            pre,
-            saw_overlap: overlap,
-        });
-    }
-
-    /// Remove and return the bracket for `(tug_session_id, tool_use_id)`,
-    /// or `None` if none is open (e.g. a replayed Bash `tool_result`, which
-    /// never opened a bracket). Prunes an emptied repo-root entry.
-    pub fn close_by_tool_use(
-        &self,
-        tug_session_id: &str,
-        tool_use_id: &str,
-    ) -> Option<OpenBracket> {
-        let mut map = self.inner.lock().expect("bracket registry mutex");
-        let mut found = None;
-        let mut empty_root = None;
-        for (root, brackets) in map.iter_mut() {
-            if let Some(pos) = brackets
-                .iter()
-                .position(|b| b.tug_session_id == tug_session_id && b.tool_use_id == tool_use_id)
-            {
-                found = Some(brackets.remove(pos));
-                if brackets.is_empty() {
-                    empty_root = Some(root.clone());
-                }
-                break;
-            }
-        }
-        if let Some(root) = empty_root {
-            map.remove(&root);
-        }
-        found
-    }
-
-    /// Drop every bracket owned by `tug_session_id` — the relay-teardown
-    /// sweep for brackets abandoned by a dying relay (a crash mid-Bash).
-    pub fn sweep_session(&self, tug_session_id: &str) {
-        let mut map = self.inner.lock().expect("bracket registry mutex");
-        map.retain(|_root, brackets| {
-            brackets.retain(|b| b.tug_session_id != tug_session_id);
-            !brackets.is_empty()
-        });
-    }
-
-    /// Count of currently-open brackets — test/diagnostic aid.
-    pub fn open_count(&self) -> usize {
-        self.inner
-            .lock()
-            .expect("bracket registry mutex")
-            .values()
-            .map(Vec::len)
-            .sum()
     }
 }
 
@@ -792,7 +693,6 @@ mod tests {
             opened_at: 10,
             repo_root: PathBuf::from("/r"),
             pre,
-            saw_overlap: false,
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
         let mut rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 99);
@@ -809,7 +709,8 @@ mod tests {
         assert_eq!(by_path.get("gone.rs"), Some(&"modified"));
         assert!(!by_path.contains_key("mod.rs"), "unchanged path has no row");
         // Every row carries Bash/bash provenance, the parent id, and the
-        // owning session's project_dir.
+        // owning session's project_dir. `ambiguous` is always false: a
+        // bracket records provenance only, never a cross-session judgment.
         for r in &rows {
             assert_eq!(r.tool_name, "Bash");
             assert_eq!(r.origin, "bash");
@@ -818,25 +719,6 @@ mod tests {
             assert_eq!(r.project_dir, "/proj");
             assert!(!r.ambiguous);
         }
-    }
-
-    #[test]
-    fn into_delta_rows_flags_ambiguous_from_overlap() {
-        let mut post = HashMap::new();
-        post.insert(PathBuf::from("/r/a.rs"), state("?"));
-        let bracket = OpenBracket {
-            tug_session_id: "tug-1".to_owned(),
-            tool_use_id: "tu".to_owned(),
-            parent_tool_use_id: None,
-            opened_at: 0,
-            repo_root: PathBuf::from("/r"),
-            pre: HashMap::new(),
-            saw_overlap: true,
-        };
-        let project_dir = CanonicalPath::from_test_str("/proj");
-        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 1);
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].ambiguous, "overlap marks the delta ambiguous");
     }
 
     #[test]
@@ -858,130 +740,6 @@ u UU N... 0 0 0 0 unmerged.rs
         assert_eq!(by.get("dst.rs"), Some(&"R."), "rename reports the new path");
         assert_eq!(by.get("new.txt"), Some(&"?"));
         assert!(!by.contains_key("unmerged.rs"), "unmerged entries skipped");
-    }
-
-    #[test]
-    fn bracket_registry_open_close_round_trips() {
-        let reg = BracketRegistry::new();
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-1",
-            "tu-1",
-            None,
-            0,
-            HashMap::new(),
-        );
-        assert_eq!(reg.open_count(), 1);
-        let b = reg
-            .close_by_tool_use("tug-1", "tu-1")
-            .expect("bracket present");
-        assert_eq!(b.tool_use_id, "tu-1");
-        assert!(!b.saw_overlap);
-        assert_eq!(reg.open_count(), 0);
-        assert!(
-            reg.close_by_tool_use("tug-1", "tu-1").is_none(),
-            "a second close misses"
-        );
-    }
-
-    #[test]
-    fn bracket_registry_cross_marks_overlap_between_sessions() {
-        // Two sessions bracket the same root concurrently; both deltas must
-        // come out ambiguous, regardless of which closes first.
-        let reg = BracketRegistry::new();
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-A",
-            "tu-A",
-            None,
-            0,
-            HashMap::new(),
-        );
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-B",
-            "tu-B",
-            None,
-            1,
-            HashMap::new(),
-        );
-        let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
-        let b = reg.close_by_tool_use("tug-B", "tu-B").unwrap();
-        assert!(a.saw_overlap, "A overlapped B");
-        assert!(b.saw_overlap, "B overlapped A");
-    }
-
-    #[test]
-    fn bracket_registry_same_session_two_brackets_not_ambiguous() {
-        let reg = BracketRegistry::new();
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-A",
-            "tu-1",
-            None,
-            0,
-            HashMap::new(),
-        );
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-A",
-            "tu-2",
-            None,
-            1,
-            HashMap::new(),
-        );
-        let one = reg.close_by_tool_use("tug-A", "tu-1").unwrap();
-        assert!(!one.saw_overlap, "same-owner brackets don't cross-flag");
-    }
-
-    #[test]
-    fn bracket_registry_different_roots_do_not_overlap() {
-        let reg = BracketRegistry::new();
-        reg.open(
-            PathBuf::from("/r1"),
-            "tug-A",
-            "tu-A",
-            None,
-            0,
-            HashMap::new(),
-        );
-        reg.open(
-            PathBuf::from("/r2"),
-            "tug-B",
-            "tu-B",
-            None,
-            1,
-            HashMap::new(),
-        );
-        let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
-        assert!(!a.saw_overlap, "brackets on different roots never overlap");
-    }
-
-    #[test]
-    fn bracket_registry_sweep_drops_a_sessions_brackets() {
-        let reg = BracketRegistry::new();
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-A",
-            "tu-A",
-            None,
-            0,
-            HashMap::new(),
-        );
-        reg.open(
-            PathBuf::from("/r"),
-            "tug-B",
-            "tu-B",
-            None,
-            1,
-            HashMap::new(),
-        );
-        reg.sweep_session("tug-A");
-        assert!(reg.close_by_tool_use("tug-A", "tu-A").is_none());
-        assert!(
-            reg.close_by_tool_use("tug-B", "tu-B").is_some(),
-            "sweep leaves other sessions' brackets"
-        );
     }
 
     // ---- real-git integration (snapshot + repo-root walk) -----------
@@ -1034,7 +792,6 @@ u UU N... 0 0 0 0 unmerged.rs
             opened_at: 0,
             repo_root: root.clone(),
             pre,
-            saw_overlap: false,
         };
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
         let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 5);
@@ -1075,7 +832,6 @@ u UU N... 0 0 0 0 unmerged.rs
             opened_at: 0,
             repo_root: PathBuf::from("/r"),
             pre: HashMap::new(),
-            saw_overlap: false,
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
         let rows = bracket.into_delta_rows(&post, &project_dir, "Turn", "turn", 7);
@@ -1115,21 +871,35 @@ u UU N... 0 0 0 0 unmerged.rs
     }
 
     #[tokio::test]
-    async fn two_overlapping_brackets_on_one_repo_produce_ambiguous_rows() {
-        // Two sessions bracket the same checkout with overlapping windows;
-        // each session's own edit is attributed, but because the windows
-        // overlapped, both deltas are flagged ambiguous (recorded, never
-        // guessed) — the shared registry is what makes the relays see each
-        // other.
+    async fn overlapping_brackets_on_one_repo_never_mark_ambiguous() {
+        // The pinned regression: two sessions bracket the same checkout with
+        // overlapping windows, each touching a DIFFERENT file. Wall-clock
+        // overlap is not evidence of contention — every delta row records
+        // provenance only, never a cross-session judgment. (Genuine same-file
+        // contention surfaces at read time, when both sessions hold rows for
+        // the same path.)
         let repo = init_repo();
         let root = repo.path().to_path_buf();
-        let reg = BracketRegistry::new();
 
         // Session A opens; then B opens (overlap) while A is still open.
         let pre_a = snapshot_worktree(&root).await;
-        reg.open(root.clone(), "tug-A", "tu-A", None, 0, pre_a);
+        let a = OpenBracket {
+            tug_session_id: "tug-A".to_owned(),
+            tool_use_id: "tu-A".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: root.clone(),
+            pre: pre_a,
+        };
         let pre_b = snapshot_worktree(&root).await;
-        reg.open(root.clone(), "tug-B", "tu-B", None, 1, pre_b);
+        let b = OpenBracket {
+            tug_session_id: "tug-B".to_owned(),
+            tool_use_id: "tu-B".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 1,
+            repo_root: root.clone(),
+            pre: pre_b,
+        };
 
         // Each session's command touches a different file.
         std::fs::write(root.join("from_a.txt"), "a\n").unwrap();
@@ -1137,21 +907,14 @@ u UU N... 0 0 0 0 unmerged.rs
 
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
         let post_a = snapshot_worktree(&root).await;
-        let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
         let rows_a = a.into_delta_rows(&post_a, &project_dir, "Bash", "bash", 2);
-
         let post_b = snapshot_worktree(&root).await;
-        let b = reg.close_by_tool_use("tug-B", "tu-B").unwrap();
         let rows_b = b.into_delta_rows(&post_b, &project_dir, "Bash", "bash", 3);
 
         assert!(!rows_a.is_empty() && !rows_b.is_empty());
         assert!(
-            rows_a.iter().all(|r| r.ambiguous),
-            "A's rows are ambiguous under overlap"
-        );
-        assert!(
-            rows_b.iter().all(|r| r.ambiguous),
-            "B's rows are ambiguous under overlap"
+            rows_a.iter().all(|r| !r.ambiguous) && rows_b.iter().all(|r| !r.ambiguous),
+            "no bracket row is ever marked ambiguous"
         );
     }
 }

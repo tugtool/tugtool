@@ -3,18 +3,30 @@
 //! Reads the session's `file_events` attribution rows from the read-only ledger
 //! ([`crate::ledger`]), joins them against the current `git status` so
 //! committed/reverted files drop out, dedups per repo-relative path (latest
-//! event wins op/origin; ambiguity ORs across events), and — with `--diff` —
-//! attaches each file's unified diff. Ported from `tugutil/src/commands/changes.rs`.
+//! live event wins op/origin), and — with `--diff` — attaches each file's
+//! unified diff. Ported from `tugutil/src/commands/changes.rs`.
 //!
 //! **Invariant ([P01]): a dirty file is never invisible.** `git status
 //! --untracked-files=all` is the universe of the shared resolution
 //! ([`resolve_changes`]); the ledger *annotates* that universe, it does not
 //! *filter* it. Every dirty path is classified into one of three buckets —
-//! `attributed` (this session's rows), `foreign` (only other sessions' rows), or
-//! `unattributed` (no rows anywhere) — so a capture gap can narrow *attribution*
-//! but can never drop a file from `context`. The `changes()` op itself keeps its
-//! legacy event-scoped wire contract (only `files`); the buckets surface through
-//! `context` ([Q01]).
+//! `attributed` (this session's live rows), `foreign` (only other sessions'
+//! live rows), or `unattributed` (no live rows anywhere) — so a capture gap can
+//! narrow *attribution* but can never drop a file from `context`. The
+//! `changes()` op itself keeps its legacy event-scoped wire contract (only
+//! `files`); the buckets surface through `context` ([Q01]).
+//!
+//! Two per-file rules govern classification:
+//!
+//! - **Row liveness.** A ledger row is live only while it postdates the last
+//!   commit that touched its path ([`min_live_at_ms`]) — a commit *spends* the
+//!   rows it absorbs, so a spent row neither attributes nor contends when the
+//!   file goes dirty again later. Ties break toward spent, degrading to
+//!   `unattributed` — visible, never falsely claimed.
+//! - **Contention is per-file, computed here at read time.** An attributed
+//!   path that other sessions also hold live rows for is `shared` (with the
+//!   claimant list); capture never records a cross-session judgment, and
+//!   wall-clock overlap between sessions is never evidence.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -38,21 +50,25 @@ pub struct ChangesOptions {
 }
 
 /// One changed file (Spec S01). `git_status` is the two-char porcelain-v1 code
-/// (`" M"`, `"M "`, `"??"`, …), empty for an `--all` row no longer dirty. `diff`
-/// is present only when requested.
+/// (`" M"`, `"M "`, `"??"`, …), empty for an `--all` row no longer dirty.
+/// `shared` marks per-file contention — other sessions also hold live rows for
+/// the path — with `sessions` naming the claimants. `diff` is present only
+/// when requested.
 #[derive(Debug, Clone, Serialize)]
 pub struct Change {
     pub path: String,
     pub op: String,
     pub origin: String,
-    pub ambiguous: bool,
+    pub shared: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<String>,
     pub git_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
 }
 
-/// A dirty file claimed only by *other* sessions (Spec S01). It is never this
-/// session's to commit by default; `sessions` lists the claiming
+/// A dirty file with live claims only from *other* sessions (Spec S01). It is
+/// never this session's to commit by default; `sessions` lists the claiming
 /// `tug_session_id`s so the agent can see whose work it is. `diff` is present
 /// only when requested (`context` always requests it).
 #[derive(Debug, Clone, Serialize)]
@@ -84,7 +100,7 @@ pub struct ChangesReport {
 pub enum ChangesError {
     /// No session id (neither `--session` nor `$TUG_SESSION_ID`) — exit 2.
     NoSessionId,
-    /// No session ledger on disk — the session can't be known — exit 2.
+    /// No changes ledger on disk — the session can't be known — exit 2.
     NoLedger { session: String },
     /// The session id is unknown to the ledger (no `sessions` row, no events) — exit 2.
     UnknownSession { session: String },
@@ -147,7 +163,6 @@ pub(crate) struct Buckets {
     pub attributed: Vec<Change>,
     pub unattributed: Vec<Change>,
     pub foreign: Vec<ForeignChange>,
-    pub known: bool,
 }
 
 /// Resolve the session, open the ledger, and compute the changed-file set —
@@ -168,24 +183,33 @@ pub(crate) fn resolve_changes(opts: &ChangesOptions) -> Result<ResolvedChanges, 
     };
     let repo_root = repo_root_for(&project_dir);
 
-    let db_path = match ledger::resolve_sessions_db_path() {
-        Some(p) if p.exists() => p,
-        _ => return Err(ChangesError::NoLedger { session }),
-    };
-    let conn = ledger::open_readonly(&db_path)?;
+    // The machine-global changes ledger ([D112]) holds every instance's
+    // `file_events`; the per-instance `sessions.db` contributes only the
+    // "known session" test. A session recorded by another instance is known
+    // through its rows alone.
+    let changes_db = ledger::resolve_changes_db_path();
+    if !changes_db.exists() {
+        return Err(ChangesError::NoLedger { session });
+    }
+    let conn = ledger::open_readonly(&changes_db)?;
+    let sessions_known = ledger::resolve_sessions_db_path()
+        .filter(|p| p.exists())
+        .and_then(|p| ledger::open_readonly(&p).ok())
+        .map(|c| ledger::session_exists(&c, &session).unwrap_or(false))
+        .unwrap_or(false);
+    let known = sessions_known || ledger::session_has_events(&conn, &session)?;
 
     let Buckets {
         mut attributed,
         mut unattributed,
         mut foreign,
-        known,
     } = compute_changes(&conn, &repo_root, &session, opts.all)?;
 
     // Exit-2 session resolution is unchanged and fires before the buckets are
-    // trusted: an unknown id (no rows, no `sessions` row) is a resolution error
-    // regardless of a dirty tree. A *known* session with no attributed files but
-    // a dirty tree is not an error — it yields empty `files` + populated
-    // `unattributed` ([P01]).
+    // trusted: an unknown id (no rows anywhere, no `sessions` row) is a
+    // resolution error regardless of a dirty tree. A *known* session with no
+    // attributed files but a dirty tree is not an error — it yields empty
+    // `files` + populated `unattributed` ([P01]).
     if attributed.is_empty() && !known {
         return Err(ChangesError::UnknownSession { session });
     }
@@ -224,13 +248,15 @@ pub fn changes(opts: ChangesOptions) -> Result<ChangesReport, ChangesError> {
 }
 
 /// Invert the join ([P01]): `git status` is the universe, the ledger annotates
-/// it. Build this session's per-path attribution from its events (latest event
-/// wins op/origin; ambiguity ORs), then classify **every dirty path** into one
-/// of three buckets ([P02]): this session's rows → `attributed`; rows only from
-/// other sessions on this repo → `foreign`; no rows anywhere → `unattributed`.
-/// `all` additionally keeps this session's committed/reverted files (an event
-/// row but no longer dirty) in `attributed`, its legacy meaning within the
-/// attributed bucket.
+/// it. Classify **every dirty path** into one of three buckets ([P02]) using
+/// only **live** rows (the row-liveness rule, [`min_live_at_ms`]): this
+/// session's live rows → `attributed` (latest live event wins op/origin,
+/// `shared` when other sessions also hold live rows); live rows only from
+/// other sessions on this repo → `foreign`; no live rows anywhere →
+/// `unattributed`. `all` additionally keeps this session's committed/reverted
+/// files (an event row but no longer dirty) in `attributed`, its legacy
+/// meaning within the attributed bucket — a history view, so liveness does not
+/// apply there.
 fn compute_changes(
     conn: &Connection,
     repo_root: &Path,
@@ -238,26 +264,13 @@ fn compute_changes(
     all: bool,
 ) -> Result<Buckets, String> {
     let events = ledger::query_events(conn, session)?;
-    let known = ledger::session_exists(conn, session)?;
     let status_map = git::parse_status_porcelain_v2(&status_output(repo_root)).v1_status_map();
 
-    // This session's attribution per repo-relative path, independent of
-    // dirtiness: latest event wins op/origin (rows are oldest-first), ambiguity
-    // is OR-ed across every event that touched the path.
-    let mut attributed_by_path: HashMap<String, Change> = HashMap::new();
-    for ev in &events {
+    // This session's events grouped per repo-relative path, oldest-first.
+    let mut events_by_path: HashMap<String, Vec<ledger::EventRow>> = HashMap::new();
+    for ev in events {
         let rel = repo_relative(repo_root, &ev.file_path);
-        let entry = attributed_by_path.entry(rel.clone()).or_insert_with(|| Change {
-            path: rel.clone(),
-            op: ev.op.clone(),
-            origin: ev.origin.clone(),
-            ambiguous: false,
-            git_status: String::new(),
-            diff: None,
-        });
-        entry.op = ev.op.clone();
-        entry.origin = ev.origin.clone();
-        entry.ambiguous |= ev.ambiguous;
+        events_by_path.entry(rel).or_default().push(ev);
     }
 
     // Walk the working-tree universe in a deterministic order.
@@ -270,35 +283,65 @@ fn compute_changes(
 
     for path in &dirty_paths {
         let git_status = status_map.get(path).cloned().unwrap_or_default();
-        if let Some(mut change) = attributed_by_path.remove(path) {
-            change.git_status = git_status;
-            attributed.push(change);
+        let self_events = events_by_path.remove(path).unwrap_or_default();
+
+        // Cheap SQL probe first; the liveness cut (one `git log` per path)
+        // runs only when some row actually claims the path.
+        let has_any_claim = !self_events.is_empty()
+            || !ledger::sessions_for_path(conn, path, session)?.is_empty();
+        if !has_any_claim {
+            unattributed.push(unattributed_change(path, git_status));
+            continue;
+        }
+
+        let min_live = min_live_at_ms(repo_root, path);
+        let live_self: Vec<&ledger::EventRow> =
+            self_events.iter().filter(|ev| ev.at >= min_live).collect();
+        let foreign_live =
+            ledger::foreign_sessions_for_path(conn, path, session, repo_root, min_live)?;
+
+        if let Some(latest) = live_self.last() {
+            attributed.push(Change {
+                path: path.clone(),
+                op: latest.op.clone(),
+                origin: latest.origin.clone(),
+                shared: !foreign_live.is_empty(),
+                sessions: foreign_live,
+                git_status,
+                diff: None,
+            });
+        } else if !foreign_live.is_empty() {
+            foreign.push(ForeignChange {
+                path: path.clone(),
+                git_status,
+                sessions: foreign_live,
+                diff: None,
+            });
         } else {
-            let sessions = ledger::foreign_sessions_for_path(conn, path, session, repo_root)?;
-            if sessions.is_empty() {
-                unattributed.push(Change {
-                    path: path.clone(),
-                    op: "unknown".to_string(),
-                    origin: "none".to_string(),
-                    ambiguous: false,
-                    git_status,
-                    diff: None,
-                });
-            } else {
-                foreign.push(ForeignChange {
-                    path: path.clone(),
-                    git_status,
-                    sessions,
-                    diff: None,
-                });
-            }
+            // Every claim on the path is spent — degrade to unattributed:
+            // visible, never falsely claimed.
+            unattributed.push(unattributed_change(path, git_status));
         }
     }
 
     // `--all`: also keep this session's no-longer-dirty files (committed or
     // reverted since the event) — they weren't in the status universe above.
     if all {
-        let mut leftover: Vec<Change> = attributed_by_path.into_values().collect();
+        let mut leftover: Vec<Change> = events_by_path
+            .into_iter()
+            .map(|(path, evs)| {
+                let latest = evs.last().expect("grouped paths hold at least one event");
+                Change {
+                    path,
+                    op: latest.op.clone(),
+                    origin: latest.origin.clone(),
+                    shared: false,
+                    sessions: Vec::new(),
+                    git_status: String::new(),
+                    diff: None,
+                }
+            })
+            .collect();
         leftover.sort_by(|a, b| a.path.cmp(&b.path));
         attributed.extend(leftover);
     }
@@ -308,8 +351,36 @@ fn compute_changes(
         attributed,
         unattributed,
         foreign,
-        known,
     })
+}
+
+/// The sentinel `Change` for a dirty path no live row claims.
+fn unattributed_change(path: &str, git_status: String) -> Change {
+    Change {
+        path: path.to_owned(),
+        op: "unknown".to_string(),
+        origin: "none".to_string(),
+        shared: false,
+        sessions: Vec::new(),
+        git_status,
+        diff: None,
+    }
+}
+
+/// The row-liveness cut for `path` (epoch ms): a row is live iff
+/// `row.at >= min_live_at_ms`. Derived from the last commit that touched the
+/// path (`git log -1 --format=%ct -- <path>`), with the whole commit second
+/// treated as spent so ties break toward spent (degrading to `unattributed` —
+/// visible, never falsely claimed). A path with no commit history (a
+/// new/untracked file) returns 0: nothing was ever absorbed, every row is
+/// live.
+fn min_live_at_ms(repo_root: &Path, path: &str) -> i64 {
+    let out = git::git_stdout(repo_root, &["log", "-1", "--format=%ct", "--", path])
+        .unwrap_or_default();
+    match out.trim().parse::<i64>() {
+        Ok(commit_secs) => (commit_secs + 1) * 1000,
+        Err(_) => 0,
+    }
 }
 
 /// Run `git status --porcelain=v2 --untracked-files=all` at `repo_root`,
@@ -443,7 +514,6 @@ mod tests {
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
 
         let buckets = compute_changes(&conn, root, "s1", false).unwrap();
-        assert!(buckets.known);
         let files = buckets.attributed;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "dirty.rs");
@@ -481,17 +551,27 @@ mod tests {
         assert!(diff.contains("+dirty"), "add-diff carries the new content: {diff}");
     }
 
+    /// Current epoch ms — a realistic `at` for a live row (a tracked file's
+    /// liveness cut sits at its last commit, made moments ago in these tests).
+    fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    }
+
     #[test]
     fn diff_on_tracked_modified_file_is_nonempty() {
         let repo = init_repo(&[]);
         let root = repo.path();
         std::fs::write(root.join("clean.rs"), "clean\nmore\n").unwrap();
+        // The edit postdates the init commit → the row is live.
         let events = vec![(
             root.join("clean.rs").to_string_lossy().into_owned(),
             "edit",
             "exact",
             false,
-            1,
+            now_ms() + 2_000,
         )];
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
@@ -502,25 +582,56 @@ mod tests {
     }
 
     #[test]
-    fn unknown_session_is_exit_two_valid_empty_is_ok() {
+    fn spent_rows_never_reclaim_a_redirtied_file() {
+        // The row-liveness rule: a session edited `clean.rs` long ago (row at
+        // epoch ~0), the file was committed since (init_repo's commit), and now
+        // someone re-dirties it. The fossil row must neither attribute nor
+        // contend — the file degrades to `unattributed`, visible.
         let repo = init_repo(&[]);
-        let db = seed_db("s1", &[]);
+        let root = repo.path();
+        std::fs::write(root.join("clean.rs"), "clean\nlater\n").unwrap();
+        let events = vec![(
+            root.join("clean.rs").to_string_lossy().into_owned(),
+            "edit",
+            "exact",
+            false,
+            1,
+        )];
+        let db = seed_db("s1", &events);
+        let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
+        let buckets = compute_changes(&conn, root, "s1", false).unwrap();
+        assert!(buckets.attributed.is_empty(), "the spent row does not attribute");
+        assert!(buckets.foreign.is_empty());
+        assert_eq!(buckets.unattributed.len(), 1);
+        assert_eq!(buckets.unattributed[0].path, "clean.rs");
+    }
+
+    #[test]
+    fn unknown_session_is_unknown_valid_empty_is_known() {
+        // The "known" test now lives in `resolve_changes` over the two ledger
+        // helpers: a `sessions` row (this instance) or any `file_events` row
+        // (any instance, via the shared changes ledger) makes a session known.
+        let repo = init_repo(&[]);
+        let db = seed_db("s1", &[("x.rs".to_owned(), "write", "exact", false, 1)]);
         let db_path = db.path().join("sessions.db");
         let conn = ledger::open_readonly(&db_path).unwrap();
 
-        // Unknown id: no events, not known.
+        assert!(!ledger::session_exists(&conn, "ghost").unwrap());
+        assert!(!ledger::session_has_events(&conn, "ghost").unwrap());
         let ghost = compute_changes(&conn, repo.path(), "ghost", false).unwrap();
-        assert!(!ghost.known);
         assert!(ghost.attributed.is_empty());
 
-        // Valid but empty session: known, empty.
-        assert!(compute_changes(&conn, repo.path(), "s1", false).unwrap().known);
+        // Valid session: known via its `sessions` row AND via its rows.
+        assert!(ledger::session_exists(&conn, "s1").unwrap());
+        assert!(ledger::session_has_events(&conn, "s1").unwrap());
     }
 
     /// Contract test (R04): a hand-built `sessions.db` with today's schema
-    /// yields the expected changed files — guards the raw-SQL coupling.
+    /// yields the expected changed files — guards the raw-SQL coupling. The
+    /// legacy `ambiguous` column (poisoned to 1 on one row) is ignored
+    /// outright: it never surfaces, never excludes, never marks anything.
     #[test]
-    fn schema_coupling_contract() {
+    fn schema_coupling_contract_ignores_legacy_ambiguous_column() {
         let repo = init_repo(&["a.rs", "amb.rs"]);
         let root = repo.path();
         let events = vec![
@@ -542,16 +653,17 @@ mod tests {
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
         let buckets = compute_changes(&conn, root, "s1", false).unwrap();
-        assert!(buckets.known);
         let files = buckets.attributed;
         let by_path = |p: &str| files.iter().find(|f| f.path == p).unwrap();
-        assert_eq!(by_path("a.rs").ambiguous, false);
-        assert_eq!(by_path("amb.rs").ambiguous, true);
         assert_eq!(by_path("amb.rs").origin, "bash");
+        assert!(
+            !by_path("amb.rs").shared && by_path("amb.rs").sessions.is_empty(),
+            "a poisoned legacy ambiguous=1 row has no effect on classification"
+        );
     }
 
     #[test]
-    fn multiple_events_dedup_latest_wins_ors_ambiguous() {
+    fn multiple_events_dedup_latest_wins() {
         let repo = init_repo(&["a.rs"]);
         let root = repo.path();
         let p = root.join("a.rs").to_string_lossy().into_owned();
@@ -564,7 +676,7 @@ mod tests {
         let files = compute_changes(&conn, root, "s1", false).unwrap().attributed;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].op, "modified");
-        assert!(files[0].ambiguous);
+        assert!(!files[0].shared, "a lone session's file is never shared");
     }
 
     /// Seed a db from `(tug_session_id, repo_relative_path, project_dir)` rows,
@@ -642,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn file_touched_by_both_sessions_is_attributed_to_this_one() {
+    fn file_touched_by_both_sessions_is_attributed_and_shared() {
         let repo = init_repo(&["shared.rs"]);
         let root = repo.path();
         let rootstr = root.to_string_lossy().into_owned();
@@ -651,7 +763,10 @@ mod tests {
         let buckets = compute_changes(&open(&db), root, "mine", false).unwrap();
 
         assert_eq!(buckets.attributed.len(), 1);
-        assert_eq!(buckets.attributed[0].path, "shared.rs");
+        let mine = &buckets.attributed[0];
+        assert_eq!(mine.path, "shared.rs");
+        assert!(mine.shared, "a live foreign claim marks the file shared");
+        assert_eq!(mine.sessions, vec!["theirs".to_string()]);
         assert!(buckets.foreign.is_empty());
         assert!(buckets.unattributed.is_empty());
     }

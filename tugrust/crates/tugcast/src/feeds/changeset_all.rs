@@ -435,13 +435,14 @@ mod tests {
             parent_tool_use_id: None,
             timestamp: None,
         };
+        // The edit postdates the fixture's commit, so the row is live.
         let row = pending.into_row(
             "sess",
             "tu-1",
             &canonical_project_dir,
             Some(&repo_root),
             "exact",
-            1,
+            crate::session_ledger::now_millis() + 2_000,
         );
         assert_eq!(
             row.file_path, "roadmap/x.md",

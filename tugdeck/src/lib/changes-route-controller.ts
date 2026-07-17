@@ -14,8 +14,9 @@
  * derives its slice as a filtered projection: this card's project by
  * `workspace_key`, its session entry by `owner_id`, the project's dash
  * entries, and the unattributed bucket. Selection is layered on top as an
- * override map over the Lens default rule (`!ambiguous && !shared` for
- * session files, always-on for unattributed).
+ * override map over the default rule: `!shared` for session files,
+ * always-OFF for unattributed (no owner claims them — inclusion is an
+ * explicit election, mirroring the CLI's exit-3 refusal).
  *
  * The commit and draft triggers are pass-throughs to the shipping app-level
  * verb / draft stores keyed by one identity (`entryKey` /
@@ -63,13 +64,13 @@ export interface ChangesRouteSnapshot {
   unattributed: UnattributedFile[];
   /** The project header (real feed project, or a placeholder before first emit). */
   project: ProjectChangeset;
-  /** Repo-relative paths currently selected for commit (session + unattributed). */
+  /** Repo-relative paths currently selected for commit (session files by default; unattributed only by explicit election). */
   selectedPaths: ReadonlySet<string>;
 }
 
-/** The commit-selection default for a session file: on unless ambiguous or shared. */
+/** The commit-selection default for a session file: on unless shared. */
 export function sessionFileDefaultSelected(file: ChangesetFile): boolean {
-  return !file.ambiguous && !file.shared;
+  return !file.shared;
 }
 
 /**
@@ -129,8 +130,12 @@ export function deriveChangesRouteSnapshot(
       consider(file.path, sessionFileDefaultSelected(file));
     }
   }
+  // Unattributed files default OFF: no owner claims them, so including one
+  // in a commit is an explicit per-file election — the card mirror of the
+  // CLI's exit-3 refusal ([D112]; a default set never absorbs work the
+  // session can't account for).
   for (const file of project.unattributed) {
-    consider(file.path, true);
+    consider(file.path, false);
   }
 
   return {

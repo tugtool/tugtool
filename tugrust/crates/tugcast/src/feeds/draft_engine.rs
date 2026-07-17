@@ -611,7 +611,6 @@ mod tests {
                 git_status: status.to_string(),
                 op: "edit".to_string(),
                 origin: "exact".to_string(),
-                ambiguous: false,
                 shared: false,
                 last_touched: 1,
             }],

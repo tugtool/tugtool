@@ -85,15 +85,15 @@ pub fn run_changes(
     if json {
         print_ok("changes", &report);
     } else {
-        // Plain: one repo-relative path per line, EXCLUDING ambiguous rows (the
+        // Plain: one repo-relative path per line, EXCLUDING shared rows (the
         // skill opts into those via --json); the omitted count goes to stderr so
         // it isn't silent.
-        for file in report.files.iter().filter(|f| !f.ambiguous) {
+        for file in report.files.iter().filter(|f| !f.shared) {
             println!("{}", file.path);
         }
-        let omitted = report.files.iter().filter(|f| f.ambiguous).count();
+        let omitted = report.files.iter().filter(|f| f.shared).count();
         if omitted > 0 {
-            eprintln!("{omitted} ambiguous file(s) omitted — use --json to see them");
+            eprintln!("{omitted} shared file(s) omitted — use --json to see them");
         }
     }
     Ok(())
@@ -217,7 +217,7 @@ fn print_left_behind(left_behind: &tugchanges_core::LeftBehind) {
     let sections = [
         ("unattributed", &left_behind.unattributed),
         ("foreign", &left_behind.foreign),
-        ("ambiguous", &left_behind.ambiguous),
+        ("shared", &left_behind.shared),
     ];
     for (label, paths) in sections {
         if !paths.is_empty() {

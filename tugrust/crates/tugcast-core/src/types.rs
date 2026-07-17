@@ -211,10 +211,10 @@ pub struct GitLogSnapshot {
 ///
 /// `git_status` is the porcelain-v2 XY pair for working-tree files, or the
 /// name-status letter for a dash's `base..branch` files. `op` / `origin`
-/// carry the attribution provenance recorded in `file_events`; `ambiguous`
-/// marks files whose Bash bracket overlapped another session's, and `shared`
-/// marks files owned by more than one changeset — both are excluded from the
-/// card's default commit selection.
+/// carry the attribution provenance recorded in `file_events`; `shared`
+/// marks files owned by more than one changeset (per-file contention, the
+/// only cross-session signal) — excluded from the card's default commit
+/// selection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChangesetFile {
     /// Path relative to the repository root.
@@ -224,10 +224,8 @@ pub struct ChangesetFile {
     /// Attribution operation: write | edit | notebook | created | modified |
     /// deleted | renamed.
     pub op: String,
-    /// Attribution origin: exact | bash | replay | dash.
+    /// Attribution origin: exact | bash | turn | replay | dash.
     pub origin: String,
-    /// True when a concurrent session's Bash bracket overlapped this file.
-    pub ambiguous: bool,
     /// True when more than one changeset owns this file.
     pub shared: bool,
     /// Epoch milliseconds of the most recent attribution event for this file.
@@ -809,7 +807,6 @@ mod tests {
                 assert!(owner_id.starts_with("sess-"));
                 assert!(live);
                 assert_eq!(files.len(), 2);
-                assert!(files[1].ambiguous);
                 assert!(files[1].shared);
             }
             other => panic!("expected session entry, got {other:?}"),

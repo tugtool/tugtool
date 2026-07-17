@@ -32,7 +32,6 @@ describe("changeset wire contract", () => {
     expect(session.kind).toBe("session");
     if (session.kind === "session") {
       expect(session.live).toBe(true);
-      expect(session.files[1].ambiguous).toBe(true);
       expect(session.files[1].shared).toBe(true);
     }
     expect(dash.kind).toBe("dash");
@@ -56,7 +55,6 @@ describe("changeset wire contract", () => {
         git_status: ".M",
         op: "edit",
         origin: "exact",
-        ambiguous: false,
         shared: false,
         last_touched: "not-a-number",
       }),

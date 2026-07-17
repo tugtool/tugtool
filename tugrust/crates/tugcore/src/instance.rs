@@ -184,6 +184,25 @@ pub fn sessions_db_path() -> Option<PathBuf> {
     instance_id().map(|_| data_dir().join("sessions.db"))
 }
 
+/// Environment variable overriding the shared changes-ledger path.
+/// Set by test harnesses (the app-test driver, the tugutil CLI suite)
+/// so isolated runs never touch the user's real ledger.
+pub const ENV_CHANGES_DB: &str = "TUG_CHANGES_DB";
+
+/// The **machine-global** changes-ledger database path: one `changes.db`
+/// for every app instance, holding the `file_events` attribution rows
+/// keyed by canonical repo root. Deliberately independent of
+/// `TUG_INSTANCE_ID` — the working tree is machine-global, so splitting
+/// attribution per instance splits the truth (a second instance on the
+/// same checkout would see the first's work as ownerless). Honors the
+/// [`ENV_CHANGES_DB`] override for isolated test runs.
+pub fn changes_db_path() -> PathBuf {
+    if let Some(p) = env::var_os(ENV_CHANGES_DB).filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
+    base_data_dir().join("changes.db")
+}
+
 /// Per-instance tugbank notify socket path.
 ///
 /// - With `TUG_INSTANCE_ID=<id>`: `$TMPDIR/tugbank-notify-<short_token>.sock`

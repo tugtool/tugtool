@@ -29,7 +29,7 @@
 
 ## Changes & commits
 
-- [tracking-changes.md](tracking-changes.md) — How a session's file changes are captured, classified, and committed. The two-layer doctrine (capture annotates, git status decides), the `file_events` ledger, the four capture origins (`exact`/`bash`/`turn`/`replay`), the ambiguity marking rule, the capture-gap inventory, the three read-side buckets (attributed/foreign/unattributed), and the commit disposition contract (exit-3 refusal, `--tree`, `left_behind`). Read before touching attribution, `tugutil context`/`commit`, or the commit skill.
+- [tracking-changes.md](tracking-changes.md) — How a session's file changes are captured, classified, and committed. The two-layer doctrine (capture annotates, git status decides), the `file_events` ledger, the four capture origins (`exact`/`bash`/`turn`/`replay`), per-file contention (`shared`) and the row-liveness rule, the capture-gap inventory, the three read-side buckets (attributed/foreign/unattributed), and the commit disposition contract (exit-3 refusal, `--tree`, `left_behind`). Read before touching attribution, `tugutil context`/`commit`, or the commit skill.
 
 ## Theming, palette, tokens
 

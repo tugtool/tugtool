@@ -22,7 +22,6 @@
               "git_status": ".M",
               "op": "edit",
               "origin": "exact",
-              "ambiguous": false,
               "shared": false,
               "last_touched": 1752264000000
             },
@@ -31,7 +30,6 @@
               "git_status": "A.",
               "op": "created",
               "origin": "bash",
-              "ambiguous": true,
               "shared": true,
               "last_touched": 1752264120000
             }
@@ -56,7 +54,6 @@
               "git_status": "M",
               "op": "modified",
               "origin": "dash",
-              "ambiguous": false,
               "shared": false,
               "last_touched": 0
             }

@@ -100,9 +100,12 @@ pub(crate) async fn compose_snapshot(
         .collect();
 
     // Fold attribution events into per-owner buckets. Events are
-    // oldest-first, so the latest event for a path wins op/origin while
-    // ambiguity ORs across all of them (same rule as `tugutil changes`).
-    // Events whose file is no longer dirty (committed / reverted) drop out.
+    // oldest-first, so the latest event for a path wins op/origin (same rule
+    // as `tugutil changes`). Events whose file is no longer dirty
+    // (committed / reverted) drop out, and so do **spent** events — rows at
+    // or before the last commit that touched their path (the row-liveness
+    // rule, [D112]): a commit spends the rows it absorbs, so a fossil row
+    // can never re-claim a file someone re-dirties later.
     // The `file_events` bucket key is canonical (the relay writes it through the
     // gateway), so query the canonical spelling of `project_dir`. Legacy rows
     // written before canonicalization carry the raw spelling; union them in
@@ -156,11 +159,24 @@ pub(crate) async fn compose_snapshot(
         }
     }
     let mut owners: BTreeMap<String, OwnerAgg> = BTreeMap::new();
+    // Per-path liveness cut, computed once per dirty path with events.
+    let mut live_cuts: HashMap<String, i64> = HashMap::new();
     for pfe in &events {
         let rel = repo_relative(&repo_root, &pfe.event.file_path);
         let Some(git_status) = dirty.get(&rel) else {
             continue;
         };
+        let min_live = match live_cuts.get(&rel) {
+            Some(cut) => *cut,
+            None => {
+                let cut = min_live_at_ms(&repo_root, &rel).await;
+                live_cuts.insert(rel.clone(), cut);
+                cut
+            }
+        };
+        if pfe.event.at < min_live {
+            continue;
+        }
         let owner = owners
             .entry(pfe.event.tug_session_id.clone())
             .or_insert_with(|| OwnerAgg {
@@ -176,13 +192,11 @@ pub(crate) async fn compose_snapshot(
                 git_status: git_status.clone(),
                 op: pfe.event.op.clone(),
                 origin: pfe.event.origin.clone(),
-                ambiguous: false,
                 shared: false,
                 last_touched: pfe.event.at,
             });
         file.op = pfe.event.op.clone();
         file.origin = pfe.event.origin.clone();
-        file.ambiguous |= pfe.event.ambiguous;
         file.last_touched = file.last_touched.max(pfe.event.at);
     }
 
@@ -444,6 +458,23 @@ fn repo_relative(repo_root: &Path, file_path: &str) -> String {
     file_path.to_owned()
 }
 
+/// The row-liveness cut for `rel` (epoch ms): a ledger row is live iff
+/// `at >= min_live_at_ms`. Derived from the last commit that touched the path
+/// (`git log -1 --format=%ct -- <rel>`), the whole commit second treated as
+/// spent so ties break toward spent (the file degrades to unattributed —
+/// visible, never falsely claimed). A path with no commit history (a
+/// new/untracked file) returns 0: nothing was ever absorbed, every row is
+/// live. Mirrors tugchanges-core's rule of the same name ([D112]).
+async fn min_live_at_ms(repo_root: &Path, rel: &str) -> i64 {
+    match git_stdout(repo_root, &["log", "-1", "--format=%ct", "--", rel]).await {
+        Some(out) => match out.trim().parse::<i64>() {
+            Ok(commit_secs) => (commit_secs + 1) * 1000,
+            Err(_) => 0,
+        },
+        None => 0,
+    }
+}
+
 /// Derive one dash entry per `refs/heads/tugdash/` branch, the same way
 /// `tugutil dash list` does (branch config `tugbase`, `rev-list --count`
 /// rounds, worktree dirt) plus the `base...branch` name-status file list.
@@ -568,7 +599,6 @@ fn parse_name_status(output: &str) -> Vec<ChangesetFile> {
             git_status: letter.to_string(),
             op: op.to_owned(),
             origin: "dash".to_owned(),
-            ambiguous: false,
             shared: false,
             last_touched: 0,
         });
@@ -680,7 +710,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compose_partitions_owned_shared_ambiguous_and_unattributed() {
+    async fn compose_partitions_owned_shared_and_unattributed() {
         let (_dir, root) = init_repo();
         std::fs::write(root.join("owned.txt"), "x").unwrap();
         std::fs::write(root.join("both.txt"), "x").unwrap();
@@ -709,6 +739,8 @@ mod tests {
         ledger
             .record_file_event(&event("sess-beta", "tu-3", &root.join("both.txt"), &root))
             .unwrap();
+        // A row poisoned with the legacy ambiguous=1 column: the compose must
+        // ignore it outright — the file surfaces as an ordinary owned file.
         let mut tainted = event("sess-alpha", "tu-4", &root.join("tainted.txt"), &root);
         tainted.origin = "bash".to_owned();
         tainted.ambiguous = true;
@@ -746,7 +778,10 @@ mod tests {
         assert_eq!(paths, ["both.txt", "owned.txt", "tainted.txt"]);
         assert!(files[0].shared, "both.txt has two owners");
         assert!(!files[1].shared);
-        assert!(files[2].ambiguous, "bash overlap taints tainted.txt");
+        assert!(
+            !files[2].shared,
+            "the legacy ambiguous=1 row has no effect — one owner, not shared"
+        );
         assert_eq!(files[2].origin, "bash");
         assert_eq!(files[0].git_status, "??");
 
@@ -773,6 +808,39 @@ mod tests {
             .map(|f| f.path.as_str())
             .collect();
         assert_eq!(unattributed, ["hand-edit.txt"]);
+    }
+
+    #[tokio::test]
+    async fn compose_spent_rows_never_reclaim_a_redirtied_file() {
+        // Row liveness ([D112]): a session's row for committed.txt predates the
+        // repo's commit (at = 1, epoch ~0), the commit absorbed that work, and
+        // now someone re-dirties the file. The fossil row must not resurrect a
+        // session entry — the file surfaces as unattributed, visible.
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("committed.txt"), "re-dirtied\n").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn("sess", "ws", &root.to_string_lossy(), "card-1", 0, None)
+            .unwrap();
+        let mut ev = event("sess", "tu-1", &root.join("committed.txt"), &root);
+        ev.at = 1;
+        ledger.record_file_event(&ev).unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        assert!(
+            snapshot
+                .changesets
+                .iter()
+                .all(|e| !matches!(e, ChangesetEntry::Session { files, .. } if !files.is_empty())),
+            "no session entry claims the re-dirtied file"
+        );
+        let unattributed: Vec<&str> = snapshot
+            .unattributed
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
+        assert_eq!(unattributed, ["committed.txt"]);
     }
 
     #[tokio::test]
@@ -1215,9 +1283,11 @@ mod tests {
         ledger
             .record_spawn("sess", "ws", pd.as_str(), "card-1", 0, None)
             .unwrap();
-        // New capture-time form: repo-relative file_path, op deleted.
+        // New capture-time form: repo-relative file_path, op deleted. The
+        // deletion postdates the repo's init commit, so the row is live.
         let mut ev = event("sess", "tu-1", Path::new("committed.txt"), pd.as_path());
         ev.op = "deleted".to_owned();
+        ev.at = crate::session_ledger::now_millis() + 2_000;
         ledger.record_file_event(&ev).unwrap();
 
         let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");

@@ -1,11 +1,14 @@
 //! Integration tests for the `tug` CLI, driving the built binary against a
-//! real temp git repo and a seeded `sessions.db`.
+//! real temp git repo and a seeded two-file ledger (`sessions.db` +
+//! `changes.db`).
 //!
-//! The library resolves `sessions.db` via `tugcore::instance::sessions_db_path`,
-//! which (without `TUG_INSTANCE_ID`) falls back to
-//! `$HOME/Library/Application Support/Tug/sessions.db`. Each test overrides
-//! `HOME` on the child process to point that lookup at a seeded db, so the
-//! tests are fully isolated from the developer's real ledger.
+//! The library resolves the per-instance `sessions.db` via
+//! `tugcore::instance::sessions_db_path` (without `TUG_INSTANCE_ID` it falls
+//! back to `$HOME/Library/Application Support/Tug/sessions.db`) and the
+//! machine-global `changes.db` via `tugcore::instance::changes_db_path`.
+//! Each test overrides `HOME` on the child process (and scrubs the
+//! `TUG_CHANGES_DB` override) so both lookups land on seeded files, fully
+//! isolated from the developer's real ledger.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,34 +49,42 @@ fn init_repo() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-/// A temp `$HOME` whose `Library/Application Support/Tug/sessions.db` is seeded
-/// with `session` ("work", with a `feature.rs` created event) and an empty
-/// `empty` session row.
+/// A temp `$HOME` seeded with the two-file ledger the binary reads: the
+/// per-instance `sessions.db` (the `sessions` table) and the machine-global
+/// `changes.db` (the `file_events` table, [D112]) — both under
+/// `Library/Application Support/Tug/`. Seeds `session` ("work", with a
+/// `feature.rs` created event) and an empty `empty` session row.
 fn seed_home(repo_root: &Path) -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let db_dir = home.path().join("Library/Application Support/Tug");
     std::fs::create_dir_all(&db_dir).unwrap();
-    let conn = Connection::open(db_dir.join("sessions.db")).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
-         CREATE TABLE file_events (
-            tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
-            tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-            parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
-    )
-    .unwrap();
-    conn.execute("INSERT INTO sessions (session_id) VALUES ('work'), ('empty')", [])
+    let sessions = Connection::open(db_dir.join("sessions.db")).unwrap();
+    sessions
+        .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
         .unwrap();
-    conn.execute(
-        "INSERT INTO file_events
-            (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
-         VALUES ('work', 'tu-1', ?1, 'Write', 'created', 'exact', 0, ?2, 1)",
-        rusqlite::params![
-            repo_root.join("feature.rs").to_string_lossy().to_string(),
-            repo_root.to_string_lossy().to_string()
-        ],
-    )
-    .unwrap();
+    sessions
+        .execute("INSERT INTO sessions (session_id) VALUES ('work'), ('empty')", [])
+        .unwrap();
+    let changes = Connection::open(db_dir.join("changes.db")).unwrap();
+    changes
+        .execute_batch(
+            "CREATE TABLE file_events (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+        )
+        .unwrap();
+    changes
+        .execute(
+            "INSERT INTO file_events
+                (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+             VALUES ('work', 'tu-1', ?1, 'Write', 'created', 'exact', 0, ?2, 1)",
+            rusqlite::params![
+                repo_root.join("feature.rs").to_string_lossy().to_string(),
+                repo_root.to_string_lossy().to_string()
+            ],
+        )
+        .unwrap();
     home
 }
 
@@ -83,6 +94,7 @@ fn tug(home: &Path) -> Command {
     cmd.env("HOME", home);
     cmd.env_remove("TUG_INSTANCE_ID");
     cmd.env_remove("TUG_SESSION_ID");
+    cmd.env_remove("TUG_CHANGES_DB");
     cmd
 }
 
@@ -254,38 +266,53 @@ fn no_session_id_exits_two() {
 
 // --- Bucket surfacing + commit disposition (Steps 3–5) --------------------
 
-/// A temp `$HOME` seeding `work` with a `file_events` row per
-/// `(repo_relative_path, ambiguous)` (all `project_dir = repo_root`, `created`),
-/// plus an empty `empty` session — the multi-file fixture the bucket tests need.
-fn seed_home_events(repo_root: &Path, events: &[(&str, bool)]) -> tempfile::TempDir {
+/// A temp `$HOME` seeding a `file_events` row per `(session, repo_relative_path)`
+/// (all `project_dir = repo_root`, `created`), registering each distinct session
+/// plus an empty `empty` session — the multi-session fixture the bucket tests
+/// need (the same path under two sessions makes it `shared` for both).
+/// `file_path` is stored repo-relative, the capture-time form the per-path
+/// contention query joins on.
+fn seed_home_events(repo_root: &Path, events: &[(&str, &str)]) -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     let db_dir = home.path().join("Library/Application Support/Tug");
     std::fs::create_dir_all(&db_dir).unwrap();
-    let conn = Connection::open(db_dir.join("sessions.db")).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
-         CREATE TABLE file_events (
-            tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
-            tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
-            parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
-    )
-    .unwrap();
-    conn.execute("INSERT INTO sessions (session_id) VALUES ('work'), ('empty')", [])
+    let sessions = Connection::open(db_dir.join("sessions.db")).unwrap();
+    sessions
+        .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
         .unwrap();
-    for (i, (path, ambiguous)) in events.iter().enumerate() {
-        conn.execute(
-            "INSERT INTO file_events
-                (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
-             VALUES ('work', ?1, ?2, 'Write', 'created', 'exact', ?3, ?4, ?5)",
-            rusqlite::params![
-                format!("tu-{i}"),
-                repo_root.join(path).to_string_lossy().to_string(),
-                i64::from(*ambiguous),
-                repo_root.to_string_lossy().to_string(),
-                i as i64
-            ],
+    sessions
+        .execute("INSERT INTO sessions (session_id) VALUES ('empty')", [])
+        .unwrap();
+    let changes = Connection::open(db_dir.join("changes.db")).unwrap();
+    changes
+        .execute_batch(
+            "CREATE TABLE file_events (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
         )
         .unwrap();
+    for (i, (session, path)) in events.iter().enumerate() {
+        sessions
+            .execute(
+                "INSERT OR IGNORE INTO sessions (session_id) VALUES (?1)",
+                [session],
+            )
+            .unwrap();
+        changes
+            .execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES (?1, ?2, ?3, 'Write', 'created', 'exact', 0, ?4, ?5)",
+                rusqlite::params![
+                    session,
+                    format!("tu-{i}"),
+                    path,
+                    repo_root.to_string_lossy().to_string(),
+                    i as i64
+                ],
+            )
+            .unwrap();
     }
     home
 }
@@ -412,17 +439,52 @@ fn leave_unattributed_proceeds_and_records_left_behind() {
 }
 
 #[test]
-fn tree_commits_attributed_unattributed_and_ambiguous() {
+fn tree_commits_attributed_unattributed_and_shared() {
     let (_repo, root) = init_repo();
-    std::fs::write(root.join("amb.rs"), "amb\n").unwrap();
+    std::fs::write(root.join("both.rs"), "both\n").unwrap();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
-    // work claims feature.rs (non-ambiguous) and amb.rs (ambiguous); orphan.rs
-    // has no rows.
-    let home = seed_home_events(&root, &[("feature.rs", false), ("amb.rs", true)]);
-    let mut cmd = tug(home.path());
-    cmd.args(["commit", "--json", "--session", "work", "--message", "m", "--tree"]);
-    cmd.args(project_arg(&root));
+    // work claims feature.rs alone and both.rs jointly with `other` (so both.rs
+    // is shared for work); orphan.rs has no rows.
+    let home = seed_home_events(
+        &root,
+        &[
+            ("work", "feature.rs"),
+            ("work", "both.rs"),
+            ("other", "both.rs"),
+        ],
+    );
 
+    // Default base excludes the shared file: without --all/--tree, a commit
+    // that leaves the orphan behind commits feature.rs only.
+    let mut cmd = tug(home.path());
+    cmd.args([
+        "commit",
+        "--json",
+        "--session",
+        "work",
+        "--message",
+        "m1",
+        "--leave-unattributed",
+    ]);
+    cmd.args(project_arg(&root));
+    let (code, out, err) = run(cmd);
+    assert_eq!(code, 0, "stderr: {err}");
+    let v = parse(&out);
+    let files = v["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1, "shared file excluded from the default base");
+    assert_eq!(files[0]["path"], "feature.rs");
+    let lb_shared: Vec<&str> = v["data"]["left_behind"]["shared"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(lb_shared, vec!["both.rs"], "the receipt names the held-back shared file");
+
+    // --tree then sweeps everything but foreign: shared + unattributed included.
+    let mut cmd = tug(home.path());
+    cmd.args(["commit", "--json", "--session", "work", "--message", "m2", "--tree"]);
+    cmd.args(project_arg(&root));
     let (code, out, err) = run(cmd);
     assert_eq!(code, 0, "stderr: {err}");
     let v = parse(&out);
@@ -432,8 +494,7 @@ fn tree_commits_attributed_unattributed_and_ambiguous() {
         .iter()
         .map(|f| f["path"].as_str().unwrap())
         .collect();
-    assert!(paths.contains(&"feature.rs"), "attributed: {paths:?}");
-    assert!(paths.contains(&"amb.rs"), "ambiguous included by --tree: {paths:?}");
+    assert!(paths.contains(&"both.rs"), "shared included by --tree: {paths:?}");
     assert!(paths.contains(&"orphan.rs"), "unattributed included by --tree: {paths:?}");
     // Whole tree committed → clean.
     assert!(status_porcelain(&root).trim().is_empty(), "tree clean after --tree commit");

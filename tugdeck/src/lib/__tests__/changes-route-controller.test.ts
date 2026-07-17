@@ -51,30 +51,34 @@ describe("deriveChangesRouteSnapshot", () => {
     expect(snap.unattributed.map((f) => f.path)).toEqual(["notes/scratch.md"]);
   });
 
-  it("selects clean session files + unattributed by default; skips ambiguous/shared", () => {
+  it("selects clean session files by default; skips shared and unattributed", () => {
     const snap = deriveChangesRouteSnapshot(DATA, BINDING, NO_OVERRIDES);
-    // changeset-types.ts: not ambiguous, not shared → selected.
+    // changeset-types.ts: not shared → selected.
     expect(snap.selectedPaths.has("tugdeck/src/lib/changeset-types.ts")).toBe(true);
-    // changeset.rs: ambiguous + shared → deselected (explicit opt-in).
+    // changeset.rs: shared → deselected (explicit opt-in).
     expect(
       snap.selectedPaths.has("tugrust/crates/tugcast/src/feeds/changeset.rs"),
     ).toBe(false);
-    // unattributed always defaults on.
-    expect(snap.selectedPaths.has("notes/scratch.md")).toBe(true);
+    // Unattributed defaults OFF — no owner claims it, inclusion is an
+    // explicit election (the card mirror of the CLI's exit-3 refusal).
+    expect(snap.selectedPaths.has("notes/scratch.md")).toBe(false);
   });
 
   it("honors overrides in both directions", () => {
     const overrides = new Map<string, boolean>([
-      // Force the ambiguous+shared file ON.
+      // Force the shared file ON.
       ["tugrust/crates/tugcast/src/feeds/changeset.rs", true],
-      // Force a default-on file OFF.
-      ["notes/scratch.md", false],
+      // Elect the (default-off) unattributed file ON.
+      ["notes/scratch.md", true],
+      // Force a default-on session file OFF.
+      ["tugdeck/src/lib/changeset-types.ts", false],
     ]);
     const snap = deriveChangesRouteSnapshot(DATA, BINDING, overrides);
     expect(
       snap.selectedPaths.has("tugrust/crates/tugcast/src/feeds/changeset.rs"),
     ).toBe(true);
-    expect(snap.selectedPaths.has("notes/scratch.md")).toBe(false);
+    expect(snap.selectedPaths.has("notes/scratch.md")).toBe(true);
+    expect(snap.selectedPaths.has("tugdeck/src/lib/changeset-types.ts")).toBe(false);
   });
 
   it("dash files never enter the commit selection", () => {
@@ -107,7 +111,10 @@ describe("deriveChangesRouteSnapshot", () => {
     expect(snap.entry).toBeNull();
     // The dash + unattributed bucket still belong to the project.
     expect(snap.dashes).toHaveLength(1);
-    expect(snap.selectedPaths.has("notes/scratch.md")).toBe(true);
+    // The pinned regression: a brand-new session on a dirty tree must not
+    // arrive with the whole unattributed bucket pre-selected — that would
+    // one-click sweep another session's work under this session's name.
+    expect(snap.selectedPaths.size).toBe(0);
   });
 });
 
@@ -120,16 +127,9 @@ describe("sessionFileDefaultSelected", () => {
     last_touched: 0,
   };
   it("clean files default on", () => {
-    expect(
-      sessionFileDefaultSelected({ ...base, ambiguous: false, shared: false }),
-    ).toBe(true);
+    expect(sessionFileDefaultSelected({ ...base, shared: false })).toBe(true);
   });
-  it("ambiguous or shared files default off", () => {
-    expect(
-      sessionFileDefaultSelected({ ...base, ambiguous: true, shared: false }),
-    ).toBe(false);
-    expect(
-      sessionFileDefaultSelected({ ...base, ambiguous: false, shared: true }),
-    ).toBe(false);
+  it("shared files default off", () => {
+    expect(sessionFileDefaultSelected({ ...base, shared: true })).toBe(false);
   });
 });

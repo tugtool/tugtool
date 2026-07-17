@@ -1,9 +1,10 @@
-//! Read-only `sessions.db` access — the attribution ledger's `file_events` and
-//! `sessions` tables.
+//! Read-only ledger access — the attribution ledger's `file_events` table
+//! (the **machine-global** `changes.db`, [D112]) and the per-instance
+//! `sessions.db`'s `sessions` table.
 //!
-//! `tugchanges-core` reads the ledger with read-only `rusqlite`
+//! `tugchanges-core` reads both with read-only `rusqlite`
 //! (`SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_NO_MUTEX`, WAL-safe against tugcast's
-//! concurrent writer) and never writes it — the ledger is tugcast's to own
+//! concurrent writers) and never writes them — the ledger is tugcast's to own
 //! ([P03]). It couples to the schema by raw SQL, exactly as the ported `tugutil`
 //! did.
 //!
@@ -16,12 +17,15 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
 
-/// A single decoded `file_events` row, in `at`-ascending order.
+/// A single decoded `file_events` row, in `at`-ascending order. `at` (epoch
+/// ms) feeds the row-liveness rule: a row is live only while it postdates the
+/// last commit that touched its path — spent rows neither attribute nor
+/// contend.
 pub(crate) struct EventRow {
     pub file_path: String,
     pub op: String,
     pub origin: String,
-    pub ambiguous: bool,
+    pub at: i64,
 }
 
 /// Open `sessions.db` read-only. WAL semantics make a read-only open safe while
@@ -39,7 +43,7 @@ pub(crate) fn open_readonly(db_path: &Path) -> Result<Connection, String> {
 pub(crate) fn query_events(conn: &Connection, session: &str) -> Result<Vec<EventRow>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT file_path, op, origin, ambiguous
+            "SELECT file_path, op, origin, at
              FROM file_events
              WHERE tug_session_id = ?1
              ORDER BY at ASC, tool_use_id ASC, file_path ASC",
@@ -51,7 +55,7 @@ pub(crate) fn query_events(conn: &Connection, session: &str) -> Result<Vec<Event
                 file_path: r.get::<_, String>(0)?,
                 op: r.get::<_, String>(1)?,
                 origin: r.get::<_, String>(2)?,
-                ambiguous: r.get::<_, i64>(3)? != 0,
+                at: r.get::<_, i64>(3)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -63,23 +67,29 @@ pub(crate) fn query_events(conn: &Connection, session: &str) -> Result<Vec<Event
 }
 
 /// Every session other than `exclude` that has a `file_events` row for the
-/// repo-relative `file_path`, paired with the row's `project_dir` (Spec S02).
-/// Read-only; `DISTINCT` so a session touching the path many times counts once.
+/// repo-relative `file_path`, as `(session, project_dir, newest at)` triples
+/// (Spec S02). Grouped so a session touching the path many times counts once,
+/// carrying its newest row's `at` for the caller's liveness cut.
 pub(crate) fn sessions_for_path(
     conn: &Connection,
     file_path: &str,
     exclude: &str,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<Vec<(String, String, i64)>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT tug_session_id, project_dir
+            "SELECT tug_session_id, project_dir, MAX(at)
              FROM file_events
-             WHERE file_path = ?1 AND tug_session_id != ?2",
+             WHERE file_path = ?1 AND tug_session_id != ?2
+             GROUP BY tug_session_id, project_dir",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(rusqlite::params![file_path, exclude], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })
         .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
@@ -89,24 +99,30 @@ pub(crate) fn sessions_for_path(
     Ok(out)
 }
 
-/// The subset of [`sessions_for_path`] whose `project_dir` canonicalizes to the
-/// same on-disk directory as `repo_root` — the genuine foreign claimants of a
-/// path (Spec S02). A row whose `project_dir` (or `repo_root` itself) fails to
-/// canonicalize, or resolves elsewhere, is not foreign: a legacy absolute-path
-/// or cross-repo row degrades to `unattributed` at the read side — visible,
-/// never silently dropped.
+/// The subset of [`sessions_for_path`] with a **live** claim: the session's
+/// `project_dir` canonicalizes to the same on-disk directory as `repo_root`,
+/// and its newest row postdates `min_live_at_ms` (the row-liveness rule — a
+/// row at or before the path's last commit is spent and neither attributes
+/// nor contends). A row whose `project_dir` (or `repo_root` itself) fails to
+/// canonicalize, or resolves elsewhere, is not foreign: a legacy
+/// absolute-path or cross-repo row degrades to `unattributed` at the read
+/// side — visible, never silently dropped.
 pub(crate) fn foreign_sessions_for_path(
     conn: &Connection,
     file_path: &str,
     exclude: &str,
     repo_root: &Path,
+    min_live_at_ms: i64,
 ) -> Result<Vec<String>, String> {
     let canon_root = match std::fs::canonicalize(repo_root) {
         Ok(p) => p,
         Err(_) => return Ok(Vec::new()),
     };
     let mut out = Vec::new();
-    for (session, project_dir) in sessions_for_path(conn, file_path, exclude)? {
+    for (session, project_dir, max_at) in sessions_for_path(conn, file_path, exclude)? {
+        if max_at < min_live_at_ms {
+            continue;
+        }
         if let Ok(canon_proj) = std::fs::canonicalize(&project_dir) {
             if canon_proj == canon_root {
                 out.push(session);
@@ -144,6 +160,28 @@ pub(crate) fn resolve_sessions_db_path() -> Option<PathBuf> {
     #[cfg(not(target_os = "macos"))]
     let dir = base.join("tugcast");
     Some(dir.join("sessions.db"))
+}
+
+/// The machine-global changes-ledger path ([D112]): one `changes.db` for
+/// every app instance, holding the `file_events` rows. Mirrors
+/// `tugcore::instance::changes_db_path()` (honoring the `TUG_CHANGES_DB`
+/// test-isolation override) — deliberately independent of `TUG_INSTANCE_ID`.
+pub(crate) fn resolve_changes_db_path() -> PathBuf {
+    tugcore::instance::changes_db_path()
+}
+
+/// Whether `session` holds any `file_events` row at all — the shared-ledger
+/// half of the "known session" test (a session recorded by another instance
+/// has rows here but no `sessions` row in this instance's `sessions.db`).
+pub(crate) fn session_has_events(conn: &Connection, session: &str) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM file_events WHERE tug_session_id = ?1)",
+            [session],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count != 0)
 }
 
 #[cfg(test)]
@@ -187,15 +225,36 @@ mod tests {
         ]);
         let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
 
-        // Raw pairs: everyone but `mine`.
-        let pairs = sessions_for_path(&conn, "foo.rs", "mine").unwrap();
-        let ids: Vec<&str> = pairs.iter().map(|(s, _)| s.as_str()).collect();
+        // Raw triples: everyone but `mine`.
+        let triples = sessions_for_path(&conn, "foo.rs", "mine").unwrap();
+        let ids: Vec<&str> = triples.iter().map(|(s, _, _)| s.as_str()).collect();
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"theirs") && ids.contains(&"elsewhere"));
 
         // Repo-matched foreigns: only `theirs` (same repo_root); `elsewhere`'s
         // project_dir resolves to a different directory, so it is not foreign.
-        let foreign = foreign_sessions_for_path(&conn, "foo.rs", "mine", repo.path()).unwrap();
+        let foreign = foreign_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap();
         assert_eq!(foreign, vec!["theirs".to_string()]);
+    }
+
+    #[test]
+    fn foreign_query_drops_spent_rows_behind_the_liveness_cut() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_dir = repo.path().to_string_lossy().into_owned();
+        // `theirs` rows carry at = 1 (the seed's insertion index).
+        let db = seed(&[("mine", "foo.rs", &repo_dir), ("theirs", "foo.rs", &repo_dir)]);
+        let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
+
+        // Below the cut → live claimant; above → spent, no claim.
+        assert_eq!(
+            foreign_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 1).unwrap(),
+            vec!["theirs".to_string()]
+        );
+        assert!(
+            foreign_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 2)
+                .unwrap()
+                .is_empty(),
+            "a spent row never contends"
+        );
     }
 }

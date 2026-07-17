@@ -1127,12 +1127,6 @@ pub struct AgentSupervisor {
     /// because the critical section is bounded, non-awaiting, and never
     /// crosses an `.await` point.
     pub spawn_timestamps: Arc<StdMutex<VecDeque<Instant>>>,
-    /// Cross-session registry of open Bash attribution brackets ([P05]).
-    /// Cloned into every session's relay so brackets on the same checkout
-    /// root can flag each other's overlap ambiguous. Supervisor-owned
-    /// (rather than per-relay) precisely so relays for *different* sessions
-    /// share one view of who's mid-command on a repo.
-    pub bracket_registry: crate::feeds::attribution::BracketRegistry,
     /// Latest CHANGESET_ALL aggregate watch receiver, stored at boot by
     /// [`AgentSupervisor::start_draft_engine`]. `do_changeset_draft_request`
     /// borrows its current frame to resolve an on-demand draft against the
@@ -2134,7 +2128,6 @@ impl AgentSupervisor {
             registry,
             cancel,
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
-            bracket_registry: crate::feeds::attribution::BracketRegistry::new(),
             changeset_watch: std::sync::OnceLock::new(),
         };
         (sup, merger_register_rx)
@@ -5520,7 +5513,6 @@ impl AgentSupervisor {
         };
         let sessions_recorder = self.sessions_recorder.clone();
         let session_ledger_for_bridge = self.session_ledger.clone();
-        let bracket_registry_for_bridge = self.bracket_registry.clone();
         let changeset_bumper_for_bridge =
             crate::feeds::changeset::ChangesetBumper::new(Arc::clone(&self.registry));
         tokio::spawn(async move {
@@ -5536,7 +5528,6 @@ impl AgentSupervisor {
                 permission_mode,
                 sessions_recorder,
                 session_ledger_for_bridge,
-                bracket_registry_for_bridge,
                 changeset_bumper_for_bridge,
                 cancel_for_bridge,
                 DEFAULT_RETRY_DELAY,
@@ -6559,7 +6550,6 @@ mod tests {
                 git_status: "M".to_string(),
                 op: "edit".to_string(),
                 origin: "exact".to_string(),
-                ambiguous: false,
                 shared: false,
                 last_touched: 1,
             }],
@@ -8627,7 +8617,6 @@ mod tests {
             "/tmp/test-relay-project",
             &recorder,
             None,
-            &crate::feeds::attribution::BracketRegistry::new(),
             &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )
@@ -8738,7 +8727,6 @@ mod tests {
             "/tmp/test-relay-resume-fail",
             &recorder,
             None,
-            &crate::feeds::attribution::BracketRegistry::new(),
             &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )
@@ -8912,7 +8900,6 @@ mod tests {
             "/tmp/test-meta-e2e",
             &recorder,
             Some(ledger.as_ref()),
-            &crate::feeds::attribution::BracketRegistry::new(),
             &crate::feeds::changeset::ChangesetBumper::disconnected(),
             &cancel,
         )

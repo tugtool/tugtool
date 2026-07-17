@@ -375,7 +375,6 @@ interface FileBlockData {
   git_status: string;
   op: string;
   origin: string;
-  ambiguous: boolean;
   shared: boolean;
 }
 
@@ -385,7 +384,6 @@ function changesetFileData(file: ChangesetFile): FileBlockData {
     git_status: file.git_status,
     op: file.op,
     origin: file.origin,
-    ambiguous: file.ambiguous === true,
     shared: file.shared === true,
   };
 }
@@ -396,7 +394,6 @@ function unattributedFileData(file: UnattributedFile): FileBlockData {
     git_status: file.git_status,
     op: "",
     origin: "",
-    ambiguous: false,
     shared: false,
   };
 }
@@ -425,11 +422,6 @@ function FileIdentity({
         gitStatus={file.git_status}
         projectRoot={projectRoot}
       />
-      {file.ambiguous ? (
-        <span className="session-changes-badge session-changes-badge-ambiguous">
-          ambiguous
-        </span>
-      ) : null}
       {file.shared ? (
         <span className="session-changes-badge session-changes-badge-shared">
           shared
@@ -1191,12 +1183,20 @@ export function SessionChangesView({
           />
         ) : null}
         {unattributedItem !== null ? (
-          <ChangesEntryFiles
-            item={unattributedItem}
-            rowSelection={rowSelection}
-            expandedKeys={expandedKeys}
-            onToggleFile={onToggleFile}
-          />
+          <>
+            <div
+              className="session-changes-section-label"
+              data-slot="session-changes-unattributed-label"
+            >
+              unattributed — no session claims these
+            </div>
+            <ChangesEntryFiles
+              item={unattributedItem}
+              rowSelection={rowSelection}
+              expandedKeys={expandedKeys}
+              onToggleFile={onToggleFile}
+            />
+          </>
         ) : null}
         {snap.dashes.map((entry) => (
           <ChangesDashEntry

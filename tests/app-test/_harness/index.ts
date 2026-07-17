@@ -30,7 +30,7 @@ import {
   type WriteStream,
 } from "node:fs";
 import { dirname, resolve as pathResolve } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
   AccessibilityPermissionMissingError,
@@ -1526,6 +1526,11 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,
       TUG_INSTANCE_ID: instanceId,
+      // Point the machine-global changes ledger into this launch's
+      // per-instance data dir: harness runs must never write attribution
+      // rows into the developer's real ~/Library/Application Support/Tug/
+      // changes.db (the same dir the teardown below reclaims).
+      TUG_CHANGES_DB: `${homedir()}/Library/Application Support/Tug/instances/${instanceId}/changes.db`,
     },
     logPath,
     expectedSurfaceVersion: opts.expectedSurfaceVersion ?? EXPECTED_SURFACE_VERSION,

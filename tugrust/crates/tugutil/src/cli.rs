@@ -83,7 +83,7 @@ pub enum Commands {
         /// Explicit file set (overrides the session's changed files).
         #[arg(long, num_args = 1..)]
         paths: Vec<String>,
-        /// Include ambiguous files.
+        /// Include shared files (paths other sessions also hold live rows for).
         #[arg(long)]
         all: bool,
         /// Commit unattributed dirty files (no ledger rows) too.
@@ -92,7 +92,7 @@ pub enum Commands {
         /// Proceed without unattributed files (they appear in the receipt's left_behind).
         #[arg(long)]
         leave_unattributed: bool,
-        /// Commit the whole dirty tree (attributed ∪ unattributed ∪ ambiguous), except foreign-claimed paths.
+        /// Commit the whole dirty tree (attributed ∪ unattributed ∪ shared), except foreign-claimed paths.
         #[arg(long)]
         tree: bool,
     },
