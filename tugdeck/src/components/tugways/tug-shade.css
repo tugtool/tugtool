@@ -27,7 +27,7 @@ body {
        0.94  gentle — transcript hinted, content dominant  (default)
        0.96  barely-there translucency
        0.98  nearly opaque */
-  --tugx-shade-alpha: 0.94;
+  --tugx-shade-alpha: 0.96;
   --tugx-shade-bg: var(--tug7-surface-global-primary-normal-content-rest);
   --tugx-shade-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-shade-shadow: 0 6px 16px var(--tug7-element-global-shadow-normal-md-rest);
