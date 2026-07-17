@@ -1,7 +1,8 @@
 /**
- * `SessionChangesView` — the Changes view-route's transcript-slot view
- * ([P01]/[P05]). On the `±` route this replaces the transcript with the
- * card's changed files: the session's attributed files plus the project's
+ * `SessionChangesView` — the Changes view-route's working surface
+ * ([P01]/[P05]). On the `±` route this rides a TugShade over the live
+ * transcript and shows the card's changed files: the session's attributed
+ * files plus the project's
  * unattributed files as one selection set (the head selection the prompt
  * entry's composer commits, [P05]), per-file inline diffs, dash entries with
  * their own Join/Release affordance, the commit receipt, and the non-repo
@@ -72,6 +73,7 @@ import type {
   UnattributedFile,
 } from "@/lib/changeset-types";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import type { CodeSessionStore } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
 // Item model — one entry (session / unattributed / dash) the ported
@@ -91,6 +93,13 @@ interface ChangesDashItem {
 }
 
 type ChangesItem = ChangesFileEntry | ChangesDashItem;
+
+/**
+ * Hint on durable-mutation buttons disabled while a Claude turn runs. Viewing
+ * changes mid-turn is free; commits, joins, releases, and git-init — anything
+ * durable — wait for the turn to end.
+ */
+const TURN_GATE_HINT = "Unavailable while a turn is running";
 
 // ---------------------------------------------------------------------------
 // Status glyph + tone
@@ -596,7 +605,13 @@ function ChangesEntryFiles({
 // Dash entry: read-only file list + Join / Release / resolve
 // ---------------------------------------------------------------------------
 
-function DashActions({ item }: { item: ChangesDashItem }) {
+function DashActions({
+  item,
+  turnInProgress,
+}: {
+  item: ChangesDashItem;
+  turnInProgress: boolean;
+}) {
   const entryKey = item.id;
   const projectRoot = item.project.project_dir;
   const dashName = item.entry.display_name;
@@ -653,7 +668,8 @@ function DashActions({ item }: { item: ChangesDashItem }) {
               size="sm"
               emphasis="outlined"
               role="accent"
-              disabled={resolve.candidateCommit === null}
+              disabled={resolve.candidateCommit === null || turnInProgress}
+              title={turnInProgress ? TURN_GATE_HINT : undefined}
               widthStabilize={{ alternateLabel: "Joining…" }}
               onClick={() =>
                 resolve.candidateCommit !== null &&
@@ -733,6 +749,8 @@ function DashActions({ item }: { item: ChangesDashItem }) {
             size="sm"
             emphasis="outlined"
             role="accent"
+            disabled={turnInProgress}
+            title={turnInProgress ? TURN_GATE_HINT : undefined}
             widthStabilize={{ alternateLabel: "Joining…" }}
             onClick={() => join.join(projectRoot, dashName, { preview: false })}
             data-testid="session-changes-dash-confirm-join"
@@ -766,6 +784,8 @@ function DashActions({ item }: { item: ChangesDashItem }) {
             size="sm"
             emphasis="outlined"
             role="accent"
+            disabled={turnInProgress}
+            title={turnInProgress ? TURN_GATE_HINT : undefined}
             onClick={() => resolve.resolve()}
             data-testid="session-changes-dash-resolve"
           >
@@ -810,7 +830,8 @@ function DashActions({ item }: { item: ChangesDashItem }) {
               size="sm"
               emphasis="outlined"
               role="danger"
-              disabled={release.phase === "pending"}
+              disabled={release.phase === "pending" || turnInProgress}
+              title={turnInProgress ? TURN_GATE_HINT : undefined}
               widthStabilize={{ alternateLabel: "Discarding…" }}
               onClick={() => {
                 release.release(projectRoot, dashName);
@@ -849,7 +870,13 @@ function DashActions({ item }: { item: ChangesDashItem }) {
 }
 
 /** A dash entry: its range files (read-only, no checkbox) + the dash actions. */
-function ChangesDashEntry({ item }: { item: ChangesDashItem }) {
+function ChangesDashEntry({
+  item,
+  turnInProgress,
+}: {
+  item: ChangesDashItem;
+  turnInProgress: boolean;
+}) {
   const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
   useEffect(() => {
@@ -900,7 +927,7 @@ function ChangesDashEntry({ item }: { item: ChangesDashItem }) {
           />
         ))
       )}
-      <DashActions item={item} />
+      <DashActions item={item} turnInProgress={turnInProgress} />
     </div>
   );
 }
@@ -937,7 +964,13 @@ function CommitReceipt({
   );
 }
 
-function NonRepoBody({ projectDir }: { projectDir: string }) {
+function NonRepoBody({
+  projectDir,
+  turnInProgress,
+}: {
+  projectDir: string;
+  turnInProgress: boolean;
+}) {
   const { phase, error, init } = useChangesetGitInit(projectDir);
   return (
     <div className="session-changes-non-repo" role="group" data-testid="session-changes-non-repo">
@@ -948,7 +981,8 @@ function NonRepoBody({ projectDir }: { projectDir: string }) {
         emphasis="outlined"
         role="accent"
         onClick={init}
-        disabled={phase === "pending"}
+        disabled={phase === "pending" || turnInProgress}
+        title={turnInProgress ? TURN_GATE_HINT : undefined}
         data-testid="session-changes-git-init"
       >
         Initialize git
@@ -969,11 +1003,18 @@ export interface SessionChangesViewProps {
   projectDir: string | null;
   /** The per-card Changes controller — selection + commit/draft state ([P07]). */
   changesController: ChangesRouteController;
+  /**
+   * The card's Claude session store — read for the turn-in-progress signal
+   * that gates the DURABLE verbs (join, release, git-init) while a turn runs.
+   * Viewing changes mid-turn is free; only durable mutations wait.
+   */
+  codeSessionStore: CodeSessionStore;
 }
 
 export function SessionChangesView({
   projectDir,
   changesController,
+  codeSessionStore,
 }: SessionChangesViewProps): React.ReactElement {
   const snap = useSyncExternalStore(
     changesController.subscribe,
@@ -981,6 +1022,12 @@ export function SessionChangesView({
   );
   const commit = useChangesetCommit(changesController.entryKey);
   const project = snap.project;
+  // `canInterrupt` is true exactly while a turn can be stopped (one is
+  // running), so it is the turn-in-progress signal ([L02]).
+  const turnInProgress = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    () => codeSessionStore.getSnapshot().canInterrupt === true,
+  );
 
   // The head selection ([P05]): the session's attributed files plus the
   // project's unattributed files, one selection set. Each row's checkbox is a
@@ -1015,7 +1062,10 @@ export function SessionChangesView({
         data-slot="session-changes-view"
         data-tug-focus="refuse"
       >
-        <NonRepoBody projectDir={projectDir ?? project.project_dir} />
+        <NonRepoBody
+          projectDir={projectDir ?? project.project_dir}
+          turnInProgress={turnInProgress}
+        />
       </div>
     );
   }
@@ -1077,6 +1127,7 @@ export function SessionChangesView({
                 project,
                 entry,
               }}
+              turnInProgress={turnInProgress}
             />
           ))}
         </div>

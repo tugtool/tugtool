@@ -43,6 +43,7 @@ import {
 } from "@/lib/route-constants";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
+import { TugShade } from "../tug-shade";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
 import { SessionHistoryView } from "./session-history/session-history-view";
@@ -3568,12 +3569,16 @@ export function SessionCardBody({
             </div>
             {/*
               Route-driven view slot ([P01]/[P02]). The transcript, the
-              Changes view, and the History view are ALL mounted; CSS hides
-              the inactive panes via `data-active-view` ([L06]) so scroll
-              position, in-progress selection, and streaming state survive a
-              route flip and the transcript's mount identity stays stable
-              ([L26]). The find overlay, Z2 status bar, and PULSE strip stay
-              OUTSIDE the slot — Find is a target-route over the transcript.
+              Changes view, and the History view are ALL mounted; the
+              transcript pane is ALWAYS visible — the Changes/History views
+              ride a TugShade descending over it from the top, so the live
+              tail keeps streaming in view beneath the working layer. CSS
+              hides the inactive Shade pane via `data-active-view` ([L06])
+              so scroll position, in-progress selection, and streaming state
+              survive a route flip and the transcript's mount identity stays
+              stable ([L26]). The find overlay, Z2 status bar, and PULSE
+              strip stay OUTSIDE the slot — Find is a target-route over the
+              transcript.
             */}
             <div className="session-view-slot" data-active-view={activeView}>
               <div className="session-view-pane" data-view="transcript">
@@ -3590,16 +3595,21 @@ export function SessionCardBody({
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
-                <SessionChangesView
-                  projectDir={projectDir}
-                  changesController={changesController}
-                />
+                <TugShade persistKey="session-card" grabberLabel="Resize the Changes view">
+                  <SessionChangesView
+                    projectDir={projectDir}
+                    changesController={changesController}
+                    codeSessionStore={codeSessionStore}
+                  />
+                </TugShade>
               </div>
               <div className="session-view-pane" data-view="history">
-                <SessionHistoryView
-                  projectDir={projectDir}
-                  active={activeView === "history"}
-                />
+                <TugShade persistKey="session-card" grabberLabel="Resize the History view">
+                  <SessionHistoryView
+                    projectDir={projectDir}
+                    active={activeView === "history"}
+                  />
+                </TugShade>
               </div>
             </div>
             <FindWrapOverlay findSession={findSession} cardRef={sessionCardRootRef} />

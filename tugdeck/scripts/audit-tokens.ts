@@ -57,7 +57,7 @@ const COMPONENT_CSS_FILES = [
   "tug-code.css",
   "tug-dock.css",
   "tug-skeleton.css",
-  "cards/file-card.css",
+  "tug-shade.css",
   "cards/gallery-popup-button.css",
   "cards/gallery-theme-accessibility.css",
 ].map((f) => path.join(TUGWAYS, f));

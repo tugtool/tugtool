@@ -1535,15 +1535,18 @@ export const TugPromptEntry = React.forwardRef<
   );
   const changesCommitPending = changesCommit.phase === "pending";
   const changesDrafting = changesDraft.phase === "drafting";
-  // A running Claude turn makes the `±` route unavailable — committing must
-  // never overlap a turn. `canInterrupt` is true exactly while a turn can be
-  // stopped (one is running), so it is the turn-in-progress signal.
+  // A running Claude turn gates the `±` route's DURABLE verb — committing
+  // must never overlap a turn. Viewing changes mid-turn is free (the route
+  // itself is always available); only the commit waits. `canInterrupt` is
+  // true exactly while a turn can be stopped (one is running), so it is the
+  // turn-in-progress signal.
   const turnInProgress = snap.canInterrupt === true;
-  // On `±` the Z5 button commits; it is disabled while the commit round-trip is
-  // pending or nothing is selected (the empty-message gate rides `data-empty`).
+  // On `±` the Z5 button commits; it is disabled while a turn runs, while the
+  // commit round-trip is pending, or when nothing is selected (the
+  // empty-message gate rides `data-empty`).
   const changesCommitBlocked =
     route === ROUTE_CHANGES &&
-    (changesCommitPending || changesSelectedCount === 0);
+    (turnInProgress || changesCommitPending || changesSelectedCount === 0);
 
   // Live refs so `performSubmit` (a stable callback) reads the current values
   // without widening its dep list ([L07]).
@@ -2077,10 +2080,11 @@ export const TugPromptEntry = React.forwardRef<
     // submission is the commit message for the head selection — a `/`-leading
     // message must NOT run a slash command, so this intercepts BEFORE the
     // local-command split and always `return`s (consuming the draft) rather
-    // than falling through. Gate: a running turn (defensive — the route is
-    // turn-exclusive), a pending commit, an empty selection, or an empty
-    // message is a no-op that leaves the draft intact (the Z5 button is
-    // disabled in those states; the Return path needs the same gate).
+    // than falling through. Gate: a running turn (committing must never
+    // overlap a turn — viewing the route mid-turn is free, the commit
+    // waits), a pending commit, an empty selection, or an empty message is
+    // a no-op that leaves the draft intact (the Z5 button is disabled in
+    // those states; the Return path needs the same gate).
     if ((routeLifecycle.getRoute() || null) === ROUTE_CHANGES) {
       const controller = changesControllerRef.current;
       if (controller !== undefined) {
@@ -2541,10 +2545,9 @@ export const TugPromptEntry = React.forwardRef<
         const prevRoute = routeLifecycle.getRoute();
         const nextRoute = event.value;
         if (prevRoute === nextRoute) return;
-        // The `±` route is unavailable while a Claude turn runs — committing
-        // must never overlap a turn. Reject the switch; the menu item also
-        // renders disabled in that state.
-        if (nextRoute === ROUTE_CHANGES && turnInProgressRef.current) return;
+        // Every route is freely enterable mid-turn — the `±` view rides a
+        // Shade over the live transcript, and only its durable verbs
+        // (commit / join / release) gate on the turn, not the viewing.
         routeLifecycle.setRoute(nextRoute);
         // Focus restoration is owned by the popup's focus trap
         // (`onCloseAutoFocus`), NOT this handler: on close it returns focus
@@ -2572,9 +2575,9 @@ export const TugPromptEntry = React.forwardRef<
         ) {
           return;
         }
-        // ⇧⌘E is inert while a turn runs — the `±` route is turn-exclusive.
-        if (nextRoute === ROUTE_CHANGES && turnInProgressRef.current) return;
         // `setRoute` is a no-op when `nextRoute` equals the current route.
+        // Mid-turn flips are free — the `±` view gates its durable verbs,
+        // not the viewing.
         routeLifecycle.setRoute(nextRoute);
       },
       // ⌘G / ⇧⌘G — advance / retreat the active match. Gated on the SESSION
@@ -3009,10 +3012,6 @@ export const TugPromptEntry = React.forwardRef<
                 icon: item.icon,
                 selected: item.value === route,
                 shortcut: item.shortcut,
-                // The `±` route is turn-exclusive: a commit must never overlap
-                // a running Claude turn, so the item is disabled while one is
-                // in flight (the keyboard + popup handlers reject it too).
-                disabled: item.value === ROUTE_CHANGES && turnInProgress,
               }))}
               onSelect={(nextRoute) => {
                 // Dispatch to this entry's own responder ([L11]) so the

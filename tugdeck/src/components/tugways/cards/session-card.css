@@ -84,16 +84,19 @@
 /* Route-driven view slot ([P01]/[P02]). Sits between Z0 (header) and Z2
    (status bar) inside `.session-card-top-column`, taking over the flex-grow
    role the transcript host held directly. All three panes (transcript /
-   changes / history) are mounted at once; only the one named by
-   `data-active-view` is displayed, so scroll, selection, and streaming
-   state survive a route flip ([L26]) and appearance changes go through CSS,
-   never React state ([L06]). */
+   changes / history) are mounted at once; the transcript is always
+   displayed, and the active Shade pane (if any) overlays it from the top,
+   so scroll, selection, and streaming state survive a route flip ([L26])
+   and appearance changes go through CSS, never React state ([L06]). */
 .session-view-slot {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* Positioning context for the Shade panes — the Shade's height fraction
+     resolves against this box. */
+  position: relative;
 }
 .session-view-pane {
   flex: 1 1 auto;
@@ -102,12 +105,23 @@
   display: flex;
   flex-direction: column;
 }
-.session-view-slot[data-active-view="transcript"]
-  .session-view-pane:not([data-view="transcript"]),
-.session-view-slot[data-active-view="changes"]
-  .session-view-pane:not([data-view="changes"]),
-.session-view-slot[data-active-view="history"]
-  .session-view-pane:not([data-view="history"]) {
+/* The transcript pane is ALWAYS visible — the Changes/History views ride a
+   TugShade OVER it, so the live tail keeps streaming beneath the working
+   layer. Each Shade pane is a full-slot overlay wrapper: it takes no flex
+   space, ignores pointer events itself (the Shade re-enables them), and
+   only the active one displays. */
+.session-view-pane[data-view="changes"],
+.session-view-pane[data-view="history"] {
+  flex: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.session-view-slot:not([data-active-view="changes"])
+  .session-view-pane[data-view="changes"],
+.session-view-slot:not([data-active-view="history"])
+  .session-view-pane[data-view="history"] {
   display: none;
 }
 
