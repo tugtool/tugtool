@@ -668,6 +668,9 @@ pub fn commit(
         } else {
             format!("{}\n\n{}", message, summary)
         };
+        // Machine-parseable trailers ([P08], Spec S02): `Tug-Session:` when the
+        // committing session resolves + `Tug-Dash: <branch> onto <base>`.
+        let commit_message = with_dash_trailers(&repo_root, name, &branch, &commit_message);
 
         let commit = git_output(&worktree, &["commit", "-m", &commit_message])?;
         if !commit.status.success() {
@@ -800,15 +803,72 @@ fn merge_tree_conflicts(repo: &Path, base: &str, branch: &str) -> Result<Vec<Str
 /// The dash's maintained draft ([P23], Spec S09) — the default join message
 /// when the caller supplies none. Read-only from `sessions.db`; any absence
 /// (no db, no table, no row) falls through to `None`.
-pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
-    let db = tugcore::instance::sessions_db_path().or_else(|| {
+/// Resolve the `sessions.db` path — the running instance's, else the
+/// platform default. Read-only callers only.
+fn sessions_db_file() -> Option<std::path::PathBuf> {
+    tugcore::instance::sessions_db_path().or_else(|| {
         let base = dirs::data_dir()?;
         #[cfg(target_os = "macos")]
         let dir = base.join("Tug");
         #[cfg(not(target_os = "macos"))]
         let dir = base.join("tugcast");
         Some(dir.join("sessions.db"))
-    })?;
+    })
+}
+
+/// The `Tug-Session:` trailer value for the committing session ([P09], Spec
+/// S02), or `None` when it can't be resolved — no `TUG_SESSION_ID` env, no
+/// `sessions.db`, or no row for that id. `tugdash commit` runs inside a Claude
+/// session where tugcast exports `TUG_SESSION_ID`; the display name is read
+/// read-only from `sessions.db` (the `dash_draft_message` pattern). Any
+/// absence omits the trailer silently — a commit never fails on trailer
+/// resolution.
+pub(crate) fn session_trailer() -> Option<String> {
+    let session_id = std::env::var("TUG_SESSION_ID")
+        .ok()
+        .filter(|s| !s.is_empty())?;
+    let db = sessions_db_file()?;
+    let conn =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
+    // No row → `query_row` errors → `.ok()?` omits the trailer. A row with a
+    // NULL/blank name falls back to the id's first 8 chars (the chooser's
+    // fallback), so a real session always attributes.
+    let name: Option<String> = conn
+        .query_row(
+            "SELECT name FROM sessions WHERE session_id = ?1",
+            rusqlite::params![session_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()?;
+    let display = name
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| session_id.chars().take(8).collect());
+    Some(format!("{display} ({session_id})"))
+}
+
+/// Append the `Tug-Session:` (when resolvable) + `Tug-Dash: <branch> onto
+/// <base>` trailers to a dash round-commit or join/squash message ([P08], Spec
+/// S02). `base` comes from the dash's recorded base branch — the same source
+/// `show()` / join use. Idempotent via `append_trailers`, so a draft that
+/// already carries a trailer is never duplicated.
+fn with_dash_trailers(repo: &Path, name: &str, branch: &str, message: &str) -> String {
+    let dash_value = match dash_base(repo, name) {
+        Ok(base) if !base.is_empty() => format!("{branch} onto {base}"),
+        _ => branch.to_string(),
+    };
+    let session = session_trailer();
+    let mut trailers: Vec<(&str, &str)> = Vec::new();
+    if let Some(sv) = session.as_deref() {
+        trailers.push(("Tug-Session", sv));
+    }
+    trailers.push(("Tug-Dash", dash_value.as_str()));
+    tugmark_core::append_trailers(message, &trailers)
+}
+
+pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
+    let db = sessions_db_file()?;
     let conn =
         rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
@@ -841,7 +901,8 @@ pub(crate) fn integrate_message(
         .or_else(|| dash_draft_message(repo, branch))
         .or(description)
         .unwrap_or_else(|| "Dash work".to_string());
-    format!("tugdash({}): {}", name, body)
+    // Subject stays `tugdash(<name>): …`; the trailers ride the body ([P08]).
+    with_dash_trailers(repo, name, branch, &format!("tugdash({}): {}", name, body))
 }
 
 /// Auto-commit any outstanding changes in the dash worktree — FATAL on error
@@ -1617,6 +1678,69 @@ mod tests {
         assert!(
             dlog.contains("joined"),
             "dash-log should record join: {dlog}"
+        );
+    }
+
+    /// Round commits and the join/squash commit carry the `Tug-Dash:` trailer
+    /// ([P08], Spec S02). With no `TUG_SESSION_ID` in the environment the
+    /// `Tug-Session:` trailer is omitted (no error).
+    #[serial]
+    #[test]
+    fn test_dash_commits_carry_dash_trailer() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        create("trailer-dash", Some("Test".to_string())).unwrap();
+        let worktree = repo.join(".tug/worktrees/trailer-dash");
+        fs::write(worktree.join("f.txt"), "x\n").unwrap();
+        commit("trailer-dash", "Add f", None).unwrap();
+
+        let round = Command::new("git")
+            .arg("-C")
+            .arg(&worktree)
+            .args(["log", "-1", "--format=%B"])
+            .output()
+            .unwrap();
+        let round = String::from_utf8_lossy(&round.stdout);
+        assert!(
+            round.contains("Tug-Dash: tugdash/trailer-dash onto "),
+            "round commit carries Tug-Dash: {round}"
+        );
+        // Only assert absence when the environment genuinely lacks the id, so
+        // the test never flakes on a runner that happens to export it.
+        if std::env::var("TUG_SESSION_ID").is_err() {
+            assert!(
+                !round.contains("Tug-Session:"),
+                "no session env → no Tug-Session: {round}"
+            );
+        }
+
+        join(
+            "trailer-dash",
+            JoinOptions {
+                message: Some("Land it".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let squash = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["log", "-1", "--format=%B"])
+            .output()
+            .unwrap();
+        let squash = String::from_utf8_lossy(&squash.stdout);
+        assert!(
+            squash.contains("tugdash(trailer-dash):"),
+            "squash subject stays tugdash(<name>): {squash}"
+        );
+        assert!(
+            squash.contains("Tug-Dash: tugdash/trailer-dash onto "),
+            "squash commit carries Tug-Dash: {squash}"
         );
     }
 

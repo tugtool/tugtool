@@ -2356,6 +2356,7 @@ dependencies = [
  "serial_test",
  "tempfile",
  "tugcore",
+ "tugmark-core",
  "tugutil-core",
 ]
 

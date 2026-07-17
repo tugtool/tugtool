@@ -11,6 +11,7 @@ pub mod commit;
 pub mod context;
 pub mod git;
 mod ledger;
+pub mod trailer;
 
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, changes};
 pub use commit::{Aggregate, CommitOptions, CommitReceipt, commit};
@@ -23,3 +24,4 @@ pub use git::{
     git_output, git_stdout, normalize_xy, parse_name_status, parse_numstat,
     parse_status_porcelain_v2, parse_unified_diff, repo_root_for,
 };
+pub use trailer::append_trailers;

@@ -1386,6 +1386,10 @@ struct ChangesetCommitPayload {
     project_dir: String,
     files: Vec<String>,
     message: String,
+    /// Optional session display name for the `Tug-Session:` trailer (Spec S01).
+    session_name: Option<String>,
+    /// Optional session id for the `Tug-Session:` trailer (Spec S01).
+    session_id: Option<String>,
 }
 
 fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPayload, ControlError> {
@@ -1415,11 +1419,36 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
         .and_then(|v| v.as_str())
         .ok_or(ControlError::Malformed)?
         .to_string();
+    let session_name = value
+        .get("session_name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let session_id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     Ok(ChangesetCommitPayload {
         project_dir,
         files,
         message,
+        session_name,
+        session_id,
     })
+}
+
+/// The commit message enriched with a `Tug-Session:` trailer when the deck
+/// supplied the session name + id (Spec S01/S02). Absent either field, the
+/// message is returned byte-for-byte. Idempotent via `append_trailers`.
+fn changeset_commit_message(request: &ChangesetCommitPayload) -> String {
+    match (&request.session_name, &request.session_id) {
+        (Some(name), Some(id)) => tugmark_core::append_trailers(
+            &request.message,
+            &[("Tug-Session", &format!("{name} ({id})"))],
+        ),
+        _ => request.message.clone(),
+    }
 }
 
 /// Parsed `changeset_draft_request` (Spec S01): the entry identity an on-demand
@@ -3513,9 +3542,8 @@ impl AgentSupervisor {
             return;
         }
 
-        match crate::feeds::changeset::run_changeset_commit(dir, &request.files, &request.message)
-            .await
-        {
+        let message = changeset_commit_message(request);
+        match crate::feeds::changeset::run_changeset_commit(dir, &request.files, &message).await {
             Ok(receipt) => {
                 self.registry.changeset_all_bump().notify_one();
                 let body = serde_json::json!({
@@ -5788,6 +5816,46 @@ mod tests {
     use super::super::agent_bridge::{RelayOutcome, SessionChild, SpawnFuture, relay_session_io};
 
     // ── session tag on the wire: inbound parse + outbound frame ───────────────
+
+    #[test]
+    fn changeset_commit_message_appends_session_trailer_when_present() {
+        let request = ChangesetCommitPayload {
+            project_dir: "/p".to_string(),
+            files: vec!["a.txt".to_string()],
+            message: "commit a".to_string(),
+            session_name: Some("web".to_string()),
+            session_id: Some("sess-1".to_string()),
+        };
+        assert_eq!(
+            changeset_commit_message(&request),
+            "commit a\n\nTug-Session: web (sess-1)"
+        );
+    }
+
+    #[test]
+    fn changeset_commit_message_is_byte_for_byte_without_session_fields() {
+        let request = ChangesetCommitPayload {
+            project_dir: "/p".to_string(),
+            files: vec!["a.txt".to_string()],
+            message: "commit a".to_string(),
+            session_name: None,
+            session_id: None,
+        };
+        assert_eq!(changeset_commit_message(&request), "commit a");
+    }
+
+    #[test]
+    fn parse_changeset_commit_payload_reads_optional_session_fields() {
+        let payload = br#"{"project_dir":"/p","files":["a.txt"],"message":"m","session_name":"web","session_id":"sess-1"}"#;
+        let parsed = parse_changeset_commit_payload(payload).expect("parse");
+        assert_eq!(parsed.session_name.as_deref(), Some("web"));
+        assert_eq!(parsed.session_id.as_deref(), Some("sess-1"));
+        // Absent fields parse to None (back-compat with today's callers).
+        let bare = br#"{"project_dir":"/p","files":["a.txt"],"message":"m"}"#;
+        let parsed_bare = parse_changeset_commit_payload(bare).expect("parse");
+        assert_eq!(parsed_bare.session_name, None);
+        assert_eq!(parsed_bare.session_id, None);
+    }
 
     #[test]
     fn parse_spawn_payload_extracts_tag() {

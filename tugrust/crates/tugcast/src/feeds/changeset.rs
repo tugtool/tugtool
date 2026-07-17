@@ -983,6 +983,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_changeset_commit_lands_a_session_trailer() {
+        let (_temp, repo) = init_repo();
+        std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
+        // The deck path enriches the message with a Tug-Session trailer before
+        // committing (do_changeset_commit → append_trailers). Mirror that here.
+        let message = tugmark_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
+        run_changeset_commit(&repo, &["a.txt".to_string()], &message)
+            .await
+            .expect("commit succeeds");
+        let trailer = git_stdout(
+            &repo,
+            &["log", "-1", "--format=%(trailers:key=Tug-Session,valueonly)"],
+        )
+        .await
+        .expect("git log reads the trailer");
+        assert_eq!(trailer.trim(), "web (sess-1)");
+        // A second append over the already-trailered message is a no-op.
+        assert_eq!(
+            tugmark_core::append_trailers(&message, &[("Tug-Session", "web (sess-1)")]),
+            message
+        );
+    }
+
+    #[tokio::test]
     async fn run_changeset_commit_refuses_empty_list_and_blank_message() {
         let (_temp, repo) = init_repo();
         assert!(run_changeset_commit(&repo, &[], "msg").await.is_err());
