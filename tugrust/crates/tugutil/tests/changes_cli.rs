@@ -152,14 +152,23 @@ fn context_plain_is_directly_readable_no_reshaping_needed() {
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
     assert!(stdout.contains("branch main"), "header line: {stdout}");
-    assert!(stdout.contains("session work"), "names the session: {stdout}");
-    assert!(stdout.contains("attributed (1):"), "labeled bucket: {stdout}");
+    assert!(
+        stdout.contains("session work"),
+        "names the session: {stdout}"
+    );
+    assert!(
+        stdout.contains("attributed (1):"),
+        "labeled bucket: {stdout}"
+    );
     // The attributed file carries its op·origin inline (created·exact here).
     assert!(
         stdout.contains("created·exact") && stdout.contains("feature.rs"),
         "per-file op·origin present: {stdout}"
     );
-    assert!(stdout.contains("recent commits:"), "history section: {stdout}");
+    assert!(
+        stdout.contains("recent commits:"),
+        "history section: {stdout}"
+    );
 }
 
 #[test]

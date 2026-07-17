@@ -900,9 +900,14 @@ mod tests {
             .find(|(id, _, _)| *id == "sess-a")
             .expect("sess-a present");
         assert_eq!(a.1, ["a.txt"]);
-        assert!(!a.2, "sess-a's file is not shared by a foreign bracket grab");
         assert!(
-            !sessions.iter().any(|(id, files, _)| *id == "sess-b" && !files.is_empty()),
+            !a.2,
+            "sess-a's file is not shared by a foreign bracket grab"
+        );
+        assert!(
+            !sessions
+                .iter()
+                .any(|(id, files, _)| *id == "sess-b" && !files.is_empty()),
             "sess-b's bracket grab does not claim a.txt: {sessions:?}"
         );
         assert!(

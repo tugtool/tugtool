@@ -156,9 +156,17 @@ fn print_context_plain(report: &tugchanges_core::ContextReport) {
     }
 
     if !report.foreign.is_empty() {
-        println!("foreign ({}) — other sessions' work, never in a default commit:", report.foreign.len());
+        println!(
+            "foreign ({}) — other sessions' work, never in a default commit:",
+            report.foreign.len()
+        );
         for f in &report.foreign {
-            println!("  {:<2} {}  owner {}", f.git_status, f.path, f.sessions.join(", "));
+            println!(
+                "  {:<2} {}  owner {}",
+                f.git_status,
+                f.path,
+                f.sessions.join(", ")
+            );
         }
     }
 
