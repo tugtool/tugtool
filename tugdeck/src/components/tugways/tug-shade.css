@@ -16,18 +16,19 @@ body {
      the pane's content surface so its body reads as card ground, not a
      floating dialog; the bottom-edge shadow is what says "over".
 
-     `--tugx-shade-opacity` is the tunable background translucency: the
-     shade's background (only) sits at this alpha over the transcript, so a
-     short / empty transcript stays faintly visible underneath rather than
-     vanishing. 1 = fully opaque; lower to reveal more. The content above the
-     background (file blocks, commit blocks, text) is fully opaque. */
-  --tugx-shade-opacity: 0.95;
-  --tugx-shade-bg: color-mix(
-    in srgb,
-    var(--tug7-surface-global-primary-normal-content-rest)
-      calc(var(--tugx-shade-opacity) * 100%),
-    transparent
-  );
+     `--tugx-shade-alpha` is the tunable translucency of the WHOLE shade —
+     surface, header, and every file / commit / text row fade together, so
+     the transcript reads faintly through even when the shade is packed with
+     content (a background-only alpha did nothing once the rows covered the
+     ground). 1 = fully opaque; lower to reveal more of the transcript.
+
+       0.90  transcript clearly ghosts through, rows softened
+       0.92  noticeable veil, rows still crisp
+       0.94  gentle — transcript hinted, content dominant  (default)
+       0.96  barely-there translucency
+       0.98  nearly opaque */
+  --tugx-shade-alpha: 0.94;
+  --tugx-shade-bg: var(--tug7-surface-global-primary-normal-content-rest);
   --tugx-shade-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-shade-shadow: 0 6px 16px var(--tug7-element-global-shadow-normal-md-rest);
   --tugx-shade-handle: var(--tug7-element-global-border-normal-default-rest);
@@ -56,6 +57,9 @@ body {
   background-color: var(--tugx-shade-bg);
   border-bottom: 1px solid var(--tugx-shade-border);
   box-shadow: var(--tugx-shade-shadow);
+  /* Element-level translucency: the whole shade (surface + content) fades
+     uniformly so the transcript reads through even when packed [L06]. */
+  opacity: var(--tugx-shade-alpha);
   pointer-events: auto;
 }
 
