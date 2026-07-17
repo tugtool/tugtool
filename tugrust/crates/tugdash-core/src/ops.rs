@@ -864,7 +864,7 @@ fn with_dash_trailers(repo: &Path, name: &str, branch: &str, message: &str) -> S
         trailers.push(("Tug-Session", sv));
     }
     trailers.push(("Tug-Dash", dash_value.as_str()));
-    tugmark_core::append_trailers(message, &trailers)
+    tugchanges_core::append_trailers(message, &trailers)
 }
 
 pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {

@@ -1,7 +1,7 @@
 //! CLI argument parsing for the unified `tugutil` binary.
 //!
 //! One command tree over three surfaces: the top-level git verbs
-//! (`changes`/`context`/`commit`/`log`/`diff`, backed by `tugmark_core`), the
+//! (`changes`/`context`/`commit`/`log`/`diff`, backed by `tugchanges_core`), the
 //! `dash` namespace (worktree work units, backed by `tugdash_core`), and the
 //! `host` namespace (instance/gate/state-dir/tell/init plumbing).
 
@@ -86,6 +86,15 @@ pub enum Commands {
         /// Include ambiguous files.
         #[arg(long)]
         all: bool,
+        /// Commit unattributed dirty files (no ledger rows) too.
+        #[arg(long)]
+        include_unattributed: bool,
+        /// Proceed without unattributed files (they appear in the receipt's left_behind).
+        #[arg(long)]
+        leave_unattributed: bool,
+        /// Commit the whole dirty tree (attributed ∪ unattributed ∪ ambiguous), except foreign-claimed paths.
+        #[arg(long)]
+        tree: bool,
     },
     /// Recent commits, or a range's commits.
     Log {

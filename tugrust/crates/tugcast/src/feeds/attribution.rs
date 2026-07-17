@@ -311,9 +311,11 @@ pub struct OpenBracket {
 impl OpenBracket {
     /// Compute the file-event rows this bracket attributes, given the
     /// post-command snapshot. Each path whose state differs between `pre`
-    /// and `post` becomes one `origin='bash'` row on `project_dir` (the
-    /// owning session's checkout root, so a session's Bash and exact events
-    /// share a project bucket), with `ambiguous` from `saw_overlap`.
+    /// and `post` becomes one row on `project_dir` (the owning session's
+    /// checkout root, so a session's bracket and exact events share a project
+    /// bucket), tagged with the caller's `tool_name`/`origin` and `ambiguous`
+    /// from `saw_overlap`. A per-call Bash bracket passes `("Bash", "bash")`;
+    /// the turn-scoped fallback bracket ([P05]) passes `("Turn", "turn")`.
     ///
     /// `file_path` is stored repo-relative (stripped against the bracket's
     /// `repo_root`), matching the exact-tool path's capture-time projection.
@@ -321,6 +323,8 @@ impl OpenBracket {
         self,
         post: &HashMap<PathBuf, FileState>,
         project_dir: &CanonicalPath,
+        tool_name: &str,
+        origin: &str,
         at: i64,
     ) -> Vec<FileEventRow> {
         let mut paths: HashSet<&PathBuf> = HashSet::new();
@@ -343,9 +347,9 @@ impl OpenBracket {
                 tug_session_id: self.tug_session_id.clone(),
                 tool_use_id: self.tool_use_id.clone(),
                 file_path,
-                tool_name: "Bash".to_owned(),
+                tool_name: tool_name.to_owned(),
                 op: op.to_owned(),
-                origin: "bash".to_owned(),
+                origin: origin.to_owned(),
                 ambiguous: self.saw_overlap,
                 parent_tool_use_id: self.parent_tool_use_id.clone(),
                 project_dir: project_dir.as_str().to_owned(),
@@ -499,9 +503,13 @@ pub async fn repo_root_for(dir: &Path) -> Option<PathBuf> {
 }
 
 /// Snapshot the working tree at `repo_root` into a `path → FileState`
-/// fingerprint (absolute paths). Runs `git status --porcelain=v2` and stats
-/// each listed path for its mtime. A git failure degrades to an empty
-/// snapshot (the bracket then attributes nothing, never a wrong guess).
+/// fingerprint (absolute paths). Runs `git status --porcelain=v2
+/// --untracked-files=all` and stats each listed path for its mtime. A git
+/// failure degrades to an empty snapshot (the bracket then attributes nothing,
+/// never a wrong guess). `--untracked-files=all` ([P06]) expands a fully- or
+/// newly-untracked directory into its individual files, so a new file inside one
+/// changes the fingerprint (a bare `? dir/` line would not) and the delta rows
+/// name the file, not the directory.
 pub async fn snapshot_worktree(repo_root: &Path) -> HashMap<PathBuf, FileState> {
     let mut map = HashMap::new();
     let Some(output) = run_git_status_porcelain(repo_root).await else {
@@ -518,9 +526,9 @@ pub async fn snapshot_worktree(repo_root: &Path) -> HashMap<PathBuf, FileState> 
     map
 }
 
-/// Run `git -C <repo_root> status --porcelain=v2`, returning stdout on
-/// success or `None` on any failure (non-repo, git error, spawn failure) —
-/// the caller degrades to an empty snapshot.
+/// Run `git -C <repo_root> status --porcelain=v2 --untracked-files=all`,
+/// returning stdout on success or `None` on any failure (non-repo, git error,
+/// spawn failure) — the caller degrades to an empty snapshot.
 async fn run_git_status_porcelain(repo_root: &Path) -> Option<String> {
     let output = tokio::process::Command::new("git")
         .args([
@@ -528,6 +536,7 @@ async fn run_git_status_porcelain(repo_root: &Path) -> Option<String> {
             &repo_root.to_string_lossy(),
             "status",
             "--porcelain=v2",
+            "--untracked-files=all",
         ])
         .output()
         .await
@@ -786,7 +795,7 @@ mod tests {
             saw_overlap: false,
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let mut rows = bracket.into_delta_rows(&post, &project_dir, 99);
+        let mut rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 99);
         rows.sort_by(|a, b| a.file_path.cmp(&b.file_path));
 
         // file_path is repo-relative (stripped against the bracket's repo_root).
@@ -825,7 +834,7 @@ mod tests {
             saw_overlap: true,
         };
         let project_dir = CanonicalPath::from_test_str("/proj");
-        let rows = bracket.into_delta_rows(&post, &project_dir, 1);
+        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 1);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].ambiguous, "overlap marks the delta ambiguous");
     }
@@ -1028,7 +1037,7 @@ u UU N... 0 0 0 0 unmerged.rs
             saw_overlap: false,
         };
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
-        let rows = bracket.into_delta_rows(&post, &project_dir, 5);
+        let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", 5);
         let by_path: HashMap<String, String> = rows
             .iter()
             .map(|r| (r.file_path.clone(), r.op.clone()))
@@ -1051,6 +1060,50 @@ u UU N... 0 0 0 0 unmerged.rs
         // A tempdir with no `.git` ancestor is not a repo.
         let non_repo = tempfile::tempdir().expect("tempdir");
         assert_eq!(repo_root_for(non_repo.path()).await, None);
+    }
+
+    #[test]
+    fn into_delta_rows_carries_the_given_tool_name_and_origin() {
+        // The turn-scoped fallback bracket ([P05]) reuses this with
+        // ("Turn", "turn"); the same delta machinery, a different provenance.
+        let mut post = HashMap::new();
+        post.insert(PathBuf::from("/r/a.rs"), state("?"));
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "turn:1000".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: PathBuf::from("/r"),
+            pre: HashMap::new(),
+            saw_overlap: false,
+        };
+        let project_dir = CanonicalPath::from_test_str("/proj");
+        let rows = bracket.into_delta_rows(&post, &project_dir, "Turn", "turn", 7);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tool_name, "Turn");
+        assert_eq!(rows[0].origin, "turn");
+        assert_eq!(rows[0].op, "created");
+    }
+
+    #[tokio::test]
+    async fn snapshot_lists_a_file_inside_an_untracked_directory() {
+        // -uall ([P06]/G5): a file inside a brand-new untracked directory is
+        // listed as itself, not collapsed to a bare `newdir/` entry the join
+        // can't use.
+        let repo = init_repo();
+        let root = repo.path().to_path_buf();
+        std::fs::create_dir(root.join("newdir")).unwrap();
+        std::fs::write(root.join("newdir/inner.rs"), "x\n").unwrap();
+
+        let snap = snapshot_worktree(&root).await;
+        assert!(
+            snap.contains_key(&root.join("newdir/inner.rs")),
+            "the file inside the untracked dir is fingerprinted: {snap:?}"
+        );
+        assert!(
+            !snap.contains_key(&root.join("newdir")),
+            "the bare directory is not a fingerprint entry"
+        );
     }
 
     #[tokio::test]
@@ -1085,11 +1138,11 @@ u UU N... 0 0 0 0 unmerged.rs
         let project_dir = CanonicalPath::from_test_str(root.to_str().unwrap());
         let post_a = snapshot_worktree(&root).await;
         let a = reg.close_by_tool_use("tug-A", "tu-A").unwrap();
-        let rows_a = a.into_delta_rows(&post_a, &project_dir, 2);
+        let rows_a = a.into_delta_rows(&post_a, &project_dir, "Bash", "bash", 2);
 
         let post_b = snapshot_worktree(&root).await;
         let b = reg.close_by_tool_use("tug-B", "tu-B").unwrap();
-        let rows_b = b.into_delta_rows(&post_b, &project_dir, 3);
+        let rows_b = b.into_delta_rows(&post_b, &project_dir, "Bash", "bash", 3);
 
         assert!(!rows_a.is_empty() && !rows_b.is_empty());
         assert!(

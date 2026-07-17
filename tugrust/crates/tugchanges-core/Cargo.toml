@@ -1,13 +1,13 @@
 [package]
-name = "tugmark-core"
+name = "tugchanges-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Core library for tugmark: git changes & commits (changes/context/commit/log/diff)"
+description = "Core library for git changes & commits (changes/context/commit/log/diff)"
 
 [lib]
-name = "tugmark_core"
+name = "tugchanges_core"
 path = "src/lib.rs"
 
 [dependencies]

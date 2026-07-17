@@ -13,9 +13,9 @@ You are a precise git commit specialist. Your job is to analyze recent work, sta
 
 **Default: commit ONLY the files you changed in this session.** Other edits in the working tree are almost always inflight work the user has not finished — staging them would bundle unrelated changes into one commit. So unless told otherwise, commit only the files that *this conversation* created or modified, and leave everything else untouched. In your report, note that other working-tree changes were left as inflight on the current branch.
 
-**Override — "commit everything":** if the arguments to the skill ask for all changes (e.g. "commit everything", "everything", "all changes", "stage all", "whole working tree"), then commit every relevant working-tree change instead — still excluding anything that looks like a secret, credential, or stray temp file. When committing everything, pass the full path set to `tugutil commit --paths …` and let your message reflect the full set of changes, not just this session's.
+**Override — "commit everything":** if the arguments to the skill ask for all changes (e.g. "commit everything", "everything", "all changes", "stage all", "whole working tree"), then commit the whole dirty tree with `tugutil commit --tree` (it commits `attributed ∪ unattributed ∪ ambiguous`, excluding only another live session's `foreign`-claimed paths) and let your message reflect the full set of changes, not just this session's. Do not hand-gather a `--paths` list for this — `--tree` owns it. Still hold back anything that looks like a secret, credential, or stray temp file (name it, use `--paths` to exclude it).
 
-When the arguments are silent on scope, the default (session-only) applies — do not ask which one; just scope to this session's files.
+When the arguments are silent on scope, the default (session-only) applies — do not ask which one; just scope to this session's files, disposing of every `unattributed` file explicitly (see below).
 
 ### One command for context — `tugutil context`
 
@@ -28,33 +28,57 @@ git changes & commits. Gather everything you need to compose the message in **on
 tugutil context --json
 ```
 
-One clean command — no `cd`, no heredoc, no port discovery, no raw git. It reads the
-file-event rows tugcast recorded at the moment of each change (exact for
-Write/Edit/NotebookEdit, working-tree-bracketed for Bash) for `$TUG_SESSION_ID`, joins them
-against the current `git status`, and returns the session's changed files (each **with its
-diff**), the branch/head, and the recent commit subjects — everything the message needs:
+One clean command — no `cd`, no heredoc, no port discovery, no raw git. `git status` is
+the universe: `context` enumerates **every dirty file** in the working tree and classifies
+each into one of three buckets, then attaches a **diff** to each and adds the branch/head
+and recent commit subjects — everything the message needs. A capture gap can no longer hide
+a changed file: a file with no ledger row still shows up (as `unattributed`), never
+silently dropped.
 
 ```jsonc
 { "session": "…", "project": "…", "repo_root": "…", "branch": "main", "head": "abc1234",
   "files": [ { "path": "tugdeck/src/foo.ts", "op": "edit", "origin": "exact",
                "ambiguous": false, "git_status": " M", "diff": "…unified diff…" } ],
+  "unattributed": [ { "path": "tugrust/src/bar.rs", "op": "unknown", "origin": "none",
+                      "ambiguous": false, "git_status": " M", "diff": "…" } ],
+  "foreign": [ { "path": "x/lib.rs", "git_status": " M",
+                 "sessions": ["<other tug_session_id>"], "diff": "…" } ],
   "recent_commits": [ { "sha": "abc1234", "subject": "…" } ] }
 ```
 
-- **`files`** is the authoritative "which files" list; each carries a **`diff`** (a created
-  file gets a real add-diff), so you read *what* changed without a separate `git diff`.
-- **`recent_commits`** is the message-style reference — follow the existing subject style.
-- **`ambiguous: true`** means an overlapping session had a Bash bracket open on this repo at
-  the same time, so the file's ownership is uncertain. `tugutil commit` **excludes**
-  ambiguous files by default. Do not auto-include one — call it out in your report and
-  include it (via `--paths`) only if the diff clearly shows it as this session's work.
-- The `files` list already excludes files committed or reverted since (the `git status`
-  join), so every listed path is a live change.
-- **Fallback:** if `tugutil context` exits non-zero (older tugcast, or `$TUG_SESSION_ID`
+The three buckets — **you must dispose of every one of them explicitly:**
+
+- **`files`** (attributed) — this session's changes, from the ledger rows tugcast recorded
+  at the moment of each change (`origin` `exact` for Write/Edit/NotebookEdit, `bash` for a
+  Bash bracket, `turn` for a turn-scoped fallback). This is the default commit set; each
+  carries a **`diff`** (a created file gets a real add-diff), so you read *what* changed
+  without a separate `git diff`.
+- **`unattributed`** — dirty with **no ledger row anywhere** (`op:"unknown"`,
+  `origin:"none"`). This is a capture gap: usually a Bash-mediated edit (`sed`, `perl`,
+  `git mv`, redirection) or a shell-route (`$`) edit whose fingerprint wasn't recorded.
+  **Read its `diff` and decide:** if it is clearly this session's work, include it
+  (`--include-unattributed`, or `--paths` for a subset); if it is the user's inflight work,
+  leave it (`--leave-unattributed`) and **name it as inflight in your report**. Never leave
+  an unattributed file undecided — a default commit *refuses* while any is present (see
+  exit 3 below).
+- **`foreign`** — dirty, claimed only by **another** session (`sessions` lists whose). It is
+  another session's work: **report it, never include it** without an explicit user ask. It
+  never blocks your commit and is never in any default set (only `--paths` can reach it).
+- **`ambiguous: true`** (a flag on an `attributed` row) — an overlapping session had a
+  bracket open on this repo at the same time, so ownership is uncertain. `tugutil commit`
+  **excludes** ambiguous files by default. Do not auto-include one — call it out and include
+  it (via `--all` or `--paths`) only if the diff clearly shows it as this session's work.
+
+**`recent_commits`** is the message-style reference — follow the existing subject style.
+Every listed path is a live change (the `git status` universe excludes committed/reverted
+files by construction).
+
+- **Fallback:** if `tugutil context` exits **2** (older tugcast, or `$TUG_SESSION_ID`
   unset — it prints a hint on stderr), reconstruct the file list from this conversation's
   Write/Edit/Bash calls and inspect the working tree with `tugutil diff --json`, then commit
   with an explicit `tugutil commit --paths <files> --message "<m>"` (an explicit `--paths`
-  set needs no session).
+  set needs no session). Do **not** fall back to raw `git` — `tug` owns git changes &
+  commits.
 
 ## Your Process
 
@@ -90,21 +114,33 @@ diff**), the branch/head, and the recent commit subjects — everything the mess
 
 4. **Commit**
    - Commit in one command. `tugutil commit` stages by construction — it commits exactly the
-     session's **non-ambiguous** changed files (`git add -- <files>` then
+     session's **non-ambiguous** attributed files (`git add -- <files>` then
      `git commit -m … -- <files>`), so anything else in the working tree stays out:
      ```
      tugutil commit --message "<message>" --json
      ```
    - The message goes inline in `--message` (newlines are fine inside the quoted string).
-   - **Narrowing or widening the file set:**
-     - To include an `ambiguous` file whose diff clearly shows it as yours, or to commit an
-       explicit subset (e.g. holding back a stray file), pass `--paths <p1> <p2> …`.
-     - To include ambiguous files wholesale, add `--all`.
-     - For the **"commit everything"** override, pass the full working-tree path set via
-       `--paths <all changed files>`.
+   - **Disposition flags** (choose from what `context` showed you):
+     - `--include-unattributed` — fold the `unattributed` bucket into the commit (use when
+       their diffs show them as this session's work).
+     - `--leave-unattributed` — proceed without the unattributed files (use when they are the
+       user's inflight work); the receipt's `left_behind` will name them.
+     - `--tree` — commit the whole dirty tree (`attributed ∪ unattributed ∪ ambiguous`,
+       except `foreign`) — the **"commit everything"** override.
+     - `--paths <p1> <p2> …` — an explicit subset: include a specific `ambiguous`/`foreign`
+       file, or hold back a stray one. Overrides all other flags.
+     - `--all` — include ambiguous files wholesale.
+   - **Exit 3 is the refusal signal.** If a default `tugutil commit` finds unattributed files
+     with no disposition, it exits **3**, lists them on stderr, and commits **nothing**. This
+     is never a reason to fall back to raw `git` — re-run `commit` with the right disposition
+     flag (`--include-unattributed` / `--leave-unattributed` / `--tree` / `--paths`) once you
+     have read their diffs from `context`. (Exit 2 is session resolution — use the fallback
+     above. Exit 1 is a real error.)
    - `tugutil commit --json` returns the structured receipt — `{ sha, branch, message,
-     files:[{path,status,added,deleted}], aggregate, numstat }` — which the Session card's
-     commit receipt renders directly. No separate `git show`/`--numstat` call is needed.
+     files:[{path,status,added,deleted}], aggregate, numstat, left_behind }` — which the
+     Session card's commit receipt renders directly. **`left_behind`** (`{unattributed,
+     foreign, ambiguous}`) names every still-dirty file after the commit; surface anything it
+     lists in your report. No separate `git show`/`--numstat` call is needed.
    - Do NOT use temp files, shell expansion (`$$`, `$(...)`), or heredocs — they trigger
      manual approval prompts.
    - Do NOT combine `cd` with the command. If you need to target a different directory, pass
@@ -113,8 +149,9 @@ diff**), the branch/head, and the recent commit subjects — everything the mess
 
 5. **Report**
    - Show the short hash (`sha`) and commit message from the receipt so the user can see what
-     was committed, and note any ambiguous files you held back or any inflight working-tree
-     changes left uncommitted.
+     was committed. Name anything you held back: `unattributed` files left as inflight,
+     `ambiguous` files, `foreign` files (another session's work), and anything the receipt's
+     `left_behind` still lists.
 
 ## Examples of Good Commit Messages
 
@@ -145,7 +182,8 @@ Fix null pointer in user lookup
 
 ## If Uncertain
 
-- If `tugutil context` reports no changed files (and no override), report this and do nothing
+- If `tugutil context` reports every bucket empty (no `files`, no `unattributed`, no
+  `foreign`) and there is no override, report this and do nothing
 - If changes seem unrelated to any plan, write message without plan reference
 - If you cannot determine what the changes accomplish, describe them literally from the diff
 - Do not stage files that look like secrets, credentials, or unrelated temporary files

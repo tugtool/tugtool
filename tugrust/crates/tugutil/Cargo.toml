@@ -23,7 +23,7 @@ chrono.workspace = true
 tugcore.workspace = true
 tugutil-core.workspace = true
 tugdash-core.workspace = true
-tugmark-core.workspace = true
+tugchanges-core.workspace = true
 ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]

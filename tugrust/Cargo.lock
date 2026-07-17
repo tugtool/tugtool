@@ -2311,10 +2311,10 @@ dependencies = [
  "tracing",
  "tugbank-core",
  "tugcast-core",
+ "tugchanges-core",
  "tugcore",
  "tugdash-core",
  "tuglog",
- "tugmark-core",
  "tugutil-core",
  "uuid",
 ]
@@ -2329,6 +2329,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "tugchanges-core"
+version = "0.8.0"
+dependencies = [
+ "dirs",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tugcore",
 ]
 
 [[package]]
@@ -2355,8 +2367,8 @@ dependencies = [
  "serde_json",
  "serial_test",
  "tempfile",
+ "tugchanges-core",
  "tugcore",
- "tugmark-core",
  "tugutil-core",
 ]
 
@@ -2382,18 +2394,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "tugcore",
-]
-
-[[package]]
-name = "tugmark-core"
-version = "0.8.0"
-dependencies = [
- "dirs",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
  "tugcore",
 ]
 
@@ -2424,9 +2424,9 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
+ "tugchanges-core",
  "tugcore",
  "tugdash-core",
- "tugmark-core",
  "tugutil-core",
  "ureq",
 ]

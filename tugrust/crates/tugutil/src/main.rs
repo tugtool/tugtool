@@ -3,8 +3,8 @@
 mod cli;
 mod commands;
 mod dash;
+mod changes;
 mod host;
-mod mark;
 mod output;
 mod splash;
 
@@ -27,32 +27,45 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
 
-        // Changes & commits — the git surface (tugmark_core).
+        // Changes & commits — the git surface (tugchanges_core).
         Some(Commands::Changes {
             session,
             project,
             all,
             diff,
-        }) => mark::finish(mark::run_changes(session, project, all, diff, json)),
+        }) => changes::finish(changes::run_changes(session, project, all, diff, json)),
         Some(Commands::Context {
             session,
             project,
             log_limit,
-        }) => mark::finish(mark::run_context(session, project, log_limit, json)),
+        }) => changes::finish(changes::run_context(session, project, log_limit, json)),
         Some(Commands::Commit {
             message,
             session,
             project,
             paths,
             all,
-        }) => mark::finish(mark::run_commit(message, session, project, paths, all, json)),
-        Some(Commands::Log { limit, range }) => mark::finish(mark::run_log(limit, range, json)),
+            include_unattributed,
+            leave_unattributed,
+            tree,
+        }) => changes::finish(changes::run_commit(
+            message,
+            session,
+            project,
+            paths,
+            all,
+            include_unattributed,
+            leave_unattributed,
+            tree,
+            json,
+        )),
+        Some(Commands::Log { limit, range }) => changes::finish(changes::run_log(limit, range, json)),
         Some(Commands::Diff {
             range,
             staged,
             session,
             project,
-        }) => mark::finish(mark::run_diff(range, staged, session, project, json)),
+        }) => changes::finish(changes::run_diff(range, staged, session, project, json)),
 
         // Dashes (tugdash_core) and host plumbing (command modules).
         Some(Commands::Dash(cmd)) => dash::dispatch(cmd, json, quiet),

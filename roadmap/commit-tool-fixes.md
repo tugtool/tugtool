@@ -689,14 +689,14 @@ None — renames and in-place changes only.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rename tugmark-core → tugchanges-core | pending | — |
-| #step-2 | Foreign-session ledger query | pending | — |
-| #step-3 | Invert the changes join; buckets in context | pending | — |
-| #step-4 | Commit disposition contract + receipt left_behind | pending | — |
-| #step-5 | CLI flags, exit 3, bucket output | pending | — |
-| #step-6 | tugcast: -uall snapshots + turn bracket | pending | — |
-| #step-7 | Commit skill rewrite | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Rename tugmark-core → tugchanges-core | done | a96b02b2d |
+| #step-2 | Foreign-session ledger query | done | 8677c601a (folded into #step-3) |
+| #step-3 | Invert the changes join; buckets in context | done | 8677c601a |
+| #step-4 | Commit disposition contract + receipt left_behind | done | 5d77ede58 |
+| #step-5 | CLI flags, exit 3, bucket output | done | e4f7eec27 |
+| #step-6 | tugcast: -uall snapshots + turn bracket | done | 6371ce8e1 |
+| #step-7 | Commit skill rewrite | done | c6e349b4e |
+| #step-8 | Integration checkpoint | done | verification only |
 
 #### Step 1: Rename tugmark-core → tugchanges-core {#step-1}
 

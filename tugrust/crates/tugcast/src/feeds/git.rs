@@ -18,16 +18,16 @@ use tugcast_core::types::{
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus.
 ///
-/// Delegates the parsing to `tugmark_core`'s canonical
-/// [`parse_status_porcelain_v2`](tugmark_core::parse_status_porcelain_v2)
-/// ([P06]/[P08]) and maps its [`StatusReport`](tugmark_core::StatusReport) into
+/// Delegates the parsing to `tugchanges_core`'s canonical
+/// [`parse_status_porcelain_v2`](tugchanges_core::parse_status_porcelain_v2)
+/// ([P06]/[P08]) and maps its [`StatusReport`](tugchanges_core::StatusReport) into
 /// the `tugcast_core` wire type: each tracked entry's XY splits into a staged
 /// (X, rendered `R` for a rename) and/or unstaged (Y) `FileStatus`, in the same
 /// per-line order as before; untracked paths and branch/ahead/behind/head carry
 /// straight over. `head_message` is filled separately via git log. The wire
 /// contract is unchanged — only the parser internals moved.
 pub(crate) fn parse_porcelain_v2(output: &str) -> GitStatus {
-    let report = tugmark_core::parse_status_porcelain_v2(output);
+    let report = tugchanges_core::parse_status_porcelain_v2(output);
     let mut staged: Vec<FileStatus> = Vec::new();
     let mut unstaged: Vec<FileStatus> = Vec::new();
     for entry in &report.entries {
@@ -472,14 +472,14 @@ pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<
 
 /// Split combined `git diff` output into one [`GitDiffFile`] per file.
 ///
-/// Delegates to `tugmark_core`'s canonical
-/// [`parse_unified_diff`](tugmark_core::parse_unified_diff) ([P06]/[P08]) and
-/// maps each [`DiffFile`](tugmark_core::DiffFile) into the `tugcast_core` wire
+/// Delegates to `tugchanges_core`'s canonical
+/// [`parse_unified_diff`](tugchanges_core::parse_unified_diff) ([P06]/[P08]) and
+/// maps each [`DiffFile`](tugchanges_core::DiffFile) into the `tugcast_core` wire
 /// type (the two structs carry identical fields — only the status enum differs).
 /// The `unified` chunk text is preserved verbatim, so the frame the client
 /// parses is unchanged.
 pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
-    tugmark_core::parse_unified_diff(output)
+    tugchanges_core::parse_unified_diff(output)
         .into_iter()
         .map(|f| GitDiffFile {
             path: f.path,
@@ -493,13 +493,13 @@ pub fn parse_git_diff(output: &str) -> Vec<GitDiffFile> {
         .collect()
 }
 
-/// Map `tugmark_core`'s diff status to the `tugcast_core` wire enum.
-fn map_diff_status(status: tugmark_core::DiffFileStatus) -> GitDiffFileStatus {
+/// Map `tugchanges_core`'s diff status to the `tugcast_core` wire enum.
+fn map_diff_status(status: tugchanges_core::DiffFileStatus) -> GitDiffFileStatus {
     match status {
-        tugmark_core::DiffFileStatus::Added => GitDiffFileStatus::Added,
-        tugmark_core::DiffFileStatus::Modified => GitDiffFileStatus::Modified,
-        tugmark_core::DiffFileStatus::Deleted => GitDiffFileStatus::Deleted,
-        tugmark_core::DiffFileStatus::Renamed => GitDiffFileStatus::Renamed,
+        tugchanges_core::DiffFileStatus::Added => GitDiffFileStatus::Added,
+        tugchanges_core::DiffFileStatus::Modified => GitDiffFileStatus::Modified,
+        tugchanges_core::DiffFileStatus::Deleted => GitDiffFileStatus::Deleted,
+        tugchanges_core::DiffFileStatus::Renamed => GitDiffFileStatus::Renamed,
     }
 }
 

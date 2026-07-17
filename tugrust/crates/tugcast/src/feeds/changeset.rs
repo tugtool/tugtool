@@ -577,33 +577,36 @@ fn parse_name_status(output: &str) -> Vec<ChangesetFile> {
 }
 
 /// Commit exactly `files` (repo-relative) in `repo_dir` with `message`
-/// ([P15]), routed through `tugmark_core::commit` ([P06]).
+/// ([P15]), routed through `tugchanges_core::commit` ([P06]).
 ///
-/// The staging-by-construction contract is unchanged — `tugmark_core::commit`
+/// The staging-by-construction contract is unchanged — `tugchanges_core::commit`
 /// with an explicit `--paths` set runs `git add -- <files…>` then
 /// `git commit -m <message> -- <files…>`, committing **only** those paths and
 /// refusing an empty list / blank message with the same error strings. The
 /// sync library is driven off the async feed via `spawn_blocking`, the same
 /// pattern tugcast uses for `tugdash-core` ([P02]).
 ///
-/// Returns the structured [`tugmark_core::CommitReceipt`]; the card path takes
+/// Returns the structured [`tugchanges_core::CommitReceipt`]; the card path takes
 /// `.sha` and the raw `.numstat` for the wire frame it already scrapes ([Q01]).
 pub(crate) async fn run_changeset_commit(
     repo_dir: &Path,
     files: &[String],
     message: &str,
-) -> Result<tugmark_core::CommitReceipt, String> {
+) -> Result<tugchanges_core::CommitReceipt, String> {
     let project = repo_dir.to_path_buf();
     let files = files.to_vec();
     let message = message.to_string();
     tokio::task::spawn_blocking(move || {
-        tugmark_core::commit(tugmark_core::CommitOptions {
+        // Explicit `--paths` bypasses bucketing, so this can never hit the
+        // [P03] refusal; map any `CommitError` back to the card's `String` error.
+        tugchanges_core::commit(tugchanges_core::CommitOptions {
             session: None,
             project: Some(project),
             message,
             paths: Some(files),
-            all: false,
+            ..Default::default()
         })
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("commit task panicked: {e}"))?
@@ -988,7 +991,7 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
         // The deck path enriches the message with a Tug-Session trailer before
         // committing (do_changeset_commit → append_trailers). Mirror that here.
-        let message = tugmark_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
+        let message = tugchanges_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
         run_changeset_commit(&repo, &["a.txt".to_string()], &message)
             .await
             .expect("commit succeeds");
@@ -1001,7 +1004,7 @@ mod tests {
         assert_eq!(trailer.trim(), "web (sess-1)");
         // A second append over the already-trailered message is a no-op.
         assert_eq!(
-            tugmark_core::append_trailers(&message, &[("Tug-Session", "web (sess-1)")]),
+            tugchanges_core::append_trailers(&message, &[("Tug-Session", "web (sess-1)")]),
             message
         );
     }

@@ -1,7 +1,7 @@
-//! `tugmark-core` — the print-free library that owns "git changes & commits".
+//! `tugchanges-core` — the print-free library that owns "git changes & commits".
 //!
 //! A synchronous library over `std::process::Command` git, mirroring
-//! `tugdash-core`'s shape: the `tugmark` CLI is a thin `--json` shell over it,
+//! `tugdash-core`'s shape: the `tugutil` CLI is a thin `--json` shell over it,
 //! and tugcast links it directly in-process (via `spawn_blocking`) to retire
 //! its duplicate commit/parse code. All real logic lives here; the binary only
 //! parses args, calls the library, and formats output.
@@ -13,8 +13,8 @@ pub mod git;
 mod ledger;
 pub mod trailer;
 
-pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, changes};
-pub use commit::{Aggregate, CommitOptions, CommitReceipt, commit};
+pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
+pub use commit::{Aggregate, CommitError, CommitOptions, CommitReceipt, LeftBehind, commit};
 pub use context::{
     ContextOptions, ContextReport, DiffOptions, DiffReport, LogEntry, LogOptions, LogReport,
     context, diff, log,

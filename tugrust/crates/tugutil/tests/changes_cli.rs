@@ -116,7 +116,7 @@ fn changes_json_emits_envelope_with_the_changed_file() {
     assert_eq!(code, 0);
     let v = parse(&stdout);
     assert_eq!(v["schema_version"], "1");
-    assert_eq!(v["command"], "mark changes");
+    assert_eq!(v["command"], "changes");
     assert_eq!(v["status"], "ok");
     let files = v["data"]["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);
@@ -135,7 +135,7 @@ fn context_json_matches_s02_shape() {
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
     let v = parse(&stdout);
-    assert_eq!(v["command"], "mark context");
+    assert_eq!(v["command"], "context");
     let data = &v["data"];
     assert_eq!(data["session"], "work");
     assert_eq!(data["branch"], "main");
@@ -161,7 +161,7 @@ fn commit_json_stages_the_session_file_and_matches_numstat() {
     let (code, stdout, stderr) = run(cmd);
     assert_eq!(code, 0, "stderr: {stderr}");
     let v = parse(&stdout);
-    assert_eq!(v["command"], "mark commit");
+    assert_eq!(v["command"], "commit");
     let data = &v["data"];
     assert_eq!(data["branch"], "main");
     assert_eq!(data["message"], "add feature");
@@ -194,7 +194,7 @@ fn log_json_emits_envelope() {
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
     let v = parse(&stdout);
-    assert_eq!(v["command"], "mark log");
+    assert_eq!(v["command"], "log");
     let commits = v["data"]["commits"].as_array().unwrap();
     assert_eq!(commits.len(), 1);
     assert_eq!(commits[0]["subject"], "init");
@@ -213,7 +213,7 @@ fn diff_json_emits_envelope() {
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
     let v = parse(&stdout);
-    assert_eq!(v["command"], "mark diff");
+    assert_eq!(v["command"], "diff");
     let files = v["data"]["files"].as_array().unwrap();
     assert!(files.iter().any(|f| f["path"] == "base.rs"));
 }
@@ -250,4 +250,191 @@ fn no_session_id_exits_two() {
     let (code, _, stderr) = run(cmd);
     assert_eq!(code, 2, "no session id exits 2");
     assert!(stderr.contains("no session id"), "stderr: {stderr}");
+}
+
+// --- Bucket surfacing + commit disposition (Steps 3–5) --------------------
+
+/// A temp `$HOME` seeding `work` with a `file_events` row per
+/// `(repo_relative_path, ambiguous)` (all `project_dir = repo_root`, `created`),
+/// plus an empty `empty` session — the multi-file fixture the bucket tests need.
+fn seed_home_events(repo_root: &Path, events: &[(&str, bool)]) -> tempfile::TempDir {
+    let home = tempfile::tempdir().unwrap();
+    let db_dir = home.path().join("Library/Application Support/Tug");
+    std::fs::create_dir_all(&db_dir).unwrap();
+    let conn = Connection::open(db_dir.join("sessions.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+         CREATE TABLE file_events (
+            tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+            tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+            parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+    )
+    .unwrap();
+    conn.execute("INSERT INTO sessions (session_id) VALUES ('work'), ('empty')", [])
+        .unwrap();
+    for (i, (path, ambiguous)) in events.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO file_events
+                (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+             VALUES ('work', ?1, ?2, 'Write', 'created', 'exact', ?3, ?4, ?5)",
+            rusqlite::params![
+                format!("tu-{i}"),
+                repo_root.join(path).to_string_lossy().to_string(),
+                i64::from(*ambiguous),
+                repo_root.to_string_lossy().to_string(),
+                i as i64
+            ],
+        )
+        .unwrap();
+    }
+    home
+}
+
+/// `git status --porcelain` output at `root`.
+fn status_porcelain(root: &Path) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn context_surfaces_an_unattributed_file_with_a_diff() {
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
+    let home = seed_home(&root);
+    let mut cmd = tug(home.path());
+    cmd.args(["context", "--json", "--session", "work"]);
+    cmd.args(project_arg(&root));
+
+    let (code, stdout, _) = run(cmd);
+    assert_eq!(code, 0);
+    let v = parse(&stdout);
+    // feature.rs is this session's (attributed); orphan.rs has no rows.
+    let files = v["data"]["files"].as_array().unwrap();
+    assert!(files.iter().any(|f| f["path"] == "feature.rs"));
+    let un = v["data"]["unattributed"].as_array().unwrap();
+    assert_eq!(un.len(), 1);
+    assert_eq!(un[0]["path"], "orphan.rs");
+    assert_eq!(un[0]["op"], "unknown");
+    assert_eq!(un[0]["origin"], "none");
+    assert!(
+        un[0]["diff"].as_str().unwrap().contains("orphan.rs"),
+        "unattributed carries a diff"
+    );
+}
+
+#[test]
+fn default_commit_refuses_unattributed_with_exit_three() {
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
+    let home = seed_home(&root);
+    let mut cmd = tug(home.path());
+    cmd.args(["commit", "--session", "work", "--message", "m"]);
+    cmd.args(project_arg(&root));
+
+    let (code, _out, err) = run(cmd);
+    assert_eq!(code, 3, "refusal is exit 3; stderr: {err}");
+    assert!(err.contains("orphan.rs"), "names the file: {err}");
+    assert!(
+        err.contains("--include-unattributed") && err.contains("--tree"),
+        "names the disposition flags: {err}"
+    );
+    // Nothing committed: both files still dirty, HEAD still at init.
+    let status = status_porcelain(&root);
+    assert!(status.contains("orphan.rs") && status.contains("feature.rs"), "tree still dirty: {status}");
+}
+
+#[test]
+fn include_unattributed_commits_the_orphan_file() {
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
+    let home = seed_home(&root);
+    let mut cmd = tug(home.path());
+    cmd.args([
+        "commit",
+        "--json",
+        "--session",
+        "work",
+        "--message",
+        "m",
+        "--include-unattributed",
+    ]);
+    cmd.args(project_arg(&root));
+
+    let (code, out, err) = run(cmd);
+    assert_eq!(code, 0, "stderr: {err}");
+    let v = parse(&out);
+    let paths: Vec<&str> = v["data"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert!(paths.contains(&"feature.rs") && paths.contains(&"orphan.rs"), "committed both: {paths:?}");
+}
+
+#[test]
+fn leave_unattributed_proceeds_and_records_left_behind() {
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
+    let home = seed_home(&root);
+    let mut cmd = tug(home.path());
+    cmd.args([
+        "commit",
+        "--json",
+        "--session",
+        "work",
+        "--message",
+        "m",
+        "--leave-unattributed",
+    ]);
+    cmd.args(project_arg(&root));
+
+    let (code, out, err) = run(cmd);
+    assert_eq!(code, 0, "stderr: {err}");
+    let v = parse(&out);
+    // Committed feature.rs only.
+    let files = v["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["path"], "feature.rs");
+    // The held-back orphan is named in left_behind.
+    let lb: Vec<&str> = v["data"]["left_behind"]["unattributed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(lb, vec!["orphan.rs"]);
+}
+
+#[test]
+fn tree_commits_attributed_unattributed_and_ambiguous() {
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("amb.rs"), "amb\n").unwrap();
+    std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
+    // work claims feature.rs (non-ambiguous) and amb.rs (ambiguous); orphan.rs
+    // has no rows.
+    let home = seed_home_events(&root, &[("feature.rs", false), ("amb.rs", true)]);
+    let mut cmd = tug(home.path());
+    cmd.args(["commit", "--json", "--session", "work", "--message", "m", "--tree"]);
+    cmd.args(project_arg(&root));
+
+    let (code, out, err) = run(cmd);
+    assert_eq!(code, 0, "stderr: {err}");
+    let v = parse(&out);
+    let paths: Vec<&str> = v["data"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert!(paths.contains(&"feature.rs"), "attributed: {paths:?}");
+    assert!(paths.contains(&"amb.rs"), "ambiguous included by --tree: {paths:?}");
+    assert!(paths.contains(&"orphan.rs"), "unattributed included by --tree: {paths:?}");
+    // Whole tree committed → clean.
+    assert!(status_porcelain(&root).trim().is_empty(), "tree clean after --tree commit");
 }

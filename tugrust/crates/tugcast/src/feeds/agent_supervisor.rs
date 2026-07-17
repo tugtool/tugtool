@@ -1443,7 +1443,7 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
 /// message is returned byte-for-byte. Idempotent via `append_trailers`.
 fn changeset_commit_message(request: &ChangesetCommitPayload) -> String {
     match (&request.session_name, &request.session_id) {
-        (Some(name), Some(id)) => tugmark_core::append_trailers(
+        (Some(name), Some(id)) => tugchanges_core::append_trailers(
             &request.message,
             &[("Tug-Session", &format!("{name} ({id})"))],
         ),

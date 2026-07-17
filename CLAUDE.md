@@ -17,7 +17,7 @@ Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a
 
 | Directory | Description |
 |-----------|-------------|
-| `tugrust/` | Rust crates (tugcast, tug, tugexec, tugbank, tugcore, the `*-core` libraries — tugutil-core/tugdash-core/tugmark-core — and supporting libraries) |
+| `tugrust/` | Rust crates (tugcast, tug, tugexec, tugbank, tugcore, the `*-core` libraries — tugutil-core/tugdash-core/tugchanges-core — and supporting libraries) |
 | `tugproto/` | Shared protocol / message types (TypeScript) |
 | `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
 | `tugdeck/` | Web frontend (the Session card lives here) |

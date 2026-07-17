@@ -1,17 +1,19 @@
 //! The `context`, `log`, and `diff` operations.
 //!
-//! `context` is the one-shot the `commit` skill runs (Spec S02): the session's
-//! changed files (always with a diff — a created/untracked file carries a
-//! synthesized add-diff, never an empty string) plus the branch/head and the
-//! recent commit subjects, everything needed to compose a message. `log` and
-//! `diff` (Spec S04) are the standalone history/range read-outs the other
-//! skills use.
+//! `context` is the one-shot the `commit` skill runs (Spec S01): the working
+//! tree bucketed into `files` (this session's `attributed` changes),
+//! `unattributed` (dirty with no ledger rows), and `foreign` (claimed only by
+//! other sessions) — all diffed (a created/untracked file carries a synthesized
+//! add-diff, never an empty string) — plus the branch/head and the recent commit
+//! subjects, everything needed to compose a message and see the whole dirty tree
+//! ([P01]: a dirty file is never invisible). `log` and `diff` (Spec S04) are the
+//! standalone history/range read-outs the other skills use.
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::changes::{Change, ChangesError, ChangesOptions, resolve_changes};
+use crate::changes::{Change, ChangesError, ChangesOptions, ForeignChange, resolve_changes};
 use crate::git::{self, FileStat};
 
 // ---------------------------------------------------------------------------
@@ -45,7 +47,9 @@ pub struct LogEntry {
     pub subject: String,
 }
 
-/// The `context` result (Spec S02).
+/// The `context` result (Spec S01). `files` is the `attributed` bucket;
+/// `unattributed` and `foreign` are additive — they complete the working-tree
+/// universe so nothing dirty is invisible ([P01]).
 #[derive(Debug, Clone, Serialize)]
 pub struct ContextReport {
     pub session: String,
@@ -54,6 +58,8 @@ pub struct ContextReport {
     pub branch: String,
     pub head: String,
     pub files: Vec<Change>,
+    pub unattributed: Vec<Change>,
+    pub foreign: Vec<ForeignChange>,
     pub recent_commits: Vec<LogEntry>,
 }
 
@@ -86,6 +92,8 @@ pub fn context(opts: ContextOptions) -> Result<ContextReport, ChangesError> {
         branch,
         head,
         files: resolved.files,
+        unattributed: resolved.unattributed,
+        foreign: resolved.foreign,
         recent_commits,
     })
 }
