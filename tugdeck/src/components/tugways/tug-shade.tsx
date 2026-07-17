@@ -28,7 +28,6 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
-import { TugLabel } from "./tug-label";
 
 /** Tugbank domain holding persisted Shade height fractions, keyed by `persistKey`. */
 export const SHADE_HEIGHT_DOMAIN = "dev.tugtool.dev.shade-height";
@@ -88,16 +87,12 @@ export interface TugShadeProps extends React.ComponentPropsWithoutRef<"div"> {
    */
   persistKey: string;
   /**
-   * Banner title shown centered in a top bar, modeled on the card's status
-   * bar. Rendered uppercase via CSS. Omit for no banner.
+   * A fixed header bar pinned above the scrolling content — composed by the
+   * caller (the Changes / History views pass a `BlockStrip` at
+   * `altitude="section"`, matching the Lens section band chrome). Omit for a
+   * headerless Shade.
    */
-  title?: string;
-  /**
-   * Controls rendered right-aligned in the banner, opposite the centered
-   * title (e.g. the Changes view's Expand All / Collapse All / Diff). Only
-   * rendered when `title` is set.
-   */
-  headerActions?: React.ReactNode;
+  header?: React.ReactNode;
   /**
    * Pixel floor for the Shade's height — it can never be dragged shorter.
    * Applied as a CSS `min-height`. @default 160
@@ -112,8 +107,7 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
   function TugShade(
     {
       persistKey,
-      title,
-      headerActions,
+      header,
       minHeight = 160,
       grabberLabel = "Resize",
       className,
@@ -192,15 +186,8 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
         }}
         {...rest}
       >
-        {title !== undefined ? (
-          <div className="tug-shade-banner">
-            <TugLabel className="tug-shade-title" emphasis="proposal">
-              {title}
-            </TugLabel>
-            {headerActions !== undefined && headerActions !== null ? (
-              <div className="tug-shade-banner-actions">{headerActions}</div>
-            ) : null}
-          </div>
+        {header !== undefined && header !== null ? (
+          <div className="tug-shade-header">{header}</div>
         ) : null}
         <div className="tug-shade-content">{children}</div>
         <div

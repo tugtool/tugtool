@@ -34,7 +34,11 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { CircleCheck, SquareArrowOutUpRight } from "lucide-react";
+import {
+  CircleCheck,
+  GitCommitHorizontal,
+  SquareArrowOutUpRight,
+} from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -44,6 +48,8 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import { BlockStrip } from "@/components/tugways/blocks/block-strip";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import type { ToolResultSummary } from "@/components/tugways/blocks/tool-result-summary";
 import {
   ToolBlockCollapseContext,
@@ -1042,15 +1048,31 @@ export function SessionChangesView({
     [],
   );
 
+  // The Shade header is the Lens section band chrome ([P02]) — a `BlockStrip`
+  // at `altitude="section"`, grip-less: the Changes glyph + title on the left,
+  // the fold-all cue + Diff pop-out on the right.
+  const buildHeader = (actions?: React.ReactNode): React.ReactElement => (
+    <BlockStrip
+      altitude="section"
+      className="tool-call-header"
+      dataTestid="session-changes-header"
+      leading={
+        <span className="tool-call-header-leading" aria-hidden="true">
+          <GitCommitHorizontal size={14} />
+        </span>
+      }
+      name="Changes"
+      actions={actions}
+    />
+  );
   const shell = (
     children: React.ReactNode,
-    headerActions?: React.ReactNode,
+    actions?: React.ReactNode,
   ): React.ReactElement => (
     <TugShade
       persistKey="session-card"
-      title="Changes"
       grabberLabel="Resize the Changes view"
-      headerActions={headerActions}
+      header={buildHeader(actions)}
     >
       <div
         className="session-changes-view"
@@ -1108,30 +1130,29 @@ export function SessionChangesView({
       ? { kind: "head", root: project.project_dir, paths: combinedDiffPaths }
       : null;
 
+  // Fold-all cue: the standard section chevron, but it expands / collapses
+  // ALL files rather than accordioning the header. `allExpanded` derives the
+  // chevron direction; the toggle sets the whole key set at once.
+  const allExpanded =
+    combinedKeys.length > 0 && combinedKeys.every((k) => expandedKeys.has(k));
   const headerActions =
-    combinedKeys.length > 0 || combinedDescriptor !== null ? (
+    combinedKeys.length > 1 || combinedDescriptor !== null ? (
       <>
         {combinedKeys.length > 1 ? (
-          <>
-            <TugPushButton
-              emphasis="ghost"
-              role="action"
-              size="2xs"
-              onClick={() => setExpandedKeys(new Set(combinedKeys))}
-              data-testid="session-changes-expand-all"
-            >
-              Expand All
-            </TugPushButton>
-            <TugPushButton
-              emphasis="ghost"
-              role="action"
-              size="2xs"
-              onClick={() => setExpandedKeys(new Set())}
-              data-testid="session-changes-collapse-all"
-            >
-              Collapse All
-            </TugPushButton>
-          </>
+          <BlockFoldCue
+            collapsed={!allExpanded}
+            onToggle={(nextCollapsed) =>
+              setExpandedKeys(nextCollapsed ? new Set() : new Set(combinedKeys))
+            }
+            collapsedLabel="Expand all"
+            expandedLabel="Collapse all"
+            ariaLabelExpand="Expand all files"
+            ariaLabelCollapse="Collapse all files"
+            size="xs"
+            subtype="icon"
+            stabilizeScroll={false}
+            data-slot="session-changes-fold-all"
+          />
         ) : null}
         {combinedDescriptor !== null ? (
           <PopOutDiffButton

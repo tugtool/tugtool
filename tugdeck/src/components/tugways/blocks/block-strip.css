@@ -34,13 +34,14 @@
   --tugx-block-strip-padding: var(--tug-space-sm) var(--tug-space-md);
 }
 
-/* section — the Lens band altitude ([P03]): slightly larger and bold name,
-   a touch taller line box, and the same roomier padding. Only *slightly*
-   above leaf — the section reads as a scaled tool header, not the oversized
-   old band. */
+/* section — the Lens band altitude ([P03]): a `sm` semibold name (the title
+   reads as a quiet heading, not a heavyweight banner), a touch taller line
+   box, and the same roomier padding. The name size / weight here is shared by
+   the Lens section bands AND the Session card's Changes / History Shade
+   headers (same `data-altitude="section"` chrome). */
 .tool-call-header[data-altitude="section"] {
-  --tugx-toolheader-name-size: calc(var(--tug-font-size-sm) * 1.12);
-  --tugx-toolheader-name-weight: var(--tug-font-weight-bold);
+  --tugx-toolheader-name-size: var(--tug-font-size-sm);
+  --tugx-toolheader-name-weight: var(--tug-font-weight-semibold);
   --tugx-toolheader-line: calc(var(--tug-font-size-sm) * 1.75);
   --tugx-block-strip-padding: var(--tug-space-sm) var(--tug-space-md);
 }

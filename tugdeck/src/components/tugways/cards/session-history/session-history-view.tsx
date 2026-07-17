@@ -30,8 +30,10 @@ import "./session-history-view.css";
 
 import { useEffect, useSyncExternalStore } from "react";
 import type React from "react";
+import { History as HistoryIcon } from "lucide-react";
 
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { TugShade } from "@/components/tugways/tug-shade";
 import {
   gitLogStore,
@@ -108,8 +110,20 @@ export function SessionHistoryView({
   const shell = (children: React.ReactNode): React.ReactElement => (
     <TugShade
       persistKey="session-card"
-      title="History"
       grabberLabel="Resize the History view"
+      header={
+        <BlockStrip
+          altitude="section"
+          className="tool-call-header"
+          dataTestid="session-history-header"
+          leading={
+            <span className="tool-call-header-leading" aria-hidden="true">
+              <HistoryIcon size={14} />
+            </span>
+          }
+          name="History"
+        />
+      }
     >
       <div
         className="session-history-view"
