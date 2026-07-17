@@ -113,37 +113,59 @@ pub fn run_context(
     if json {
         print_ok("context", &report);
     } else {
-        println!("branch: {}  head: {}", report.branch, report.head);
-        println!("files ({}):", report.files.len());
-        for file in &report.files {
-            println!("  {} {}", file.git_status, file.path);
-        }
-        // The buckets that complete the working-tree universe ([P01]): each is
-        // labeled and only printed when non-empty, so a clean tree reads exactly
-        // as before.
-        if !report.unattributed.is_empty() {
-            println!("unattributed ({}):", report.unattributed.len());
-            for file in &report.unattributed {
-                println!("  {} {}", file.git_status, file.path);
-            }
-        }
-        if !report.foreign.is_empty() {
-            println!("foreign ({}):", report.foreign.len());
-            for file in &report.foreign {
-                println!(
-                    "  {} {} [{}]",
-                    file.git_status,
-                    file.path,
-                    file.sessions.join(", ")
-                );
-            }
-        }
-        println!("recent commits:");
-        for commit in &report.recent_commits {
-            println!("  {} {}", commit.sha, commit.subject);
-        }
+        print_context_plain(&report);
     }
     Ok(())
+}
+
+/// The default (non-`--json`) `context` read-out: a complete, directly-readable
+/// summary of everything a commit needs — no `jq`/`python`/`grep` reshaping.
+/// Each attributed file carries its `op·origin` and, when contended, a
+/// `shared` marker naming the other owner(s); `foreign` files name their owner
+/// session; the disposition hint spells out how to clear a non-empty
+/// `unattributed` bucket (the exit-3 case). Empty buckets are omitted, so a
+/// clean session stays terse.
+fn print_context_plain(report: &tugchanges_core::ContextReport) {
+    println!(
+        "branch {}  head {}  session {}",
+        report.branch, report.head, report.session
+    );
+
+    println!("attributed ({}):", report.files.len());
+    for f in &report.files {
+        let shared = if f.shared {
+            format!("  shared with {}", f.sessions.join(", "))
+        } else {
+            String::new()
+        };
+        println!(
+            "  {:<2} {}·{}  {}{}",
+            f.git_status, f.op, f.origin, f.path, shared
+        );
+    }
+
+    if !report.unattributed.is_empty() {
+        println!("unattributed ({}):", report.unattributed.len());
+        for f in &report.unattributed {
+            println!("  {:<2} {}", f.git_status, f.path);
+        }
+        println!(
+            "  → dispose explicitly: --include-unattributed (commit them), \
+             --leave-unattributed (proceed without), or --paths <p…>"
+        );
+    }
+
+    if !report.foreign.is_empty() {
+        println!("foreign ({}) — other sessions' work, never in a default commit:", report.foreign.len());
+        for f in &report.foreign {
+            println!("  {:<2} {}  owner {}", f.git_status, f.path, f.sessions.join(", "));
+        }
+    }
+
+    println!("recent commits:");
+    for c in &report.recent_commits {
+        println!("  {} {}", c.sha, c.subject);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -139,6 +139,30 @@ fn changes_json_emits_envelope_with_the_changed_file() {
 }
 
 #[test]
+fn context_plain_is_directly_readable_no_reshaping_needed() {
+    // The default (non-JSON) read-out must carry everything a commit agent
+    // needs — header, per-file op·origin, buckets — so nothing has to be piped
+    // through jq/python/grep.
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
+    cmd.args(["context", "--session", "work"]);
+    cmd.args(project_arg(&root));
+
+    let (code, stdout, _) = run(cmd);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("branch main"), "header line: {stdout}");
+    assert!(stdout.contains("session work"), "names the session: {stdout}");
+    assert!(stdout.contains("attributed (1):"), "labeled bucket: {stdout}");
+    // The attributed file carries its op·origin inline (created·exact here).
+    assert!(
+        stdout.contains("created·exact") && stdout.contains("feature.rs"),
+        "per-file op·origin present: {stdout}"
+    );
+    assert!(stdout.contains("recent commits:"), "history section: {stdout}");
+}
+
+#[test]
 fn context_json_matches_s02_shape() {
     let (_repo, root) = init_repo();
     let ledger = seed_ledger(&root);
