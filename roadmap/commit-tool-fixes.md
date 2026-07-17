@@ -17,7 +17,7 @@ dirty file explicitly. As a prep step, the library crate is renamed
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-07-16 |
+| Last updated | 2026-07-17 |
 
 ---
 
@@ -69,9 +69,11 @@ improvements as defense in depth.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- `grep -rn "tugmark" tugrust/` returns nothing after Step 1 (the deck's unrelated
-  `tugdeck/crates/tugmark-wasm` markdown crate keeps its name; historical
-  `roadmap/`/`tuglaws/` mentions are out of scope).
+- `git grep -n tugmark -- tugrust/` returns nothing after Step 1, while
+  `git grep -n tugmark -- tugdeck/crates/tugmark-wasm` still has hits (the deck's
+  unrelated **markdown** crate keeps its name; historical `roadmap/`/`tuglaws/`
+  mentions are out of scope). Use `git grep`, not `grep -rn` — the latter matches
+  regenerated `tugrust/target/` build artifacts ([P08]).
 - A file dirtied with **zero** ledger rows appears in `tugutil context --json` under
   `unattributed`, with a diff (integration test in `tugutil/tests/changes_cli.rs`).
 - A default `tugutil commit` in the presence of unattributed files exits **3** and lists
@@ -189,8 +191,12 @@ worktrees) selects files by its own rules — does it also silently narrow?
 **Why it matters:** Dash worktrees are where autonomous recipes commit.
 
 **Resolution:** DEFERRED to a follow-on audit. Dash commits operate on an isolated
-worktree where the session is the only writer, so the blast radius differs; this plan's
-tugchanges-core changes don't touch tugdash-core.
+worktree where the session is the only writer, so the blast radius differs. Note the
+distinction: Step 1 **mechanically** edits tugdash-core (the crate rename reaches its
+`Cargo.toml` + `src/ops.rs`, which call `append_trailers` since commit `bce77a4`), but
+none of this plan's **behavioral** changes — the join inversion, buckets, refusal, or
+turn bracket — touch tugdash-core's own file-selection logic. Auditing *that* logic for
+the same silent-narrowing hole is the deferred work.
 
 #### [Q03] Do we need a replay-gap diagnostic marker? (DECIDED — unnecessary) {#q03-replay-gap-marker}
 
@@ -311,7 +317,9 @@ whole dirty tree except `foreign`-claimed paths.
 **Decision:** The relay opens a working-tree bracket when it forwards a `user_message`
 to tugcode stdin and closes it on the turn's (non-replayed) `turn_complete`; any delta
 path not already recorded by an exact or per-call-Bash row during that turn becomes a
-`file_events` row with `tool_name='Turn'`, `origin='turn'`.
+`file_events` row with `tool_name='Turn'`, `origin='turn'`. Cross-session ambiguity
+marking follows the existing registry rule, **accepting the ambiguity inflation this
+implies** (see the trade below).
 
 **Rationale:**
 - Closes capture gaps G2 (pre-snapshot races a fast command) and G3 (bracket lost to a
@@ -320,14 +328,42 @@ path not already recorded by an exact or per-call-Bash row during that turn beco
   results.
 - Two `git status` runs per turn — negligible cost.
 
+**The ambiguity-inflation trade (DECIDED: accept):** `BracketRegistry::open` cross-marks
+`ambiguous` on *any* other session's bracket open on the same repo root, and `ambiguous`
+rows are excluded from the default commit set ([D112]). Today that fires only when two
+sessions' **Bash calls** overlap — rare, seconds-wide windows. A turn bracket is open for
+the **whole turn** (including idle stretches while the model is thinking and writing
+nothing), so with two live sessions on one checkout, nearly every Bash and turn row on
+both sides will be marked `ambiguous`. This cuts **both** ways and we accept it on net:
+- **More correct:** today a session's *exact-tool* edits made during another session's
+  open Bash bracket escape the overlap check entirely (exact rows aren't registry
+  brackets); a turn bracket that spans those edits finally flags the genuine contention.
+- **Over-broad:** it also flags turns that overlap only in *wall-clock idle*, where no
+  files were being written concurrently — a false "uncertain owner."
+- **Why accept rather than narrow:** these repos are overwhelmingly single-writer per
+  checkout, so the inflation is near-zero in practice; and the failure mode is *safe* —
+  an over-`ambiguous` row is merely excluded from the one-click default and surfaced for
+  the agent/user to include via `--paths`/`--all` (never a wrong auto-commit). Narrowing
+  the rule (e.g. cross-mark only against another side's *per-call* bracket or a turn with
+  already-recorded writes) is a possible follow-on if multi-session checkouts become
+  common; it is **out of scope here** to avoid perturbing the [D112] overlap semantics
+  mid-plan.
+
 **Implications:**
 - Reuses `BracketRegistry` (`feeds/attribution.rs`) so cross-*session* overlap marks
   turn rows `ambiguous` exactly like per-call brackets (same-session per-call brackets
   inside the turn never mark it — the registry only cross-marks different sessions).
+- Extends [D112]'s attribution doctrine — which today enumerates only Bash bracketing and
+  the `exact`/`bash`/`replay` origins — with a new `origin='turn'` / `tool_name='Turn'`
+  point-of-change source. Still point-of-change (a bracket window, just turn-wide), still
+  upsert-idempotent, still never gating delivery. The global [D112] entry is amended to
+  record this ([#documentation-plan], Step 6).
 - The relay tracks a `turn_recorded_paths: HashSet<String>` (repo-relative), inserted
   on every successful `record_file_event`, cleared at turn close — the dedup filter.
 - Turn rows mint `tool_use_id = "turn:<opened_at_millis>"` to satisfy the
-  `(session, tool_use_id, file_path)` PK.
+  `(session, tool_use_id, file_path)` PK. A same-millisecond turn reopen would collide
+  and `ON CONFLICT DO NOTHING`-drop its rows; append a monotonic per-relay counter
+  (`turn:<millis>:<n>`) if that edge ever matters — negligible in practice.
 - A second `user_message` arriving before `turn_complete` (queued sends) does **not**
   reopen — the wider window still brackets everything.
 - Replay never opens a turn bracket (user messages don't replay through `input_rx`);
@@ -367,30 +403,71 @@ listing still-dirty paths per bucket.
 
 #### [P08] The crate rename: tugmark-core → tugchanges-core (DECIDED) {#p08-crate-rename}
 
+**Two distinct things are named "tugmark" in this repo. Exactly one is renamed.**
+The name is overloaded, and the whole point of this decision is to end that overload
+on the git side *without touching the markdown side*:
+
+| "tugmark" thing | What it is | Where it lives | This plan |
+|---|---|---|---|
+| `tugmark-core` (crate) + `tugmark` (retired CLI name) | git **changes & commits** library — `changes`/`context`/`commit`/`log`/`diff` | `tugrust/crates/tugmark-core/` (Rust backend) | **RENAMED → `tugchanges-core`** |
+| `tugmark-wasm` (crate) | **markdown** lexer/parser (pulldown-cmark; "mark" = markdown) | `tugdeck/crates/tugmark-wasm/` (browser frontend) | **KEPT — never touched** |
+
+The two live in **separate directory trees** — `tugrust/` (backend) vs `tugdeck/`
+(frontend) — and nothing in `tugrust/` references the markdown crate (verified: a
+`tugmark-wasm`/`tugmark_wasm` grep over `tugrust/` returns zero hits). That directory
+boundary is what makes a `tugrust/`-scoped search a complete and *safe* verification:
+it sweeps every git-side occurrence and *cannot* reach the markdown crate. Conversely,
+`tugdeck/`'s many `tugmark`/`tugmark_wasm` hits (the markdown crate, its `pkg/` build
+output, and every `tug-markdown-view` / `parse-markdown` importer) are all the crate
+that KEEPS its name and are out of scope — see [#non-goals].
+
 **Decision:** The library crate `tugrust/crates/tugmark-core` is renamed
-`tugchanges-core` (package, directory, workspace member, dependents), and `tugutil`'s
+`tugchanges-core` (package, directory, workspace member, all dependents), and `tugutil`'s
 `src/mark.rs` module becomes `src/changes.rs` with envelope `command` strings reduced
-to the bare verbs (`"changes"`, `"context"`, `"commit"`, `"log"`, `"diff"`).
+to the bare verbs (`"changes"`, `"context"`, `"commit"`, `"log"`, `"diff"`). The
+markdown crate `tugdeck/crates/tugmark-wasm` is **explicitly left alone**.
 
 **Rationale:**
 - The `tugmark` CLI was retired when tugutil/tugdash/tugmark were unified into the
   single `tug` CLI (commit `b122bb09b`) and renamed `tugutil`; the crate is the last
   live use of the withdrawn name.
-- "tugmark" already means something else in this repo: the deck's `tugmark-wasm` is
-  the **markdown** lexer (pulldown-cmark). One name, two meanings — the git-side one
-  yields.
+- "tugmark" already means something else in this repo (the markdown lexer above). One
+  spelling, two meanings — the git-side one yields; the markdown one is the older,
+  self-descriptive owner of "mark" and stays.
 - `tugchanges-core` names the flagship verb surface (owner's choice over
   `tuggit-core`/`tugcommit-core`).
 
 **Implications:**
-- Rename surface (from a full-tree grep): `tugrust/Cargo.toml` (members list +
-  workspace dep), `crates/tugmark-core/` directory + its `Cargo.toml` package name,
-  `crates/tugutil/Cargo.toml` + `src/{mark.rs,main.rs,cli.rs}` (`tugmark_core::`
-  paths + module rename), `crates/tugutil/tests/mark_cli.rs` (rename to
-  `changes_cli.rs`), `crates/tugcast/Cargo.toml` + `src/feeds/{changeset.rs,git.rs}`
-  (`tugmark_core::` paths), and CLAUDE.md's repository-structure table.
-- **Not** renamed: `tugdeck/crates/tugmark-wasm` (markdown), `tuglaws/wasm-crates.md`,
-  historical `roadmap/` plans.
+- **The completeness gate is `git grep`, not the file list below.** After the rename,
+  `git grep -n tugmark -- tugrust/` must return **zero hits**, and
+  `cd tugrust && cargo build` must pass under `-D warnings` (a stale `tugmark_core::`
+  path won't compile). Use `git grep` (tracked files only) — a plain
+  `grep -rn tugmark tugrust/` also matches regenerated build artifacts under
+  `tugrust/target/` and will never read clean. These two checks are authoritative;
+  the enumeration below is a **map to start from**, not the definition of "done".
+- Git-side rename surface (tracked files, current as of the trailer feature landing in
+  commit `bce77a4`):
+  - `tugrust/Cargo.toml` — workspace `members` entry + the `tugmark-core = { path … }`
+    workspace dep.
+  - `tugrust/crates/tugmark-core/` — directory (`git mv`) + its `Cargo.toml` package
+    name; internal `src/{lib.rs,trailer.rs,changes.rs,commit.rs,context.rs,git.rs,ledger.rs}`
+    need no path edits (same-crate `mod`/`pub use`), but `lib.rs`'s doc comment names
+    "the `tugmark` CLI" and should update.
+  - `tugrust/crates/tugutil/` — `Cargo.toml` dep; `src/{mark.rs,main.rs,cli.rs}`
+    (`tugmark_core::` paths + the `mark` → `changes` module rename); `tests/mark_cli.rs`
+    → `tests/changes_cli.rs`.
+  - `tugrust/crates/tugcast/` — `Cargo.toml` dep; `src/feeds/{changeset.rs,git.rs}`
+    **and `src/feeds/agent_supervisor.rs`** (`tugmark_core::append_trailers`, from the
+    trailer feature).
+  - `tugrust/crates/tugdash-core/` — `Cargo.toml` dep **and `src/ops.rs`**
+    (`tugmark_core::append_trailers`, from the trailer feature).
+  - `tugrust/Cargo.lock` — the `tugmark-core` package name + every dependent's dep line
+    (regenerated by `cargo build`; commit the churn).
+  - CLAUDE.md's repository-structure table (the one non-`tugrust/` doc edit).
+- **Not** renamed (KEEP): `tugdeck/crates/tugmark-wasm` and every `tugdeck/` markdown
+  importer, `tuglaws/wasm-crates.md`, and historical `roadmap/` plans
+  (`tugmark-bringup.md` et al.). None of these live under `tugrust/`, so the `git grep`
+  gate never flags them.
 - The envelope `command` strings have no known consumer (checked: nothing in
   `tugdeck/src` or the skills reads them; the card's receipt arrives via tugcast's
   changeset feed) — safe to change alongside.
@@ -574,6 +651,8 @@ None — renames and in-place changes only.
 ### Documentation Plan {#documentation-plan}
 
 - [ ] CLAUDE.md repository-structure table: `tugmark-core` → `tugchanges-core` (Step 1).
+- [ ] `tuglaws/design-decisions.md` **[D112]**: add the `origin='turn'` turn-scoped
+      bracket as a second bracketing source + the ambiguity-inflation trade (Step 6, [P05]).
 - [ ] Rewrite `tugplug/skills/commit/SKILL.md` for the bucket protocol (Step 7).
 - [ ] Module docs in `changes.rs`/`commit.rs` updated to state the inverted-join
       invariant ("a dirty file is never invisible").
@@ -625,32 +704,56 @@ None — renames and in-place changes only.
 
 **References:** [P08] crate rename, (#context, #non-goals)
 
+**Scope reminder ([P08]):** this renames the **git changes & commits** crate only.
+The **markdown** crate `tugdeck/crates/tugmark-wasm` (and every `tugdeck/` markdown
+importer) KEEPS the `tugmark` name — it is a different crate in a different tree. Every
+edit in this step is under `tugrust/`; if a task would touch a file outside `tugrust/`
+(other than the one CLAUDE.md table row), stop — it is out of scope.
+
 **Artifacts:**
 - `tugrust/crates/tugchanges-core/` (directory + package rename); updated
   `tugrust/Cargo.toml` members + workspace dep; updated dependents
-  (`tugutil`, `tugcast`); `tugutil/src/changes.rs` (née `mark.rs`);
-  `tugutil/tests/changes_cli.rs` (née `mark_cli.rs`); CLAUDE.md table row.
+  (`tugutil`, `tugcast`, `tugdash-core`); `tugutil/src/changes.rs` (née `mark.rs`);
+  `tugutil/tests/changes_cli.rs` (née `mark_cli.rs`); regenerated `tugrust/Cargo.lock`;
+  CLAUDE.md table row.
 
 **Tasks:**
 - [ ] `git mv tugrust/crates/tugmark-core tugrust/crates/tugchanges-core`; package
-      `name = "tugchanges-core"`; workspace `members` + `tugchanges-core = { path = … }`.
-- [ ] Update `tugmark_core::` → `tugchanges_core::` in
-      `tugutil/src/{mark.rs,main.rs,cli.rs}` and
-      `tugcast/src/feeds/{changeset.rs,git.rs}`; update both Cargo.toml deps.
+      `name = "tugchanges-core"`; workspace `members` + `tugchanges-core = { path = … }`
+      in `tugrust/Cargo.toml`. Update `lib.rs`'s doc comment that names "the `tugmark`
+      CLI".
+- [ ] Rewrite every `tugmark_core::` path → `tugchanges_core::` and every
+      `tugmark-core` dep line → `tugchanges-core` across **all dependents** — the
+      complete tracked set (per the [P08] rename-surface map; confirm with the grep
+      gate, don't trust this list blindly): `tugutil/Cargo.toml` +
+      `src/{mark.rs,main.rs,cli.rs}`; `tugcast/Cargo.toml` +
+      `src/feeds/{changeset.rs,git.rs,agent_supervisor.rs}`; `tugdash-core/Cargo.toml`
+      + `src/ops.rs`. (`agent_supervisor.rs` and `tugdash-core` are the trailer-feature
+      consumers added in `bce77a4` — easy to miss.)
 - [ ] `git mv` `tugutil/src/mark.rs` → `src/changes.rs` (module `mark` → `changes` in
       `main.rs`/`cli.rs`); change envelope `command` strings to bare verbs
       (`"changes"`, `"context"`, `"commit"`, `"log"`, `"diff"`).
 - [ ] `git mv` `tugutil/tests/mark_cli.rs` → `tests/changes_cli.rs`.
-- [ ] CLAUDE.md repository-structure table: `tugmark-core` → `tugchanges-core`.
-- [ ] Do **not** touch `tugdeck/crates/tugmark-wasm` (markdown crate),
-      `tuglaws/wasm-crates.md`, or historical `roadmap/` plans ([P08]).
+- [ ] CLAUDE.md repository-structure table: `tugmark-core` → `tugchanges-core` (the
+      only edit outside `tugrust/`).
+- [ ] Let `cargo build` regenerate `tugrust/Cargo.lock`; commit the lockfile churn.
+- [ ] Do **NOT** touch `tugdeck/crates/tugmark-wasm` (the markdown crate) or any
+      `tugdeck/` markdown file, `tuglaws/wasm-crates.md`, or historical `roadmap/`
+      plans ([P08], [#non-goals]).
 
 **Tests:**
-- [ ] Existing suites pass unmodified apart from the renames (no behavior change).
+- [ ] Existing suites pass unmodified apart from the renames (no behavior change) —
+      including the trailer tests in `tugcast` (`agent_supervisor.rs`, `changeset.rs`)
+      and `tugdash-core` (`ops.rs`) that call `append_trailers`.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo build && cargo nextest run`
-- [ ] `grep -rn "tugmark" tugrust/` → no hits
+- [ ] `cd tugrust && cargo build && cargo nextest run` (build fails on any missed
+      `tugmark_core::` path under `-D warnings`)
+- [ ] `git grep -n tugmark -- tugrust/` → **no hits** (tracked files only; a plain
+      `grep -rn` would match regenerated `tugrust/target/` artifacts and never read
+      clean — see [P08])
+- [ ] `git grep -n tugmark -- tugdeck/crates/tugmark-wasm | head -1` → **still has
+      hits** (a sanity check that the markdown crate was left intact, not swept)
 
 ---
 
@@ -690,7 +793,9 @@ None — renames and in-place changes only.
 **Commit:** `tugutil(commit-fixes): git status is the universe — bucket every dirty file`
 
 **References:** [P01] status is truth, [P02] Three buckets, [P06] untracked-all,
-Spec S01, Spec S02, (#capture-gap-inventory, #current-data-flow)
+[D112] point-of-change attribution (the read-side inversion is compatible — the ledger
+stays the record, the read stops treating it as the gate), Spec S01, Spec S02,
+(#capture-gap-inventory, #current-data-flow)
 
 **Artifacts:**
 - Rewritten `compute_changes` / `resolve_changes` (`tugchanges-core/src/changes.rs`):
@@ -813,7 +918,8 @@ Spec S04
 
 **Commit:** `tugcast(commit-fixes): turn-scoped fallback bracket; -uall fingerprints`
 
-**References:** [P05] turn bracket, [P06] untracked-all, (#turn-bracket-protocol,
+**References:** [P05] turn bracket, [P06] untracked-all, [D112] point-of-change
+attribution (amended here with the `origin='turn'` source), (#turn-bracket-protocol,
 #capture-gap-inventory)
 
 **Artifacts:**
@@ -821,6 +927,8 @@ Spec S04
 - Parameterized `OpenBracket::into_delta_rows(tool_name, origin, …)` (or field
   rewrite); turn open/accumulate/close wiring in `relay_session_io` per
   [#turn-bracket-protocol].
+- Amended `tuglaws/design-decisions.md` [D112] entry (the `origin='turn'` source + the
+  ambiguity trade).
 
 **Tasks:**
 - [ ] Open on `user_message` forward (after the stdin write, best-effort, never
@@ -832,9 +940,18 @@ Spec S04
       bump `changeset_bumper` when any row lands.
 - [ ] Clear turn state in the same teardown path as `sweep_session`.
 - [ ] Audit `origin`/`tool_name` consumers for the new values: `feeds/changeset.rs`,
-      `feeds/changeset_all.rs`, the deck's changeset rendering, and tugchanges-core
-      (which passes origin through opaquely) — confirm `'turn'` rows flow as ordinary
-      advisory events.
+      `feeds/changeset_all.rs`, the deck's changeset rendering (`sessions-section.tsx`
+      `FileIdentity` renders an unknown origin as `"{op} · {origin}"`, so `'turn'` shows
+      as "modified · turn" — no crash; decide whether that label is wanted), and
+      tugchanges-core (which passes origin through opaquely) — confirm `'turn'` rows flow
+      as ordinary advisory events.
+- [ ] Amend the global **[D112]** entry in `tuglaws/design-decisions.md`: it currently
+      says "only `Bash` needs working-tree fingerprint bracketing" and enumerates the
+      `exact`/`bash`/`replay` origins. Add the turn-scoped fallback bracket
+      (`origin='turn'`, snapshot on `user_message` / delta on `turn_complete`) as a
+      second bracketing source, and note the ambiguity-inflation trade ([P05]). Keep the
+      invariant text (point-of-change, upsert-idempotent, never gates delivery) — the
+      extension honors all three.
 
 **Tests:**
 - [ ] Unit (`attribution.rs`): parameterized delta rows carry the given
@@ -898,7 +1015,8 @@ Spec S01, (#documentation-plan)
 
 **Tasks:**
 - [ ] Full-workspace verification: `cd tugrust && cargo nextest run` and
-      `cargo build` clean; `grep -rn "tugmark" tugrust/` still empty.
+      `cargo build` clean; `git grep -n tugmark -- tugrust/` still empty (the markdown
+      crate under `tugdeck/` is untouched — [P08]).
 - [ ] Live smoke inside a real Session-card session: run a Bash `perl -i` bulk edit
       over several files plus one `Write`-tool edit, then `tugutil context --json` —
       every touched file appears (attributed via bracket/turn rows or, at minimum,
@@ -922,8 +1040,9 @@ post-unification name.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `tugchanges-core` is the crate's name everywhere in `tugrust/` and CLAUDE.md;
-      the deck's markdown `tugmark-wasm` is untouched (grep verification).
+- [ ] `tugchanges-core` is the crate's name everywhere in `tugrust/` and CLAUDE.md
+      (`git grep -n tugmark -- tugrust/` empty); the deck's **markdown** crate
+      `tugdeck/crates/tugmark-wasm` is untouched (`git grep` there still has hits).
 - [ ] `context` reports attributed / foreign / unattributed buckets, all diffed
       (changes_cli integration tests).
 - [ ] Default `commit` cannot silently narrow: refusal exit 3 with the list, or a
@@ -946,7 +1065,7 @@ post-unification name.
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Rename complete | `grep -rn "tugmark" tugrust/` empty; workspace builds |
+| Rename complete | `git grep -n tugmark -- tugrust/` empty (markdown crate under `tugdeck/` untouched); workspace builds |
 | Buckets end-to-end | `changes_cli.rs` integration suite |
 | Turn bracket | `agent_bridge.rs` end-to-end tests |
 | No silent narrowing, live | Step 8 smoke in a real Session card |
