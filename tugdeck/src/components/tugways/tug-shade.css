@@ -6,6 +6,9 @@
  * | Element                                          | Surface                                            | Role    | Context                                 |
  * |--------------------------------------------------|----------------------------------------------------|---------|-----------------------------------------|
  * | --tug7-element-global-border-normal-default-rest | --tug7-surface-global-primary-normal-content-rest  | control | .tug-shade-grabber-handle (background)  |
+ *
+ * The banner title is a composed `TugLabel` (emphasis="proposal") — it keeps
+ * its own token contract per [L20], so no title pairing is declared here.
  */
 
 body {
@@ -54,6 +57,33 @@ body {
   border-bottom: 1px solid var(--tugx-shade-border);
   box-shadow: var(--tugx-shade-shadow);
   pointer-events: auto;
+}
+
+/* Banner — a centered title bar at the top of the shade, matching the
+   transcript's resting top strip (`.session-transcript-top-row`) exactly:
+   same `controlbar` surface, same muted bottom rule, same constant height.
+   The title composes the same `TugLabel` (emphasis="proposal") that strip's
+   labels use, so weight / muted color / small-caps come from the component,
+   not from here. */
+.tug-shade-banner {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--tug-space-md);
+  background-color: var(--tug7-surface-card-primary-normal-controlbar-rest);
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  user-select: none;
+}
+
+/* Title size matches the transcript strip's tuned label size (md + 1px, the
+   small-caps land at a comfortable caption height); `line-height: 1` centers
+   the caps optically. Weight and color are TugLabel's own ([L20]). */
+.tug-shade-title.tug-label {
+  font-size: calc(var(--tug-font-size-md) + 1px);
+  line-height: 1;
 }
 
 /* Content region — fills the shade above the grabber; the child view owns

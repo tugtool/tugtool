@@ -3595,7 +3595,11 @@ export function SessionCardBody({
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
-                <TugShade persistKey="session-card" grabberLabel="Resize the Changes view">
+                <TugShade
+                  persistKey="session-card"
+                  title="Changes"
+                  grabberLabel="Resize the Changes view"
+                >
                   <SessionChangesView
                     projectDir={projectDir}
                     changesController={changesController}
@@ -3604,7 +3608,11 @@ export function SessionCardBody({
                 </TugShade>
               </div>
               <div className="session-view-pane" data-view="history">
-                <TugShade persistKey="session-card" grabberLabel="Resize the History view">
+                <TugShade
+                  persistKey="session-card"
+                  title="History"
+                  grabberLabel="Resize the History view"
+                >
                   <SessionHistoryView
                     projectDir={projectDir}
                     active={activeView === "history"}

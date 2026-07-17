@@ -28,6 +28,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
+import { TugLabel } from "./tug-label";
 
 /** Tugbank domain holding persisted Shade height fractions, keyed by `persistKey`. */
 export const SHADE_HEIGHT_DOMAIN = "dev.tugtool.dev.shade-height";
@@ -87,6 +88,11 @@ export interface TugShadeProps extends React.ComponentPropsWithoutRef<"div"> {
    */
   persistKey: string;
   /**
+   * Banner title shown centered in a top bar, modeled on the card's status
+   * bar. Rendered uppercase via CSS. Omit for no banner.
+   */
+  title?: string;
+  /**
    * Pixel floor for the Shade's height — it can never be dragged shorter.
    * Applied as a CSS `min-height`. @default 160
    */
@@ -100,6 +106,7 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
   function TugShade(
     {
       persistKey,
+      title,
       minHeight = 160,
       grabberLabel = "Resize",
       className,
@@ -178,6 +185,13 @@ export const TugShade = React.forwardRef<HTMLDivElement, TugShadeProps>(
         }}
         {...rest}
       >
+        {title !== undefined ? (
+          <div className="tug-shade-banner">
+            <TugLabel className="tug-shade-title" emphasis="proposal">
+              {title}
+            </TugLabel>
+          </div>
+        ) : null}
         <div className="tug-shade-content">{children}</div>
         <div
           className="tug-shade-grabber"

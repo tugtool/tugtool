@@ -1102,7 +1102,7 @@ export function SessionChangesView({
           {empty && !showReceipt ? (
             <div className="session-changes-clean" role="status">
               <CircleCheck size={14} />
-              No changes from this session
+              No changes
             </div>
           ) : null}
           {showReceipt ? (

@@ -160,7 +160,9 @@
 .session-changes-clean {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  padding: var(--tug-space-md);
   font-size: 0.875rem;
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
