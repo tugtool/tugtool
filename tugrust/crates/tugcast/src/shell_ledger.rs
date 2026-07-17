@@ -64,6 +64,16 @@ pub struct ShellExchangeRow {
     pub settled_at_ms: i64,
 }
 
+/// A card→session summary for {@link ShellLedger::reconcile_orphaned_rows}.
+/// The caller (`main`) maps `SessionLedger::list_with_card_id` rows to this,
+/// keeping the ledger's most-recent-first (`last_used_at DESC`) order.
+#[derive(Debug, Clone)]
+pub struct SessionForReconcile {
+    pub session_id: String,
+    pub card_id: String,
+    pub turn_count: i64,
+}
+
 pub struct ShellLedger {
     db: Mutex<Connection>,
 }
@@ -160,6 +170,98 @@ impl ShellLedger {
         Ok(())
     }
 
+    /// Distinct session ids that currently own at least one exchange.
+    pub fn session_ids_with_rows(
+        &self,
+    ) -> Result<std::collections::HashSet<String>, ShellLedgerError> {
+        let conn = self.db.lock().expect("shell ledger mutex");
+        let mut stmt = conn.prepare("SELECT DISTINCT tug_session_id FROM shell_exchanges")?;
+        let ids = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<std::collections::HashSet<_>, _>>()?;
+        Ok(ids)
+    }
+
+    /// Move every exchange from `from` onto `to`, preserving `seq` (the caller
+    /// only re-keys onto an empty target, so seqs stay unique). Returns the
+    /// number of rows moved.
+    pub fn rekey_session(&self, from: &str, to: &str) -> Result<usize, ShellLedgerError> {
+        let conn = self.db.lock().expect("shell ledger mutex");
+        let moved = conn.execute(
+            "UPDATE shell_exchanges SET tug_session_id = ?2 WHERE tug_session_id = ?1",
+            params![from, to],
+        )?;
+        Ok(moved)
+    }
+
+    /// Recover shell rows orphaned by the pre-F1 fresh-spawn bug ([P07]).
+    ///
+    /// Before F1, a shell-only session (no JSONL, `turn_count == 0`) was
+    /// re-spawned under a FRESH session id on relaunch, orphaning its shell
+    /// ledger rows (keyed by the old id) while the card bound to the new,
+    /// empty session. This moves those rows onto the card's current session so
+    /// they show again.
+    ///
+    /// Conservative by construction — it only acts on a card whose CURRENT
+    /// session is itself empty (zero-turn AND no shell rows), i.e. the exact
+    /// bug aftermath. If the user has since used the new session (any turn or
+    /// shell row), nothing moves. Idempotent: re-keying clears the orphan, so a
+    /// second pass finds nothing.
+    ///
+    /// `sessions` must be ordered most-recent-first per card (the shape
+    /// `SessionLedger::list_with_card_id` returns: `last_used_at DESC`).
+    pub fn reconcile_orphaned_rows(
+        &self,
+        sessions: &[SessionForReconcile],
+    ) -> Result<usize, ShellLedgerError> {
+        let with_rows = self.session_ids_with_rows()?;
+        if with_rows.is_empty() {
+            return Ok(0);
+        }
+        // Group by card_id, preserving the caller's most-recent-first order.
+        let mut order: Vec<&str> = Vec::new();
+        let mut groups: std::collections::HashMap<&str, Vec<&SessionForReconcile>> =
+            std::collections::HashMap::new();
+        for s in sessions {
+            let key = s.card_id.as_str();
+            if !groups.contains_key(key) {
+                order.push(key);
+                groups.insert(key, Vec::new());
+            }
+            groups.get_mut(key).expect("just inserted").push(s);
+        }
+        let mut moved_total = 0;
+        for card in order {
+            let group = &groups[card];
+            let primary = group[0];
+            // Only touch a card whose CURRENT session is empty — the exact
+            // aftermath of the bug. If the new session has any turn or shell
+            // row, the user has moved on; leave everything untouched.
+            if primary.turn_count > 0 || with_rows.contains(&primary.session_id) {
+                continue;
+            }
+            // Adopt the most-recent OTHER zero-turn session that still owns rows.
+            let orphan = group
+                .iter()
+                .skip(1)
+                .find(|s| s.turn_count == 0 && with_rows.contains(&s.session_id));
+            if let Some(orphan) = orphan {
+                let moved = self.rekey_session(&orphan.session_id, &primary.session_id)?;
+                if moved > 0 {
+                    tracing::info!(
+                        card = %card,
+                        from = %orphan.session_id,
+                        to = %primary.session_id,
+                        moved,
+                        "shell ledger: recovered orphaned exchanges onto the card's current session",
+                    );
+                    moved_total += moved;
+                }
+            }
+        }
+        Ok(moved_total)
+    }
+
     /// List a session's exchanges oldest-first (the transcript's natural order).
     pub fn list_exchanges(
         &self,
@@ -220,6 +322,61 @@ mod tests {
         assert_eq!(rows[1].command, "false");
         assert_eq!(rows[1].seq, 2);
         assert_eq!(rows[1].exit_code, Some(1));
+    }
+
+    fn sess(session_id: &str, card_id: &str, turn_count: i64) -> SessionForReconcile {
+        SessionForReconcile {
+            session_id: session_id.to_string(),
+            card_id: card_id.to_string(),
+            turn_count,
+        }
+    }
+
+    #[test]
+    fn reconcile_moves_orphan_rows_onto_the_cards_empty_current_session() {
+        let led = ShellLedger::open_in_memory().unwrap();
+        // The lost session (`old`) has a shell row; the card's current session
+        // (`new`) is empty. Ordered most-recent-first: new, old.
+        led.record_exchange(&ex("old", "ls", Some(0))).unwrap();
+        let sessions = [sess("new", "card-1", 0), sess("old", "card-1", 0)];
+
+        let moved = led.reconcile_orphaned_rows(&sessions).unwrap();
+        assert_eq!(moved, 1);
+        assert_eq!(led.list_exchanges("old").unwrap().len(), 0);
+        let recovered = led.list_exchanges("new").unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].command, "ls");
+
+        // Idempotent: a second pass finds no orphan.
+        assert_eq!(led.reconcile_orphaned_rows(&sessions).unwrap(), 0);
+    }
+
+    #[test]
+    fn reconcile_leaves_a_used_current_session_untouched() {
+        let led = ShellLedger::open_in_memory().unwrap();
+        led.record_exchange(&ex("old", "ls", Some(0))).unwrap();
+
+        // Current session has a real Claude turn — the user moved on.
+        let with_turn = [sess("new", "card-1", 3), sess("old", "card-1", 0)];
+        assert_eq!(led.reconcile_orphaned_rows(&with_turn).unwrap(), 0);
+        assert_eq!(led.list_exchanges("old").unwrap().len(), 1);
+
+        // Current session already owns a shell row — likewise untouched.
+        led.record_exchange(&ex("new", "pwd", Some(0))).unwrap();
+        let with_row = [sess("new", "card-1", 0), sess("old", "card-1", 0)];
+        assert_eq!(led.reconcile_orphaned_rows(&with_row).unwrap(), 0);
+        assert_eq!(led.list_exchanges("old").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reconcile_ignores_orphans_from_a_different_card() {
+        let led = ShellLedger::open_in_memory().unwrap();
+        led.record_exchange(&ex("old", "ls", Some(0))).unwrap();
+        // `old` belongs to card-2, the empty current session to card-1 — no
+        // cross-card adoption.
+        let sessions = [sess("new", "card-1", 0), sess("old", "card-2", 0)];
+        assert_eq!(led.reconcile_orphaned_rows(&sessions).unwrap(), 0);
+        assert_eq!(led.list_exchanges("old").unwrap().len(), 1);
     }
 
     #[test]

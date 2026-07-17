@@ -387,6 +387,45 @@ export function pruneOrphanedCardDefaults(
 }
 
 /**
+ * Session-keyed durable domains ([P07]): the `/btw` history and the
+ * staged-context queue survive an app relaunch keyed by `tug_session_id`
+ * (preserved across relaunch by the F1 fresh-spawn fix). The values are small
+ * JSON blobs (capped per session), read from the TugbankClient cache at store
+ * construction. Entries for evicted sessions age with the ledger — a future
+ * sweep can prune them by live session id, mirroring `pruneOrphanedCardDefaults`.
+ */
+export const SIDE_QUESTIONS_DOMAIN = "dev.tugtool.side-questions";
+export const PENDING_CONTEXT_DOMAIN = "dev.tugtool.pending-context";
+
+/** PUT a session's `/btw` history to tugbank (fire-and-forget). */
+export function putSideQuestionHistory(sessionId: string, history: unknown): void {
+  const url = `/api/defaults/${SIDE_QUESTIONS_DOMAIN}/${encodeURIComponent(sessionId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: history }),
+  })
+    .then(() => {})
+    .catch((err) => {
+      console.warn("[settings] PUT side-questions failed for", sessionId, err);
+    });
+}
+
+/** PUT a session's staged-context queue + VISIBILITY to tugbank (fire-and-forget). */
+export function putPendingContext(sessionId: string, state: unknown): void {
+  const url = `/api/defaults/${PENDING_CONTEXT_DOMAIN}/${encodeURIComponent(sessionId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "json", value: state }),
+  })
+    .then(() => {})
+    .catch((err) => {
+      console.warn("[settings] PUT pending-context failed for", sessionId, err);
+    });
+}
+
+/**
  * PUT the focused card ID to tugbank (fire-and-forget).
  */
 export function putFocusedCardId(focusedCardId: string): void {

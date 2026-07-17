@@ -18,7 +18,7 @@
  */
 
 import React, { useSyncExternalStore } from "react";
-import { Layers, X } from "lucide-react";
+import { MessageSquareShare, X } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { PendingContextStore } from "@/lib/pending-context-store";
@@ -46,7 +46,7 @@ export function SessionPendingContextStrip({
   return (
     <div className="session-pending-context-strip" data-slot="session-pending-context-strip">
       <span className="session-pending-context-strip-lead" aria-hidden>
-        <Layers size={13} strokeWidth={2} />
+        <MessageSquareShare size={13} strokeWidth={2} />
       </span>
       <span className="session-pending-context-strip-caption">
         Rides next message:

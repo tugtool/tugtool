@@ -17,6 +17,9 @@ import {
   parseSideQuestionAnswerPayload,
 } from "../side-question-store";
 import { PendingContextStore, splitLeadingContext } from "../pending-context-store";
+import { setTugbankClient } from "../tugbank-singleton";
+import { SIDE_QUESTIONS_DOMAIN } from "@/settings-api";
+import type { TugbankClient } from "../tugbank-client";
 
 // A minimal FeedStore whose `emit` drives the store's feed subscription.
 class MockFeedStore {
@@ -182,6 +185,48 @@ describe("SideQuestionStore — VISIBILITY=Context auto-stage ([P08])", () => {
     feed.emit(FeedId.CODE_OUTPUT, answerFrame(id, null));
     expect(pendingContext.getSnapshot().items).toHaveLength(0);
     store.dispose();
+  });
+});
+
+describe("SideQuestionStore — durable across relaunch ([P07])", () => {
+  function fakeClientWith(sessionId: string, value: unknown): TugbankClient {
+    return {
+      getValue: (domain: string, key: string) =>
+        domain === SIDE_QUESTIONS_DOMAIN && key === sessionId ? value : undefined,
+    } as unknown as TugbankClient;
+  }
+
+  test("seeds settled history from the durable blob and resumes #b{n}", () => {
+    setTugbankClient(
+      fakeClientWith("sess-1", [
+        { id: "btw-1", question: "q1", phase: "answered", answer: "a1", synthetic: false, at: 1 },
+        { id: "btw-2", question: "q2", phase: "error", answer: null, synthetic: false, at: 2 },
+      ]),
+    );
+    try {
+      const { store } = newStore();
+      const ex = store.getSnapshot().exchanges;
+      expect(ex.map((e) => e.id)).toEqual(["btw-1", "btw-2"]);
+      expect(ex[0]).toMatchObject({ phase: "answered", answer: "a1" });
+      expect(ex[1]).toMatchObject({ phase: "error", answer: null });
+      // A fresh ask continues the ordinal past the highest loaded id.
+      store.ask("q3");
+      expect(store.getSnapshot().exchanges[2].id).toBe("btw-3");
+      store.dispose();
+    } finally {
+      setTugbankClient(null);
+    }
+  });
+
+  test("no durable blob → empty history (the fresh-session case)", () => {
+    setTugbankClient(fakeClientWith("other", []));
+    try {
+      const { store } = newStore();
+      expect(store.getSnapshot().exchanges).toHaveLength(0);
+      store.dispose();
+    } finally {
+      setTugbankClient(null);
+    }
   });
 });
 

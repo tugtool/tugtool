@@ -7,6 +7,55 @@ import {
   composeContextPrefix,
   splitLeadingContext,
 } from "@/lib/pending-context-store";
+import { setTugbankClient } from "@/lib/tugbank-singleton";
+import { PENDING_CONTEXT_DOMAIN } from "@/settings-api";
+import type { TugbankClient } from "@/lib/tugbank-client";
+
+describe("PendingContextStore — durable across relaunch ([P07])", () => {
+  function fakeClientWith(sessionId: string, value: unknown): TugbankClient {
+    return {
+      getValue: (domain: string, key: string) =>
+        domain === PENDING_CONTEXT_DOMAIN && key === sessionId ? value : undefined,
+    } as unknown as TugbankClient;
+  }
+
+  it("seeds items + VISIBILITY from the durable blob and resumes ctx-{n}", () => {
+    setTugbankClient(
+      fakeClientWith("sess-1", {
+        items: [
+          { id: "ctx-1", source: "shell", ref: "sh-1", label: "shell #s1", body: "b1" },
+          { id: "ctx-2", source: "btw", ref: "btw-3", label: "/btw #b3", body: "b2" },
+        ],
+        shellContext: true,
+        btwContext: false,
+      }),
+    );
+    try {
+      const store = new PendingContextStore("sess-1");
+      const snap = store.getSnapshot();
+      expect(snap.items.map((i) => i.id)).toEqual(["ctx-1", "ctx-2"]);
+      expect(store.isContext("shell")).toBe(true);
+      expect(store.isContext("btw")).toBe(false);
+      // A new stage continues the ordinal past the highest loaded id.
+      store.stage({ source: "shell", ref: "sh-9", label: "shell #s9", body: "b9" });
+      expect(store.getSnapshot().items[2].id).toBe("ctx-3");
+    } finally {
+      setTugbankClient(null);
+    }
+  });
+
+  it("no durable blob → empty queue, VISIBILITY Private", () => {
+    setTugbankClient(fakeClientWith("other", null));
+    try {
+      const store = new PendingContextStore("sess-1");
+      expect(store.getSnapshot().items).toHaveLength(0);
+      expect(store.isContext("shell")).toBe(false);
+      expect(store.isContext("btw")).toBe(false);
+    } finally {
+      setTugbankClient(null);
+    }
+  });
+});
 
 describe("btwContextLabel — session ordinal attribution", () => {
   it("renders /btw #b{n} from a btw-{n} request id", () => {

@@ -514,11 +514,21 @@ export function restoreSessions(
       } else {
         // Card was bound to a project but no turn ever happened and
         // no live subprocess is holding mid-turn state (Start Fresh
-        // + quit). claude has no JSONL, so resume would fail — but
-        // the project binding is still meaningful. Fire a fresh
-        // spawn with the same project so the card opens straight to
-        // its bound state.
-        fireFreshSpawn(binding.card_id, binding.project_dir, connection);
+        // + quit, or a shell-only / `/btw`-only session). claude has no
+        // JSONL, so a `resume`-mode spawn would fail — but we still
+        // PRESERVE the original `session_id`. A `new`-mode spawn under
+        // the same id re-keys the session's durable non-JSONL content
+        // (the shell ledger + the `/btw` history + the staged-context
+        // queue, all keyed by `tug_session_id`) so a shell-only session's
+        // rows survive relaunch instead of being orphaned under a fresh
+        // UUID. Server-side `record_spawn` upserts on `session_id`, so the
+        // existing row (name, created_at, tag) is updated in place.
+        fireFreshSpawn(
+          binding.card_id,
+          binding.session_id,
+          binding.project_dir,
+          connection,
+        );
         freshCount += 1;
       }
     }
@@ -558,15 +568,19 @@ function isCardBinding(value: unknown): value is CardBinding {
 }
 
 /**
- * Spawn a fresh claude session under an existing card→project
- * binding. Used by `restoreSessions` for zero-turn rows: the
- * user's previous session never had any turns (so there's
- * no JSONL to resume), but the card was bound to a project — keep
- * that binding by spawning a new session under the same project.
+ * Spawn a fresh (JSONL-less) claude session under an existing
+ * card→session binding. Used by `restoreSessions` for zero-turn rows:
+ * the previous session never had any Claude turns (so there's no JSONL
+ * to resume), but the card was bound to a session whose id keys durable
+ * non-JSONL content — the shell ledger, the `/btw` history, the
+ * staged-context queue.
  *
- * Mints a fresh `tug_session_id`. The supervisor will allocate a new
- * ledger row; the previous zero-turn row remains as a closed-state
- * crumb (eventually swept by age).
+ * PRESERVES the original `session_id` (passed in, not minted): a
+ * `new`-mode spawn re-uses the id so that content re-keys to the same
+ * session on relaunch instead of being orphaned under a fresh UUID
+ * (the shell-only-session data-loss bug). Server-side `record_spawn`
+ * upserts on `session_id` (`ON CONFLICT(session_id) DO UPDATE`), so the
+ * existing ledger row — name, created_at, tag — survives untouched.
  *
  * Registers a `sessionRestoreRegistry` hold for the pre-binding window.
  * Without it, `restorePassGate` settles the instant this pass
@@ -582,10 +596,10 @@ function isCardBinding(value: unknown): value is CardBinding {
  */
 function fireFreshSpawn(
   cardId: string,
+  tugSessionId: string,
   projectDir: string,
   connection: TugConnection,
 ): void {
-  const tugSessionId = crypto.randomUUID();
   // Drop any prior in-flight restore timer before arming a new hold.
   sessionRestoreRegistry._clear(cardId);
   // Stamp the restore-start clock — the `SessionRestoring` placeholder

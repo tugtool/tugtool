@@ -19,6 +19,9 @@
  * @module lib/pending-context-store
  */
 
+import { getTugbankClient } from "./tugbank-singleton";
+import { PENDING_CONTEXT_DOMAIN, putPendingContext } from "@/settings-api";
+
 /** Which surface an item was staged from. */
 export type ContextSource = "shell" | "btw";
 
@@ -137,6 +140,29 @@ export interface PendingContextSnapshot {
 
 const EMPTY_ITEMS: readonly PendingContextItem[] = [];
 
+/** Parse one persisted staged item, or `null` if malformed. */
+function parsePersistedItem(raw: unknown): PendingContextItem | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (o.source !== "shell" && o.source !== "btw") return null;
+  if (
+    typeof o.id !== "string" ||
+    typeof o.ref !== "string" ||
+    typeof o.label !== "string" ||
+    typeof o.body !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: o.id,
+    source: o.source,
+    ref: o.ref,
+    label: o.label,
+    body: o.body,
+    at: typeof o.at === "number" ? o.at : 0,
+  };
+}
+
 export class PendingContextStore {
   private _items: readonly PendingContextItem[] = EMPTY_ITEMS;
   private _shellContext = false;
@@ -148,6 +174,61 @@ export class PendingContextStore {
   };
   private _listeners = new Set<() => void>();
   private _seq = 0;
+  private readonly _tugSessionId: string | undefined;
+
+  /**
+   * @param tugSessionId When set, the queue + VISIBILITY are durable across an
+   * app relaunch ([P07]): loaded from the per-session tugbank blob at
+   * construction and re-persisted on every change. Omitted in tests / headless.
+   */
+  constructor(tugSessionId?: string) {
+    this._tugSessionId = tugSessionId;
+    this._loadPersisted();
+  }
+
+  /** Seed items + VISIBILITY from the durable per-session blob ([P07]), read
+   *  synchronously from the TugbankClient cache. Resumes `_seq` past the
+   *  highest `ctx-{n}`. No listeners exist yet — sets state without a notify. */
+  private _loadPersisted(): void {
+    if (this._tugSessionId === undefined) return;
+    // `?.getValue?.` also tolerates a partial mock client (tests) that lacks
+    // the method — the durable read simply yields nothing there.
+    const raw = getTugbankClient()?.getValue?.(PENDING_CONTEXT_DOMAIN, this._tugSessionId);
+    if (raw === null || typeof raw !== "object") return;
+    const o = raw as Record<string, unknown>;
+    const items = Array.isArray(o.items)
+      ? (o.items.map(parsePersistedItem).filter((it): it is PendingContextItem => it !== null))
+      : [];
+    this._items = items.length > 0 ? items : EMPTY_ITEMS;
+    this._shellContext = o.shellContext === true;
+    this._btwContext = o.btwContext === true;
+    let maxSeq = 0;
+    for (const it of items) {
+      const n = it.id.startsWith("ctx-") ? Number.parseInt(it.id.slice(4), 10) : NaN;
+      if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+    }
+    this._seq = maxSeq;
+    this._snapshot = {
+      items: this._items,
+      shellContext: this._shellContext,
+      btwContext: this._btwContext,
+    };
+  }
+
+  /** Persist the queue + VISIBILITY to the durable blob ([P07]). No-op without
+   *  a session id or a live TugbankClient (tests / headless). */
+  private _persist(): void {
+    // A real (live-app) TugbankClient exposes `getValue`; a null or partial
+    // mock (tests / headless) means no live persistence context — skip so no
+    // stray fetch fires.
+    if (this._tugSessionId === undefined) return;
+    if (typeof getTugbankClient()?.getValue !== "function") return;
+    putPendingContext(this._tugSessionId, {
+      items: this._items,
+      shellContext: this._shellContext,
+      btwContext: this._btwContext,
+    });
+  }
 
   /**
    * Stage an interaction. De-duplicated by `source`+`ref`: staging the same
@@ -245,6 +326,9 @@ export class PendingContextStore {
       shellContext: this._shellContext,
       btwContext: this._btwContext,
     };
+    // Every mutation routes through `_emit`, so this is the one persistence
+    // point ([P07]) — the durable blob always mirrors the live state.
+    this._persist();
     for (const listener of this._listeners) listener();
   }
 

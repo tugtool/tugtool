@@ -877,6 +877,38 @@ async fn main() {
             }
         });
 
+    // Recover shell rows orphaned by the pre-F1 fresh-spawn bug: move a lost
+    // zero-turn session's exchanges onto the card's current (empty) session so
+    // shell-only sessions that were re-spawned under a fresh id before the fix
+    // show their history again. Conservative + idempotent (see
+    // `reconcile_orphaned_rows`); non-fatal.
+    if let Some(sl) = shell_ledger.as_ref() {
+        match ledger.list_with_card_id() {
+            Ok(rows) => {
+                let sessions: Vec<shell_ledger::SessionForReconcile> = rows
+                    .into_iter()
+                    .filter_map(|r| {
+                        r.card_id.map(|card_id| shell_ledger::SessionForReconcile {
+                            session_id: r.session_id,
+                            card_id,
+                            turn_count: r.turn_count,
+                        })
+                    })
+                    .collect();
+                match sl.reconcile_orphaned_rows(&sessions) {
+                    Ok(n) if n > 0 => {
+                        info!(recovered = n, "shell ledger: reconciled orphaned exchanges onto current sessions")
+                    }
+                    Ok(_) => {}
+                    Err(e) => warn!(error = %e, "shell ledger: orphan reconciliation failed"),
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "shell ledger: could not list card sessions for reconciliation")
+            }
+        }
+    }
+
     let ledger_recorder = Arc::new(LedgerSessionsRecorder::with_broadcast(
         Arc::clone(&ledger),
         client_action_tx.clone(),

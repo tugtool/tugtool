@@ -25,6 +25,36 @@ import { FeedId } from "../protocol";
 import { getConnection } from "./connection-singleton";
 import type { PendingContextStore } from "./pending-context-store";
 import { btwContextLabel, composeBtwContextBody } from "./pending-context-store";
+import { getTugbankClient } from "./tugbank-singleton";
+import { SIDE_QUESTIONS_DOMAIN, putSideQuestionHistory } from "@/settings-api";
+
+/** Cap on persisted side questions per session ([P07]) — the tail is what the
+ *  overlay needs, mirroring the shell ledger's per-session cap. */
+const MAX_PERSISTED_SIDE_QUESTIONS = 100;
+
+/** Parse a persisted `/btw` history blob into settled exchanges. */
+function parsePersistedSideQuestions(raw: unknown): SideQuestionExchange[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SideQuestionExchange[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.id !== "string" || typeof o.question !== "string") continue;
+    const phase: SideQuestionPhase = o.phase === "error" ? "error" : "answered";
+    const answer = typeof o.answer === "string" ? o.answer : null;
+    // A persisted "answered" with no answer text is corrupt — drop it.
+    if (phase === "answered" && answer === null) continue;
+    out.push({
+      id: o.id,
+      question: o.question,
+      phase,
+      answer,
+      synthetic: o.synthetic === true,
+      at: typeof o.at === "number" ? o.at : 0,
+    });
+  }
+  return out;
+}
 
 // ── Wire type (mirror tugcode `SideQuestionAnswer`) ─────────────────────────
 
@@ -100,6 +130,50 @@ export class SideQuestionStore {
     this._tugSessionId = tugSessionId;
     this._pendingContextStore = pendingContextStore;
     this._unsubscribeFeed = feedStore.subscribe(() => this._onFeedUpdate());
+    this._loadPersisted();
+  }
+
+  /**
+   * Seed the history from the durable per-session `/btw` blob ([P07]), read
+   * synchronously from the TugbankClient cache (populated by the boot DEFAULTS
+   * frame before the card's services are constructed). Only settled exchanges
+   * were persisted; `_seq` resumes past the highest `btw-{n}` so a new ask
+   * keeps a unique `#b{n}`. No listeners exist yet, so this sets the snapshot
+   * directly without a notify.
+   */
+  private _loadPersisted(): void {
+    // `?.getValue?.` also tolerates a partial mock client (tests) missing the
+    // method — the durable read simply yields nothing there.
+    const raw = getTugbankClient()?.getValue?.(SIDE_QUESTIONS_DOMAIN, this._tugSessionId);
+    const loaded = parsePersistedSideQuestions(raw);
+    if (loaded.length === 0) return;
+    this._snapshot = { exchanges: loaded };
+    let maxSeq = 0;
+    for (const ex of loaded) {
+      const n = ex.id.startsWith("btw-") ? Number.parseInt(ex.id.slice(4), 10) : NaN;
+      if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+    }
+    this._seq = maxSeq;
+  }
+
+  /** Persist the settled exchanges (capped tail) to the durable blob ([P07]).
+   *  No-op without a live TugbankClient (tests / headless) so no stray fetch. */
+  private _persist(): void {
+    // Only with a real (live-app) TugbankClient — a null or partial mock
+    // (tests / headless) means no live persistence context, so no stray fetch.
+    if (typeof getTugbankClient()?.getValue !== "function") return;
+    const settled = this._snapshot.exchanges
+      .filter((ex) => ex.phase !== "loading")
+      .slice(-MAX_PERSISTED_SIDE_QUESTIONS)
+      .map((ex) => ({
+        id: ex.id,
+        question: ex.question,
+        phase: ex.phase,
+        answer: ex.answer,
+        synthetic: ex.synthetic,
+        at: ex.at,
+      }));
+    putSideQuestionHistory(this._tugSessionId, settled);
   }
 
   private _onFeedUpdate(): void {
@@ -133,6 +207,9 @@ export class SideQuestionStore {
     });
     if (!changed) return;
     this._set({ exchanges });
+    // Durable ([P07]): a newly settled exchange is written to the per-session
+    // blob so the overlay history survives an app relaunch.
+    this._persist();
     // VISIBILITY=Context ([P08], the submission-time variant): a newly answered
     // side question auto-stages onto the pending-context queue to ride the next
     // `❯` submission. Fires once, on the live settle — a re-render never
@@ -201,12 +278,14 @@ export class SideQuestionStore {
     const next = this._snapshot.exchanges.filter((ex) => ex.id !== id);
     if (next.length === this._snapshot.exchanges.length) return;
     this._set({ exchanges: next });
+    this._persist();
   }
 
   /** Empty the whole zone (the footer's Clear). */
   clear(): void {
     if (this._snapshot.exchanges.length === 0) return;
     this._set(EMPTY_SNAPSHOT);
+    this._persist();
   }
 
   private _append(exchange: SideQuestionExchange): void {

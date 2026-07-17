@@ -3,9 +3,11 @@
  *
  * On a cold relaunch, `restoreSessions` resolves each ledger
  * binding by `turn_count`: `> 0` resumes the JSONL, `=== 0` fires a
- * fresh `spawn_session(mode=new)` under the same project. The fresh
- * path mints a new session — there is nothing to "restore" — but the
- * card is still mid-bind: until `spawn_session_ok` lands, an unbound
+ * fresh `spawn_session(mode=new)` under the same project AND the same
+ * session id (F1 — preserving the id re-keys the session's durable
+ * non-JSONL content instead of orphaning it). The fresh path starts a
+ * JSONL-less session — there is nothing to "restore" from JSONL — but
+ * the card is still mid-bind: until `spawn_session_ok` lands, an unbound
  * session card with no `sessionRestoreRegistry` entry falls straight through
  * to the project picker, flashing its `TugSheet` for the round-trip.
  *
@@ -113,6 +115,13 @@ describe("session-restore — zero-turn fresh-spawn hold", () => {
     // `SessionRestoring` backdrop until the bind lands.
     expect(sessionRestoreRegistry.has(cardId)).toBe(true);
     expect(sessionRestoreRegistry.get(cardId)?.projectDir).toBe(projectDir);
+    // F1: the fresh-spawn PRESERVES the bound session id (does not mint a
+    // fresh UUID), so the session's durable non-JSONL content — the shell
+    // ledger, `/btw` history, staged-context queue, all keyed by
+    // tug_session_id — re-keys to the same session instead of orphaning.
+    expect(sessionRestoreRegistry.get(cardId)?.tugSessionId).toBe(
+      `sess-${cardId}`,
+    );
   });
 
   it("notifySpawnRejected drops the hold so the picker can present", () => {
