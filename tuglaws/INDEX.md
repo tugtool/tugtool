@@ -27,6 +27,10 @@
 - [session-card-unsupported-slash-commands.md](session-card-unsupported-slash-commands.md) — Why some of Claude Code's slash commands are hidden from the session card's `/` popup. The maintained mirror of `HIDDEN_SLASH_COMMANDS` in `slash-supported.ts`; the discoverable answer to "why isn't `/vim` here?". Doctrine lives in `slash-commands.md`.
 - [turn-metric.md](turn-metric.md) — The one canonical definition of a "turn": tugcode `totalTurns` is the authority, every other counter reconciles to it. The turn rule (S01), the `#t…m…` transcript address (S02), the four-way equality invariant, and the rewind carve-out.
 
+## Changes & commits
+
+- [tracking-changes.md](tracking-changes.md) — How a session's file changes are captured, classified, and committed. The two-layer doctrine (capture annotates, git status decides), the `file_events` ledger, the four capture origins (`exact`/`bash`/`turn`/`replay`), the ambiguity marking rule, the capture-gap inventory, the three read-side buckets (attributed/foreign/unattributed), and the commit disposition contract (exit-3 refusal, `--tree`, `left_behind`). Read before touching attribution, `tugutil context`/`commit`, or the commit skill.
+
 ## Theming, palette, tokens
 
 - [token-naming.md](token-naming.md) — The seven-slot prefix scheme for CSS custom properties. Every design-system token declares its kind in its name.

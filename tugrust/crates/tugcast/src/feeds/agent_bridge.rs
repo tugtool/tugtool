@@ -30,8 +30,8 @@ use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::attribution::{
-    BracketRegistry, InspectedToolResult, InspectedToolUse, PendingCalls, exact_op_for_tool,
-    file_path_for_tool, repo_root_for, snapshot_worktree,
+    BracketRegistry, InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls,
+    exact_op_for_tool, file_path_for_tool, repo_root_for, snapshot_worktree,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
@@ -952,13 +952,23 @@ pub async fn relay_session_io(
 
     // Turn-scoped fallback bracket ([P05]). Opened when a `user_message` is
     // forwarded to tugcode stdin (seconds before the model can emit any
-    // command), closed on that turn's non-replayed `turn_complete`. `open_turn`
-    // holds the bracket's synthetic `tool_use_id` while it is live;
-    // `turn_recorded_paths` collects every repo-relative path an exact or
-    // per-call Bash row already recorded this turn, so the close only mints
-    // `origin='turn'` rows for deltas capture actually missed (G2 pre-snapshot
-    // race, G3 relay crash mid-Bash within a live turn).
-    let mut open_turn: Option<String> = None;
+    // command), closed on that turn's non-replayed `turn_complete`. It mints
+    // `origin='turn'` rows only for working-tree deltas no exact/Bash row
+    // already recorded this turn (G2 pre-snapshot race, G3 relay crash mid-Bash
+    // within a live turn), deduped via `turn_recorded_paths`.
+    //
+    // **Relay-local, NOT in the shared `BracketRegistry`.** A turn bracket spans
+    // the whole turn (idle thinking included), so putting it in the cross-session
+    // registry made it cross-mark every concurrent session's Bash/turn rows
+    // `ambiguous` on mere wall-clock overlap — with several session cards on one
+    // checkout, essentially every row went ambiguous. The turn bracket is a
+    // capture-gap safety net, not a signal of concurrent writing: it never
+    // participates in cross-session ambiguity marking (its rows are never
+    // ambiguous, and it never marks another session). Genuine write contention is
+    // still caught by the per-call Bash brackets, which do register and cross-mark
+    // ([D112]). A relay-local bracket also needs no `sweep_session` cleanup — a
+    // crashed relay just drops it.
+    let mut open_turn: Option<OpenBracket> = None;
     let mut turn_recorded_paths: std::collections::HashSet<String> =
         std::collections::HashSet::new();
 
@@ -1379,41 +1389,40 @@ pub async fn relay_session_io(
                                 // Close the turn-scoped fallback bracket ([P05]):
                                 // attribute any working-tree delta this live turn
                                 // that no exact/Bash row already covered, as
-                                // `origin='turn'` rows. Best-effort — a snapshot
-                                // or ledger error is logged, never gates the
-                                // frame. The set is cleared for the next turn.
-                                if let (Some(turn_id), Some(ledger)) =
+                                // `origin='turn'` rows. The bracket is relay-local
+                                // (never registered), so this is a direct take —
+                                // no registry lookup and no cross-session
+                                // ambiguity. Best-effort — a snapshot or ledger
+                                // error is logged, never gates the frame. The set
+                                // is cleared for the next turn.
+                                if let (Some(bracket), Some(ledger)) =
                                     (open_turn.take(), session_ledger)
                                 {
-                                    if let Some(bracket) = bracket_registry
-                                        .close_by_tool_use(tug_session_id.as_str(), &turn_id)
-                                    {
-                                        let post = snapshot_worktree(&bracket.repo_root).await;
-                                        let at = crate::session_ledger::now_millis();
-                                        let mut recorded = false;
-                                        for row in bracket.into_delta_rows(
-                                            &post,
-                                            &canonical_project_dir,
-                                            "Turn",
-                                            "turn",
-                                            at,
-                                        ) {
-                                            if turn_recorded_paths.contains(&row.file_path) {
-                                                continue;
-                                            }
-                                            if let Err(err) = ledger.record_file_event(&row) {
-                                                warn!(
-                                                    session = %tug_session_id,
-                                                    error = %err,
-                                                    "record_file_event (turn) failed; frame forwarded unchanged"
-                                                );
-                                            } else {
-                                                recorded = true;
-                                            }
+                                    let post = snapshot_worktree(&bracket.repo_root).await;
+                                    let at = crate::session_ledger::now_millis();
+                                    let mut recorded = false;
+                                    for row in bracket.into_delta_rows(
+                                        &post,
+                                        &canonical_project_dir,
+                                        "Turn",
+                                        "turn",
+                                        at,
+                                    ) {
+                                        if turn_recorded_paths.contains(&row.file_path) {
+                                            continue;
                                         }
-                                        if recorded {
-                                            changeset_bumper.bump(Path::new(project_dir));
+                                        if let Err(err) = ledger.record_file_event(&row) {
+                                            warn!(
+                                                session = %tug_session_id,
+                                                error = %err,
+                                                "record_file_event (turn) failed; frame forwarded unchanged"
+                                            );
+                                        } else {
+                                            recorded = true;
                                         }
+                                    }
+                                    if recorded {
+                                        changeset_bumper.bump(Path::new(project_dir));
                                     }
                                     turn_recorded_paths.clear();
                                 }
@@ -1710,9 +1719,11 @@ pub async fn relay_session_io(
                     // race (G2) or is dropped by a mid-Bash crash (G3) is still
                     // caught by this turn-wide window. A second queued
                     // user_message before turn_complete does not reopen — the
-                    // wider window already brackets everything. Best-effort:
-                    // never gates the forward; skipped in a non-repo dir or
-                    // without a ledger to record into.
+                    // wider window already brackets everything. Held relay-local
+                    // (NOT in the shared registry) with `saw_overlap: false`, so a
+                    // whole-turn window never cross-marks concurrent sessions'
+                    // rows ambiguous. Best-effort: never gates the forward;
+                    // skipped in a non-repo dir or without a ledger to record into.
                     if is_user_message.is_some()
                         && open_turn.is_none()
                         && session_ledger.is_some()
@@ -1723,16 +1734,15 @@ pub async fn relay_session_io(
                             let root = repo_root.as_path().to_path_buf();
                             let pre = snapshot_worktree(&root).await;
                             let opened_at = crate::session_ledger::now_millis();
-                            let turn_id = format!("turn:{opened_at}");
-                            bracket_registry.open(
-                                root,
-                                tug_session_id.as_str(),
-                                &turn_id,
-                                None,
+                            open_turn = Some(OpenBracket {
+                                tug_session_id: tug_session_id.as_str().to_owned(),
+                                tool_use_id: format!("turn:{opened_at}"),
+                                parent_tool_use_id: None,
                                 opened_at,
+                                repo_root: root,
                                 pre,
-                            );
-                            open_turn = Some(turn_id);
+                                saw_overlap: false,
+                            });
                         }
                     }
                 }
@@ -2483,7 +2493,9 @@ mod tests {
             .unwrap();
 
         // A user_message forwarded to stdin opens the turn bracket (clean
-        // pre-snapshot). Wait until it is actually open before mutating.
+        // pre-snapshot). The bracket is relay-local (not in the shared registry),
+        // so let the relay process the input frame and take the pre-snapshot
+        // before mutating the tree.
         input_tx
             .send(Frame::new(
                 FeedId::CODE_INPUT,
@@ -2491,15 +2503,12 @@ mod tests {
             ))
             .await
             .unwrap();
-        let mut opened = false;
-        for _ in 0..100 {
-            if registry.open_count() >= 1 {
-                opened = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(opened, "the user_message opened the turn bracket");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            registry.open_count(),
+            0,
+            "the turn bracket is relay-local, never in the shared registry"
+        );
 
         // An exact Write records `exact.rs` (also created on disk so it is
         // dirty at the post-snapshot) — its path must NOT be re-recorded by the
@@ -2554,6 +2563,184 @@ mod tests {
             "exact.rs is not re-recorded by the turn bracket"
         );
         assert_eq!(rows.len(), 2, "exactly two rows: one exact, one turn");
+        // The turn fallback never claims cross-session contention: its rows are
+        // never ambiguous (the relay-local bracket has no registry overlap).
+        assert!(
+            rows.iter().all(|r| !r.ambiguous),
+            "turn/exact rows from a lone session are never ambiguous"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_turn_bracket_never_marks_another_sessions_bash_row_ambiguous() {
+        // The regression this fixes: a session mid-turn holds a turn bracket for
+        // the whole turn, so before this fix a concurrent session's Bash edit on
+        // the same checkout was cross-marked `ambiguous` on mere wall-clock
+        // overlap. The turn bracket is now relay-local (never registered), so it
+        // is invisible to the shared registry and cannot inflate another
+        // session's rows.
+        use crate::feeds::agent_supervisor::NoopSessionsRecorder;
+        use crate::feeds::attribution::BracketRegistry;
+        use crate::feeds::workspace_registry::WorkspaceKey;
+        use tokio::io::AsyncWriteExt;
+
+        // Real git repo, clean.
+        let repo = tempfile::tempdir().expect("tempdir");
+        let root = repo.path().to_path_buf();
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&root)
+                    .output()
+                    .expect("git")
+                    .status
+                    .success(),
+                "git {args:?}"
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t.test"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        git(&["add", "a.txt"]);
+        git(&["commit", "-q", "-m", "init"]);
+
+        let project_dir = root.to_str().unwrap().to_string();
+        // One shared registry across both sessions — the real cross-session path.
+        let registry = BracketRegistry::new();
+
+        // --- Session A: hold a turn bracket open for the whole test window ---
+        let ledger_a = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tug_a = TugSessionId::new("tug-A".to_string());
+        let ledger_entry_a = Arc::new(Mutex::new(
+            crate::feeds::agent_supervisor::LedgerEntry::new(
+                tug_a.clone(),
+                WorkspaceKey::from_test_str("ws-test"),
+                PathBuf::from(&project_dir),
+                SessionMode::New,
+                CrashBudget::new(3, Duration::from_secs(60)),
+            ),
+        ));
+        let (input_tx_a, mut input_rx_a) = mpsc::channel::<Frame>(16);
+        let (merger_tx_a, mut _merger_rx_a) = mpsc::channel::<Frame>(256);
+        let (state_tx_a, _state_rx_a) = broadcast::channel::<Frame>(64);
+        let cancel_a = CancellationToken::new();
+        let (relay_stdin_w_a, _stdin_r_a) = tokio::io::duplex(64 * 1024);
+        let (relay_stdout_r_a, mut feed_w_a) = tokio::io::duplex(256 * 1024);
+        let reader_a: Box<dyn AsyncRead + Send + Unpin> = Box::new(relay_stdout_r_a);
+        let lines_a = BufReader::new(reader_a).lines();
+        let project_a = project_dir.clone();
+        let ledger_a_for_relay = ledger_a.clone();
+        let registry_a = registry.clone();
+        let relay_a = tokio::spawn(async move {
+            let recorder = NoopSessionsRecorder;
+            relay_session_io(
+                &tug_a,
+                &ledger_entry_a,
+                &mut input_rx_a,
+                &merger_tx_a,
+                &state_tx_a,
+                Box::new(relay_stdin_w_a),
+                lines_a,
+                &project_a,
+                &recorder,
+                Some(ledger_a_for_relay.as_ref()),
+                &registry_a,
+                &crate::feeds::changeset::ChangesetBumper::disconnected(),
+                &cancel_a,
+            )
+            .await
+        });
+        feed_w_a
+            .write_all(b"{\"type\":\"protocol_ack\"}\n")
+            .await
+            .unwrap();
+        // A's user_message opens A's (relay-local) turn bracket; it stays open
+        // for the rest of the test (no turn_complete sent to A).
+        input_tx_a
+            .send(Frame::new(
+                FeedId::CODE_INPUT,
+                br#"{"type":"user_message","text":"go"}"#.to_vec(),
+            ))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // --- Session B: a Bash edit on the same checkout while A is mid-turn ---
+        let ledger_b = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tug_b = TugSessionId::new("tug-B".to_string());
+        let ledger_entry_b = Arc::new(Mutex::new(
+            crate::feeds::agent_supervisor::LedgerEntry::new(
+                tug_b.clone(),
+                WorkspaceKey::from_test_str("ws-test"),
+                PathBuf::from(&project_dir),
+                SessionMode::New,
+                CrashBudget::new(3, Duration::from_secs(60)),
+            ),
+        ));
+        let (_input_tx_b, mut input_rx_b) = mpsc::channel::<Frame>(16);
+        let (merger_tx_b, mut _merger_rx_b) = mpsc::channel::<Frame>(256);
+        let (state_tx_b, _state_rx_b) = broadcast::channel::<Frame>(64);
+        let cancel_b = CancellationToken::new();
+        let (relay_stdin_w_b, _stdin_r_b) = tokio::io::duplex(64 * 1024);
+        let (relay_stdout_r_b, mut feed_w_b) = tokio::io::duplex(256 * 1024);
+        let reader_b: Box<dyn AsyncRead + Send + Unpin> = Box::new(relay_stdout_r_b);
+        let lines_b = BufReader::new(reader_b).lines();
+        let project_b = project_dir.clone();
+        let ledger_b_for_relay = ledger_b.clone();
+        let registry_b = registry.clone();
+        let relay_b = tokio::spawn(async move {
+            let recorder = NoopSessionsRecorder;
+            relay_session_io(
+                &tug_b,
+                &ledger_entry_b,
+                &mut input_rx_b,
+                &merger_tx_b,
+                &state_tx_b,
+                Box::new(relay_stdin_w_b),
+                lines_b,
+                &project_b,
+                &recorder,
+                Some(ledger_b_for_relay.as_ref()),
+                &registry_b,
+                &crate::feeds::changeset::ChangesetBumper::disconnected(),
+                &cancel_b,
+            )
+            .await
+        });
+        feed_w_b
+            .write_all(b"{\"type\":\"protocol_ack\"}\n")
+            .await
+            .unwrap();
+        // B's Bash tool_use opens a real (registered) Bash bracket → pre-snapshot.
+        feed_w_b
+            .write_all(b"{\"type\":\"tool_use\",\"tool_name\":\"Bash\",\"tool_use_id\":\"tu-b\",\"input\":{\"command\":\"echo x >> a.txt\"}}\n")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        std::fs::write(root.join("a.txt"), "one\ntwo\n").unwrap();
+        feed_w_b
+            .write_all(b"{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b\",\"output\":\"\",\"is_error\":false}\n")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop(feed_w_b);
+        let _ = relay_b.await.expect("relay B");
+
+        // B's Bash edit is attributed and, crucially, NOT ambiguous — A's
+        // whole-turn window never touched the shared registry.
+        let rows_b = ledger_b.file_events_for_session("tug-B").unwrap();
+        assert!(!rows_b.is_empty(), "B's Bash edit is attributed");
+        assert!(
+            rows_b.iter().all(|r| !r.ambiguous),
+            "A's mid-turn window must not mark B's Bash rows ambiguous"
+        );
+
+        // Tear down A: EOF on its stdout ends the relay.
+        drop(feed_w_a);
+        drop(input_tx_a);
+        let _ = relay_a.await;
     }
 
     #[tokio::test]
