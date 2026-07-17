@@ -161,6 +161,11 @@ pub(crate) async fn compose_snapshot(
     let mut owners: BTreeMap<String, OwnerAgg> = BTreeMap::new();
     // Per-path liveness cut, computed once per dirty path with events.
     let mut live_cuts: HashMap<String, i64> = HashMap::new();
+    // Per repo-relative path, the owners with an `exact` live row — the
+    // genuine authors ([D112]). A `bash`/`turn` row is a whole-tree-delta
+    // *claim* (contaminated by concurrent saves and build churn), so it does
+    // not make a session an owner of a path another session exact-edited.
+    let mut exact_owners: HashMap<String, HashSet<String>> = HashMap::new();
     for pfe in &events {
         let rel = repo_relative(&repo_root, &pfe.event.file_path);
         let Some(git_status) = dirty.get(&rel) else {
@@ -176,6 +181,12 @@ pub(crate) async fn compose_snapshot(
         };
         if pfe.event.at < min_live {
             continue;
+        }
+        if pfe.event.origin == "exact" {
+            exact_owners
+                .entry(rel.clone())
+                .or_default()
+                .insert(pfe.event.tug_session_id.clone());
         }
         let owner = owners
             .entry(pfe.event.tug_session_id.clone())
@@ -200,26 +211,61 @@ pub(crate) async fn compose_snapshot(
         file.last_touched = file.last_touched.max(pfe.event.at);
     }
 
-    // Multi-owner rule: a path in more than one owner's bucket is marked
-    // shared everywhere it appears.
-    let mut owner_counts: HashMap<&str, usize> = HashMap::new();
-    for agg in owners.values() {
-        for path in agg.files.keys() {
-            *owner_counts.entry(path.as_str()).or_default() += 1;
-        }
-    }
-    let shared_paths: Vec<String> = owner_counts
-        .iter()
-        .filter(|(_, n)| **n > 1)
-        .map(|(p, _)| (*p).to_owned())
+    // Resolve ownership per path with `exact` rows authoritative:
+    //
+    // - Some session exact-owns the path → strip it from every owner that
+    //   only bracket-grabbed it (their contamination); mark `shared` iff more
+    //   than one session exact-owns it (genuine same-file contention).
+    // - No exact owner, multiple bracket owners → contamination on all sides,
+    //   no reliable author: strip the path from everyone (it falls to
+    //   `unattributed` below — visible, never falsely claimed).
+    // - No exact owner, a single bracket owner → a genuine Bash-mediated edit;
+    //   keep it under that owner, never shared.
+    let all_paths: HashSet<String> = owners
+        .values()
+        .flat_map(|agg| agg.files.keys().cloned())
         .collect();
-    for agg in owners.values_mut() {
-        for path in &shared_paths {
-            if let Some(file) = agg.files.get_mut(path) {
-                file.shared = true;
+    for path in &all_paths {
+        let exact = exact_owners.get(path);
+        let holders: Vec<String> = owners
+            .iter()
+            .filter(|(_, agg)| agg.files.contains_key(path))
+            .map(|(id, _)| id.clone())
+            .collect();
+        match exact {
+            Some(exact_ids) => {
+                for id in &holders {
+                    if !exact_ids.contains(id) {
+                        if let Some(agg) = owners.get_mut(id) {
+                            agg.files.remove(path);
+                        }
+                    }
+                }
+                if exact_ids.len() > 1 {
+                    for id in exact_ids {
+                        if let Some(file) =
+                            owners.get_mut(id).and_then(|agg| agg.files.get_mut(path))
+                        {
+                            file.shared = true;
+                        }
+                    }
+                }
+            }
+            None => {
+                if holders.len() > 1 {
+                    for id in &holders {
+                        if let Some(agg) = owners.get_mut(id) {
+                            agg.files.remove(path);
+                        }
+                    }
+                }
             }
         }
     }
+    // An owner left with no files (its only claims were stripped bracket
+    // grabs) drops out here; fileless live sessions are re-injected by
+    // `apply_session_rows`, so the card still lists every open session.
+    owners.retain(|_, agg| !agg.files.is_empty());
 
     // Unattributed: dirty files no owner claims.
     let unattributed: Vec<UnattributedFile> = dirty
@@ -808,6 +854,62 @@ mod tests {
             .map(|f| f.path.as_str())
             .collect();
         assert_eq!(unattributed, ["hand-edit.txt"]);
+    }
+
+    #[tokio::test]
+    async fn compose_bracket_grab_does_not_steal_or_share_an_exact_owners_file() {
+        // The pinned regression (meek-sheep), in the card's compose: sess-a
+        // exact-edited a.txt; sess-b's Bash/turn bracket swept it up (a
+        // contaminated whole-tree delta). The file must appear under sess-a
+        // alone, NOT shared, and must not appear under sess-b at all.
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("a.txt"), "x").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for s in ["sess-a", "sess-b"] {
+            ledger
+                .record_spawn(s, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+        }
+        // sess-a: the real exact edit. sess-b: a bracket grab of the same file.
+        ledger
+            .record_file_event(&event("sess-a", "tu-a", &root.join("a.txt"), &root))
+            .unwrap();
+        let mut grab = event("sess-b", "tu-b", &root.join("a.txt"), &root);
+        grab.origin = "bash".to_owned();
+        ledger.record_file_event(&grab).unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let sessions: Vec<(&str, Vec<&str>, bool)> = snapshot
+            .changesets
+            .iter()
+            .filter_map(|e| match e {
+                ChangesetEntry::Session {
+                    owner_id, files, ..
+                } => Some((
+                    owner_id.as_str(),
+                    files.iter().map(|f| f.path.as_str()).collect(),
+                    files.iter().any(|f| f.shared),
+                )),
+                _ => None,
+            })
+            .collect();
+        // Exactly one session owns a.txt — sess-a — and it is not shared.
+        let a = sessions
+            .iter()
+            .find(|(id, _, _)| *id == "sess-a")
+            .expect("sess-a present");
+        assert_eq!(a.1, ["a.txt"]);
+        assert!(!a.2, "sess-a's file is not shared by a foreign bracket grab");
+        assert!(
+            !sessions.iter().any(|(id, files, _)| *id == "sess-b" && !files.is_empty()),
+            "sess-b's bracket grab does not claim a.txt: {sessions:?}"
+        );
+        assert!(
+            snapshot.unattributed.is_empty(),
+            "a.txt is owned, not unattributed: {:?}",
+            snapshot.unattributed
+        );
     }
 
     #[tokio::test]

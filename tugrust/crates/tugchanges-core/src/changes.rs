@@ -249,15 +249,26 @@ pub fn changes(opts: ChangesOptions) -> Result<ChangesReport, ChangesError> {
 }
 
 /// Invert the join ([P01]): `git status` is the universe, the ledger annotates
-/// it. Classify **every dirty path** into one of three buckets ([P02]) using
-/// only **live** rows (the row-liveness rule, [`min_live_at_ms`]): this
-/// session's live rows → `attributed` (latest live event wins op/origin,
-/// `shared` when other sessions also hold live rows); live rows only from
-/// other sessions on this repo → `foreign`; no live rows anywhere →
-/// `unattributed`. `all` additionally keeps this session's committed/reverted
-/// files (an event row but no longer dirty) in `attributed`, its legacy
-/// meaning within the attributed bucket — a history view, so liveness does not
-/// apply there.
+/// it. Classify **every dirty path** into one of three buckets ([P02]) over
+/// **live** rows (the row-liveness rule, [`min_live_at_ms`]), with **`exact`
+/// rows authoritative** for cross-session ownership ([D112]):
+///
+/// - This session has a live **`exact`** row → `attributed`; `shared` iff
+///   another session also has a live `exact` row (genuine same-file
+///   contention).
+/// - No self exact row, but another session has a live `exact` row → the
+///   file is that session's; `foreign`. This session's `bash`/`turn` rows are
+///   ignored — a whole-tree fingerprint delta is contaminated by concurrent
+///   saves and build churn, so it never overrides a real (`exact`) owner.
+/// - No exact owner anywhere, this session has a live **`bash`/`turn`** row →
+///   `attributed` (a genuine Bash-mediated edit — `sed`/`perl`/`git mv`),
+///   never `shared` (bracket-only rows carry no reliable contention signal).
+/// - No live owner this session can claim → `unattributed` (a bracket-only
+///   foreign claim degrades here too: visible, never falsely foreign).
+///
+/// `all` additionally keeps this session's committed/reverted files (an event
+/// row but no longer dirty) in `attributed` — a history view, so liveness does
+/// not apply there.
 fn compute_changes(
     conn: &Connection,
     repo_root: &Path,
@@ -298,29 +309,51 @@ fn compute_changes(
         let min_live = min_live_at_ms(repo_root, path);
         let live_self: Vec<&ledger::EventRow> =
             self_events.iter().filter(|ev| ev.at >= min_live).collect();
-        let foreign_live =
-            ledger::foreign_sessions_for_path(conn, path, session, repo_root, min_live)?;
+        let self_has_exact = live_self.iter().any(|ev| ev.origin == "exact");
+        let foreign_exact =
+            ledger::foreign_exact_sessions_for_path(conn, path, session, repo_root, min_live)?;
 
-        if let Some(latest) = live_self.last() {
+        if self_has_exact {
+            // This session genuinely edited the file. Contention requires
+            // another session's *exact* row — bracket rows never mark shared.
+            let latest = live_self.last().expect("self_has_exact ⇒ nonempty");
             attributed.push(Change {
                 path: path.clone(),
                 op: latest.op.clone(),
                 origin: latest.origin.clone(),
-                shared: !foreign_live.is_empty(),
-                sessions: foreign_live,
+                shared: !foreign_exact.is_empty(),
+                sessions: foreign_exact,
                 git_status,
                 diff: None,
             });
-        } else if !foreign_live.is_empty() {
+        } else if !foreign_exact.is_empty() {
+            // Another session exact-owns the file; this session at most
+            // bracket-grabbed it (contamination). It is theirs — foreign.
             foreign.push(ForeignChange {
                 path: path.clone(),
                 git_status,
-                sessions: foreign_live,
+                sessions: foreign_exact,
                 diff: None,
             });
+        } else if let Some(latest) = live_self.last() {
+            // No exact owner anywhere; this session's own bracket row stands
+            // as a genuine Bash-mediated edit. Never shared (bracket-only).
+            attributed.push(Change {
+                path: path.clone(),
+                op: latest.op.clone(),
+                origin: latest.origin.clone(),
+                shared: false,
+                sessions: Vec::new(),
+                git_status,
+                diff: None,
+            });
+        } else if ledger::any_foreign_live_for_path(conn, path, session, repo_root, min_live)? {
+            // Only other sessions' bracket rows touch the path — unreliable
+            // (contamination), so degrade to unattributed rather than falsely
+            // foreign: visible, an explicit election to commit.
+            unattributed.push(unattributed_change(path, git_status));
         } else {
-            // Every claim on the path is spent — degrade to unattributed:
-            // visible, never falsely claimed.
+            // Every claim on the path is spent — degrade to unattributed.
             unattributed.push(unattributed_change(path, git_status));
         }
     }
@@ -728,6 +761,37 @@ mod tests {
         dir
     }
 
+    /// Like [`seed_sessions`] but with an explicit `origin` per row — the
+    /// fixture the exact-vs-bracket authorship tests need.
+    fn seed_sessions_origin(rows: &[(&str, &str, &str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = Connection::open(dir.path().join("sessions.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+             CREATE TABLE file_events (
+                tug_session_id TEXT, tool_use_id TEXT, file_path TEXT,
+                tool_name TEXT, op TEXT, origin TEXT, ambiguous INTEGER,
+                parent_tool_use_id TEXT, project_dir TEXT, at INTEGER);",
+        )
+        .unwrap();
+        let mut seen: Vec<String> = Vec::new();
+        for (i, (session, file_path, origin, project_dir)) in rows.iter().enumerate() {
+            if !seen.iter().any(|s| s == session) {
+                conn.execute("INSERT INTO sessions (session_id) VALUES (?1)", [session])
+                    .unwrap();
+                seen.push(session.to_string());
+            }
+            conn.execute(
+                "INSERT INTO file_events
+                    (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+                 VALUES (?1, ?2, ?3, 'Write', 'edit', ?4, 0, ?5, ?6)",
+                rusqlite::params![session, format!("tu-{i}"), file_path, origin, project_dir, i as i64],
+            )
+            .unwrap();
+        }
+        dir
+    }
+
     fn open(db: &tempfile::TempDir) -> Connection {
         ledger::open_readonly(&db.path().join("sessions.db")).unwrap()
     }
@@ -790,6 +854,90 @@ mod tests {
         assert_eq!(mine.sessions, vec!["theirs".to_string()]);
         assert!(buckets.foreign.is_empty());
         assert!(buckets.unattributed.is_empty());
+    }
+
+    #[test]
+    fn a_bracket_grab_by_another_session_never_marks_my_file_shared() {
+        // The pinned regression (meek-sheep): I exact-edited `mine.rs`. Another
+        // session's `cargo test` / `git status` bracket swept it up (a whole-
+        // tree delta contaminated by my concurrent save) — a `bash` row. That
+        // bracket row must NOT make my file `shared`: only an exact row is
+        // authorship.
+        let repo = init_repo(&["mine.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[
+            ("me", "mine.rs", "exact", &rootstr),
+            ("bracketer", "mine.rs", "bash", &rootstr),
+        ]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert_eq!(buckets.attributed.len(), 1);
+        let mine = &buckets.attributed[0];
+        assert_eq!(mine.path, "mine.rs");
+        assert!(
+            !mine.shared && mine.sessions.is_empty(),
+            "a foreign bracket grab is not contention: {mine:?}"
+        );
+        assert!(buckets.foreign.is_empty());
+    }
+
+    #[test]
+    fn a_file_i_only_bracket_grabbed_is_foreign_to_its_exact_owner() {
+        // The symmetric case: `theirs.rs` is another session's exact work; my
+        // Bash command's bracket grabbed it (I never opened it). It is theirs —
+        // foreign to me — and my contaminated bracket row is ignored.
+        let repo = init_repo(&["theirs.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[
+            ("owner", "theirs.rs", "exact", &rootstr),
+            ("me", "theirs.rs", "turn", &rootstr),
+        ]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(
+            buckets.attributed.is_empty(),
+            "my bracket grab does not attribute another's file: {:?}",
+            buckets.attributed
+        );
+        assert_eq!(buckets.foreign.len(), 1);
+        assert_eq!(buckets.foreign[0].path, "theirs.rs");
+        assert_eq!(buckets.foreign[0].sessions, vec!["owner".to_string()]);
+    }
+
+    #[test]
+    fn my_own_bash_edit_still_attributes_when_no_exact_owner_exists() {
+        // A genuine Bash-mediated edit (sed/perl/git mv) with no exact row
+        // anywhere still attributes to me — and is never shared.
+        let repo = init_repo(&["sed.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[("me", "sed.rs", "bash", &rootstr)]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert_eq!(buckets.attributed.len(), 1);
+        assert_eq!(buckets.attributed[0].path, "sed.rs");
+        assert!(!buckets.attributed[0].shared);
+    }
+
+    #[test]
+    fn a_file_only_others_bracket_grabbed_degrades_to_unattributed() {
+        // Only another session's bracket row touches the path (no exact owner
+        // anywhere, and I have no row) — unreliable, so it degrades to
+        // unattributed: visible, never falsely foreign.
+        let repo = init_repo(&["churn.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[
+            ("me", "unrelated.rs", "exact", &rootstr),
+            ("bracketer", "churn.rs", "bash", &rootstr),
+        ]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(buckets.foreign.is_empty(), "bracket-only is never foreign");
+        assert_eq!(buckets.unattributed.len(), 1);
+        assert_eq!(buckets.unattributed[0].path, "churn.rs");
     }
 
     #[test]
