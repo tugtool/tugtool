@@ -166,9 +166,9 @@ Much of the replacement already exists. `/shell`, `/btw`, and `/find` are shippe
 - `/changes commit <message…>` → gated commit: refuse with a pane bulletin while a turn runs (`canInterrupt`), while a commit is pending, when the selection is empty, or when the message is empty; otherwise `changesController.commit(message)`.
 - `/changes <anything else>` → caution bulletin `Usage: /changes [describe | commit <message>]` (never guess a commit from free text).
 - `/history` (bare) → `show("history")`.
-- `/history <question…>` → show History + send `/tugplug:history <question>` on the record via `codeSessionStore.send` (mid-turn sends queue, matching today's semantics).
+- `/history <question…>` → show History + send `/tugplug:history <question>` on the record via `codeSessionStore.send` (mid-turn sends queue, matching today's semantics). Replay guard: when `!canSubmit && !canInterrupt` (session replaying / transport settling), refuse with a caution bulletin instead of sending — a submit during replay must never leak a turn, matching the old `↺` branch's drop semantics. Surface-level refusal is the right shape here; the entry's defer machinery is not reachable from a command surface.
 
-**Rationale:** The commit is a durable mutation — it keeps the exact gates the `±` route enforced (`performSubmit`'s `ROUTE_CHANGES` branch); free text must never accidentally commit.
+**Rationale:** The commit is a durable mutation — it keeps the exact gates the `±` route enforced (`performSubmit`'s `ROUTE_CHANGES` branch); free text must never accidentally commit. The history send keeps the `↺` branch's replay protection for the same reason.
 
 **Implications:** The surfaces live in `slashCommandSurfaces` (session-card body scope, where `changesController`, `codeSessionStore`, `paneBulletinRef`, and the controller's snapshot are all in reach). Command history records the typed line via the existing local-command history push.
 
@@ -205,7 +205,7 @@ Much of the replacement already exists. `/shell`, `/btw`, and `/find` are shippe
 
 **Rationale:** Spec S02. The interactive per-session shell child is lazily spawned and can wedge on rc files; a non-interactive login probe is cheap, safe, and PATH-accurate. Process-wide cache: PATH effectively never changes within a tugcast run, and the set (~2–5k names) serializes in tens of KB, well under transport caps.
 
-**Implications:** Deck side: `PathCommandsStore` (new `tugdeck/src/lib/path-commands-store.ts`) keyed by `tug_session_id`, requesting lazily on first classifier consultation and caching the `ReadonlySet<string>`; classifier answers "Code" until the set arrives (safe default).
+**Implications:** Deck side: `PathCommandsStore` (new `tugdeck/src/lib/path-commands-store.ts`) keyed by `tug_session_id`, caching the `ReadonlySet<string>`. The request fires **at session bind** (where the card learns its `tug_session_id`), not on first classifier consultation — otherwise the first command-shaped line of every session would misroute to Claude while the set loads. Null-until-loaded → classifier answers "Code" (the safety net, not the steady state).
 
 #### [P09] The classifier is high-precision, submit-time, attributed, and undoable (DECIDED) {#p09-classifier}
 
@@ -314,7 +314,7 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 |-------|------|-----------|-----|
 | Shade visibility (`ShadeView`) | structure | `ShadeViewController` store + `useSyncExternalStore` (render), direct subscription (menu publication) | [L02], [L22] |
 | Command chip in the draft | local-data (editor document) | CM6 editing state via `insertCommandChip` / `restoreState` — never React state | [L06] |
-| PATH command set | structure | `PathCommandsStore` + lazy feed request; classifier reads snapshot imperatively at submit ([L07]-style live read) | [L02], [L22] |
+| PATH command set | structure | `PathCommandsStore`, requested at session bind; classifier reads snapshot imperatively at submit ([L07]-style live read) | [L02], [L22] |
 | Find-cluster visibility | structure (derived) | `useSyncExternalStore` over `FindSession` (query ≠ "") | [L02] |
 | Auto-route attribution on a shell row | local-data | field on the exchange record → rendered attribute; no separate store | [L06] |
 | Menu verb (Show/Hide) | host-side | Swift `validateMenuItem` from cached `menuState` booleans | — |
@@ -408,7 +408,7 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 **Tasks:**
 - [ ] Implement Spec S01; lazy `useRef` ownership in `SessionCardBody`.
 - [ ] Replace the `activeRoute`-ternary `activeView` with a `useSyncExternalStore` read of the controller.
-- [ ] Bridge route→controller with `observeRouteDidChange` (temporary, removed in #step-4; mark with a `// step-4 removes` breadcrumb-free comment stating what it bridges).
+- [ ] Bridge route→controller via the existing `useRouteDelegate` hook (its `useLayoutEffect` registration satisfies [L03]); temporary, removed in #step-4 — the comment states what it bridges, nothing more.
 - [ ] Add `onClose` to both Shade views' props and headers (compose the existing icon-button pattern next to `BlockFoldCue`/`PopOutDiffButton`).
 
 **Tests:**
@@ -434,7 +434,7 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 
 **Tasks:**
 - [ ] Add both registry entries; the exhaustive `Record` forces the surfaces.
-- [ ] Implement [P04] verbatim, reading `changesController` snapshot + `codeSessionStore.getSnapshot().canInterrupt` live at invocation.
+- [ ] Implement [P04] verbatim, reading `changesController` snapshot + `codeSessionStore.getSnapshot()` live at invocation — including the `/history <q>` replay guard (`!canSubmit && !canInterrupt` → caution bulletin, no send).
 - [ ] Completion descriptions in the registry voice.
 
 **Tests:**
@@ -461,7 +461,8 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 **Tasks:**
 - [ ] Move Generate; keep `requestDraft()` as the single trigger for both the button and `/changes describe`.
 - [ ] Rewrite the seed effect; delete the entry's `ROUTE_CHANGES` submit branch (the local-command intercept now carries commit) and the ± Z5/`changesCommitBlocked` wiring.
-- [ ] Verify the `±` route (still selectable until #step-4) now shows the view via the Step 1 shim without a route-local composer — the entry behaves as Code there.
+- [ ] Delete `performSubmit`'s `routeInterceptsLocal` `±`/`↺` exclusion (and its keeper comment): its rationale — a commit message / history question leading with `/` is literal text — dies with the `±` branch. Without this deletion, a `/changes commit <msg>` submitted while the still-selectable `±` route is active would skip the intercept and fall through to `codeSessionStore.send`, sending the commit message to Claude.
+- [ ] Verify the `±` route (still selectable until #step-4) now shows the view via the Step 1 shim without a route-local composer — the entry behaves as Code there, local-command interception included.
 
 **Tests:**
 - [ ] Unit: `buildSlashCommandLine` on a command atom + `commit <msg>` reconstructs `/changes commit <msg>` (existing helper, new fixture).
@@ -529,7 +530,7 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 
 #### Step 6: Swift Show/Hide menu items + toggle round-trip {#step-6}
 
-**Depends on:** #step-1
+**Depends on:** #step-1, #step-4
 
 **Commit:** `Session menu: Show/Hide Changes (⌘⇧C) and Show/Hide History (⌘⇧H)`
 
@@ -587,7 +588,7 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 - `lib/path-commands-store.ts` (lazy request on first consult; [L02] store shape); `lib/shell-line-classifier.ts` + corpus test; `performSubmit` hook (default branch, post-intercepts, pre-`send`); `ShellSessionStore.exec` origin option; `→ shell` attribution + "Send to Claude instead" on auto-routed exchange rows.
 
 **Tasks:**
-- [ ] Classifier per Spec S03; store answers null → Code.
+- [ ] Classifier per Spec S03; store answers null → Code. Fire the `path_commands` request at session bind (per [P08]) so the set is warm before the first submit; keep null→Code as the safety net.
 - [ ] Attribution UI on the shell block header (compose existing block chrome affordances; no new component); resend dispatches the original text via `codeSessionStore.send` and needs no special turn state (send queues mid-turn).
 - [ ] History: auto-routed submissions record the raw line under the Code route (they were typed as Code input).
 
