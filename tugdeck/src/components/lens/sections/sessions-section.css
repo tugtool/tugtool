@@ -85,6 +85,13 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* No current pulse line — dimmer still than a live line, and italic, so it
+   reads as a state ("None") rather than pulse text. */
+.sessions-monitor-pulse-none {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-style: italic;
+}
+
 .sessions-monitor-spark {
   flex-shrink: 0;
 }

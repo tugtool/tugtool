@@ -248,9 +248,17 @@ function SessionMonitorRow({
           {displayName}
         </span>
       </div>
-      {/* Secondary line — the pulse aligns with its sparkline (like the strip). */}
+      {/* Secondary line — the pulse aligns with its sparkline (like the strip).
+          A session with no current pulse line reads a muted "None" rather than
+          an empty gap, so the row still reports its pulse state. */}
       <div className="sessions-monitor-line sessions-monitor-line-pulse">
-        <span className="sessions-monitor-pulse">{pulseText}</span>
+        {pulseText !== null ? (
+          <span className="sessions-monitor-pulse">{pulseText}</span>
+        ) : (
+          <span className="sessions-monitor-pulse sessions-monitor-pulse-none">
+            None
+          </span>
+        )}
         <RowSparkline tugSessionId={row.tugSessionId} />
       </div>
     </div>
