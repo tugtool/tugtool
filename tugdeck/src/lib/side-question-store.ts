@@ -24,7 +24,7 @@ import type { FeedIdValue } from "../protocol";
 import { FeedId } from "../protocol";
 import { getConnection } from "./connection-singleton";
 import type { PendingContextStore } from "./pending-context-store";
-import { composeBtwContextBody } from "./pending-context-store";
+import { btwContextLabel, composeBtwContextBody } from "./pending-context-store";
 
 // ── Wire type (mirror tugcode `SideQuestionAnswer`) ─────────────────────────
 
@@ -142,7 +142,7 @@ export class SideQuestionStore {
       this._pendingContextStore.stage({
         source: "btw",
         ref: ex.id,
-        label: "side question",
+        label: btwContextLabel(ex.id),
         body: composeBtwContextBody(ex.question, ex.answer ?? ""),
       });
     }

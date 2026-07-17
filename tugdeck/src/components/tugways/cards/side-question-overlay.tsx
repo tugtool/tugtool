@@ -33,6 +33,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import type { SideQuestionStore, SideQuestionExchange } from "@/lib/side-question-store";
 import {
+  btwContextLabel,
   composeBtwContextBody,
   type PendingContextStore,
   type PendingContextSnapshot,
@@ -196,7 +197,7 @@ function SideQuestionExchangeRow({
                   pendingContextStore.stage({
                     source: "btw",
                     ref: exchange.id,
-                    label: "side question",
+                    label: btwContextLabel(exchange.id),
                     body: composeBtwContextBody(exchange.question, exchange.answer ?? ""),
                   });
                 }

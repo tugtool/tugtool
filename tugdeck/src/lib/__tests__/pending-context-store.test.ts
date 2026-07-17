@@ -2,10 +2,18 @@ import { describe, expect, it } from "bun:test";
 
 import {
   PendingContextStore,
+  btwContextLabel,
   composeBtwContextBody,
   composeContextPrefix,
   splitLeadingContext,
 } from "@/lib/pending-context-store";
+
+describe("btwContextLabel — session ordinal attribution", () => {
+  it("renders /btw #b{n} from a btw-{n} request id", () => {
+    expect(btwContextLabel("btw-1")).toBe("/btw #b1");
+    expect(btwContextLabel("btw-42")).toBe("/btw #b42");
+  });
+});
 
 describe("composeContextPrefix / splitLeadingContext — the sentinel round-trip", () => {
   it("returns null for an empty queue", () => {

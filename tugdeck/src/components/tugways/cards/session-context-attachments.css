@@ -21,6 +21,9 @@
   padding-left: var(--tug-space-sm);
 }
 
+/* Quiet attribution line — matches the transcript's other quiet lines
+   (timestamp / sequence): the shared muted color at the 0.85em quiet-line
+   scale anchored to the transcript root (see session-card.css). */
 .session-context-attachment-heading {
   display: flex;
   flex-direction: row;
@@ -29,7 +32,7 @@
   margin-bottom: 2px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-family: var(--tug-font-family-sans);
-  font-size: 0.72rem;
+  font-size: 0.85em;
 }
 
 .session-context-attachment-icon {
@@ -39,19 +42,6 @@
 
 .session-context-attachment-label {
   font-variant-numeric: tabular-nums;
-}
-
-/* The trailing "context" pill — a whisper that this block is what Claude
-   received as extra context, not the user's own words. */
-.session-context-attachment-tag {
-  margin-left: auto;
-  padding: 0 var(--tug-space-xs);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: 999px;
-  font-size: 0.64rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The block body renders at the shared markdown scale but slightly muted so

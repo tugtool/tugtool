@@ -1952,16 +1952,16 @@ export const TugPromptEntry = React.forwardRef<
       const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
       const localCommand = matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
-      // One-shot accelerators (`/shell`, `/find`, `/btw`) intercept ONLY on
-      // the Code route — on `$` a literal `/shell ls` reaches the shell as
-      // typed instead of being re-intercepted.
-      const routeAllowsLocal =
-        localCommand === null ||
-        !isCodeRouteOnlyCommand(localCommand.name) ||
-        (routeLifecycle.getRoute() || DEFAULT_ROUTE) === DEFAULT_ROUTE;
+      // Route-based local commands (`/btw`, `/shell`, `/find`) intercept on
+      // EVERY route, not just Code — so `/btw hello` typed on the `$` route
+      // runs the side question instead of being exec'd literally. Only these
+      // registry-known local commands are intercepted; an arbitrary claude
+      // slash command still falls through to the route's native handling (the
+      // `/` completion popup on non-Code routes still hides them, [line ~1841]
+      // — this is the submit intercept only). A non-command draft never
+      // matches the registry, so plain shell/prose input is untouched.
       if (
         localCommand !== null &&
-        routeAllowsLocal &&
         manager !== null &&
         targetId !== undefined &&
         // Guard the `sendToTarget` throw-on-unregistered contract, and

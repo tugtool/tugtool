@@ -19,24 +19,25 @@
  */
 
 import React from "react";
-import { MessageCircleQuestion, Terminal } from "lucide-react";
+import { MessageSquareDashed, Shell } from "lucide-react";
 
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import type { ParsedContextBlock } from "@/lib/pending-context-store";
 
 import "./session-context-attachments.css";
 
-/** Human label + icon for a parsed block's source. */
+/** Human label + icon for a parsed block's source — the SAME icons the route
+ *  selector uses for the `$` shell and `?` btw routes. */
 function blockHeading(block: ParsedContextBlock): { icon: React.ReactNode; label: string } {
   if (block.source === "shell") {
     return {
-      icon: <Terminal size={13} strokeWidth={2} aria-hidden />,
+      icon: <Shell size={13} strokeWidth={2} aria-hidden />,
       label: "shell",
     };
   }
   return {
-    icon: <MessageCircleQuestion size={13} strokeWidth={2} aria-hidden />,
-    label: "side question",
+    icon: <MessageSquareDashed size={13} strokeWidth={2} aria-hidden />,
+    label: "/btw",
   };
 }
 
@@ -68,7 +69,6 @@ export function SessionContextAttachments({
             <div className="session-context-attachment-heading">
               <span className="session-context-attachment-icon">{icon}</span>
               <span className="session-context-attachment-label">{label}</span>
-              <span className="session-context-attachment-tag">context</span>
             </div>
             <TugMarkdownBlock
               initialText={block.body}

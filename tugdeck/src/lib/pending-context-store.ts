@@ -114,6 +114,16 @@ export function composeBtwContextBody(question: string, answer: string): string 
   return `**Side question:** ${question}\n\n${answer}`;
 }
 
+/**
+ * The chip label for a staged `/btw` exchange: `/btw #b{n}`, giving the side
+ * question a session ordinal for attribution — the `#b{n}` analog of a shell
+ * exchange's `#s{n}`. Derived from the `btw-{n}` request id.
+ */
+export function btwContextLabel(exchangeId: string): string {
+  const n = exchangeId.startsWith("btw-") ? exchangeId.slice(4) : exchangeId;
+  return `/btw #b${n}`;
+}
+
 /** Reactive snapshot the composer / rows / VISIBILITY chip read via
  *  `useSyncExternalStore`. */
 export interface PendingContextSnapshot {
