@@ -82,9 +82,7 @@ fn is_trailer_line(line: &str) -> bool {
     let key = &line[..colon];
     !key.is_empty()
         && key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
 #[cfg(test)]

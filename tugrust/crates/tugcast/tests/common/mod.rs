@@ -280,10 +280,7 @@ impl TestTugcast {
         // developer's real ~/Library/Application Support/Tug/changes.db.
         command.env(
             "TUG_CHANGES_DB",
-            std::env::temp_dir().join(format!(
-                "tugcast-test-changes-{}.db",
-                std::process::id()
-            )),
+            std::env::temp_dir().join(format!("tugcast-test-changes-{}.db", std::process::id())),
         );
         let mut child = command.spawn().expect("failed to spawn tugcast");
         if let Some(stderr) = child.stderr.take() {

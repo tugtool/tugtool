@@ -21,7 +21,8 @@ fn setup_test_project() -> tempfile::TempDir {
 
     // Run tugutil init
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tugutil init");
@@ -40,7 +41,8 @@ fn test_init_creates_expected_files() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tugutil init");
@@ -64,7 +66,8 @@ fn test_init_idempotent_on_existing_project() {
 
     // Running init again should succeed (idempotent — creates missing files only)
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tugutil init");
@@ -91,7 +94,8 @@ fn test_init_creates_missing_files() {
 
     // Running init should create the missing infrastructure files
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .current_dir(temp.path())
         .output()
         .expect("failed to run tugutil init");
@@ -116,7 +120,8 @@ fn test_init_with_force_succeeds() {
     let temp = setup_test_project();
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--force")
         .current_dir(temp.path())
         .output()
@@ -130,7 +135,8 @@ fn test_json_output_init() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--json")
         .current_dir(temp.path())
         .output()
@@ -152,7 +158,8 @@ fn test_init_check_uninitialized_project() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--check")
         .current_dir(temp.path())
         .output()
@@ -171,7 +178,8 @@ fn test_init_check_initialized_project() {
     let temp = setup_test_project();
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--check")
         .current_dir(temp.path())
         .output()
@@ -190,7 +198,8 @@ fn test_init_check_json_uninitialized() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--check")
         .arg("--json")
         .current_dir(temp.path())
@@ -214,7 +223,8 @@ fn test_init_check_json_initialized() {
     let temp = setup_test_project();
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--check")
         .arg("--json")
         .current_dir(temp.path())
@@ -238,7 +248,8 @@ fn test_init_check_force_mutually_exclusive() {
     let temp = tempfile::tempdir().expect("failed to create temp dir");
 
     let output = Command::new(tug_binary())
-        .arg("host").arg("init")
+        .arg("host")
+        .arg("init")
         .arg("--check")
         .arg("--force")
         .current_dir(temp.path())

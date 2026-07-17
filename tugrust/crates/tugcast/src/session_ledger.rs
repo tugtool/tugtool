@@ -4303,12 +4303,20 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         // First open seeds the schema.
-        let l1 = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l1 = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         l1.record_spawn("s1", WS_A, "/proj", "c1", millis(0), None)
             .unwrap();
         drop(l1);
         // Second open re-runs the idempotent DDL and finds the row intact.
-        let l2 = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l2 = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         let r = l2.get("s1").unwrap().expect("row survives reopen");
         assert_eq!(r.session_id, "s1");
     }
@@ -4806,7 +4814,11 @@ mod tests {
         }
         // Open via SessionLedger — bootstrap's guard sees the drift
         // and rebuilds the table.
-        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         // A write that lists `session_init_tokens` now succeeds — it
         // would have failed against the stale 16-column shape.
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -4824,12 +4836,20 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         {
-            let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+            let l = SessionLedger::open_with_claude_root(
+                &path,
+                PathBuf::from("/tmp/tugcast-tests-no-trash"),
+            )
+            .unwrap();
             seed_live(&l, "s1", "ws", "card-1", millis(0));
             l.record_turn_telemetry(&sample_telemetry("s1", "msg-A", 1_000))
                 .unwrap();
         }
-        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         assert_eq!(l.list_turn_telemetry("s1").unwrap().len(), 1);
     }
 
@@ -5213,7 +5233,11 @@ mod tests {
         }
         // Open via SessionLedger — the bootstrap guard sees the drift and
         // rebuilds the table with the current shape.
-        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         // A write listing `parent_tool_use_id` now succeeds — it would have
         // failed against the stale shape.
         seed_live(&l, "s1", "ws", "card-1", millis(0));
@@ -5231,12 +5255,20 @@ mod tests {
         let tmp = NamedTempFile::new().expect("temp file");
         let path = tmp.path().to_path_buf();
         {
-            let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+            let l = SessionLedger::open_with_claude_root(
+                &path,
+                PathBuf::from("/tmp/tugcast-tests-no-trash"),
+            )
+            .unwrap();
             seed_live(&l, "s1", "ws", "card-1", millis(0));
             l.record_file_event(&sample_file_event("s1", "tu-A", "/proj/a.rs"))
                 .unwrap();
         }
-        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         assert_eq!(l.file_events_for_session("s1").unwrap().len(), 1);
     }
 
@@ -5322,7 +5354,11 @@ mod tests {
             )
             .unwrap();
         }
-        let l = SessionLedger::open_with_claude_root(&path, PathBuf::from("/tmp/tugcast-tests-no-trash")).unwrap();
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
         // A write listing `fingerprint` now succeeds; the stale row is gone.
         l.upsert_changeset_draft(&sample_draft("session", "s1", "/p", "fp", "msg"))
             .unwrap();

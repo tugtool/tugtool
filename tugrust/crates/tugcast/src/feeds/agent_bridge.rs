@@ -30,8 +30,8 @@ use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::attribution::{
-    InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls,
-    exact_op_for_tool, file_path_for_tool, repo_root_for, snapshot_worktree,
+    InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls, exact_op_for_tool,
+    file_path_for_tool, repo_root_for, snapshot_worktree,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
@@ -2468,7 +2468,9 @@ mod tests {
         feed_w.write_all(exact_use.as_bytes()).await.unwrap();
         feed_w.write_all(b"\n").await.unwrap();
         feed_w
-            .write_all(br#"{"type":"tool_result","tool_use_id":"tu-e","output":"ok","is_error":false}"#)
+            .write_all(
+                br#"{"type":"tool_result","tool_use_id":"tu-e","output":"ok","is_error":false}"#,
+            )
             .await
             .unwrap();
         feed_w.write_all(b"\n").await.unwrap();

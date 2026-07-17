@@ -632,7 +632,10 @@ Binary files a/img.png and b/img.png differ
         let combined = format!("{MODIFIED}{ADDED}{DELETED}{RENAMED_EDITED}{BINARY}");
         let files = parse_unified_diff(&combined);
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-        assert_eq!(paths, ["src/main.rs", "new.txt", "gone.txt", "b.txt", "img.png"]);
+        assert_eq!(
+            paths,
+            ["src/main.rs", "new.txt", "gone.txt", "b.txt", "img.png"]
+        );
 
         assert_eq!(files[0].status, DiffFileStatus::Modified);
         assert_eq!(files[0].added, 2);

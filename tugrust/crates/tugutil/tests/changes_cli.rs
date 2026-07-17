@@ -63,7 +63,10 @@ fn seed_home(repo_root: &Path) -> tempfile::TempDir {
         .execute_batch("CREATE TABLE sessions (session_id TEXT PRIMARY KEY);")
         .unwrap();
     sessions
-        .execute("INSERT INTO sessions (session_id) VALUES ('work'), ('empty')", [])
+        .execute(
+            "INSERT INTO sessions (session_id) VALUES ('work'), ('empty')",
+            [],
+        )
         .unwrap();
     let changes = Connection::open(db_dir.join("changes.db")).unwrap();
     changes
@@ -167,7 +170,14 @@ fn commit_json_stages_the_session_file_and_matches_numstat() {
     let (_repo, root) = init_repo();
     let home = seed_home(&root);
     let mut cmd = tug(home.path());
-    cmd.args(["commit", "--json", "--session", "work", "--message", "add feature"]);
+    cmd.args([
+        "commit",
+        "--json",
+        "--session",
+        "work",
+        "--message",
+        "add feature",
+    ]);
     cmd.args(project_arg(&root));
 
     let (code, stdout, stderr) = run(cmd);
@@ -372,7 +382,10 @@ fn default_commit_refuses_unattributed_with_exit_three() {
     );
     // Nothing committed: both files still dirty, HEAD still at init.
     let status = status_porcelain(&root);
-    assert!(status.contains("orphan.rs") && status.contains("feature.rs"), "tree still dirty: {status}");
+    assert!(
+        status.contains("orphan.rs") && status.contains("feature.rs"),
+        "tree still dirty: {status}"
+    );
 }
 
 #[test]
@@ -401,7 +414,10 @@ fn include_unattributed_commits_the_orphan_file() {
         .iter()
         .map(|f| f["path"].as_str().unwrap())
         .collect();
-    assert!(paths.contains(&"feature.rs") && paths.contains(&"orphan.rs"), "committed both: {paths:?}");
+    assert!(
+        paths.contains(&"feature.rs") && paths.contains(&"orphan.rs"),
+        "committed both: {paths:?}"
+    );
 }
 
 #[test]
@@ -479,11 +495,23 @@ fn tree_commits_attributed_unattributed_and_shared() {
         .iter()
         .map(|p| p.as_str().unwrap())
         .collect();
-    assert_eq!(lb_shared, vec!["both.rs"], "the receipt names the held-back shared file");
+    assert_eq!(
+        lb_shared,
+        vec!["both.rs"],
+        "the receipt names the held-back shared file"
+    );
 
     // --tree then sweeps everything but foreign: shared + unattributed included.
     let mut cmd = tug(home.path());
-    cmd.args(["commit", "--json", "--session", "work", "--message", "m2", "--tree"]);
+    cmd.args([
+        "commit",
+        "--json",
+        "--session",
+        "work",
+        "--message",
+        "m2",
+        "--tree",
+    ]);
     cmd.args(project_arg(&root));
     let (code, out, err) = run(cmd);
     assert_eq!(code, 0, "stderr: {err}");
@@ -494,8 +522,17 @@ fn tree_commits_attributed_unattributed_and_shared() {
         .iter()
         .map(|f| f["path"].as_str().unwrap())
         .collect();
-    assert!(paths.contains(&"both.rs"), "shared included by --tree: {paths:?}");
-    assert!(paths.contains(&"orphan.rs"), "unattributed included by --tree: {paths:?}");
+    assert!(
+        paths.contains(&"both.rs"),
+        "shared included by --tree: {paths:?}"
+    );
+    assert!(
+        paths.contains(&"orphan.rs"),
+        "unattributed included by --tree: {paths:?}"
+    );
     // Whole tree committed → clean.
-    assert!(status_porcelain(&root).trim().is_empty(), "tree clean after --tree commit");
+    assert!(
+        status_porcelain(&root).trim().is_empty(),
+        "tree clean after --tree commit"
+    );
 }

@@ -2516,6 +2516,7 @@ impl AgentSupervisor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn do_spawn_session(
         &self,
         card_id: &str,

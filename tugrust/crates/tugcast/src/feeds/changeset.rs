@@ -1059,13 +1059,18 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
         // The deck path enriches the message with a Tug-Session trailer before
         // committing (do_changeset_commit → append_trailers). Mirror that here.
-        let message = tugchanges_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
+        let message =
+            tugchanges_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
         run_changeset_commit(&repo, &["a.txt".to_string()], &message)
             .await
             .expect("commit succeeds");
         let trailer = git_stdout(
             &repo,
-            &["log", "-1", "--format=%(trailers:key=Tug-Session,valueonly)"],
+            &[
+                "log",
+                "-1",
+                "--format=%(trailers:key=Tug-Session,valueonly)",
+            ],
         )
         .await
         .expect("git log reads the trailer");

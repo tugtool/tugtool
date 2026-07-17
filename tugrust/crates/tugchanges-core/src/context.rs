@@ -151,8 +151,7 @@ pub struct LogReport {
 /// Run the `log` operation (Spec S04). With `--range a..b`, log that range;
 /// otherwise the `--limit N` (default 10) most-recent commits.
 pub fn log(opts: LogOptions) -> Result<LogReport, String> {
-    let repo_root = std::env::current_dir()
-        .map_err(|e| format!("cannot resolve cwd: {e}"))?;
+    let repo_root = std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?;
     let repo_root = git::repo_root_for(&repo_root);
 
     let (range, args): (String, Vec<String>) = match &opts.range {

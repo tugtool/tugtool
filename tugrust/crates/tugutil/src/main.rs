@@ -1,9 +1,9 @@
 //! tugutil — the unified Tug developer CLI (changes & commits, dashes, host plumbing).
 
+mod changes;
 mod cli;
 mod commands;
 mod dash;
-mod changes;
 mod host;
 mod output;
 mod splash;
@@ -59,7 +59,9 @@ fn main() -> ExitCode {
             tree,
             json,
         )),
-        Some(Commands::Log { limit, range }) => changes::finish(changes::run_log(limit, range, json)),
+        Some(Commands::Log { limit, range }) => {
+            changes::finish(changes::run_log(limit, range, json))
+        }
         Some(Commands::Diff {
             range,
             staged,

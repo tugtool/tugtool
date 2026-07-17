@@ -441,7 +441,10 @@ mod tests {
             ..Default::default()
         })
         .unwrap_err();
-        assert!(err.to_string().contains("no-such-file.txt"), "stderr detail: {err}");
+        assert!(
+            err.to_string().contains("no-such-file.txt"),
+            "stderr detail: {err}"
+        );
     }
 
     // --- Table T01 disposition matrix (pure `select_from_buckets`) ------------
@@ -514,7 +517,11 @@ mod tests {
         let files = select_from_buckets(&att, &un, &opts_with(|o| o.tree = true)).unwrap();
         assert_eq!(
             files,
-            vec!["a.rs".to_string(), "shared.rs".to_string(), "u.rs".to_string()]
+            vec![
+                "a.rs".to_string(),
+                "shared.rs".to_string(),
+                "u.rs".to_string()
+            ]
         );
     }
 

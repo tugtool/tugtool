@@ -179,7 +179,8 @@ pub(crate) fn resolve_changes(opts: &ChangesOptions) -> Result<ResolvedChanges, 
 
     let project_dir = match &opts.project {
         Some(p) => p.clone(),
-        None => std::env::current_dir().map_err(|e| ChangesError::Other(format!("cannot resolve cwd: {e}")))?,
+        None => std::env::current_dir()
+            .map_err(|e| ChangesError::Other(format!("cannot resolve cwd: {e}")))?,
     };
     let repo_root = repo_root_for(&project_dir);
 
@@ -287,8 +288,8 @@ fn compute_changes(
 
         // Cheap SQL probe first; the liveness cut (one `git log` per path)
         // runs only when some row actually claims the path.
-        let has_any_claim = !self_events.is_empty()
-            || !ledger::sessions_for_path(conn, path, session)?.is_empty();
+        let has_any_claim =
+            !self_events.is_empty() || !ledger::sessions_for_path(conn, path, session)?.is_empty();
         if !has_any_claim {
             unattributed.push(unattributed_change(path, git_status));
             continue;
@@ -375,8 +376,8 @@ fn unattributed_change(path: &str, git_status: String) -> Change {
 /// new/untracked file) returns 0: nothing was ever absorbed, every row is
 /// live.
 fn min_live_at_ms(repo_root: &Path, path: &str) -> i64 {
-    let out = git::git_stdout(repo_root, &["log", "-1", "--format=%ct", "--", path])
-        .unwrap_or_default();
+    let out =
+        git::git_stdout(repo_root, &["log", "-1", "--format=%ct", "--", path]).unwrap_or_default();
     match out.trim().parse::<i64>() {
         Ok(commit_secs) => (commit_secs + 1) * 1000,
         Err(_) => 0,
@@ -540,7 +541,9 @@ mod tests {
         )];
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
-        let files = compute_changes(&conn, root, "s1", false).unwrap().attributed;
+        let files = compute_changes(&conn, root, "s1", false)
+            .unwrap()
+            .attributed;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].git_status, "??");
 
@@ -548,7 +551,10 @@ mod tests {
         // for a new file (the F2 gap).
         let diff = file_diff(root, &files[0].path, &files[0].git_status);
         assert!(diff.contains("fresh.rs"), "add-diff names the file: {diff}");
-        assert!(diff.contains("+dirty"), "add-diff carries the new content: {diff}");
+        assert!(
+            diff.contains("+dirty"),
+            "add-diff carries the new content: {diff}"
+        );
     }
 
     /// Current epoch ms — a realistic `at` for a live row (a tracked file's
@@ -575,10 +581,15 @@ mod tests {
         )];
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
-        let files = compute_changes(&conn, root, "s1", false).unwrap().attributed;
+        let files = compute_changes(&conn, root, "s1", false)
+            .unwrap()
+            .attributed;
         assert_eq!(files.len(), 1);
         let diff = file_diff(root, &files[0].path, &files[0].git_status);
-        assert!(diff.contains("+more"), "tracked diff carries the edit: {diff}");
+        assert!(
+            diff.contains("+more"),
+            "tracked diff carries the edit: {diff}"
+        );
     }
 
     #[test]
@@ -600,7 +611,10 @@ mod tests {
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
         let buckets = compute_changes(&conn, root, "s1", false).unwrap();
-        assert!(buckets.attributed.is_empty(), "the spent row does not attribute");
+        assert!(
+            buckets.attributed.is_empty(),
+            "the spent row does not attribute"
+        );
         assert!(buckets.foreign.is_empty());
         assert_eq!(buckets.unattributed.len(), 1);
         assert_eq!(buckets.unattributed[0].path, "clean.rs");
@@ -673,7 +687,9 @@ mod tests {
         ];
         let db = seed_db("s1", &events);
         let conn = ledger::open_readonly(&db.path().join("sessions.db")).unwrap();
-        let files = compute_changes(&conn, root, "s1", false).unwrap().attributed;
+        let files = compute_changes(&conn, root, "s1", false)
+            .unwrap()
+            .attributed;
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].op, "modified");
         assert!(!files[0].shared, "a lone session's file is never shared");
@@ -741,7 +757,10 @@ mod tests {
         let repo = init_repo(&["shared.rs"]);
         let root = repo.path();
         let rootstr = root.to_string_lossy().into_owned();
-        let db = seed_sessions(&[("mine", "clean.rs", &rootstr), ("theirs", "shared.rs", &rootstr)]);
+        let db = seed_sessions(&[
+            ("mine", "clean.rs", &rootstr),
+            ("theirs", "shared.rs", &rootstr),
+        ]);
         let buckets = compute_changes(&open(&db), root, "mine", false).unwrap();
 
         assert!(buckets.attributed.is_empty());
@@ -758,8 +777,10 @@ mod tests {
         let repo = init_repo(&["shared.rs"]);
         let root = repo.path();
         let rootstr = root.to_string_lossy().into_owned();
-        let db =
-            seed_sessions(&[("mine", "shared.rs", &rootstr), ("theirs", "shared.rs", &rootstr)]);
+        let db = seed_sessions(&[
+            ("mine", "shared.rs", &rootstr),
+            ("theirs", "shared.rs", &rootstr),
+        ]);
         let buckets = compute_changes(&open(&db), root, "mine", false).unwrap();
 
         assert_eq!(buckets.attributed.len(), 1);
@@ -783,7 +804,9 @@ mod tests {
         // plain porcelain would collapse to `newdir/` and the row would match
         // nothing).
         let db = seed_sessions(&[("mine", "newdir/inner.rs", &rootstr)]);
-        let attributed = compute_changes(&open(&db), root, "mine", false).unwrap().attributed;
+        let attributed = compute_changes(&open(&db), root, "mine", false)
+            .unwrap()
+            .attributed;
         assert_eq!(attributed.len(), 1);
         assert_eq!(attributed[0].path, "newdir/inner.rs");
         assert_eq!(attributed[0].git_status, "??");
@@ -808,7 +831,13 @@ mod tests {
         assert_eq!(buckets.unattributed.len(), 1);
         let u = &buckets.unattributed[0];
         let diff = file_diff(root, &u.path, &u.git_status);
-        assert!(diff.contains("orphan.rs"), "add-diff names the file: {diff}");
-        assert!(diff.contains("+dirty"), "add-diff carries the content: {diff}");
+        assert!(
+            diff.contains("orphan.rs"),
+            "add-diff names the file: {diff}"
+        );
+        assert!(
+            diff.contains("+dirty"),
+            "add-diff carries the content: {diff}"
+        );
     }
 }

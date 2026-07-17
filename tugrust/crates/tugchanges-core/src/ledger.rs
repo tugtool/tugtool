@@ -242,7 +242,10 @@ mod tests {
         let repo = tempfile::tempdir().unwrap();
         let repo_dir = repo.path().to_string_lossy().into_owned();
         // `theirs` rows carry at = 1 (the seed's insertion index).
-        let db = seed(&[("mine", "foo.rs", &repo_dir), ("theirs", "foo.rs", &repo_dir)]);
+        let db = seed(&[
+            ("mine", "foo.rs", &repo_dir),
+            ("theirs", "foo.rs", &repo_dir),
+        ]);
         let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
 
         // Below the cut → live claimant; above → spent, no claim.

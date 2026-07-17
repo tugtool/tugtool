@@ -897,7 +897,10 @@ async fn main() {
                     .collect();
                 match sl.reconcile_orphaned_rows(&sessions) {
                     Ok(n) if n > 0 => {
-                        info!(recovered = n, "shell ledger: reconciled orphaned exchanges onto current sessions")
+                        info!(
+                            recovered = n,
+                            "shell ledger: reconciled orphaned exchanges onto current sessions"
+                        )
                     }
                     Ok(_) => {}
                     Err(e) => warn!(error = %e, "shell ledger: orphan reconciliation failed"),

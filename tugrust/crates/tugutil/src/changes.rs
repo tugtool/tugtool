@@ -256,7 +256,10 @@ pub fn run_diff(
         print_ok("diff", &report);
     } else {
         for file in &report.files {
-            let added = file.added.map(|n| n.to_string()).unwrap_or_else(|| "-".into());
+            let added = file
+                .added
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "-".into());
             let deleted = file
                 .deleted
                 .map(|n| n.to_string())
