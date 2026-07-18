@@ -3,24 +3,21 @@
  * prompt entry, driven through the real app.
  *
  * Exercises the shared `markdownTextStyling` capability on `TugTextEditor`
- * as it reaches `TugPromptEntry`:
+ * as it reaches `TugPromptEntry` — always on, since Code (prose) is the
+ * resting mode:
  *
- *   1. On the `❯` (Code / prose) route, markdown tokens are subtly styled
- *      — heading and strong render bold, emphasis italic, inline code
- *      recolored — while every raw marker (`#`, `**`, `*`, `` ` ``) stays
- *      in the document and on screen. Styling only; syntax is never
- *      removed.
+ *   1. Markdown tokens are subtly styled — heading and strong render bold,
+ *      emphasis italic, inline code recolored — while every raw marker
+ *      (`#`, `**`, `*`, `` ` ``) stays in the document and on screen.
+ *      Styling only; syntax is never removed.
  *   2. A markdown list line carries the hanging-indent line decoration
  *      (`text-indent`/`padding-left`), bundled with the grammar so it is
  *      present whenever markdown styling is on (visible under soft wrap).
- *   3. Switching to the `$` (Shell) route drops the styling entirely: the
- *      same text renders plain, and the list line's indent decoration is
- *      gone. Shell input is not markdown.
- *   4. The excluded markdown editing keymap never installs: on the `❯`
- *      route (Return = newline), `- item` + Return yields `"- item\n"`,
- *      NOT `"- item\n- "`. This proves `insertNewlineContinueMarkup` from
- *      the default `markdown()` bundle is absent — verified session-free
- *      (no submit route is driven, so no real turn is dispatched).
+ *   3. The excluded markdown editing keymap never installs: Return is a
+ *      plain newline, so `- item` + Return yields `"- item\n"`, NOT
+ *      `"- item\n- "`. This proves `insertNewlineContinueMarkup` from the
+ *      default `markdown()` bundle is absent — verified session-free (no
+ *      submit is driven, so no real turn is dispatched).
  *
  * Surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), so
  * no live Claude session is needed. Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -78,32 +75,6 @@ async function typeChunked(app: App, text: string): Promise<void> {
     await app.nativeType(text.slice(offset, offset + TYPING_CHUNK_SIZE));
     await new Promise((r) => setTimeout(r, TYPING_CHUNK_DELAY_MS));
   }
-}
-
-// ---- Route popup mechanics (mirrors at0050) ----
-
-const ROUTE_TRIGGER_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar button[aria-label="Route"]';
-const ROUTE_LABEL_SELECTOR = `${ROUTE_TRIGGER_SELECTOR} [data-tug-stable="active"]`;
-
-const LABEL_BY_ROUTE: Record<string, string> = {
-  "❯": "Code",
-  $: "Shell",
-};
-
-/** Open the route popup and pick `routeValue`, waiting until the label takes. */
-async function selectRoute(app: App, routeValue: string): Promise<void> {
-  const label = LABEL_BY_ROUTE[routeValue];
-  expect(label, `unknown route value ${routeValue}`).toBeDefined();
-  await app.click(ROUTE_TRIGGER_SELECTOR);
-  await app.click(`.tug-menu-item[data-item-id="${routeValue}"]`);
-  await app.waitForCondition<boolean>(
-    `(function(){
-      var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
-      return lbl !== null && lbl.textContent.trim() === ${JSON.stringify(label!)};
-    })()`,
-    { timeoutMs: 4000 },
-  );
 }
 
 // ---- Token style inspection ----
@@ -182,7 +153,7 @@ describe.skipIf(!SHOULD_RUN)(
   "at0229: prompt-entry markdown text styling",
   () => {
     test(
-      "prose route styles markdown (syntax preserved); shell route plain; no continue-list keymap",
+      "styles markdown (syntax preserved); no continue-list keymap",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {
@@ -297,38 +268,11 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(listStyledNorm).toContain("padding-left:");
 
-            // ---- Phase 3: shell route ($) drops styling ----
-            await selectRoute(app, "$");
-            await app.waitForCondition<boolean>(
-              `(function(){
-                var content = document.querySelector(${JSON.stringify(CONTENT_SELECTOR)});
-                if (!content) return false;
-                var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
-                var node;
-                while ((node = walker.nextNode())) {
-                  if (node.textContent.indexOf(${JSON.stringify(STRONG)}) !== -1) {
-                    var w = getComputedStyle(node.parentElement).fontWeight;
-                    return !(w === "bold" || parseInt(w, 10) >= 600);
-                  }
-                }
-                return false;
-              })()`,
-              { timeoutMs: 4000 },
-            );
-            const strongPlain = await tokenStyle(app, STRONG);
-            const headPlain = await tokenStyle(app, HEAD);
-            expect(weight(strongPlain!.fontWeight)).toBe(400);
-            expect(weight(headPlain!.fontWeight)).toBe(400);
-            // The hanging-indent decoration is gone with the grammar.
-            const listPlain = await lineStyle(app, LIST_PREFIX);
-            const listPlainNorm = (listPlain ?? "").replace(/\s/g, "");
-            expect(listPlainNorm.includes("text-indent:-")).toBe(false);
-
-            // ---- Phase 4: no continue-list keymap (session-free) ----
-            // Back on ❯ (Return = newline). Clear, type a list line, press
-            // Return. If the excluded markdownKeymap were installed,
-            // insertNewlineContinueMarkup would append "- "; it must not.
-            await selectRoute(app, "❯");
+            // ---- Phase 3: no continue-list keymap (session-free) ----
+            // Return = newline on the resting Code route. Clear, type a list
+            // line, press Return. If the excluded markdownKeymap were
+            // installed, insertNewlineContinueMarkup would append "- "; it
+            // must not.
             await focusEditor(app);
             await app.nativeKey("a", ["cmd"]);
             await app.nativeKey("Delete");
