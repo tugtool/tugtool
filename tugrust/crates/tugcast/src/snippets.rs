@@ -279,7 +279,9 @@ pub(crate) async fn put_snippets(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({"status": "error", "message": format!("invalid JSON: {e}")})),
+                axum::Json(
+                    serde_json::json!({"status": "error", "message": format!("invalid JSON: {e}")}),
+                ),
             )
                 .into_response();
         }

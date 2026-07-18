@@ -86,7 +86,9 @@ fn install_watcher(path: &Path, fs_tx: mpsc::UnboundedSender<()>) -> Option<Poll
 
     watcher
         .watch(&parent, RecursiveMode::NonRecursive)
-        .map_err(|e| warn!(error = %e, dir = %parent.display(), "snippets_feed: failed to watch dir"))
+        .map_err(
+            |e| warn!(error = %e, dir = %parent.display(), "snippets_feed: failed to watch dir"),
+        )
         .ok()?;
 
     Some(watcher)

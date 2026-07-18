@@ -22,8 +22,8 @@ mod scribe;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
-mod snippets;
 mod shell_ledger;
+mod snippets;
 mod terminal_registry;
 mod turn_engine;
 
