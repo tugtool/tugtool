@@ -435,6 +435,31 @@ export interface ConsumeCommandInsertActionEvent {
 }
 
 /**
+ * Internal action injected by `CodeSessionStore.insertSnippet`. Not a wire
+ * event. Parks a snippet's `{ text, at }` on `pendingSnippetInsert` when a
+ * Lens snippet is dragged onto (or double-clicked into) the prompt entry;
+ * the entry observes the slot via `useSyncExternalStore`, inserts the text
+ * inside a `useLayoutEffect`, and dispatches `consume_snippet_insert`. `at`
+ * is the drop point in client coordinates (resolved to a document offset) or
+ * `null` for append semantics (click / no coordinates).
+ */
+export interface InsertSnippetActionEvent {
+  type: "insert_snippet";
+  text: string;
+  at: { x: number; y: number } | null;
+}
+
+/**
+ * Internal action injected by `CodeSessionStore.consumePendingSnippetInsert`.
+ * Clears `pendingSnippetInsert` to `null` once the prompt entry has inserted
+ * the text. Idempotent — a consume while already `null` is a state-ref-stable
+ * no-op, so the seeding `useLayoutEffect` can fire it without a storm.
+ */
+export interface ConsumeSnippetInsertActionEvent {
+  type: "consume_snippet_insert";
+}
+
+/**
  * Internal action injected by `CodeSessionStore.cancelQueuedSend`. Not
  * a wire event. Removes one entry from `queuedSends` by `turnKey` — a
  * true un-send of a mid-turn submission that was queued but never
@@ -1218,6 +1243,8 @@ export type CodeSessionEvent =
   | ConsumeDraftRestoreActionEvent
   | InsertCommandDraftActionEvent
   | ConsumeCommandInsertActionEvent
+  | InsertSnippetActionEvent
+  | ConsumeSnippetInsertActionEvent
   | CancelQueuedSendActionEvent
   | CostUpdateEvent
   | StreamingUsageEvent

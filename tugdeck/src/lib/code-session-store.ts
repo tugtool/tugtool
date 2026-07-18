@@ -672,6 +672,7 @@ export class CodeSessionStore {
       // unchanged lets the prompt entry's seeding `useLayoutEffect` (keyed
       // on the slot's identity) fire exactly once per clicked command.
       pendingCommandInsert: this.state.pendingCommandInsert,
+      pendingSnippetInsert: this.state.pendingSnippetInsert,
       lastCost: this.state.lastCost,
       // Live API-retry announcement (or null). The reducer assigns a
       // fresh object only on an `api_retry` frame and clears it to null
@@ -1314,6 +1315,28 @@ export class CodeSessionStore {
   consumePendingCommandInsert(): void {
     if (this._disposed) return;
     this.dispatch({ type: "consume_command_insert" });
+  }
+
+  /**
+   * Park a snippet's text on `pendingSnippetInsert` for the prompt entry to
+   * insert. `at` is the drop point in client coordinates (resolved to a
+   * document offset), or `null` for append semantics (a click / no point).
+   * The entry observes the slot, inserts, and calls
+   * {@link consumePendingSnippetInsert}. Public because the dispatch source is
+   * a UI surface (a Lens drag / double-click), not the reducer.
+   */
+  insertSnippet(text: string, at: { x: number; y: number } | null): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "insert_snippet", text, at });
+  }
+
+  /**
+   * Clear `pendingSnippetInsert` once the prompt entry has inserted the text.
+   * Idempotent — a call while already `null` is a state-ref-stable no-op.
+   */
+  consumePendingSnippetInsert(): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "consume_snippet_insert" });
   }
 
   /**

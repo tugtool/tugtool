@@ -43,6 +43,7 @@ import type {
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
   InsertCommandDraftActionEvent,
+  InsertSnippetActionEvent,
   CodeSessionEvent,
   ContentBlockStartEvent,
   ContextBreakdownEvent,
@@ -426,6 +427,16 @@ export interface CodeSessionState {
   pendingCommandInsert: {
     name: string;
     args: string;
+  } | null;
+  /**
+   * A snippet dragged/clicked into the prompt entry, parked by
+   * `insert_snippet` and cleared by `consume_snippet_insert`. Mirrored onto
+   * `CodeSessionSnapshot.pendingSnippetInsert` with a shared reference so the
+   * seeding `useLayoutEffect` fires once per gesture.
+   */
+  pendingSnippetInsert: {
+    text: string;
+    at: { x: number; y: number } | null;
   } | null;
   /**
    * Counter of outstanding CASE A wire echoes the reducer expects to
@@ -891,6 +902,7 @@ export function createInitialState(
     pendingTurn: null,
     pendingDraftRestore: null,
     pendingCommandInsert: null,
+    pendingSnippetInsert: null,
     pendingCaseAEchoes: 0,
     queuedSends: [],
     lastError: null,
@@ -1351,6 +1363,32 @@ function handleConsumeCommandInsert(
   }
   return {
     state: { ...state, pendingCommandInsert: null },
+    effects: [],
+  };
+}
+
+function handleInsertSnippet(
+  state: CodeSessionState,
+  event: InsertSnippetActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  return {
+    state: {
+      ...state,
+      pendingSnippetInsert: { text: event.text, at: event.at },
+    },
+    effects: [],
+  };
+}
+
+function handleConsumeSnippetInsert(
+  state: CodeSessionState,
+): { state: CodeSessionState; effects: Effect[] } {
+  // Idempotent — ref-stable no-op when the slot is already null.
+  if (state.pendingSnippetInsert === null) {
+    return { state, effects: [] };
+  }
+  return {
+    state: { ...state, pendingSnippetInsert: null },
     effects: [],
   };
 }
@@ -5509,6 +5547,10 @@ export function reduce(
       return handleInsertCommandDraft(state, event);
     case "consume_command_insert":
       return handleConsumeCommandInsert(state);
+    case "insert_snippet":
+      return handleInsertSnippet(state, event);
+    case "consume_snippet_insert":
+      return handleConsumeSnippetInsert(state);
     case "cancel_queued_send":
       return handleCancelQueuedSend(state, event);
     case "cost_update":

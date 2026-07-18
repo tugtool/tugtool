@@ -1,0 +1,76 @@
+/* Snippets Lens section. Tokens only — no literal colors. */
+
+.snippets-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 8px;
+}
+
+.snippets-error {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--tug-radius-sm, 6px);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}
+
+.snippet-row-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.snippet-row-label-empty {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-style: italic;
+}
+
+/* Header + button — matches the quiet band-action affordances. */
+.snippets-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--tug-radius-sm, 6px);
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+}
+
+.snippets-add-button:hover {
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* Drag ghost that follows the pointer from a row toward the prompt entry. */
+.snippet-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483000;
+  max-width: 260px;
+  padding: 4px 9px;
+  border-radius: var(--tug-radius-sm, 6px);
+  font-family: var(--tug-font-family-sans);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  color: var(--tug7-element-global-text-normal-default-rest);
+  background: var(--tug7-element-global-surface-overlay-rest, rgba(40, 40, 40, 0.92));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
+/* Accept ring on the prompt entry while a snippet hovers over it. */
+[data-snippet-drop-target][data-snippet-drop-active] {
+  outline: 2px solid var(--tug7-element-global-border-accent-rest, rgba(90, 150, 255, 0.9));
+  outline-offset: -2px;
+  border-radius: var(--tug-radius-md, 8px);
+}

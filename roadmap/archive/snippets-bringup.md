@@ -196,7 +196,7 @@ The UX target is Things 3: a list you move through with arrows, open with Return
 
 #### [P08] The interaction grammar ships as a reusable TugQuickList primitive (DECIDED) {#p08-tugquicklist}
 
-**Decision:** The Things 3 grammar — list mode (↑/↓ select, Return/Space open, ⌘N/`+` create, Delete remove, Escape deselect-then-fall-through) and edit mode (in-place expansion, Return title→text, ⌘Return or Escape commit-and-close) — is encapsulated as `TugQuickList` (component + `useQuickList` hook) under `tugdeck/src/components/tugways/`, with Snippets as its first client.
+**Decision:** The real Things 3 grammar (see #keyboard-grammar) — list mode (↑/↓ select, **Space** create-below-and-open, Return open selected, ⌘N/`+` create, Delete remove, ⌘Z/⇧⌘Z undo/redo, Escape deselect-then-fall-through) and edit mode (in-place expansion of a single multi-line body, Return = newline, Escape commit-and-close, ⌘Return commit-and-spawn-next) — is encapsulated as `TugQuickList` (component + `useQuickList` hook) under `tugdeck/src/components/tugways/`, with Snippets as its first client.
 
 **Rationale:**
 - "Lightweight editable list with excellent keyboard flow" is a general primitive; inlining it in the section would guarantee a second hand-rolled copy later, violating the compose-real-components rule.
@@ -207,7 +207,7 @@ The UX target is Things 3: a list you move through with arrows, open with Return
 
 #### [P09] Array order is display order; the document is the whole truth (DECIDED) {#p09-array-order}
 
-**Decision:** `snippets.json` holds `{ "version": 1, "snippets": [ { "id", "title", "text" } ] }`; array position is display order (no `order` field), `title` is optional (an untitled snippet displays its first text line), and `id` is a client-generated opaque string (`sn_` + random suffix) stable across edits.
+**Decision:** `snippets.json` holds `{ "version": 1, "snippets": [ { "id", "text" } ] }`; array position is display order (no `order` field); there is **no title** — a snippet is just its multi-line `text`, and a row's handle is the *incipit* (its opening line, à la how papal bulls are named by their first words), derived in the UI; `id` is a client-generated opaque string (`sn_` + random suffix) stable across edits.
 
 **Rationale:**
 - One ordering source of truth; hand-editing the file stays obvious.
@@ -230,19 +230,22 @@ Missing/corrupt file: missing → empty document, version 1. Corrupt JSON → fe
 
 #### The keyboard grammar, precisely {#keyboard-grammar}
 
+Grounded in Cultured Code's own Things Mac shortcut docs (https://culturedcode.com/things/support/articles/2785159/): in Things, **Space** = "new to-do below selection" (the rapid-entry key), **Return** = open the selected item for editing, **⌘Return** = save & close. Snippets adopt that model. Snippets are **body-led with no title**: a snippet is just its multi-line `text`, and a row's handle is the *incipit* — its opening line ([P09]). Because the body is the only field, plain `Return` is free to be a newline, and `Space` (in the list, no field focused) stays the create key without conflict.
+
 List mode (section focused, no row open):
 - `↓`/`↑` — move selection (clamped; `↓` with no selection selects the first row).
-- `Return` or `Space` — open the selected row for editing (caret at end of text).
-- `⌘N`, the header `+`, or `Return` with no selection — insert a new row below the selection (or at end), immediately open in edit mode with focus in the title field.
-- `Delete`/`Backspace` — remove the selected row, select its successor; no confirmation ([P06]).
+- `Space` — **create a new snippet below the selection and open it** (Things' rapid-entry key). Also `⌘N` and the header `+`.
+- `Return` — open the selected snippet for editing; with nothing selected, create one.
+- `Delete`/`Backspace` — remove the selected snippet, select its successor; no confirmation ([P06]).
+- `⌘Z`/`⇧⌘Z` — store-level undo/redo ([P07]).
 - `Escape` — clear selection; with nothing selected, do not handle (falls through to the Lens's existing Escape-out in `lens-content.tsx`).
 
-Edit mode (one row open, expanded in place: single-line title field above a multi-line text area):
-- `Return` in the title field — move focus to the text area.
-- `Return` in the text area — inserts a newline (snippets are multi-line).
-- `⌘Return` or `Escape` — commit and close; the row stays selected in list mode.
-- Clicking another row — commit the open row, select (not open) the clicked row.
-- `⌘Z` inside a field — field-level undo; after commit, store-level undo ([P07]).
+Edit mode (one snippet open, expanded in place: a single multi-line body):
+- `Return` — inserts a newline (snippets are multi-line).
+- `Escape` — commit and return to the list, the snippet still selected.
+- `⌘Return` — commit and immediately spawn the next snippet below, focused (the rapid chain, since plain Return is a newline here).
+- Clicking another row — commit the open snippet, select the clicked one.
+- `⌘Z` inside the field — field-level (CodeMirror/native) undo; after commit, store-level undo ([P07]).
 
 #### Drag-to-prompt mechanics {#drag-to-prompt}
 
@@ -282,8 +285,8 @@ Pointer down on a row's grip (or a long-ish drag threshold on the row body, ~6 p
 {
   "version": 1,
   "snippets": [
-    { "id": "sn_8f3a1c", "title": "Vet checklist", "text": "Before declaring done, run …" },
-    { "id": "sn_c21b9d", "title": "", "text": "Explain the tradeoffs, then recommend one." }
+    { "id": "sn_8f3a1c", "text": "Before declaring done, drive the real flow." },
+    { "id": "sn_c21b9d", "text": "Explain the tradeoffs, then recommend one." }
   ]
 }
 ```
@@ -291,8 +294,7 @@ Pointer down on a row's grip (or a long-ish drag threshold on the row body, ~6 p
 - `version`: integer, currently 1. Unknown greater versions: serve read-only with an `error` notice; never rewrite.
 - `snippets[]`: array position is display order ([P09]).
 - `id`: non-empty string, unique within the document; convention `sn_` + 12 hex chars, client-generated.
-- `title`: string, may be empty; display fallback is the first line of `text`.
-- `text`: string, the snippet body; may be multi-line.
+- `text`: string, the snippet body; may be multi-line. There is **no title** — a row's handle is the *incipit*, the opening line of `text`, derived in the UI (`snippetIncipit`).
 - Whole-document size cap: 1 MB at the PUT boundary.
 - Missing file ≡ `{ "version": 1, "snippets": [] }`.
 
@@ -374,14 +376,14 @@ Pointer down on a row's grip (or a long-ish drag threshold on the row body, ~6 p
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Shared path helper in tugcore | pending | — |
-| #step-2 | Snippets document model + HTTP endpoints | pending | — |
-| #step-3 | SNIPPETS feed with file watcher | pending | — |
-| #step-4 | snippetsStore in tugdeck | pending | — |
-| #step-5 | TugQuickList primitive | pending | — |
-| #step-6 | Snippets Lens section | pending | — |
-| #step-7 | Drag-to-prompt insertion | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Shared path helper in tugcore | done | 56f821c6e |
+| #step-2 | Snippets document model + HTTP endpoints | done | 149e35cc4 |
+| #step-3 | SNIPPETS feed with file watcher | done | b8ecf7d33 |
+| #step-4 | snippetsStore in tugdeck | done | 43d29a705 |
+| #step-5 | TugQuickList primitive | done | 0f3e762b5 |
+| #step-6 | Snippets Lens section | done | eaeb0025a |
+| #step-7 | Drag-to-prompt insertion | done | d85ddae51 |
+| #step-8 | Integration checkpoint | done | 5928bbab7 (verify fix) |
 
 #### Step 1: Shared path helper in tugcore {#step-1}
 

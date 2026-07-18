@@ -1382,6 +1382,44 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.consumePendingCommandInsert();
   }, [pendingCommandInsert, codeSessionStore]);
 
+  // Snippet insert ([P05]). A snippet dragged from the Lens onto the prompt
+  // entry (or double-clicked) parks `{ text, at }` here; this effect inserts
+  // the text — at the drop offset when `at` resolves, else appended (empty
+  // editor takes it as-is, non-empty on a new line, the `applyShellShare`
+  // rule) — then consumes. Mirrors the share effect: [L02] slot via the
+  // snapshot; [L03] useLayoutEffect so the doc change lands in one paint; the
+  // slot survives until an editor exists (no consume on a missing view) so a
+  // drop is never silently dropped.
+  const pendingSnippetInsert = snap.pendingSnippetInsert;
+  useLayoutEffect(() => {
+    if (pendingSnippetInsert === null) return;
+    const editor = textEditorRef.current;
+    const view = editor?.view() ?? null;
+    if (editor === null || view === null) return;
+    const { text, at } = pendingSnippetInsert;
+    const offset = at !== null ? dropOffsetAtCoords(view, at.x, at.y) : null;
+    let from: number;
+    let insert: string;
+    if (offset !== null) {
+      from = offset;
+      insert = text;
+    } else {
+      const share = applyShellShare(text, {
+        length: view.state.doc.length,
+        isEffectivelyEmpty: isEffectivelyEmpty(view),
+      });
+      from = share.from;
+      insert = share.insert;
+    }
+    view.dispatch({
+      changes: { from, insert },
+      selection: { anchor: from + insert.length },
+      scrollIntoView: true,
+    });
+    codeSessionStore.consumePendingSnippetInsert();
+    editor.focus();
+  }, [pendingSnippetInsert, codeSessionStore]);
+
   // Code's Z5 button follows the Claude session lifecycle unchanged.
   const submitButtonMode = claudeSubmitButtonMode;
   const submitView = resolveSubmitButtonView(submitButtonMode);
@@ -2784,6 +2822,7 @@ export const TugPromptEntry = React.forwardRef<
           // per [L22]) and the responder-chain registration.
           ref={composedRootRef}
           data-slot="tug-prompt-entry"
+          data-snippet-drop-target=""
           data-phase={snap.phase}
           data-can-interrupt={String(snap.canInterrupt)}
           data-can-submit={String(snap.canSubmit)}

@@ -57,6 +57,8 @@ export const FeedId = {
   // Usage (subscription usage panel: `claude -p "/usage"` response + request)
   USAGE: 0x90,
   USAGE_QUERY: 0x91,
+  // Snippets (reusable prompt fragments: whole-document push)
+  SNIPPETS: 0xa0,
   // Router-internal
   CONTROL: 0xc0,
   HEARTBEAT: 0xff,

@@ -22,6 +22,7 @@ mod scribe;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
+mod snippets;
 mod shell_ledger;
 mod terminal_registry;
 mod turn_engine;
@@ -1217,6 +1218,16 @@ async fn main() {
     // it sees every recompute the router does.
     supervisor.start_draft_engine(changeset_all_rx.clone(), cancel.clone());
 
+    // SNIPPETS feed — watches the machine-global `snippets.json` and pushes
+    // the whole document to every client. The nudge lets `PUT /api/snippets`
+    // force an immediate rebuild.
+    let snippets_file_path = tug_instance::snippets_path();
+    let (snippets_rx, snippets_nudge) = feeds::snippets::snippets_feed(snippets_file_path.clone());
+    let snippets_state = Some(snippets::SnippetsState::new(
+        snippets_file_path,
+        snippets_nudge,
+    ));
+
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
         bootstrap.ft_watch_rx.clone(),
@@ -1226,6 +1237,7 @@ async fn main() {
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
+    snapshot_watches.push(snippets_rx);
     // SESSION_SIDEBAND and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
     // Multi-workspace FILETREE response stream — registered once. Every
@@ -1305,7 +1317,13 @@ async fn main() {
     }
 
     // Start server and select! on shutdown channel + SIGTERM
-    let server_future = server::run_server(listener, feed_router, shared_dev_state, bank_client);
+    let server_future = server::run_server(
+        listener,
+        feed_router,
+        shared_dev_state,
+        bank_client,
+        snippets_state,
+    );
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to register SIGTERM handler");

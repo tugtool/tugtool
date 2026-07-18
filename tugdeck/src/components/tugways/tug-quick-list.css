@@ -1,0 +1,64 @@
+/* TugQuickList — Things-3-style editable list. Appearance is CSS keyed on the
+   data attributes the component renders; no colors are literal. */
+
+.tug-quick-list {
+  position: relative; /* offset parent for the BlockDropCaret */
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  outline: none;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.tug-quick-list-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.tug-quick-list-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 10px 5px 4px;
+  border-radius: var(--tug-radius-sm, 6px);
+  cursor: default;
+  user-select: none;
+  line-height: 1.35;
+}
+
+.tug-quick-list-row-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The grip is quiet until the row is hovered or selected. */
+.tug-quick-list-row .block-grip {
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+
+.tug-quick-list-row:hover .block-grip,
+.tug-quick-list-row[data-selected="true"] .block-grip {
+  opacity: 0.55;
+}
+
+.tug-quick-list-row:hover {
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}
+
+/* Selection highlight — driven by the data attribute, not React state. */
+.tug-quick-list:focus-within .tug-quick-list-row[data-selected="true"],
+.tug-quick-list .tug-quick-list-row[data-selected="true"] {
+  background: var(--tug7-element-global-surface-selected-rest, rgba(127, 127, 127, 0.16));
+}
+
+.tug-quick-list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--tug-radius-sm, 6px);
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}

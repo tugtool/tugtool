@@ -55,6 +55,14 @@ export interface UseBlockReorderOptions {
   getVisibleOrder: () => string[];
   /** Commit the new visible order — the ONLY store write, on drop ([L08]). */
   commit: (newVisibleOrder: readonly string[]) => void;
+  /**
+   * CSS selector matching each reorderable child within the container.
+   * Defaults to the Lens-section selector; other clients (e.g. TugQuickList
+   * rows) pass their own so the same FLIP reorder drives any list.
+   */
+  selector?: string;
+  /** Attribute on each child holding its stable key. Defaults to the Lens one. */
+  kindAttr?: string;
 }
 
 export interface UseBlockReorder {
@@ -67,6 +75,8 @@ export function useBlockReorder({
   caretRef,
   getVisibleOrder,
   commit,
+  selector = SECTION_SELECTOR,
+  kindAttr = KIND_ATTR,
 }: UseBlockReorderOptions): UseBlockReorder {
   // Latest-ref mirrors so the stable callback reads current inputs ([L07]).
   const getVisibleOrderRef = React.useRef(getVisibleOrder);
@@ -92,9 +102,9 @@ export function useBlockReorder({
       // kind → element, in visible order.
       const elByKind = new Map<string, HTMLElement>();
       for (const el of Array.from(
-        container.querySelectorAll<HTMLElement>(SECTION_SELECTOR),
+        container.querySelectorAll<HTMLElement>(selector),
       )) {
-        const k = el.getAttribute(KIND_ATTR);
+        const k = el.getAttribute(kindAttr);
         if (k !== null) elByKind.set(k, el);
       }
       const els = visible.map((k) => elByKind.get(k));

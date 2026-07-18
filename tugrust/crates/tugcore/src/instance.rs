@@ -210,6 +210,25 @@ pub fn changes_db_path() -> PathBuf {
     base_data_dir().join("changes.db")
 }
 
+/// Environment variable overriding the shared snippets-file path.
+/// Set by test harnesses so isolated runs never touch the user's real
+/// snippets file.
+pub const ENV_SNIPPETS_PATH: &str = "TUG_SNIPPETS_PATH";
+
+/// The **machine-global** snippets file path: one `snippets.json` for
+/// every app instance, holding the user's reusable prompt fragments.
+/// Deliberately independent of `TUG_INSTANCE_ID` — snippets are the
+/// user's phrasebook, the same across every build (debug, release, any
+/// branch), so partitioning per instance would split the truth (a second
+/// instance would see an empty list while the first holds the snippets).
+/// Honors the [`ENV_SNIPPETS_PATH`] override for isolated test runs.
+pub fn snippets_path() -> PathBuf {
+    if let Some(p) = env::var_os(ENV_SNIPPETS_PATH).filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
+    base_data_dir().join("snippets.json")
+}
+
 /// Per-instance tugbank notify socket path.
 ///
 /// - With `TUG_INSTANCE_ID=<id>`: `$TMPDIR/tugbank-notify-<short_token>.sock`
@@ -453,6 +472,55 @@ mod tests {
         let sl = sessions_db_path().expect("expected Some when ID set");
         assert!(tb.ends_with("Tug/instances/debug-baz/tugbank.db"));
         assert!(sl.ends_with("Tug/instances/debug-baz/sessions.db"));
+    }
+
+    /// Snapshot/restore for `TUG_SNIPPETS_PATH` (not covered by `EnvGuard`).
+    struct SnippetsEnvGuard(Option<OsString>);
+    impl SnippetsEnvGuard {
+        fn snapshot() -> Self {
+            Self(env::var_os(ENV_SNIPPETS_PATH))
+        }
+    }
+    impl Drop for SnippetsEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.0 {
+                    Some(v) => env::set_var(ENV_SNIPPETS_PATH, v),
+                    None => env::remove_var(ENV_SNIPPETS_PATH),
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn snippets_path_default_is_machine_global_and_instance_independent() {
+        let _g = EnvGuard::snapshot();
+        let _s = SnippetsEnvGuard::snapshot();
+        unsafe { env::remove_var(ENV_SNIPPETS_PATH) };
+        // Independent of TUG_INSTANCE_ID: same path with the ID set or unset.
+        set_instance(None);
+        let unset = snippets_path();
+        set_instance(Some("debug-foo"));
+        let set = snippets_path();
+        assert_eq!(unset, set);
+        assert!(set.ends_with("Tug/snippets.json"));
+    }
+
+    #[test]
+    #[serial]
+    fn snippets_path_env_override_wins() {
+        let _s = SnippetsEnvGuard::snapshot();
+        unsafe { env::set_var(ENV_SNIPPETS_PATH, "/tmp/custom-snippets.json") };
+        assert_eq!(snippets_path(), PathBuf::from("/tmp/custom-snippets.json"));
+    }
+
+    #[test]
+    #[serial]
+    fn snippets_path_ignores_empty_env() {
+        let _s = SnippetsEnvGuard::snapshot();
+        unsafe { env::set_var(ENV_SNIPPETS_PATH, "") };
+        assert!(snippets_path().ends_with("Tug/snippets.json"));
     }
 
     #[test]

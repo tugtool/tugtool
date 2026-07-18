@@ -51,7 +51,7 @@ fn build_test_app(port: u16) -> (axum::Router, String) {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
     (app, token)
 }
 
@@ -512,7 +512,7 @@ async fn test_tell_reload() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -564,7 +564,7 @@ async fn test_tell_client_action_round_trip() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, None);
+    let app = build_app(feed_router, dev_state, None, None);
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     let app_with_connect_info = app.layer(MockConnectInfo(addr));
@@ -734,7 +734,7 @@ fn build_defaults_test_app() -> (axum::Router, tempfile::NamedTempFile) {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, Some(client));
+    let app = build_app(feed_router, dev_state, Some(client), None);
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
     (app.layer(MockConnectInfo(addr)), tmp)
 }
@@ -1029,7 +1029,7 @@ async fn test_defaults_non_loopback_returns_403() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
 
-    let app = build_app(feed_router, dev_state, Some(bank_client));
+    let app = build_app(feed_router, dev_state, Some(bank_client), None);
     // Apply a non-loopback address
     let non_loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 0);
     let app = app.layer(MockConnectInfo(non_loopback));
@@ -1192,4 +1192,150 @@ async fn test_defaults_all_seven_variants_roundtrip() {
             "round-trip mismatch for key {key}: got {got_json}, expected {expected}"
         );
     }
+}
+
+// ── Snippets API integration tests ────────────────────────────────────────
+
+/// Build a test app wired to a temp `snippets.json` path (the file itself is
+/// not created — a missing file reads as the empty document). Returns the
+/// router (loopback `MockConnectInfo` applied) and the `TempDir` backing it,
+/// which the caller must keep alive.
+fn build_snippets_test_app() -> (axum::Router, tempfile::TempDir, std::path::PathBuf) {
+    use axum::extract::connect_info::MockConnectInfo;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let path = dir.path().join("snippets.json");
+    let state =
+        crate::snippets::SnippetsState::new(path.clone(), Arc::new(tokio::sync::Notify::new()));
+
+    let auth = auth::new_shared_auth_state(7893);
+    let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (code_tx, _) = broadcast::channel(1024);
+    let (code_input_tx, _) = tokio::sync::mpsc::channel(256);
+    let (shutdown_tx, _) = tokio::sync::mpsc::channel::<u8>(1);
+    let (client_action_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+
+    let dev_state = dev::new_shared_dev_state();
+    let mut feed_router = FeedRouter::new(
+        "test-dummy".to_string(),
+        auth,
+        shutdown_tx,
+        dev_state.clone(),
+    );
+    feed_router.register_stream(FeedId::TERMINAL_OUTPUT, terminal_tx, LagPolicy::Bootstrap);
+    feed_router.register_stream(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn);
+    feed_router.register_stream(FeedId::CONTROL, client_action_tx, LagPolicy::Warn);
+    feed_router.register_input(FeedId::TERMINAL_INPUT, input_tx.clone());
+    feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
+    feed_router.register_input(FeedId::CODE_INPUT, code_input_tx);
+
+    let app = build_app(feed_router, dev_state, None, Some(state));
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+    (app.layer(MockConnectInfo(addr)), dir, path)
+}
+
+/// GET on a missing file returns 200 with the empty document, a hash, no error.
+#[tokio::test]
+async fn test_snippets_get_missing_returns_empty() {
+    let (app, _dir, _path) = build_snippets_test_app();
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/snippets")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = json_body(resp).await;
+    assert_eq!(json["doc"]["version"], 1);
+    assert_eq!(json["doc"]["snippets"], serde_json::json!([]));
+    assert!(json["hash"].is_string());
+    assert!(json["error"].is_null());
+}
+
+/// PUT a document, then GET it back — round-trip, and the PUT hash matches the
+/// GET hash (the echo-suppression contract).
+#[tokio::test]
+async fn test_snippets_put_then_get_round_trip() {
+    let (app, _dir, _path) = build_snippets_test_app();
+
+    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"sn_a","text":"body"}]}}"#;
+    let put_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/snippets")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(doc))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put_resp.status(), StatusCode::OK);
+    let put_json = json_body(put_resp).await;
+    let put_hash = put_json["hash"].as_str().expect("hash string").to_owned();
+
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/snippets")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let get_json = json_body(get_resp).await;
+    assert_eq!(get_json["doc"]["snippets"][0]["id"], "sn_a");
+    assert_eq!(get_json["hash"].as_str(), Some(put_hash.as_str()));
+}
+
+/// PUT with duplicate ids is rejected at the boundary with 400.
+#[tokio::test]
+async fn test_snippets_put_duplicate_ids_rejected() {
+    let (app, _dir, _path) = build_snippets_test_app();
+
+    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"x"},{"id":"x"}]}}"#;
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/snippets")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(doc))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+/// PUT refuses (409) to clobber an on-disk file that is corrupt.
+#[tokio::test]
+async fn test_snippets_put_refuses_to_clobber_corrupt_file() {
+    let (app, _dir, path) = build_snippets_test_app();
+    std::fs::write(&path, b"{ not valid json").unwrap();
+
+    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"sn_a"}]}}"#;
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/snippets")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(doc))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
