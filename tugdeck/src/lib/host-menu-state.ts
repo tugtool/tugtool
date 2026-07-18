@@ -226,6 +226,13 @@ export interface MenuStateSessionBlock {
   hasAssistantMessage: boolean;
   /** The transcript holds at least one completed turn (rewind gate). */
   hasTurns: boolean;
+  /**
+   * The Changes Shade is showing ([P05], Spec S04). Drives the Swift Session
+   * menu's dynamic verb — "Hide Changes" when true, "Show Changes" when false.
+   */
+  changesVisible: boolean;
+  /** The History Shade is showing — drives the "Show/Hide History" verb. */
+  historyVisible: boolean;
 }
 
 /**

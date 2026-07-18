@@ -299,6 +299,13 @@ export const TUG_ACTIONS = {
   //                 Transport-independent — not gated on send-readiness.
   //                 A host with no handler leaves it unhandled, so the
   //                 prompt entry sends the text to claude instead.
+  // INSERT_SLASH_COMMAND: payload — `value: { name }` (a command name). The
+  //                 ⌃⌘ chords dispatch it key-card-scoped; the session card's
+  //                 card-content responder forwards to the prompt entry's
+  //                 `insertCommandChip`, seeding a leading command chip ([P07]).
+  // OPEN_COMMAND_PICKER: payload — none. ⌘/ dispatches it key-card-scoped; the
+  //                 session card's card-content responder forwards to the
+  //                 prompt entry's `openCommandPicker` ([P06]).
   // SHOW_SLASH_COMMAND_NOTICE: payload — `value: { name, commandLine, reason }`
   //                 where `reason` is `"unknown"` (no such command — a typo) or
   //                 `"unsupported"` (a real Claude Code command with no meaning
@@ -346,6 +353,10 @@ export const TUG_ACTIONS = {
   FIRST_TURN:     "first-turn",
   LAST_TURN:      "last-turn",
   RUN_SLASH_COMMAND: "run-slash-command",
+  INSERT_SLASH_COMMAND: "insert-slash-command",
+  OPEN_COMMAND_PICKER: "open-command-picker",
+  TOGGLE_CHANGES_VIEW: "toggle-changes-view",
+  TOGGLE_HISTORY_VIEW: "toggle-history-view",
   SHOW_SLASH_COMMAND_NOTICE: "show-slash-command-notice",
 
   // ---- Dialog / popover ----
@@ -383,13 +394,6 @@ export const TUG_ACTIONS = {
   //                  Used by numeric scrubbers on arrow-up.
   // DECREMENT_VALUE: payload — optional `value: number` (step override).
   //                  Used by numeric scrubbers on arrow-down.
-  // SELECT_ROUTE:    payload — `value: string` (a tug-prompt-entry route
-  //                  identifier — `"❯"`, `"$"`, or `":"`). Dispatched
-  //                  by the keymap's ⇧⌘C / ⇧⌘S / ⇧⌘: bindings; handled
-  //                  by `tug-prompt-entry`'s responder, which sets its
-  //                  React route state. Distinct from `select-value` —
-  //                  no sender disambiguation is needed because route
-  //                  state has a single owner per entry.
   // SET_COLOR:       payload — `value: TugColorSpec` ({ hue, adjacent?, i, t, a }).
   //                  Dispatched by the standalone TugColorPicker via
   //                  sendToTarget(targetId, …) to the host responder that owns
@@ -408,7 +412,6 @@ export const TUG_ACTIONS = {
   SELECT_VALUE:    "select-value",
   INCREMENT_VALUE: "increment-value",
   DECREMENT_VALUE: "decrement-value",
-  SELECT_ROUTE:    "select-route",
 
   // ---- Tab operations ----
   //

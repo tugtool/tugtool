@@ -108,6 +108,13 @@ enum ShellInput {
     Kill {
         tug_session_id: String,
     },
+    // `path_commands` requests the login-PATH executable set for the deck's
+    // shell-line classifier ([P08]). The reply is one `path_commands`
+    // SHELL_OUTPUT frame tagged for this session; the set is resolved once per
+    // tugcast process and cached, so repeat requests answer from the cache.
+    PathCommands {
+        tug_session_id: String,
+    },
 }
 
 fn now_ms() -> u64 {
@@ -128,6 +135,146 @@ fn resolve_exec_shell() -> String {
         }
     }
     "/bin/zsh".to_string()
+}
+
+// ---------------------------------------------------------------------------
+// PATH command set ([P08], Spec S02)
+// ---------------------------------------------------------------------------
+
+/// Wall-clock cap on the login-PATH probe. The probe is a non-interactive
+/// `printf` — cheap — so a stall past this means the login shell wedged on rc
+/// baggage; fall back to tugcast's own `$PATH`.
+const PATH_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Upper bound on the serialized `commands` array. A login PATH holds ~2–5k
+/// names (tens of KB); past this the set is truncated to a sorted prefix and a
+/// warning is logged, so a pathological PATH can never blow the transport cap.
+const PATH_COMMANDS_SERIALIZED_CAP: usize = 512 * 1024;
+
+/// Process-wide cache of the login-PATH executable set. PATH effectively never
+/// changes within a tugcast run, so the readdir sweep runs once.
+static PATH_COMMANDS: std::sync::OnceLock<Arc<Vec<String>>> = std::sync::OnceLock::new();
+
+/// Resolve the user's login `$PATH`: spawn `$SHELL -lc 'printf %s "$PATH"'`
+/// when `$SHELL` is bash/zsh (the same gate as the exec shell), else — or on
+/// probe failure / timeout — fall back to tugcast's own `$PATH`. Not the
+/// interactive per-session shell child: that is lazily spawned and can wedge on
+/// rc baggage; a non-interactive login probe is cheap, safe, and PATH-accurate.
+fn probe_login_path() -> String {
+    if let Ok(sh) = std::env::var("SHELL") {
+        let leaf = sh.rsplit('/').next().unwrap_or("");
+        if leaf == "bash" || leaf == "zsh" {
+            if let Some(p) = run_path_probe(&sh) {
+                return p;
+            }
+        }
+    }
+    std::env::var("PATH").unwrap_or_default()
+}
+
+/// Run the login-shell PATH probe with a hard timeout. A background thread runs
+/// the blocking `Command`; `recv_timeout` bounds the wait so a wedged login
+/// shell can't stall the caller. Returns the trimmed `$PATH`, or `None` on
+/// failure / non-zero exit / empty output / timeout.
+fn run_path_probe(shell: &str) -> Option<String> {
+    let shell = shell.to_string();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let out = std::process::Command::new(&shell)
+            .args(["-lc", "printf %s \"$PATH\""])
+            .output();
+        let _ = tx.send(out);
+    });
+    match rx.recv_timeout(PATH_PROBE_TIMEOUT) {
+        Ok(Ok(output)) if output.status.success() => String::from_utf8(output.stdout)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    }
+}
+
+/// Sweep the login-PATH directories for executable command names, resolving the
+/// login `$PATH` first. Runs once, cached process-wide.
+fn compute_path_commands() -> Vec<String> {
+    command_names_in_path(&probe_login_path())
+}
+
+/// Sweep a `:`-separated PATH string for executable command names: readdir each
+/// existing entry, keep regular files with an executable bit, dedupe and sort (a
+/// `BTreeSet` gives both). Pure over the filesystem — the unit seam.
+fn command_names_in_path(path: &str) -> Vec<String> {
+    use std::collections::BTreeSet;
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for dir in path.split(':').filter(|d| !d.is_empty()) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            // `metadata` follows symlinks, so a symlinked executable (the norm
+            // for Homebrew shims) counts; a broken link errors out and is
+            // skipped. Keep regular files with any executable bit set.
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_file() && meta.permissions().mode() & 0o111 != 0 {
+                if let Some(name) = entry.file_name().to_str() {
+                    set.insert(name.to_string());
+                }
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// The cached login-PATH command set, computed once. `spawn_blocking` keeps the
+/// readdir sweep + probe off the async dispatcher; the result is stored in the
+/// process-wide `OnceLock`.
+async fn path_command_set() -> Arc<Vec<String>> {
+    if let Some(cached) = PATH_COMMANDS.get() {
+        return Arc::clone(cached);
+    }
+    let computed = tokio::task::spawn_blocking(compute_path_commands)
+        .await
+        .unwrap_or_default();
+    // A concurrent request may have set it first; `set` then errors and we take
+    // the winner. The single-threaded dispatcher makes this rare, but be safe.
+    let _ = PATH_COMMANDS.set(Arc::new(computed));
+    Arc::clone(PATH_COMMANDS.get().expect("just set"))
+}
+
+/// Emit a `path_commands` SHELL_OUTPUT frame for `tug_session_id`. The command
+/// array is truncated to a sorted prefix if its serialized form would exceed
+/// {@link PATH_COMMANDS_SERIALIZED_CAP}, logging a warning.
+fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands: &[String]) {
+    let mut end = commands.len();
+    // Trim from the tail until the serialized array fits the cap. Cheap to
+    // recompute since the real-world set is well under the cap.
+    while end > 0 {
+        let serialized = serde_json::to_string(&commands[..end]).map(|s| s.len()).unwrap_or(0);
+        if serialized <= PATH_COMMANDS_SERIALIZED_CAP {
+            break;
+        }
+        end = end * 9 / 10;
+    }
+    if end < commands.len() {
+        warn!(
+            total = commands.len(),
+            kept = end,
+            "path_commands set exceeded the transport cap; truncated to a sorted prefix"
+        );
+    }
+    emit(
+        output,
+        tug_session_id,
+        json!({
+            "type": "path_commands",
+            "tug_session_id": tug_session_id,
+            "commands": &commands[..end],
+        }),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -647,6 +794,13 @@ async fn run_dispatcher(
                     }
                 }
             }
+            // Resolve the login-PATH command set (once, cached) and reply for
+            // this session ([P08]). Independent of any per-session shell child —
+            // the probe never touches the lazily-spawned exec shell.
+            ShellInput::PathCommands { tug_session_id } => {
+                let commands = path_command_set().await;
+                emit_path_commands(&output, &tug_session_id, &commands);
+            }
         }
     }
 
@@ -967,5 +1121,126 @@ mod tests {
         let _ = handle.await;
         let v = settled.expect("killed exchange must settle");
         assert_eq!(v["exit_code"], serde_json::Value::Null);
+    }
+
+    // ── path_commands ([P08]) ──────────────────────────────────────────────
+
+    fn path_commands_frame(sid: &str) -> Frame {
+        Frame::new(
+            FeedId::SHELL_INPUT,
+            json!({ "type": "path_commands", "tug_session_id": sid })
+                .to_string()
+                .into_bytes(),
+        )
+    }
+
+    /// Drive the dispatcher and collect the first `count` `path_commands`
+    /// output frames for `sid`.
+    async fn drive_path_commands(
+        frames: Vec<Frame>,
+        sid: &str,
+        count: usize,
+    ) -> Vec<serde_json::Value> {
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            cancel.clone(),
+            Duration::from_secs(3),
+        ));
+        for f in frames {
+            tx.send(f).await.unwrap();
+        }
+        let mut got = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        while got.len() < count {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Ok(frame)) => {
+                    let v = payload_json(&frame);
+                    if v["tug_session_id"] == sid && v["type"] == "path_commands" {
+                        got.push(v);
+                    }
+                }
+                _ => break,
+            }
+        }
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+        got
+    }
+
+    #[test]
+    fn command_names_in_path_dedupes_and_sorts() {
+        use std::os::unix::fs::PermissionsExt;
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let exe = |dir: &std::path::Path, name: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        // `zed` in both dirs (dedupe); `apple` non-executable (skipped).
+        exe(a.path(), "zed");
+        exe(a.path(), "git");
+        exe(b.path(), "zed");
+        exe(b.path(), "cargo");
+        let plain = b.path().join("apple");
+        std::fs::write(&plain, b"data").unwrap();
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let path = format!("{}:{}", a.path().display(), b.path().display());
+        let names = command_names_in_path(&path);
+        assert_eq!(names, vec!["cargo", "git", "zed"]);
+    }
+
+    #[test]
+    fn command_names_in_path_skips_missing_and_empty_segments() {
+        // A nonexistent dir and empty segments are tolerated, not fatal.
+        let names = command_names_in_path("/no/such/dir::");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn run_path_probe_bogus_shell_returns_none() {
+        // A shell that can't spawn fails fast → None, so `probe_login_path`
+        // falls back to tugcast's own `$PATH`.
+        assert_eq!(run_path_probe("/nonexistent/shell/binary"), None);
+    }
+
+    #[tokio::test]
+    async fn path_commands_round_trip_over_the_feed() {
+        let got = drive_path_commands(vec![path_commands_frame("s1")], "s1", 1).await;
+        assert_eq!(got.len(), 1);
+        let commands = got[0]["commands"].as_array().expect("commands array");
+        // The tugcast test process has a real PATH, so the set is non-empty and
+        // sorted, and every entry is a bare name (no path separators).
+        assert!(!commands.is_empty());
+        let names: Vec<&str> = commands.iter().map(|v| v.as_str().unwrap()).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted);
+        assert!(names.iter().all(|n| !n.contains('/')));
+    }
+
+    #[tokio::test]
+    async fn path_commands_cache_hit_serves_identical_sets() {
+        // Two requests answer from the process-wide cache — same set, same
+        // order, no re-probe divergence.
+        let got = drive_path_commands(
+            vec![path_commands_frame("s1"), path_commands_frame("s2")],
+            "s1",
+            1,
+        )
+        .await;
+        assert_eq!(got.len(), 1);
+        let first = got[0]["commands"].clone();
+        let second = drive_path_commands(vec![path_commands_frame("s2")], "s2", 1).await;
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0]["commands"], first);
     }
 }

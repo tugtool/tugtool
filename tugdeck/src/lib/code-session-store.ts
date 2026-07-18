@@ -859,6 +859,7 @@ export class CodeSessionStore {
           command: string;
           cwd: string;
           startedAtMs: number;
+          autoRouted?: boolean;
         }
       | {
           phase: "complete";
@@ -870,6 +871,7 @@ export class CodeSessionStore {
           cwdAfter: string | null;
           startedAtMs: number;
           settledAtMs: number;
+          autoRouted?: boolean;
         },
   ): void {
     if (this._disposed) return;
@@ -880,6 +882,7 @@ export class CodeSessionStore {
         command: event.command,
         cwd: event.cwd,
         startedAtMs: event.startedAtMs,
+        autoRouted: event.autoRouted,
       });
     } else {
       this.dispatch({
@@ -892,6 +895,7 @@ export class CodeSessionStore {
         cwdAfter: event.cwdAfter,
         startedAtMs: event.startedAtMs,
         settledAtMs: event.settledAtMs,
+        autoRouted: event.autoRouted,
       });
     }
   }

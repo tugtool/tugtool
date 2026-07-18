@@ -384,15 +384,15 @@ Ships with a unit corpus (Vitest/bun test): ≥30 command lines that MUST classi
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | ShadeViewController: visibility off the route | pending | — |
-| #step-2 | `/changes` + `/history` commands and directives | pending | — |
-| #step-3 | Commit-draft flow: Generate in the Shade, draft as `/changes commit` chip | pending | — |
-| #step-4 | Delete the sticky routes | pending | — |
-| #step-5 | Picker button, ⌘/, ⌃⌘ chords, `insertCommandChip` | pending | — |
-| #step-6 | Swift Show/Hide menu items + toggle round-trip | pending | — |
-| #step-7 | tugcast `path_commands` verb | pending | — |
-| #step-8 | Deck classifier + auto-route attribution | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | ShadeViewController: visibility off the route | done | 2b45cae93 |
+| #step-2 | `/changes` + `/history` commands and directives | done | a98784f0f |
+| #step-3 | Commit-draft flow: Generate in the Shade, draft as `/changes commit` chip | done | b73baabdb |
+| #step-4 | Delete the sticky routes | done | 9ae903f4a |
+| #step-5 | Picker button, ⌘/, ⌃⌘ chords, `insertCommandChip` | done | f7323f044 |
+| #step-6 | Swift Show/Hide menu items + toggle round-trip | done | af65e87c7 |
+| #step-7 | tugcast `path_commands` verb | done | 9cd0f6f4b |
+| #step-8 | Deck classifier + auto-route attribution | done | 63379cdfb |
+| #step-9 | Integration checkpoint | done | N/A (verification) |
 
 #### Step 1: ShadeViewController — visibility off the route {#step-1}
 

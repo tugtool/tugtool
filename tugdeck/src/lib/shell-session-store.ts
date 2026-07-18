@@ -69,6 +69,8 @@ export class ShellSessionStore {
   private readonly _projectDir: string;
   private readonly _codeSessionStore: CodeSessionStore;
   private readonly _pendingContextStore: PendingContextStore | undefined;
+  /** Exchange ids the PATH classifier auto-routed here ([P09]); client-side. */
+  private readonly _autoRoutedExchanges = new Set<string>();
 
   constructor(
     feedStore: FeedStore,
@@ -130,6 +132,7 @@ export class ShellSessionStore {
           command: String(p.command ?? ""),
           cwd: typeof p.cwd === "string" ? p.cwd : this._projectDir,
           startedAtMs: numberOr(p.started_at, Date.now()),
+          autoRouted: this._autoRoutedExchanges.has(String(p.exchange_id ?? "")),
         });
         break;
       }
@@ -151,6 +154,7 @@ export class ShellSessionStore {
         const output = typeof p.output === "string" ? p.output : "";
         const exitCode = typeof p.exit_code === "number" ? p.exit_code : null;
         const settledAt = numberOr(p.settled_at, startedAt);
+        const autoRouted = this._autoRoutedExchanges.has(exchangeId);
         this._codeSessionStore.ingestShellExchange({
           phase: "complete",
           exchangeId,
@@ -161,7 +165,10 @@ export class ShellSessionStore {
           cwdAfter,
           startedAtMs: startedAt,
           settledAtMs: settledAt,
+          autoRouted,
         });
+        // The exchange has settled; forget its auto-route marker.
+        this._autoRoutedExchanges.delete(exchangeId);
         // VISIBILITY=Context ([P08], the submission-time variant): a newly
         // settled exchange auto-stages onto the pending-context queue to ride
         // the next `❯` submission. This fires only for LIVE completions —
@@ -190,12 +197,16 @@ export class ShellSessionStore {
    * frame echoes back — not optimistically — so a failed send never leaves a
    * ghost row. Serial: refused while an exchange is in flight.
    */
-  exec(command: string): void {
+  exec(command: string, opts?: { origin?: "auto" }): void {
     const trimmed = command.trim();
     if (trimmed.length === 0) return;
     if (this._snapshot.inflight !== null) return;
     this._seq += 1;
     const exchangeId = `sh-${this._seq}`;
+    // Remember an auto-routed exchange so the transcript row (minted when the
+    // `exchange_started` frame echoes back) renders the `→ shell` attribution.
+    // Client-side only — the shell ledger schema is untouched ([P09]).
+    if (opts?.origin === "auto") this._autoRoutedExchanges.add(exchangeId);
     this._set({ ...this._snapshot, inflight: { exchangeId, command: trimmed } });
     const conn = getConnection();
     if (!conn) {

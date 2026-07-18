@@ -825,6 +825,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Show Code Changes", "diff", "session.diff"))
         sessionMenu.addItem(sessionCommandItem("Show Context", "context", "session.context"))
         sessionMenu.addItem(sessionCommandItem("Show Usage", "usage", "session.usage"))
+        // Show/Hide the Changes / History Shades ([P05], Spec S04). The title's
+        // verb flips in validateMenuItem from the cached visibility booleans;
+        // the represented view name rides `representedObject`, and the toggle
+        // round-trips a `toggle-{changes,history}-view` control frame.
+        let toggleChangesItem = NSMenuItem(title: "Show Changes", action: #selector(toggleShadeView(_:)), keyEquivalent: "c", modifierMask: [.command, .shift]).identified("session.toggleChanges")
+        toggleChangesItem.representedObject = "changes"
+        sessionMenu.addItem(toggleChangesItem)
+        let toggleHistoryItem = NSMenuItem(title: "Show History", action: #selector(toggleShadeView(_:)), keyEquivalent: "h", modifierMask: [.command, .shift]).identified("session.toggleHistory")
+        toggleHistoryItem.representedObject = "history"
+        sessionMenu.addItem(toggleHistoryItem)
         sessionMenu.addItem(NSMenuItem.separator())
         sessionMenu.addItem(sessionCommandItem("Skills", "skills", "session.skills"))
         sessionMenu.addItem(sessionCommandItem("Agents", "agents", "session.agents"))
@@ -1159,6 +1169,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("cycle-permission-mode")
     }
 
+    /// Show/Hide Changes / History ([P05], Spec S04). The represented view name
+    /// selects the control frame; tugdeck's card-content responder toggles the
+    /// matching Shade.
+    @objc private func toggleShadeView(_ sender: NSMenuItem) {
+        guard let view = sender.representedObject as? String else { return }
+        sendControl(view == "history" ? "toggle-history-view" : "toggle-changes-view")
+    }
+
     // Edit ▸ Undo / Redo — two execution paths, matching the two
     // validation sources (see validateMenuItem):
     //   - Native text control focused: drive the web view's NSUndoManager
@@ -1442,6 +1460,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 return menuState.session?.canInterrupt ?? false
             case "session.rewind":
                 return (menuState.session?.sessionBound ?? false) && (menuState.session?.hasTurns ?? false)
+            case "session.toggleChanges":
+                // Verb flips with live visibility (Spec S04); enabled on a bound
+                // session card so the Shade can be summoned / dismissed.
+                menuItem.title = (menuState.session?.changesVisible ?? false) ? "Hide Changes" : "Show Changes"
+                return menuState.session?.sessionBound ?? false
+            case "session.toggleHistory":
+                menuItem.title = (menuState.session?.historyVisible ?? false) ? "Hide History" : "Show History"
+                return menuState.session?.sessionBound ?? false
             default:
                 return menuState.session?.sessionBound ?? false
             }
@@ -2079,6 +2105,11 @@ struct MenuState {
         let permissionMode: String
         let hasAssistantMessage: Bool
         let hasTurns: Bool
+        /// The Changes Shade is showing — drives the "Show/Hide Changes" verb
+        /// picked in `validateMenuItem` (Spec S04).
+        let changesVisible: Bool
+        /// The History Shade is showing — drives the "Show/Hide History" verb.
+        let historyVisible: Bool
     }
 
     /// Text-card state; nil unless the active card is a Text card. Gates
@@ -2198,7 +2229,11 @@ struct MenuState {
                 canChangeSettings: rawSession["canChangeSettings"] as? Bool ?? true,
                 permissionMode: rawSession["permissionMode"] as? String ?? "default",
                 hasAssistantMessage: rawSession["hasAssistantMessage"] as? Bool ?? false,
-                hasTurns: rawSession["hasTurns"] as? Bool ?? false
+                hasTurns: rawSession["hasTurns"] as? Bool ?? false,
+                // Default false for deck/app version skew (an older deck omits
+                // these) — the menu then reads "Show".
+                changesVisible: rawSession["changesVisible"] as? Bool ?? false,
+                historyVisible: rawSession["historyVisible"] as? Bool ?? false
             )
         }
         if let rawFile = payload["file"] as? [String: Any],

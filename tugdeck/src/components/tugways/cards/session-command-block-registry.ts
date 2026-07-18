@@ -51,6 +51,11 @@ export interface CommandBlockProps {
    * Omitted where no staged-context queue is available.
    */
   onToggleContext?: () => void;
+  /**
+   * Send the original command to Claude instead ([P09]) — the auto-route undo.
+   * Rendered only for a `message.autoRouted` row.
+   */
+  onSendToClaude?: () => void;
   /** Whether this exchange is currently staged (drives the toggle's pose). */
   staged?: boolean;
 }

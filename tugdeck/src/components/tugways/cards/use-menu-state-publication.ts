@@ -23,6 +23,7 @@ import { useEffect } from "react";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type { ShadeViewController } from "@/lib/shade-view-controller";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { clearSessionMenuState, publishSessionMenuState } from "@/lib/host-menu-state";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
@@ -49,6 +50,7 @@ export function useMenuStatePublication(
   cardId: string,
   codeSessionStore: CodeSessionStore,
   sessionMetadataStore: SessionMetadataStore,
+  shadeViewController: ShadeViewController,
 ): void {
   useEffect(() => {
     let cachedTranscript: ReadonlyArray<TurnEntry> | null = null;
@@ -65,6 +67,7 @@ export function useMenuStatePublication(
       const persisted = parsePersistedPermissionMode(
         getTugbankClient()?.get(PERMISSION_MODE_DOMAIN, cardId),
       );
+      const shadeView = shadeViewController.getSnapshot();
       publishSessionMenuState(cardId, {
         cardId,
         sessionBound: cardSessionBindingStore.getBinding(cardId) !== undefined,
@@ -74,6 +77,8 @@ export function useMenuStatePublication(
           sessionMetadataStore.getSnapshot().permissionMode,
           persisted,
         ),
+        changesVisible: shadeView === "changes",
+        historyVisible: shadeView === "history",
         ...cachedFacts,
       });
     };
@@ -82,6 +87,7 @@ export function useMenuStatePublication(
       codeSessionStore.subscribe(publish),
       sessionMetadataStore.subscribe(publish),
       cardSessionBindingStore.subscribe(publish),
+      shadeViewController.subscribe(publish),
     ];
     publish();
 
@@ -89,5 +95,5 @@ export function useMenuStatePublication(
       for (const unsubscribe of unsubscribes) unsubscribe();
       clearSessionMenuState(cardId);
     };
-  }, [cardId, codeSessionStore, sessionMetadataStore]);
+  }, [cardId, codeSessionStore, sessionMetadataStore, shadeViewController]);
 }

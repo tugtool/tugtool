@@ -35,13 +35,9 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 
 import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry";
-import { RouteLifecycle } from "@/lib/route-lifecycle";
-import {
-  DEFAULT_ROUTE,
-  ROUTE_CHANGES,
-  ROUTE_HISTORY,
-} from "@/lib/route-constants";
+import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
@@ -49,8 +45,6 @@ import { SessionHistoryView } from "./session-history/session-history-view";
 import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
 import { SessionRouteIndicatorBadge } from "../chrome/session-route-indicator-badge";
-import { SessionRouteChromeManifest } from "../chrome/session-route-chrome-manifest";
-import { SessionCwdChip } from "../chrome/session-cwd-chip";
 import { formatPathChipText } from "../chrome/path-chip-format";
 import { SessionIdBadge } from "../chrome/session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
@@ -70,7 +64,6 @@ import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
 import { EffortChip } from "./effort-chip";
-import { VisibilityChip } from "./visibility-chip";
 import { SessionPendingContextStrip } from "./session-pending-context-strip";
 import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
@@ -128,6 +121,7 @@ import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
+import type { PathCommandsStore } from "@/lib/path-commands-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
 import { deriveSessionCardBannerSpec, humanizeErrorSummary } from "./session-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
@@ -243,21 +237,11 @@ function activeTurnHasCompactNote(
 }
 
 /**
- * Placeholder copy for the prompt entry, keyed by the active route
- * value (`❯` Code / `$` Shell / `?` btw — see `ROUTE_ITEMS` in
- * `tug-prompt-entry.tsx`). Forwarded as `placeholderByRoute`; the
- * entry shows the match for the active route and falls back to no
- * placeholder for any unlisted route. Dev-specific — the gallery
+ * Placeholder copy for the prompt entry. Code is the only resting mode, so
+ * one line — forwarded as `placeholder`. Dev-specific; the gallery
  * prompt-entry passes nothing.
  */
-const SESSION_PROMPT_PLACEHOLDER_BY_ROUTE: Readonly<Record<string, string>> = {
-  "❯": "Ask Claude to build, fix, or explain",
-  "$": "Run a shell command",
-  "?": "Ask a question or say something to Claude as an aside",
-  "⌕": "Find in transcript",
-  "±": "Commit message",
-  "↺": "Ask about commits, files, prior work",
-};
+const SESSION_PROMPT_PLACEHOLDER = "Ask Claude to build, fix, or explain";
 
 /**
  * Focus group the session card authors its keyboard-focus-cycling stops
@@ -457,8 +441,10 @@ export interface SessionCardServices {
   hooksInventoryStore: HooksInventoryStore;
   /** Ephemeral `/btw` side-question history store (Spec S02). */
   sideQuestionStore: SideQuestionStore;
-  /** `$`-route shell session store — session state + exchange ingest ([P12]). */
+  /** Card shell session store — session state + exchange ingest ([P12]). */
   shellSessionStore: ShellSessionStore;
+  /** Login-PATH command set for the shell-line classifier ([P08]). */
+  pathCommandsStore: PathCommandsStore;
   /** `±`-route Changes controller — selection + commit/draft triggers ([P07]). */
   changesController: ChangesRouteController;
   /** Staged shell / `/btw` context queue — consumed at send, surfaced to the
@@ -2132,7 +2118,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, pathCommandsStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, gitDiffStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -2149,41 +2135,45 @@ export function SessionCardBody({
     });
   });
 
+  // [P03] Shade visibility is card chrome state, not route state. A per-card
+  // `ShadeViewController` holds which transcript-slot view is showing; the
+  // card reads it via `useSyncExternalStore` to pick the active pane. All
+  // three panes stay mounted — only visibility flips, via CSS ([L26]/[L06]).
+  // Typed commands (`/changes`, `/history`) call `show`; hiding is chrome-only
+  // (Shade close affordance, Swift menu / keyboard toggles) ([P05]).
+  const shadeViewControllerRef = useRef<ShadeViewController | null>(null);
+  if (shadeViewControllerRef.current === null) {
+    shadeViewControllerRef.current = new ShadeViewController();
+  }
+  const shadeViewController = shadeViewControllerRef.current;
+
   useSessionCardObserver(cardId, codeSessionStore);
-  useMenuStatePublication(cardId, codeSessionStore, sessionMetadataStore);
+  // Publishes the two Shade-visibility booleans so the Swift Session menu can
+  // pick its Show/Hide verb (Spec S04).
+  useMenuStatePublication(
+    cardId,
+    codeSessionStore,
+    sessionMetadataStore,
+    shadeViewController,
+  );
 
   // Imperative handle to the transcript pane. `handleAfterSubmit`
   // reads it to jump the transcript back to the live edge on submit
   // (the transcript is a split-pane sibling of the prompt entry, so
   // the gesture can't bubble through the DOM).
   const transcriptRef = useRef<SessionTranscriptHandle | null>(null);
-  // [P02] The card owns the prompt entry's RouteLifecycle so it can read
-  // the route (via useSyncExternalStore, added when the view slot lands)
-  // to swap the transcript slot. Constructed once with `DEFAULT_ROUTE`,
-  // exactly as `TugPromptEntry` does when no host provides one; the entry
-  // remains the sole writer of `setRoute` (persist/restore untouched,
-  // Risk R01). A lazy `useRef` keeps the instance stable for the card's
-  // lifetime ([D01]).
-  const routeLifecycleRef = useRef<RouteLifecycle | null>(null);
-  if (routeLifecycleRef.current === null) {
-    routeLifecycleRef.current = new RouteLifecycle(DEFAULT_ROUTE);
-  }
-  const routeLifecycle = routeLifecycleRef.current;
-  // [L02] The card reads the route off the shared lifecycle via
-  // `useSyncExternalStore` to pick which transcript-slot view is active
-  // ([P01]/[P02]). The view-routes (`±` Changes / `↺` History) swap the
-  // slot content; every other route shows the transcript. All three panes
-  // stay mounted — only visibility flips, via CSS ([L26]/[L06]).
-  const activeRoute = useSyncExternalStore(
-    routeLifecycle.subscribe,
-    routeLifecycle.getRoute,
+  const shadeView = useSyncExternalStore(
+    shadeViewController.subscribe,
+    shadeViewController.getSnapshot,
   );
   const activeView: "transcript" | "changes" | "history" =
-    activeRoute === ROUTE_CHANGES
-      ? "changes"
-      : activeRoute === ROUTE_HISTORY
-        ? "history"
-        : "transcript";
+    shadeView === "none" ? "transcript" : shadeView;
+  // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
+  // active `/find` holds a non-empty query — no route gate. [L02].
+  const findActive = useSyncExternalStore(
+    findSession.subscribe,
+    () => findSession.getSnapshot().query !== "",
+  );
   // Captured by the JSX's composed ref below for the first-mount
   // fade-in animation. Read by a useLayoutEffect with empty deps —
   // the effect runs once when this card first acquires services
@@ -3024,6 +3014,73 @@ export function SessionCardBody({
       findSession.setQuery(query);
       findSession.next();
     },
+    // `/changes` ([P04]) — the Changes Shade is chrome, summoned by typing but
+    // never hidden by it ([P05]). Bare shows it; `describe` shows + kicks off an
+    // AI draft; `commit <message>` runs the gated durable commit (the exact
+    // gates the retired `±` route enforced); anything else is a usage caution
+    // (free text must never guess a commit).
+    changes: (arg) => {
+      const notify = paneBulletinRef.current;
+      const trimmed = arg.trim();
+      if (trimmed.length === 0) {
+        shadeViewController.show("changes");
+        return;
+      }
+      const verb = trimmed.slice(0, trimmed.search(/\s|$/));
+      const rest = trimmed.slice(verb.length).trim();
+      if (verb === "describe") {
+        shadeViewController.show("changes");
+        changesController.requestDraft();
+        return;
+      }
+      if (verb === "commit") {
+        const message = rest;
+        // Same gates the `±` route's commit branch enforced: no overlap with a
+        // running turn, no double-commit, a non-empty selection, a non-empty
+        // message. A refused commit surfaces a bulletin instead of silently
+        // dropping.
+        if (codeSessionStore.getSnapshot().canInterrupt === true) {
+          notify?.caution("Can't commit while a turn is in flight");
+          return;
+        }
+        if (
+          getChangesetVerbStore()?.commitState(changesController.entryKey)
+            .phase === "pending"
+        ) {
+          notify?.caution("A commit is already in progress");
+          return;
+        }
+        if (changesController.getSnapshot().selectedPaths.size === 0) {
+          shadeViewController.show("changes");
+          notify?.caution("Select at least one file to commit");
+          return;
+        }
+        if (message.length === 0) {
+          notify?.caution("Usage: /changes commit <message>");
+          return;
+        }
+        changesController.commit(message);
+        return;
+      }
+      notify?.caution("Usage: /changes [describe | commit <message>]");
+    },
+    // `/history` ([P04]) — bare shows the History Shade; a question wraps in the
+    // `/tugplug:history` skill and sends ON the record so the answer streams in
+    // the transcript. The replay guard mirrors the retired `↺` branch: a submit
+    // while the session is replaying / transport-settling must never leak a
+    // turn (mid-turn sends queue, which is fine).
+    history: (arg) => {
+      const notify = paneBulletinRef.current;
+      const question = arg.trim();
+      shadeViewController.show("history");
+      if (question.length === 0) return;
+      const snap = codeSessionStore.getSnapshot();
+      if (!snap.canSubmit && !snap.canInterrupt) {
+        notify?.caution("The session is still loading — try again in a moment");
+        return;
+      }
+      codeSessionStore.send(`/tugplug:history ${question}`, []);
+    },
     // Copy the most recent assistant message (committed transcript only, read
     // live at click time per [L07]) to the clipboard, with a pane-scoped
     // confirmation bulletin. No message yet → caution; clipboard failure →
@@ -3304,6 +3361,26 @@ export function SessionCardBody({
         const open = slashCommandSurfaces[payload.name];
         if (open !== undefined) open(payload.args);
       },
+      // ⌃⌘ chord ([P07]): seed the corresponding command chip at the head of
+      // the prompt draft, preserving typed text as args.
+      [TUG_ACTIONS.INSERT_SLASH_COMMAND]: (event: ActionEvent) => {
+        const payload = event.value as { name: string } | undefined;
+        if (payload === undefined) return;
+        entryDelegateRef.current?.insertCommandChip(payload.name);
+      },
+      // ⌘/ ([P06]): focus the editor and open the command completion popup.
+      [TUG_ACTIONS.OPEN_COMMAND_PICKER]: (_event: ActionEvent) => {
+        entryDelegateRef.current?.openCommandPicker();
+      },
+      // Swift Session-menu "Show/Hide Changes" (⌘⇧C) and the ⇧⌘C deck twin
+      // ([P05], Spec S04) — toggle the Changes Shade.
+      [TUG_ACTIONS.TOGGLE_CHANGES_VIEW]: (_event: ActionEvent) => {
+        shadeViewController.toggle("changes");
+      },
+      // Swift Session-menu "Show/Hide History" (⌘⇧H) and the ⇧⌘H deck twin.
+      [TUG_ACTIONS.TOGGLE_HISTORY_VIEW]: (_event: ActionEvent) => {
+        shadeViewController.toggle("history");
+      },
       // A typed `/command` the session card will not run, dispatched by the prompt
       // entry ([#step-13a]). `unknown` = a typo (not in claude's catalog);
       // `unsupported` = a real Claude Code command we hide (no meaning over the
@@ -3420,21 +3497,6 @@ export function SessionCardBody({
       {projectCopy.contextMenu}
     </>
   ) : null;
-
-  // Shell route's Cwd chip ([P10], Table T01) — bound live to the shell
-  // session's cwd ([L02]); falls back to the project dir before the first
-  // `shell_state` (the store seeds cwd to the project dir at construction).
-  const shellCwd = useSyncExternalStore(
-    shellSessionStore.subscribe,
-    () => shellSessionStore.getSnapshot().cwd,
-  );
-  const cwdStatusContent = (
-    <SessionCwdChip
-      cwd={shellCwd ?? projectDir}
-      focusGroup={SESSION_CYCLE_GROUP}
-      focusOrder={SESSION_CYCLE_ORDER_CWD}
-    />
-  );
 
   // Dev-only placement-experiment slots. In production this returns
   // an object with every slot undefined (the harness is gated behind
@@ -3598,12 +3660,14 @@ export function SessionCardBody({
                   projectDir={projectDir}
                   changesController={changesController}
                   codeSessionStore={codeSessionStore}
+                  onClose={() => shadeViewController.hide()}
                 />
               </div>
               <div className="session-view-pane" data-view="history">
                 <SessionHistoryView
                   projectDir={projectDir}
                   active={activeView === "history"}
+                  onClose={() => shadeViewController.hide()}
                 />
               </div>
             </div>
@@ -3705,13 +3769,9 @@ export function SessionCardBody({
             <TugPromptEntry
               ref={entryDelegateRef}
               id={`${cardId}-entry`}
-              routeLifecycle={routeLifecycle}
-              // The Session card is the view-route host ([P03]): it offers
-              // Changes (`±`) and History (`↺`) in the selector and honors
-              // ⇧⌘E / ⇧⌘Y. History needs only the code session store, already
-              // present; the Changes route's commit/draft plumbing rides
-              // `changesController` ([P07]).
-              viewRoutes
+              // Code is the only resting mode ([P01]); `changesController`
+              // supplies the AI commit-draft stream that lands in the editor
+              // as a `/changes commit` line ([P04]/S05).
               changesController={changesController}
               // The editor stands down (read-only + caret off + dimmed)
               // while an inline dialog owns the keyboard and while cycling
@@ -3738,6 +3798,7 @@ export function SessionCardBody({
               localCommandTargetId={`${cardId}-card-content`}
               codeSessionStore={codeSessionStore}
               shellSessionStore={shellSessionStore}
+              pathCommandsStore={pathCommandsStore}
               findSession={findSession}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
@@ -3762,77 +3823,57 @@ export function SessionCardBody({
               onAfterSubmit={handleAfterSubmit}
               onDoubleEscapeWhenEmpty={() => rewindSheet.openRewindSheet()}
               indicatorsContent={
+                // Static Code chip set ([P01]/[P10]): identity · session ·
+                // project · mode · model · effort, plus the find cluster
+                // whenever an active `/find` holds a query. All three panes
+                // stay mounted; the cluster mounts/unmounts on find activity
+                // ([L26]).
                 <>
-                  <SessionRouteChromeManifest
-                    identityBadge={
-                      <SessionRouteIndicatorBadge
-                        codeSessionStore={codeSessionStore}
-                        sessionMetadataStore={sessionMetadataStore}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_CLAUDE_CODE}
-                      />
-                    }
-                    session={
-                      <SessionIdBadge
-                        cardId={cardId}
-                        sessionMetadataStore={sessionMetadataStore}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_SESSION}
-                      />
-                    }
-                    project={effectivePromptStatusContent}
-                    cwd={cwdStatusContent}
-                    mode={
-                      // Disabled while a turn is in flight so a mode change
-                      // never races the running turn — the chips mirror the
-                      // submit button, which is a live blue arrow exactly when
-                      // `canSubmit`. The setter seam enforces this too; the
-                      // `disabled` makes the refusal visible.
-                      <PermissionModeChip
-                        cardId={cardId}
-                        sessionMetadataStore={sessionMetadataStore}
-                        onOpenSheet={permissionSheet.openPermissionSheet}
-                        disabled={!codeSnap.canSubmit}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_MODE}
-                      />
-                    }
-                    model={
-                      <ModelChip
-                        sessionMetadataStore={sessionMetadataStore}
-                        onOpenPicker={modelPicker.openModelPicker}
-                        disabled={!codeSnap.canSubmit}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_MODEL}
-                      />
-                    }
-                    effort={
-                      <EffortChip
-                        sessionMetadataStore={sessionMetadataStore}
-                        onOpenPicker={effortPicker.openEffortPicker}
-                        disabled={!codeSnap.canSubmit}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_EFFORT}
-                      />
-                    }
-                    visibility={
-                      // Shell + btw routes only; reuses the effort slot's focus
-                      // order — the two never mount together (effort is a code-
-                      // route chip), so the cycle sees exactly one.
-                      <VisibilityChip
-                        pendingContextStore={pendingContextStore}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_EFFORT}
-                      />
-                    }
-                    find={
-                      <TugFindCluster
-                        surface={findSession}
-                        focusGroup={SESSION_CYCLE_GROUP}
-                        focusOrder={SESSION_CYCLE_ORDER_FIND}
-                      />
-                    }
+                  <SessionRouteIndicatorBadge
+                    codeSessionStore={codeSessionStore}
+                    sessionMetadataStore={sessionMetadataStore}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_CLAUDE_CODE}
                   />
+                  <SessionIdBadge
+                    cardId={cardId}
+                    sessionMetadataStore={sessionMetadataStore}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_SESSION}
+                  />
+                  {effectivePromptStatusContent}
+                  {/* Disabled while a turn is in flight so a mode/model/effort
+                      change never races the running turn — the chips mirror the
+                      submit button, a live blue arrow exactly when `canSubmit`. */}
+                  <PermissionModeChip
+                    cardId={cardId}
+                    sessionMetadataStore={sessionMetadataStore}
+                    onOpenSheet={permissionSheet.openPermissionSheet}
+                    disabled={!codeSnap.canSubmit}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_MODE}
+                  />
+                  <ModelChip
+                    sessionMetadataStore={sessionMetadataStore}
+                    onOpenPicker={modelPicker.openModelPicker}
+                    disabled={!codeSnap.canSubmit}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_MODEL}
+                  />
+                  <EffortChip
+                    sessionMetadataStore={sessionMetadataStore}
+                    onOpenPicker={effortPicker.openEffortPicker}
+                    disabled={!codeSnap.canSubmit}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_EFFORT}
+                  />
+                  {findActive && (
+                    <TugFindCluster
+                      surface={findSession}
+                      focusGroup={SESSION_CYCLE_GROUP}
+                      focusOrder={SESSION_CYCLE_ORDER_FIND}
+                    />
+                  )}
                   {effectiveFooterContent}
                 </>
               }
@@ -3841,7 +3882,7 @@ export function SessionCardBody({
               highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
               returnAction={editorSettings.returnKeyAction}
               numpadEnterAction={editorSettings.numpadEnterAction}
-              placeholderByRoute={SESSION_PROMPT_PLACEHOLDER_BY_ROUTE}
+              placeholder={SESSION_PROMPT_PLACEHOLDER}
             />
             </cycle.CycleScope>
           </TugBox>

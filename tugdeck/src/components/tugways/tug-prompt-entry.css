@@ -104,28 +104,27 @@ body {
   background-color: var(--tugx-entry-shell-editor-focus);
 }
 
-/* Z4A route popup trigger — the theme SELECTION color, not a control role.
+/* Z4A command picker ([P06]) — the theme SELECTION color, not a control role.
  *
- * The trigger is a filled `TugButton` (base emphasis `filled` role `accent`),
- * but the route control's identity is "the selected route", so it wears the
- * theme's selection surface — the same seafoam pill the old `TugChoiceGroup`
- * active segment and the `TugPopupMenu` item highlight use — rather than the
- * accent (orange) role fill. Overriding via `.tug-button.<class>` (0-2-0)
- * outweighs `.tug-button-filled-accent` (0-1-0) so the role fill is fully
- * replaced across rest / hover / active, text + icon included. */
-.tug-button.tug-prompt-entry-route-trigger {
+ * The picker is a filled `TugButton` (base emphasis `filled` role `accent`)
+ * carrying the slash glyph; it wears the theme's selection surface — the same
+ * seafoam pill the `TugPopupMenu` item highlight uses — rather than the accent
+ * (orange) role fill. Overriding via `.tug-button.<class>` (0-2-0) outweighs
+ * `.tug-button-filled-accent` (0-1-0) so the role fill is fully replaced across
+ * rest / hover / active, icon included. */
+.tug-button.tug-prompt-entry-command-picker {
   background-color: var(--tug7-surface-selection-primary-normal-selected-rest);
   color: var(--tug7-element-selection-text-normal-selected-rest);
   border-color: var(--tug7-surface-selection-primary-normal-selected-rest);
 }
-.tug-button.tug-prompt-entry-route-trigger svg {
+.tug-button.tug-prompt-entry-command-picker svg {
   color: var(--tug7-element-selection-text-normal-selected-rest);
 }
-.tug-button.tug-prompt-entry-route-trigger:hover:not(:disabled):not([aria-disabled="true"]) {
+.tug-button.tug-prompt-entry-command-picker:hover:not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug7-surface-selection-primary-normal-selected-hover);
   border-color: var(--tug7-surface-selection-primary-normal-selected-hover);
 }
-.tug-button.tug-prompt-entry-route-trigger:is(:active, [data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
+.tug-button.tug-prompt-entry-command-picker:is(:active, [data-pressing="true"]):not(:disabled):not([aria-disabled="true"]) {
   background-color: var(--tug7-surface-selection-primary-normal-selected-hover);
   border-color: var(--tug7-surface-selection-primary-normal-selected-hover);
 }

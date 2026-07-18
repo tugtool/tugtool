@@ -227,6 +227,13 @@ export interface ShellExchangeMessage extends MessageBase {
   startedAtMs: number;
   /** `null` while in flight; set when the exchange settles. */
   settledAtMs: number | null;
+  /**
+   * True when the PATH classifier silently routed a command-shaped line here
+   * from the prompt entry ([P09]). The row renders a `→ shell` auto-route
+   * attribution with a one-click "send to Claude instead". Client-side only —
+   * not persisted in the shell ledger.
+   */
+  autoRouted?: boolean;
 }
 
 /**

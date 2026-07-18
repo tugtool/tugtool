@@ -1,61 +1,24 @@
 /**
- * `SessionRouteIndicatorBadge` — the Z4B route-aware indicator badge for
- * the Dev prompt entry's toolbar.
+ * `SessionRouteIndicatorBadge` — the Z4B Claude Code indicator badge for
+ * the Session card's prompt-entry toolbar.
  *
- * Names what the active route targets. One component, two branches
- * (Table T01 reduced to the two live routes after Command's retirement):
+ * Names the destination the prompt targets — Claude Code, the only resting
+ * mode ([P01]). Rendered as a two-line `TugPushButton`
+ * (`layout="label-top"`): the `CLAUDE CODE` caption over the running
+ * stream-json version, matching the other Z4B chrome chips.
  *
- *   route  | indicator content                          | data source
- *   -------|--------------------------------------------|-----------------------------------
- *   ❯ Code | `Claude Code <version>` (drift-aware)      | sessionMetadataStore + drift detectors
- *   $ Shell| `<shell name>`                             | HostFactsStore.shell
- *
- * Rendered as a two-line `TugPushButton` (`layout="label-top"`): an
- * uppercase caption over the value — `CLAUDE CODE` / version on the
- * Code route, `SHELL` / shell-path on the Shell route — matching the
- * other Z4B chrome chips.
- *
- * **Mount identity ([L26], Risk R03).** The badge keeps its mount
- * across a route flip — the returned tree always has the same shape:
- * a single `TugPopover` wrapping a `TugPopoverAnchor` wrapping one
- * `TugPushButton`. Only the button's `label`, children, icon, click
- * behavior, and the conditional `TugPopoverContent` swap. React
- * reconciles the `TugPushButton` element as the same type at the same
- * position; the `Code`-route drift report's open/closed state survives
- * a flip-away-and-back through Shell.
- *
- * **Code branch ([D13] interactive Z4B chip).** Caption `Claude Code`,
- * value the running stream-json version (with `· N events` appended on
- * drift, flagged with a `TriangleAlert` icon and a `data-drift` hook
- * when the dispatch detected drift, [D04] / [Q03]). A **left click**
- * opens Anthropic's Claude Code changelog in the system browser; a
- * **right click** opens the report popover listing running / validated
- * versions and any drift events. Falls back to the tugbank-persisted
- * last-known version before the live `system_metadata.version` lands,
- * or `?` when none has ever been seen.
- *
- * **Shell branch.** Caption `Shell`, value the full `$SHELL` path
- * (`/bin/zsh`, `/usr/local/bin/fish`, …), read from {@link useHostFacts}
- * ([D04]). Falls back to the basename (`shell`) if `shellPath` is empty
- * (an older tugcast that predates the field), then to the `shell`
- * placeholder before host facts resolve at all (the fetch is one-shot
- * at app load, so this is brief). No report; clicking is a placeholder
- * no-op today — someday it opens the shell in the user's terminal app.
- *
- * **Width stabilization.** The chip pins its footprint across the
- * route flip so its neighbors (Project / Session / … chips) never
- * shift when the user toggles Code ↔ Shell. Both lines wrap a
- * `TugStableOverlay`: the caption overlays `Claude Code` / `Shell` and
- * the value overlays version / shell-path, each cell reserving the
- * wider of its two faces ([R01]). A face that grows past the reserved
- * width (the Code route's `· N events` drift annotation) still fits —
- * the active face is a real layout item, so the box grows to it rather
- * than clipping.
+ * The value is the running stream-json version (with `· N events` appended
+ * on drift, flagged with a `TriangleAlert` icon and a `data-drift` hook
+ * when the dispatch detected drift, [D04] / [Q03]). A **left click** opens
+ * Anthropic's Claude Code changelog in the system browser; a **right
+ * click** opens the report popover listing running / validated versions
+ * and any drift events. Falls back to the tugbank-persisted last-known
+ * version before the live `system_metadata.version` lands, or `?` when
+ * none has ever been seen.
  *
  * Laws:
  *  - [L02] external state enters through `useSyncExternalStore` — the
- *    `CodeSessionStore` transcript, `SessionMetadataStore` version,
- *    `HostFactsStore` host facts, and `RouteLifecycle` route are all
+ *    `CodeSessionStore` transcript and `SessionMetadataStore` version are
  *    subscribed, never mirrored into React state.
  *  - [L06] no React state for appearance — the report popover's
  *    open/closed state is owned by `TugPopover` and driven imperatively
@@ -69,8 +32,6 @@
  *  - [L20] owns only the `--tugx-route-indicator-*` report-geometry
  *    slots; composes `TugPushButton` (the chip) and `SessionCautionBadge`
  *    (the report rows), each of which keeps its own tokens.
- *  - [L26] one component-type at one React position; no per-route
- *    keying — mount identity is preserved across route flips.
  *
  * @module components/tugways/chrome/session-route-indicator-badge
  */
@@ -81,7 +42,6 @@ import React, { useCallback, useEffect, useMemo, useSyncExternalStore } from "re
 import { TriangleAlert } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import {
   TugPopover,
   TugPopoverAnchor,
@@ -97,19 +57,10 @@ import {
 } from "@/components/tugways/cards/session-assistant-renderer-dispatch";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
-import { useHostFacts } from "@/lib/host-facts-store";
-import { useRoute } from "@/lib/route-lifecycle";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
 import { SessionCautionBadge } from "./session-caution-badge";
-
-// ── Route values ───────────────────────────────────────────────────────────
-//
-// Mirror the values in `tug-prompt-entry.tsx`'s `ROUTE_ITEMS`. Kept inline
-// (not re-exported from there) so this component depends only on the
-// route's *value* — a `string` — not on the prompt-entry's item list.
-const ROUTE_SHELL = "$";
 
 // ── External links ─────────────────────────────────────────────────────────
 
@@ -195,16 +146,6 @@ export function SessionRouteIndicatorBadge({
   focusGroup,
   focusOrder,
 }: SessionRouteIndicatorBadgeProps): React.ReactElement {
-  // Route from the per-prompt-entry `RouteLifecycle`. `null` outside a
-  // provider; treated the same as the `Code` default below.
-  const route = useRoute();
-  const isShell = route === ROUTE_SHELL;
-
-  // Host facts — read once on app load; null while unresolved. Only
-  // the shell branch reads it for display, but the subscription is
-  // unconditional so mount identity is route-independent ([L26]).
-  const hostFacts = useHostFacts();
-
   // Narrowed to `transcript` — the only snapshot field the drift walk
   // reads. The committed transcript array's reference changes once per
   // turn commit, so the badge does not re-render on every streaming
@@ -267,27 +208,16 @@ export function SessionRouteIndicatorBadge({
   // session has reported one, else the last-known version.
   const displayVersion = version ?? lastKnownVersion;
 
-  const hasDrift = !isShell && summary.count > 0;
+  const hasDrift = summary.count > 0;
   const cls =
     className === undefined
       ? "session-route-indicator-badge"
       : `session-route-indicator-badge ${className}`;
 
-  // Per-branch faces. The Shell face is the full `$SHELL` path, with
-  // graceful fall-back to the basename (older tugcast) or a `shell`
-  // placeholder (host facts not yet resolved). The Code face is the
-  // running Claude Code version with optional drift annotation.
-  const shellFace =
-    hostFacts?.shellPath !== undefined && hostFacts.shellPath.length > 0
-      ? hostFacts.shellPath
-      : hostFacts?.shell !== undefined && hostFacts.shell.length > 0
-        ? hostFacts.shell
-        : "shell";
-
-  // Content line for the Code route: the running version, with the
-  // drift event count appended when drift is present (the running /
-  // validated split and the full event list live in the click-expand
-  // report). `?` until any version has been seen.
+  // Content line: the running Claude Code version, with the drift event
+  // count appended when drift is present (the running / validated split and
+  // the full event list live in the click-expand report). `?` until any
+  // version has been seen.
   let codeContent: string;
   if (displayVersion === null) {
     codeContent = "?";
@@ -297,85 +227,55 @@ export function SessionRouteIndicatorBadge({
     codeContent = `${version ?? displayVersion} · ${eventCountLabel(summary.count)}`;
   }
 
-  // Two-line faces: an uppercase caption (CSS-transformed) over the
-  // value. Caption and value both swap with the route. The *inactive*
-  // face is overlaid (hidden) in the same cell via `TugStableOverlay` so
-  // the chip reserves the wider of the two and a route flip never
-  // reflows its neighbors ([R01]).
-  const caption = isShell ? "Shell" : "Claude Code";
-  const content = isShell ? shellFace : codeContent;
-  const inactiveCaption = isShell ? "Claude Code" : "Shell";
-  const inactiveContent = isShell ? codeContent : shellFace;
+  const caption = "Claude Code";
+  const content = codeContent;
 
   // Imperative handle for the report popover — opened on right-click of
-  // the Code-route chip ([D13]). Left click is reassigned to the
-  // changelog, so the disclosure is driven imperatively rather than by a
-  // `TugPopoverTrigger`'s click-toggle.
+  // the chip ([D13]). Left click is reassigned to the changelog, so the
+  // disclosure is driven imperatively rather than by a `TugPopoverTrigger`'s
+  // click-toggle.
   const popoverRef = React.useRef<TugPopoverHandle>(null);
 
-  // Click: Code opens Anthropic's changelog in the system browser; Shell
-  // is a placeholder no-op today (someday it opens the shell in the
-  // user's terminal app).
-  const handleClick = isShell
-    ? undefined
-    : () => openUrlInOS(CLAUDE_CODE_CHANGELOG_URL);
+  // Left click opens Anthropic's changelog in the system browser.
+  const handleClick = (): void => openUrlInOS(CLAUDE_CODE_CHANGELOG_URL);
 
-  // Right-click: Code opens the version / drift report popover; Shell has
-  // no report, so its native context menu is left alone.
-  const handleContextMenu = isShell
-    ? undefined
-    : (e: React.MouseEvent) => {
-        e.preventDefault();
-        popoverRef.current?.open();
-      };
+  // Right click opens the version / drift report popover.
+  const handleContextMenu = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    popoverRef.current?.open();
+  };
 
-  // Tooltip carries the route's face plus the affordance hint; on the
-  // Code route it surfaces the drift count so the signal survives even
-  // without opening the report.
-  const title = isShell
-    ? `${content} — opens in your terminal (coming soon)`
-    : hasDrift
-      ? `Claude Code ${version ?? displayVersion ?? "?"} · ${eventCountLabel(summary.count)} drift — click for changelog, right-click for report`
-      : `Claude Code ${displayVersion ?? "?"} — click for changelog, right-click for report`;
+  // Tooltip carries the version plus the affordance hint; it surfaces the
+  // drift count so the signal survives even without opening the report.
+  const title = hasDrift
+    ? `Claude Code ${version ?? displayVersion ?? "?"} · ${eventCountLabel(summary.count)} drift — click for changelog, right-click for report`
+    : `Claude Code ${displayVersion ?? "?"} — click for changelog, right-click for report`;
 
-  // One-shape render: `TugPopover` always wraps the `TugPushButton`
-  // anchor ([L26], Risk R03) so the chip's mount survives a route flip.
-  // The `TugPopoverContent` is the only piece that varies — Shell renders
-  // none (nothing to expand to), Code renders the running/validated
-  // versions and any drift events.
   return (
     <TugPopover ref={popoverRef}>
       <TugPopoverAnchor>
         <TugPushButton
           layout="label-top"
-          label={
-            <TugStableOverlay
-              active={caption}
-              alternates={[inactiveCaption]}
-            />
-          }
+          label={caption}
           emphasis="tinted"
           role="action"
           size="sm"
           icon={hasDrift ? <TriangleAlert aria-hidden="true" /> : undefined}
           className={cls}
-          data-route={isShell ? "shell" : "code"}
+          data-route="code"
           data-drift={hasDrift ? "" : undefined}
           data-slot="session-route-indicator-badge"
           focusGroup={focusGroup}
           focusOrder={focusOrder}
-          aria-label={isShell ? "Shell" : "Claude Code — open changelog"}
+          aria-label="Claude Code — open changelog"
           title={title}
           onClick={handleClick}
           onContextMenu={handleContextMenu}
         >
-          <TugStableOverlay
-            active={content}
-            alternates={[inactiveContent]}
-          />
+          {content}
         </TugPushButton>
       </TugPopoverAnchor>
-      {isShell ? null : (
+      {(
         <TugPopoverContent side="top" align="end" sideOffset={8} arrow spaceDismisses>
           <div
             className="session-route-indicator-badge-report"

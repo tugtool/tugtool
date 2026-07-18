@@ -764,6 +764,11 @@ export function initActionDispatch(
     TUG_ACTIONS.FOCUS_PROMPT,
     TUG_ACTIONS.CYCLE_PERMISSION_MODE,
     TUG_ACTIONS.INTERRUPT_SESSION,
+    // Swift Session-menu Show/Hide Changes / History ([P05], Spec S04). The
+    // control-frame name matches the chain-action name, so the same key-card
+    // re-dispatch adapter serves them.
+    TUG_ACTIONS.TOGGLE_CHANGES_VIEW,
+    TUG_ACTIONS.TOGGLE_HISTORY_VIEW,
   ]) {
     registerAction(action, () => {
       if (responderChainManagerRef) {

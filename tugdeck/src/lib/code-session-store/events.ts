@@ -29,6 +29,8 @@ export interface ShellExchangeStartedActionEvent {
   command: string;
   cwd: string;
   startedAtMs: number;
+  /** True when the PATH classifier auto-routed this line to the shell ([P09]). */
+  autoRouted?: boolean;
 }
 
 export interface ShellExchangeCompleteActionEvent {
@@ -44,6 +46,8 @@ export interface ShellExchangeCompleteActionEvent {
   cwdAfter: string | null;
   startedAtMs: number;
   settledAtMs: number;
+  /** True when the PATH classifier auto-routed this line to the shell ([P09]). */
+  autoRouted?: boolean;
 }
 
 export interface SendActionEvent {

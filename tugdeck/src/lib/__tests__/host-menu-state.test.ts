@@ -160,7 +160,10 @@ describe("HostMenuStatePublisher", () => {
     expect(posted).toHaveLength(1);
   });
 
-  const sessionBlock = (cardId: string): MenuStateSessionBlock => ({
+  const sessionBlock = (
+    cardId: string,
+    overrides: Partial<MenuStateSessionBlock> = {},
+  ): MenuStateSessionBlock => ({
     cardId,
     sessionBound: true,
     canInterrupt: false,
@@ -168,6 +171,9 @@ describe("HostMenuStatePublisher", () => {
     permissionMode: "default",
     hasAssistantMessage: false,
     hasTurns: false,
+    changesVisible: false,
+    historyVisible: false,
+    ...overrides,
   });
 
   test("attaches the session block only for the focused pane's active session card", async () => {
@@ -180,6 +186,18 @@ describe("HostMenuStatePublisher", () => {
     await settle();
     expect(posted).toHaveLength(1);
     expect(posted[0].session).toEqual(sessionBlock("a"));
+  });
+
+  test("the Shade-visibility booleans (Spec S04) ride the session block", async () => {
+    const posted: MenuStatePayload[] = [];
+    const publisher = new HostMenuStatePublisher((p) => posted.push(p));
+    publisher.setDeckProjection(
+      projectDeckState(deck([card("a", { componentId: "session" })], [pane("p1", ["a"])])),
+    );
+    publisher.setSessionBlock("a", sessionBlock("a", { changesVisible: true }));
+    await settle();
+    expect(posted[0].session?.changesVisible).toBe(true);
+    expect(posted[0].session?.historyVisible).toBe(false);
   });
 
   test("non-session active card rides with session: null even when a block exists", async () => {

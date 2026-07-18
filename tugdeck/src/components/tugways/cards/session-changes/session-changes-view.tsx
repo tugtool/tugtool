@@ -38,12 +38,14 @@ import {
   CircleCheck,
   GitCommitHorizontal,
   SquareArrowOutUpRight,
+  X,
 } from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
@@ -71,6 +73,7 @@ import {
   useChangesetRelease,
 } from "@/lib/changeset-verb-store";
 import { useChangesetJoinResolve } from "@/lib/changeset-join-store";
+import { useChangesetDraft } from "@/lib/changeset-draft-store";
 import type {
   ChangesetFile,
   DashChangesetEntry,
@@ -977,17 +980,31 @@ export interface SessionChangesViewProps {
    * Viewing changes mid-turn is free; only durable mutations wait.
    */
   codeSessionStore: CodeSessionStore;
+  /** Hide the Shade — the header's close affordance ([P05]). */
+  onClose?: () => void;
 }
 
 export function SessionChangesView({
   projectDir,
   changesController,
   codeSessionStore,
+  onClose,
 }: SessionChangesViewProps): React.ReactElement {
   const snap = useSyncExternalStore(
     changesController.subscribe,
     changesController.getSnapshot,
   );
+  // The commit-message draft overlay ([P06]/S05). The Generate affordance now
+  // lives in this header (it moved off the retired `±` route's entry); a click
+  // requests an on-demand AI draft, which streams into the prompt entry as a
+  // `/changes commit <draft>` command line. Width-stabilized so "Generating…"
+  // never resizes the button; disabled while a draft streams.
+  const draft = useChangesetDraft(
+    changesController.projectDir,
+    changesController.draftOwnerKind,
+    changesController.tugSessionId,
+  );
+  const drafting = draft.phase === "drafting";
   const commit = useChangesetCommit(changesController.entryKey);
   const project = snap.project;
   // `canInterrupt` is true exactly while a turn can be stopped (one is
@@ -1054,7 +1071,32 @@ export function SessionChangesView({
         </span>
       }
       name="Changes"
-      actions={actions}
+      actions={
+        <>
+          <TugPushButton
+            className="tug-prompt-entry-generate-button"
+            emphasis="outlined"
+            role="action"
+            size="2xs"
+            disabled={drafting}
+            widthStabilize={{ alternateLabel: "Generating…" }}
+            onClick={() => changesController.requestDraft()}
+            data-testid="changes-generate-draft"
+          >
+            {drafting ? "Generating…" : "Generate"}
+          </TugPushButton>
+          {actions}
+          {onClose !== undefined ? (
+            <TugIconButton
+              icon={<X size={12} strokeWidth={2.5} />}
+              aria-label="Close"
+              size="2xs"
+              emphasis="ghost"
+              onClick={onClose}
+            />
+          ) : null}
+        </>
+      }
     />
   );
   const shell = (

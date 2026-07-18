@@ -10,7 +10,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildSlashCommandLine,
-  isCodeRouteOnlyCommand,
   matchLocalSlashCommand,
   slashCommandName,
   type CommandLineAtom,
@@ -233,22 +232,55 @@ describe("buildSlashCommandLine", () => {
   });
 });
 
-describe("isCodeRouteOnlyCommand — one-shot gating", () => {
-  test("the one-shot accelerators are Code-route-only", () => {
-    expect(isCodeRouteOnlyCommand("shell")).toBe(true);
-    expect(isCodeRouteOnlyCommand("btw")).toBe(true);
-  });
-
-  test("ordinary local commands are offered everywhere", () => {
-    expect(isCodeRouteOnlyCommand("permissions")).toBe(false);
-    expect(isCodeRouteOnlyCommand("model")).toBe(false);
-    expect(isCodeRouteOnlyCommand("not-a-command")).toBe(false);
-  });
-
+describe("one-shot command args", () => {
   test("/shell matches with its argument", () => {
     expect(matchLocalSlashCommand("/shell echo hi")).toEqual({
       name: "shell",
       args: "echo hi",
+    });
+  });
+});
+
+describe("/changes and /history", () => {
+  test("bare /changes and /history match with empty args", () => {
+    expect(matchLocalSlashCommand("/changes")).toEqual({
+      name: "changes",
+      args: "",
+    });
+    expect(matchLocalSlashCommand("/history")).toEqual({
+      name: "history",
+      args: "",
+    });
+  });
+
+  test("/changes carries its directive + message as args (verb split is the surface's job)", () => {
+    expect(matchLocalSlashCommand("/changes describe")).toEqual({
+      name: "changes",
+      args: "describe",
+    });
+    expect(matchLocalSlashCommand("/changes commit fix: thing")).toEqual({
+      name: "changes",
+      args: "commit fix: thing",
+    });
+  });
+
+  test("/history carries the whole question as args", () => {
+    expect(matchLocalSlashCommand("/history what changed")).toEqual({
+      name: "history",
+      args: "what changed",
+    });
+  });
+
+  test("a command atom + 'commit <msg>' reconstructs /changes commit <msg>", () => {
+    const { text, atoms } = mkDraft([
+      { type: "command", value: "changes" },
+      " commit fix: the parser",
+    ]);
+    const line = buildSlashCommandLine(text, atoms);
+    expect(line).toBe("/changes commit fix: the parser");
+    expect(matchLocalSlashCommand(line)).toEqual({
+      name: "changes",
+      args: "commit fix: the parser",
     });
   });
 });

@@ -123,11 +123,10 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "KeyC", meta: true, action: TUG_ACTIONS.COPY, preventDefaultOnMatch: true },
   // Copy variant. ⌥⇧⌘C strips Markdown from the selection to plain text.
   // The exact-modifier match in `keyBindingMatchesEvent` keeps it distinct
-  // from bare ⌘C and from ⇧⌘C — which is the Code route shortcut
-  // (SELECT_ROUTE `❯`, below), so this variant carries the extra ⌥. In
-  // Tug.app the Swift Edit menu owns the chord (AppKit swallows it at the
-  // menu bar and round-trips a control frame); this entry serves browser-only
-  // dev where no Swift menu is present.
+  // from bare ⌘C, so this variant carries the extra ⌥⇧. In Tug.app the Swift
+  // Edit menu owns the chord (AppKit swallows it at the menu bar and
+  // round-trips a control frame); this entry serves browser-only dev where no
+  // Swift menu is present.
   { key: "KeyC", meta: true, shift: true, alt: true, action: TUG_ACTIONS.COPY_AS_PLAIN_TEXT, preventDefaultOnMatch: true },
   { key: "KeyV", meta: true, action: TUG_ACTIONS.PASTE, preventDefaultOnMatch: true },
   // Paste variants. ⌥⌘V wraps the clipboard as a Markdown blockquote;
@@ -230,33 +229,6 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "Digit7", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 7 },
   { key: "Digit8", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 8 },
   { key: "Digit9", meta: true, action: TUG_ACTIONS.JUMP_TO_TAB, value: 9 },
-  // tug-prompt-entry route shortcuts. ⇧⌘C / ⇧⌘S / ⇧⌘B switch the
-  // route segment without leaving the editor. The handler lives on
-  // tug-prompt-entry's responder (default `first-responder` scope —
-  // dispatch from the editor walks up to the entry). The `value`
-  // payload carries the canonical route character; the entry's
-  // SELECT_ROUTE handler narrows to string and calls setRouteState.
-  // `preventDefaultOnMatch` suppresses the WebView's native handling
-  // (Shift+Cmd+S "Save Page As"; Shift+Cmd+C "Copy with Style") so the
-  // shortcut is owned by the responder chain regardless of focus.
-  // ⇧⌘B has no WebKit default in this context (verified unbound) but
-  // carries `preventDefaultOnMatch` for symmetry with its siblings.
-  { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "❯", preventDefaultOnMatch: true },
-  { key: "KeyS", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "$", preventDefaultOnMatch: true },
-  { key: "KeyB", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "?", preventDefaultOnMatch: true },
-  // ⇧⌘F flips to the Find route (transcript search), same SELECT_ROUTE path as
-  // its siblings; the entry's handler gates on membership in
-  // RETURN_ACTION_BY_ROUTE, where `⌕` is present. Plain ⌘F is left to whichever
-  // CM6 editor owns find. `preventDefaultOnMatch` suppresses WebKit's ⇧⌘F.
-  { key: "KeyF", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "⌕", preventDefaultOnMatch: true },
-  // ⇧⌘E / ⇧⌘Y flip to the Changes (`±`) / History (`↺`) view-routes, the
-  // same SELECT_ROUTE path as their siblings; the entry's handler gates on
-  // membership in RETURN_ACTION_BY_ROUTE (where `±` / `↺` are present) and
-  // additionally no-ops on a host that does not offer the view-routes
-  // (`viewRoutes` false). `preventDefaultOnMatch` suppresses WebKit's ⇧⌘E
-  // (no default here, kept for symmetry) and ⇧⌘Y.
-  { key: "KeyE", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "±", preventDefaultOnMatch: true },
-  { key: "KeyY", meta: true, shift: true, action: TUG_ACTIONS.SELECT_ROUTE, value: "↺", preventDefaultOnMatch: true },
   // ⇧⌘P cycles the session card's permission mode. Tug deliberately departs from
   // the Claude Code TUI here: the terminal cycles permission mode on Shift+Tab,
   // but in a GUI Shift+Tab must move focus to the previous control. So the
@@ -268,6 +240,28 @@ export const KEYBINDINGS: KeyBinding[] = [
   // pick-a-mode affordances. Tab / Shift-Tab are NOT in this map — the
   // focus-walk stage in `responder-chain-provider.tsx` owns them.
   { key: "KeyP", meta: true, shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card", preventDefaultOnMatch: true },
+  // Command picker + one-shot command chords ([P06]/[P07]). ⌘/ opens the
+  // completion popup (seeds a leading `/`); ⌃⌘S/B/C/G/H insert the matching
+  // command chip at the head of the draft, preserving typed args. All are
+  // `scope: "key-card"` so they fire card-wide (not only while the editor is
+  // focused); the session card's card-content responder forwards each to the
+  // prompt entry's `openCommandPicker` / `insertCommandChip`. ⌃⌘G (not ⌃⌘F)
+  // for find — F shadows the legacy macOS fullscreen chord; G carries the
+  // platform find-next mnemonic (⌘G). `preventDefaultOnMatch` suppresses the
+  // WebView default / macOS beep.
+  { key: "Slash", meta: true, action: TUG_ACTIONS.OPEN_COMMAND_PICKER, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyS", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "shell" }, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyB", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "btw" }, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyC", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "changes" }, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyG", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "find" }, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyH", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "history" }, scope: "key-card", preventDefaultOnMatch: true },
+  // Show/Hide Changes (⇧⌘C) and History (⇧⌘H) — the browser-dev twins of the
+  // Swift Session-menu items ([P05], Spec S04). In Tug.app the menu key
+  // equivalents (⌘⇧C / ⌘⇧H) win at the menu bar; these serve dev where no
+  // Swift menu is present. `scope: "key-card"` routes to the active card's
+  // card-content responder, which toggles the Shade.
+  { key: "KeyC", meta: true, shift: true, action: TUG_ACTIONS.TOGGLE_CHANGES_VIEW, scope: "key-card", preventDefaultOnMatch: true },
+  { key: "KeyH", meta: true, shift: true, action: TUG_ACTIONS.TOGGLE_HISTORY_VIEW, scope: "key-card", preventDefaultOnMatch: true },
   // ⌥⇥ toggles a text-first card's keyboard-focus-cycling mode — the mode in
   // which Tab circulates the card's chrome zones (the [D97] Z-areas) instead of
   // feeding the editor. `scope: "key-card"` routes to the active card's

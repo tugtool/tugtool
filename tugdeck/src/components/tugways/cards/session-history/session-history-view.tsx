@@ -30,10 +30,11 @@ import "./session-history-view.css";
 
 import { useEffect, useSyncExternalStore } from "react";
 import type React from "react";
-import { History as HistoryIcon } from "lucide-react";
+import { History as HistoryIcon, X } from "lucide-react";
 
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugShade } from "@/components/tugways/tug-shade";
 import {
   gitLogStore,
@@ -86,11 +87,14 @@ export interface SessionHistoryViewProps {
   projectDir: string | null;
   /** True while the `↺` route is the active slot — gates the singleton request. */
   active: boolean;
+  /** Hide the Shade — the header's close affordance ([P05]). */
+  onClose?: () => void;
 }
 
 export function SessionHistoryView({
   projectDir,
   active,
+  onClose,
 }: SessionHistoryViewProps): React.ReactElement {
   const snapshot = useGitLogSnapshot();
 
@@ -122,6 +126,17 @@ export function SessionHistoryView({
             </span>
           }
           name="History"
+          actions={
+            onClose !== undefined ? (
+              <TugIconButton
+                icon={<X size={12} strokeWidth={2.5} />}
+                aria-label="Close"
+                size="2xs"
+                emphasis="ghost"
+                onClick={onClose}
+              />
+            ) : undefined
+          }
         />
       }
     >

@@ -5404,6 +5404,7 @@ function shellMessage(
     cwdAfter: settled ? event.cwdAfter : null,
     startedAtMs: event.startedAtMs,
     settledAtMs: settled ? event.settledAtMs : null,
+    autoRouted: event.autoRouted === true,
   };
 }
 

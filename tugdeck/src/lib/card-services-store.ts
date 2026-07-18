@@ -42,6 +42,7 @@ import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
 import { ShellSessionStore } from "./shell-session-store";
+import { PathCommandsStore } from "./path-commands-store";
 import { PendingContextStore } from "./pending-context-store";
 import { FeedStore, type FeedStoreFilter } from "./feed-store";
 import { FeedId } from "../protocol";
@@ -120,6 +121,12 @@ export interface CardServices {
    */
   readonly shellSessionStore: ShellSessionStore;
   readonly shellSessionFeedStore: FeedStore;
+  /**
+   * The login-PATH command set for the shell-line classifier ([P08]). Shares
+   * the shell session's `SHELL_OUTPUT` feed; requested at bind, null until the
+   * reply lands.
+   */
+  readonly pathCommandsStore: PathCommandsStore;
   /**
    * The `±`-route Changes controller ([P07]) — a filtered, selection-aware
    * projection over the app-level `ChangesetAllStore` (0x24) scoped to this
@@ -512,6 +519,16 @@ class CardServicesStore {
       pendingContextStore,
     );
 
+    // Login-PATH command set for the shell-line classifier ([P08]). Shares the
+    // shell session's SHELL_OUTPUT feed; request it now (at bind) so the set is
+    // warm before the first submit.
+    const pathCommandsStore = new PathCommandsStore(
+      shellSessionFeedStore,
+      FeedId.SHELL_OUTPUT,
+      binding.tugSessionId,
+    );
+    pathCommandsStore.request();
+
     // `±`-route Changes controller ([P07]): a filtered projection over the
     // app-level `ChangesetAllStore` singleton — NO new FeedStore (the
     // per-workspace CHANGESET feed 0x23 is retired). Scoped to this card's
@@ -618,6 +635,7 @@ class CardServicesStore {
       sideQuestionFeedStore,
       shellSessionStore,
       shellSessionFeedStore,
+      pathCommandsStore,
       changesController,
       pendingContextStore,
       fileCompletionProvider,
@@ -644,6 +662,7 @@ class CardServicesStore {
     services.sideQuestionStore.dispose();
     services.sideQuestionFeedStore.dispose();
     services.shellSessionStore.dispose();
+    services.pathCommandsStore.dispose();
     services.shellSessionFeedStore.dispose();
     services.changesController.dispose();
     services.pendingContextStore.dispose();

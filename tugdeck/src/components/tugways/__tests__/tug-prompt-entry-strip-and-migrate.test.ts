@@ -20,60 +20,83 @@ import {
   buildEditingStateFromDraftRestore,
   classifyBlockedSubmit,
   coerceRestorePayload,
+  computeCommandChipInsert,
   computeSideQuestionArg,
-  routeAwareSubmitButtonMode,
 } from "@/components/tugways/tug-prompt-entry";
-import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { CommandLineAtom } from "@/lib/slash-commands";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 
 // ---------------------------------------------------------------------------
-// routeAwareSubmitButtonMode — the `$`-route Z5 mode selector ([P13])
+// computeCommandChipInsert — the ⌃⌘ chord / picker head-chip transform ([P07])
 // ---------------------------------------------------------------------------
 
-describe("routeAwareSubmitButtonMode", () => {
-  const claude: SessionSubmitButtonMode = { kind: "stopping" };
+describe("computeCommandChipInsert", () => {
+  const A = TUG_ATOM_CHAR;
 
-  it("passes the Claude lifecycle mode through unchanged on `❯` and `?`", () => {
-    expect(routeAwareSubmitButtonMode("❯", claude, false)).toBe(claude);
-    expect(routeAwareSubmitButtonMode("❯", claude, true)).toBe(claude);
-    expect(routeAwareSubmitButtonMode("?", claude, true)).toBe(claude);
-    expect(routeAwareSubmitButtonMode(null, claude, true)).toBe(claude);
+  it("empty draft → a lone command atom + trailing space, caret after it", () => {
+    const result = computeCommandChipInsert(
+      { text: "", atoms: [], selection: null },
+      "shell",
+    );
+    expect(result.text).toBe(`${A} `);
+    expect(result.atoms).toEqual([
+      { position: 0, type: "command", label: "shell", value: "shell" },
+    ]);
+    expect(result.selection).toEqual({ start: 2, end: 2 });
   });
 
-  it("`$` + idle → submit (never inert; empty-gating rides data-empty)", () => {
-    expect(routeAwareSubmitButtonMode("$", claude, false)).toEqual({
-      kind: "submit",
-      disabled: false,
-    });
+  it("plain-text draft → chip leads, the text becomes args", () => {
+    const result = computeCommandChipInsert(
+      { text: "-la src", atoms: [], selection: { start: 7, end: 7 } },
+      "shell",
+    );
+    expect(result.text).toBe(`${A} -la src`);
+    expect(result.atoms).toEqual([
+      { position: 0, type: "command", label: "shell", value: "shell" },
+    ]);
+    // The caret rides right by the two inserted chars.
+    expect(result.selection).toEqual({ start: 9, end: 9 });
   });
 
-  it("`$` + in-flight → stop (fires kill, ignoring the Claude mode)", () => {
-    expect(routeAwareSubmitButtonMode("$", claude, true)).toEqual({ kind: "stop" });
+  it("existing head command atom → swapped in place, args preserved", () => {
+    const result = computeCommandChipInsert(
+      {
+        text: `${A} commit msg`,
+        atoms: [{ position: 0, type: "command", label: "changes", value: "changes" }],
+        selection: { start: 11, end: 11 },
+      },
+      "history",
+    );
+    // Text + caret untouched; only the atom's name changes.
+    expect(result.text).toBe(`${A} commit msg`);
+    expect(result.atoms).toEqual([
+      { position: 0, type: "command", label: "history", value: "history" },
+    ]);
+    expect(result.selection).toEqual({ start: 11, end: 11 });
   });
 
-  it("`±` (Changes) → plain submit, disjoint from the Claude lifecycle", () => {
-    expect(routeAwareSubmitButtonMode("±", claude, false)).toEqual({
-      kind: "submit",
-      disabled: false,
-    });
-    // A shell exchange in flight elsewhere must not leak into the commit button.
-    expect(routeAwareSubmitButtonMode("±", claude, true)).toEqual({
-      kind: "submit",
-      disabled: false,
-    });
-  });
-
-  it("`↺` (History) follows the Claude lifecycle (a question is a turn)", () => {
-    expect(routeAwareSubmitButtonMode("↺", claude, false)).toBe(claude);
-    expect(routeAwareSubmitButtonMode("↺", claude, true)).toBe(claude);
+  it("mid-text atom (not at head) → a new head chip; the atom shifts right", () => {
+    const result = computeCommandChipInsert(
+      {
+        text: `look ${A}`,
+        atoms: [{ position: 5, type: "file", label: "a.ts", value: "a.ts" }],
+        selection: null,
+      },
+      "find",
+    );
+    expect(result.text).toBe(`${A} look ${A}`);
+    expect(result.atoms).toEqual([
+      { position: 0, type: "command", label: "find", value: "find" },
+      { position: 7, type: "file", label: "a.ts", value: "a.ts" },
+    ]);
+    expect(result.selection).toEqual({ start: 2, end: 2 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// computeSideQuestionArg — the `?`-route (btw) submission transform
+// computeSideQuestionArg — the `/btw` submission transform
 // ---------------------------------------------------------------------------
 
 // Build draft text + positioned atoms from a piece list — a string piece is

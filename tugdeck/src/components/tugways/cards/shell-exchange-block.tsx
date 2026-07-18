@@ -26,6 +26,7 @@ import type React from "react";
 import {
   ArrowDownToLine as shareIconNode,
   Check as checkIconNode,
+  CornerUpRight as sendToClaudeIconNode,
   Plus as plusIconNode,
 } from "lucide";
 
@@ -102,6 +103,7 @@ export function ShellExchangeBlock({
   message,
   onShare,
   onToggleContext,
+  onSendToClaude,
   staged = false,
 }: {
   message: ShellExchangeMessage;
@@ -109,6 +111,12 @@ export function ShellExchangeBlock({
   onShare?: () => void;
   /** Add-to-context toggle ([P08], staged variant) — omitted where no queue. */
   onToggleContext?: () => void;
+  /**
+   * Send the original command to Claude instead ([P09]). Rendered only for an
+   * auto-routed row (`message.autoRouted`); dispatches the raw text via
+   * `codeSessionStore.send`, undoing a classifier misroute in one click.
+   */
+  onSendToClaude?: () => void;
   /** Whether this exchange is currently staged. */
   staged?: boolean;
 }): React.ReactElement {
@@ -140,9 +148,36 @@ export function ShellExchangeBlock({
     onToggleContext !== undefined && !view.inFlight ? (
       <ShellAddToContextButton staged={staged} onToggle={onToggleContext} />
     ) : null;
+  // Auto-route attribution ([P09]): a `→ shell` marker + a one-click "send to
+  // Claude instead" for a row the PATH classifier routed here from the prompt
+  // entry. Rendered whenever the row was auto-routed, in-flight or settled, so
+  // the undo is reachable the instant the row appears.
+  const sendToClaudeButton =
+    message.autoRouted === true && onSendToClaude !== undefined ? (
+      <TugPushButton
+        data-slot="shell-exchange-send-to-claude"
+        icon={
+          <TugSpriteIcon
+            name="corner-up-right"
+            node={sendToClaudeIconNode as LucideIconNode}
+          />
+        }
+        subtype="icon-text"
+        emphasis="ghost"
+        size="xs"
+        aria-label="Send the original text to Claude instead"
+        title="Auto-routed to the shell — send the original text to Claude instead"
+        onClick={onSendToClaude}
+      >
+        → shell · Send to Claude
+      </TugPushButton>
+    ) : null;
   const headerActions =
-    shareButton !== null || addContextButton !== null ? (
+    sendToClaudeButton !== null ||
+    shareButton !== null ||
+    addContextButton !== null ? (
       <>
+        {sendToClaudeButton}
         {addContextButton}
         {shareButton}
       </>

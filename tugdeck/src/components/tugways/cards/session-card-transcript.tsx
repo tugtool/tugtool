@@ -540,6 +540,7 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   index,
   row,
   dataSource,
+  codeSessionStore,
   shellSessionStore,
   pendingContextStore,
 }: ShellTurnCellProps) {
@@ -648,6 +649,10 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
                   });
                 }
               }}
+              // Send to Claude instead ([P09]): undo a classifier auto-route by
+              // dispatching the raw command as a Claude turn (queues mid-turn).
+              // Only rendered for an auto-routed row.
+              onSendToClaude={() => codeSessionStore.send(message.command, [])}
             />
           </ToolBlockHistoryCollapse>
         }
