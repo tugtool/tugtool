@@ -52,12 +52,12 @@ import {
   PencilSparkles,
   Plus,
   Search,
-  Slash,
   Square,
   SquareTerminal,
 } from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { isolateHistory } from "@codemirror/commands";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -95,6 +95,7 @@ import {
 } from "./tug-text-editor/drop-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import {
+  addAtomsEffect,
   getAtomsInState,
   regenerateAtomsEffect,
   removeAtomById,
@@ -137,7 +138,8 @@ import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
-import { classifyShellLine } from "@/lib/shell-line-classifier";
+import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier";
+import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import { useChangesetDraft } from "@/lib/changeset-draft-store";
 import type { FindSession } from "@/lib/find-session";
 
@@ -148,26 +150,35 @@ import type { FindSession } from "@/lib/find-session";
 /** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
+/** Per-routing menu icons for the Z4A picker — presentation only; names,
+ *  descriptions, and chords come from the {@link BANG_COMMANDS} registry. */
+const BANG_PICKER_ICONS: Record<string, React.ReactNode> = {
+  shell: <SquareTerminal size={14} />,
+  btw: <MessageSquareDashed size={14} />,
+  find: <Search size={14} />,
+  changes: <GitCommitHorizontal size={14} />,
+  history: <HistoryIcon size={14} />,
+};
+
 /**
- * The Z4A command picker's roster ([P06], revised): ONLY the five commands
- * demoted from sticky routes, each with its ⌃⌘ chord label so the menu teaches
- * the shortcuts as it is used. Picking one seeds its command chip; the label
- * shortcuts mirror the `keybinding-map.ts` chords. Deliberately NOT the whole
- * `/` completion catalog — the picker is a focused accelerator, not a command
- * browser.
+ * The Z4A picker's roster ([P06], revised): the bang-command registry —
+ * ONLY the five routings demoted from sticky routes, each labeled in its
+ * typed `!name` form with its ⌃⌘ chord, so the menu teaches both the
+ * shortcut and the typeable syntax as it is used. Picking one seeds its
+ * `!name` chip. Deliberately NOT the `/` completion catalog — routings are
+ * a different species from slash commands (`lib/bang-commands.ts`).
  */
 const COMMAND_PICKER_ITEMS: ReadonlyArray<{
   id: string;
   label: string;
   icon: React.ReactNode;
   shortcut: string;
-}> = [
-  { id: "shell", label: "Shell", icon: <SquareTerminal size={14} />, shortcut: "⌃⌘S" },
-  { id: "btw", label: "btw", icon: <MessageSquareDashed size={14} />, shortcut: "⌃⌘B" },
-  { id: "find", label: "Find", icon: <Search size={14} />, shortcut: "⌃⌘G" },
-  { id: "changes", label: "Changes", icon: <GitCommitHorizontal size={14} />, shortcut: "⌃⌘C" },
-  { id: "history", label: "History", icon: <HistoryIcon size={14} />, shortcut: "⌃⌘H" },
-];
+}> = BANG_COMMANDS.map((cmd) => ({
+  id: cmd.name,
+  label: `!${cmd.name}`,
+  icon: BANG_PICKER_ICONS[cmd.name],
+  shortcut: cmd.shortcut,
+}));
 
 /**
  * Empty editing state — the draft a freshly-cleared editor holds.
@@ -1552,6 +1563,14 @@ export const TugPromptEntry = React.forwardRef<
     selectionGuard.updateCardDomSelection(id, range);
   }, []);
 
+  // Live `!shell` auto-insert latches ([P09] companion). One flag pair per
+  // draft: `inserted` marks that THIS draft's chip came from the auto path
+  // (a menu/chord-seeded chip never sets it), `declined` latches once the
+  // user deletes an auto-inserted chip — one backspace (or ⌘Z) means "this
+  // is prose", and the chip must not nag on the next space. Both reset when
+  // the editor empties (clear / submit / select-all-delete).
+  const autoShellFlagsRef = useRef({ inserted: false, declined: false });
+
   // Substrate-level extensions installed at mount time. The
   // data-empty sync writes through a ref-tracked root element —
   // stable across renders. Extension array is captured by the
@@ -1600,6 +1619,66 @@ export const TugPromptEntry = React.forwardRef<
         if (mismatch) {
           const view = update.view;
           queueMicrotask(() => renumberImageChips(view));
+        }
+        // Live `!shell` auto-insert: the moment a typed draft becomes
+        // `<unambiguous PATH command><space>`, materialize the `!shell`
+        // routing chip at the head — the routing decision is visible (and
+        // vetoable) while the user types, instead of decided silently at
+        // submit. The submit-time classifier stays as the backstop for what
+        // this deliberately won't touch (ambiguous openers, env-assignment
+        // prefixes, pasted lines).
+        {
+          const flags = autoShellFlagsRef.current;
+          const doc = update.state.doc;
+          if (doc.length === 0) {
+            flags.inserted = false;
+            flags.declined = false;
+          } else if (
+            flags.inserted &&
+            (positioned.length === 0 ||
+              positioned[0]!.position !== 0 ||
+              positioned[0]!.segment.type !== "command")
+          ) {
+            // The auto-inserted chip is gone but the draft lives on — the
+            // user deleted it (backspace or ⌘Z). Latch the decline.
+            flags.inserted = false;
+            flags.declined = true;
+          }
+          if (
+            !flags.inserted &&
+            !flags.declined &&
+            positioned.length === 0 &&
+            update.transactions.some((tr) => tr.isUserEvent("input.type")) &&
+            autoShellOpener(
+              doc.toString(),
+              update.state.selection.main.head,
+              pathCommandsStoreRef.current?.getSnapshot() ?? null,
+            ) !== null
+          ) {
+            flags.inserted = true;
+            const view = update.view;
+            // Deferred dispatch — never re-enter the in-flight update. Its
+            // own isolated undo step, so ⌘Z peels just the chip (and the
+            // decline latch above reads that as "no, this is prose").
+            queueMicrotask(() => {
+              view.dispatch({
+                changes: { from: 0, insert: `${TUG_ATOM_CHAR} ` },
+                effects: addAtomsEffect.of([
+                  {
+                    position: 0,
+                    segment: {
+                      kind: "atom",
+                      type: "command",
+                      label: "shell",
+                      value: "shell",
+                    },
+                  },
+                ]),
+                annotations: isolateHistory.of("full"),
+                userEvent: "input.tug-atom",
+              });
+            });
+          }
         }
       }),
       // Empty-Escape gesture. On an empty editor, Escape surfaces
@@ -1799,15 +1878,17 @@ export const TugPromptEntry = React.forwardRef<
       // A draft that doesn't lead with a slash command won't match the
       // registry, so non-command drafts are unaffected.
       const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
-      const localCommand = matchLocalSlashCommand(commandLine);
+      // Bang routings first (`lib/bang-commands.ts`): a line leading with `!`
+      // — a `!name` chip or typed text — routes its payload per-submission
+      // (`!shell`, `!btw`, `!find`, `!changes`, `!history`), with `!<anything
+      // else>` the shell escape hatch (`!git status` runs in the shell). Then
+      // the local slash-command registry (`/model`, `/rewind`, …). Both
+      // dispatch through the same card responder; an arbitrary claude slash
+      // command falls through to `send()`, and a non-command draft matches
+      // neither, so plain prose is untouched.
+      const localCommand =
+        matchBangCommandLine(commandLine) ?? matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
-      // Registry-known local commands (`/btw`, `/shell`, `/find`, `/changes`,
-      // `/history`, …) intercept on EVERY route — so `/btw hello` typed on the
-      // `$` route runs the side question instead of being exec'd literally, and
-      // `/changes commit <msg>` runs the gated commit surface rather than being
-      // sent to claude. An arbitrary claude slash command still falls through to
-      // the route's native handling; a non-command draft never matches the
-      // registry, so plain shell/prose input is untouched.
       if (
         localCommand !== null &&
         manager !== null &&
@@ -2571,12 +2652,14 @@ export const TugPromptEntry = React.forwardRef<
             </div>
     ) : undefined;
 
-  // Z4A leading slot — the command picker ([P06], revised): a slash-glyph
-  // `TugPopupMenu` trigger. The menu lists ONLY the five demoted commands with
-  // their ⌃⌘ chord labels (the teaching surface); picking one seeds its command
-  // chip. `⌘/` opens the same menu by activating this trigger. Keeps the
-  // leading-slot focus-group registration so the keyboard cycle's walk is
-  // unchanged; sets no persistent state.
+  // Z4A leading slot — the routing picker ([P06], revised): a `!`-glyph
+  // `TugPopupMenu` trigger. The `!` is the honest sigil — this button picks a
+  // *routing* (where the input goes), not a slash command (what to do) — and
+  // matches the `!name` chips picking one seeds. The menu lists ONLY the five
+  // bang routings with their ⌃⌘ chord labels (the teaching surface). `⌘/`
+  // opens the same menu by activating this trigger. Keeps the leading-slot
+  // focus-group registration so the keyboard cycle's walk is unchanged; sets
+  // no persistent state.
   const entryRoutePopup = (
     <TugPopupMenu
       side="top"
@@ -2596,8 +2679,12 @@ export const TugPromptEntry = React.forwardRef<
           role="accent"
           size="sm"
           subtype="icon"
-          icon={<Slash size={14} />}
-          aria-label="Commands"
+          icon={
+            <span className="tug-prompt-entry-bang-glyph" aria-hidden="true">
+              !
+            </span>
+          }
+          aria-label="Route this input"
           focusGroup={routeFocusGroup}
           focusOrder={routeFocusOrder}
         />

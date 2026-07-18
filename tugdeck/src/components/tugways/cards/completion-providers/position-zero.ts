@@ -17,15 +17,18 @@ import type { TugPromptEntryDelegate } from "@/components/tugways/tug-prompt-ent
 /**
  * Wrap a `CompletionProvider` so it only yields results when the
  * trigger character is the first character of the editor's text.
+ * `trigger` is the character the provider is registered under
+ * (`"/"` for slash commands, `"!"` for bang routings).
  */
 export function wrapPositionZero(
   entryRef: React.RefObject<TugPromptEntryDelegate | null>,
+  trigger: string,
   inner: CompletionProvider,
 ): CompletionProvider {
   return (query: string) => {
     const editor = entryRef.current?.getEditorElement();
     const text = editor?.textContent ?? "";
-    if (text.length === 0 || text[0] !== "/") return [];
+    if (text.length === 0 || text[0] !== trigger) return [];
     return inner(query);
   };
 }

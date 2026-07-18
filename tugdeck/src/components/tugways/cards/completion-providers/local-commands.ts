@@ -20,6 +20,7 @@
 
 import type { CompletionItem, CompletionProvider } from "@/lib/tug-text-types";
 import { LOCAL_SLASH_COMMANDS, type LocalCommandName } from "@/lib/slash-commands";
+import { BANG_COMMANDS } from "@/lib/bang-commands";
 import { scoreCommandMatch } from "@/lib/text-match";
 
 /** Options for {@link localCommandCompletionProvider}. */
@@ -75,6 +76,37 @@ export function localCommandCompletionProvider(
         },
         matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
         description: descriptionOverride?.(cmd.name) ?? cmd.description,
+      });
+    }
+    return items;
+  };
+}
+
+/**
+ * A `CompletionProvider` over {@link BANG_COMMANDS} — the `!` trigger's
+ * popup. Exactly the five routings, each row carrying its ⌃⌘ chord in the
+ * muted description column so the popup teaches the shortcuts like the Z4A
+ * picker menu does. Items insert the same `type: "command"` atom shape as
+ * slash completions; the chip renders with the `!` sigil (`chipDisplayLabel`
+ * keys on the bang registry) and the submit path recognizes the
+ * reconstructed `!name …` line via `matchBangCommandLine`.
+ */
+export function bangCommandCompletionProvider(): CompletionProvider {
+  return (query: string): CompletionItem[] => {
+    const items: CompletionItem[] = [];
+    for (const cmd of BANG_COMMANDS) {
+      const match = scoreCommandMatch(query, cmd.name);
+      if (match === null) continue;
+      items.push({
+        label: cmd.name,
+        atom: {
+          kind: "atom",
+          type: "command",
+          label: cmd.name,
+          value: cmd.name,
+        },
+        matches: match.matches.map(([s, e]) => [s, e] as [number, number]),
+        description: `${cmd.description} · ${cmd.shortcut}`,
       });
     }
     return items;

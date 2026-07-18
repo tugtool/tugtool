@@ -14,6 +14,7 @@ import {
   slashCommandName,
   type CommandLineAtom,
 } from "@/lib/slash-commands";
+import { isBangCommand, matchBangCommandLine } from "@/lib/bang-commands";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   CompletionItem,
@@ -232,55 +233,90 @@ describe("buildSlashCommandLine", () => {
   });
 });
 
-describe("one-shot command args", () => {
-  test("/shell matches with its argument", () => {
-    expect(matchLocalSlashCommand("/shell echo hi")).toEqual({
+describe("bang routings (matchBangCommandLine)", () => {
+  test("the five routings are bang commands, not slash commands", () => {
+    for (const name of ["shell", "btw", "find", "changes", "history"]) {
+      expect(isBangCommand(name)).toBe(true);
+      expect(matchLocalSlashCommand(`/${name}`)).toBeNull();
+    }
+    expect(isBangCommand("model")).toBe(false);
+  });
+
+  test("!shell matches with its argument", () => {
+    expect(matchBangCommandLine("!shell echo hi")).toEqual({
       name: "shell",
       args: "echo hi",
     });
   });
-});
 
-describe("/changes and /history", () => {
-  test("bare /changes and /history match with empty args", () => {
-    expect(matchLocalSlashCommand("/changes")).toEqual({
+  test("bare !changes and !history match with empty args", () => {
+    expect(matchBangCommandLine("!changes")).toEqual({
       name: "changes",
       args: "",
     });
-    expect(matchLocalSlashCommand("/history")).toEqual({
+    expect(matchBangCommandLine("!history")).toEqual({
       name: "history",
       args: "",
     });
   });
 
-  test("/changes carries its directive + message as args (verb split is the surface's job)", () => {
-    expect(matchLocalSlashCommand("/changes describe")).toEqual({
+  test("!changes carries its directive + message as args (verb split is the surface's job)", () => {
+    expect(matchBangCommandLine("!changes describe")).toEqual({
       name: "changes",
       args: "describe",
     });
-    expect(matchLocalSlashCommand("/changes commit fix: thing")).toEqual({
+    expect(matchBangCommandLine("!changes commit fix: thing")).toEqual({
       name: "changes",
       args: "commit fix: thing",
     });
   });
 
-  test("/history carries the whole question as args", () => {
-    expect(matchLocalSlashCommand("/history what changed")).toEqual({
+  test("!history carries the whole question as args", () => {
+    expect(matchBangCommandLine("!history what changed")).toEqual({
       name: "history",
       args: "what changed",
     });
   });
 
-  test("a command atom + 'commit <msg>' reconstructs /changes commit <msg>", () => {
+  test("!<anything else> is the shell escape hatch", () => {
+    expect(matchBangCommandLine("!git status")).toEqual({
+      name: "shell",
+      args: "git status",
+    });
+    expect(matchBangCommandLine("!./run.sh -v")).toEqual({
+      name: "shell",
+      args: "./run.sh -v",
+    });
+    // A bare `!` routes to shell with empty args (the surface shows usage).
+    expect(matchBangCommandLine("!")).toEqual({ name: "shell", args: "" });
+  });
+
+  test("prose is never a bang routing", () => {
+    // `!` followed by whitespace, or a line not leading with `!`.
+    expect(matchBangCommandLine("! wow that worked")).toBeNull();
+    expect(matchBangCommandLine("hello !shell")).toBeNull();
+    expect(matchBangCommandLine("plain prose")).toBeNull();
+    expect(matchBangCommandLine("/model")).toBeNull();
+  });
+
+  test("a command atom + 'commit <msg>' reconstructs !changes commit <msg>", () => {
     const { text, atoms } = mkDraft([
       { type: "command", value: "changes" },
       " commit fix: the parser",
     ]);
     const line = buildSlashCommandLine(text, atoms);
-    expect(line).toBe("/changes commit fix: the parser");
-    expect(matchLocalSlashCommand(line)).toEqual({
+    expect(line).toBe("!changes commit fix: the parser");
+    expect(matchBangCommandLine(line)).toEqual({
       name: "changes",
       args: "commit fix: the parser",
     });
+  });
+
+  test("a non-bang command atom still reconstructs with the slash sigil", () => {
+    const { text, atoms } = mkDraft([
+      { type: "command", value: "compact" },
+      " focus",
+    ]);
+    expect(buildSlashCommandLine(text, atoms)).toBe("/compact focus");
   });
 });

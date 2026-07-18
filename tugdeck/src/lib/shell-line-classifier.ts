@@ -76,6 +76,45 @@ function hasStrongSignal(text: string, tokens: readonly string[]): boolean {
 }
 
 /**
+ * The live-typing companion to {@link classifyShellLine}: decide whether a
+ * draft that just became `<token><space>` should auto-insert the `!shell`
+ * routing chip at its head, so the routing is visible (and vetoable) while
+ * the user types instead of decided silently at submit.
+ *
+ * Far stricter than the submit-time classifier, because at first-space time
+ * there is no line context to judge — only the opener itself:
+ *  - `docText` must be exactly one token + one trailing space, single-line,
+ *    with the caret (`caret`) right after that space.
+ *  - The token must be a known PATH executable (or `./…` / `~/…`
+ *    path-shaped) AND unambiguous: an {@link AMBIGUOUS_OPENERS} or
+ *    {@link STOPWORDS} member never live-inserts (`cat …`, `make sure …`) —
+ *    those wait for the full-line classifier at submit.
+ *
+ * Returns the opener token when the chip should be inserted, else `null`.
+ * Pure; the caller enforces the atom-free precondition and its own
+ * once-per-draft / declined latches.
+ */
+export function autoShellOpener(
+  docText: string,
+  caret: number,
+  commands: ReadonlySet<string> | null,
+): string | null {
+  if (commands === null) return null;
+  if (docText.includes("\n")) return null;
+  if (caret !== docText.length) return null;
+  const m = /^(\S+) $/.exec(docText);
+  if (m === null) return null;
+  const token = m[1]!;
+  if (token.startsWith("./") || token.startsWith("~/")) return token;
+  if (token.startsWith("/") || token.startsWith("!") || token.startsWith("#")) {
+    return null;
+  }
+  if (!commands.has(token)) return null;
+  if (AMBIGUOUS_OPENERS.has(token) || STOPWORDS.has(token)) return null;
+  return token;
+}
+
+/**
  * Classify a trimmed, single-line, atom-free draft as shell (`true`) or Code
  * (`false`) per Spec S03. Returns `false` for a null command set (the set is
  * still loading — answer Code).

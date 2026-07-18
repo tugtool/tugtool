@@ -13,6 +13,7 @@ import {
   canonicalizeBareCommandLine,
 } from "@/lib/slash-supported";
 import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
+import { isBangCommand } from "@/lib/bang-commands";
 
 describe("classifySlashCommand", () => {
   test("a registered local command is supported-local", () => {
@@ -34,12 +35,16 @@ describe("classifySlashCommand", () => {
     }
   });
 
-  test("/btw is supported-local (native side_question control-request; probe-verified on 2.1.204)", () => {
-    // Graduated out of the hidden set: the user-text path is still refused
-    // headless, but the `side_question` control-request is a different door —
-    // serviced idle AND mid-turn (tugcode/probes/btw/FINDINGS.md).
-    expect(classifySlashCommand("btw")).toBe("supported-local");
-    expect(HIDDEN_SLASH_COMMANDS.has("btw")).toBe(false);
+  test("the bang routings left the slash inventory entirely", () => {
+    // shell/btw/find/changes/history are bang commands now
+    // (`lib/bang-commands.ts`), not slash commands: not local, not hidden —
+    // a typed `/shell` is a plain pass-through that resolves to an unknown
+    // (the notice teaches the `!` form) rather than a silent swallow.
+    for (const name of ["shell", "btw", "find", "changes", "history"]) {
+      expect(isBangCommand(name)).toBe(true);
+      expect(classifySlashCommand(name)).toBe("pass-through");
+      expect(HIDDEN_SLASH_COMMANDS.has(name)).toBe(false);
+    }
   });
 
   test("/tasks and /bashes are supported-local (the WORK popover surface)", () => {

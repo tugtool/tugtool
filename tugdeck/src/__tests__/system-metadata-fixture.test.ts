@@ -110,25 +110,32 @@ describe("wrapPositionZero", () => {
   ]) as CompletionProvider;
 
   it("returns [] when the editor is empty", () => {
-    const gated = wrapPositionZero(makeEntryRef(""), inner);
+    const gated = wrapPositionZero(makeEntryRef(""), "/", inner);
     expect(gated("x")).toEqual([]);
   });
 
   it("returns [] when the first character is not `/`", () => {
-    const gated = wrapPositionZero(makeEntryRef("hello /world"), inner);
+    const gated = wrapPositionZero(makeEntryRef("hello /world"), "/", inner);
     expect(gated("world")).toEqual([]);
   });
 
   it("passes through when the first character is `/`", () => {
-    const gated = wrapPositionZero(makeEntryRef("/tugplug:plan"), inner);
+    const gated = wrapPositionZero(makeEntryRef("/tugplug:plan"), "/", inner);
     const hits = gated("plan");
     expect(hits.length).toBe(1);
     expect(hits[0].label).toBe("hit:plan");
   });
 
+  it("gates a `!` provider on a leading `!`, not `/`", () => {
+    const slashDoc = wrapPositionZero(makeEntryRef("/model"), "!", inner);
+    expect(slashDoc("model")).toEqual([]);
+    const bangDoc = wrapPositionZero(makeEntryRef("!shell ls"), "!", inner);
+    expect(bangDoc("shell").length).toBe(1);
+  });
+
   it("returns [] when the ref is null (pre-mount)", () => {
     const ref: React.RefObject<TugPromptEntryDelegate | null> = { current: null };
-    const gated = wrapPositionZero(ref, inner);
+    const gated = wrapPositionZero(ref, "/", inner);
     expect(gated("x")).toEqual([]);
   });
 });

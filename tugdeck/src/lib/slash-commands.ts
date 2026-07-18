@@ -33,6 +33,7 @@
  */
 
 import { TUG_ATOM_CHAR } from "./tug-atom-img";
+import { isBangCommand } from "./bang-commands";
 
 /** One locally-handled slash command's static descriptor. */
 export interface LocalSlashCommandSpec {
@@ -125,31 +126,6 @@ export const LOCAL_SLASH_COMMANDS = [
   {
     name: "usage",
     description: "Show subscription usage limits and this session's cost",
-  },
-  {
-    name: "btw",
-    description: "Ask a quick side question, answered from the conversation with no tools · ⌃⌘B",
-    takesArgs: true,
-  },
-  {
-    name: "shell",
-    description: "Run one shell command from here · ⌃⌘S",
-    takesArgs: true,
-  },
-  {
-    name: "find",
-    description: "Find in the transcript · ⌃⌘G",
-    takesArgs: true,
-  },
-  {
-    name: "changes",
-    description: "View and commit this session's changes · ⌃⌘C",
-    takesArgs: true,
-  },
-  {
-    name: "history",
-    description: "View project history; ask about prior work · ⌃⌘H",
-    takesArgs: true,
   },
   {
     name: "copy",
@@ -248,7 +224,9 @@ export interface CommandLineAtom {
  * atoms, so a slash command is recognized even when its argument contains
  * `@`/file mentions. Each atom placeholder ({@link TUG_ATOM_CHAR}) in `text`
  * is expanded in place by its segment type: a `command` atom → `/<value>`
- * (the leading command typed via the popup); `image` atoms are dropped (not
+ * (or `!<value>` when the value is a registered bang routing — the same
+ * sigil the chip displays, so the bang matcher recognizes the line);
+ * `image` atoms are dropped (not
  * meaningful as a command argument); every other atom (file / doc / link /
  * …) contributes its `value` — the path or reference. Plain text passes
  * through unchanged, so a draft with no atoms returns verbatim.
@@ -272,7 +250,8 @@ export function buildSlashCommandLine(
     }
     const seg = segByPos.get(i);
     if (seg === undefined) continue; // defensive: orphan placeholder
-    if (seg.type === "command") out += `/${seg.value}`;
+    if (seg.type === "command")
+      out += `${isBangCommand(seg.value) ? "!" : "/"}${seg.value}`;
     else if (seg.type === "image") continue; // drop — not a focus argument
     else out += seg.value;
   }

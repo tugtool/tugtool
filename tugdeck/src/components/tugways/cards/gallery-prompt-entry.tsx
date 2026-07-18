@@ -192,7 +192,7 @@ export function GalleryPromptEntry({ cardId }: GalleryPromptEntryProps) {
     const innerSlash = getFixtureSessionMetadataStore().getCommandCompletionProvider();
     return {
       "@": fileTreeStackRef.current?.provider ?? EMPTY_FILE_COMPLETION_PROVIDER,
-      "/": wrapPositionZero(entryDelegateRef, innerSlash),
+      "/": wrapPositionZero(entryDelegateRef, "/", innerSlash),
     };
   }, []);
 

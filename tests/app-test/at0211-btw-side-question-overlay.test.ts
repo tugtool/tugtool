@@ -1,25 +1,25 @@
 /**
- * at0211-btw-side-question-overlay.test.ts — `/btw` opens the side-question
+ * at0211-btw-side-question-overlay.test.ts — `!btw` opens the side-question
  * placard and the exchange leaves the transcript untouched ([P02]/[P05],
  * roadmap/add-btw.md).
  *
  * A side question is answered from the live conversation with no tools and
- * MUST NOT enter the transcript. Tug renders it as the `/btw` body inside the
+ * MUST NOT enter the transcript. Tug renders it as the `!btw` body inside the
  * shared Z2 `TugPlacard` (in-DOM, just above the status row), fed by a
  * dedicated `SideQuestionStore` whose `side_question_answer` frame is
  * deliberately absent from `KNOWN_CODE_OUTPUT_TYPES` — so the code-session
  * (transcript) store drops it.
  *
  * This standard-tier test drives one committed turn (so the transcript has
- * entries to count), types `/btw <question>` and submits, and asserts:
+ * entries to count), types `!btw <question>` and submits, and asserts:
  *   1. the placard opens (a side-question row appears), above Z2 and within the
  *      card;
- *   2. the transcript entry count is UNCHANGED across the whole `/btw`
+ *   2. the transcript entry count is UNCHANGED across the whole `!btw`
  *      exchange — the ask, and the settled answer (injected as a
  *      `side_question_answer` frame);
  *   3. the placard AUTO-DISMISSES — a click away closes it (there is no `×`);
  *      it reopens on a BTW-cell click; and
- *   4. it is ONE-AT-A-TIME — opening a log cell (TIME) while `/btw` is open
+ *   4. it is ONE-AT-A-TIME — opening a log cell (TIME) while `!btw` is open
  *      swaps the placard rather than stacking a second one.
  *
  * The mid-turn + reload-clean behaviors are covered against real claude in
@@ -43,7 +43,7 @@ const PROMPT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const TRANSCRIPT_ENTRIES = '[data-card-id="A"] [data-slot="tug-transcript-entry"]';
 const SIDE_Q_ASK = '.side-question-question';
 const SIDE_Q_ANSWER = '.side-question-answer';
-// The `/btw` body inside the shared Z2 placard — its presence means the btw
+// The `!btw` body inside the shared Z2 placard — its presence means the btw
 // placard is open.
 const SIDE_Q_BODY = '[data-card-id="A"] [data-slot="side-question-body"]';
 const BTW_CELL = '[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"]';
@@ -81,10 +81,10 @@ function deckShape() {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0211: `/btw` opens the side-question overlay and never touches the transcript",
+  "AT0211: `!btw` opens the side-question overlay and never touches the transcript",
   () => {
     test(
-      "a /btw ask + settled answer leaves the transcript entry count unchanged",
+      "a !btw ask + settled answer leaves the transcript entry count unchanged",
       async () => {
         const app = await launchTugApp({
           testName: "at0211-btw-side-question-overlay",
@@ -135,17 +135,17 @@ describe.skipIf(!SHOULD_RUN)(
           const baseline = await countEntries();
           expect(baseline).toBeGreaterThan(0); // the committed turn rendered
 
-          // The Z2 BTW cell reads the `/btw` count — an em-dash before any ask.
+          // The Z2 BTW cell reads the `!btw` count — an em-dash before any ask.
           const btwCellValue = () =>
             app.evalJS<string | null>(
               `(() => { const el = document.querySelector('[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"] .session-telemetry-status-value'); return el ? el.textContent : null; })()`,
             );
           expect(await btwCellValue()).toBe("—");
 
-          // Type `/btw <question>` and submit. Escape first dismisses any
+          // Type `!btw <question>` and submit. Escape first dismisses any
           // open completion menu; Cmd+Return is the editor's forced submit.
           await app.nativeClickAtElement(PROMPT);
-          await app.nativeType("/btw what did I just say");
+          await app.nativeType("!btw what did I just say");
           await new Promise((r) => setTimeout(r, 200));
           await app.nativeKey("Escape");
           await new Promise((r) => setTimeout(r, 200));
@@ -237,8 +237,8 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // One-at-a-time ([P05]): opening the TIME cell while `/btw` is open
-          // SWAPS the placard — the `/btw` body is gone, the TIME log popup is
+          // One-at-a-time ([P05]): opening the TIME cell while `!btw` is open
+          // SWAPS the placard — the `!btw` body is gone, the TIME log popup is
           // shown, and exactly one placard is mounted (never stacked).
           await app.nativeClickAtElement(TIME_CELL);
           await app.waitForCondition<boolean>(

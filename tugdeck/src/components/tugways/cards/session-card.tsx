@@ -70,6 +70,7 @@ import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useSessionCardServices } from "./use-session-card-services";
 import { type LocalCommandName } from "@/lib/slash-commands";
+import { type BangCommandName, isBangCommand } from "@/lib/bang-commands";
 import { useUsageStore } from "@/lib/usage-context";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
@@ -2971,116 +2972,6 @@ export function SessionCardBody({
     memory: () => memorySheet.openMemorySheet(),
     hooks: () => hooksSheet.openHooksSheet(),
     usage: () => usageSheet.openUsageSheet(),
-    // `/btw` (arg) — ask a side question and open the non-modal overlay. The
-    // trailing text is the question (`takesArgs`). Un-gated and pre-`canSubmit`
-    // like every local command, so it works idle AND mid-turn with no
-    // `performSubmit` change ([P04]). A bare `/btw` just opens the placard
-    // (history / earlier asks) without asking.
-    btw: (arg) => {
-      if (arg.trim().length > 0) sideQuestionStore.ask(arg);
-      statusRowRef.current?.openSideQuestions();
-    },
-    shell: (arg) => {
-      // One-shot `$` accelerator from the Code route ([D110] recipients):
-      // run one exchange against the card's shell session — the row threads
-      // into the transcript via `ingestShellExchange` exactly like a
-      // `$`-route submit — while the route stays `❯`. `exec` silently drops
-      // a command while an exchange is in flight (the shell child is
-      // serial), so surface that as a bulletin instead of losing the input.
-      const notify = paneBulletinRef.current;
-      const command = arg.trim();
-      if (command.length === 0) {
-        notify?.caution("Usage: /shell <command>");
-        return;
-      }
-      if (shellSessionStore.getSnapshot().inflight !== null) {
-        notify?.caution("A shell command is already running");
-        return;
-      }
-      shellSessionStore.exec(command);
-    },
-    find: (arg) => {
-      // One-shot `⌕` accelerator from the Code route: run the transcript
-      // search and jump to the first match — highlights + ⌘G/⇧⌘G stay live
-      // while the route stays `❯`. The session dissolves on the next
-      // submit, on Escape (empty editor), or on entering/leaving the ⌕
-      // route (whose mirror/clear observers own the query there).
-      const notify = paneBulletinRef.current;
-      const query = arg.trim();
-      if (query.length === 0) {
-        notify?.caution("Usage: /find <query>");
-        return;
-      }
-      findSession.setQuery(query);
-      findSession.next();
-    },
-    // `/changes` ([P04]) — the Changes Shade is chrome, summoned by typing but
-    // never hidden by it ([P05]). Bare shows it; `describe` shows + kicks off an
-    // AI draft; `commit <message>` runs the gated durable commit (the exact
-    // gates the retired `±` route enforced); anything else is a usage caution
-    // (free text must never guess a commit).
-    changes: (arg) => {
-      const notify = paneBulletinRef.current;
-      const trimmed = arg.trim();
-      if (trimmed.length === 0) {
-        shadeViewController.show("changes");
-        return;
-      }
-      const verb = trimmed.slice(0, trimmed.search(/\s|$/));
-      const rest = trimmed.slice(verb.length).trim();
-      if (verb === "describe") {
-        shadeViewController.show("changes");
-        changesController.requestDraft();
-        return;
-      }
-      if (verb === "commit") {
-        const message = rest;
-        // Same gates the `±` route's commit branch enforced: no overlap with a
-        // running turn, no double-commit, a non-empty selection, a non-empty
-        // message. A refused commit surfaces a bulletin instead of silently
-        // dropping.
-        if (codeSessionStore.getSnapshot().canInterrupt === true) {
-          notify?.caution("Can't commit while a turn is in flight");
-          return;
-        }
-        if (
-          getChangesetVerbStore()?.commitState(changesController.entryKey)
-            .phase === "pending"
-        ) {
-          notify?.caution("A commit is already in progress");
-          return;
-        }
-        if (changesController.getSnapshot().selectedPaths.size === 0) {
-          shadeViewController.show("changes");
-          notify?.caution("Select at least one file to commit");
-          return;
-        }
-        if (message.length === 0) {
-          notify?.caution("Usage: /changes commit <message>");
-          return;
-        }
-        changesController.commit(message);
-        return;
-      }
-      notify?.caution("Usage: /changes [describe | commit <message>]");
-    },
-    // `/history` ([P04]) — bare shows the History Shade; a question wraps in the
-    // `/tugplug:history` skill and sends ON the record so the answer streams in
-    // the transcript. The replay guard mirrors the retired `↺` branch: a submit
-    // while the session is replaying / transport-settling must never leak a
-    // turn (mid-turn sends queue, which is fine).
-    history: (arg) => {
-      const notify = paneBulletinRef.current;
-      const question = arg.trim();
-      shadeViewController.show("history");
-      if (question.length === 0) return;
-      const snap = codeSessionStore.getSnapshot();
-      if (!snap.canSubmit && !snap.canInterrupt) {
-        notify?.caution("The session is still loading — try again in a moment");
-        return;
-      }
-      codeSessionStore.send(`/tugplug:history ${question}`, []);
-    },
     // Copy the most recent assistant message (committed transcript only, read
     // live at click time per [L07]) to the clipboard, with a pane-scoped
     // confirmation bulletin. No message yet → caution; clipboard failure →
@@ -3286,6 +3177,122 @@ export function SessionCardBody({
     logout: () => requestLogout(),
   };
 
+  // Surface for each bang routing (`lib/bang-commands.ts`), keyed by name —
+  // the five per-submission destinations demoted from sticky routes, now
+  // their own namespace with the `!` sigil. Dispatched through the same
+  // `RUN_SLASH_COMMAND` channel as slash commands; only the registry (and
+  // the sigil) differs. The `as const satisfies` registry narrows
+  // `BangCommandName` to the literal union, so this `Record` is exhaustive —
+  // a registered routing without a wired surface is a compile error.
+  const bangCommandSurfaces: Record<BangCommandName, (args: string) => void> = {
+    // `!btw <question>` — ask a side question and open the non-modal overlay.
+    // Un-gated and pre-`canSubmit`, so it works idle AND mid-turn with no
+    // `performSubmit` change ([P04]). A bare `!btw` just opens the placard
+    // (history / earlier asks) without asking.
+    btw: (arg) => {
+      if (arg.trim().length > 0) sideQuestionStore.ask(arg);
+      statusRowRef.current?.openSideQuestions();
+    },
+    shell: (arg) => {
+      // One-shot shell routing ([D110] recipients): run one exchange against
+      // the card's shell session — the row threads into the transcript via
+      // `ingestShellExchange`. `exec` silently drops a command while an
+      // exchange is in flight (the shell child is serial), so surface that as
+      // a bulletin instead of losing the input.
+      const notify = paneBulletinRef.current;
+      const command = arg.trim();
+      if (command.length === 0) {
+        notify?.caution("Usage: !shell <command> (or just !<command>)");
+        return;
+      }
+      if (shellSessionStore.getSnapshot().inflight !== null) {
+        notify?.caution("A shell command is already running");
+        return;
+      }
+      shellSessionStore.exec(command);
+    },
+    find: (arg) => {
+      // One-shot transcript find: run the search and jump to the first match
+      // — highlights + ⌘G/⇧⌘G stay live. The session dissolves on the next
+      // submit or on Escape (empty editor).
+      const notify = paneBulletinRef.current;
+      const query = arg.trim();
+      if (query.length === 0) {
+        notify?.caution("Usage: !find <query>");
+        return;
+      }
+      findSession.setQuery(query);
+      findSession.next();
+    },
+    // `!changes` ([P04]) — the Changes Shade is chrome, summoned by typing but
+    // never hidden by it ([P05]). Bare shows it; `describe` shows + kicks off an
+    // AI draft; `commit <message>` runs the gated durable commit (the exact
+    // gates the retired `±` route enforced); anything else is a usage caution
+    // (free text must never guess a commit).
+    changes: (arg) => {
+      const notify = paneBulletinRef.current;
+      const trimmed = arg.trim();
+      if (trimmed.length === 0) {
+        shadeViewController.show("changes");
+        return;
+      }
+      const verb = trimmed.slice(0, trimmed.search(/\s|$/));
+      const rest = trimmed.slice(verb.length).trim();
+      if (verb === "describe") {
+        shadeViewController.show("changes");
+        changesController.requestDraft();
+        return;
+      }
+      if (verb === "commit") {
+        const message = rest;
+        // Same gates the `±` route's commit branch enforced: no overlap with a
+        // running turn, no double-commit, a non-empty selection, a non-empty
+        // message. A refused commit surfaces a bulletin instead of silently
+        // dropping.
+        if (codeSessionStore.getSnapshot().canInterrupt === true) {
+          notify?.caution("Can't commit while a turn is in flight");
+          return;
+        }
+        if (
+          getChangesetVerbStore()?.commitState(changesController.entryKey)
+            .phase === "pending"
+        ) {
+          notify?.caution("A commit is already in progress");
+          return;
+        }
+        if (changesController.getSnapshot().selectedPaths.size === 0) {
+          shadeViewController.show("changes");
+          notify?.caution("Select at least one file to commit");
+          return;
+        }
+        if (message.length === 0) {
+          notify?.caution("Usage: !changes commit <message>");
+          return;
+        }
+        changesController.commit(message);
+        return;
+      }
+      notify?.caution("Usage: !changes [describe | commit <message>]");
+    },
+    // `!history` ([P04]) — bare shows the History Shade; a question wraps in the
+    // `/tugplug:history` skill and sends ON the record so the answer streams in
+    // the transcript. The replay guard mirrors the retired `↺` branch: a submit
+    // while the session is replaying / transport-settling must never leak a
+    // turn (mid-turn sends queue, which is fine).
+    history: (arg) => {
+      const notify = paneBulletinRef.current;
+      const question = arg.trim();
+      shadeViewController.show("history");
+      if (question.length === 0) return;
+      const snap = codeSessionStore.getSnapshot();
+      if (!snap.canSubmit && !snap.canInterrupt) {
+        notify?.caution("The session is still loading — try again in a moment");
+        return;
+      }
+      codeSessionStore.send(`/tugplug:history ${question}`, []);
+    },
+  };
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -3349,16 +3356,25 @@ export function SessionCardBody({
       [TUG_ACTIONS.INTERRUPT_SESSION]: (_event: ActionEvent) => {
         codeSessionStore.interrupt();
       },
-      // A typed local slash command, dispatched key-card-scoped by the
-      // prompt entry. Open the command's surface; an unknown name is a
-      // no-op (the matcher only dispatches registered names, so this is
-      // defensive against registry/handler drift) ([#step-1c] / [D23]).
+      // A typed local slash command OR bang routing, dispatched
+      // key-card-scoped by the prompt entry. Open the matching surface —
+      // slash registry first, bang registry second (the namespaces are
+      // disjoint; both records are exhaustive over their registries). An
+      // unknown name is a no-op (the matchers only dispatch registered
+      // names, so this is defensive against registry/handler drift)
+      // ([#step-1c] / [D23]).
       [TUG_ACTIONS.RUN_SLASH_COMMAND]: (event: ActionEvent) => {
         const payload = event.value as
-          | { name: LocalCommandName; args: string }
+          | { name: LocalCommandName | BangCommandName; args: string }
           | undefined;
         if (payload === undefined) return;
-        const open = slashCommandSurfaces[payload.name];
+        const open =
+          (slashCommandSurfaces as Partial<Record<string, (args: string) => void>>)[
+            payload.name
+          ] ??
+          (bangCommandSurfaces as Partial<Record<string, (args: string) => void>>)[
+            payload.name
+          ];
         if (open !== undefined) open(payload.args);
       },
       // ⌃⌘ chord ([P07]): seed the corresponding command chip at the head of
@@ -3391,8 +3407,15 @@ export function SessionCardBody({
           | { name: string; reason: "unknown" | "unsupported" }
           | undefined;
         if (payload === undefined) return;
-        const { title, message } =
-          payload.reason === "unsupported"
+        const { title, message } = isBangCommand(payload.name)
+          ? {
+              // A slash-typed routing name (`/shell`, `/btw`, …) — muscle
+              // memory from before the bang split. Teach the `!` form
+              // instead of reporting a generic unknown.
+              title: "That Command Moved",
+              message: `/${payload.name} is now the !${payload.name} routing. Type ! to see the five routings, or ⌘/ to open the picker.`,
+            }
+          : payload.reason === "unsupported"
             ? {
                 title: "Command Not Available",
                 message: `The /${payload.name} command is not available in the session card. Type / to see the available commands.`,

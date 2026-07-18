@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 
-import { classifyShellLine } from "../shell-line-classifier";
+import { autoShellOpener, classifyShellLine } from "../shell-line-classifier";
 
 // A representative login-PATH set. The classifier keys the first command token
 // against this; unknown names fall to Code unless path-shaped.
@@ -138,5 +138,39 @@ describe("classifyShellLine — gates", () => {
 
   it("routes a path-shaped executable not in the set", () => {
     expect(classifyShellLine("./bin/tool --run", COMMANDS)).toBe(true);
+  });
+});
+
+describe("autoShellOpener — live `!shell` chip insert gate", () => {
+  it("fires on an unambiguous PATH command + trailing space, caret at end", () => {
+    expect(autoShellOpener("git ", 4, COMMANDS)).toBe("git");
+    expect(autoShellOpener("ls ", 3, COMMANDS)).toBe("ls");
+    expect(autoShellOpener("cargo ", 6, COMMANDS)).toBe("cargo");
+  });
+
+  it("fires on a path-shaped executable", () => {
+    expect(autoShellOpener("./run.sh ", 9, COMMANDS)).toBe("./run.sh");
+    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS)).toBe("~/bin/tool");
+  });
+
+  it("never fires on ambiguous openers or stopword-ish commands", () => {
+    for (const doc of ["cat ", "find ", "make ", "test ", "open ", "which "]) {
+      expect(autoShellOpener(doc, doc.length, COMMANDS)).toBeNull();
+    }
+  });
+
+  it("never fires on an unknown token, sigil leads, or a null set", () => {
+    expect(autoShellOpener("frobnicate ", 11, COMMANDS)).toBeNull();
+    expect(autoShellOpener("/shell ", 7, COMMANDS)).toBeNull();
+    expect(autoShellOpener("!shell ", 7, COMMANDS)).toBeNull();
+    expect(autoShellOpener("# note ", 7, COMMANDS)).toBeNull();
+    expect(autoShellOpener("git ", 4, null)).toBeNull();
+  });
+
+  it("requires exactly one token + one space with the caret at the end", () => {
+    expect(autoShellOpener("git", 3, COMMANDS)).toBeNull();
+    expect(autoShellOpener("git status ", 11, COMMANDS)).toBeNull();
+    expect(autoShellOpener("git ", 2, COMMANDS)).toBeNull();
+    expect(autoShellOpener("git \n", 5, COMMANDS)).toBeNull();
   });
 });

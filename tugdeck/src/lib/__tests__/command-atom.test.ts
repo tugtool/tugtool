@@ -60,6 +60,12 @@ describe("chipDisplayLabel", () => {
     );
   });
 
+  test("a bang routing shows its `!` sigil", () => {
+    for (const name of ["shell", "btw", "find", "changes", "history"]) {
+      expect(chipDisplayLabel("command", name, name)).toBe(`!${name}`);
+    }
+  });
+
   test("other types show their stored label verbatim", () => {
     expect(chipDisplayLabel("file", "README.md", "README.md")).toBe("README.md");
     expect(chipDisplayLabel("link", "example.com", "https://example.com")).toBe(

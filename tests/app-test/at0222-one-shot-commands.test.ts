@@ -1,26 +1,26 @@
 /**
  * at0222-one-shot-commands.test.ts — the Code route's one-shot slash
- * commands, `/shell` and `/find` ([AT0222]).
+ * commands, `!shell` and `!find` ([AT0222]).
  *
  * ## Why this exists
  *
- * With first-character route switching removed, the Code route gains
- * one-shot accelerators: `/shell <cmd>` runs one exchange against the card's
- * shell session and `/find <query>` runs the transcript search with live
- * ⌘G cycling — both while the route STAYS `❯`. They are `codeRouteOnly` in
- * the local-command registry: not offered by the `/` popup on other routes,
- * and not intercepted at submit there (a literal `/shell ls` typed on `$`
- * reaches the shell as typed).
+ * With the sticky routes demoted ([P01]), every non-Code destination is a
+ * per-submission *bang routing* (`lib/bang-commands.ts`): `!shell <cmd>`
+ * runs one exchange against the card's shell session and `!find <query>`
+ * runs the transcript search with live ⌘G cycling — Code stays the only
+ * resting mode throughout.
  *
  * ## Test matrix
  *
- *   1. `/shell echo …` lands a settled shell exchange row; route stays Code.
- *   2. `/find <term>` paints both matches, actives the first, ⌘G advances,
- *      Escape (empty editor) dissolves, a fresh `/find` re-seeds, and a
- *      subsequent non-find submission (`/shell`) dissolves again — route
- *      stays Code throughout.
- *   3. On the `$` route the `/` popup offers no one-shot commands while
- *      still offering ordinary local commands.
+ *   1. `!shell echo …` lands a settled shell exchange row.
+ *   2. `!find <term>` paints both matches, actives the first, ⌘G advances,
+ *      Escape (empty editor) dissolves, a fresh `!find` re-seeds, and a
+ *      subsequent non-find submission (`!shell`) dissolves again.
+ *   3. Namespace split: the `/` popup offers no bang routings (they left
+ *      the slash inventory), and the `!` popup offers exactly the five.
+ *   4. Live `!shell` auto-insert: typing `git ` materializes the `!shell`
+ *      chip at the head; deleting it latches the decline (typing on, the
+ *      next space never re-inserts).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -147,9 +147,6 @@ function deckShape() {
 
 const EDITOR_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
-const ROUTE_TRIGGER_SELECTOR =
-  '[data-card-id="A"] .tug-prompt-entry-toolbar button[aria-label="Route"]';
-const ROUTE_LABEL_SELECTOR = `${ROUTE_TRIGGER_SELECTOR} [data-tug-stable="active"]`;
 const COMPLETION_MENU_SELECTOR = '[data-slot="tug-completion-menu"]';
 
 async function mountAndReplay(app: App): Promise<void> {
@@ -163,15 +160,6 @@ async function mountAndReplay(app: App): Promise<void> {
   await app.waitForCondition<boolean>(
     `document.querySelectorAll('[data-card-id="A"] [data-tug-list-cell-index]').length >= 4`,
     { timeoutMs: 30_000 },
-  );
-}
-
-async function readRouteLabel(app: App): Promise<string> {
-  return await app.evalJS<string>(
-    `(() => {
-      const el = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
-      return el ? (el.textContent || '').trim() : '';
-    })()`,
   );
 }
 
@@ -252,16 +240,15 @@ async function dispatchChord(
   );
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
+describe.skipIf(!SHOULD_RUN)("AT0222: one-shot !shell and !find", () => {
   test(
-    "/shell runs one exchange into the transcript; the route stays Code",
+    "!shell runs one exchange into the transcript",
     async () => {
       const app = await launchTugApp({ testName: "at0222-shell" });
       try {
         await mountAndReplay(app);
-        expect(await readRouteLabel(app)).toBe("Code");
 
-        await submitLine(app, "/shell echo oneshot-shell-probe");
+        await submitLine(app, "!shell echo oneshot-shell-probe");
         await app.waitForCondition<boolean>(
           `(() => {
             const rows = document.querySelectorAll('[data-slot="session-transcript-shell-row"]');
@@ -273,7 +260,6 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
           })()`,
           { timeoutMs: 20_000 },
         );
-        expect(await readRouteLabel(app)).toBe("Code");
       } finally {
         await app.close();
       }
@@ -282,15 +268,14 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
   );
 
   test(
-    "/find paints + cycles on the Code route; Escape and a new submission dissolve it",
+    "!find paints + cycles; Escape and a new submission dissolve it",
     async () => {
       const app = await launchTugApp({ testName: "at0222-find" });
       try {
         await mountAndReplay(app);
 
-        await submitLine(app, "/find oneshotmark");
+        await submitLine(app, "!find oneshotmark");
         await waitForPaintedCount(app, 2);
-        expect(await readRouteLabel(app)).toBe("Code");
         const painted = await readPaintedRanges(app);
         expect(painted.map((p) => p.text)).toEqual(["oneshotmark", "oneshotmark"]);
         const firstActiveRow = painted.find((p) => p.active)!.row;
@@ -318,13 +303,12 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
         await app.nativeKey("Escape");
         await waitForPaintedCount(app, 0);
 
-        // A fresh /find re-seeds…
-        await submitLine(app, "/find oneshotmark");
+        // A fresh !find re-seeds…
+        await submitLine(app, "!find oneshotmark");
         await waitForPaintedCount(app, 2);
         // …and a subsequent non-find submission dissolves it again.
-        await submitLine(app, "/shell echo oneshot-clear");
+        await submitLine(app, "!shell echo oneshot-clear");
         await waitForPaintedCount(app, 0);
-        expect(await readRouteLabel(app)).toBe("Code");
       } finally {
         await app.close();
       }
@@ -333,47 +317,113 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot /shell and /find", () => {
   );
 
   test(
-    "the `/` popup offers no one-shot commands on the `$` route",
+    "namespace split: `/` offers no bang routings; `!` offers exactly the five",
     async () => {
       const app = await launchTugApp({ testName: "at0222-gating" });
       try {
         await mountAndReplay(app);
-        await app.click(ROUTE_TRIGGER_SELECTOR);
-        await app.click('.tug-menu-item[data-item-id="$"]');
-        await app.waitForCondition<boolean>(
-          `(() => {
-            const el = document.querySelector(${JSON.stringify(ROUTE_LABEL_SELECTOR)});
-            return el !== null && (el.textContent || '').trim() === "Shell";
-          })()`,
-          { timeoutMs: 4000 },
-        );
 
+        const readPopupLabels = async (): Promise<string[]> => {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(COMPLETION_MENU_SELECTOR)}) !== null`,
+            { timeoutMs: 4000 },
+          );
+          const labels = await app.evalJS<string>(
+            `(() => {
+              const popup = document.querySelector(${JSON.stringify(COMPLETION_MENU_SELECTOR)});
+              if (!popup) return "[]";
+              const items = popup.querySelectorAll(".tug-completion-menu-item");
+              return JSON.stringify(Array.from(items).map((el) => (el.textContent || '').trim()));
+            })()`,
+          );
+          return JSON.parse(labels) as string[];
+        };
+
+        // The `/` popup: ordinary commands present, the five routings absent.
         await app.nativeClickAtElement(EDITOR_SELECTOR);
         await app.nativeType("/");
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(COMPLETION_MENU_SELECTOR)}) !== null`,
-          { timeoutMs: 4000 },
-        );
-        const labels = await app.evalJS<string>(
-          `(() => {
-            const popup = document.querySelector(${JSON.stringify(COMPLETION_MENU_SELECTOR)});
-            if (!popup) return "[]";
-            const items = popup.querySelectorAll(".tug-completion-menu-item");
-            return JSON.stringify(Array.from(items).map((el) => (el.textContent || '').trim()));
-          })()`,
-        );
-        const names = JSON.parse(labels) as string[];
-        expect(names.length).toBeGreaterThan(0);
-        for (const gated of ["shell", "find", "btw"]) {
+        const slashNames = await readPopupLabels();
+        expect(slashNames.length).toBeGreaterThan(0);
+        for (const routed of ["shell", "find", "btw", "changes", "history"]) {
           expect(
-            names.some((n) => n === gated || n.startsWith(`${gated} `)),
-            `gated one-shot "/${gated}" must not be offered on the $ route`,
+            slashNames.some((n) => n === routed || n.startsWith(`${routed} `)),
+            `bang routing "!${routed}" must not be offered by the / popup`,
           ).toBe(false);
         }
         expect(
-          names.some((n) => n.includes("permissions")),
+          slashNames.some((n) => n.includes("permissions")),
           "ordinary local commands stay offered",
         ).toBe(true);
+
+        // Clear the typed `/`, then the `!` popup: exactly the five routings.
+        await app.nativeKey("Escape");
+        await app.nativeKey("Backspace");
+        await app.nativeType("!");
+        const bangNames = await readPopupLabels();
+        expect(bangNames.length).toBe(5);
+        for (const routed of ["shell", "find", "btw", "changes", "history"]) {
+          expect(
+            bangNames.some((n) => n.startsWith(routed)),
+            `bang routing "!${routed}" must be offered by the ! popup`,
+          ).toBe(true);
+        }
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "typing `git ` live-inserts the !shell chip; deleting it latches the decline",
+    async () => {
+      const app = await launchTugApp({ testName: "at0222-autoinsert" });
+      const CHIP_SELECTOR = `${EDITOR_SELECTOR} img[data-atom-type="command"][data-atom-value="shell"]`;
+      const readChipCount = async (): Promise<number> =>
+        await app.evalJS<number>(
+          `document.querySelectorAll(${JSON.stringify(CHIP_SELECTOR)}).length`,
+        );
+      try {
+        await mountAndReplay(app);
+
+        // The gate reads the login-PATH command set, which loads async after
+        // bind (`null` set always answers no) — so retype until it answers.
+        // Emptying the doc resets the per-draft latches, so retries are safe.
+        await app.nativeClickAtElement(EDITOR_SELECTOR);
+        let inserted = false;
+        for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
+          await app.nativeType("git ");
+          try {
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(CHIP_SELECTOR)}) !== null`,
+              { timeoutMs: 2000 },
+            );
+            inserted = true;
+          } catch {
+            await app.nativeKey("a", ["cmd"]);
+            await app.nativeKey("Backspace");
+          }
+        }
+        expect(inserted, "the !shell chip must auto-insert on `git `").toBe(true);
+
+        // Deleting the auto-inserted chip latches the decline. Walk the caret
+        // to the head and forward-delete the chip + its following space
+        // (doc: `⟨chip⟩ git ` → `git `), then retype the exact trigger shape
+        // — Backspace the trailing space and type it again so the last edit
+        // is a typed space on a doc of exactly `git ` — and assert the chip
+        // does NOT come back.
+        await app.nativeKey("ArrowLeft", ["cmd"]);
+        await app.nativeKey("Delete"); // forward delete: the chip
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CHIP_SELECTOR)}) === null`,
+          { timeoutMs: 4000 },
+        );
+        await app.nativeKey("Delete"); // forward delete: the chip's space
+        await app.nativeKey("ArrowRight", ["cmd"]);
+        await app.nativeKey("Backspace");
+        await app.nativeType(" ");
+        await new Promise((r) => setTimeout(r, 400));
+        expect(await readChipCount()).toBe(0);
       } finally {
         await app.close();
       }
