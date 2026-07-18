@@ -48,15 +48,29 @@ let bundlePromise: Promise<Extension> | null = null;
  */
 export function loadMarkdownTextStyling(): Promise<Extension> {
   if (bundlePromise === null) {
-    bundlePromise = import("@codemirror/lang-markdown").then((m) => [
-      m.markdown({
-        addKeymap: false,
-        pasteURLAsLink: false,
-        completeHTMLTags: false,
-      }),
-      tugEditingHighlightStyle,
-      mdListHangingIndent,
-    ]);
+    const attempt: Promise<Extension> = import("@codemirror/lang-markdown").then(
+      (m) => [
+        m.markdown({
+          addKeymap: false,
+          pasteURLAsLink: false,
+          completeHTMLTags: false,
+        }),
+        tugEditingHighlightStyle,
+        mdListHangingIndent,
+      ],
+    );
+    // A rejected dynamic import — a chunk fetch that 404s or 500s while the
+    // dev server is mid-rebuild, a transient network drop — must NOT be
+    // cached. Without this the module-level `bundlePromise` would hold a
+    // permanently-rejected promise, so every editor mounted for the rest of
+    // the page's life awaits that same rejection and silently renders
+    // unstyled markdown (the "sometimes randomly doesn't apply" bite). Clear
+    // the slot on failure so the next caller re-attempts a fresh import, and
+    // re-throw so the awaiting effect can observe (and retry) the rejection.
+    bundlePromise = attempt.catch((err) => {
+      bundlePromise = null;
+      throw err;
+    });
   }
   return bundlePromise;
 }

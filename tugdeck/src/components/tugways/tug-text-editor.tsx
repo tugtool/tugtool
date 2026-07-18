@@ -186,6 +186,7 @@ import {
 } from "./tug-text-editor/state-preservation";
 import type { PendingEditRestore } from "./tug-text-editor/state-preservation";
 import { deckTrace } from "@/deck-trace";
+import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { selectionGuard } from "./selection-guard";
 import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
@@ -2495,13 +2496,15 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // mount-kick path: two async paths would race, and a load resolving
     // after the prop flipped off would strand styling on.
     //
-    // Enable is async (the grammar chunk lazy-loads), so the `.then`
-    // guards against three ways the request can be stale by the time it
-    // resolves: the effect was cleaned up (`alive`), the view is gone
-    // (`viewRef.current`), or the prop already flipped back off
+    // Enable is async (the grammar chunk lazy-loads), so the resolve
+    // handler guards against three ways the request can be stale by the
+    // time it resolves: the effect was cleaned up (`alive`), the view is
+    // gone (`viewRef.current`), or the prop already flipped back off
     // (`markdownTextStylingRef.current` — the flip-during-load race, read
-    // live per [L07]). Disable is synchronous. [L06] appearance via a
-    // compartment swap — no React state, no document/selection loss.
+    // live per [L07]). A rejected load retries with backoff so a transient
+    // chunk-fetch failure doesn't leave the editor unstyled. Disable is
+    // synchronous. [L06] appearance via a compartment swap — no React
+    // state, no document/selection loss.
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
@@ -2512,15 +2515,37 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         return;
       }
       let alive = true;
-      void loadMarkdownTextStyling().then((bundle) => {
-        if (!alive) return;
-        const live = viewRef.current;
-        if (live === null) return;
-        if (!markdownTextStylingRef.current) return;
-        live.dispatch({
-          effects: markdownStylingCompartment.reconfigure(bundle),
-        });
-      });
+      // Enable is async (the grammar chunk lazy-loads). If the load rejects
+      // — a chunk fetch failing while the dev server rebuilds, a transient
+      // drop — retry with a short backoff so a one-off hiccup doesn't strand
+      // this editor unstyled. `loadMarkdownTextStyling` no longer caches a
+      // rejection, so each retry re-attempts a fresh import.
+      const maxAttempts = 4;
+      const apply = (attempt: number): void => {
+        loadMarkdownTextStyling().then(
+          (bundle) => {
+            if (!alive) return;
+            const live = viewRef.current;
+            if (live === null) return;
+            if (!markdownTextStylingRef.current) return;
+            live.dispatch({
+              effects: markdownStylingCompartment.reconfigure(bundle),
+            });
+          },
+          (err) => {
+            if (!alive) return;
+            tugDevLogStore.warn(
+              "tug-text-editor",
+              `markdown styling load failed (attempt ${attempt + 1}/${maxAttempts}): ${String(err)}`,
+            );
+            if (attempt + 1 >= maxAttempts) return;
+            setTimeout(() => {
+              if (alive) apply(attempt + 1);
+            }, 200 * (attempt + 1));
+          },
+        );
+      };
+      apply(0);
       return () => {
         alive = false;
       };
