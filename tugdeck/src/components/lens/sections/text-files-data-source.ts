@@ -32,7 +32,7 @@ import type { DeckState } from "@/layout-tree";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { getOpenTextCard } from "@/lib/text-card-open-registry";
 import {
-  getRecentDocumentsSnapshot,
+  getReachableRecentDocumentsSnapshot,
   subscribeRecentDocuments,
 } from "@/lib/recent-documents";
 
@@ -176,10 +176,12 @@ export function useLensTextFilesDataSource(): LensTextFilesDataSource {
     deckStore !== null ? deckStore.getSnapshot : () => null,
     () => null,
   );
+  // The REACHABLE projection: paths the existence probe reported gone are
+  // excluded — a row the user cannot open is never listed.
   const recents = useSyncExternalStore(
     subscribeRecentDocuments,
-    getRecentDocumentsSnapshot,
-    getRecentDocumentsSnapshot,
+    getReachableRecentDocumentsSnapshot,
+    getReachableRecentDocumentsSnapshot,
   );
 
   const ref = useRef<LensTextFilesDataSource | null>(null);

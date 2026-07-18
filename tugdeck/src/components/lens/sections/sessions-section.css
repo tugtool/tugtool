@@ -7,10 +7,25 @@
 .sessions-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
+  /* Fill the section body's flex allotment so the list can scroll
+     internally when the section shrinks (every band stays visible). */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 
-.lens-sessions-list {
-  padding: 4px 8px 8px;
+/* Doubled selector so these overrides beat the base `.tug-list-view`
+   rules regardless of bundle order. */
+.tug-list-view.lens-sessions-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  height: auto;
+  /* Margin, not padding: the container focus ring is an outline on the
+     list's border box — inset the box so the ring paints on all four
+     sides instead of clipping against the section edges. */
+  margin: 4px 8px 8px;
+  padding-inline: 6px;
 }
 
 .sessions-card-empty {

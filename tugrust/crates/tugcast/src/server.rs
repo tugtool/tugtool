@@ -259,6 +259,7 @@ pub(crate) fn build_app(
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))
         .route("/api/fs/read", get(crate::fs_read::get_fs_read))
+        .route("/api/fs/stat", post(crate::fs_stat::post_fs_stat))
         .route(
             "/api/fs/write",
             // Per-route body limit above axum's 2 MB default so an 8 MiB

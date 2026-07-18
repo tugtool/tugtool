@@ -519,6 +519,17 @@ export interface TugListViewHandle {
    * Requires `inline` rendering in practice, so the target row is mounted.
    */
   descendIntoRow(index: number): void;
+
+  /**
+   * Park the movement cursor on the nearest cursorable row to `index`
+   * (preferring `index` itself, then earlier rows, then later ones) and
+   * scroll it into view — for a consumer whose action removed the cursor
+   * row out from under the keyboard (a Delete verb): the cursor lands on a
+   * surviving neighbor instead of vanishing. The bar paints only while the
+   * container holds the keyboard key view (the standard cursor gating).
+   * No-op when the list is not engine-authored or the list is empty.
+   */
+  moveCursorTo(index: number): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -2631,6 +2642,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // below this handle; the ref lets the handle read the live closure at call
     // time without pulling later-declared consts into its dependency array.
     const descendIntoRowRef = React.useRef<(index: number) => void>(() => {});
+    const moveCursorToRef = React.useRef<(index: number) => void>(() => {});
     React.useImperativeHandle(
       ref,
       () => ({
@@ -2717,6 +2729,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
         descendIntoRow(index: number): void {
           descendIntoRowRef.current(index);
+        },
+        moveCursorTo(index: number): void {
+          moveCursorToRef.current(index);
         },
       }),
       [dataSource, estimatedHeightForKindOnly, pageByEntryStep],
@@ -2922,8 +2937,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // ([L06]/[L22]) — mirrors `useFocusCursor`'s projection, but index-keyed off
     // `cellElementMapRef` so it composes with windowing (a cursor row scrolled
     // into view mounts, then the per-commit re-projection effect below stamps it).
+    // The bar is a KEYBOARD mark: it paints only while the container holds the
+    // keyboard key view (`data-key-view-kbd`). A pointer click parks the cursor
+    // index without painting — otherwise a clicked list keeps a bar the kbd-loss
+    // clear can never reach (it never held the key view), and a later keyboard
+    // entry into a sibling list shows two bars at once.
     const projectCursor = React.useCallback((): void => {
-      const target = cursorIndexRef.current;
+      const kbd =
+        scrollContainerRef.current?.hasAttribute("data-key-view-kbd") === true;
+      const target = kbd ? cursorIndexRef.current : -1;
       for (const [i, el] of cellElementMapRef.current) {
         if (i === target) el.setAttribute(KEY_CURSOR_ATTRIBUTE, "");
         else el.removeAttribute(KEY_CURSOR_ATTRIBUTE);
@@ -3047,6 +3069,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (rowFirstFocusableId(index) === null) return;
       moveCursorTo(index, true);
       descendCursorRow();
+    };
+    moveCursorToRef.current = (index: number): void => {
+      if (!focusEngineActiveRef.current) return;
+      const landing = cursorableNear(index, -1);
+      if (landing >= 0) moveCursorTo(landing, true);
     };
 
     // ---- Descended-row deletion landing ----
@@ -3310,16 +3337,17 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     // Re-project the cursor every commit while the container holds the key view,
     // so a row that mounts as the cursor scrolls into view picks up
-    // `data-key-cursor` on the next paint. Cheap null/attribute check otherwise.
+    // `data-key-cursor` on the next paint — and clear any stale bar when it
+    // does not (the projection is keyboard-gated; a bar left behind by a state
+    // the clear paths missed self-heals on the next commit).
     React.useLayoutEffect(() => {
       if (!focusEngineActive) return;
       const el = scrollContainerRef.current;
-      if (
-        el !== null &&
-        el.hasAttribute("data-key-view-kbd") &&
-        cursorIndexRef.current >= 0
-      ) {
+      if (el === null) return;
+      if (el.hasAttribute("data-key-view-kbd") && cursorIndexRef.current >= 0) {
         projectCursor();
+      } else {
+        clearCursorVisual();
       }
     });
 

@@ -52,7 +52,7 @@ describe("lens-section-registry — resolveSectionRenderOrder", () => {
   const registered = ["log", "telemetry", "changeset"];
 
   it("defaults to registration order when nothing is persisted", () => {
-    expect(resolveSectionRenderOrder(registered, [], [])).toEqual([
+    expect(resolveSectionRenderOrder(registered, [])).toEqual([
       "log",
       "telemetry",
       "changeset",
@@ -61,25 +61,19 @@ describe("lens-section-registry — resolveSectionRenderOrder", () => {
 
   it("honors persisted order, then appends unordered kinds", () => {
     expect(
-      resolveSectionRenderOrder(registered, ["telemetry", "log"], []),
+      resolveSectionRenderOrder(registered, ["telemetry", "log"]),
     ).toEqual(["telemetry", "log", "changeset"]);
-  });
-
-  it("drops hidden kinds", () => {
-    expect(
-      resolveSectionRenderOrder(registered, ["telemetry", "log"], ["log"]),
-    ).toEqual(["telemetry", "changeset"]);
   });
 
   it("ignores unknown/removed persisted kinds", () => {
     expect(
-      resolveSectionRenderOrder(registered, ["ghost", "telemetry"], []),
+      resolveSectionRenderOrder(registered, ["ghost", "telemetry"]),
     ).toEqual(["telemetry", "log", "changeset"]);
   });
 
   it("de-dupes a persisted kind listed twice", () => {
     expect(
-      resolveSectionRenderOrder(registered, ["log", "log", "telemetry"], []),
+      resolveSectionRenderOrder(registered, ["log", "log", "telemetry"]),
     ).toEqual(["log", "telemetry", "changeset"]);
   });
 });

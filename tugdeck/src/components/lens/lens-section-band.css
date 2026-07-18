@@ -4,16 +4,28 @@
  * The band itself is a `BlockStrip` at `altitude="section"` ([P02]): its
  * layout is `block-header.css` (the shared `tool-call-header` shell), its
  * sizes the `block-strip.css` altitude scale. This file owns only what the
- * strip does not — the section root (the stacking + between-section rule),
- * the drag-state cursor, and the section body (which publishes the band's
- * measured height as `--tugx-pin-stack-top` so nested sticky content clears
- * it, [P09]).
+ * strip does not — the section root (the flex sizing that keeps every band
+ * on-screen, the between-section rule), the drag-state cursor, and the
+ * section body (the internal scroll region).
+ *
+ * Sizing model: a section is a flex item of the non-scrolling
+ * `.lens-sections` stack — `flex-basis: auto` (content height) with
+ * shrink, so short sections take exactly their content and long ones
+ * shrink until their body scrolls. The band itself never shrinks; every
+ * section header is therefore always visible.
  */
 
 .lens-section {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-block-size: 0;
+  overflow: hidden;
   border-block-end: 1px solid var(--tug-border-subtle, rgba(128, 128, 128, 0.2));
+}
+
+.lens-section > .tool-call-header {
+  flex-shrink: 0;
 }
 
 /* Drag ghost — the dragged section lifts while a reorder is live ([P08]):
@@ -34,14 +46,8 @@
 }
 
 .lens-section-body {
-  /* Static first-frame fallback until the ResizeObserver writes the measured
-     band height here ([P09]). The band publishes its height onto the BODY,
-     not the section root, so the section strip (which pins at `top: 0`) never
-     reads the variable its own height produces — no dependency cycle. Nested
-     sticky content inside the body inherits this offset and pins BELOW the
-     band. */
-  --tugx-pin-stack-top: 36px;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-block-size: 0;
 }

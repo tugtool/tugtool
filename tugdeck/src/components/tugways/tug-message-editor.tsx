@@ -96,6 +96,12 @@ export interface TugMessageEditorProps {
    */
   lineWrap?: boolean;
   /**
+   * Light markdown token styling (heading / emphasis / code colors and
+   * weights, raw syntax always visible). Forwarded to the substrate's
+   * `markdownTextStyling`. @default false
+   */
+  markdownTextStyling?: boolean;
+  /**
    * Editor font size (a CSS length; drives `--tug-font-size-editor` on the
    * substrate). Omit to keep the substrate default.
    */
@@ -121,6 +127,7 @@ export const TugMessageEditor = React.forwardRef<
     placeholder,
     maxRows = DEFAULT_MAX_ROWS,
     lineWrap,
+    markdownTextStyling,
     fontSize,
     disabled = false,
     className,
@@ -197,6 +204,7 @@ export const TugMessageEditor = React.forwardRef<
       returnAction="newline"
       maxRows={maxRows}
       lineWrap={lineWrap}
+      markdownTextStyling={markdownTextStyling}
       fontSize={fontSize}
       placeholder={placeholder}
       disabled={disabled}

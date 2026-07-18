@@ -8,6 +8,7 @@ mod external_sessions;
 mod feeds;
 mod fs_complete;
 mod fs_read;
+mod fs_stat;
 mod fs_write;
 mod host;
 /// Crate-root path utilities (firmlink/synthetic/symlink resolution). Lives

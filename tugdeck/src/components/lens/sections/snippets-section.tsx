@@ -6,21 +6,27 @@
  * The list is authored into the section's focus group (`host.focusGroup`), so
  * it is one Tab stop in the Lens. The grammar (Spec S01):
  *  - **Arrows** rove the cursor; **Enter** opens the cursor row's editor
- *    (`onActivate` → `beginEdit`), which mounts a `TugTextarea` authored into
- *    the row's descend scope and is focused via `descendIntoRow`. **Escape**
- *    ascends the row scope (engine) and the editor's **blur** commits;
- *    **⌘Return** commits and chains a new snippet. **Space** selects only.
+ *    (`onActivate` → `beginEdit`), which mounts a `TugMessageEditor` (the
+ *    `TugTextEditor` CM6 substrate, markdown-styled) inside a focusable
+ *    wrapper authored into the row's descend scope; the row claims the CM6
+ *    caret itself (the engine's ladder yields keys to a focused editor).
+ *    **Escape** ascends the row scope (the wrapper's handler — the surface
+ *    owns its Escape) and the resulting **blur** commits; **⌘Return**
+ *    commits and chains a new snippet. **Space** selects only.
  *  - Section verbs while the list holds the key view: **Delete** removes the
- *    cursor row (read from the projected `data-key-cursor`), **⌘N** creates
- *    below the cursor, **⌘Z / ⇧⌘Z** undo/redo (via a chain responder, active
- *    only in list mode so the editor's native undo wins while typing).
+ *    cursor row (read from the projected `data-key-cursor`) and lands the
+ *    cursor on the surviving neighbor, **⌘N** creates below the cursor,
+ *    **⌘Z / ⇧⌘Z** undo/redo (via a chain responder, active only in list mode
+ *    so the editor's CM6 undo wins while typing). Each display row also
+ *    carries a hover-reveal delete button for the pointer.
  *  - A row's incipit is draggable into a session prompt (`startSnippetDrag`);
  *    the grip reorders (commit on drop, [Q02]).
  *
  * One cell kind (`"snippet"`) branches display/editor on `editingId` — never
  * two kinds for one row ([L26]). Laws: [L02] store via `useSyncExternalStore`;
  * [L06] cursor/selection appearance is CSS on engine attributes; [L22] the
- * FocusManager owns the cursor and the descend scope.
+ * FocusManager owns the cursor and the descend scope; [L11] the editor's
+ * CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO responders ride the composed substrate.
  *
  * @module components/lens/sections/snippets-section
  */
@@ -33,7 +39,7 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { Plus, TextQuote } from "lucide-react";
+import { Plus, TextQuote, X } from "lucide-react";
 
 import { getSnippetsStore } from "@/lib/snippets-store";
 import { snippetIncipit, type Snippet } from "@/lib/snippets-doc";
@@ -46,11 +52,17 @@ import type {
   TugListViewDelegate,
   TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
-import { TugTextarea } from "@/components/tugways/tug-textarea";
+import {
+  TugMessageEditor,
+  type TugMessageEditorHandle,
+} from "@/components/tugways/tug-message-editor";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
-import { useFocusManager } from "@/components/tugways/use-focusable";
+import {
+  useFocusable,
+  useFocusManager,
+} from "@/components/tugways/use-focusable";
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { registerLensSection } from "../lens-section-registry";
@@ -80,9 +92,10 @@ function insertIntoCard(
   cardServicesStore.getServices(cardId)?.codeSessionStore.insertSnippet(text, at);
 }
 
-/** Reorder-grip handler, provided by the section body to the module-level cell. */
+/** Row verbs provided by the section body to the module-level cell. */
 interface SnippetsCellContextValue {
   onGripPointerDown: (id: string, event: React.PointerEvent) => void;
+  onDeleteRow: (id: string) => void;
 }
 const SnippetsCellContext =
   React.createContext<SnippetsCellContextValue | null>(null);
@@ -117,7 +130,7 @@ function SnippetsHeaderActions(): React.ReactElement {
   );
 }
 
-/** The display row — incipit + reorder grip; the incipit drags into a prompt. */
+/** The display row — grip + draggable incipit + hover-reveal delete. */
 function SnippetDisplayRow({ snippet }: { snippet: Snippet }): React.ReactElement {
   const ctx = React.useContext(SnippetsCellContext);
   const incipit = snippetIncipit(snippet);
@@ -143,12 +156,33 @@ function SnippetDisplayRow({ snippet }: { snippet: Snippet }): React.ReactElemen
       >
         {empty ? "New snippet" : incipit}
       </span>
+      {ctx !== null ? (
+        <button
+          type="button"
+          className="snippet-row-delete"
+          title="Delete snippet"
+          aria-label="Delete snippet"
+          onClick={(e) => {
+            // Never let the delete read as a row activation on the cell
+            // wrapper above.
+            e.stopPropagation();
+            ctx.onDeleteRow(snippet.id);
+          }}
+        >
+          <X size={12} />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/** The in-place editor — a `TugTextarea` authored into the row's descend
- *  scope. Escape ascends (engine) and blur commits; ⌘Return commits + chains. */
+/**
+ * The in-place editor — a `TugMessageEditor` (CM6 substrate, markdown-styled)
+ * inside a wrapper registered as the row's descend-scope focusable. The engine
+ * lands DOM focus on the wrapper (`tabIndex={-1}`); the wrapper forwards it
+ * into the CM6 caret. Escape ascends (engine) and the resulting blur commits;
+ * ⌘Return (the substrate's `onSubmit`) commits + chains a new snippet.
+ */
 function SnippetEditorRow({
   snippet,
   store,
@@ -157,39 +191,104 @@ function SnippetEditorRow({
   store: ReturnType<typeof getSnippetsStore>;
 }): React.ReactElement {
   const manager = useFocusManager();
+  const editorRef = useRef<TugMessageEditorHandle | null>(null);
+  const focusableId = useId();
+  // Registers into the cell's per-row FocusModeContext, so `descendIntoRow`
+  // finds this wrapper as the row's inner focusable. No key-view behavior:
+  // a behavior-less leaf keeps Enter as a newline in the editor and leaves
+  // Escape to the engine's ascend.
+  const { focusableRef } = useFocusable({
+    id: focusableId,
+    group: "snippet-row-editor",
+    order: 0,
+  });
+
+  // Claim the CM6 caret on open. The editor row only ever mounts from an
+  // explicit open gesture (Enter / + / ⌘N via `editingId`), so taking focus
+  // here is always the user's intent. The engine's `focusKeyView` cannot
+  // land it: its generic DOM walk refuses a `tabIndex={-1}` wrapper and
+  // cannot focus a contenteditable caret, and the substrate's responder
+  // focus contract is keyed to the editor's responder id, not this wrapper's
+  // focusable id. The delegate's `focus()` routes through `focusResponder`,
+  // so first-responder state tracks the caret ([L11]).
+  //
+  // Deferred to a microtask deliberately: this child layout effect runs
+  // BEFORE the section body's descend effect, and the focus claim must run
+  // AFTER it — the descend's `pushFocusMode` captures the current key view
+  // as the scope's Escape-restore target, and claiming first would make the
+  // chain reflection coarsen the key view onto the editor's responder, so
+  // Escape would "restore" focus straight back into the caret it should be
+  // leaving. The microtask runs after the whole commit's effects, before
+  // paint; the CM6 view exists by then.
+  useLayoutEffect(() => {
+    queueMicrotask(() => editorRef.current?.focus());
+  }, []);
+
+  const onFocus = useCallback((e: React.FocusEvent<HTMLDivElement>): void => {
+    // A later engine focus lands on the wrapper itself; forward into the CM6
+    // caret. Focus arriving already inside the editor passes through.
+    if (e.target === e.currentTarget) editorRef.current?.focus();
+  }, []);
+
+  const onBlur = useCallback(
+    (e: React.FocusEvent<HTMLDivElement>): void => {
+      // Commit when focus leaves the row entirely (Escape-ascend, Tab,
+      // click-away) — the single close path. Focus moves within the row
+      // (wrapper → CM6) are not an exit.
+      if (
+        e.relatedTarget instanceof Node &&
+        e.currentTarget.contains(e.relatedTarget)
+      ) {
+        return;
+      }
+      if (store.getSnapshot().editingId === snippet.id) store.commitEdit();
+    },
+    [store, snippet.id],
+  );
+
+  // ⌘Return commits and chains a new snippet; the new row's editor opens via
+  // the store's `editingId` + the descend effect.
+  const onSubmit = useCallback((): void => {
+    manager?.ascend();
+    store.commitEdit();
+    store.createSnippet(snippet.id);
+  }, [manager, store, snippet.id]);
+
+  // Escape closes the editor. The engine's Escape ladder yields to a focused
+  // CM6 editor (`data-tug-tab-consume` marks it as owning its keys), so the
+  // ascend is this surface's to perform: CM6's completion keymap consumes
+  // Escape first when a popup is open (arriving here `defaultPrevented`);
+  // a bare Escape ascends the row scope, and the resulting blur commits.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent): void => {
-      // ⌘Return commits and chains a new snippet. The engine does not intercept
-      // Enter for this behavior-less editor leaf, so it reaches here; the new
-      // row's editor opens via the store's `editingId` + the descend effect.
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        manager?.ascend();
-        store.commitEdit();
-        store.createSnippet(snippet.id);
-      }
-      // Plain Escape is handled by the engine (ascend the non-trapped row
-      // scope); the resulting blur commits the edit. Nothing to do here.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      manager?.ascend();
     },
-    [manager, store, snippet.id],
+    [manager],
   );
-  const onBlur = useCallback((): void => {
-    // Whatever moved focus out of the editor (Escape-ascend, Tab, click-away)
-    // commits the open row — the single close path.
-    if (store.getSnapshot().editingId === snippet.id) store.commitEdit();
-  }, [store, snippet.id]);
+
   return (
-    <div className="snippet-editor" onKeyDown={onKeyDown}>
-      <TugTextarea
-        rows={3}
-        autoResize
-        maxRows={14}
-        focusGroup="snippet-row-editor"
-        focusOrder={0}
+    <div
+      className="snippet-editor"
+      ref={(el) => focusableRef(el)}
+      tabIndex={-1}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
+    >
+      <TugMessageEditor
+        ref={editorRef}
+        value={snippet.text}
         placeholder="Type a snippet — its opening line becomes its handle"
-        defaultValue={snippet.text}
-        onChange={(e) => store.updateSnippet(snippet.id, e.target.value)}
-        onBlur={onBlur}
+        markdownTextStyling
+        lineWrap
+        maxRows={14}
+        onChange={(text) => store.updateSnippet(snippet.id, text)}
+        onSubmit={onSubmit}
+        aria-label="Snippet text"
+        data-testid="snippet-editor-field"
       />
     </div>
   );
@@ -230,7 +329,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
 
   // Descend into a row when it opens for editing ([P06]/[R01]): the editor cell
   // mounts in the same commit that set `editingId`; this parent layout effect
-  // runs after the child textarea has registered its focusable, so the descend
+  // runs after the child editor has registered its focusable, so the descend
   // finds it. Guarded so it fires once per open (not on every keystroke).
   const prevEditingRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -266,6 +365,24 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     };
   }, [dataSource, store]);
 
+  // Delete `id` and land the cursor on the surviving neighbor (same index,
+  // clamped) so the keyboard position never vanishes with the row. Shared by
+  // the keyboard Delete verb and the row's pointer delete button.
+  const deleteSnippetKeepingCursor = useCallback(
+    (id: string): void => {
+      const index = dataSource.indexForId(id);
+      if (index < 0) return;
+      const survivorCount = dataSource.numberOfItems() - 1;
+      store.deleteSnippet(id);
+      if (survivorCount <= 0) return;
+      const landing = Math.min(index, survivorCount - 1);
+      const survivor = store.getSnapshot().doc.snippets[landing];
+      if (survivor !== undefined) lastSelectedSnippetId = survivor.id;
+      listRef.current?.moveCursorTo(landing);
+    },
+    [dataSource, store],
+  );
+
   // Reorder by grip: commit on drop ([Q02]). Rows are matched by their stable
   // `data-snippet-id`; the FLIP animates the row content, the store commit
   // reorders the document.
@@ -278,8 +395,8 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     kindAttr: ROW_KIND_ATTR,
   });
   const cellContext = useMemo<SnippetsCellContextValue>(
-    () => ({ onGripPointerDown }),
-    [onGripPointerDown],
+    () => ({ onGripPointerDown, onDeleteRow: deleteSnippetKeepingCursor }),
+    [onGripPointerDown, deleteSnippetKeepingCursor],
   );
 
   // Read the cursor row id from the engine's projected `data-key-cursor` —
@@ -315,15 +432,15 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
         const id = cursorSnippetId();
         if (id === null) return;
         e.preventDefault();
-        store.deleteSnippet(id);
+        deleteSnippetKeepingCursor(id);
       }
     },
-    [editingId, store, cursorSnippetId],
+    [editingId, store, cursorSnippetId, deleteSnippetKeepingCursor],
   );
 
   // ⌘Z / ⇧⌘Z route through the responder chain as UNDO/REDO. Handle them only
   // in list mode: while editing, omit the handlers so the chain walks past to
-  // the textarea's native undo ([the KeyZ binding does not preventDefault]).
+  // the editor's own undo responder ([the KeyZ binding does not preventDefault]).
   const responderId = useId();
   const responderActions = useMemo(
     () =>

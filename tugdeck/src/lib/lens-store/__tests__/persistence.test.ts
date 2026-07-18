@@ -65,17 +65,6 @@ describe("LensStore — persistence", () => {
     expect(put!.body).toEqual({ kind: "json", value: ["telemetry", "log"] });
   });
 
-  it("setHidden(true) PUTs the hiddenSections json array", async () => {
-    lensStore.setHidden("log", true);
-    await Promise.resolve();
-    const put = captured.find(
-      (c) =>
-        c.method === "PUT" && c.url.endsWith(`/${LENS_KEYS.HIDDEN_SECTIONS}`),
-    );
-    expect(put).toBeDefined();
-    expect(put!.body).toEqual({ kind: "json", value: ["log"] });
-  });
-
   it("setCollapsed(true) PUTs the collapsedSections json array", async () => {
     lensStore.setCollapsed("telemetry", true);
     await Promise.resolve();
@@ -99,7 +88,7 @@ describe("LensStore — persistence", () => {
   });
 
   it("a no-op mutation issues no PUT", async () => {
-    lensStore.setHidden("log", false); // never hidden → no change
+    lensStore.setCollapsed("log", false); // never collapsed → no change
     await Promise.resolve();
     expect(captured.filter((c) => c.method === "PUT").length).toBe(0);
   });

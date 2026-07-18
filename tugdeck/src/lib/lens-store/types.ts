@@ -1,7 +1,7 @@
 /**
  * Public types for the Lens store — the persisted section-arrangement
- * state for the Lens panel (section order, per-section visibility and
- * collapse, and the preferred reopen width).
+ * state for the Lens panel (section order, per-section collapse, and
+ * the preferred reopen width).
  *
  * The Lens's live geometry (open/width) belongs to the deck layout blob
  * (anchored-pane presence + `size.width`); this store owns only the
@@ -23,7 +23,6 @@ export const LENS_DOMAIN = "dev.tugtool.lens";
 export const LENS_KEYS = {
   WIDTH_PX: "widthPx",
   SECTION_ORDER: "sectionOrder",
-  HIDDEN_SECTIONS: "hiddenSections",
   COLLAPSED_SECTIONS: "collapsedSections",
   ANCHOR_SIDE: "anchorSide",
 } as const;
@@ -61,8 +60,6 @@ export interface LensSnapshot {
   widthPx: number;
   /** Persisted section order, most-preferred first. Unknown kinds tolerated. */
   sectionOrder: readonly string[];
-  /** Kinds the user has hidden from the stack. */
-  hiddenSections: readonly string[];
   /** Kinds the user has collapsed (band-only). */
   collapsedSections: readonly string[];
   /** Viewport edge the Lens rail pins to. */

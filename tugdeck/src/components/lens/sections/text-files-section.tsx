@@ -13,7 +13,7 @@
 
 import "./text-files-section.css";
 
-import React, { useMemo, useSyncExternalStore } from "react";
+import React, { useEffect, useMemo, useSyncExternalStore } from "react";
 import { FileText } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
@@ -21,7 +21,8 @@ import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { dispatchAction } from "@/action-dispatch";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import {
-  getRecentDocumentsSnapshot,
+  getReachableRecentDocumentsSnapshot,
+  probeRecentDocuments,
   subscribeRecentDocuments,
 } from "@/lib/recent-documents";
 import { TugListView } from "@/components/tugways/tug-list-view";
@@ -43,6 +44,11 @@ import {
 // collapse toggle; valid while the Lens is a singleton card.
 let lastSelectedTextId: string | null = null;
 
+/** Abbreviate a macOS home prefix (`/Users/<name>`) to `~` for display. */
+function displayDir(dir: string): string {
+  return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+}
+
 /** A two-line row: filename over its (dimmed) directory. */
 function FileRow({
   name,
@@ -58,7 +64,9 @@ function FileRow({
       <span className="text-files-name" title={dir ? `${dir}/${name}` : name}>
         {name}
       </span>
-      {dir.length > 0 ? <span className="text-files-dir">{dir}</span> : null}
+      {dir.length > 0 ? (
+        <span className="text-files-dir">{displayDir(dir)}</span>
+      ) : null}
     </div>
   );
 }
@@ -102,8 +110,8 @@ function TextFilesCollapsedSummary(): React.ReactElement {
   );
   const recents = useSyncExternalStore(
     subscribeRecentDocuments,
-    getRecentDocumentsSnapshot,
-    getRecentDocumentsSnapshot,
+    getReachableRecentDocumentsSnapshot,
+    getReachableRecentDocumentsSnapshot,
   );
   const { open, recent } = useMemo(() => {
     const rows = buildTextFilesRows({ deck, recents });
@@ -119,6 +127,12 @@ function TextFilesCollapsedSummary(): React.ReactElement {
 function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const dataSource = useLensTextFilesDataSource();
   const count = dataSource.numberOfItems();
+
+  // Re-probe the MRU against disk whenever the section (re)appears — a file
+  // deleted while the section was collapsed drops off on expand.
+  useEffect(() => {
+    probeRecentDocuments();
+  }, []);
 
   const initialSelectedIndex = useMemo(() => {
     if (lastSelectedTextId === null) return undefined;

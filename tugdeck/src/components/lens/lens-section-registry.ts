@@ -85,32 +85,30 @@ export function getRegisteredLensSections(): ReadonlyMap<
 }
 
 /**
- * Resolve the visible section render order (pure): start from the
- * persisted `sectionOrder` (keeping only kinds that are actually
- * registered), append any registered-but-unordered kinds in their
- * registration order, then drop the hidden kinds. Unknown persisted
- * kinds are ignored — the persisted lists tolerate removed section
- * kinds without crashing ([P03]).
+ * Resolve the section render order (pure): start from the persisted
+ * `sectionOrder` (keeping only kinds that are actually registered), then
+ * append any registered-but-unordered kinds in their registration order.
+ * Every registered section renders — the Lens has no hidden sections.
+ * Unknown persisted kinds are ignored — the persisted list tolerates
+ * removed section kinds without crashing ([P03]).
  */
 export function resolveSectionRenderOrder(
   registeredKinds: readonly string[],
   sectionOrder: readonly string[],
-  hiddenSections: readonly string[],
 ): string[] {
   const registered = new Set(registeredKinds);
-  const hidden = new Set(hiddenSections);
   const seen = new Set<string>();
   const out: string[] = [];
 
   for (const kind of sectionOrder) {
     if (!registered.has(kind) || seen.has(kind)) continue;
     seen.add(kind);
-    if (!hidden.has(kind)) out.push(kind);
+    out.push(kind);
   }
   for (const kind of registeredKinds) {
     if (seen.has(kind)) continue;
     seen.add(kind);
-    if (!hidden.has(kind)) out.push(kind);
+    out.push(kind);
   }
   return out;
 }

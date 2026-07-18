@@ -1,6 +1,9 @@
 /**
- * lens-content.tsx — the Lens card's content: a single vertical scroll
- * of reorderable, collapsible sections.
+ * lens-content.tsx — the Lens card's content: a fixed, non-scrolling stack
+ * of reorderable, collapsible sections. Every registered section always
+ * renders (there is no hidden-sections set and no title-bar `…` menu);
+ * each section's BODY scrolls internally when its list outgrows the
+ * section's flex share, so every band stays on-screen.
  *
  * Hosted by the normal `CardHost` inside an anchored pane (the Lens
  * rail). This file is the ordinary registered card's content component;
@@ -8,8 +11,8 @@
  * [L25]/[L09]).
  *
  * Responsibilities:
- *   - Derive the visible sections + order from `lensStore` over the
- *     registered sections ([L02] via `useSyncExternalStore`).
+ *   - Derive the section order from `lensStore` over the registered
+ *     sections ([L02] via `useSyncExternalStore`).
  *   - Drag-reorder sections from their grips: a DOM-only live preview
  *     (flex `order`) during the drag, committing `lensStore.setSectionOrder`
  *     only on drop ([P08], [L06]/[L08]).
@@ -27,14 +30,12 @@
  */
 
 import React, {
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
   useSyncExternalStore,
 } from "react";
 import { lensStore } from "@/lib/lens-store/lens-store";
-import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
 import { dispatchAction } from "@/action-dispatch";
@@ -46,7 +47,6 @@ import {
   getRegisteredLensSections,
   resolveSectionRenderOrder,
   sectionFocusGroup,
-  type LensSectionDefinition,
   type LensSectionHost,
 } from "./lens-section-registry";
 import { LensSection } from "./lens-section-band";
@@ -67,11 +67,7 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
   const lens = useSyncExternalStore(lensStore.subscribe, lensStore.getSnapshot);
   const sections = getRegisteredLensSections();
   const registeredKinds = [...sections.keys()];
-  const order = resolveSectionRenderOrder(
-    registeredKinds,
-    lens.sectionOrder,
-    lens.hiddenSections,
-  );
+  const order = resolveSectionRenderOrder(registeredKinds, lens.sectionOrder);
   const orderKey = order.join(" ");
   const collapsed = new Set(lens.collapsedSections);
 
@@ -99,53 +95,6 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
   // so a section's body and collapsed-summary always agree ([P11]).
   const followedCardId = useTrackLastNonLensKeyCard(cardId);
 
-  // Contribute the section-visibility items to the pane's title-bar `…`
-  // menu (Spec S03): the menu mirrors the rail — visible sections first,
-  // in their on-screen order (`order`), then hidden sections below,
-  // alphabetically by title. Each item toggles `hiddenSections`. All the
-  // section-visibility logic lives here in the lens layer; the pane just
-  // renders what it's handed. Recomputed when the registry, order, or
-  // hidden set changes; cleared on unmount.
-  const hiddenKey = lens.hiddenSections.join(" ");
-  useEffect(() => {
-    const byKind = getRegisteredLensSections();
-    const defFor = (kind: string): LensSectionDefinition | undefined =>
-      byKind.get(kind);
-    const isDef = (
-      def: LensSectionDefinition | undefined,
-    ): def is LensSectionDefinition => def !== undefined;
-
-    // Visible sections, in the exact order the rail stacks them.
-    const visibleItems = order
-      .map(defFor)
-      .filter(isDef)
-      .map((def) => ({
-        id: def.kind,
-        label: def.title,
-        checked: true,
-        onSelect: () => lensStore.setHidden(def.kind, true),
-      }));
-
-    // Hidden sections (registered but not in `order`), sorted by title.
-    const hiddenItems = registeredKinds
-      .filter((kind) => !order.includes(kind))
-      .map(defFor)
-      .filter(isDef)
-      .sort((a, b) => a.title.localeCompare(b.title))
-      .map((def) => ({
-        id: def.kind,
-        label: def.title,
-        checked: false,
-        onSelect: () => lensStore.setHidden(def.kind, false),
-      }));
-
-    paneTitleBarMenuStore.set(cardId, [...visibleItems, ...hiddenItems]);
-    return () => paneTitleBarMenuStore.set(cardId, null);
-    // `orderKey`/`hiddenKey`/`registeredKinds` capture the inputs; the
-    // `order` array and registry are read fresh inside.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId, orderKey, hiddenKey, registeredKinds.join(" ")]);
-
   // Keep the FocusManager group-walk order in lock-step with the rendered
   // order ([P08]/[L22]) — group order is structure owned by the
   // FocusManager, driven off the store, never a parallel useState.
@@ -168,16 +117,9 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
       resolveSectionRenderOrder(
         [...getRegisteredLensSections().keys()],
         lensStore.getSnapshot().sectionOrder,
-        lensStore.getSnapshot().hiddenSections,
       ),
     commit: (newVisible) => {
-      const registered = new Set(getRegisteredLensSections().keys());
-      // Preserve currently-hidden kinds after the visible order so their
-      // arrangement isn't lost when they're shown again.
-      const hiddenTail = lensStore
-        .getSnapshot()
-        .hiddenSections.filter((k) => registered.has(k) && !newVisible.includes(k));
-      lensStore.setSectionOrder([...newVisible, ...hiddenTail]);
+      lensStore.setSectionOrder([...newVisible]);
     },
   });
 

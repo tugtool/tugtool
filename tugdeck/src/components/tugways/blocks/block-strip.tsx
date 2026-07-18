@@ -101,6 +101,13 @@ export interface BlockStripProps {
   dataPhase?: string;
   /** When `true`, stamps `data-collapsed="true"` on the root. */
   dataCollapsed?: boolean;
+  /**
+   * Click handler on the strip root. A caller that treats the whole band
+   * as an affordance (the Lens section bands focus their section's list)
+   * wires it here; slot contents that own their own clicks (buttons, the
+   * grip) stop propagation or are filtered by the caller.
+   */
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
 }
 
 /**
@@ -123,6 +130,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
       dataTestid,
       dataPhase,
       dataCollapsed,
+      onClick,
     },
     ref,
   ) {
@@ -135,6 +143,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         data-phase={dataPhase}
         data-collapsed={dataCollapsed ? "true" : undefined}
         className={className}
+        onClick={onClick}
       >
         {/* Leftmost drag grip ([P04]); absent at leaf/entry. */}
         {grip}

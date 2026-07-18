@@ -5,16 +5,33 @@
   flex-direction: column;
   gap: 6px;
   padding: 4px 4px 8px;
+  /* Fill the section body's flex allotment so the list can scroll
+     internally when the section shrinks (every band stays visible). */
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 
 /* Positioning context for the reorder drop caret ([Q02]); the list view owns
    the row scroll/hover/cursor, this wrap owns only the caret overlay. */
 .snippets-list-wrap {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 
-.lens-snippets-list {
-  padding: 0 4px;
+/* Doubled selector so these overrides beat the base `.tug-list-view`
+   rules regardless of bundle order. */
+.tug-list-view.lens-snippets-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  height: auto;
+  /* Margin, not padding: the container focus ring is an outline on the
+     list's border box — inset the box so the ring paints on all four
+     sides instead of clipping against the section edges. */
+  margin: 2px 4px;
+  padding-inline: 4px;
 }
 
 .snippets-error {
@@ -45,9 +62,51 @@
   z-index: 2;
 }
 
-/* The in-place editor fills the row; the textarea grows with content. */
+/* The in-place editor fills the row; the CM6 field grows with content. The
+   wrapper is the row's descend-scope focusable — it paints the field frame
+   (the substrate mounts borderless inside `TugMessageEditor`), brightening
+   the border while the caret is inside. */
 .snippet-editor {
   padding: 2px 0;
+  outline: none;
+}
+
+.snippet-editor .tug-message-editor {
+  border: 1px solid var(--tug7-element-field-border-normal-plain-rest, rgba(128, 128, 128, 0.35));
+  border-radius: var(--tug-radius-sm, 6px);
+  background: var(--tug7-surface-field-primary-normal-plain-rest, rgba(127, 127, 127, 0.06));
+}
+
+.snippet-editor:focus-within .tug-message-editor {
+  border-color: var(--tug7-element-global-fill-normal-accent-rest, rgba(255, 149, 0, 0.9));
+}
+
+/* Hover-reveal per-row delete — visible on row hover or its own keyboard
+   focus; quiet otherwise so the incipit stays the row's voice. */
+.snippet-row-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--tug-radius-sm, 6px);
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.snippet-row-content:hover .snippet-row-delete,
+.snippet-row-delete:focus-visible {
+  opacity: 1;
+}
+
+.snippet-row-delete:hover {
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 .snippet-row-label {

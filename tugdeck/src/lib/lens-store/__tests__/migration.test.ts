@@ -1,6 +1,6 @@
 /**
  * Section-`kind` migration on hydrate. When a section is renamed, a user's
- * persisted arrangement state (order / hidden / collapsed) is keyed by the
+ * persisted arrangement state (order / collapsed) is keyed by the
  * OLD kind string in tugbank. `LensStore` remaps known-renamed kinds as it
  * hydrates so that state is not silently lost.
  *
@@ -54,7 +54,6 @@ describe("LensStore — section-kind migration", () => {
     setTugbankClient(
       fakeClient({
         [LENS_KEYS.SECTION_ORDER]: jsonArray(["changeset", "log", "telemetry"]),
-        [LENS_KEYS.HIDDEN_SECTIONS]: jsonArray(["changeset"]),
         [LENS_KEYS.COLLAPSED_SECTIONS]: jsonArray(["changeset"]),
       }),
     );
@@ -63,7 +62,6 @@ describe("LensStore — section-kind migration", () => {
     const snap = lensStore.getSnapshot();
 
     expect(snap.sectionOrder).toEqual(["sessions", "log", "telemetry"]);
-    expect(snap.hiddenSections).toEqual(["sessions"]);
     expect(snap.collapsedSections).toEqual(["sessions"]);
   });
 

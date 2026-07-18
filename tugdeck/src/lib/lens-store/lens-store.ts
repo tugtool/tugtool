@@ -1,7 +1,7 @@
 /**
  * `LensStore` — module-scope owner of the Lens panel's persisted
- * arrangement state (section order, per-section visibility and collapse,
- * and the preferred reopen width).
+ * arrangement state (section order, per-section collapse, and the
+ * preferred reopen width).
  *
  * The store is constructed lazily on first read so tests that never
  * touch the Lens pay zero cost. It:
@@ -73,9 +73,6 @@ class LensStore {
     const sectionOrder = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.SECTION_ORDER)),
     );
-    const hiddenSections = migrateKinds(
-      readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.HIDDEN_SECTIONS)),
-    );
     const collapsedSections = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS)),
     );
@@ -87,7 +84,6 @@ class LensStore {
         type: "hydrate",
         ...(widthPx !== undefined ? { widthPx } : {}),
         ...(sectionOrder !== undefined ? { sectionOrder } : {}),
-        ...(hiddenSections !== undefined ? { hiddenSections } : {}),
         ...(collapsedSections !== undefined ? { collapsedSections } : {}),
         ...(anchorSide !== undefined ? { anchorSide } : {}),
       },
@@ -121,9 +117,6 @@ class LensStore {
     }
     if (prev.sectionOrder !== next.sectionOrder) {
       putJson(LENS_KEYS.SECTION_ORDER, next.sectionOrder);
-    }
-    if (prev.hiddenSections !== next.hiddenSections) {
-      putJson(LENS_KEYS.HIDDEN_SECTIONS, next.hiddenSections);
     }
     if (prev.collapsedSections !== next.collapsedSections) {
       putJson(LENS_KEYS.COLLAPSED_SECTIONS, next.collapsedSections);
@@ -162,12 +155,6 @@ class LensStore {
   setSectionOrder = (order: readonly string[]): void => {
     this._ensureInitialized();
     this._dispatch({ type: "set_section_order", order });
-  };
-
-  /** Show/hide a section by kind. Persists. */
-  setHidden = (kind: string, hidden: boolean): void => {
-    this._ensureInitialized();
-    this._dispatch({ type: "set_hidden", kind, hidden });
   };
 
   /** Expand/collapse a section by kind. Persists. */
@@ -218,7 +205,7 @@ function readNumber(entry: TaggedValue | undefined): number | undefined {
 
 /**
  * Section-`kind` renames applied on hydrate so a user's persisted
- * arrangement state (order / hidden / collapsed) survives a section
+ * arrangement state (order / collapsed) survives a section
  * being renamed. Maps old kind → new kind; unknown kinds pass through.
  * The remapped state re-persists on the next mutation, self-healing the
  * stored value.

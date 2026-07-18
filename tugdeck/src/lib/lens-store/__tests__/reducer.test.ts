@@ -1,6 +1,6 @@
 /**
  * Pure-logic tests for the Lens store reducer. Covers width clamp,
- * section-order replace, hidden/collapsed membership toggles, and
+ * section-order replace, collapsed membership toggles, and
  * hydrate — including the "no-op events return same state reference"
  * contract required by `useSyncExternalStore` for quiescent subscribers.
  */
@@ -62,26 +62,6 @@ describe("LensStore reducer — set_section_order", () => {
   });
 });
 
-describe("LensStore reducer — set_hidden", () => {
-  it("adds a kind to the hidden list", () => {
-    const next = reduce(fresh(), { type: "set_hidden", kind: "log", hidden: true });
-    expect(next.hiddenSections).toEqual(["log"]);
-  });
-  it("removes a kind when hidden=false", () => {
-    const a = reduce(fresh(), { type: "set_hidden", kind: "log", hidden: true });
-    const b = reduce(a, { type: "set_hidden", kind: "log", hidden: false });
-    expect(b.hiddenSections).toEqual([]);
-  });
-  it("hiding an already-hidden kind is a no-op (same-ref)", () => {
-    const a = reduce(fresh(), { type: "set_hidden", kind: "log", hidden: true });
-    expect(reduce(a, { type: "set_hidden", kind: "log", hidden: true })).toBe(a);
-  });
-  it("un-hiding a kind that was never hidden is a no-op (same-ref)", () => {
-    const s = fresh();
-    expect(reduce(s, { type: "set_hidden", kind: "log", hidden: false })).toBe(s);
-  });
-});
-
 describe("LensStore reducer — set_collapsed", () => {
   it("adds and removes collapse membership", () => {
     const a = reduce(fresh(), {
@@ -114,7 +94,6 @@ describe("LensStore reducer — hydrate", () => {
     const seeded: LensState = {
       widthPx: 500,
       sectionOrder: ["log"],
-      hiddenSections: [],
       collapsedSections: ["log"],
       anchorSide: "right",
     };
@@ -135,7 +114,6 @@ describe("LensStore reducer — hydrate", () => {
     const seeded: LensState = {
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
-      hiddenSections: ["telemetry"],
       collapsedSections: [],
       anchorSide: "left",
     };
@@ -143,7 +121,6 @@ describe("LensStore reducer — hydrate", () => {
       type: "hydrate",
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
-      hiddenSections: ["telemetry"],
       collapsedSections: [],
       anchorSide: "left",
     });
@@ -156,14 +133,12 @@ describe("LensStore reducer — toSnapshot", () => {
     const s: LensState = {
       widthPx: 500,
       sectionOrder: ["log", "telemetry"],
-      hiddenSections: ["telemetry"],
       collapsedSections: ["log"],
       anchorSide: "left",
     };
     const snap = toSnapshot(s);
     expect(snap.widthPx).toBe(500);
     expect(snap.sectionOrder).toEqual(["log", "telemetry"]);
-    expect(snap.hiddenSections).toEqual(["telemetry"]);
     expect(snap.collapsedSections).toEqual(["log"]);
     expect(snap.anchorSide).toBe("left");
   });

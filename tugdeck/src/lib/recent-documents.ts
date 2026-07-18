@@ -43,6 +43,17 @@ export const RECENT_DOCUMENTS_MAX_BYTES = 16 * 1024;
 /** In-memory MRU, newest first. The tugbank value is the durable copy. */
 let recents: string[] = [];
 
+/**
+ * Paths the last `/api/fs/stat` probe reported as gone (deleted, moved,
+ * or unreadable). Kept OUT of `recents` filtering at the storage level —
+ * a restored file reappears on the next probe — and applied only to the
+ * reachable projection below.
+ */
+let unreachable: ReadonlySet<string> = new Set();
+
+/** The reachable projection of `recents` — the list UI surfaces show. */
+let reachableRecents: string[] = [];
+
 /** Change listeners — notified whenever the in-memory MRU mutates. */
 const listeners = new Set<() => void>();
 
@@ -58,6 +69,18 @@ export function subscribeRecentDocuments(listener: () => void): () => void {
 
 function notifyRecentDocuments(): void {
   for (const listener of listeners) listener();
+}
+
+/** Recompute the reachable projection. Reference-stable when unchanged. */
+function recomputeReachable(): void {
+  const next = recents.filter((p) => !unreachable.has(p));
+  if (
+    next.length === reachableRecents.length &&
+    next.every((p, i) => p === reachableRecents[i])
+  ) {
+    return;
+  }
+  reachableRecents = next;
 }
 
 /**
@@ -104,8 +127,10 @@ export function initRecentDocuments(): void {
     console.warn("[recent-documents] read failed:", err);
   }
   recents = coerceRecentDocuments(raw);
+  recomputeReachable();
   publishRecentDocuments(recents);
   notifyRecentDocuments();
+  probeRecentDocuments();
 }
 
 /** The current MRU snapshot (newest first). */
@@ -123,16 +148,82 @@ export function getRecentDocumentsSnapshot(): readonly string[] {
 }
 
 /**
+ * The reachable MRU — `recents` minus the paths the last existence probe
+ * reported gone. The list surfaces (the Lens Text Files section) read
+ * this, so a deleted or moved file is never offered as openable. Same
+ * stable-reference contract as {@link getRecentDocumentsSnapshot}.
+ */
+export function getReachableRecentDocumentsSnapshot(): readonly string[] {
+  return reachableRecents;
+}
+
+let probeSeq = 0;
+
+/**
+ * Probe the MRU against disk via `POST /api/fs/stat` (batched, one round
+ * trip) and fold the result into the reachable projection. Fired from
+ * boot / mutation chokepoints and by surfaces when they (re)appear.
+ * Best-effort: a transport failure leaves the current projection alone.
+ * Stale responses (a newer probe started meanwhile) are discarded.
+ */
+export function probeRecentDocuments(): void {
+  const paths = recents.slice();
+  if (paths.length === 0) {
+    if (unreachable.size > 0) unreachable = new Set();
+    recomputeReachable();
+    return;
+  }
+  const seq = ++probeSeq;
+  void fetch("/api/fs/stat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths }),
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body: unknown) => {
+      if (seq !== probeSeq || body === null || typeof body !== "object") return;
+      const exists = (body as { exists?: unknown }).exists;
+      if (exists === null || typeof exists !== "object") return;
+      const gone = new Set<string>();
+      for (const path of paths) {
+        if ((exists as Record<string, unknown>)[path] === false) gone.add(path);
+      }
+      const changed =
+        gone.size !== unreachable.size ||
+        [...gone].some((p) => !unreachable.has(p));
+      if (!changed) return;
+      unreachable = gone;
+      recomputeReachable();
+      notifyRecentDocuments();
+    })
+    .catch(() => {
+      // Best-effort — keep the current projection on transport failure.
+    });
+}
+
+/**
  * Record `path` as the most-recent document: move it to the front,
  * de-dupe, cap, persist, and re-publish to the host.
  */
 export function noteRecentDocument(path: string): void {
   if (path === "") return;
   const next = capRecentDocuments([path, ...recents.filter((p) => p !== path)]);
+  // A just-noted path was just opened — it is reachable by definition.
+  const wasUnreachable = unreachable.has(path);
+  if (wasUnreachable) {
+    const cleared = new Set(unreachable);
+    cleared.delete(path);
+    unreachable = cleared;
+  }
   if (next.length === recents.length && next.every((p, i) => p === recents[i])) {
-    return; // Already newest — nothing changed.
+    if (wasUnreachable) {
+      recomputeReachable();
+      notifyRecentDocuments();
+    }
+    return; // Already newest — nothing else changed.
   }
   recents = next;
+  recomputeReachable();
   persist();
   publishRecentDocuments(recents);
   notifyRecentDocuments();
@@ -142,6 +233,8 @@ export function noteRecentDocument(path: string): void {
 export function clearRecentDocuments(): void {
   if (recents.length === 0) return;
   recents = [];
+  unreachable = new Set();
+  recomputeReachable();
   persist();
   publishRecentDocuments(recents);
   notifyRecentDocuments();
