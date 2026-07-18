@@ -281,6 +281,10 @@ Payload: `{project_dir, owner_kind, owner_id, message?, selection?, edited, clea
 
 `ChangesetDraftRow` + `edited: bool` + `selection: Option<String>` (JSON `{"include": [paths], "exclude": [paths]}` deltas against the default rule: session files `!shared` on, unattributed off). Wire: `ChangesetDraft` on the snapshot gains the same fields (additive).
 
+**Spec S05: Draft `project_dir` spelling contract** {#s05-draft-project-dir}
+
+Writers store `project_dir` **canonical**: tugcast through the `CanonicalPath` gateway (as the draft engine's `EntryKey` already carries), `tugutil draft` via `std::fs::canonicalize` on `--project`. Readers query **canonical with raw union** — exactly the legacy-tolerant pattern compose already uses for `file_events` in `feeds/changeset.rs` (query the canonical spelling; union the raw spelling when it differs). This applies to `changeset_drafts_for_project` (compose), `get_changeset_draft`, and `tugdash-core::ops::dash_draft_message`. Without this contract, a skill-written draft with a differently-spelled path (firmlink/symlink split) silently fails to attach to its entry — the same canonicalization split that bit `file_events` before [P05] of the changesets plan.
+
 **Spec S04: Receipt block** {#s04-receipt-block}
 
 A local transcript block (registered in `session-command-block-registry.ts`) rendering: verb (`commit`/`join`), short sha, subject line, `N file(s) +A −D`, `left behind: …` when non-empty, and for joins `from dash <name> · <k> rounds`. Not session context — never sent to Claude.
@@ -323,7 +327,9 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 | `AlsoOnProjectLine` (+ expansion) | component | `session-changes/session-changes-view.tsx` | [P06]; jump via `dispatchAction` |
 | receipt block renderer | component | `cards/session-command-block-registry.ts` (+ block component) | Spec S04 |
 | join badge | render | `session-history/session-history-view.tsx` | `Tug-Dash:` trailer parse ([P09]) |
-| `draft` verbs | CLI | `tugutil/src/cli.rs`, `tugutil/src/draft.rs` | Spec S02 |
+| `draft` verbs | CLI | `tugutil/src/cli.rs`, `tugutil/src/draft.rs` | Spec S02, Spec S05 (canonical `--project`) |
+| `dash_draft_message` | fn (modify) | `tugdash-core/src/ops.rs` | repoint to `changes.changeset_drafts` via `changes_db_path()`; Spec S05 read |
+| local-name collision filter | fn | `tugdeck/src/lib/session-metadata-store.ts` (or the popup merge site) | suppresses Claude-advertised commands shadowed by `LOCAL_SLASH_COMMANDS` |
 
 ---
 
@@ -381,17 +387,20 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 
 **Commit:** `Move changeset drafts to changes.db; add edited + selection`
 
-**References:** [P02], Spec S03, (#draft-migration, #machinery-inventory)
+**References:** [P02], Spec S03, Spec S05, (#draft-migration, #machinery-inventory)
 
-**Artifacts:** `changes.changeset_drafts` DDL + migration; extended `ChangesetDraftRow`; wire `ChangesetDraft` fields; fixture updates.
+**Artifacts:** `changes.changeset_drafts` DDL + migration; extended `ChangesetDraftRow`; wire `ChangesetDraft` fields; repointed `dash_draft_message`; fixture updates.
 
 **Tasks:**
 - [ ] In `tugcast/src/session_ledger.rs`: move the `changeset_drafts` DDL into the ATTACHed `changes` schema; add `edited INTEGER NOT NULL DEFAULT 0`, `selection TEXT`; re-qualify `upsert_changeset_draft` / `get_changeset_draft` / `changeset_drafts_for_project` DML.
 - [ ] Add `migrate_instance_changeset_drafts_to_changes` on open, modeled on the `file_events` migration in the same file.
+- [ ] **Repoint `tugdash-core/src/ops.rs::dash_draft_message`** — it reads `changeset_drafts` by raw SQL directly from the per-instance `sessions.db` path today ("read-only from `sessions.db`" per its doc) and would silently fall back to the dash description after the move, losing every join's draft message. Point it at `changes.changeset_drafts` via `tugcore::instance::changes_db_path()` (honoring `TUG_CHANGES_DB`), reading per Spec S05.
+- [ ] Apply the Spec S05 spelling contract to all draft readers (`changeset_drafts_for_project` in compose, `get_changeset_draft`, `dash_draft_message`): canonical query, raw-spelling union when it differs.
 - [ ] Extend `tugcast-core/src/types.rs::ChangesetDraft` and `tugdeck/src/lib/changeset-types.ts` (+ guard) additively; update golden snapshot fixtures.
 
 **Tests:**
 - [ ] Rust: legacy per-instance drafts migrate in and the local table drops; round-trip preserves `edited`/`selection`.
+- [ ] Rust (tugdash-core): a join whose dash has a migrated draft in `changes.changeset_drafts` uses the draft as its squash message — pins the `dash_draft_message` repoint.
 - [ ] bun: type guard accepts old and new draft shapes.
 
 **Checkpoint:**
@@ -425,14 +434,15 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 
 **Commit:** `tugutil draft set/show/clear; drafts-version probe in the aggregate`
 
-**References:** [P11], [P12], Spec S02, Risk R01, (#r01-aggregate-poll)
+**References:** [P11], [P12], Spec S02, Spec S05, Risk R01, (#r01-aggregate-poll)
 
 **Tasks:**
-- [ ] New `tugutil/src/draft.rs` + `cli.rs` wiring per Spec S02; WAL write to `changes.changeset_drafts` via `tugcore::instance::changes_db_path()`; plain + `--json` output.
+- [ ] New `tugutil/src/draft.rs` + `cli.rs` wiring per Spec S02; WAL write to `changes.changeset_drafts` via `tugcore::instance::changes_db_path()`; `--project` canonicalized on write per Spec S05; plain + `--json` output.
 - [ ] Add the 2 s `MAX(updated_at)` probe arm to `ChangesetAllFeed`'s select loop in `changeset_all.rs`; bump only on change; update the module-header doctrine comment.
 
 **Tests:**
 - [ ] Rust integration (`tugutil/tests/`): `draft set` → `draft show` round-trip under `TUG_CHANGES_DB` isolation; include/exclude serialization.
+- [ ] Rust integration (cross-process spelling, Spec S05): `tugutil draft set` with a symlinked/raw `--project` spelling → tugcast-side compose (`compose_snapshot` with the same `TUG_CHANGES_DB`) finds and attaches the draft to the entry.
 - [ ] Rust: probe fires the bump exactly once per external write.
 
 **Checkpoint:**
@@ -471,8 +481,8 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 **References:** [P06], [Q02], (#p06-zones, #machinery-inventory)
 
 **Tasks:**
-- [ ] Restructure `session-changes-view.tsx` into the two zones; Zone 2 collapsed one-line summary (pure summarizer over `dashes` + `unattributed` + other-session presence from the aggregate snapshot), `useState` expansion.
-- [ ] Expanded session rows: display name + `focus-session-card` jump (port the row/`cardId` sourcing from `lens/sections/sessions-section.tsx`; unlinked when unresolvable per [Q02]).
+- [ ] Restructure `session-changes-view.tsx` into the two zones; Zone 2 collapsed one-line summary (pure summarizer over `dashes` + `unattributed` + other-session entries), `useState` expansion. **Zone 2's session rows come from `snapshot.project.changesets`** — `ChangesRouteSnapshot.project` is a `ProjectChangeset extends ChangesetSnapshot` carrying every entry; filter out the card's own `owner_id`. No controller/store change is needed.
+- [ ] Expanded session rows: display name + `focus-session-card` jump (port the `buildRows` pattern from `lens/sections/sessions-section.tsx` — it walks a `bindings: ReadonlyMap<cardId, CardSessionBinding{tugSessionId, projectDir}>`; map Zone 2 owner ids through the same binding source; unlinked when no open card resolves, per [Q02]).
 - [ ] Dash rows: name · base · rounds · dirty, with the existing `DashActions` (Join/Release/resolve) relocated under this zone in dash grammar (no per-file checkboxes on dash files).
 - [ ] CSS: distinct section grammar for Zone 2 (`session-changes-view.css`).
 
@@ -518,10 +528,12 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] Implement the Table T01 dispatch in `session-card.tsx`'s local-command handling, reusing the four gates and `changesController.commit(...)` verbatim from the current `!changes commit` branch; ready-draft = overlay phase `ready` or persisted non-empty `entry.draft.message`.
 - [ ] On successful landing, `changeset_draft_set {clear: true}` for the entry key.
 - [ ] Reduce the `!changes` bang handler to the bare routing (show shade); delete the `describe`/`commit` sub-verbs and their usage strings.
+- [ ] **Suppress popup duplicates:** the slash completion popup merges Claude's advertised commands (`session-metadata-store.ts`, `slash_commands ∪ skills ∪ agents` — which includes the built-in `commit`) alongside the `completion-providers/local-commands.ts` provider. Add a general suppression — filter any metadata-derived entry whose name collides with a `LOCAL_SLASH_COMMANDS` name (not a `commit` special case) — so exactly one `/commit` appears, described as Tug's landing verb.
 - [ ] Verify the [D14] allowlist path picks up the new local command.
 
 **Tests:**
 - [ ] bun: matcher — `/commit`, `/commit now`, `/commit <msg>` all match locally and never fall through to send; Table T01 branch logic as a pure function.
+- [ ] bun: metadata-store merge drops entries colliding with local slash names (`commit` disappears from the Claude-derived list; a non-colliding skill survives).
 
 **Checkpoint:**
 - [ ] `bun test` + `bunx vite build` green; manual two-beat walkthrough per (#commit-flow).
