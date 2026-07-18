@@ -161,11 +161,12 @@ pub(crate) async fn compose_snapshot(
     let mut owners: BTreeMap<String, OwnerAgg> = BTreeMap::new();
     // Per-path liveness cut, computed once per dirty path with events.
     let mut live_cuts: HashMap<String, i64> = HashMap::new();
-    // Per repo-relative path, the owners with an `exact` live row — the
-    // genuine authors ([D112]). A `bash`/`turn` row is a whole-tree-delta
-    // *claim* (contaminated by concurrent saves and build churn), so it does
-    // not make a session an owner of a path another session exact-edited.
-    let mut exact_owners: HashMap<String, HashSet<String>> = HashMap::new();
+    // Per repo-relative path, the owners with a live **proof** row
+    // (`exact`/`replay` — the tool input named the file), the genuine authors
+    // ([D112]). A `bash`/`turn` row is a whole-tree-delta *claim*
+    // (contaminated by concurrent saves, build churn, and the user's own
+    // hand-saves), so it never makes a session an owner.
+    let mut proof_owners: HashMap<String, HashSet<String>> = HashMap::new();
     for pfe in &events {
         let rel = repo_relative(&repo_root, &pfe.event.file_path);
         let Some(git_status) = dirty.get(&rel) else {
@@ -182,8 +183,8 @@ pub(crate) async fn compose_snapshot(
         if pfe.event.at < min_live {
             continue;
         }
-        if pfe.event.origin == "exact" {
-            exact_owners
+        if super::attribution::origin_is_proof(&pfe.event.origin) {
+            proof_owners
                 .entry(rel.clone())
                 .or_default()
                 .insert(pfe.event.tug_session_id.clone());
@@ -206,57 +207,52 @@ pub(crate) async fn compose_snapshot(
                 shared: false,
                 last_touched: pfe.event.at,
             });
-        file.op = pfe.event.op.clone();
-        file.origin = pfe.event.origin.clone();
+        // Provenance display follows proof rows: a later bracket sweep never
+        // overwrites the op/origin a proof row established.
+        if super::attribution::origin_is_proof(&pfe.event.origin)
+            || !super::attribution::origin_is_proof(&file.origin)
+        {
+            file.op = pfe.event.op.clone();
+            file.origin = pfe.event.origin.clone();
+        }
         file.last_touched = file.last_touched.max(pfe.event.at);
     }
 
-    // Resolve ownership per path with `exact` rows authoritative:
+    // Resolve ownership per path with **proof** rows the only evidence
+    // ([D112]) — correlation never decides, not even for the bracket's own
+    // session:
     //
-    // - Some session exact-owns the path → strip it from every owner that
+    // - Some session proof-owns the path → strip it from every owner that
     //   only bracket-grabbed it (their contamination); mark `shared` iff more
-    //   than one session exact-owns it (genuine same-file contention).
-    // - No exact owner, multiple bracket owners → contamination on all sides,
-    //   no reliable author: strip the path from everyone (it falls to
-    //   `unattributed` below — visible, never falsely claimed).
-    // - No exact owner, a single bracket owner → a genuine Bash-mediated edit;
-    //   keep it under that owner, never shared.
+    //   than one session proof-owns it (genuine same-file contention).
+    // - No proof owner → strip the path from every bracket holder, however
+    //   many: the same delta that sweeps up another session's save sweeps up
+    //   the user's own hand-save during the command, and the user's editor
+    //   has no session to claim it back. The path falls to `unattributed`
+    //   below — visible, an explicit per-file election on the card.
     let all_paths: HashSet<String> = owners
         .values()
         .flat_map(|agg| agg.files.keys().cloned())
         .collect();
     for path in &all_paths {
-        let exact = exact_owners.get(path);
+        let proof_ids = proof_owners.get(path);
         let holders: Vec<String> = owners
             .iter()
             .filter(|(_, agg)| agg.files.contains_key(path))
             .map(|(id, _)| id.clone())
             .collect();
-        match exact {
-            Some(exact_ids) => {
-                for id in &holders {
-                    if !exact_ids.contains(id) {
-                        if let Some(agg) = owners.get_mut(id) {
-                            agg.files.remove(path);
-                        }
-                    }
-                }
-                if exact_ids.len() > 1 {
-                    for id in exact_ids {
-                        if let Some(file) =
-                            owners.get_mut(id).and_then(|agg| agg.files.get_mut(path))
-                        {
-                            file.shared = true;
-                        }
-                    }
+        for id in &holders {
+            if !proof_ids.is_some_and(|ids| ids.contains(id)) {
+                if let Some(agg) = owners.get_mut(id) {
+                    agg.files.remove(path);
                 }
             }
-            None => {
-                if holders.len() > 1 {
-                    for id in &holders {
-                        if let Some(agg) = owners.get_mut(id) {
-                            agg.files.remove(path);
-                        }
+        }
+        if let Some(proof_ids) = proof_ids {
+            if proof_ids.len() > 1 {
+                for id in proof_ids {
+                    if let Some(file) = owners.get_mut(id).and_then(|agg| agg.files.get_mut(path)) {
+                        file.shared = true;
                     }
                 }
             }
@@ -785,8 +781,10 @@ mod tests {
         ledger
             .record_file_event(&event("sess-beta", "tu-3", &root.join("both.txt"), &root))
             .unwrap();
-        // A row poisoned with the legacy ambiguous=1 column: the compose must
-        // ignore it outright — the file surfaces as an ordinary owned file.
+        // A bracket-only claim (also poisoned with the legacy ambiguous=1
+        // column, which is ignored outright): correlation never decides, so
+        // the file falls to `unattributed` — never auto-claimed by the
+        // bracket's own session.
         let mut tainted = event("sess-alpha", "tu-4", &root.join("tainted.txt"), &root);
         tainted.origin = "bash".to_owned();
         tainted.ambiguous = true;
@@ -821,14 +819,13 @@ mod tests {
         assert_eq!(display_name, "alpha work");
         assert!(live);
         let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
-        assert_eq!(paths, ["both.txt", "owned.txt", "tainted.txt"]);
+        assert_eq!(
+            paths,
+            ["both.txt", "owned.txt"],
+            "a bracket-only claim never attributes — tainted.txt is not alpha's"
+        );
         assert!(files[0].shared, "both.txt has two owners");
         assert!(!files[1].shared);
-        assert!(
-            !files[2].shared,
-            "the legacy ambiguous=1 row has no effect — one owner, not shared"
-        );
-        assert_eq!(files[2].origin, "bash");
         assert_eq!(files[0].git_status, "??");
 
         let ChangesetEntry::Session {
@@ -853,7 +850,7 @@ mod tests {
             .iter()
             .map(|f| f.path.as_str())
             .collect();
-        assert_eq!(unattributed, ["hand-edit.txt"]);
+        assert_eq!(unattributed, ["hand-edit.txt", "tainted.txt"]);
     }
 
     #[tokio::test]

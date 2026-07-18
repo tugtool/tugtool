@@ -122,9 +122,10 @@ pub fn run_context(
 /// summary of everything a commit needs — no `jq`/`python`/`grep` reshaping.
 /// Each attributed file carries its `op·origin` and, when contended, a
 /// `shared` marker naming the other owner(s); `foreign` files name their owner
-/// session; the disposition hint spells out how to clear a non-empty
-/// `unattributed` bucket (the exit-3 case). Empty buckets are omitted, so a
-/// clean session stays terse.
+/// session; an `unattributed` file this session's own bracket saw change is
+/// tagged `likely this session's (bash bracket)`; the disposition hint spells
+/// out how to clear a non-empty `unattributed` bucket (the exit-3 case). Empty
+/// buckets are omitted, so a clean session stays terse.
 fn print_context_plain(report: &tugchanges_core::ContextReport) {
     println!(
         "branch {}  head {}  session {}",
@@ -147,7 +148,14 @@ fn print_context_plain(report: &tugchanges_core::ContextReport) {
     if !report.unattributed.is_empty() {
         println!("unattributed ({}):", report.unattributed.len());
         for f in &report.unattributed {
-            println!("  {:<2} {}", f.git_status, f.path);
+            // A bracket hint: this session's Bash/turn window saw the path
+            // change — likely (but not provably) this session's work.
+            let hint = if f.origin == "none" {
+                String::new()
+            } else {
+                format!("  likely this session's ({} bracket)", f.origin)
+            };
+            println!("  {:<2} {}{}", f.git_status, f.path, hint);
         }
         println!(
             "  → dispose explicitly: --include-unattributed (commit them), \

@@ -253,7 +253,9 @@ fn emit_path_commands(output: &SessionScopedFeed, tug_session_id: &str, commands
     // Trim from the tail until the serialized array fits the cap. Cheap to
     // recompute since the real-world set is well under the cap.
     while end > 0 {
-        let serialized = serde_json::to_string(&commands[..end]).map(|s| s.len()).unwrap_or(0);
+        let serialized = serde_json::to_string(&commands[..end])
+            .map(|s| s.len())
+            .unwrap_or(0);
         if serialized <= PATH_COMMANDS_SERIALIZED_CAP {
             break;
         }

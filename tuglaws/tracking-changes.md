@@ -21,6 +21,22 @@ The invariant that falls out ([D112], `commit-tool-fixes` [P01]): **a dirty file
 
 ---
 
+## The five identities (soundness axioms)
+
+Classifying a dirty file consumes exactly five identities, and each must be derived **from the artifact itself, never from ambient context**. Every historical attribution failure was one of these resolved ambiently; the list is closed, so a new failure class would have to violate one of these axioms — check here first.
+
+| Identity | Axiom | Derived from | Ambient shortcut it forbids (and the incident it caused) |
+|---|---|---|---|
+| **Who** (session) | A row's session is the relay that recorded it | `$TUG_SESSION_ID` at the recording relay | — (never broken; capture is relay-local by construction) |
+| **What** (evidence) | Only **proof** decides ownership — for *any* session, including the recording one. Correlation may only *suggest* | The tool frame: `exact`/`replay` name the file in the tool input (proof); `bash`/`turn` are a whole-tree fingerprint delta (correlation) | "any row = authorship" — bracket sweeps claimed other sessions' saves (meek-sheep), and self-brackets claimed the user's own hand-saves |
+| **Where** (repo + path) | Repo membership is a **per-file** fact: the row's repo root is resolved by walking up from the file's own directory (worktree-aware), and the path is stored relative to *that* root | The file's own path at capture time (`file_repo_root`) | projecting against the *session's* project dir — a dash session's worktree files were keyed `.tug/worktrees/…` under the main checkout, invisible to every reader |
+| **When** (liveness) | A claim lives only until its path's next commit; the commit spends it | The path's own git history (`git log -1 --format=%ct`) | immortal rows — any re-dirty resurrected every fossil claim (G6) |
+| **Scope** (which ledger) | One machine-global ledger; the working tree is machine-global so the truth about it must be too | `changes.db` under the shared data dir, keyed by canonical repo root | per-instance ledgers — a second app instance saw the first's work as ownerless (fluent-light) |
+
+The evidence axiom deserves its one-sentence justification, because it is the one that keeps getting re-litigated: a bracket delta contains **every path whose status/mtime moved during the window** — another session's save, a build's churn, and the **user's own editor save**, which belongs to no session and can never be claimed back. Evidence too weak to attribute a file to someone else is exactly as weak when it points at yourself.
+
+---
+
 ## The ledger
 
 The record is the `file_events` table in the **machine-global `changes.db`** (`~/Library/Application Support/Tug/changes.db`), one row per (session, tool call, file). One ledger for the whole machine, regardless of app instance: the working tree is machine-global, so per-instance attribution splits the truth — a second instance on the same checkout would see the first instance's work as ownerless. The rows themselves are keyed by canonical repo root (`project_dir`), so every instance's compose and every `tugutil` invocation reads the same answer.
@@ -29,21 +45,21 @@ The record is the `file_events` table in the **machine-global `changes.db`** (`~
 - **Writer:** tugcast only (`session_ledger.rs` owns the DDL; the relay loop writes rows). Multiple tugcast processes write concurrently — WAL + busy-timeout make that safe. Every write is best-effort — a ledger error is logged and the wire frame forwards unchanged; attribution never gates delivery ([D112]). Evicting a `sessions` row deletes its `changes.file_events` rows explicitly (a trigger cannot reach across databases).
 - **Reader:** tugchanges-core opens `changes.db` **read-only** (`SQLITE_OPEN_READ_ONLY`, WAL-safe against the concurrent writers) for `file_events`, plus the per-instance `sessions.db` for the known-session test — a session with rows in the shared ledger is known even when this instance holds no `sessions` row for it. Raw-SQL coupling (`tugchanges-core/src/ledger.rs`; a contract test guards the shape).
 - **Idempotency contract:** the primary key is `(tug_session_id, tool_use_id, file_path)` with `ON CONFLICT DO NOTHING`. Replay/resume re-streams history freely and converges; every capture source must mint `tool_use_id`s that respect this key (the turn bracket's synthetic `turn:<opened_at_millis>` id exists for exactly this reason).
-- **Path space:** `file_path` is stored **repo-relative in canonical space**, projected at capture time against the session's canonical repo root (`CanonicalPath`), so both sides of every downstream join speak git's language. Legacy absolute-path rows degrade safely: they stop matching and the file surfaces as `unattributed` — visible, never silent.
+- **Path space:** `file_path` is stored **repo-relative in canonical space**, and `project_dir` is the **file's own repo root** — resolved per file at capture time by walking up from the file's directory (`attribution.rs::file_repo_root`, worktree-aware: a `.git` *file* marks a linked worktree's root). A session whose project dir is one checkout can exact-edit files in a nested dash worktree; those rows are keyed by the worktree's root with worktree-relative paths, so a read inside the worktree matches them. Off-repo files fall back to the session's dir with the canonical absolute path. Legacy rows (absolute paths, or worktree files misfiled under the outer checkout) degrade safely: they stop matching and the file surfaces as `unattributed` — visible, never silent.
 - **Provenance only:** a row records who/what/when/how (`tug_session_id`, `tool_use_id`, `file_path`, `tool_name`, `op`, `origin`, `at`) and **no judgments**. The schema's `ambiguous` column is legacy — always written 0, read by nothing (which also neutralizes every historical row the retired time-overlap heuristic poisoned; see Contention below).
 
 ---
 
 ## Capture: the four origins
 
-All capture happens at one supervised point — tugcast's stdout relay loop (`agent_bridge.rs::relay_session_io`), which every tool frame already traverses. Four source rules, distinguished by the row's `origin`:
+All capture happens at one supervised point — tugcast's stdout relay loop (`agent_bridge.rs::relay_session_io`), which every tool frame already traverses. Four source rules, distinguished by the row's `origin` — and split into two **evidence classes** (the What axiom, `origin_is_proof`): `exact`/`replay` are **proof** (the tool input names the file), `bash`/`turn` are **correlation** (a whole-tree delta; at read time it can only *hint*, never decide):
 
-| `origin` | `tool_name` | Mechanism | When |
-|---|---|---|---|
-| `exact` | `Write`/`Edit`/`MultiEdit`/`NotebookEdit` | Path read straight from the tool input | Recorded on the **successful** `tool_result` (a denied/errored call records nothing) |
-| `bash` | `Bash` | Per-call working-tree fingerprint bracket | Snapshot on `tool_use`, delta on `tool_result` |
-| `turn` | `Turn` | Turn-scoped fallback bracket | Snapshot on the `user_message` forward, delta on the turn's non-replayed `turn_complete` |
-| `replay` | (as original) | Exact-tool backfill during JSONL replay | Historical `timestamp` used as `at`; PK collapses re-streams |
+| `origin` | Class | `tool_name` | Mechanism | When |
+|---|---|---|---|---|
+| `exact` | proof | `Write`/`Edit`/`MultiEdit`/`NotebookEdit` | Path read straight from the tool input | Recorded on the **successful** `tool_result` (a denied/errored call records nothing) |
+| `bash` | correlation | `Bash` | Per-call working-tree fingerprint bracket | Snapshot on `tool_use`, delta on `tool_result` |
+| `turn` | correlation | `Turn` | Turn-scoped fallback bracket | Snapshot on the `user_message` forward, delta on the turn's non-replayed `turn_complete` |
+| `replay` | proof | (as original) | Exact-tool backfill during JSONL replay | Historical `timestamp` used as `at`; PK collapses re-streams |
 
 ### Exact tools
 
@@ -71,14 +87,13 @@ On resume/restore, exact tool frames re-stream from JSONL and backfill rows with
 
 Three read-time rules turn raw provenance rows into trustworthy classification. All are computed per file, from evidence; capture contributes facts only.
 
-**Authorship — `exact` rows are authoritative; bracket rows are not.** An `exact` row's file comes straight from the tool input: the session provably edited that file. A `bash`/`turn` row is a whole-tree fingerprint *delta* — every path whose status/mtime moved during the command/turn window — and it **cannot distinguish this session's own writes from another session's concurrent save or a build's churn**. So a bracket row establishes ownership only *for its own session, and only when no other session has an `exact` row for the path*. It never makes a file contended or foreign across sessions. This is the fix for the contamination that defeated the naïve "any row = authorship" rule: with two sessions live on one checkout, each session's `cargo`/`git`/`just` bracket swept up the other's concurrent saves, minting cross-session rows for files it never opened — and everything went `shared`. Concretely, per dirty path, over live rows:
+**Authorship — proof decides; correlation only suggests. For every session, including the recording one.** A proof row's file comes straight from the tool input: the session provably edited that file. A `bash`/`turn` row is a whole-tree fingerprint *delta* — every path whose status/mtime moved during the command/turn window — and it **cannot distinguish this session's own writes from another session's concurrent save, a build's churn, or the user's own hand-save in their editor** (which belongs to no session at all and can never be claimed back). So a bracket row never establishes ownership — not across sessions (the meek-sheep contamination: with two sessions live on one checkout, each session's `cargo`/`git`/`just` bracket swept up the other's saves and everything went `shared`) and **not for its own session either** (the user saves a file by hand while the agent's `cargo build` runs → the bracket sweeps it into the agent's claim → a default commit takes the user's inflight work). A self bracket row survives as a **hint**: the file stays `unattributed`, tagged `likely this session's (bash bracket)`, and inclusion is the same explicit disposition as any other unattributed file — one flag, informed by the hint, never automatic. Concretely, per dirty path, over live rows:
 
-- This session has a live `exact` row → **attributed**; `shared` iff another session also has a live `exact` row.
-- No self `exact` row, another session has a live `exact` row → **foreign** (theirs); this session's bracket rows are ignored as contamination.
-- No `exact` owner anywhere, this session has a live bracket row → **attributed** (a genuine Bash-mediated edit — `sed`/`perl`/`git mv`), never `shared`.
-- Only *other* sessions' bracket rows touch the path → **unattributed** (unreliable — never falsely foreign).
+- This session has a live proof row → **attributed** (op/origin from the latest proof row); `shared` iff another session also has a live proof row.
+- No self proof row, another session has a live proof row → **foreign** (theirs); this session's bracket rows are ignored as contamination.
+- No proof owner anywhere → **unattributed**, always. A live self bracket row annotates the entry with its op/origin as the hint; other sessions' bracket rows annotate nothing (never falsely foreign).
 
-**Contention (`shared`).** A file is `shared` if and only if **two or more sessions hold live `exact` rows for that exact repo-relative path** on the same repo. This is the *only* cross-session signal, and (per authorship, above) bracket rows are excluded from it. Wall-clock overlap between sessions is never evidence: the retired design cross-marked rows `ambiguous` whenever two sessions' Bash brackets were open on the same repo root at the same moment, which false-positived on every unrelated concurrent command while adding nothing real. Shared files are excluded from every default commit set (the card's one-click commit and `tugutil commit` alike) and included only by explicit election (`--all`, `--tree`, `--paths`); the claimant sessions are named alongside the flag. (Accepted gap: two sessions genuinely editing one file *only* via Bash — no `exact` row on either side — is not flagged `shared`; a whole-tree bracket delta is too unreliable to gate on, and the failure direction is under-report, never a false claim.)
+**Contention (`shared`).** A file is `shared` if and only if **two or more sessions hold live proof rows for that exact repo-relative path** on the same repo. This is the *only* cross-session signal, and (per authorship, above) bracket rows are excluded from it. Wall-clock overlap between sessions is never evidence: the retired design cross-marked rows `ambiguous` whenever two sessions' Bash brackets were open on the same repo root at the same moment, which false-positived on every unrelated concurrent command while adding nothing real. Shared files are excluded from every default commit set (the card's one-click commit and `tugutil commit` alike) and included only by explicit election (`--all`, `--tree`, `--paths`); the claimant sessions are named alongside the flag. (Accepted gap: two sessions genuinely editing one file *only* via Bash — no proof row on either side — is not flagged `shared`; both see the same hinted-unattributed file, and the failure direction is under-report, never a false claim.)
 
 **Row liveness.** A ledger row is **live** only while it postdates the last commit that touched its path; a commit *spends* the rows it absorbs. Concretely (`min_live_at_ms`, implemented identically in tugchanges-core `changes.rs` and tugcast `changeset.rs`): a row is live iff `at ≥ (last_commit_epoch_secs + 1) × 1000`, the whole commit second treated as spent so ties break toward spent; a path with no commit history (new/untracked) spends nothing — every row is live. Spent rows neither attribute nor contend: without this rule rows are immortal, so the moment a path went dirty again — days later, by anyone — every historical row resurfaced and re-claimed it (G6). The degradation direction is always toward `unattributed`: visible, never falsely claimed.
 
@@ -93,8 +108,8 @@ The known ways attribution can be missing or wrong — and why each is safe now:
 | Gap | What happens | Disposition |
 |---|---|---|
 | **G1 — replay never brackets Bash** | Historical Bash deltas are unreconstructable after restart/reload | Unfixable at capture; file surfaces as `unattributed` |
-| **G2 — pre-snapshot races a fast command** | Claude Code executes Bash regardless of the relay; a fast `perl -i` can finish before the pre-snapshot's `git status` returns → pre == post, zero rows | Caught by the **turn bracket** (its pre-snapshot precedes the whole turn) |
-| **G3 — relay crash mid-Bash** | The open bracket is dropped with the relay | Mid-Bash within a live turn: turn bracket. Mid-turn crash: `unattributed` |
+| **G2 — pre-snapshot races a fast command** | Claude Code executes Bash regardless of the relay; a fast `perl -i` can finish before the pre-snapshot's `git status` returns → pre == post, zero rows | Caught by the **turn bracket** (its pre-snapshot precedes the whole turn) — as a *hint* on the unattributed entry, per the evidence axiom |
+| **G3 — relay crash mid-Bash** | The open bracket is dropped with the relay | Mid-Bash within a live turn: turn-bracket hint. Mid-turn crash: `unattributed`, unhinted |
 | **G4 — shell route (`$` commands)** | Shell commands never traverse the relay's tool frames ([D111]) | Deliberately uncaptured; visible as `unattributed` |
 | **G5 — untracked-directory collapse** | Plain porcelain collapses a fully-untracked dir to one `? dir/` line, so files inside never matched any join | Fixed outright: **both** status universes (`snapshot_worktree` and tugchanges-core's `status_output`) pass `--untracked-files=all` |
 | **G6 — row immortality** | Rows outlive the commit that consumed them; a re-dirtied path resurrected every fossil claim on it | Fixed at read time by the **row-liveness rule** — spent rows neither attribute nor contend |
@@ -109,9 +124,9 @@ The pattern: G5/G6 were read-side defects and are fixed; G2/G3 are narrowed by t
 
 | Bucket | Meaning | Shape |
 |---|---|---|
-| `files` (attributed) | This session has live rows for the path | `Change` — `{path, op, origin, shared, sessions, git_status, diff}`; latest live event wins op/origin; `shared` + claimant `sessions` when other sessions also hold live rows |
-| `foreign` | Only *other* sessions hold live rows, and their `project_dir` canonicalizes to this repo root | `ForeignChange` — `{path, git_status, sessions[], diff}` |
-| `unattributed` | No live rows anywhere (including all-claims-spent) | `Change` with sentinel `op:"unknown"`, `origin:"none"` |
+| `files` (attributed) | This session has live **proof** rows for the path | `Change` — `{path, op, origin, shared, sessions, git_status, diff}`; latest live *proof* row wins op/origin; `shared` + claimant `sessions` when other sessions also hold live proof rows |
+| `foreign` | Only *other* sessions hold live proof rows, and their `project_dir` canonicalizes to this repo root | `ForeignChange` — `{path, git_status, sessions[], diff}` |
+| `unattributed` | No live proof rows anywhere (including all-claims-spent) | `Change` — sentinel `op:"unknown"`, `origin:"none"`, except when this session's own live bracket row hints (op/origin carried through, e.g. `modified`/`bash`; the plain read-out renders `likely this session's (bash bracket)`) |
 
 All three are diffed in `context` (an untracked file gets a synthesized add-diff via `git diff --no-index -- /dev/null <path>` — never an empty string). The per-path session query (`ledger.rs::sessions_for_path` / `foreign_sessions_for_path`: canonicalized repo match + the liveness cut) is advisory classification: a row that fails to match degrades to `unattributed`, visible either way.
 
@@ -148,7 +163,7 @@ The net effect of refusal + `--tree` + `left_behind`: a half-commit is impossibl
 | Consumer | Path | Notes |
 |---|---|---|
 | `tugutil context` / `commit` | tugchanges-core via the CLI (`tugutil/src/changes.rs`) | The bucket surface; JSON envelope fields are additive |
-| The commit skill | `tugplug/skills/commit/SKILL.md` | Runs `context --json`, must dispose of every `unattributed` file (include it, or leave it and name it as inflight); treats exit 3 as "re-run with a disposition flag", never as "fall back to raw git" |
+| The commit skill | `tugplug/skills/commit/SKILL.md` | Runs plain `tugutil context` (no `--json`, no jq/python/grep glue), must dispose of every `unattributed` file — the `likely this session's (bash bracket)` hint informs the election; treats exit 3 as "re-run with a disposition flag", never as "fall back to raw git" |
 | Session card commit button | `tugcast feeds/changeset.rs::run_changeset_commit` | Calls `commit()` with an explicit `paths` set → bypasses bucketing, can never hit the refusal; maps `CommitError` back to its `String` error |
 | Changeset card / feed | `feeds/changeset.rs`, `feeds/changeset_all.rs` ([D113]) | Composes live ledger rows per project (same liveness rule); marks per-file multi-owner paths `shared`; the card's default selection is `!shared` for session files and **OFF for unattributed** (inclusion is an explicit per-file election — the card mirror of the exit-3 refusal) |
 | Dash commits | tugdash-core (`tugutil dash commit`) | A **separate** file-selection path on an isolated single-writer worktree; not governed by the bucket contract (auditing it for the same narrowing shape is a recorded follow-on) |
@@ -162,8 +177,9 @@ The net effect of refusal + `--tree` + `left_behind`: a half-commit is impossibl
 3. **Capture never gates delivery.** Every relay intercept is best-effort: log, forward unchanged.
 4. **Every capture source is upsert-idempotent** under the `(session, tool_use_id, file_path)` PK.
 5. **Capture records provenance, never judgments.** All brackets are relay-local; no capture path observes or marks another session, and no row carries a cross-session flag.
-6. **Contention is a per-file fact, computed at read time, gated on authorship.** A file is `shared` iff two or more sessions hold live **`exact`** rows for that exact path. `exact` rows are authoritative; `bash`/`turn` bracket rows (a contaminated whole-tree delta) never establish cross-session `shared`/`foreign`. Wall-clock overlap is never evidence.
+6. **Proof decides; correlation only suggests — for every session, including the recording one.** A file is owned (attributed/foreign) or contended (`shared`) only through live **proof** rows (`exact`/`replay`). A `bash`/`turn` bracket row (a contaminated whole-tree delta that can equally be the user's own hand-save) never decides any bucket — at most it *hints* on an `unattributed` entry, and inclusion stays an explicit disposition. Wall-clock overlap is never evidence.
 7. **A ledger row is live only until its path's next commit.** A commit spends the rows it absorbs; spent rows neither attribute nor contend, and ties degrade toward `unattributed` — visible, never falsely claimed.
 8. **Shared and foreign files are opt-in only.** No default set includes them; `foreign` never blocks.
 9. **The ledger is machine-global.** One `changes.db` regardless of app instance, keyed by canonical repo root — attribution truth is never split across instances that share a working tree.
-10. **No replay reconstruction.** A fingerprint delta that wasn't captured live is gone; the bucket surfacing, not heroics, makes that safe.
+10. **Repo membership is a per-file fact.** A row's `project_dir` is the file's own repo root (worktree-aware, resolved from the file's path at capture), never the session's project dir — a dash session's worktree edits are keyed to the worktree, and a session can span repos without misfiling a single row.
+11. **No replay reconstruction.** A fingerprint delta that wasn't captured live is gone; the bucket surfacing, not heroics, makes that safe.

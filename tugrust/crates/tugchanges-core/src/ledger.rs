@@ -66,24 +66,22 @@ pub(crate) fn query_events(conn: &Connection, session: &str) -> Result<Vec<Event
     Ok(out)
 }
 
-/// One other session's claim on a path: its `project_dir`, its newest row's
-/// `at` (any origin), and its newest **`exact`** row's `at` (`None` when it
-/// has only `bash`/`turn` bracket rows for the path). The exact/any split is
-/// the load-bearing distinction: a bracket row is a whole-tree-delta *claim*,
-/// not proof of authorship — only `exact` rows (tool input names the file)
-/// establish cross-session ownership ([D112]).
+/// One other session's claim on a path: its `project_dir` and its newest
+/// **proof** row's `at` (`None` when it has only `bash`/`turn` bracket rows
+/// for the path). The proof/correlation split is the load-bearing
+/// distinction: a bracket row is a whole-tree-delta *claim*, not proof of
+/// authorship — only proof rows (`exact` live, `replay` backfill; the tool
+/// input names the file) establish ownership ([D112]).
 pub(crate) struct PathClaim {
     pub session: String,
     pub project_dir: String,
-    pub max_at: i64,
-    pub max_exact_at: Option<i64>,
+    pub max_proof_at: Option<i64>,
 }
 
 /// Every session other than `exclude` that has a `file_events` row for the
 /// repo-relative `file_path`, as [`PathClaim`]s (Spec S02). Grouped so a
-/// session touching the path many times counts once, carrying both its newest
-/// row's `at` and its newest `exact` row's `at` for the caller's liveness +
-/// authorship cuts.
+/// session touching the path many times counts once, carrying its newest
+/// proof row's `at` for the caller's liveness + authorship cuts.
 pub(crate) fn sessions_for_path(
     conn: &Connection,
     file_path: &str,
@@ -91,8 +89,8 @@ pub(crate) fn sessions_for_path(
 ) -> Result<Vec<PathClaim>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT tug_session_id, project_dir, MAX(at),
-                    MAX(CASE WHEN origin = 'exact' THEN at END)
+            "SELECT tug_session_id, project_dir,
+                    MAX(CASE WHEN origin IN ('exact', 'replay') THEN at END)
              FROM file_events
              WHERE file_path = ?1 AND tug_session_id != ?2
              GROUP BY tug_session_id, project_dir",
@@ -103,8 +101,7 @@ pub(crate) fn sessions_for_path(
             Ok(PathClaim {
                 session: r.get::<_, String>(0)?,
                 project_dir: r.get::<_, String>(1)?,
-                max_at: r.get::<_, i64>(2)?,
-                max_exact_at: r.get::<_, Option<i64>>(3)?,
+                max_proof_at: r.get::<_, Option<i64>>(2)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -115,16 +112,16 @@ pub(crate) fn sessions_for_path(
     Ok(out)
 }
 
-/// Other sessions with a **live `exact`** claim on `file_path` — the genuine
+/// Other sessions with a **live proof** claim on `file_path` — the genuine
 /// cross-session owners. A session qualifies when its `project_dir`
-/// canonicalizes to the same on-disk directory as `repo_root` and it has an
-/// `exact` row at or after `min_live_at_ms` (the row-liveness cut). Bracket
+/// canonicalizes to the same on-disk directory as `repo_root` and it has a
+/// proof row at or after `min_live_at_ms` (the row-liveness cut). Bracket
 /// (`bash`/`turn`) rows never qualify a session here: a whole-tree fingerprint
 /// delta cannot distinguish this session's own writes from another session's
 /// concurrent save or a build's churn, so it is not authorship ([D112]). A row
 /// whose `project_dir` (or `repo_root`) fails to canonicalize, or resolves
 /// elsewhere, is not foreign — it degrades to `unattributed`, visible.
-pub(crate) fn foreign_exact_sessions_for_path(
+pub(crate) fn foreign_proof_sessions_for_path(
     conn: &Connection,
     file_path: &str,
     exclude: &str,
@@ -137,7 +134,7 @@ pub(crate) fn foreign_exact_sessions_for_path(
     };
     let mut out = Vec::new();
     for claim in sessions_for_path(conn, file_path, exclude)? {
-        let Some(exact_at) = claim.max_exact_at else {
+        let Some(exact_at) = claim.max_proof_at else {
             continue;
         };
         if exact_at < min_live_at_ms {
@@ -152,33 +149,12 @@ pub(crate) fn foreign_exact_sessions_for_path(
     Ok(out)
 }
 
-/// Whether any other session has a **live row of any origin** on `file_path`
-/// in this repo — the weak "someone else has been here" test. Used only to
-/// decide between `foreign` and `unattributed` for a path with no live exact
-/// owner; a bracket-only foreign claim is unreliable, so it degrades the path
-/// to `unattributed` (visible, never falsely foreign) rather than blocking.
-pub(crate) fn any_foreign_live_for_path(
-    conn: &Connection,
-    file_path: &str,
-    exclude: &str,
-    repo_root: &Path,
-    min_live_at_ms: i64,
-) -> Result<bool, String> {
-    let canon_root = match std::fs::canonicalize(repo_root) {
-        Ok(p) => p,
-        Err(_) => return Ok(false),
-    };
-    for claim in sessions_for_path(conn, file_path, exclude)? {
-        if claim.max_at < min_live_at_ms {
-            continue;
-        }
-        if let Ok(canon_proj) = std::fs::canonicalize(&claim.project_dir) {
-            if canon_proj == canon_root {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
+/// Whether a row's `origin` is **proof** of authorship — the tool input named
+/// the file (`exact` live, `replay` backfill of the same). `bash`/`turn`
+/// bracket rows are correlation (a whole-tree fingerprint delta), never proof.
+/// Mirrors `tugcast::feeds::attribution::origin_is_proof` (the writer side).
+pub(crate) fn origin_is_proof(origin: &str) -> bool {
+    matches!(origin, "exact" | "replay")
 }
 
 /// Whether a `sessions` row exists for `session` — the "known vs unknown" test
@@ -287,7 +263,7 @@ mod tests {
 
         // Repo-matched exact foreigns: only `theirs`; `elsewhere` resolves off-repo.
         let foreign =
-            foreign_exact_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap();
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap();
         assert_eq!(foreign, vec!["theirs".to_string()]);
     }
 
@@ -306,14 +282,26 @@ mod tests {
         let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
 
         assert!(
-            foreign_exact_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0)
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0)
                 .unwrap()
                 .is_empty(),
             "bracket-only rows never establish foreign ownership"
         );
-        // The weak "someone has been here" probe still sees the bracket rows —
-        // it only decides foreign-vs-unattributed at the read side.
-        assert!(any_foreign_live_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap());
+    }
+
+    #[test]
+    fn replay_rows_are_proof_class_evidence() {
+        // A `replay` row is an exact-tool backfill — the tool input named the
+        // file — so it establishes ownership exactly like a live `exact` row.
+        let repo = tempfile::tempdir().unwrap();
+        let repo_dir = repo.path().to_string_lossy().into_owned();
+        let db = seed(&[("resumed", "foo.rs", "replay", &repo_dir, 5)]);
+        let conn = open_readonly(&db.path().join("sessions.db")).unwrap();
+
+        assert_eq!(
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 0).unwrap(),
+            vec!["resumed".to_string()]
+        );
     }
 
     #[test]
@@ -325,11 +313,11 @@ mod tests {
 
         // Below the cut → live claimant; above → spent, no claim.
         assert_eq!(
-            foreign_exact_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 1).unwrap(),
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 1).unwrap(),
             vec!["theirs".to_string()]
         );
         assert!(
-            foreign_exact_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 2)
+            foreign_proof_sessions_for_path(&conn, "foo.rs", "mine", repo.path(), 2)
                 .unwrap()
                 .is_empty(),
             "a spent exact row never contends"

@@ -387,6 +387,26 @@ fn op_from_status(status: &str) -> &'static str {
     }
 }
 
+/// Whether a row's `origin` is **proof** of authorship — the tool input named
+/// the file (`exact` live, `replay` backfill of the same). `bash`/`turn`
+/// bracket rows are correlation (a whole-tree fingerprint delta), never proof.
+pub fn origin_is_proof(origin: &str) -> bool {
+    matches!(origin, "exact" | "replay")
+}
+
+/// The canonical repo root **of the file itself** — resolved by walking up
+/// from the file's own directory, in canonical space. Repo membership is a
+/// per-file fact, not a per-session fact: a session whose project dir is one
+/// checkout can exact-edit a file inside a nested worktree (a dash session
+/// does exactly this), and the row must be keyed by the worktree's root, not
+/// the session's. `None` when the file is outside any repo.
+pub async fn file_repo_root(file_path: &str) -> Option<CanonicalPath> {
+    let canonical = CanonicalPath::from_raw(Path::new(file_path));
+    let parent = canonical.as_path().parent()?;
+    let root = repo_root_for(parent).await?;
+    Some(CanonicalPath::from_raw(&root))
+}
+
 /// The canonical repo root for `dir` — the nearest ancestor (inclusive)
 /// containing a `.git` entry (a directory for a normal repo, a file for a
 /// worktree/submodule). `None` for a non-repo path, which never opens a
@@ -618,6 +638,44 @@ mod tests {
         );
         assert_eq!(row.file_path, "roadmap/lens-frame.md");
         assert_eq!(row.project_dir, "/repo");
+    }
+
+    /// Repo membership is a per-file fact: a file inside a nested worktree
+    /// (a `.git` FILE under an outer repo's `.git` DIRECTORY — the dash
+    /// layout, `.tug/worktrees/<name>/…`) resolves to the worktree's own
+    /// root, never the outer checkout's. This is the pinned regression for
+    /// the misfiled dash-session rows (`.tug/worktrees/…` paths keyed to the
+    /// main root, invisible to every reader).
+    #[tokio::test]
+    async fn file_repo_root_resolves_the_nested_worktrees_own_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        std::fs::create_dir_all(outer.join(".git")).unwrap();
+        let wt = outer.join(".tug/worktrees/demo");
+        std::fs::create_dir_all(wt.join("src")).unwrap();
+        std::fs::write(wt.join(".git"), "gitdir: elsewhere\n").unwrap();
+        let file = wt.join("src/a.rs");
+        std::fs::write(&file, "x").unwrap();
+
+        let root = file_repo_root(&file.to_string_lossy())
+            .await
+            .expect("inside a repo");
+        assert!(
+            root.as_path().ends_with(".tug/worktrees/demo"),
+            "the worktree's own root wins: {root:?}"
+        );
+        let row =
+            call(&file.to_string_lossy()).into_row("tug-1", "tu-1", &root, Some(&root), "exact", 1);
+        assert_eq!(row.file_path, "src/a.rs", "worktree-relative, not .tug/…");
+        assert_eq!(row.project_dir, root.as_str());
+
+        // A file directly in the outer checkout still resolves there.
+        let outer_file = outer.join("b.rs");
+        std::fs::write(&outer_file, "x").unwrap();
+        let outer_root = file_repo_root(&outer_file.to_string_lossy())
+            .await
+            .expect("inside a repo");
+        assert!(outer_root.as_path().ends_with("outer"), "{outer_root:?}");
     }
 
     /// A non-repo project dir has no root to strip against, so the canonical

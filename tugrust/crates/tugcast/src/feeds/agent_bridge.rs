@@ -31,7 +31,7 @@ use super::agent_supervisor::{
 };
 use super::attribution::{
     InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls, exact_op_for_tool,
-    file_path_for_tool, repo_root_for, snapshot_worktree,
+    file_path_for_tool, file_repo_root, repo_root_for, snapshot_worktree,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
@@ -1555,16 +1555,32 @@ pub async fn relay_session_io(
                                             } else {
                                                 crate::session_ledger::now_millis()
                                             };
-                                            let repo_root = ensure_repo_root(
-                                                &mut repo_root_cache,
-                                                project_dir,
-                                            )
-                                            .await;
+                                            // Repo membership is a per-file
+                                            // fact: the row's project_dir is
+                                            // the file's OWN repo root (a
+                                            // nested worktree's root for a
+                                            // worktree file), never the
+                                            // session's. Off-repo files fall
+                                            // back to the session's dir.
+                                            let file_root =
+                                                file_repo_root(&pending.file_path).await;
+                                            let (row_project_dir, row_repo_root) = match file_root
+                                            {
+                                                Some(root) => (root.clone(), Some(root)),
+                                                None => (
+                                                    canonical_project_dir.clone(),
+                                                    ensure_repo_root(
+                                                        &mut repo_root_cache,
+                                                        project_dir,
+                                                    )
+                                                    .await,
+                                                ),
+                                            };
                                             let row = pending.into_row(
                                                 tug_session_id.as_str(),
                                                 &tr.tool_use_id,
-                                                &canonical_project_dir,
-                                                repo_root.as_ref(),
+                                                &row_project_dir,
+                                                row_repo_root.as_ref(),
                                                 origin,
                                                 at,
                                             );

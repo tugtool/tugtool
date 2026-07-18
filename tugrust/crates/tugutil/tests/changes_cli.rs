@@ -172,6 +172,67 @@ fn context_plain_is_directly_readable_no_reshaping_needed() {
 }
 
 #[test]
+fn a_bash_bracket_row_hints_but_never_auto_commits() {
+    // Correlation never decides, not even for self: a file this session's own
+    // Bash bracket saw change (which could equally be the user's hand-save
+    // during the command) surfaces as `unattributed` with a named hint, the
+    // default commit refuses (exit 3), and inclusion is the explicit
+    // `--include-unattributed` election.
+    let (_repo, root) = init_repo();
+    std::fs::write(root.join("swept.rs"), "swept\n").unwrap();
+    let ledger = seed_ledger(&root);
+    let changes = Connection::open(ledger.path().join("changes.db")).unwrap();
+    changes
+        .execute(
+            "INSERT INTO file_events
+                (tug_session_id, tool_use_id, file_path, tool_name, op, origin, ambiguous, project_dir, at)
+             VALUES ('work', 'tu-b', ?1, 'Bash', 'modified', 'bash', 0, ?2, 2)",
+            rusqlite::params![
+                root.join("swept.rs").to_string_lossy().to_string(),
+                root.to_string_lossy().to_string()
+            ],
+        )
+        .unwrap();
+
+    let mut cmd = tug(ledger.path());
+    cmd.args(["context", "--session", "work"]);
+    cmd.args(project_arg(&root));
+    let (code, stdout, _) = run(cmd);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("attributed (1):"), "{stdout}");
+    assert!(stdout.contains("unattributed (1):"), "{stdout}");
+    assert!(
+        stdout.contains("swept.rs  likely this session's (bash bracket)"),
+        "the hint names the bracket: {stdout}"
+    );
+
+    let mut refuse = tug(ledger.path());
+    refuse.args(["commit", "--message", "m", "--session", "work"]);
+    refuse.args(project_arg(&root));
+    let (code, _, stderr) = run(refuse);
+    assert_eq!(code, 3, "a hinted file still refuses by default: {stderr}");
+    assert!(stderr.contains("swept.rs"), "{stderr}");
+
+    let mut include = tug(ledger.path());
+    include.args([
+        "commit",
+        "--message",
+        "take both",
+        "--include-unattributed",
+        "--session",
+        "work",
+    ]);
+    include.args(project_arg(&root));
+    let (code, stdout, stderr) = run(include);
+    assert_eq!(code, 0, "explicit election commits: {stderr}");
+    assert!(stdout.contains("committed"), "{stdout}");
+    assert!(
+        status_porcelain(&root).is_empty(),
+        "tree clean after commit"
+    );
+}
+
+#[test]
 fn context_json_matches_s02_shape() {
     let (_repo, root) = init_repo();
     let ledger = seed_ledger(&root);

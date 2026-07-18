@@ -41,10 +41,11 @@ file — one with no ledger row still shows up (as `unattributed`), never silent
 ```
 branch main  head abc1234  session <id>
 attributed (2):
-   M edit·exact  tugdeck/src/foo.ts
-   M edit·bash   tugrust/src/bar.rs  shared with <other session>
-unattributed (1):
-   M tugrust/src/baz.rs
+   M edit·exact   tugdeck/src/foo.ts
+   M edit·exact   tugrust/src/bar.rs  shared with <other session>
+unattributed (2):
+   M tugrust/src/baz.rs  likely this session's (bash bracket)
+   M tugrust/src/qux.rs
   → dispose explicitly: --include-unattributed (commit them), --leave-unattributed (proceed without), or --paths <p…>
 foreign (1) — other sessions' work, never in a default commit:
    M x/lib.rs  owner <other session>
@@ -54,21 +55,28 @@ recent commits:
 
 The buckets — **you must dispose of every one of them explicitly:**
 
-- **`attributed`** — this session's changes, from the ledger rows tugcast recorded at the
-  moment of each change (`origin` `exact` for Write/Edit/NotebookEdit, `bash` for a Bash
-  bracket, `turn` for a turn-scoped fallback). This is the default commit set.
-- **`unattributed`** — dirty with **no ledger row anywhere**. A capture gap: usually a
-  Bash-mediated edit (`sed`, `perl`, `git mv`, redirection) or a shell-route (`$`) edit
-  whose fingerprint wasn't recorded. Decide per file: if it is clearly this session's work,
-  include it (`--include-unattributed`, or `--paths` for a subset); if it is the user's
-  inflight work, leave it (`--leave-unattributed`) and **name it as inflight in your
-  report**. Never leave one undecided — a default commit *refuses* while any is present (exit
-  3 below). To see a file's contents, read the file or run `tugutil diff` — never raw git.
+- **`attributed`** — files this session **provably** edited: the ledger holds a proof row
+  (`origin` `exact` for Write/Edit/NotebookEdit, `replay` for the same backfilled on
+  resume), recorded from the tool input at the moment of change. This is the default
+  commit set.
+- **`unattributed`** — dirty with **no proof row anywhere**. Two flavors, told apart by
+  the inline tag:
+  - **`likely this session's (bash bracket)`** (or `turn bracket`) — this session's own
+    Bash/turn window saw the path change. Likely, not proven: a `sed`/`perl`/`git mv`
+    edit you made lands here, but so does a **hand-save the user made while your command
+    ran**. The hint plus the diff decides: an edit you recognize as your own Bash work →
+    include it; anything you don't recognize → the user's inflight work, leave it.
+  - **untagged** — no row at all: a capture gap, a shell-route (`$`) edit, or the user's
+    inflight work.
+  Decide per file: include (`--include-unattributed`, or `--paths` for a subset) or leave
+  (`--leave-unattributed`) and **name it as inflight in your report**. Never leave one
+  undecided — a default commit *refuses* while any is present (exit 3 below). To see a
+  file's contents, read the file or run `tugutil diff` — never raw git.
 - **`foreign`** — dirty, claimed only by **another** session (its owner is named). It is
   another session's work: **report it, never include it** without an explicit user ask. It
   never blocks your commit and is never in any default set (only `--paths` can reach it).
-- **`shared`** (marked on an attributed row) — another session **also** exact-edited this
-  file, so ownership is contended. `tugutil commit` **excludes** shared files by default. Do
+- **`shared`** (marked on an attributed row) — another session **also** provably edited
+  this file, so ownership is contended. `tugutil commit` **excludes** shared files by default. Do
   not auto-include one — call it out and include it (via `--all` or `--paths`) only if it is
   clearly this session's work.
 
