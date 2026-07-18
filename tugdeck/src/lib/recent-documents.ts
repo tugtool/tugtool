@@ -184,11 +184,45 @@ export function probeRecentDocuments(): void {
       if (seq !== probeSeq || body === null || typeof body !== "object") return;
       const exists = (body as { exists?: unknown }).exists;
       if (exists === null || typeof exists !== "object") return;
+      const canonical = (body as { canonical?: unknown }).canonical;
+      const canonicalMap =
+        canonical !== null && typeof canonical === "object"
+          ? (canonical as Record<string, unknown>)
+          : {};
+
+      // Canonicalize the MRU to the resolver's form (the same form a Text card
+      // binds on open), so a just-opened file dedupes out of RECENT instead of
+      // stranding an orphan when the stored path and the card's bound path
+      // differ only by symlink resolution (e.g. `/var` vs `/private/var`).
+      let canonicalized = false;
+      const rewritten: string[] = [];
+      const seen = new Set<string>();
+      for (const path of recents) {
+        const c = canonicalMap[path];
+        const next = typeof c === "string" && c.length > 0 ? c : path;
+        if (next !== path) canonicalized = true;
+        if (!seen.has(next)) {
+          seen.add(next);
+          rewritten.push(next);
+        }
+      }
+      if (canonicalized) {
+        recents = rewritten;
+        persist();
+        publishRecentDocuments(recents);
+      }
+
       const gone = new Set<string>();
       for (const path of paths) {
-        if ((exists as Record<string, unknown>)[path] === false) gone.add(path);
+        if ((exists as Record<string, unknown>)[path] === false) {
+          // Track the missing path under its canonical form so it matches the
+          // (now-canonicalized) MRU entries.
+          const c = canonicalMap[path];
+          gone.add(typeof c === "string" && c.length > 0 ? c : path);
+        }
       }
       const changed =
+        canonicalized ||
         gone.size !== unreachable.size ||
         [...gone].some((p) => !unreachable.has(p));
       if (!changed) return;

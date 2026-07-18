@@ -1,6 +1,8 @@
-/* The Lens Text Files section — open Text cards + recently-open files. The list
-   view owns the cursor ring / selection fill / hover / scroll; this file styles
-   only the row content. Tokens only ([L06]/[L20]). */
+/* The Lens Text Files section — open Text cards + recently-open files, rendered
+   as a TugListView of shared `TugListRow`s. The row chrome (padding, hover,
+   flush divider, selection fill, caret) comes from `TugListRow` + `TugListView`;
+   this file styles only the section shell, the "Recent" divider, and the quiet
+   tint on recent (not-open) rows. Tokens only ([L06]/[L20]). */
 
 .text-files-section {
   font-family: var(--tug-font-family-sans);
@@ -14,16 +16,17 @@
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. */
+   rules regardless of bundle order. TugListRow owns the inner inline padding;
+   a small margin insets the container so its keyboard focus ring paints uncut,
+   and `scrollbar-gutter: stable` keeps the rows from hopping when a scrollbar
+   appears. */
 .tug-list-view.lens-text-files-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Margin, not padding: the container focus ring is an outline on the
-     list's border box — inset the box so the ring paints on all four
-     sides instead of clipping against the section edges. */
-  margin: 4px 8px 8px;
-  padding-inline: 6px;
+  margin: 4px 6px 8px;
+  --tugx-list-view-padding-inline: 0;
+  scrollbar-gutter: stable;
 }
 
 .text-files-empty {
@@ -32,38 +35,16 @@
   font-size: 0.875rem;
 }
 
-.text-files-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.text-files-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.text-files-dir {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.6875rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
 /* Recently-open (not currently open) reads a touch quieter than open cards. */
-.text-files-row-recent .text-files-name {
+.text-files-row[data-recent="true"] .tug-list-row-title,
+.text-files-row[data-recent="true"] .tug-list-row-title .tug-label {
   font-weight: 500;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The inert "Recent" divider row. */
 .text-files-header {
-  padding: 6px 2px 2px;
+  padding: 8px 14px 2px;
   font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;

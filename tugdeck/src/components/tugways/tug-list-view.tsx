@@ -115,6 +115,7 @@ import type {
   KeyViewBehavior,
   SpatialCursorHandle,
 } from "./focus-manager";
+import type { FocusKey } from "./focus-act";
 import { CardIdContext } from "@/lib/card-id-context";
 import { KEY_CURSOR_ATTRIBUTE } from "./use-focus-cursor";
 
@@ -998,6 +999,19 @@ export interface TugListViewProps<
   commitOnEnter?: "act";
 
   /**
+   * Keys the consumer reserves for its own handling ([P04] captures). Each is a
+   * `KeyboardEvent.key` value (e.g. `" "` for Space). While the container holds
+   * the key view, the engine's act-dispatch treats a listed key as captured —
+   * it does NOT resolve it to select/act, so the key bubbles to the consumer's
+   * own keydown handler. Use for a list that repurposes a normally-committing
+   * key: the Snippets list reserves Space to mean "new snippet below the
+   * cursor" instead of the default item-container select.
+   *
+   * @default undefined (no keys reserved)
+   */
+  captureKeys?: readonly string[];
+
+  /**
    * ARIA role for the scroll container. Defaults to `"list"`. Override for a
    * list that is semantically a selection group — e.g. `"radiogroup"` (a
    * single-select option list) or `"group"` (a multi-select one). The cell
@@ -1220,6 +1234,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       initialSelectedIndex,
       seedSelection = false,
       commitOnEnter,
+      captureKeys,
       listRole = "list",
       itemRole = "listitem",
       spatialCursor = false,
@@ -3153,10 +3168,23 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // (the multi-select item-group shape); a single-select list owns Enter as
     // passthrough (Right descends), so the opt-in is suppressed there.
     const enterActs = commitOnEnter === "act" && !singleSelect;
+    // Keys the consumer reserves for its own handling ([P04] captures). While
+    // the container holds the key view, the engine's act-dispatch yields these
+    // to the DOM (they bubble to the consumer's own keydown) instead of
+    // resolving them to select/act. The Snippets list reserves Space so it can
+    // mean "new snippet below the cursor" (a Things-style gesture) rather than
+    // the default item-container select.
+    const captureKeySet = React.useMemo(
+      () => (captureKeys !== undefined ? new Set(captureKeys) : null),
+      [captureKeys],
+    );
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
         commit: singleSelect ? "live" : "deferred",
+        ...(captureKeySet !== null
+          ? { captures: (k: FocusKey) => captureKeySet.has(k.key) }
+          : {}),
         // A single-select list keeps select-on-arrow (the cursor IS the selection —
         // a 7.5 picker idiom, intentionally excluded from the [P24] reversion):
         // `commit: "live"` moves the selection with the cursor, and a single-select
@@ -3175,6 +3203,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [
         singleSelect,
         enterActs,
+        captureKeySet,
         rowFirstFocusableId,
         selectCursorRow,
         actCursorRow,
@@ -3344,6 +3373,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       if (!focusEngineActive) return;
       const el = scrollContainerRef.current;
       if (el === null) return;
+      // A data-source mutation can shift rows under the cursor so its index now
+      // points at a header / footer / disabled row (e.g. opening a recent file
+      // removes it, sliding the "Recent" divider under the caret). Snap the
+      // cursor back onto the nearest cursorable cell before projecting, so the
+      // bar never lands on an inert divider.
+      const cur = cursorIndexRef.current;
+      if (cur >= 0 && !isCursorableRow(cur)) {
+        cursorIndexRef.current = cursorableNear(cur, -1);
+      }
       if (el.hasAttribute("data-key-view-kbd") && cursorIndexRef.current >= 0) {
         projectCursor();
       } else {

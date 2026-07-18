@@ -27,11 +27,13 @@
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Margin, not padding: the container focus ring is an outline on the
-     list's border box — inset the box so the ring paints on all four
-     sides instead of clipping against the section edges. */
-  margin: 2px 4px;
-  padding-inline: 4px;
+  /* Margin insets the container so its keyboard focus ring paints on all
+     four sides instead of clipping the section edges. TugListRow owns the
+     inner inline padding, so the list adds none; `scrollbar-gutter: stable`
+     keeps the rows from hopping when a scrollbar appears. */
+  margin: 2px 6px 4px;
+  --tugx-list-view-padding-inline: 0;
+  scrollbar-gutter: stable;
 }
 
 .snippets-error {
@@ -48,15 +50,8 @@
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
-/* One display row: the reorder grip beside the draggable incipit. The list
-   view cell wrapper owns the cursor ring / selection fill / hover. */
-.snippet-row-content {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
+/* The reorder-drag lift on the TugListRow root while it is being dragged. The
+   row layout itself (grip / content / delete) comes from TugListRow. */
 .snippet-row-content[data-dragging="true"] {
   opacity: 0.6;
   z-index: 2;
@@ -67,7 +62,9 @@
    (the substrate mounts borderless inside `TugMessageEditor`), brightening
    the border while the caret is inside. */
 .snippet-editor {
-  padding: 2px 0;
+  /* Inline padding matches the TugListRow inline padding so the open editor
+     lines up with the display rows above / below it. */
+  padding: 2px 10px;
   outline: none;
 }
 
@@ -81,8 +78,8 @@
   border-color: var(--tug7-element-global-fill-normal-accent-rest, rgba(255, 149, 0, 0.9));
 }
 
-/* Hover-reveal per-row delete — visible on row hover or its own keyboard
-   focus; quiet otherwise so the incipit stays the row's voice. */
+/* Per-row delete button. Reveal (hover / cursor / focus-within) is owned by
+   `TugListRow`'s `trailingReveal="engaged"`; this styles only the button. */
 .snippet-row-delete {
   display: inline-flex;
   align-items: center;
@@ -96,12 +93,6 @@
   background: transparent;
   color: var(--tug7-element-global-text-normal-muted-rest);
   cursor: pointer;
-  opacity: 0;
-}
-
-.snippet-row-content:hover .snippet-row-delete,
-.snippet-row-delete:focus-visible {
-  opacity: 1;
 }
 
 .snippet-row-delete:hover {
@@ -109,8 +100,8 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
+/* The draggable incipit rides the TugListRow content column. */
 .snippet-row-label {
-  flex: 1 1 auto;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;

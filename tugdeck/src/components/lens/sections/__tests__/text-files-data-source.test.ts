@@ -104,6 +104,7 @@ describe("LensTextFilesDataSource", () => {
     const ds = new LensTextFilesDataSource({
       deck: deck([["lens-tf-uniq", "text"]]),
       recents: ["/proj/closed.txt"],
+      registryVersion: 0,
     });
     expect(ds.numberOfItems()).toBe(3); // open + header + recent
     expect(ds.kindForIndex(0)).toBe("text-open");
@@ -117,6 +118,7 @@ describe("LensTextFilesDataSource", () => {
     ds.setInputsWithoutNotify({
       deck: deck([["lens-tf-uniq", "text"]]),
       recents: ["/proj/closed.txt"],
+      registryVersion: 1,
     });
     expect(ds.getVersion()).not.toBe(v0); // new references → recompute
   });

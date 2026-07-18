@@ -39,15 +39,45 @@ export interface TextCardOpenEntry {
 
 const entries = new Map<string, TextCardOpenEntry>();
 
+/** Observers notified when the set of open cards — or a card's bound path —
+ *  changes. A card binds its path asynchronously (mount → file read), so a
+ *  consumer that projects open cards (the Lens Text Files list) must re-read
+ *  when the binding lands, not just when the card mounts. */
+const listeners = new Set<() => void>();
+let version = 0;
+
+/** Subscribe to registry changes (register / unregister / path-bind). */
+export function subscribeOpenTextCards(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** A monotonic token that bumps on every registry change — a
+ *  `useSyncExternalStore` snapshot paired with {@link subscribeOpenTextCards}. */
+export function getOpenTextCardsVersion(): number {
+  return version;
+}
+
+/** Notify observers that a card's binding changed (its path resolved, say),
+ *  even though the entry object is the same. Called by a Text card when its
+ *  bound path changes. */
+export function notifyOpenTextCardsChanged(): void {
+  version += 1;
+  for (const listener of listeners) listener();
+}
+
 export function registerOpenTextCard(
   cardId: string,
   entry: TextCardOpenEntry,
 ): void {
   entries.set(cardId, entry);
+  notifyOpenTextCardsChanged();
 }
 
 export function unregisterOpenTextCard(cardId: string): void {
-  entries.delete(cardId);
+  if (entries.delete(cardId)) notifyOpenTextCardsChanged();
 }
 
 /** The open-file entry for `cardId`, or null when not a mounted Text card. */

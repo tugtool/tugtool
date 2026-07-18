@@ -57,6 +57,7 @@ import React, {
 import { TextCardStore, type FilePositions } from "@/lib/text-card-store";
 import { cardTitleStore } from "@/lib/card-title-store";
 import {
+  notifyOpenTextCardsChanged,
   registerOpenTextCard,
   unregisterOpenTextCard,
 } from "@/lib/text-card-open-registry";
@@ -527,7 +528,23 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         void store.flush().then(() => store.openPath(path));
       },
     });
+    // A fresh card binds its path AFTER mount (the async file read), so
+    // registry consumers that project by path (the Lens Text Files list) must
+    // re-read when the path lands, not just when the card registers. Notify the
+    // registry on every path change so the Lens dedupes the just-opened file
+    // out of RECENT and titles the open row the moment the binding resolves —
+    // instead of stranding an orphan recent + a nameless "File" until the next
+    // deck re-render.
+    let lastPath = store.getSnapshot().path;
+    const unsubscribe = store.subscribe(() => {
+      const next = store.getSnapshot().path;
+      if (next !== lastPath) {
+        lastPath = next;
+        notifyOpenTextCardsChanged();
+      }
+    });
     return () => {
+      unsubscribe();
       unregisterOpenTextCard(cardId);
     };
   }, [cardId, store]);

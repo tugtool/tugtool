@@ -175,6 +175,26 @@ export const TugMessageEditor = React.forwardRef<
     substrateRef.current?.restoreState({ text, atoms: [], selection: null });
   };
 
+  // Seed `value` once, from a layout effect — NOT from the substrate ref
+  // callback. `TugTextEditor` declares its `useImperativeHandle` (the delegate
+  // this ref receives) BEFORE its view-creation `useLayoutEffect`, so the
+  // delegate lands while `viewRef.current` is still null and a seed from the
+  // ref callback restores into a view that does not exist yet — a silent no-op
+  // that drops the initial text (a real data-loss path when the field opens an
+  // existing document). A parent layout effect runs AFTER the child's
+  // view-creation effect, so the view is live by the time this fires; the
+  // delegate reads `viewRef.current` at call time, so the restore lands.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  React.useLayoutEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    const initial = valueRef.current;
+    if (initial !== undefined && initial !== "") seed(initial);
+    // Mount-only seed; later `value` changes go through `restoreState`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   React.useImperativeHandle(
     ref,
     (): TugMessageEditorHandle => ({
@@ -189,11 +209,6 @@ export const TugMessageEditor = React.forwardRef<
     <TugTextEditor
       ref={(delegate) => {
         substrateRef.current = delegate;
-        // Seed the initial `value` the first time the view is live.
-        if (delegate !== null && !seededRef.current) {
-          seededRef.current = true;
-          if (value !== undefined && value !== "") seed(value);
-        }
       }}
       className={cn("tug-message-editor", className)}
       data-slot="tug-message-editor"

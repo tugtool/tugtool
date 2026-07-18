@@ -905,6 +905,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mMenu.addItem(reloadItem)
         mMenu.addItem(NSMenuItem.separator())
         mMenu.addItem(NSMenuItem(title: "Show JavaScript Console", action: #selector(showJavaScriptConsole(_:)), keyEquivalent: "c", modifierMask: [.command, .option]).identified("maker.jsConsole"))
+        mMenu.addItem(NSMenuItem(title: "Focus Lens", action: #selector(focusLens(_:)), keyEquivalent: "l").identified("maker.focusLens"))
         mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "l", modifierMask: [.command, .option]).identified("maker.lens"))
         if BuildInfo.profile == "debug" {
             // Debug-only card creators, relocated from the flattened
@@ -1018,6 +1019,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// action-dispatch picks it up the same way other menu-driven RPCs do.
     @objc private func showLens(_ sender: Any) {
         sendControl("toggle-lens")
+    }
+
+    /// Move keyboard focus into the Lens (opening it if hidden), or back out
+    /// if it already holds focus. ⌘L is a menu key equivalent so it fires
+    /// whenever the app is active — even when the native title bar (not the
+    /// web view) holds focus, where a web-level ⌘L keybinding never sees the
+    /// event. Mirrors tugdeck's ⌘L `focus-lens` keybinding for browser-dev.
+    @objc private func focusLens(_ sender: Any) {
+        sendControl("focus-lens")
     }
 
     @objc private func cascadeCards(_ sender: Any?) {

@@ -1,8 +1,9 @@
 /* The Lens Sessions section — a read-only session monitor rendered as a
-   TugListView. One row per open session: phase dot · name/context · latest
-   pulse line · sparkline. Appearance only ([L06]); the list view owns the
-   cursor ring, selection fill, hover, row padding, and scrolling — this file
-   styles only the two-line row *content*. */
+   TugListView of shared `TugListRow`s. The row chrome (padding, hover, the
+   flush divider, selection fill, and the movement-cursor caret) comes from
+   `TugListRow` + `TugListView`; this file styles only the section shell and the
+   pulse / sparkline content that rides the row's subtitle + trailing slots.
+   Appearance only ([L06]). */
 
 .sessions-section {
   font-family: var(--tug-font-family-sans);
@@ -16,16 +17,18 @@
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. */
+   rules regardless of bundle order. TugListRow owns the inner inline padding,
+   so the list adds none; a small margin insets the container so its keyboard
+   focus ring paints on all four sides instead of clipping the section edges.
+   `scrollbar-gutter: stable` reserves the scrollbar's width whether or not it
+   is showing, so the rows never hop when the list grows past its allotment. */
 .tug-list-view.lens-sessions-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Margin, not padding: the container focus ring is an outline on the
-     list's border box — inset the box so the ring paints on all four
-     sides instead of clipping against the section edges. */
-  margin: 4px 8px 8px;
-  padding-inline: 6px;
+  margin: 4px 6px 8px;
+  --tugx-list-view-padding-inline: 0;
+  scrollbar-gutter: stable;
 }
 
 .sessions-card-empty {
@@ -34,48 +37,8 @@
   font-size: 0.875rem;
 }
 
-/* Width of the leading dot column — the pulse line indents by this so it
-   left-aligns under the session name on the line above. Sized to the 12px dot
-   plus the primary line's gap. */
-.sessions-monitor-row {
-  --sessions-dot-col: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.sessions-monitor-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-/* Primary line — the phase dot (fixed-width leading glyph) beside the name. */
-.sessions-monitor-line-primary > .tug-progress-indicator {
-  flex-shrink: 0;
-}
-
-.sessions-monitor-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-/* Secondary line — indented to clear the dot column so the pulse text starts
-   under the name; the sparkline rides the far end (like `session-pulse-strip`). */
-.sessions-monitor-line-pulse {
-  padding-left: var(--sessions-dot-col);
-}
-
+/* The pulse line rides the row's subtitle slot. */
 .sessions-monitor-pulse {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -83,8 +46,8 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* No current pulse line — dimmer still than a live line, and italic, so it
-   reads as a state ("None") rather than pulse text. */
+/* No current pulse line — dimmer still, and italic, so it reads as a state
+   ("None") rather than pulse text. */
 .sessions-monitor-pulse-none {
   color: var(--tug7-element-global-text-normal-subtle-rest);
   font-style: italic;

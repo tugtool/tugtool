@@ -26,11 +26,17 @@
 
 import "./sessions-section.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { GitBranch } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
+import { setSectionHasContent } from "@/components/lens/lens-section-content";
 import { dispatchAction } from "@/action-dispatch";
 import { TugListView } from "@/components/tugways/tug-list-view";
 import type {
@@ -38,6 +44,7 @@ import type {
   TugListViewCellRenderer,
   TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
   sparklineCurves,
   TugSparkline,
@@ -179,8 +186,11 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
   );
 }
 
-/** The two-line content of one monitor row. The interactive shell (cursor,
- *  selection, click → `onSelect`) is the `TugListView` cell wrapper. */
+/** One monitor row, composed on the shared `TugListRow` chrome (padding,
+ *  hover, divider, and the movement-cursor caret come from the row + the
+ *  enclosing `TugListView`). The phase dot leads; the name is the title, the
+ *  latest pulse line the subtitle, and the activity sparkline the trailing
+ *  accessory. The `TugListView` cell wrapper owns cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const changesets = useChangesetAll();
   const branch = branchForProject(changesets, row.projectDir);
@@ -189,24 +199,21 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const latest = latestLineForScope(pulse.lines, row.tugSessionId);
   const pulseText = pulse.enabled && latest !== null ? latest.text : null;
   return (
-    <div className="sessions-monitor-row" data-slot="sessions-monitor-row">
-      <div className="sessions-monitor-line sessions-monitor-line-primary">
-        <RowPhaseDot cardId={row.cardId} />
-        <span className="sessions-monitor-name" title={displayName}>
-          {displayName}
-        </span>
-      </div>
-      <div className="sessions-monitor-line sessions-monitor-line-pulse">
-        {pulseText !== null ? (
+    <TugListRow
+      leading={<RowPhaseDot cardId={row.cardId} />}
+      title={displayName}
+      titleSize="sm"
+      subtitle={
+        pulseText !== null ? (
           <span className="sessions-monitor-pulse">{pulseText}</span>
         ) : (
           <span className="sessions-monitor-pulse sessions-monitor-pulse-none">
             None
           </span>
-        )}
-        <RowSparkline tugSessionId={row.tugSessionId} />
-      </div>
-    </div>
+        )
+      }
+      trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
+    />
   );
 }
 
@@ -234,6 +241,14 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
   const bindings = useOpenBindings();
   const dataSource = useLensSessionsDataSource(bindings);
   const count = dataSource.numberOfItems();
+  const hasContent = count > 0;
+
+  // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
+  // when it is empty (an empty list is not a focus stop).
+  useLayoutEffect(() => {
+    setSectionHasContent(host.focusGroup, hasContent);
+    return () => setSectionHasContent(host.focusGroup, false);
+  }, [host.focusGroup, hasContent]);
 
   const initialSelectedIndex = useMemo(() => {
     if (lastSelectedSessionId === null) return undefined;
@@ -264,8 +279,8 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
         cellRenderers={SESSIONS_CELL_RENDERERS}
         scrollKey="lens-sessions"
         inline
-        rowLayout="pill"
-        focusGroup={host.focusGroup}
+        rowLayout="flush"
+        focusGroup={hasContent ? host.focusGroup : undefined}
         commitOnEnter="act"
         initialSelectedIndex={initialSelectedIndex}
         className="lens-sessions-list"

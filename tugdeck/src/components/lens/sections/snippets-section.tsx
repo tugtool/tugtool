@@ -56,6 +56,7 @@ import {
   TugMessageEditor,
   type TugMessageEditorHandle,
 } from "@/components/tugways/tug-message-editor";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -65,6 +66,7 @@ import {
 } from "@/components/tugways/use-focusable";
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { setSectionHasContent } from "@/components/lens/lens-section-content";
 import { registerLensSection } from "../lens-section-registry";
 import type { LensSectionHost } from "../lens-section-registry";
 import {
@@ -75,6 +77,10 @@ import "./snippets-section.css";
 
 const ROW_SELECTOR = ".snippet-row-content[data-snippet-id]";
 const ROW_KIND_ATTR = "data-snippet-id";
+
+// Space is reserved so the section's keydown can create a new snippet below the
+// cursor (Things-style) rather than the engine's default item-container select.
+const SNIPPETS_CAPTURE_KEYS: readonly string[] = [" "];
 
 // The section's remembered selection — the last-touched snippet id, mapped to
 // a cursor seed on the next Cmd-L / Tab into the section ([P10]). Module-level
@@ -130,18 +136,45 @@ function SnippetsHeaderActions(): React.ReactElement {
   );
 }
 
-/** The display row — grip + draggable incipit + hover-reveal delete. */
+/** The display row on the shared `TugListRow` chrome: the reorder grip leads,
+ *  the draggable incipit is the content column, and a hover-reveal delete is
+ *  the trailing accessory. Row padding / hover / divider / caret come from the
+ *  row + the enclosing flush `TugListView`. */
 function SnippetDisplayRow({ snippet }: { snippet: Snippet }): React.ReactElement {
   const ctx = React.useContext(SnippetsCellContext);
   const incipit = snippetIncipit(snippet);
   const empty = incipit.length === 0;
   return (
-    <div className="snippet-row-content" data-snippet-id={snippet.id}>
-      {ctx !== null ? (
-        <BlockGrip
-          onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
-        />
-      ) : null}
+    <TugListRow
+      className="snippet-row-content"
+      data-snippet-id={snippet.id}
+      leading={
+        ctx !== null ? (
+          <BlockGrip
+            onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
+          />
+        ) : undefined
+      }
+      trailing={
+        ctx !== null ? (
+          <button
+            type="button"
+            className="snippet-row-delete"
+            title="Delete snippet"
+            aria-label="Delete snippet"
+            onClick={(e) => {
+              // Never let the delete read as a row activation on the cell
+              // wrapper above.
+              e.stopPropagation();
+              ctx.onDeleteRow(snippet.id);
+            }}
+          >
+            <X size={12} />
+          </button>
+        ) : undefined
+      }
+      trailingReveal="engaged"
+    >
       <span
         className={
           empty ? "snippet-row-label snippet-row-label-empty" : "snippet-row-label"
@@ -156,23 +189,7 @@ function SnippetDisplayRow({ snippet }: { snippet: Snippet }): React.ReactElemen
       >
         {empty ? "New snippet" : incipit}
       </span>
-      {ctx !== null ? (
-        <button
-          type="button"
-          className="snippet-row-delete"
-          title="Delete snippet"
-          aria-label="Delete snippet"
-          onClick={(e) => {
-            // Never let the delete read as a row activation on the cell
-            // wrapper above.
-            e.stopPropagation();
-            ctx.onDeleteRow(snippet.id);
-          }}
-        >
-          <X size={12} />
-        </button>
-      ) : null}
-    </div>
+    </TugListRow>
   );
 }
 
@@ -322,6 +339,14 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const snippets = snapshot.doc.snippets;
   const editingId = snapshot.editingId;
   const dataSource = useLensSnippetsDataSource(snippets);
+  const hasContent = snippets.length > 0;
+
+  // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
+  // when it is empty (an empty list is not a focus stop).
+  useLayoutEffect(() => {
+    setSectionHasContent(host.focusGroup, hasContent);
+    return () => setSectionHasContent(host.focusGroup, false);
+  }, [host.focusGroup, hasContent]);
 
   const listRef = useRef<TugListViewHandle>(null);
   const listWrapRef = useRef<HTMLDivElement | null>(null);
@@ -409,8 +434,11 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     return snapshot.doc.snippets[idx]?.id ?? null;
   }, [snapshot.doc.snippets]);
 
-  // Section verbs — Delete removes the cursor row, ⌘N creates below it. Bubble
-  // phase (the engine leaves Delete / ⌘N as passthrough); only in list mode.
+  // Section verbs — Space / ⌘N create a new snippet below the cursor (the
+  // Things-style gesture), Delete removes the cursor row. Bubble phase: the
+  // engine leaves Delete / ⌘N as passthrough, and yields Space because the list
+  // reserves it via `captureKeys` (otherwise Space would resolve to the
+  // item-container select). Only in list mode; the editor owns keys while open.
   const onSectionKeyDown = useCallback(
     (e: React.KeyboardEvent): void => {
       if (editingId !== null) return; // the editor owns keys while open
@@ -423,9 +451,19 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       ) {
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) {
+      const createBelowCursor = (): void => {
         e.preventDefault();
+        // `createSnippet(afterId)` inserts after `afterId` and opens the new
+        // row for editing (its descend effect focuses the caret). A null cursor
+        // (empty list / no landing) appends at the end.
         store.createSnippet(cursorSnippetId());
+      };
+      if (e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        createBelowCursor();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) {
+        createBelowCursor();
         return;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
@@ -479,9 +517,10 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
               cellRenderers={SNIPPETS_CELL_RENDERERS}
               scrollKey="lens-snippets"
               inline
-              rowLayout="pill"
-              focusGroup={host.focusGroup}
+              rowLayout="flush"
+              focusGroup={hasContent ? host.focusGroup : undefined}
               commitOnEnter="act"
+              captureKeys={SNIPPETS_CAPTURE_KEYS}
               initialSelectedIndex={initialSelectedIndex}
               className="lens-snippets-list"
             />

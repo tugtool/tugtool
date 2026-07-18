@@ -33,21 +33,35 @@ pub(crate) struct StatRequest {
     paths: Vec<String>,
 }
 
-/// Probe each path and build the `{ "exists": { path: bool } }` payload.
-/// Pure over the filesystem, synchronous — the handler runs it under
-/// `spawn_blocking`.
+/// Probe each path and build the
+/// `{ "exists": { path: bool }, "canonical": { path: canonicalPath } }`
+/// payload. `canonical` carries the resolved form (via the same
+/// `resolve_to_claude_form` a Text card binds on open) for every reachable
+/// file, so the caller can normalize its stored paths and dedupe them against
+/// open cards' canonical paths. Pure over the filesystem, synchronous — the
+/// handler runs it under `spawn_blocking`.
 fn stat_paths(paths: &[String]) -> Value {
     let mut exists = Map::new();
+    let mut canonical = Map::new();
     for raw in paths.iter().take(MAX_STAT_PATHS) {
         let reachable = match guard_absolute_path(raw) {
-            Ok(canonical) => std::fs::metadata(&canonical)
-                .map(|md| md.is_file())
-                .unwrap_or(false),
+            Ok(resolved) => {
+                let is_file = std::fs::metadata(&resolved)
+                    .map(|md| md.is_file())
+                    .unwrap_or(false);
+                if is_file {
+                    canonical.insert(
+                        raw.clone(),
+                        Value::String(resolved.to_string_lossy().into_owned()),
+                    );
+                }
+                is_file
+            }
             Err(_) => false,
         };
         exists.insert(raw.clone(), Value::Bool(reachable));
     }
-    json!({ "exists": exists })
+    json!({ "exists": exists, "canonical": canonical })
 }
 
 /// Handle `POST /api/fs/stat`. Restricted to loopback.
@@ -93,6 +107,14 @@ mod tests {
         ]);
         assert_eq!(body["exists"][present.to_string_lossy().as_ref()], true);
         assert_eq!(body["exists"][missing.to_string_lossy().as_ref()], false);
+        // A reachable file carries its resolved canonical form; a missing one
+        // does not.
+        assert!(body["canonical"][present.to_string_lossy().as_ref()].is_string());
+        assert!(
+            body["canonical"]
+                .get(missing.to_string_lossy().as_ref())
+                .is_none()
+        );
     }
 
     #[test]
@@ -118,9 +140,6 @@ mod tests {
             .map(|i| format!("/nonexistent/{i}"))
             .collect();
         let body = stat_paths(&paths);
-        assert_eq!(
-            body["exists"].as_object().unwrap().len(),
-            MAX_STAT_PATHS
-        );
+        assert_eq!(body["exists"].as_object().unwrap().len(), MAX_STAT_PATHS);
     }
 }

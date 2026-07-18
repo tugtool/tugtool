@@ -30,7 +30,11 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import type { DeckState } from "@/layout-tree";
 import { getDeckStore } from "@/lib/deck-store-registry";
-import { getOpenTextCard } from "@/lib/text-card-open-registry";
+import {
+  getOpenTextCard,
+  getOpenTextCardsVersion,
+  subscribeOpenTextCards,
+} from "@/lib/text-card-open-registry";
 import {
   getReachableRecentDocumentsSnapshot,
   subscribeRecentDocuments,
@@ -56,6 +60,9 @@ export function dirname(path: string): string {
 interface TextFilesInputs {
   readonly deck: DeckState | null;
   readonly recents: readonly string[];
+  /** Bumps when a Text card registers / unregisters / binds its path, so the
+   *  rows recompute against the newly-resolved open-card paths. */
+  readonly registryVersion: number;
 }
 
 /** Resolve an open Text card's bound path. Default reads the open registry. */
@@ -72,7 +79,7 @@ const registryPathResolver: OpenCardPathResolver = (cardId) =>
  * React state; re-read on every recompute), so a test can inject its own.
  */
 export function buildTextFilesRows(
-  inputs: TextFilesInputs,
+  inputs: Pick<TextFilesInputs, "deck" | "recents">,
   resolvePath: OpenCardPathResolver = registryPathResolver,
 ): TextFilesRow[] {
   const rows: TextFilesRow[] = [];
@@ -145,7 +152,11 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
   }
 
   setInputsWithoutNotify(next: TextFilesInputs): boolean {
-    if (this.inputs.deck === next.deck && this.inputs.recents === next.recents) {
+    if (
+      this.inputs.deck === next.deck &&
+      this.inputs.recents === next.recents &&
+      this.inputs.registryVersion === next.registryVersion
+    ) {
       return false;
     }
     this.inputs = next;
@@ -183,13 +194,20 @@ export function useLensTextFilesDataSource(): LensTextFilesDataSource {
     getReachableRecentDocumentsSnapshot,
     getReachableRecentDocumentsSnapshot,
   );
+  // Recompute when a Text card binds / rebinds its path, so a just-opened
+  // recent is deduped out of RECENT and titled the instant its card resolves.
+  const registryVersion = useSyncExternalStore(
+    subscribeOpenTextCards,
+    getOpenTextCardsVersion,
+    getOpenTextCardsVersion,
+  );
 
   const ref = useRef<LensTextFilesDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new LensTextFilesDataSource({ deck, recents });
+    ref.current = new LensTextFilesDataSource({ deck, recents, registryVersion });
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify({ deck, recents });
+  const didChange = ds.setInputsWithoutNotify({ deck, recents, registryVersion });
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();

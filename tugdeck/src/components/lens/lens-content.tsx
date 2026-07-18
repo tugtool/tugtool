@@ -50,6 +50,11 @@ import {
   type LensSectionHost,
 } from "./lens-section-registry";
 import { LensSection } from "./lens-section-band";
+import {
+  getSectionContentVersion,
+  sectionHasContent,
+  subscribeSectionContent,
+} from "./lens-section-content";
 import { useBlockReorder } from "./block-reorder";
 import { BlockDropCaret } from "./block-drop-caret";
 import {
@@ -75,19 +80,23 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
   const caretRef = useRef<HTMLDivElement | null>(null);
   const focusManager = useFocusManager();
 
-  // Seed the opening key view onto the first *expanded* section's list, so the
-  // first Cmd-L lands the movement cursor on a real Lens item ([P02], the
-  // focus-language seed). A collapsed section unmounts its body (no
-  // focusable), so it is skipped; a still-collapsed-everywhere Lens seeds
-  // nothing until a section expands (`useSeedKeyView` re-arms while the key is
+  // Seed the opening key view onto the first *expanded* section that has
+  // navigable content, so the first Cmd-L lands the movement cursor on a real
+  // Lens item ([P02], the focus-language seed) — never on an empty band (an
+  // empty list is not a focus stop; seeding it would arm a pending restore that
+  // shows a ring on emptiness). A collapsed section unmounts its body (no
+  // focusable), so it is skipped; a Lens with no content anywhere seeds nothing
+  // until a section gains content (`useSeedKeyView` re-arms while the key is
   // null). Subsequent Cmd-L presses (after a toggle-out) are handled by
   // `adoptKeyCard` restoring this card's stored key view — this seed is only
   // the first landing.
-  const firstExpandedKind = order.find((k) => !collapsed.has(k)) ?? null;
+  useSyncExternalStore(subscribeSectionContent, getSectionContentVersion);
+  const seedKind =
+    order.find(
+      (k) => !collapsed.has(k) && sectionHasContent(sectionFocusGroup(k)),
+    ) ?? null;
   useSeedKeyView(
-    firstExpandedKind !== null
-      ? `${sectionFocusGroup(firstExpandedKind)}:0`
-      : null,
+    seedKind !== null ? `${sectionFocusGroup(seedKind)}:0` : null,
   );
 
   // The card the Lens is contextually about — tracked once here (mounted

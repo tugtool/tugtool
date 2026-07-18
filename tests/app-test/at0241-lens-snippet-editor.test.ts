@@ -133,13 +133,27 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
             { timeoutMs: 3_000 },
           );
 
-          // 3. Type at the caret — the keystrokes land in the CM6 document.
+          // 3. The editor opened pre-seeded with the snippet's existing text
+          //    (the data-loss regression guard — an empty editor here would
+          //    clobber the snippet on the next edit).
+          expect(
+            await app.evalJS<boolean>(
+              `(() => {
+                 const content = document.querySelector('${EDITOR} .cm-content');
+                 return content !== null &&
+                   (content.textContent ?? '').includes('There is a tide');
+               })()`,
+            ),
+          ).toBe(true);
+
+          // Type at the caret — the keystrokes land in the CM6 document
+          // alongside the seeded text.
           await app.nativeType(" in the affairs");
           await app.waitForCondition<boolean>(
             `(() => {
                const content = document.querySelector('${EDITOR} .cm-content');
-               return content !== null &&
-                 (content.textContent ?? '').includes('in the affairs');
+               const text = content?.textContent ?? '';
+               return text.includes('in the affairs') && text.includes('There is a tide');
              })()`,
             { timeoutMs: 3_000 },
           );
@@ -157,6 +171,84 @@ describe.skipIf(!SHOULD_RUN)("at0241 — Lens snippet editor round-trip", () => 
                .some((el) => (el.textContent ?? '').includes('in the affairs'))`,
             { timeoutMs: 3_000 },
           );
+        } finally {
+          await app.close();
+        }
+      } finally {
+        rmSync(snippetsDir, { recursive: true, force: true });
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "Space creates a new snippet below the cursor and opens it",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      const snippetsDir = mkdtempSync(join(tmpdir(), "tug-at0241b-"));
+      const snippetsPath = join(snippetsDir, "snippets.json");
+      writeFileSync(
+        snippetsPath,
+        `${JSON.stringify(
+          { version: 1, snippets: [{ id: "s1", text: "There is a tide" }] },
+          null,
+          2,
+        )}\n`,
+      );
+      try {
+        seedTugbankForLaunch(tugbankPath);
+        const app = await launchTugApp({
+          testName: "at0241-lens-snippet-space",
+          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          persistInTestMode: true,
+        });
+        try {
+          await app.enableDeckTrace(true);
+          await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 5_000 },
+          );
+          await app.waitForCondition<boolean>(`document.hasFocus()`, {
+            timeoutMs: 6_000,
+          });
+
+          await dispatch(app, "toggle-lens");
+          await app.waitForCondition<boolean>(
+            `Array.from(document.querySelectorAll('.snippet-row-label'))
+               .some((el) => el.textContent === 'There is a tide')`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeClickAtElement(
+            `.lens-section[data-lens-section="snippets"] [data-testid="lens-section-band"] .tool-call-header-name`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+
+          // Space on the list (the Things-style gesture) creates a new snippet
+          // below the cursor and opens its editor — an empty CM6 field.
+          await app.nativeKey(" ");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(EDITOR)}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+          // Two rows now exist (the original + the new one), and the open
+          // editor is a FRESH empty snippet — CM6 shows its placeholder only
+          // while the document is empty, so its presence proves the new row
+          // carries no text (not a copy of the seeded snippet).
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll('.lens-snippets-list .snippet-row-content, .lens-snippets-list .snippet-editor').length`,
+            ),
+          ).toBe(2);
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector('${EDITOR} .cm-content .cm-placeholder') !== null`,
+            ),
+          ).toBe(true);
         } finally {
           await app.close();
         }
