@@ -3771,8 +3771,10 @@ export function SessionCardBody({
               id={`${cardId}-entry`}
               // Code is the only resting mode ([P01]); `changesController`
               // supplies the AI commit-draft stream that lands in the editor
-              // as a `/changes commit` line ([P04]/S05).
+              // as a `/changes commit` line ([P04]/S05). The Z5 "Generate a
+              // commit message" button shows only while the Changes Shade is up.
               changesController={changesController}
+              changesShadeVisible={activeView === "changes"}
               // The editor stands down (read-only + caret off + dimmed)
               // while an inline dialog owns the keyboard and while cycling
               // (the cycling-mode indicator, [P12] revised: reuse the

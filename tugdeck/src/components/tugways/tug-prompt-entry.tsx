@@ -44,7 +44,18 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { ArrowUp, Plus, Slash, Square } from "lucide-react";
+import {
+  ArrowUp,
+  GitCommitHorizontal,
+  History as HistoryIcon,
+  MessageSquareDashed,
+  PencilSparkles,
+  Plus,
+  Search,
+  Slash,
+  Square,
+  SquareTerminal,
+} from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
@@ -92,6 +103,7 @@ import {
 } from "./tug-text-editor/atom-decoration";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugButton } from "./internal/tug-button";
+import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
@@ -135,6 +147,27 @@ import type { FindSession } from "@/lib/find-session";
 
 /** Stable no-op `useSyncExternalStore` subscribe for an absent shell store. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
+/**
+ * The Z4A command picker's roster ([P06], revised): ONLY the five commands
+ * demoted from sticky routes, each with its ⌃⌘ chord label so the menu teaches
+ * the shortcuts as it is used. Picking one seeds its command chip; the label
+ * shortcuts mirror the `keybinding-map.ts` chords. Deliberately NOT the whole
+ * `/` completion catalog — the picker is a focused accelerator, not a command
+ * browser.
+ */
+const COMMAND_PICKER_ITEMS: ReadonlyArray<{
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  shortcut: string;
+}> = [
+  { id: "shell", label: "Shell", icon: <SquareTerminal size={14} />, shortcut: "⌃⌘S" },
+  { id: "btw", label: "btw", icon: <MessageSquareDashed size={14} />, shortcut: "⌃⌘B" },
+  { id: "find", label: "Find", icon: <Search size={14} />, shortcut: "⌃⌘G" },
+  { id: "changes", label: "Changes", icon: <GitCommitHorizontal size={14} />, shortcut: "⌃⌘C" },
+  { id: "history", label: "History", icon: <HistoryIcon size={14} />, shortcut: "⌃⌘H" },
+];
 
 /**
  * Empty editing state — the draft a freshly-cleared editor holds.
@@ -595,6 +628,12 @@ export interface TugPromptEntryProps {
    */
   changesController?: ChangesRouteController;
   /**
+   * Whether the card's Changes Shade is currently showing. Gates the Z5
+   * "Generate a commit message" button — it appears (left of the submit
+   * button) only while Changes is up, and is disabled during a running turn.
+   */
+  changesShadeVisible?: boolean;
+  /**
    * Responder id that owns this entry's local slash commands — the
    * card's command-handling scope (typically `${cardId}-card-content`).
    * When a typed `/command` matches the local registry, the entry routes
@@ -926,6 +965,7 @@ export const TugPromptEntry = React.forwardRef<
   const {
     id,
     changesController,
+    changesShadeVisible = false,
     localCommandTargetId,
     codeSessionStore,
     shellSessionStore,
@@ -2419,27 +2459,33 @@ export const TugPromptEntry = React.forwardRef<
 
   // Expose the imperative delegate. Pass-throughs to the substrate;
   // the entry does not own text state.
-  // Command picker ([P06]): focus the editor and, unless the draft already
-  // leads with a `/` or a command atom, seed a leading `/` at document
-  // position 0 as a single-char input so the completion popup's position-zero
-  // provider opens (`detectTriggerInsertion` fires on a one-char trigger that
-  // lands the caret right after it). Shared by the Z4A picker button and the
-  // ⌘/ binding.
-  const openCommandPicker = useCallback(() => {
+  // Seed (or replace) the leading command chip ([P07]) — the shared sink for
+  // the ⌃⌘ chords, the picker menu, and the delegate method.
+  const seedCommandChip = useCallback((name: string) => {
     const editor = textEditorRef.current;
     if (editor === null) return;
+    editor.restoreState(computeCommandChipInsert(editor.captureState(), name));
     editor.focus();
-    const view = editor.view();
-    if (view === null) return;
-    const firstChar =
-      view.state.doc.length > 0 ? view.state.doc.sliceString(0, 1) : "";
-    if (firstChar === "/" || firstChar === TUG_ATOM_CHAR) return;
-    view.dispatch({
-      changes: { from: 0, insert: "/" },
-      selection: { anchor: 1 },
-      scrollIntoView: true,
-      userEvent: "input.type",
-    });
+  }, []);
+
+  // Command picker ([P06], revised): open the Z4A menu of the five demoted
+  // commands. The menu is a `TugPopupMenu` whose trigger is the Z4A button; ⌘/
+  // opens it by focusing that trigger and dispatching a bubbling `Enter`
+  // keydown — the Radix trigger opens on Enter/Space/Arrow, not on a bare
+  // programmatic `.click()` (which fires no pointerdown). The menu shows each
+  // command's ⌃⌘ chord so it teaches the shortcuts over time.
+  const pickerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const openCommandPicker = useCallback(() => {
+    const trigger = pickerTriggerRef.current;
+    if (trigger === null) return;
+    trigger.focus();
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
   }, []);
 
   useImperativeHandle(
@@ -2459,12 +2505,7 @@ export const TugPromptEntry = React.forwardRef<
         textEditorRef.current?.clear();
       },
       insertCommandChip(name: string) {
-        const editor = textEditorRef.current;
-        if (editor === null) return;
-        editor.restoreState(
-          computeCommandChipInsert(editor.captureState(), name),
-        );
-        editor.focus();
+        seedCommandChip(name);
       },
       getEditorElement() {
         const view = textEditorRef.current?.view();
@@ -2475,7 +2516,7 @@ export const TugPromptEntry = React.forwardRef<
         view?.dispatch({ effects: regenerateAtomsEffect.of(null) });
       },
     }),
-    [openCommandPicker],
+    [openCommandPicker, seedCommandChip],
   );
 
   // Compose rootRef + responderRef onto the same DOM element.
@@ -2530,28 +2571,67 @@ export const TugPromptEntry = React.forwardRef<
             </div>
     ) : undefined;
 
-  // Z4A leading slot — the command picker ([P06]): a slash-glyph button that
-  // focuses the editor and seeds a leading `/` to open the completion popup.
-  // It keeps the leading-slot focus-group registration so the keyboard cycle's
-  // walk is unchanged in shape. Pure sugar over syntax — it sets no persistent
-  // state.
+  // Z4A leading slot — the command picker ([P06], revised): a slash-glyph
+  // `TugPopupMenu` trigger. The menu lists ONLY the five demoted commands with
+  // their ⌃⌘ chord labels (the teaching surface); picking one seeds its command
+  // chip. `⌘/` opens the same menu by activating this trigger. Keeps the
+  // leading-slot focus-group registration so the keyboard cycle's walk is
+  // unchanged; sets no persistent state.
   const entryRoutePopup = (
-    <TugButton
-      className="tug-prompt-entry-command-picker"
-      emphasis="filled"
-      role="accent"
-      size="sm"
-      subtype="icon"
-      icon={<Slash size={14} />}
-      aria-label="Commands"
-      focusGroup={routeFocusGroup}
-      focusOrder={routeFocusOrder}
-      onClick={openCommandPicker}
+    <TugPopupMenu
+      side="top"
+      align="start"
+      items={COMMAND_PICKER_ITEMS.map((item) => ({
+        id: item.id,
+        label: item.label,
+        icon: item.icon,
+        shortcut: item.shortcut,
+      }))}
+      onSelect={seedCommandChip}
+      trigger={
+        <TugButton
+          ref={pickerTriggerRef}
+          className="tug-prompt-entry-command-picker"
+          emphasis="filled"
+          role="accent"
+          size="sm"
+          subtype="icon"
+          icon={<Slash size={14} />}
+          aria-label="Commands"
+          focusGroup={routeFocusGroup}
+          focusOrder={routeFocusOrder}
+        />
+      }
     />
   );
 
   const entryToolbarTrailing = (
     <>
+            {/*
+              Z5 "Generate a commit message" button ([P06] revised) — a Z5-shaped
+              button left of the submit button, shown ONLY while the Changes
+              Shade is up. It requests an on-demand AI commit draft (the streamed
+              text flows into the editor as a `/changes commit` line, per the seed
+              effect above). Disabled while a turn runs — a commit-draft
+              generation must not overlap a Claude turn — and while a draft is
+              already streaming. During a turn with a typed draft this is the
+              third Z5 button: Generate (disabled) · `+` queue · Stop.
+            */}
+            {changesShadeVisible && changesController !== undefined && (
+              <TugPushButton
+                className="tug-prompt-entry-generate-button"
+                subtype="icon"
+                size="lg"
+                emphasis="outlined"
+                role="action"
+                disabled={snap.canInterrupt === true || changesDrafting}
+                onClick={() => changesController.requestDraft()}
+                aria-label="Generate a commit message"
+                title="Generate a commit message"
+                data-testid="changes-generate-draft"
+                icon={<PencilSparkles size={16} strokeWidth={2.5} />}
+              />
+            )}
             {/*
               Z5 `+` queue button — mounted alongside the primary Stop
               button while a turn runs (mode `stop`). CSS-gated on the

@@ -73,7 +73,6 @@ import {
   useChangesetRelease,
 } from "@/lib/changeset-verb-store";
 import { useChangesetJoinResolve } from "@/lib/changeset-join-store";
-import { useChangesetDraft } from "@/lib/changeset-draft-store";
 import type {
   ChangesetFile,
   DashChangesetEntry,
@@ -994,17 +993,6 @@ export function SessionChangesView({
     changesController.subscribe,
     changesController.getSnapshot,
   );
-  // The commit-message draft overlay ([P06]/S05). The Generate affordance now
-  // lives in this header (it moved off the retired `±` route's entry); a click
-  // requests an on-demand AI draft, which streams into the prompt entry as a
-  // `/changes commit <draft>` command line. Width-stabilized so "Generating…"
-  // never resizes the button; disabled while a draft streams.
-  const draft = useChangesetDraft(
-    changesController.projectDir,
-    changesController.draftOwnerKind,
-    changesController.tugSessionId,
-  );
-  const drafting = draft.phase === "drafting";
   const commit = useChangesetCommit(changesController.entryKey);
   const project = snap.project;
   // `canInterrupt` is true exactly while a turn can be stopped (one is
@@ -1073,18 +1061,6 @@ export function SessionChangesView({
       name="Changes"
       actions={
         <>
-          <TugPushButton
-            className="tug-prompt-entry-generate-button"
-            emphasis="outlined"
-            role="action"
-            size="2xs"
-            disabled={drafting}
-            widthStabilize={{ alternateLabel: "Generating…" }}
-            onClick={() => changesController.requestDraft()}
-            data-testid="changes-generate-draft"
-          >
-            {drafting ? "Generating…" : "Generate"}
-          </TugPushButton>
           {actions}
           {onClose !== undefined ? (
             <TugIconButton
