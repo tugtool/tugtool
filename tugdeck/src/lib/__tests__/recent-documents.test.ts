@@ -14,6 +14,7 @@ import {
   coerceRecentDocuments,
   getRecentDocuments,
   noteRecentDocument,
+  subscribeRecentDocuments,
 } from "@/lib/recent-documents";
 
 // The module list is a process-global (the real app singleton). bun
@@ -91,6 +92,33 @@ describe("clearRecentDocuments", () => {
     noteRecentDocument("/a.txt");
     clearRecentDocuments();
     expect(getRecentDocuments()).toEqual([]);
+  });
+});
+
+describe("subscribeRecentDocuments", () => {
+  it("fires on note and clear, and stops after unsubscribe", () => {
+    let count = 0;
+    const unsubscribe = subscribeRecentDocuments(() => {
+      count += 1;
+    });
+    noteRecentDocument("/a.txt");
+    expect(count).toBe(1);
+    clearRecentDocuments();
+    expect(count).toBe(2);
+    unsubscribe();
+    noteRecentDocument("/b.txt");
+    expect(count).toBe(2); // no further notifications after unsubscribe
+  });
+
+  it("does not fire when a note is a redundant no-op", () => {
+    noteRecentDocument("/a.txt");
+    let count = 0;
+    const unsubscribe = subscribeRecentDocuments(() => {
+      count += 1;
+    });
+    noteRecentDocument("/a.txt"); // already newest — noteRecentDocument early-returns
+    expect(count).toBe(0);
+    unsubscribe();
   });
 });
 

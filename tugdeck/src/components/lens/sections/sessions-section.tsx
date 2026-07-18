@@ -1,29 +1,25 @@
 /**
- * The Lens **Sessions** section — a read-only session *monitor* ([P12], the
- * lens-route-rework phase). One row per open session card, stacked two lines:
+ * The Lens **Sessions** section — a read-only session *monitor* rendered as a
+ * `TugListView`. One row per open session card, stacked two lines:
  *
  *   [phase dot]  <session name>
  *                <latest pulse line>      <activity sparkline>
  *
+ * The list is authored into the section's focus group (`host.focusGroup`), so
+ * it is one Tab stop in the Lens: arrows rove the movement cursor over the
+ * rows, and Space/Enter/click activate the row's bound card
+ * (`focus-session-card`) — the monitor has no "selected but not activated"
+ * state, so `onSelect` and `onActivate` are the same act. The section
+ * remembers its last-activated session so Cmd-L / Tab re-seed the cursor onto
+ * it (`initialSelectedIndex`).
+ *
  * The name is resolved exactly like the Session card's title-bar chip
- * (`sessionChipDisplay`: user name → mnemonic tag → truncated id), minus its
- * "Session" caption. The pulse line + sparkline share one row and align the
- * same way the on-card `session-pulse-strip` does (minus the `PULSE` prefix).
- * The phase dot aligns with the name line.
+ * (`sessionCardTitleOverride`); the pulse line + sparkline share the second
+ * row and align the same way the on-card `session-pulse-strip` does.
  *
- * Clicking a row activates the bound card's pane (fronts it) and flashes its
- * title bar once (`focus-session-card`, [P04]). Rows are non-interactive stops
- * (`data-tug-focus="refuse"`): the click dispatches an action, never claims
- * first responder.
- *
- * The working surface — changed files, commit composer, dash join, git-init —
- * moved onto the Session card's `±` Changes view-route; the Lens no longer
- * commits or joins.
- *
- * Laws: [L02] every store enters React through `useSyncExternalStore` with a
- * referentially stable snapshot; [L06] no appearance state in React (the
- * dot/sparkline paint via CSS/WAAPI, the flash rides a CSS class on the pane
- * header).
+ * Laws: [L02] every store enters React through `useSyncExternalStore`; [L06]
+ * appearance (cursor ring, selection, dot/sparkline) is CSS on engine
+ * attributes, never React state; [L22] the FocusManager owns the cursor.
  *
  * @module components/lens/sections/sessions-section
  */
@@ -34,7 +30,14 @@ import React, { useCallback, useMemo, useSyncExternalStore } from "react";
 import { GitBranch } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
+import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { dispatchAction } from "@/action-dispatch";
+import { TugListView } from "@/components/tugways/tug-list-view";
+import type {
+  TugListViewCellProps,
+  TugListViewCellRenderer,
+  TugListViewDelegate,
+} from "@/components/tugways/tug-list-view";
 import {
   sparklineCurves,
   TugSparkline,
@@ -48,10 +51,7 @@ import {
   sessionSessionPhaseVisual,
   type SessionPhaseInput,
 } from "@/lib/code-session-store/session-phase-visual";
-import {
-  cardSessionBindingStore,
-  type CardSessionBinding,
-} from "@/lib/card-session-binding-store";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
@@ -62,6 +62,12 @@ import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
 } from "@/lib/session-activity-store";
+import {
+  buildSessionRows,
+  useLensSessionsDataSource,
+  type LensSessionsDataSource,
+  type MonitorRow,
+} from "./sessions-data-source";
 
 // Sparkline shape — the same constants the on-card `session-pulse-strip` uses,
 // so a session reads identically in the Lens and on its card.
@@ -70,54 +76,25 @@ const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 const SPARKLINE_WIDTH = 64;
 const SPARKLINE_HEIGHT = 18;
 
-/** One monitor row: a session and the card it is bound to. */
-interface MonitorRow {
-  cardId: string;
-  tugSessionId: string;
-  projectDir: string;
-}
-
-/**
- * One row per open session binding, deduped by `tugSessionId` in binding order
- * — the same binding walk `buildItems` used, minus the dash / unattributed
- * pseudo-entries (those live on the card now). Labels are resolved per row from
- * the session name / tag stores + the aggregate branch.
- */
-function buildRows(
-  bindings: ReadonlyMap<string, CardSessionBinding>,
-): MonitorRow[] {
-  const rows: MonitorRow[] = [];
-  const seen = new Set<string>();
-  for (const [cardId, binding] of bindings) {
-    if (seen.has(binding.tugSessionId)) continue;
-    seen.add(binding.tugSessionId);
-    rows.push({
-      cardId,
-      tugSessionId: binding.tugSessionId,
-      projectDir: binding.projectDir,
-    });
-  }
-  return rows;
-}
+// The section's remembered selection — the last-activated session id, mapped
+// to a cursor seed on the next Cmd-L / Tab into the section ([P10] selection
+// memory). Session-local; a fresh launch starts at the first row. Module-level
+// because it must outlive the section body's unmount across a collapse toggle;
+// valid while the Lens is a singleton card.
+let lastSelectedSessionId: string | null = null;
 
 /** The open cards' bindings, read straight from the store ([L02]). */
-function useOpenBindings(): ReadonlyMap<string, CardSessionBinding> {
+function useOpenBindings() {
   return useSyncExternalStore(
     cardSessionBindingStore.subscribe,
     cardSessionBindingStore.getSnapshot,
   );
 }
 
-function useMonitorRows(): MonitorRow[] {
-  const bindings = useOpenBindings();
-  return useMemo(() => buildRows(bindings), [bindings]);
-}
-
 /**
- * The session's label, formatted EXACTLY like the Session card's title bar
- * ([P12]): `<project>/<session> (<branch>)` (branch omitted on `main`), name →
- * tag precedence, read reactively from the name / tag stores ([L02]). The
- * shared `sessionCardTitleOverride` keeps the row and the title bar identical.
+ * The session's label, formatted EXACTLY like the Session card's title bar:
+ * `<project>/<session> (<branch>)` (branch omitted on `main`), name → tag
+ * precedence, read reactively from the name / tag stores ([L02]).
  */
 function useSessionLabel(
   projectDir: string,
@@ -148,14 +125,7 @@ const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
-/**
- * The per-row phase dot — reads the bound card's `codeSessionStore` ([P12]).
- * Two nested `useSyncExternalStore` reads, each returning a referentially
- * stable snapshot ([L02]): the services bag (stable until a rebind) resolves
- * the store, then the store's own snapshot drives the dot. The phase input is
- * derived in render — NOT inside a `getSnapshot`, which must never mint a fresh
- * object (that is an infinite-render loop).
- */
+/** The per-row phase dot — reads the bound card's `codeSessionStore`. */
 function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
   const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
     cardServicesStore.getServices(cardId),
@@ -209,48 +179,23 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
   );
 }
 
-function SessionMonitorRow({
-  row,
-  branch,
-}: {
-  row: MonitorRow;
-  branch: string | null;
-}): React.ReactElement {
+/** The two-line content of one monitor row. The interactive shell (cursor,
+ *  selection, click → `onSelect`) is the `TugListView` cell wrapper. */
+function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
+  const changesets = useChangesetAll();
+  const branch = branchForProject(changesets, row.projectDir);
   const displayName = useSessionLabel(row.projectDir, row.tugSessionId, branch);
   const pulse = usePulse();
   const latest = latestLineForScope(pulse.lines, row.tugSessionId);
-  // Plain text — the monitor row shows the raw pulse line; the KaTeX/markdown
-  // rendering (`renderPulseLine`) is the on-card strip's richer surface.
   const pulseText = pulse.enabled && latest !== null ? latest.text : null;
-
-  const activate = useCallback(() => {
-    dispatchAction({ action: "focus-session-card", cardId: row.cardId });
-  }, [row.cardId]);
-
   return (
-    <div
-      className="sessions-monitor-row"
-      data-slot="sessions-monitor-row"
-      data-testid="sessions-monitor-row"
-      data-session-id={row.tugSessionId}
-      // Read-only: the click activates a card via a dispatched action; it must
-      // never pull first responder off wherever it sits ([P04]).
-      data-tug-focus="refuse"
-      data-no-activate=""
-      role="button"
-      tabIndex={-1}
-      onClick={activate}
-    >
-      {/* Primary line — the phase dot aligns with the session name. */}
+    <div className="sessions-monitor-row" data-slot="sessions-monitor-row">
       <div className="sessions-monitor-line sessions-monitor-line-primary">
         <RowPhaseDot cardId={row.cardId} />
         <span className="sessions-monitor-name" title={displayName}>
           {displayName}
         </span>
       </div>
-      {/* Secondary line — the pulse aligns with its sparkline (like the strip).
-          A session with no current pulse line reads a muted "None" rather than
-          an empty gap, so the row still reports its pulse state. */}
       <div className="sessions-monitor-line sessions-monitor-line-pulse">
         {pulseText !== null ? (
           <span className="sessions-monitor-pulse">{pulseText}</span>
@@ -265,46 +210,77 @@ function SessionMonitorRow({
   );
 }
 
+/** The `"session"` cell renderer — queries the data source for its row. */
+const SessionCell: TugListViewCellRenderer<LensSessionsDataSource> = ({
+  index,
+  dataSource,
+}: TugListViewCellProps<LensSessionsDataSource>) => {
+  return <SessionRowContent row={dataSource.rowAt(index)} />;
+};
+
+const SESSIONS_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<LensSessionsDataSource>
+> = { session: SessionCell };
+
 /** The Lens band's collapsed summary: `N sessions`. */
 function SessionsCollapsedSummary(): React.ReactElement {
-  const rows = useMonitorRows();
-  const n = rows.length;
+  const bindings = useOpenBindings();
+  const n = useMemo(() => buildSessionRows(bindings).length, [bindings]);
   return <>{`${n} session${n === 1 ? "" : "s"}`}</>;
 }
 
-function SessionsSectionBody(): React.ReactElement {
-  const rows = useMonitorRows();
-  // One aggregate read for the whole section; each row's branch is projected
-  // from it (the label reads `<project>/<session> (<branch>)`).
-  const changesets = useChangesetAll();
-  if (rows.length === 0) {
-    return (
-      <div data-slot="sessions-card" className="sessions-card sessions-card-empty">
-        No open sessions
-      </div>
-    );
-  }
+function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
+  const bindings = useOpenBindings();
+  const dataSource = useLensSessionsDataSource(bindings);
+  const count = dataSource.numberOfItems();
+
+  const initialSelectedIndex = useMemo(() => {
+    if (lastSelectedSessionId === null) return undefined;
+    const i = dataSource.indexForId(lastSelectedSessionId);
+    return i >= 0 ? i : undefined;
+    // Recompute when membership changes (the data source version bumps `count`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource, count]);
+
+  // A monitor row has no "selected but not activated" state: Space/click
+  // (`onSelect`) and Enter (`onActivate`) both front the bound card and
+  // remember the session for the next cursor seed ([P11]/[P10]).
+  const delegate = useMemo<TugListViewDelegate>(() => {
+    const activate = (index: number): void => {
+      const row = dataSource.rowAt(index);
+      if (row === undefined) return;
+      lastSelectedSessionId = row.tugSessionId;
+      dispatchAction({ action: "focus-session-card", cardId: row.cardId });
+    };
+    return { onSelect: activate, onActivate: activate };
+  }, [dataSource]);
+
   return (
-    <div data-slot="sessions-card" className="sessions-card">
-      <div className="sessions-scroll">
-        <div className="sessions-monitor-rows">
-          {rows.map((row) => (
-            <SessionMonitorRow
-              key={row.tugSessionId}
-              row={row}
-              branch={branchForProject(changesets, row.projectDir)}
-            />
-          ))}
-        </div>
-      </div>
+    <div className="sessions-section">
+      <TugListView<LensSessionsDataSource>
+        dataSource={dataSource}
+        delegate={delegate}
+        cellRenderers={SESSIONS_CELL_RENDERERS}
+        scrollKey="lens-sessions"
+        inline
+        rowLayout="pill"
+        focusGroup={host.focusGroup}
+        commitOnEnter="act"
+        initialSelectedIndex={initialSelectedIndex}
+        className="lens-sessions-list"
+      />
+      {count === 0 ? (
+        <div className="sessions-card-empty">No open sessions</div>
+      ) : null}
     </div>
   );
 }
 
 /**
  * Register the Sessions Lens section. Called once at boot from `main.tsx`. The
- * body reads the app-level singletons directly (no host feed wiring), so it is
- * host-agnostic — nothing imported from `lens/` beyond the registry entry point.
+ * body reads app-level singletons directly (no host feed wiring), so it is
+ * host-agnostic — it takes only the `focusGroup` from the host.
  */
 export function registerSessionsSection(): void {
   registerLensSection({
@@ -312,6 +288,6 @@ export function registerSessionsSection(): void {
     title: "Sessions",
     glyph: <GitBranch size={14} />,
     collapsedSummary: () => <SessionsCollapsedSummary />,
-    body: () => <SessionsSectionBody />,
+    body: (host) => <SessionsSectionBody host={host} />,
   });
 }

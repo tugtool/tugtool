@@ -503,6 +503,22 @@ export interface TugListViewHandle {
    * no-op if the scroll instance or a target entry element is absent.
    */
   pageByEntry(direction: "up" | "down"): void;
+
+  /**
+   * Move the movement cursor to the row at `index` and **descend** into its
+   * first inner focusable — the imperative twin of the Enter/ArrowRight
+   * descend gesture, for a consumer whose row content becomes descendable
+   * only *after* an activation mounts it (an in-place row editor: the row is
+   * a plain display row until Enter opens its editor, which mounts on the
+   * next commit). The consumer calls this from the layout effect that reacts
+   * to the editor mounting, so the row's `[data-tug-focusable]` exists by the
+   * time the descend runs.
+   *
+   * No-op when the list is not engine-authored, when `index` is out of range,
+   * or when the row carries no inner focusable (nothing to descend into).
+   * Requires `inline` rendering in practice, so the target row is mounted.
+   */
+  descendIntoRow(index: number): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -2610,6 +2626,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     //
     // Out-of-range indices clamp to first/last per [D03]; `NaN` and
     // empty data sources are no-ops with no scroll write.
+    // `descendIntoRow` routes through this ref because the cursor / descend
+    // callbacks it needs (`moveCursorTo`, `descendCursorRow`) are declared
+    // below this handle; the ref lets the handle read the live closure at call
+    // time without pulling later-declared consts into its dependency array.
+    const descendIntoRowRef = React.useRef<(index: number) => void>(() => {});
     React.useImperativeHandle(
       ref,
       () => ({
@@ -2693,6 +2714,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
         pageByEntry(direction: "up" | "down"): void {
           pageByEntryStep(direction);
+        },
+        descendIntoRow(index: number): void {
+          descendIntoRowRef.current(index);
         },
       }),
       [dataSource, estimatedHeightForKindOnly, pageByEntryStep],
@@ -3014,6 +3038,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       manager.setKeyView(innerId, true);
       manager.focusKeyView();
     }, [manager, rowFirstFocusableId, rowScopeId, selectCursorRow]);
+
+    // Populate the imperative `descendIntoRow` entry now that the cursor /
+    // descend callbacks exist. Refreshed every render (like `cursorNavRef`
+    // below) so the handle always runs the current closures. A row with no
+    // inner focusable is a pure no-op — nothing to descend into.
+    descendIntoRowRef.current = (index: number): void => {
+      if (rowFirstFocusableId(index) === null) return;
+      moveCursorTo(index, true);
+      descendCursorRow();
+    };
 
     // ---- Descended-row deletion landing ----
     //

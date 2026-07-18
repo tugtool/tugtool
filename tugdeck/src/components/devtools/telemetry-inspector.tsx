@@ -15,7 +15,7 @@
  * Conformance: [L02], [L19], [L20] (reads only `--tugx-devpanel-*`
  * slots), read-only — no mutations of the card session.
  *
- * @module components/lens/internal/telemetry-inspector
+ * @module components/devtools/telemetry-inspector
  */
 
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";

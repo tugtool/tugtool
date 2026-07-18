@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "bun:test";
 
-import { formatFieldValue } from "@/components/lens/internal/field-row";
+import { formatFieldValue } from "@/components/devtools/field-row";
 
 describe("FieldRow — formatFieldValue", () => {
   it("renders null and undefined as literal strings", () => {

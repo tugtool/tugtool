@@ -10,7 +10,7 @@
  * presentation concerns with field discovery. The projection is the
  * single point of truth for "which fields exist."
  *
- * @module components/lens/internal/telemetry-projection
+ * @module components/devtools/telemetry-projection
  */
 
 import type { CodeSessionState } from "@/lib/code-session-store/reducer";

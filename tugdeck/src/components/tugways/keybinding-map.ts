@@ -250,6 +250,8 @@ export const KEYBINDINGS: KeyBinding[] = [
   // platform find-next mnemonic (⌘G). `preventDefaultOnMatch` suppresses the
   // WebView default / macOS beep.
   { key: "Slash", meta: true, action: TUG_ACTIONS.OPEN_COMMAND_PICKER, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌥⌘/ opens the DevTools card (Log + Telemetry). Distinct from ⌘/ (command picker).
+  { key: "Slash", meta: true, alt: true, action: TUG_ACTIONS.SHOW_DEVTOOLS, preventDefaultOnMatch: true },
   { key: "KeyS", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "shell" }, scope: "key-card", preventDefaultOnMatch: true },
   { key: "KeyB", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "btw" }, scope: "key-card", preventDefaultOnMatch: true },
   { key: "KeyC", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "changes" }, scope: "key-card", preventDefaultOnMatch: true },

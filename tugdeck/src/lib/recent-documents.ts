@@ -43,6 +43,23 @@ export const RECENT_DOCUMENTS_MAX_BYTES = 16 * 1024;
 /** In-memory MRU, newest first. The tugbank value is the durable copy. */
 let recents: string[] = [];
 
+/** Change listeners — notified whenever the in-memory MRU mutates. */
+const listeners = new Set<() => void>();
+
+/**
+ * Subscribe to MRU changes (seed / note / clear). Returns an unsubscribe.
+ * A data source consumes this to re-window when the recent-documents list
+ * changes, the same way it consumes any [L02] store's `subscribe`.
+ */
+export function subscribeRecentDocuments(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifyRecentDocuments(): void {
+  for (const listener of listeners) listener();
+}
+
 /**
  * Trim `paths` (already de-duped, newest first) to both the count cap and
  * the byte cap — whichever binds first — keeping the newest entries.
@@ -88,11 +105,21 @@ export function initRecentDocuments(): void {
   }
   recents = coerceRecentDocuments(raw);
   publishRecentDocuments(recents);
+  notifyRecentDocuments();
 }
 
 /** The current MRU snapshot (newest first). */
 export function getRecentDocuments(): string[] {
   return recents.slice();
+}
+
+/**
+ * The live MRU array reference — stable between mutations (each mutation
+ * reassigns `recents`), so it is a valid `useSyncExternalStore` snapshot paired
+ * with {@link subscribeRecentDocuments}. Read-only: callers must not mutate it.
+ */
+export function getRecentDocumentsSnapshot(): readonly string[] {
+  return recents;
 }
 
 /**
@@ -108,6 +135,7 @@ export function noteRecentDocument(path: string): void {
   recents = next;
   persist();
   publishRecentDocuments(recents);
+  notifyRecentDocuments();
 }
 
 /** Empty the list (File ▸ Open Recent ▸ Clear Menu). */
@@ -116,6 +144,7 @@ export function clearRecentDocuments(): void {
   recents = [];
   persist();
   publishRecentDocuments(recents);
+  notifyRecentDocuments();
 }
 
 /**

@@ -44,10 +44,10 @@ import { registerSessionsSection } from "./components/lens/sections/sessions-sec
 import { registerSessionCard } from "./components/tugways/cards/session-card-registration";
 import { registerAboutCard } from "./components/tugways/cards/about-card";
 import { registerSettingsCard } from "./components/tugways/cards/settings-card";
+import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
-import { registerLogSection } from "./components/lens/sections/log-section";
-import { registerTelemetrySection } from "./components/lens/sections/telemetry-section";
 import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
+import { registerTextFilesSection } from "./components/lens/sections/text-files-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
@@ -260,6 +260,7 @@ if (!container) {
   registerSessionCard();
   registerAboutCard();
   registerSettingsCard();
+  registerDevtoolsCard();
   // The Lens card must register unconditionally and before the deck
   // restores its layout, so the anchored rail survives reload
   // (`filterRegisteredCards` drops panes whose only card is unregistered).
@@ -267,9 +268,8 @@ if (!container) {
   // Registration order is the DEFAULT Lens section order — the fallback
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerSessionsSection();
-  registerLogSection();
-  registerTelemetrySection();
   registerSnippetsSection();
+  registerTextFilesSection();
   registerTextCard();
   registerDiffCard();
   registerGalleryCards();

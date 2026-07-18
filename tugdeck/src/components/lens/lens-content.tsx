@@ -38,7 +38,10 @@ import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
 import { dispatchAction } from "@/action-dispatch";
-import { useFocusManager } from "@/components/tugways/use-focusable";
+import {
+  useFocusManager,
+  useSeedKeyView,
+} from "@/components/tugways/use-focusable";
 import {
   getRegisteredLensSections,
   resolveSectionRenderOrder,
@@ -75,6 +78,21 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
   const sectionsRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
   const focusManager = useFocusManager();
+
+  // Seed the opening key view onto the first *expanded* section's list, so the
+  // first Cmd-L lands the movement cursor on a real Lens item ([P02], the
+  // focus-language seed). A collapsed section unmounts its body (no
+  // focusable), so it is skipped; a still-collapsed-everywhere Lens seeds
+  // nothing until a section expands (`useSeedKeyView` re-arms while the key is
+  // null). Subsequent Cmd-L presses (after a toggle-out) are handled by
+  // `adoptKeyCard` restoring this card's stored key view — this seed is only
+  // the first landing.
+  const firstExpandedKind = order.find((k) => !collapsed.has(k)) ?? null;
+  useSeedKeyView(
+    firstExpandedKind !== null
+      ? `${sectionFocusGroup(firstExpandedKind)}:0`
+      : null,
+  );
 
   // The card the Lens is contextually about — tracked once here (mounted
   // the whole time the pane is open) and shared with sections via context

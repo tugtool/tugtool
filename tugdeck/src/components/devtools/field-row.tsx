@@ -10,7 +10,7 @@
  * Conformance: [L19] small focused component, [L20] no raw token reads
  * — every visual aspect goes through `TugLabel`'s own slot family.
  *
- * @module components/lens/internal/field-row
+ * @module components/devtools/field-row
  */
 
 import React from "react";

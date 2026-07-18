@@ -13,7 +13,7 @@ import {
   formatMs,
   formatUsd,
   projectTelemetryInspector,
-} from "@/components/lens/internal/telemetry-projection";
+} from "@/components/devtools/telemetry-projection";
 import { createInitialState } from "@/lib/code-session-store/reducer";
 import type { CodeSessionState } from "@/lib/code-session-store/reducer";
 import type { TurnEntry } from "@/lib/code-session-store/types";

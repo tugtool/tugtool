@@ -1,7 +1,7 @@
 /**
  * at0233-lens-reorder-escape.test.ts — Lens section drag-reorder + Escape
- * focus-out, exercised with the two real registered sections (Log +
- * Telemetry).
+ * focus-out, exercised with the top two registered rail sections (whatever
+ * they currently are — the test reads them live, nothing is hardcoded).
  *
  * Scenarios:
  *   1. Drag the second rail section's grip above the first; assert the
@@ -71,7 +71,7 @@ describe.skipIf(!SHOULD_RUN)(
   "at0233 — Lens section reorder + Escape focus-out",
   () => {
     test(
-      "dragging Telemetry above Log persists the new order",
+      "dragging the second section above the first persists the new order",
       async () => {
         const tugbankPath = mkTempTugbank();
         try {

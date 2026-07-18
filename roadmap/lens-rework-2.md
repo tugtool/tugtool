@@ -413,13 +413,13 @@ The section body renders error state (`snapshot.error`) above the list as today,
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | TugListView `descendIntoRow` | pending | — |
-| #step-2 | Store seams: `editingId` + recents subscribe | pending | — |
-| #step-3 | Sessions on TugListView + the Cmd-L seed | pending | — |
-| #step-4 | Snippets on TugListView; delete TugQuickList | pending | — |
-| #step-5 | Text Files section | pending | — |
-| #step-6 | DevTools card; remove Log/Telemetry from the Lens | pending | — |
-| #step-7 | Integration checkpoint: grammar app-test + full sweep | pending | — |
+| #step-1 | TugListView `descendIntoRow` | done | 9bf076af9 |
+| #step-2 | Store seams: `editingId` + recents subscribe | done | 1e9c26434 |
+| #step-3 | Sessions on TugListView + the Cmd-L seed | done | 732b69ff7 |
+| #step-4 | Snippets on TugListView; delete TugQuickList | done | 7d87c5320 |
+| #step-5 | Text Files section | done | 30595c0f0 |
+| #step-6 | DevTools card; remove Log/Telemetry from the Lens | done | 67df30722 |
+| #step-7 | Integration checkpoint: grammar app-test + full sweep | done | 38ca1a356 |
 
 #### Step 1: TugListView `descendIntoRow` {#step-1}
 

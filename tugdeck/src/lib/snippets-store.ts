@@ -6,8 +6,10 @@
  * undo/redo stack, and hash-gated echo suppression. The React surface is
  * `subscribe` / `getSnapshot`, returning `{ doc, error }`.
  *
- * Selection and the open-for-edit row are *appearance* and live in the
- * component ([L06]); the store tracks only `openRowId` internally, for the
+ * Selection is *appearance* and lives in the component ([L06]). The
+ * open-for-edit row is *structure* — which row mounts its editor — so it lives
+ * here as `editingId` on the snapshot ([L02]): the section body, the cell
+ * renderer, and the descend effect all read one source. It also drives the
  * foreign-merge carve-out (Risk R01) and undo coalescing.
  */
 
@@ -39,11 +41,12 @@ export interface SnippetsSnapshot {
   /** Non-null when the on-disk file is unreadable or a save was rejected. */
   error: string | null;
   /**
-   * The id of the most recently created snippet, so a section header's `+`
-   * (rendered in a separate subtree from the list) can signal the list to open
-   * the new row for editing. Changes only on `createSnippet`.
+   * The id of the row currently open for editing, or null when none is open.
+   * Set by `beginEdit` and by `createSnippet` (create-and-open); cleared by
+   * `commitEdit`. The section body mounts the editor for this row and descends
+   * into it; a header `+` opens the freshly-created row through this field.
    */
-  lastCreatedId: string | null;
+  editingId: string | null;
 }
 
 /** Debounce for text edits; structural mutations save immediately. */
@@ -57,15 +60,14 @@ export class SnippetsStore {
   private doc: SnippetsDoc = emptyDoc();
   private undoStack: UndoStack = emptyUndo();
   private editBaseline: SnippetsDoc | null = null;
-  private openRowId: string | null = null;
+  private editingId: string | null = null;
   private error: string | null = null;
   private lastWrittenHash: string | null = null;
-  private lastCreatedId: string | null = null;
 
   private snapshot: SnippetsSnapshot = Object.freeze({
     doc: this.doc,
     error: null,
-    lastCreatedId: null,
+    editingId: null,
   });
   private readonly listeners = new Set<() => void>();
   private unsubFeed: (() => void) | null = null;
@@ -137,7 +139,7 @@ export class SnippetsStore {
 
     // Genuine foreign change: merge (preserving the open row, R01) and, per
     // [P07], drop the undo history that never applied to this document.
-    this.doc = mergeForeignDoc(this.doc, frame.doc, this.openRowId);
+    this.doc = mergeForeignDoc(this.doc, frame.doc, this.editingId);
     this.error = null;
     this.undoStack = emptyUndo();
     this.commit();
@@ -145,12 +147,20 @@ export class SnippetsStore {
 
   // ── Mutations ──────────────────────────────────────────────────────────
 
-  /** Insert a blank snippet after `afterId` (or at end); returns its id. */
+  /**
+   * Insert a blank snippet after `afterId` (or at end) and open it for editing;
+   * returns its id. Opening it here (setting `editingId` + the coalescing
+   * baseline) is what lets a header `+` or a ⌘Return chain create-and-open in
+   * one call — the section's descend effect reacts to `editingId`.
+   */
   createSnippet(afterId: string | null = null): string {
     this.undoStack = pushUndo(this.undoStack, this.doc);
     const result = applyCreate(this.doc, afterId, newSnippetId());
     this.doc = result.doc;
-    this.lastCreatedId = result.id;
+    this.editingId = result.id;
+    if (this.editBaseline === null) {
+      this.editBaseline = this.doc;
+    }
     this.commit();
     this.save(true);
     return result.id;
@@ -188,10 +198,11 @@ export class SnippetsStore {
 
   /** Open a row for editing: snapshots the pre-edit doc for undo coalescing. */
   beginEdit(id: string): void {
-    this.openRowId = id;
+    this.editingId = id;
     if (this.editBaseline === null) {
       this.editBaseline = this.doc;
     }
+    this.commit();
   }
 
   /** Close the open row: push one coalesced undo entry and flush the save. */
@@ -200,7 +211,8 @@ export class SnippetsStore {
       this.undoStack = pushUndo(this.undoStack, this.editBaseline);
     }
     this.editBaseline = null;
-    this.openRowId = null;
+    this.editingId = null;
+    this.commit();
     // A commit is a save point: flush any pending debounced write now.
     this.save(true);
   }
@@ -229,7 +241,7 @@ export class SnippetsStore {
     this.snapshot = Object.freeze({
       doc: this.doc,
       error: this.error,
-      lastCreatedId: this.lastCreatedId,
+      editingId: this.editingId,
     });
     for (const listener of this.listeners) listener();
   }

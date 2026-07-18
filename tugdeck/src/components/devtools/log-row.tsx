@@ -10,7 +10,7 @@
  * `--tugx-devlog-*` slots for the chip + tag styling; `TugLabel`
  * owns its own token family for the message text.
  *
- * @module components/lens/internal/log-row
+ * @module components/devtools/log-row
  */
 
 import React, { useState } from "react";

@@ -90,6 +90,7 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.PREVIOUS_TAB,
   TUG_ACTIONS.NEXT_TAB,
   TUG_ACTIONS.SHOW_SETTINGS,
+  TUG_ACTIONS.SHOW_DEVTOOLS,
   TUG_ACTIONS.FOCUS_LENS,
   TUG_ACTIONS.TOGGLE_LENS,
   TUG_ACTIONS.SHOW_COMPONENT_GALLERY,
@@ -328,6 +329,25 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const incomingCardId = settingsCard
           ? settingsCard.id
           : store.addCard("settings");
+        if (incomingCardId === null) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId,
+          store,
+          commitMutation: () => store.activateCard(incomingCardId),
+        });
+      },
+      [TUG_ACTIONS.SHOW_DEVTOOLS]: (_event: ActionEvent) => {
+        // ⌥⌘/ — open (or raise) the DevTools singleton card (Log +
+        // Telemetry). Same find-or-create-then-focus-claim shape as
+        // SHOW_SETTINGS.
+        const snapshot = store.getSnapshot();
+        const devtoolsCard = snapshot.cards.find(
+          (c) => c.componentId === "devtools",
+        );
+        const incomingCardId = devtoolsCard
+          ? devtoolsCard.id
+          : store.addCard("devtools");
         if (incomingCardId === null) return;
         transferFocusForActivation({
           outgoingCardId: store.getFirstResponderCardId(),

@@ -6,7 +6,7 @@
  * a plain div underneath; future tabs with many sections may swap this
  * for `TugAccordion` for collapsibility.
  *
- * @module components/lens/internal/field-section
+ * @module components/devtools/field-section
  */
 
 import React from "react";

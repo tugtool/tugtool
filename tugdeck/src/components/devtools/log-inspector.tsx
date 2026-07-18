@@ -22,7 +22,7 @@
  *   - Free-text filter ownership: lives on `tugDevLogStore.filters.text`
  *     so it survives tab switch.
  *
- * @module components/lens/internal/log-inspector
+ * @module components/devtools/log-inspector
  */
 
 import "./log-inspector.css";

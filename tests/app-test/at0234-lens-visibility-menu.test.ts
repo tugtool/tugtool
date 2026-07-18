@@ -10,7 +10,7 @@
  * Scenario:
  *   1. Seed a free card + open the Lens. Exactly one `…` button exists
  *      (the Lens's); the free pane has none.
- *   2. Open the `…` menu, toggle Telemetry off; assert it leaves the
+ *   2. Open the `…` menu, toggle Text Files off; assert it leaves the
  *      stack and persists.
  *   3. Toggle it back on; assert it returns.
  */
@@ -29,7 +29,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
 const MENU_BUTTON = `.tug-pane[data-anchored] [data-testid="tug-pane-title-bar-menu-button"]`;
-const TELEMETRY = `.lens-section[data-lens-section="telemetry"]`;
+const TEXT_FILES = `.lens-section[data-lens-section="text-files"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
   await app.evalJS<void>(
@@ -43,13 +43,13 @@ async function menuButtonCount(app: App): Promise<number> {
   );
 }
 
-async function toggleTelemetry(app: App): Promise<void> {
+async function toggleTextFiles(app: App): Promise<void> {
   await app.nativeClickAtElement(MENU_BUTTON);
   await app.waitForCondition<boolean>(
-    `document.querySelector('[data-item-id="telemetry"]') !== null`,
+    `document.querySelector('[data-item-id="text-files"]') !== null`,
     { timeoutMs: 3_000 },
   );
-  await app.nativeClickAtElement(`[data-item-id="telemetry"]`);
+  await app.nativeClickAtElement(`[data-item-id="text-files"]`);
 }
 
 function freeCardDeck() {
@@ -97,17 +97,17 @@ describe.skipIf(!SHOULD_RUN)(
 
             await dispatch(app, "toggle-lens");
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(TELEMETRY)}) !== null`,
+              `document.querySelector(${JSON.stringify(TEXT_FILES)}) !== null`,
               { timeoutMs: 3_000 },
             );
 
             // Only the lens pane contributes a … menu; the free pane has none.
             expect(await menuButtonCount(app)).toBe(1);
 
-            // Toggle Telemetry off → leaves the stack + persists.
-            await toggleTelemetry(app);
+            // Toggle Text Files off → leaves the stack + persists.
+            await toggleTextFiles(app);
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(TELEMETRY)}) === null`,
+              `document.querySelector(${JSON.stringify(TEXT_FILES)}) === null`,
               { timeoutMs: 3_000 },
             );
             const hidden = tugbankRead<string[]>(
@@ -115,17 +115,17 @@ describe.skipIf(!SHOULD_RUN)(
               "dev.tugtool.lens",
               "hiddenSections",
             );
-            expect(hidden?.value).toContain("telemetry");
+            expect(hidden?.value).toContain("text-files");
 
             // Toggle it back on → returns.
-            await toggleTelemetry(app);
+            await toggleTextFiles(app);
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(TELEMETRY)}) !== null`,
+              `document.querySelector(${JSON.stringify(TEXT_FILES)}) !== null`,
               { timeoutMs: 3_000 },
             );
             expect(
               await app.evalJS<boolean>(
-                `document.querySelector(${JSON.stringify(TELEMETRY)}) !== null`,
+                `document.querySelector(${JSON.stringify(TEXT_FILES)}) !== null`,
               ),
             ).toBe(true);
           } finally {

@@ -10,7 +10,7 @@
  * dialog. Reading the clipboard is what triggers the popup; writing
  * is silent.
  *
- * @module components/lens/internal/copy-as-json
+ * @module components/devtools/copy-as-json
  */
 
 /**

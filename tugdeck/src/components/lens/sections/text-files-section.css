@@ -1,0 +1,57 @@
+/* The Lens Text Files section — open Text cards + recently-open files. The list
+   view owns the cursor ring / selection fill / hover / scroll; this file styles
+   only the row content. Tokens only ([L06]/[L20]). */
+
+.text-files-section {
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.lens-text-files-list {
+  padding: 4px 8px 8px;
+}
+
+.text-files-empty {
+  padding: 16px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.875rem;
+}
+
+.text-files-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.text-files-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.text-files-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Recently-open (not currently open) reads a touch quieter than open cards. */
+.text-files-row-recent .text-files-name {
+  font-weight: 500;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The inert "Recent" divider row. */
+.text-files-header {
+  padding: 6px 2px 2px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}

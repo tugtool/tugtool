@@ -57,8 +57,8 @@ export interface UseBlockReorderOptions {
   commit: (newVisibleOrder: readonly string[]) => void;
   /**
    * CSS selector matching each reorderable child within the container.
-   * Defaults to the Lens-section selector; other clients (e.g. TugQuickList
-   * rows) pass their own so the same FLIP reorder drives any list.
+   * Defaults to the Lens-section selector; other clients (e.g. the Snippets
+   * section's rows) pass their own so the same FLIP reorder drives any list.
    */
   selector?: string;
   /** Attribute on each child holding its stable key. Defaults to the Lens one. */

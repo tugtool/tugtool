@@ -1,32 +1,22 @@
-/* The Lens Sessions section — a read-only session monitor ([P12]). One row per
-   open session: phase dot · name/context · latest pulse line · sparkline.
-   Appearance only ([L06]); the row click dispatches `focus-session-card`. */
+/* The Lens Sessions section — a read-only session monitor rendered as a
+   TugListView. One row per open session: phase dot · name/context · latest
+   pulse line · sparkline. Appearance only ([L06]); the list view owns the
+   cursor ring, selection fill, hover, row padding, and scrolling — this file
+   styles only the two-line row *content*. */
 
-.sessions-card {
-  display: flex;
-  flex-direction: column;
+.sessions-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
+.lens-sessions-list {
+  padding: 4px 8px 8px;
+}
+
 .sessions-card-empty {
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
+  padding: 16px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: 0.875rem;
-}
-
-/* No inner scroll ([P08]): the Lens content scroll (`.lens-content`) owns
-   scrolling, so this is a plain padded block. */
-.sessions-scroll {
-  padding: 8px 14px 12px;
-}
-
-.sessions-monitor-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 /* Width of the leading dot column — the pulse line indents by this so it
@@ -38,13 +28,6 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
-  padding: 5px 6px;
-  border-radius: var(--tug-radius-sm, 6px);
-  cursor: pointer;
-}
-
-.sessions-monitor-row:hover {
-  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
 
 .sessions-monitor-line {
