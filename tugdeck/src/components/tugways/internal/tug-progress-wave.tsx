@@ -4,52 +4,42 @@
  * App code should use {@link TugProgressIndicator} instead.
  *
  * Three vertical bars rendered as a tight horizontal stack. When
- * `state === "running"`, the bars pulse in staggered sequence via
- * `TugAnimator.group()`: each bar runs a finite WAAPI one-shot that
- * scales Y from a rest pose to a peak pose; the group's `.finished`
- * resolves only when the last bar completes, providing a clean cycle
- * boundary.
+ * `state === "running"`, the bars pulse in staggered sequence: each bar
+ * runs a continuous `scaleY` @keyframes loop (`tugx-progress-wave-0/1/2`,
+ * selected by sibling position) whose stops trace an ease-in-out pulse
+ * from a rest pose to a peak pose. The three loops share one 960ms period
+ * so the wave silhouette stays phase-locked.
  *
  * State semantics:
- *   running   — bars pulse in staggered cycles.
- *   paused    — bars hold at rest pose; any in-flight cycle completes
- *               cleanly and no new cycle starts.
+ *   running   — bars pulse in staggered cycles (CSS animation).
+ *   paused    — bars hold at rest pose; no animation.
  *   stopped   — bars static at the short-long-short rest pose.
  *   completed — bars static at peak pose (all tall).
  *   aborted   — bars static at rest pose; danger tint from the parent.
  *
  * Laws: [L02] state arrives via props from the parent indicator;
- *       [L06] toggles drive `data-state` on the root; the bar pulses are
- *       owned by TugAnimator at group boundaries;
- *       [L13] motion runs through TugAnimator (WAAPI) — finite one-shot
- *       pulses bundled by `group()`. No CSS `animation: ... infinite`.
+ *       [L06] state drives `data-state` on the root; the running pulse is
+ *       a CSS @keyframes loop gated on `[data-state="running"]`;
+ *       [L13] a continuous animation lives in CSS `@keyframes`, not
+ *       TugAnimator. Motion-off zeroes it via the global
+ *       `body[data-tug-motion="off"]` duration rule, resting the bars at
+ *       their seeded pose.
  *
  * @module components/tugways/internal/tug-progress-wave
  */
 
 import "./tug-progress-wave.css";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React from "react";
 
 import { cn } from "@/lib/utils";
-import {
-  group,
-  type TugAnimationGroup,
-} from "@/components/tugways/tug-animator";
 import type { TugProgressIndicatorState } from "../tug-progress-indicator";
 
-const DEFAULT_CYCLE_MS = 960;
-const PULSE_WINDOW_RATIO = 600 / 960;
-const PULSE_STAGGER_RATIO = 180 / 960;
 const BAR_COUNT = 3;
 const SHRINK_TO = 0.5;
 const SIDE_BAR_RATIO = 0.5;
 const BAR_WIDTH_RATIO = 0.15;
 const GAP_TO_WIDTH_RATIO = 0.8;
-
-function isRunning(state: TugProgressIndicatorState): boolean {
-  return state === "running";
-}
 
 /** Gap (px) between bars given a bar width (px). Exported for tests. */
 export function gapForBarWidth(barWidthPx: number): number {
@@ -82,20 +72,6 @@ export function staticScale(index: number, state: TugProgressIndicatorState): nu
   return barScales(index).restScale;
 }
 
-function buildBarKeyframes(index: number): Keyframe[] {
-  const startOffset = index * PULSE_STAGGER_RATIO;
-  const midOffset = startOffset + PULSE_WINDOW_RATIO / 2;
-  const endOffset = startOffset + PULSE_WINDOW_RATIO;
-  const { restScale, peakScale } = barScales(index);
-  return [
-    { offset: 0, transform: `scaleY(${restScale})` },
-    { offset: clamp01(startOffset), transform: `scaleY(${restScale})` },
-    { offset: clamp01(midOffset), transform: `scaleY(${peakScale})` },
-    { offset: clamp01(endOffset), transform: `scaleY(${restScale})` },
-    { offset: 1, transform: `scaleY(${restScale})` },
-  ];
-}
-
 export interface TugProgressWaveProps {
   /** Bar height in CSS px. @default 16 */
   size?: number;
@@ -114,60 +90,6 @@ export const TugProgressWave = React.forwardRef<
   { size = 16, state = "running", disabled = false, className },
   forwardedRef,
 ) {
-  const barRefs = useRef<Array<HTMLSpanElement | null>>(
-    new Array(BAR_COUNT).fill(null),
-  );
-  const groupRef = useRef<TugAnimationGroup | null>(null);
-  const latestStateRef = useRef<TugProgressIndicatorState>(state);
-  latestStateRef.current = state;
-
-  // Start one staggered pulse cycle across all three bars. The group's
-  // `.finished` resolves when the LAST bar completes; on resolution,
-  // read `latestStateRef` and decide whether to chain another cycle.
-  const startCycle = useCallback(() => {
-    const g = group({ duration: DEFAULT_CYCLE_MS, easing: "ease-in-out" });
-    groupRef.current = g;
-    let scheduled = 0;
-    for (let i = 0; i < BAR_COUNT; i += 1) {
-      const el = barRefs.current[i];
-      if (el === null) continue;
-      g.animate(el, buildBarKeyframes(i), {
-        duration: DEFAULT_CYCLE_MS,
-        easing: "ease-in-out",
-      });
-      scheduled += 1;
-    }
-    if (scheduled === 0) {
-      groupRef.current = null;
-      return;
-    }
-    g.finished
-      .then(() => {
-        if (groupRef.current !== g) return;
-        groupRef.current = null;
-        if (isRunning(latestStateRef.current)) startCycle();
-      })
-      .catch(() => {
-        if (groupRef.current === g) groupRef.current = null;
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!isRunning(state)) return;
-    if (groupRef.current !== null) return;
-    startCycle();
-  }, [state, startCycle]);
-
-  useEffect(() => {
-    return () => {
-      const g = groupRef.current;
-      if (g !== null) {
-        g.cancel("snap-to-end");
-        groupRef.current = null;
-      }
-    };
-  }, []);
-
   const barWidthPx = size * BAR_WIDTH_RATIO;
   const barGapPx = gapForBarWidth(barWidthPx);
   const rootStyle: React.CSSProperties = {
@@ -194,19 +116,11 @@ export const TugProgressWave = React.forwardRef<
         return (
           <span
             key={i}
-            ref={(el) => {
-              barRefs.current[i] = el;
-            }}
             className="tug-progress-wave-bar"
-            // Seed the bar's rest pose so the silhouette renders
-            // correctly on first paint (before WAAPI's first keyframe).
-            // Also the source of truth while paused/stopped/completed.
-            // Center-pivoted so the pulse scales symmetrically from
-            // both the top and the bottom of the bar.
-            style={{
-              transformOrigin: "center center",
-              transform: `scaleY(${restScale})`,
-            }}
+            // Seed the bar's static pose. It renders on first paint, holds
+            // for the non-running states, and equals the running loop's
+            // 0% keyframe (rest) so the animation starts without a jump.
+            style={{ transform: `scaleY(${restScale})` }}
           />
         );
       })}

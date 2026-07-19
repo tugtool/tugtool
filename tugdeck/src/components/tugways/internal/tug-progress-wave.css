@@ -9,16 +9,19 @@
  * `--tugx-progress-wave-size` (parent-set). Bar width and gap derive
  * from the size via `--tugx-progress-wave-bar-width` and `-bar-gap`.
  *
- * Motion: the bars' scaleY transforms are owned by the component's
- * TugAnimator group at pulse boundaries. The rest pose is seeded as an
- * inline transform on each bar so the silhouette renders correctly on
- * first paint and so static states (stopped / completed / aborted)
- * paint without animation.
+ * Motion: when `data-state="running"`, each bar runs a continuous
+ * `scaleY` @keyframes loop (`tugx-progress-wave-0/1/2`, one per sibling
+ * position) over a shared 960ms period scaled by `--tug-timing`. The
+ * stops trace an ease-in-out pulse with `linear` timing, so the whole
+ * three-bar wave stays phase-locked. Static states seed their pose as an
+ * inline transform on each bar (the loop's 0% keyframe matches the rest
+ * pose, so running starts without a jump).
  *
  * Tuglaws cross-check:
- *  - [L06] bar transforms are inline styles; the wave's data-state on
- *    the root drives any CSS that depends on the state.
- *  - [L13] motion via TugAnimator (WAAPI), not CSS keyframes.
+ *  - [L06] the wave's data-state on the root gates the running pulse;
+ *    static poses are inline transforms.
+ *  - [L13] the continuous pulse is a CSS @keyframes loop; motion-off is
+ *    handled by the global `body[data-tug-motion="off"]` duration rule.
  *  - [L16] bar's `background-color` is self-paired.
  *  - [L19] file pair, `data-slot="tug-progress-wave"`.
  *  - [L20] owns its `--tugx-progress-wave-*` sub-family; reads
@@ -49,4 +52,78 @@
 
 .tug-progress-wave-disabled {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
+}
+
+/* Running pulse: each bar loops its own keyframes on a shared 960ms
+   period. `--tug-timing` scales the period; the global motion-off rule
+   zeroes the duration so the bars rest at their seeded inline pose. */
+.tug-progress-wave[data-state="running"] .tug-progress-wave-bar {
+  animation-duration: calc(960ms * var(--tug-timing, 1));
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.tug-progress-wave[data-state="running"] .tug-progress-wave-bar:nth-child(1) {
+  animation-name: tugx-progress-wave-0;
+}
+
+.tug-progress-wave[data-state="running"] .tug-progress-wave-bar:nth-child(2) {
+  animation-name: tugx-progress-wave-1;
+}
+
+.tug-progress-wave[data-state="running"] .tug-progress-wave-bar:nth-child(3) {
+  animation-name: tugx-progress-wave-2;
+}
+
+/* The keyframe stops bake an ease-in-out pulse into `linear` timing: a
+   staggered scaleY from the rest pose to the peak pose and back. Outer
+   bars (0, 2) grow 0.5 -> 1.0; the middle bar (1) dips 1.0 -> 0.5. */
+@keyframes tugx-progress-wave-0 {
+  0% { transform: scaleY(0.5); }
+  5% { transform: scaleY(0.5077); }
+  10% { transform: scaleY(0.5316); }
+  15% { transform: scaleY(0.5723); }
+  20% { transform: scaleY(0.6307); }
+  25% { transform: scaleY(0.7067); }
+  30% { transform: scaleY(0.7998); }
+  35% { transform: scaleY(0.9088); }
+  38.77% { transform: scaleY(1); }
+  40% { transform: scaleY(0.969); }
+  45% { transform: scaleY(0.8371); }
+  50% { transform: scaleY(0.7); }
+  55% { transform: scaleY(0.5629); }
+  57.35% { transform: scaleY(0.5); }
+  100% { transform: scaleY(0.5); }
+}
+
+@keyframes tugx-progress-wave-1 {
+  0% { transform: scaleY(1); }
+  30% { transform: scaleY(1); }
+  35% { transform: scaleY(0.8912); }
+  40% { transform: scaleY(0.769); }
+  45% { transform: scaleY(0.6371); }
+  50% { transform: scaleY(0.5); }
+  55% { transform: scaleY(0.6371); }
+  60% { transform: scaleY(0.769); }
+  65% { transform: scaleY(0.8912); }
+  70% { transform: scaleY(1); }
+  100% { transform: scaleY(1); }
+}
+
+@keyframes tugx-progress-wave-2 {
+  0% { transform: scaleY(0.5); }
+  42.65% { transform: scaleY(0.5); }
+  45% { transform: scaleY(0.5629); }
+  50% { transform: scaleY(0.7); }
+  55% { transform: scaleY(0.8371); }
+  60% { transform: scaleY(0.969); }
+  61.23% { transform: scaleY(1); }
+  65% { transform: scaleY(0.9088); }
+  70% { transform: scaleY(0.7998); }
+  75% { transform: scaleY(0.7067); }
+  80% { transform: scaleY(0.6307); }
+  85% { transform: scaleY(0.5723); }
+  90% { transform: scaleY(0.5316); }
+  95% { transform: scaleY(0.5077); }
+  100% { transform: scaleY(0.5); }
 }

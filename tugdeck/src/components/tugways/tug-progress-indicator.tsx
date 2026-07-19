@@ -8,7 +8,7 @@
  *   bar           — horizontal track + fill (determinate or barber-pole)
  *   pie           — conic-gradient wedge (determinate or rotating)
  *   spinner       — single-arc rotor
- *   pulsing-dot   — dot + WAAPI pulsing ring (replaces TugStateIndicator)
+ *   pulsing-dot   — dot + pulsing ring (replaces TugStateIndicator)
  *   wave          — three-bar staggered pulse (replaces TugThinkingIndicator)
  *
  * The component is a compound dispatch [L20]: it owns role-color injection,
@@ -64,8 +64,8 @@
  *
  * Laws: [L02] state arrives via props from the consumer's external store;
  *       [L06] appearance via CSS / DOM attributes, never React state;
- *       [L13] motion runs through CSS keyframes (ring/bar/pie/spinner)
- *             or TugAnimator (pulsing-dot/wave) per the internal variant;
+ *       [L13] motion runs through CSS keyframes per the internal variant
+ *             (a continuous animation belongs to CSS);
  *       [L15] token-driven states;
  *       [L16] pairings declared in CSS;
  *       [L19] component authoring guide;
