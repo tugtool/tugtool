@@ -10,20 +10,23 @@
  * paints at `--tugx-progress-pulsing-dot-dot-size` (half the root in
  * the active states, smaller while quiet).
  *
- * Motion: the ring is hidden (`display: none`) by default. While
- * `data-state="running"` it shows and runs a continuous CSS `@keyframes`
- * pulse (`scale` + `opacity`, ease-out, 1600ms period scaled by
- * `--tug-timing`). Motion-off zeroes the duration via the global
- * `body[data-tug-motion="off"]` rule, resting the ring at its base pose.
+ * Motion: the ring's display and pulse are owned by the component
+ * (`tug-progress-pulsing-dot.tsx`) as a chain of finite `element.animate()`
+ * one-shots. Default ring state is `display: none`; the component flips it
+ * to `block`, snapshots the pulse's tone to an inline `border-color`, and
+ * hides it again when the chain settles. No CSS `@keyframes` — the pulse is
+ * programmatic so each one can complete and freeze its tone.
  *
  * Tuglaws cross-check:
- *  - [L06] dot color is set via a CSS custom property; the root's
- *    `data-state` gates the ring's display and pulse.
- *  - [L13] the continuous pulse is a CSS `@keyframes` loop.
- *  - [L16] dot's `background-color` and the static outer ring's
- *    (`::after`) `border-color` are self-paired (same rule). The
- *    `running` state's fixed-blue `--tugx-progress-indicator-fill`
- *    override is likewise self-paired.
+ *  - [L06] dot color is a live CSS variable; the ring's display and frozen
+ *    tone are set imperatively by the component.
+ *  - [L13] the ring pulse needs per-pulse completion + tone freeze, so it is
+ *    programmatic motion (WAAPI one-shots via raw `animate()`), not a CSS
+ *    loop.
+ *  - [L16] dot's `background-color` and the static outer ring's (`::after`)
+ *    `border-color` are self-paired (same rule). The `running` state's
+ *    fixed-blue `--tugx-progress-indicator-fill` override is likewise
+ *    self-paired.
  *  - [L19] file pair, `data-slot="tug-progress-pulsing-dot"`.
  *  - [L20] owns its `--tugx-progress-pulsing-dot-*` sub-family; reads
  *    `--tugx-progress-indicator-fill` from the parent indicator.
@@ -98,28 +101,6 @@
    awaiting/restoring/interrupting, danger, …) keeps its own role tone. */
 .tug-progress-indicator[data-role="action"] .tug-progress-pulsing-dot[data-state="running"] {
   --tugx-progress-indicator-fill: --tug-color(cobalt, l: 700, c: 320);
-}
-
-/* Running pulse: the ring shows and loops its scale/opacity pulse.
-   `--tug-timing` scales the period; the global motion-off rule zeroes
-   the duration so the ring rests at its base (full-size, opaque) pose. */
-.tug-progress-pulsing-dot[data-state="running"] .tug-progress-pulsing-dot-ring {
-  display: block;
-  animation-name: tugx-progress-pulsing-dot-pulse;
-  animation-duration: calc(1600ms * var(--tug-timing, 1));
-  animation-timing-function: ease-out;
-  animation-iteration-count: infinite;
-}
-
-@keyframes tugx-progress-pulsing-dot-pulse {
-  0% {
-    transform: translate(-50%, -50%) scale(0.85);
-    opacity: 0.7;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.9);
-    opacity: 0;
-  }
 }
 
 .tug-progress-pulsing-dot-disabled {

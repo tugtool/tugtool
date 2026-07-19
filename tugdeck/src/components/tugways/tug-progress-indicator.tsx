@@ -64,8 +64,9 @@
  *
  * Laws: [L02] state arrives via props from the consumer's external store;
  *       [L06] appearance via CSS / DOM attributes, never React state;
- *       [L13] motion runs through CSS keyframes per the internal variant
- *             (a continuous animation belongs to CSS);
+ *       [L13] motion is per internal variant — CSS keyframes for the
+ *             continuous glyphs (wave/ring/bar/pie/spinner), raw WAAPI
+ *             one-shots for the pulsing-dot ring (per-pulse completion);
  *       [L15] token-driven states;
  *       [L16] pairings declared in CSS;
  *       [L19] component authoring guide;
