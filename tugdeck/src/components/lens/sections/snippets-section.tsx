@@ -252,7 +252,10 @@ function SnippetDisplayRow({
         {empty ? (
           "New snippet"
         ) : incipitHtml !== null ? (
-          <span dangerouslySetInnerHTML={{ __html: incipitHtml }} />
+          <span
+            className="snippet-row-incipit"
+            dangerouslySetInnerHTML={{ __html: incipitHtml }}
+          />
         ) : (
           incipit
         )}

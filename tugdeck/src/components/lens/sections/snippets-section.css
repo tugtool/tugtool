@@ -135,6 +135,17 @@
   font-style: italic;
 }
 
+/* The rendered-markdown incipit is a PRESENTATIONAL span inside the drag-handle
+   label. It must be click-transparent: a `dangerouslySetInnerHTML` span
+   swallows the row-select click (mousedown/up land on it and WebKit synthesizes
+   no `click` on the cell), so a click on the incipit text never selected the
+   row. `pointer-events: none` sends the pointer straight to the label, which
+   bubbles the click to the list cell (select + focus, the Things model). The
+   label itself keeps pointer events for the drag handle. */
+.snippet-row-incipit {
+  pointer-events: none;
+}
+
 /* Drag ghost that follows the pointer from a row toward the prompt entry. */
 .snippet-drag-ghost {
   position: fixed;
