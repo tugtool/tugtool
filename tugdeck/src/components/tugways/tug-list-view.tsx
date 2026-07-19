@@ -999,6 +999,18 @@ export interface TugListViewProps<
   commitOnEnter?: "act";
 
   /**
+   * Activate a row on **double-click** — fire {@link TugListViewDelegate.onActivate}
+   * on the cell's second click. The Things model: a single click SELECTS (and
+   * focuses) the row via `onSelect`, and a double-click OPENS it via `onActivate`
+   * — the pointer equivalent of Enter. Opt in only where `onSelect` and
+   * `onActivate` are DISTINCT and a single click must not activate; a list whose
+   * click already activates (`onSelect === onActivate`) has no need for it.
+   *
+   * @default false (a double-click is just two selects)
+   */
+  activateOnDoubleClick?: boolean;
+
+  /**
    * Keys the consumer reserves for its own handling ([P04] captures). Each is a
    * `KeyboardEvent.key` value (e.g. `" "` for Space). While the container holds
    * the key view, the engine's act-dispatch treats a listed key as captured —
@@ -1234,6 +1246,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       initialSelectedIndex,
       seedSelection = false,
       commitOnEnter,
+      activateOnDoubleClick = false,
       captureKeys,
       listRole = "list",
       itemRole = "listitem",
@@ -1330,6 +1343,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // current values at fire time [L07].
     const selectionRequiredRef = React.useRef(selectionRequired);
     selectionRequiredRef.current = selectionRequired;
+    const activateOnDoubleClickRef = React.useRef(activateOnDoubleClick);
+    activateOnDoubleClickRef.current = activateOnDoubleClick;
     const onSelectionChangeRef = React.useRef(onSelectionChange);
     onSelectionChangeRef.current = onSelectionChange;
     // Last index handed to `onSelectionChange` — dedupes the mirror
@@ -3557,6 +3572,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
       readonly click: () => void;
+      readonly doubleClick: () => void;
       readonly keyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
     }
     const cellCallbacksRef = React.useRef<Map<number, CellCallbacks>>(
@@ -3642,9 +3658,22 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         delegateRef.current?.onSelect?.(index);
         if (selectionRequiredRef.current) setSelectedIndex(index);
       };
+      // Double-click activates the row (the Things model's OPEN gesture), the
+      // pointer equivalent of Enter — routed to `onActivate`, distinct from the
+      // first click's `onSelect`. Opt-in via `activateOnDoubleClick`; role- and
+      // enablement-gated exactly like the single click.
+      const dblClickCb = (): void => {
+        if (!activateOnDoubleClickRef.current) return;
+        const role =
+          dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
+        if (role !== "cell") return;
+        if (dataSourceRef.current.enabledForIndex?.(index) === false) return;
+        delegateRef.current?.onActivate?.(index);
+      };
       const callbacks: CellCallbacks = {
         ref: refCb,
         click: clickCb,
+        doubleClick: dblClickCb,
         keyDown: keyDownCb,
       };
       registry.set(index, callbacks);
@@ -3801,6 +3830,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   tabIndex={wrapperTabIndex}
                   ref={getCellCallbacks(index).ref}
                   onClick={getCellCallbacks(index).click}
+                  onDoubleClick={getCellCallbacks(index).doubleClick}
                   onKeyDown={getCellCallbacks(index).keyDown}
                 />
               );
@@ -3819,6 +3849,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}
                 onClick={getCellCallbacks(index).click}
+                onDoubleClick={getCellCallbacks(index).doubleClick}
                 onKeyDown={getCellCallbacks(index).keyDown}
               >
                 {focusEngineActive ? (

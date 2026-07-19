@@ -483,9 +483,11 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // The Things model on the list view's own `selectionRequired` shape: the list
   // owns a never-null selected row and stamps `data-selected`, so the REAL
   // `TugListRow` selection fill paints (the session-picker look — no hand-rolled
-  // styling). A click (`onSelect`) SELECTS + focuses the row but NEVER opens it;
-  // only Enter (`onActivate`, via `commitOnEnter="act"`) opens the row's editor.
-  // Both remember the snippet for the next Cmd-L / Tab seed ([P10]).
+  // styling). A single click (`onSelect`) SELECTS + focuses the row but NEVER
+  // opens it; the row OPENS only on Enter (`onActivate`, via `commitOnEnter`) or
+  // a double-click (`onActivate`, via `activateOnDoubleClick`) — the first click
+  // of the pair selects, the second opens. Both remember the snippet for the
+  // next Cmd-L / Tab seed ([P10]).
   const delegate = useMemo<TugListViewDelegate>(() => {
     const remember = (index: number): void => {
       const row = dataSource.rowAt(index);
@@ -678,6 +680,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
                 rowLayout="flush"
                 focusGroup={hasContent ? host.focusGroup : undefined}
                 commitOnEnter="act"
+                activateOnDoubleClick
                 selectionRequired
                 captureKeys={SNIPPETS_CAPTURE_KEYS}
                 onSelectionChange={onSelectionChange}

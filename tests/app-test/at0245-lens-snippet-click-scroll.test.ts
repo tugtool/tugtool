@@ -130,6 +130,16 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + one-scroll"
             ),
           ).toBe(true);
 
+          // Double-click OPENS the row's editor (the pointer equivalent of
+          // Enter): the first click selects, the second activates.
+          await app.nativeDoubleClickAtElement(
+            `.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.lens-snippets-list .snippet-editor') !== null`,
+            { timeoutMs: 3_000 },
+          );
+
           // One-scroll: the list grew to full content height (no internal
           // scroll), and `.lens-sections` is the single scroller.
           const scroll = await app.evalJS<{
