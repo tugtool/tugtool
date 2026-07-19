@@ -49,8 +49,9 @@ Investigation found the parts largely built: tugcast already handles `changeset_
 2. The Zone 1 draft composer (`TugMessageEditor` in the Changes shade) with persisted selection dispositions.
 3. Zone split: "This session" / collapsed "Also on this project" with session jump-links and dash lanes.
 4. Unattributed bracket hints surfaced in compose and the shade.
-5. Native `/commit` (double-duty) and `/join` local slash verbs; retirement of `!changes commit|describe` sub-verbs and Claude's built-in `/commit`.
-6. Landing receipts as transcript ink; History join badges.
+5. Native `/commit` (double-duty) and `/join` local slash verbs; retirement of `!changes commit|describe` sub-verbs, Claude's built-in `/commit`, and the Z5 "Generate a commit message" prompt-row button.
+6. Landing receipts as transcript ink; History join badges; release receipts.
+6a. Release hardening: shade-only gesture with a discard preflight, draft cleanup on release/join, and the empty-dash join→release handoff ([P14]).
 7. `tugplug:commit` → `tugplug:draft` rename; `implement` skill ending hands off to `/join`.
 8. Laws/docs updates.
 
@@ -239,6 +240,23 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 **Rationale:** parity with the CLI's `likely this session's (bash bracket)` tag — the hint is what makes the disposition decision one glance instead of one investigation.
 
+#### [P14] Release is shade-only, previewed, receipted, and cleans up its draft (DECIDED) {#p14-release}
+
+**Decision:** Releasing a dash never gets a prompt-entry verb — destruction requires walking to the room and looking at the thing. The Zone 2 dash row's **Release** affordance is the only gesture, and it gains a **discard preflight**: when the dash has work on it (commits past base or a dirty tree), confirming expands the row into `discards <k> rounds · <n> dirty files` with the round subjects listed (from the existing dash log/rounds data) before the destructive confirm; a clean dash (nothing past base, no dirt) keeps today's light confirm. Release success (a) appends a release receipt to the transcript (Spec S04 `release` variant), and (b) fires `changeset_draft_set {clear: true}` for `dash:<name>` — join drafts are keyed by reusable dash names, so an uncleaned draft would haunt the *next* dash of the same name as an `edited=1`, clobber-protected message describing destroyed work. Join success clears the dash draft the same way. The nothing-to-join refusal (`ops.rs::join_in`: "Use 'tugdash release <name>'") stops pointing at the terminal: `/join <name>` on an empty dash routes to the shade's dash lane with the release affordance fronted ("nothing to join — release this dash?"), and the CLI message drops the raw-command instruction in favor of naming the release verb generically.
+
+**Rationale:**
+- Release is the one irreversible act in the workflow ([P08]'s gates protect *landings*; this protects the *discard*) — the commit/join two-beat doctrine ("beat 1 shows exactly what beat 2 will do") applies with more force, not less, to the gesture that destroys rounds.
+- A typed one-liner that discards work would be the asymmetric outlier: `/commit` and `/join` land work into permanence; a `/release` would vaporize it with the same keystroke weight. User ruling: shade-only.
+- The draft-cleanup clause closes a hole this plan itself opens — durable machine-global drafts ([P02]) make orphaned `dash:<name>` rows a real hazard that the ephemeral per-instance storage never was.
+
+**Implications:** release joins the [P08] gate doctrine formally (turn-inflight, pending-release phase); Spec S04 grows the `release` variant; `do_changeset_release` and the join-success path both clear the dash draft row; Step 5 builds the preflight, Step 8 the handoff, Step 9 the receipt.
+
+#### [P15] The Z5 Generate button retires (DECIDED) {#p15-z5-generate}
+
+**Decision:** The Z5-shaped "Generate a commit message" button in the prompt row (`tug-prompt-entry.tsx`, shown only while the Changes shade is up) is removed in Step 7, with the `!changes describe` idiom it fronts.
+
+**Rationale:** its job is fully absorbed — `/commit` beat 1 *is* generation (Table T01), and the shade's **Regenerate** button is the explicit in-room path. A second casual generation trigger in chrome is exactly the class of accident [P03]'s edited-pin exists to prevent; leaving it would keep two generation affordances with different confirm semantics.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -287,7 +305,7 @@ Writers store `project_dir` **canonical**: tugcast through the `CanonicalPath` g
 
 **Spec S04: Receipt block** {#s04-receipt-block}
 
-A local transcript block (registered in `session-command-block-registry.ts`) rendering: verb (`commit`/`join`), short sha, subject line, `N file(s) +A −D`, `left behind: …` when non-empty, and for joins `from dash <name> · <k> rounds`. Not session context — never sent to Claude.
+A local transcript block (registered in `session-command-block-registry.ts`) rendering: verb (`commit`/`join`/`release`), short sha, subject line, `N file(s) +A −D`, `left behind: …` when non-empty, and for joins `from dash <name> · <k> rounds`. The `release` variant has no sha: `released dash <name> · discarded <k> rounds, <n> dirty files` (or `clean release` when nothing was lost) per [P14]. Not session context — never sent to Claude.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -419,9 +437,11 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 **Tasks:**
 - [ ] In `agent_supervisor.rs`: add `parse_changeset_draft_set_payload` + `do_changeset_draft_set` beside the existing draft-request pair; partial upsert; `clear` deletes; fire the global bump.
 - [ ] Gate `do_changeset_draft_request` / `draft_engine::spawn_on_demand_draft` on `edited==0` unless the request carries `force: true` ([P03]).
+- [ ] Release/join draft cleanup ([P14]): `do_changeset_release` success and `do_changeset_join` success both delete the `dash:<name>` draft row (same ledger path as `clear`), so reused dash names never inherit a dead dash's clobber-protected join draft.
 
 **Tests:**
 - [ ] Rust: set→snapshot round-trip; an edited draft survives a non-forced request untouched; `force` regenerates and resets `edited`.
+- [ ] Rust: releasing (and joining) a dash with a persisted `dash:<name>` draft deletes the row; a subsequent draft lookup for a same-named dash comes up empty ([P14]).
 
 **Checkpoint:**
 - [ ] `cargo nextest run -p tugcast` green.
@@ -484,10 +504,12 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] Restructure `session-changes-view.tsx` into the two zones; Zone 2 collapsed one-line summary (pure summarizer over `dashes` + `unattributed` + other-session entries), `useState` expansion. **Zone 2's session rows come from `snapshot.project.changesets`** — `ChangesRouteSnapshot.project` is a `ProjectChangeset extends ChangesetSnapshot` carrying every entry; filter out the card's own `owner_id`. No controller/store change is needed.
 - [ ] Expanded session rows: display name + `focus-session-card` jump (port the exported `buildSessionRows(bindings)` helper from `lens/sections/sessions-data-source.ts` — it walks a `bindings: ReadonlyMap<cardId, CardSessionBinding{tugSessionId, projectDir}>` sourced from `cardSessionBindingStore` (`@/lib/card-session-binding-store`, subscribe/getSnapshot, as the Lens's `useOpenBindings()` does); map Zone 2 owner ids through the same binding source; unlinked when no open card resolves, per [Q02]).
 - [ ] Dash rows: name · base · rounds · dirty, with the existing `DashActions` (Join/Release/resolve) relocated under this zone in dash grammar (no per-file checkboxes on dash files).
+- [ ] Release discard preflight ([P14]): when the dash has commits past base or a dirty tree, the Release confirm expands into `discards <k> rounds · <n> dirty files` with round subjects listed before the destructive confirm; a clean dash keeps the light confirm. Release stays gated on turn-inflight and pending-release phase ([P08] doctrine).
 - [ ] CSS: distinct section grammar for Zone 2 (`session-changes-view.css`).
 
 **Tests:**
 - [ ] bun: summarizer string cases (0/1/n sessions, dashes, dirty flags).
+- [ ] bun: release-preflight selector — clean dash → light confirm, rounds/dirt → preflight with counts ([P14]).
 
 **Checkpoint:**
 - [ ] `bun test` + `bunx vite build` green; manual: snippets-style dash renders collapsed, expands, jump-link fronts the owning card.
@@ -528,6 +550,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] Implement the Table T01 dispatch in `session-card.tsx`'s local-command handling, reusing the four gates and `changesController.commit(...)` verbatim from the current `!changes commit` branch; ready-draft = overlay phase `ready` or persisted non-empty `entry.draft.message`.
 - [ ] On successful landing, `changeset_draft_set {clear: true}` for the entry key.
 - [ ] Reduce the `!changes` bang handler to the bare routing (show shade); delete the `describe`/`commit` sub-verbs and their usage strings.
+- [ ] Remove the Z5 "Generate a commit message" button from `tug-prompt-entry.tsx` (and its shade-visibility gating props/CSS) — generation is `/commit` beat 1 and the shade's Regenerate ([P15]).
 - [ ] **Suppress popup duplicates:** the slash completion popup merges Claude's advertised commands (`session-metadata-store.ts`, `slash_commands ∪ skills ∪ agents` — which includes the built-in `commit`) alongside the `completion-providers/local-commands.ts` provider. Add a general suppression — filter any metadata-derived entry whose name collides with a `LOCAL_SLASH_COMMANDS` name (not a `commit` special case) — so exactly one `/commit` appears, described as Tug's landing verb.
 - [ ] Verify the [D14] allowlist path picks up the new local command.
 
@@ -552,6 +575,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] Add `join` (`takesArgs: true`) to `LOCAL_SLASH_COMMANDS`; dispatch in `session-card.tsx`: bare → shade dash lane (single dash: also fire preview); `/join <name>` → preview via `changeset-join-store` → clean + join-draft-ready → execute (`JoinStrategy::Squash`, message = dash draft) → conflicts → shade resolve flow.
 - [ ] Ensure `do_changeset_join` uses the dash's draft message when present (confirm existing behavior — `ops.rs::join_in` documents "squash/merge message is the maintained dash draft, else the description"; wire the payload if the verb path doesn't already).
 - [ ] Join gates per [P08] (turn-inflight, pending-join).
+- [ ] Empty-dash handoff ([P14]): `/join <name>` on a dash with nothing past base routes to the shade's dash lane with the release affordance fronted ("nothing to join — release this dash?") instead of surfacing the refusal text; reword the `ops.rs::join_in` nothing-to-join message to drop the raw `tugdash release` terminal instruction.
 
 **Tests:**
 - [ ] bun: `/join` matcher + dispatch branch logic.
@@ -571,7 +595,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 **References:** [P09], Spec S04, (#s04-receipt-block)
 
 **Tasks:**
-- [ ] Receipt block per Spec S04 registered in `session-command-block-registry.ts`; appended on `changeset_commit_ok` / join success by the session card's verb-store subscriptions; non-context (never sent to Claude).
+- [ ] Receipt block per Spec S04 registered in `session-command-block-registry.ts`; appended on `changeset_commit_ok` / join success / release success by the session card's verb-store subscriptions; non-context (never sent to Claude); release variant per [P14].
 - [ ] `session-history-view.tsx`: parse the `Tug-Dash: <name>` trailer from commit messages already in the history data; render the join badge (`from dash <name>`).
 
 **Tests:**
@@ -650,6 +674,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] `/commit` is fully local; `tugplug:draft` exists and never commits; `!changes commit` is gone.
 - [ ] Drafts are machine-global, survive restart/reload, and edited drafts are clobber-proof (tests green).
 - [ ] Zone 2 collapses to one line and jump-links to owner sessions.
+- [ ] Releasing a dash with work shows the discard preflight, leaves a receipt, and clears its join draft; the Z5 Generate button is gone ([P14]/[P15]).
 - [ ] Full suite green: `cargo nextest run`, `bun test`, `bunx vite build`, `just app-test`.
 
 **Acceptance tests:** the Step 3/8 Rust integration tests and Step 7 matcher tests are the anchors.
