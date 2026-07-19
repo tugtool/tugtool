@@ -196,7 +196,7 @@ export function GalleryThemeEditor(): React.ReactElement {
       if (seededRef.current) return;
       if (cardId !== null && focusManager.keyCard() !== cardId) return;
       seededRef.current = true;
-      focusManager.contextFor(cardId).armKeyboardRestore(`${FG}:0`);
+      focusManager.place(cardId, { kind: "focus-key", focusKey: `${FG}:0` }, { modality: "keyboard" });
     };
     arm();
     return focusManager.subscribe(arm);

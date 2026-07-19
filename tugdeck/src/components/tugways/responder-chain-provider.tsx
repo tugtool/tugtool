@@ -267,9 +267,29 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // publisher's diff suppresses no-op posts.
     const onFocusChange = (): void => {
       queueMicrotask(publishEditCaps);
+      // Every settled focus change is a chance for the keyboard ring to have
+      // drifted from the real keyboard sink; the tripwire verifies agreement
+      // (microtask-coalesced inside the manager).
+      focusManager.scheduleFocusInvariantCheck("focus-change");
     };
     document.addEventListener("focusin", onFocusChange, { capture: true });
     document.addEventListener("focusout", onFocusChange, { capture: true });
+
+    // ---- Derived key view ([P02]) ----
+    // The key view derives from real DOM focus. `focusin` reflects
+    // synchronously (the destination is known); `focusout` defers a
+    // microtask because a handoff between siblings fires it with a
+    // transient `<body>` active element before the destination's `focusin`
+    // — reading synchronously there would flicker the ring (the same
+    // load-bearing defer `use-companion-popup-binding` documents).
+    const reflectOnFocusIn = (): void => {
+      focusManager.reflectSettledFocus();
+    };
+    const reflectOnFocusOut = (): void => {
+      queueMicrotask(() => focusManager.reflectSettledFocus());
+    };
+    document.addEventListener("focusin", reflectOnFocusIn, { capture: true });
+    document.addEventListener("focusout", reflectOnFocusOut, { capture: true });
 
     // Late-bind the responder chain manager to the CardLifecycle so
     // activations can promote the key responder. DeckManager
@@ -372,13 +392,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
         focusManager.keyViewConsumesTab();
       if (surfaceConsumes) return;
-      // (2) Advance the walk. Non-null = the key view moved; land focus and
-      // swallow the key. Null = nothing to move to; yield to native Tab.
+      // (2) Advance the walk. Non-null = the key view moved; place it (the
+      // atomic land-DOM-focus-and-project pass) and swallow the key. Null =
+      // nothing to move to; yield to native Tab.
       const moved = event.shiftKey
         ? focusManager.focusPrevious()
         : focusManager.focusNext();
       if (moved !== null) {
-        focusManager.focusKeyView();
+        focusManager.place(null, { kind: "focusable", id: moved }, {
+          modality: "keyboard",
+        });
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -937,21 +960,20 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // responder wherever the user was working.
       if (isFrPreserving(event.target)) return;
       // Card-modal barrier: a stray click on the scrimmed surround promotes the
-      // dialog island instead of the click target, and does so as a PROGRAMMATIC
-      // (non-pointer) promotion — so `seedKeyViewFromChain` yields to the finer
-      // key view already resting on the dialog default and its ring survives,
-      // while first responder still lands on (and activates) the dialog's card.
+      // dialog island instead of the click target — first responder lands on
+      // (and activates) the dialog's card, while the companion mousedown
+      // preventDefault keeps browser focus (and therefore the derived key view
+      // + ring) on the dialog's default.
       const redirect = modalScrimRedirectTarget(event.target);
       if (redirect !== null) {
         promoteFromTarget(redirect);
         return;
       }
-      // Mark this promotion pointer-driven so the key-view seeding coarsens to
-      // the promoted responder and clears the ring (click-to-focus). Programmatic
-      // promotions (focusin from `.focus()`, boot restore) are not wrapped, so
-      // they yield to an established finer focusable key view instead of dropping
-      // its ring.
-      focusManager.runPointerPromotion(() => promoteFromTarget(event.target as Node | null));
+      // Chain promotion only: the key view no longer seeds from chain state.
+      // A click that moves browser focus re-derives the key view through the
+      // settled-focus reflection (click-to-focus with the pointer modality);
+      // a click that doesn't move focus leaves the key view alone.
+      promoteFromTarget(event.target as Node | null);
     }
 
     function preventFocusOnMouseDown(event: MouseEvent): void {
@@ -992,6 +1014,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // in the capture phase ahead of the global-shortcut dispatch. arrowNavListener
     // sits between them: it owns bare arrows for the spatial plane ahead of the
     // keybinding map, the same precedence the walk has for Tab ([P22]).
+    // ---- Input-source latch ----
+    // The engine's modality latch: the last REAL user input source. The ring
+    // projection reads it for native focus changes; a placement overrides it
+    // per call. Pure-modifier keydowns don't count as keyboard navigation.
+    const noteKeyboardInput = (event: KeyboardEvent): void => {
+      const k = event.key;
+      if (k === "Shift" || k === "Meta" || k === "Alt" || k === "Control") return;
+      focusManager.noteInputSource("keyboard");
+    };
+    const notePointerInput = (): void => {
+      focusManager.noteInputSource("pointer");
+    };
+    document.addEventListener("keydown", noteKeyboardInput, { capture: true });
+    document.addEventListener("pointerdown", notePointerInput, { capture: true });
+
     document.addEventListener("keydown", focusWalkListener, { capture: true });
     document.addEventListener("keydown", arrowNavListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
@@ -1003,6 +1040,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("contextmenu", fallbackContextMenu);
 
     return () => {
+      document.removeEventListener("keydown", noteKeyboardInput, { capture: true });
+      document.removeEventListener("pointerdown", notePointerInput, { capture: true });
       document.removeEventListener("keydown", focusWalkListener, { capture: true });
       document.removeEventListener("keydown", arrowNavListener, { capture: true });
       document.removeEventListener("keydown", captureListener, { capture: true });
@@ -1015,6 +1054,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       selectionGuard.detach();
       document.removeEventListener("focusin", onFocusChange, { capture: true });
       document.removeEventListener("focusout", onFocusChange, { capture: true });
+      document.removeEventListener("focusin", reflectOnFocusIn, { capture: true });
+      document.removeEventListener("focusout", reflectOnFocusOut, { capture: true });
       registerEditCapsRefresher(null);
       unsubscribeEditCaps();
       unsubscribeKeyboardAccess();

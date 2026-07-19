@@ -23,9 +23,15 @@ function setup(): { fm: FocusManager; chain: ResponderChainManager } {
   const fm = new FocusManager();
   fm.attach(chain);
   // `editor` is a root responder, so registering it auto-promotes it to first
-  // responder; the attach seed reflects it onto the key view.
+  // responder.
   chain.register({ id: "editor", parentId: null, actions: {} });
   chain.register({ id: "popover", parentId: "editor", actions: {} });
+  // Establish `editor` as the key view the way the live app would: a
+  // placement (in the app, the user's focus lands there and the settled-focus
+  // derivation records it; DOM-free tests assert the same state via `place`).
+  fm.place(null, { kind: "responder", responderId: "editor" }, {
+    modality: "pointer",
+  });
   return { fm, chain };
 }
 

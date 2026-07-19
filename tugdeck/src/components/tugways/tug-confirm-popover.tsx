@@ -318,7 +318,7 @@ export const TugConfirmPopover = React.forwardRef<
   // engine moves the key view (`data-key-view-kbd`) between Cancel/Confirm, which
   // drives each outlined button's promotion to its filled role style + ring
   // ([P02]/[P06]) — the fill follows the ring. The default button is seeded with
-  // the key view on open via `armKeyboardRestore`.
+  // the key view on open via a keyboard `place()`.
   const buttonFocusGroup = React.useId();
   const CANCEL_ORDER = 0;
   const CONFIRM_ORDER = 1;
@@ -571,7 +571,7 @@ export const TugConfirmPopover = React.forwardRef<
   //     default lands on Cancel (Return-safe).
   //   - `action` / `accent`: Enter accepts, so the default lands on
   //     Confirm.
-  // The default is seeded as the engine KEY VIEW (`armKeyboardRestore`,
+  // The default is seeded as the engine KEY VIEW (a keyboard `place()`,
   // by the button's stable `group:order` focus key), not a bare
   // `.focus()` — so the engine is the single owner, the ring rests on
   // the seed at open, and the default button promotes to its filled
@@ -583,7 +583,7 @@ export const TugConfirmPopover = React.forwardRef<
     (event: Event) => {
       event.preventDefault();
       const defaultOrder = confirmRole === "danger" ? CANCEL_ORDER : CONFIRM_ORDER;
-      focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultOrder}`);
+      focusManager?.place(null, { kind: "focus-key", focusKey: `${buttonFocusGroup}:${defaultOrder}` }, { modality: "keyboard" });
     },
     [confirmRole, focusManager, buttonFocusGroup],
   );

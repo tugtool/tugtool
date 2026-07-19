@@ -1202,7 +1202,7 @@ const PICKER_ORDER_CANCEL = 4;
 const PICKER_ORDER_OPEN = 5;
 /**
  * Stable focus-key (`group:order`) of a picker stop. The smart-latch seed lands
- * the ring on a specific stop by this key via `armKeyboardRestore` — the picker's
+ * the ring on a specific stop by this key via a keyboard `place()` — the picker's
  * commit-home (Open) is LAST in reading order, so the session-card "seed = first
  * stop" convention (`focusFirstInMode`) doesn't fit; seeding by key does.
  */
@@ -1731,7 +1731,7 @@ function SessionProjectPickerForm({
   //     latch without moving so typing is never interrupted.
   // The picker is persistent-cycling ([P13]) — the seed is the engine KEY VIEW
   // (ring + DOM focus), not a bare `.focus()`, so the focus engine stays the
-  // single owner and the ring rests on the seed at open. `armKeyboardRestore`
+  // single owner and the ring rests on the seed at open. The keyboard `place()`
   // resolves the stop by its stable focus-key now (the field is already
   // registered) or re-lights it the instant it mounts. [L03] layout effect
   // (seed before paint).
@@ -1743,11 +1743,11 @@ function SessionProjectPickerForm({
       return;
     }
     if (openDisabled || !sessionsReady) {
-      focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_PATH));
+      focusManager.place(null, { kind: "focus-key", focusKey: pickerFocusKey(PICKER_ORDER_PATH) }, { modality: "keyboard" });
       return;
     }
     defaultFocusPlacedRef.current = true;
-    focusManager.armKeyboardRestore(pickerFocusKey(PICKER_ORDER_SESSIONS));
+    focusManager.place(null, { kind: "focus-key", focusKey: pickerFocusKey(PICKER_ORDER_SESSIONS) }, { modality: "keyboard" });
   }, [openDisabled, sessionsReady, focusManager]);
 
   return (

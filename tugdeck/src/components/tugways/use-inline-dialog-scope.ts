@@ -114,7 +114,7 @@ export function useInlineDialogScope(
   // request arriving for a non-key card, or one in a non-frontmost pane) can't
   // land DOM focus then, and a pointer activation that brings the card forward
   // can coarsen the key view off the default before it ever resolves. So on the
-  // background→key transition we re-arm `armKeyboardRestore`, which lands the
+  // background→key transition we re-place the keyboard focus-key target, which lands the
   // ring (and now DOM focus, the card being active) back on the recommended
   // default — the answer options for a question, Allow/Submit for a permission —
   // instead of stranding the user on a bare Tab that starts at Cancel/Deny.
@@ -133,7 +133,7 @@ export function useInlineDialogScope(
       defaultFocusKey !== null &&
       manager !== null
     ) {
-      manager.contextFor(cardId).armKeyboardRestore(defaultFocusKey);
+      manager.place(cardId, { kind: "focus-key", focusKey: defaultFocusKey }, { modality: "keyboard" });
     }
   }, [active, isKeyCard, defaultFocusKey, manager, cardId]);
 

@@ -385,8 +385,9 @@ export const TugAccordion = React.forwardRef<HTMLDivElement, TugAccordionProps>(
         const innerId = inner?.getAttribute("data-tug-focusable");
         if (!innerId) return; // no navigable content — stay on the headers
         manager.pushFocusMode(scopeIdFor(value), { trapped: false });
-        manager.setKeyView(innerId, true);
-        manager.focusKeyView();
+        manager.place(null, { kind: "focusable", id: innerId }, {
+          modality: "keyboard",
+        });
         pendingDescendRef.current = null;
       },
       [manager, enabledTriggers, sectionFirstFocusable, scopeIdFor],

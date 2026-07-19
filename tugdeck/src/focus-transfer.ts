@@ -130,8 +130,46 @@ import { deckTrace, formatElement } from "./deck-trace";
 import { traceApplyDefaultFocus } from "./default-focus";
 import { canProgrammaticallyFocus } from "./focus-theft-gate";
 
+import type { FocusModality, FocusTarget } from "./components/tugways/focus-manager";
 import type { IDeckManagerStore } from "./deck-manager-store";
-import type { CardStateBag } from "./layout-tree";
+import type { CardStateBag, FocusSnapshot } from "./layout-tree";
+
+/**
+ * Pure mapping from a persisted `bag.focus` snapshot to the engine's
+ * unified {@link FocusTarget} descriptor + the modality the placement
+ * should assert. The four legacy shapes map 1:1 — no tugbank migration:
+ *
+ *   - `{ kind: "dom", focusKey, keyboard }` → `focus-key` (keyboard ring
+ *     resumes iff the snapshot recorded it)
+ *   - `{ kind: "form-control", componentStatePreservationKey }` →
+ *     `state-key` (focus identity implicit in the preservation key, [D10])
+ *   - `{ kind: "engine" }` → `engine`
+ *   - `{ kind: "none" }` / absent → `none`
+ *
+ * Shape-only: the store-aware refinements ("no saved focus on an
+ * engine-bearing card still resolves to the engine") stay in
+ * {@link resolveBagFocus}, which owns the store and DOM reads.
+ */
+export function focusSnapshotToTarget(
+  focus: FocusSnapshot | null | undefined,
+): { target: FocusTarget; modality: FocusModality } {
+  if (focus === undefined || focus === null || focus.kind === "none") {
+    return { target: { kind: "none" }, modality: "pointer" };
+  }
+  if (focus.kind === "engine") {
+    return { target: { kind: "engine" }, modality: "pointer" };
+  }
+  if (focus.kind === "form-control") {
+    return {
+      target: { kind: "state-key", key: focus.componentStatePreservationKey },
+      modality: "pointer",
+    };
+  }
+  return {
+    target: { kind: "focus-key", focusKey: focus.focusKey },
+    modality: focus.keyboard === true ? "keyboard" : "pointer",
+  };
+}
 
 /**
  * Local replica of `card-host.tsx`'s `isElementHidden`. Detects
@@ -445,17 +483,31 @@ export function applyBagFocus(
     resolution.kind === "deferred-engine"
   ) {
     // The saved focusable isn't in the DOM yet (an item-group stop inside a
-    // Radix/portal subtree that late-mounts). If it wore the keyboard ring, arm
-    // the engine to re-light it the moment that focusable registers — the
-    // late-mount retry for the focus axis ([state-preservation]). Focus itself
-    // is not retried (the one-shot contract); only the ring resumes.
+    // Radix/portal subtree that late-mounts). Record the target through the
+    // one primitive: an unrealized keyboard `focus-key` placement arms the
+    // engine's declarative late-mount realization — the placement re-runs
+    // when a matching focusable registers. Focus itself is not retried for
+    // pointer restores (the one-shot contract).
     if (resolution.kind === "deferred-dom" && resolution.keyboard === true) {
-      getFocusManager()?.armKeyboardRestore(resolution.key);
+      getFocusManager()?.place(
+        cardId,
+        resolution.focusKind === "dom"
+          ? { kind: "focus-key", focusKey: resolution.key }
+          : { kind: "state-key", key: resolution.key },
+        { modality: "keyboard" },
+      );
     }
     return "deferred";
   }
 
   if (resolution.kind === "framework") {
+    // One placement, one primitive: the paint half (`data-key-view-kbd`) and
+    // the focus half (`el.focus()`) land in the same atomic pass — the
+    // historical two-write shape here (focus, then a separate `setKeyView`
+    // fixup) was the drift bug in miniature. `place` carries the
+    // idempotency guard (a redundant mount-time re-`focus()` can drop focus
+    // to body in WebKit) and `preventScroll` on every engine focus write.
+    const fm = getFocusManager();
     const el = resolution.el;
     const doc = el.ownerDocument;
     const activeBefore = formatElement(doc.activeElement);
@@ -463,68 +515,69 @@ export function applyBagFocus(
       resolution.sourceKind === "dom"
         ? `[data-tug-focus-key=...]`
         : `[data-tug-state-key=...]`;
-
-    // Idempotency guard. When the resolved target is already the
-    // active element, re-calling `.focus()` is not a no-op in
-    // WebKit during a mount commit — it can interfere with React
-    // reconciliation's focus-restoration heuristics and drop focus
-    // to body. Yield instead: record the trace event for coherence
-    // without re-calling `.focus()`.
-    if (doc.activeElement === el) {
-      deckTrace.record({
-        kind: "focus-call",
-        site: `${site}:yielded`,
-        cardId,
-        targetSelector,
-        activeBefore,
-        activeAfter: activeBefore,
-        hidden: isElementHidden(el),
+    const target: FocusTarget | null =
+      resolution.sourceKind === "dom"
+        ? (() => {
+            const focusKey = el.getAttribute("data-tug-focus-key");
+            return focusKey !== null
+              ? { kind: "focus-key", focusKey }
+              : null;
+          })()
+        : (() => {
+            const key = el.getAttribute("data-tug-state-key");
+            return key !== null ? { kind: "state-key", key } : null;
+          })();
+    if (fm !== null && target !== null) {
+      measureFocusClaim(`${site}:framework`, cardId, doc, () => {
+        fm.place(cardId, target, {
+          modality: resolution.keyboard === true ? "keyboard" : "pointer",
+          preventScroll: options?.preventScroll,
+        });
       });
-    } else {
+    } else if (doc.activeElement !== el) {
+      // No engine mounted (headless bootstrap): the direct claim, with the
+      // same idempotency guard.
       measureFocusClaim(`${site}:framework`, cardId, doc, () => {
         el.focus(
           options?.preventScroll === true ? { preventScroll: true } : undefined,
         );
       });
-      deckTrace.record({
-        kind: "focus-call",
-        site,
-        cardId,
-        targetSelector,
-        activeBefore,
-        activeAfter: formatElement(doc.activeElement),
-        hidden: isElementHidden(el),
-      });
     }
-    // Resume the keyboard focus ring on the restored focusable, through the
-    // engine, as part of this single focus claim — so a reload / relaunch
-    // re-lights the ring on exactly the element focus landed on, and nothing
-    // re-seeds it afterward ([state-preservation] focus axis). The `.focus()`
-    // above fires a `focusin` that re-seeds the key view to the card with
-    // `keyboard=false`; this set runs after, so it wins. No-op when the saved
-    // focus was not keyboard-active.
-    if (resolution.keyboard === true) {
-      const focusableId = el.getAttribute("data-tug-focusable");
-      if (focusableId !== null) {
-        getFocusManager()?.setKeyView(focusableId, true);
-      }
-    }
+    deckTrace.record({
+      kind: "focus-call",
+      site,
+      cardId,
+      targetSelector,
+      activeBefore,
+      activeAfter: formatElement(doc.activeElement),
+      hidden: isElementHidden(el),
+    });
     return "applied";
   }
 
   if (resolution.kind === "engine") {
-    // Engine claim runs through the registered hook. The hook
-    // records its own `engine-paint-mirror-active` event tagged
-    // `caller: "via-engine-hook"`.
+    // Engine claim: recorded as the card's focus target and realized
+    // through the engine's single write primitive — `place` gates on
+    // key-card authority (this caller adopted the key card above) and
+    // invokes the registered hook, which records its own
+    // `engine-paint-mirror-active` event tagged `caller: "via-engine-hook"`.
+    // `pointer` modality: the caret is the focus mark; engine restores
+    // never ring.
+    const fm = getFocusManager();
     const doc =
       store.peekCardHostRoot(cardId)?.ownerDocument ??
       (typeof document !== "undefined" ? document : null);
-    if (doc !== null) {
-      measureFocusClaim(`${site}:engine`, cardId, doc, () => {
+    const invoke = (): void => {
+      if (fm !== null) {
+        fm.place(cardId, { kind: "engine" }, { modality: "pointer" });
+      } else {
         store.invokeEnginePaintMirrorAsActive(cardId);
-      });
+      }
+    };
+    if (doc !== null) {
+      measureFocusClaim(`${site}:engine`, cardId, doc, invoke);
     } else {
-      store.invokeEnginePaintMirrorAsActive(cardId);
+      invoke();
     }
     return "applied";
   }

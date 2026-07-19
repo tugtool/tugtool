@@ -566,7 +566,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       (event: Event) => {
         // Stop Radix's own first-focusable walk; the engine drives focus.
         event.preventDefault();
-        focusManager?.armKeyboardRestore(`${buttonFocusGroup}:${defaultButtonOrder}`);
+        focusManager?.place(null, { kind: "focus-key", focusKey: `${buttonFocusGroup}:${defaultButtonOrder}` }, { modality: "keyboard" });
       },
       [focusManager, buttonFocusGroup, defaultButtonOrder],
     );

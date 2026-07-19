@@ -120,7 +120,7 @@ export function TugColorPicker(): React.ReactElement {
       if (seededRef.current) return;
       if (cardId !== null && focusManager.keyCard() !== cardId) return;
       seededRef.current = true;
-      focusManager.contextFor(cardId).armKeyboardRestore(focusKey);
+      focusManager.place(cardId, { kind: "focus-key", focusKey }, { modality: "keyboard" });
     };
     arm();
     return focusManager.subscribe(arm);

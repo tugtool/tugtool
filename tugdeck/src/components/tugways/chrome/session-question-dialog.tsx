@@ -1702,7 +1702,7 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
         // single-question commit keeps the user on the only question) —
         // arm the key view directly so the ring still lands on Submit.
         if (manager !== null && pending.focusKey !== null) {
-          manager.armKeyboardRestore(pending.focusKey);
+          manager.place(null, { kind: "focus-key", focusKey: pending.focusKey }, { modality: "keyboard" });
         }
         return;
       }
@@ -1778,7 +1778,7 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     const target = pendingFocusKeyRef.current;
     if (target === null) return;
     pendingFocusKeyRef.current = null;
-    manager.armKeyboardRestore(target);
+    manager.place(null, { kind: "focus-key", focusKey: target }, { modality: "keyboard" });
   }, [isPending, manager, currentIndex, declineMode]);
 
   // Reveal Submit when the wizard reaches the review step. The action bar

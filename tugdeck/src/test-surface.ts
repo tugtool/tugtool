@@ -38,6 +38,7 @@
 import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
+import { getFocusManager } from "./components/tugways/focus-manager";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
   cardSessionBindingStore,
@@ -485,6 +486,23 @@ export interface TugTestSurface {
   getActiveElement(): ActiveElementInfo | null;
   getSelection(cardId?: string): SelectionSnapshot | null;
   getComputedStyleValue(selector: string, property: string): string;
+
+  /**
+   * The focus engine's invariant-tripwire report: the cumulative count of
+   * ring-without-a-keyboard-sink violations observed this session, and the
+   * most recent violation (both elements named). `null` when no
+   * `FocusManager` is mounted. Tests assert `violations === 0` (or, while a
+   * known drift is being pinned, that the drift was detected and named).
+   */
+  getFocusInvariantReport(): {
+    violations: number;
+    last: {
+      ringed: string;
+      active: string;
+      keyCard: string | null;
+      reason: string;
+    } | null;
+  } | null;
 
   /**
    * Register an element as a selection boundary on behalf of a test
@@ -1321,6 +1339,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         componentStatePreservationKey,
         selector,
       };
+    },
+
+    getFocusInvariantReport() {
+      return getFocusManager()?.focusInvariantReport() ?? null;
     },
 
     getSelection(cardId?: string): SelectionSnapshot | null {

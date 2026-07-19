@@ -255,9 +255,9 @@ export function useFocusManager() {
  * key, once, when this component mounts ([P12] surface default-seed). For a
  * surface (sheet / popover) whose controls are authored into its trapped focus
  * mode: the default control rests with the ring + its filled promotion the
- * instant the surface opens, and Tab moves the key view from there. Rides
- * `armKeyboardRestore`, which resolves immediately if the target is already
- * registered or re-lights it the moment it mounts ([L03]). No-op outside a
+ * instant the surface opens, and Tab moves the key view from there. Rides a keyboard `place()` on the stop's stable focus key, which realizes
+ * immediately if the target is already registered, or the moment it mounts
+ * (the engine's declarative late-mount realization, [L03]). No-op outside a
  * `FocusManagerProvider` or when `focusKey` is null.
  */
 export function useSeedKeyView(focusKey: string | null): void {
@@ -271,6 +271,6 @@ export function useSeedKeyView(focusKey: string | null): void {
   useLayoutEffect(() => {
     if (seededRef.current || manager === null || focusKey === null) return;
     seededRef.current = true;
-    manager.contextFor(cardId).armKeyboardRestore(focusKey);
+    manager.place(cardId, { kind: "focus-key", focusKey }, { modality: "keyboard" });
   }, [manager, focusKey, cardId]);
 }

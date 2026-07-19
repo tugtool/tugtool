@@ -365,7 +365,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // (opening it if hidden); a second ⌘L while the Lens is the key card
       // focuses back out to the previously-focused card ([P05]). The
       // open-then-focus ordering is handled by `applyBagFocus`'s late-mount
-      // `armKeyboardRestore` — no bespoke plumbing.
+      // the keyboard `place()` — no bespoke plumbing.
       [TUG_ACTIONS.FOCUS_LENS]: (_event: ActionEvent) => {
         const snapshot = store.getSnapshot();
         const lensCard = snapshot.cards.find(

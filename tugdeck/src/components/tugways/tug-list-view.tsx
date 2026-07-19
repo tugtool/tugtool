@@ -3087,8 +3087,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         index: i,
       };
       manager.pushFocusMode(rowScopeId(i), { trapped: false });
-      manager.setKeyView(innerId, true);
-      manager.focusKeyView();
+      manager.place(null, { kind: "focusable", id: innerId }, {
+        modality: "keyboard",
+      });
     }, [manager, rowFirstFocusableId, rowScopeId, selectCursorRow]);
 
     // Populate the imperative `descendIntoRow` entry now that the cursor /

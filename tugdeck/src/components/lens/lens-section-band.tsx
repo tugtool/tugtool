@@ -16,7 +16,7 @@
  *
  * Clicking the band (anywhere except its buttons / the grip) focuses the
  * section's list: it expands a collapsed section and lands the keyboard key
- * view on the section's focus group via `armKeyboardRestore`, so the band is
+ * view on the section's focus group via a keyboard `place()`, so the band is
  * a one-click route to keyboard navigation of its items.
  *
  * Collapse is persisted via `lensStore.setCollapsed`; the expand/collapse
@@ -27,7 +27,7 @@
  * flows from `lensStore`; [L17]/[L20] the section sizes come from the
  * `data-altitude` token scale, not bespoke band CSS; [L19] file pair,
  * docstring, `data-slot`; [L22] the band-click focus goes through the
- * FocusManager (`armKeyboardRestore`), never a hand-rolled focus walk.
+ * FocusManager (a keyboard `place()`), never a hand-rolled focus walk.
  *
  * @module components/lens/lens-section-band
  */
@@ -78,7 +78,7 @@ export function LensSection({
   // Band click → focus this section's list. Filtered to the band's inert
   // surface: clicks on the fold chevron, header-action buttons, or the drag
   // grip keep their own meaning. Expanding a collapsed section first means
-  // the list mounts before the key view lands; `armKeyboardRestore` resolves
+  // the list mounts before the key view lands; the placement realizes
   // immediately against a mounted focusable and arms a late-mount resume for
   // one still mounting — both orderings land the ring.
   const onBandClick = React.useCallback(
@@ -86,9 +86,11 @@ export function LensSection({
       const target = event.target as HTMLElement | null;
       if (target?.closest("button, .block-grip") !== null) return;
       if (collapsed) lensStore.setCollapsed(def.kind, false);
-      focusManager
-        ?.contextFor(host.lensCardId)
-        .armKeyboardRestore(`${sectionFocusGroup(def.kind)}:0`);
+      focusManager?.place(
+        host.lensCardId,
+        { kind: "focus-key", focusKey: `${sectionFocusGroup(def.kind)}:0` },
+        { modality: "keyboard" },
+      );
     },
     [collapsed, def.kind, focusManager, host.lensCardId],
   );

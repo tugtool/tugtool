@@ -100,6 +100,21 @@ Role resolves from a prop (or a validation class) to the matching `--tug7-…-fi
 
 ---
 
+## One writer — who may place focus
+
+The engine has exactly **one focus-write primitive**: `FocusManager.place(cardId, target, opts)`. A placement records the card's `FocusTarget` (a serializable descriptor: a focusable id, a stable `group:order` focus key, a `data-tug-state-key`, a responder, the card's engine surface, or none) and — iff that card is the key card — realizes it in one atomic pass: key view, DOM focus (responder focus contract first, DOM-walk fallback second, always `preventScroll`), and the modality latch, set **before** the focus call so the synchronous `focusin` projection reads it. A claim for a background card records (and caches its key view for the [P20] activation restore) but moves nothing. The persisted `bag.focus` is just the serialized target, so restore, activation, tab switch, and cmd-tab return are the same operation; a target naming a not-yet-mounted focusable realizes declaratively when the matching focusable registers.
+
+The **projection is derived, never written independently**: `data-key-view` / `data-key-view-kbd` follow the *settled DOM focus* (the innermost `[data-tug-focusable]` / `[data-responder-id]` ancestor of `document.activeElement`, ringed iff the input latch says keyboard), so a ring cannot point where the keyboard is not. Consequences authors must uphold:
+
+- **Never pair a paint half with a focus half by hand.** The historical `setKeyView(id, true)` + `focusKeyView()` shape is exactly the drift class this design removed; call `place()`.
+- **Never call `.focus()` to "put the keyboard somewhere."** Legal raw `.focus()` calls are: a substrate managing its own surface inside a registered `focus` contract (CM6 `view.focus()`), a component focusing its own inner field on its own interaction, or a card's [P20]-gated resting-destination reclaim. Anything else routes through `place()` (or `focusResponder` when chain promotion + focus must land together).
+- **Every ringable stop must be DOM-focusable** (intrinsically, `tabindex`, or via a tabbable descendant). A ring is a promise of a keyboard sink; a stop that cannot hold focus can no longer wear one.
+- **The tripwire is permanent.** A dev-log `focus-invariant` error names the ringed element and the real `activeElement` whenever they disagree; treat any occurrence as a bug in the placing code path, never as noise to suppress.
+
+Enforcement is the tripwire, the pinned app-tests (at0246 is the boot honesty pin), and reviewer judgment against this section — deliberately **not** a lint rule; a mechanical checker must never gate correct code, and the tripwire sees actual drift (including from browser defaults no lint could model).
+
+---
+
 ## Authoring contract
 
 Building a control or surface that participates in the language:
