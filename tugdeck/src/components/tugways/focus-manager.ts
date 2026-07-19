@@ -1373,19 +1373,46 @@ export class FocusContext {
    *
    * This reconciles that ONE case. It is tightly guarded so an intentional focus
    * is never overridden: it acts only when the key view wears the keyboard ring
-   * AND `document.activeElement` is nothing (`null` / `<body>`) — i.e. the
-   * activation did not itself place focus. A click / Tab / surface entry lands
-   * DOM focus inside the card first, so `activeElement` is a real element and
-   * this is a no-op; only a restore that stranded focus on `<body>` is repaired.
+   * AND `document.activeElement` is nothing (`null` / `<body>` / `<html>`) — i.e.
+   * the activation did not itself place focus. A click / Tab / surface entry lands
+   * DOM focus inside the card first, so `activeElement` is a real element and this
+   * is a no-op; only a restore that stranded focus on `<body>` is repaired. Focus
+   * already ON the key-view element (or a descendant — a descended editor caret)
+   * is likewise left alone.
    */
   claimKeyboardFocusIfAdrift(): void {
     if (typeof document === "undefined") return;
     if (!this.isActive() || this.keyViewId === null || !this.keyViewKeyboard) {
       return;
     }
+    const el = this.keyViewElement();
+    if (el === null) return;
     const active = document.activeElement;
-    if (active !== null && active !== document.body) return;
+    // Already here (or a descended child) — the ring is already truthful.
+    if (active === el || (active !== null && el.contains(active))) return;
+    // Only repair the "focus stranded on nothing" case; never override an
+    // intentional focus that landed on a real control elsewhere.
+    if (
+      active !== null &&
+      active !== document.body &&
+      active !== document.documentElement
+    ) {
+      return;
+    }
     this.focusKeyView();
+    // Belt-and-suspenders: if `focusKeyView` reported success through the
+    // responder-contract path without actually moving DOM focus (a container
+    // responder whose focus is chain-only), force it onto the key-view element so
+    // the ring is not left lying. The list container carries `tabindex=0`, so it
+    // accepts focus directly.
+    const landed = document.activeElement;
+    if (landed !== el && !(landed !== null && el.contains(landed))) {
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        /* element refuses focus — leave it, nothing better to do */
+      }
+    }
   }
 
   /**

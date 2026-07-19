@@ -70,18 +70,19 @@ function formatLastOpened(ts: number): string {
 
 /** A two-line row on the shared `TugListRow` chrome: filename (title) over its
  *  dimmed directory (subtitle). A recent (not-open) file reads a touch quieter
- *  via `data-recent`, and shows its last-opened time right-aligned in the
- *  trailing slot (recent files are, by definition, not open now). */
+ *  via `data-recent`. `meta` is the right-aligned trailing label — "Currently
+ *  open" for an open card, "Last opened: …" for a recent file — in one slot and
+ *  one style. */
 function FileRow({
   name,
   dir,
   recent,
-  openedAt,
+  meta,
 }: {
   name: string;
   dir: string;
   recent?: boolean;
-  openedAt?: number | null;
+  meta?: string;
 }): React.ReactElement {
   return (
     <TugListRow
@@ -91,10 +92,8 @@ function FileRow({
       titleSize="sm"
       subtitle={dir.length > 0 ? displayDir(dir) : undefined}
       trailing={
-        openedAt != null ? (
-          <span className="text-files-last-opened">
-            Last opened: {formatLastOpened(openedAt)}
-          </span>
+        meta !== undefined ? (
+          <span className="text-files-meta">{meta}</span>
         ) : undefined
       }
     />
@@ -112,6 +111,7 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
         <FileRow
           name={row.title}
           dir={row.path !== null ? dirname(row.path) : ""}
+          meta="Currently open"
         />
       );
     case "text-recent":
@@ -120,7 +120,11 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
           name={basename(row.path)}
           dir={dirname(row.path)}
           recent
-          openedAt={row.openedAt}
+          meta={
+            row.openedAt != null
+              ? `Last opened: ${formatLastOpened(row.openedAt)}`
+              : undefined
+          }
         />
       );
   }

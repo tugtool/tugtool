@@ -10,6 +10,10 @@
   /* Sizes to content — the section never scrolls on its own (the whole Lens is
      one scroll region). */
   flex: 0 0 auto;
+  /* Snippet editor font size — TUNE HERE. Passed to the open editor as
+     `--tug-font-size-editor`; smaller than the substrate's 14px default so the
+     in-place editor reads at the row's density. */
+  --tugx-snippet-editor-font-size: 12px;
 }
 
 /* Positioning context for the reorder drop caret ([Q02]); the list view owns
@@ -33,6 +37,9 @@
   margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
+  /* Tighter rows than the default 8px — the snippet list is a dense index of
+     one-line handles, so it spends less vertical space per row. TUNE HERE. */
+  --tugx-list-row-padding-block: 5px;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -77,23 +84,29 @@
   outline: none;
 }
 
-/* Flatten the composed `TugTextEditor` substrate to the row surface. `borderless`
-   only transparentizes the border; the substrate still paints a rounded FIELD
-   BACKGROUND (`--tug7-surface-field-*` + `border-radius`), and where that rounded
-   fill meets the transparent row it draws the stray corner "curl". Zero the
-   background, border, and radius in EVERY state (rest / hover / focused, both
-   focus styles) so the open editor is visually indistinguishable from a display
-   row — the CM6 caret and the section's key-view ring are the only affordances.
-   The inner `.cm-editor`'s own rounded clip is zeroed too. Appearance only ([L06]). */
+/* Flatten EVERY layer of the composed editor to the row surface. `borderless`
+   only transparentizes the host border; the substrate still paints a field
+   BACKGROUND on two layers — the host wrapper (`--tug7-surface-field-*`) AND the
+   CM6 `.cm-editor` (its theme's `&` / `&.cm-focused` fill, a tinted field
+   surface) — which, with the host's `border-radius`, drew the rounded-corner
+   "curl" over the row. Zero the background + radius on both layers, in every
+   state, so the open editor is visually indistinguishable from a display row.
+   `!important` is required: it beats both the host's focused-background rule and
+   CM6's head-injected theme (source order / generated scope would otherwise win).
+   Appearance only ([L06]). */
 .snippet-editor .tug-text-editor,
-.snippet-editor .tug-text-editor:hover,
-.snippet-editor .tug-text-editor[data-focused] {
-  background-color: transparent;
-  border-color: transparent;
-  border-radius: 0;
+.snippet-editor .cm-editor,
+.snippet-editor .cm-editor.cm-focused,
+.snippet-editor .cm-scroller,
+.snippet-editor .cm-content {
+  background-color: transparent !important;
+}
+.snippet-editor .tug-text-editor {
+  border-color: transparent !important;
+  border-radius: 0 !important;
 }
 .snippet-editor .tug-text-editor > .cm-editor {
-  border-radius: 0;
+  border-radius: 0 !important;
 }
 
 /* The per-row delete ✕ and header + are `TugIconButton`s — their hover /
@@ -101,7 +114,11 @@
    is owned by `TugListRow`'s `trailingReveal="engaged"`). No bespoke button
    CSS here. */
 
-/* The draggable incipit rides the TugListRow content column. */
+/* The draggable incipit rides the TugListRow content column. It is a drag
+   HANDLE, not selectable prose — `user-select: none` stops a click that lands on
+   the text from starting a native text-selection, which WebKit then swallows the
+   click for (so a click on the incipit never reached the row's select handler;
+   the non-text gap, with nothing to select, always did). */
 .snippet-row-label {
   display: block;
   overflow: hidden;
@@ -109,6 +126,8 @@
   white-space: nowrap;
   font-size: 13px;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .snippet-row-label-empty {

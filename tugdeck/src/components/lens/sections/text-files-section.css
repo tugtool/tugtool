@@ -52,10 +52,10 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The right-aligned "Last opened …" label on a recent row (trailing slot). A
-   recent file is not open, so the row's right side is free for its last-opened
-   time — quiet, single line, never wrapping. */
-.text-files-last-opened {
+/* The right-aligned trailing meta label — "Currently open" on an open row,
+   "Last opened: …" on a recent row — in one slot and one quiet style. Single
+   line, never wrapping. */
+.text-files-meta {
   flex-shrink: 0;
   white-space: nowrap;
   font-size: 0.6875rem;
