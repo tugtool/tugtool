@@ -205,13 +205,32 @@ export class SnippetsStore {
     this.commit();
   }
 
-  /** Close the open row: push one coalesced undo entry and flush the save. */
+  /** Close the open row: push one coalesced undo entry and flush the save.
+   *  A row left EMPTY on close is discarded rather than persisted — creating a
+   *  snippet (via `+` / ⌘N / Space / ⌘Return) then leaving without typing must
+   *  not leave a blank row behind. */
   commitEdit(): void {
-    if (this.editBaseline !== null && !docsEqual(this.editBaseline, this.doc)) {
-      this.undoStack = pushUndo(this.undoStack, this.editBaseline);
-    }
+    const editingId = this.editingId;
+    const baseline = this.editBaseline;
     this.editBaseline = null;
     this.editingId = null;
+    if (editingId !== null) {
+      const snippet = this.doc.snippets.find((s) => s.id === editingId);
+      if (snippet !== undefined && snippet.text.trim() === "") {
+        // Undo restores the pre-edit doc (so clearing an existing snippet to
+        // empty is undoable); a never-populated new row leaves no trace.
+        if (baseline !== null && !docsEqual(baseline, this.doc)) {
+          this.undoStack = pushUndo(this.undoStack, baseline);
+        }
+        this.doc = applyDelete(this.doc, editingId).doc;
+        this.commit();
+        this.save(true);
+        return;
+      }
+    }
+    if (baseline !== null && !docsEqual(baseline, this.doc)) {
+      this.undoStack = pushUndo(this.undoStack, baseline);
+    }
     this.commit();
     // A commit is a save point: flush any pending debounced write now.
     this.save(true);

@@ -24,13 +24,22 @@
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  margin: 4px 6px 8px;
+  /* Equal margin on all four sides; no list-owned block/inline padding (see the
+     Sessions list) so all three Lens lists frame identically. */
+  margin: 6px;
   --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-padding-block: 0;
   scrollbar-gutter: stable;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
   --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Row dividers always show (see the Sessions list for the rationale). */
+.tug-list-view.lens-text-files-list[data-row-layout="flush"]
+  .tug-list-view-cell:not(:last-child) {
+  border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
 .text-files-empty {

@@ -218,20 +218,32 @@ function SnippetEditorRow({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const focusableId = useId();
 
-  // Animate the editor in on open — a quick fade + settle so the row's switch
-  // from display to editor reads as a motion, not a jump ([L06] via WAAPI, not
-  // React state; reduced-motion is honored by the animator).
+  // Slide the editor OPEN — grow from zero height to its natural height so the
+  // row visibly opens rather than snapping ([L06] via WAAPI, not React state;
+  // reduced-motion honored by the animator). `overflow: hidden` clips the field
+  // during the grow; restored when the animation settles.
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (el === null) return;
+    const target = el.getBoundingClientRect().height;
+    if (target <= 0) return;
+    const prevOverflow = el.style.overflow;
+    el.style.overflow = "hidden";
+    const restore = (): void => {
+      el.style.overflow = prevOverflow;
+    };
     animate(
       el,
       [
-        { opacity: 0, transform: "translateY(-3px)" },
-        { opacity: 1, transform: "translateY(0)" },
+        { height: "0px", opacity: 0 },
+        { height: `${target}px`, opacity: 1 },
       ],
-      { duration: "--tug-motion-duration-fast", key: "snippet-editor-open" },
-    );
+      {
+        duration: "--tug-motion-duration-moderate",
+        easing: "cubic-bezier(0.2, 0, 0, 1)",
+        key: "snippet-editor-open",
+      },
+    ).finished.then(restore, restore);
   }, []);
   // Registers into the cell's per-row FocusModeContext, so `descendIntoRow`
   // finds this wrapper as the row's inner focusable. No key-view behavior:

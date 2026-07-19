@@ -45,6 +45,9 @@ describe("reuse open target + dirty guard ([P11])", () => {
       }),
       getFirstResponderCardId: () => "c1",
       activateCard: () => {},
+      // The fresh-card path saves the outgoing card's focus bag before `addCard`
+      // so the previously-focused surface (e.g. the Lens list) keeps its key view.
+      invokeSaveCallback: () => {},
       addCard: (...args: unknown[]) => {
         addCardCalls.push(args);
         return "cNew";

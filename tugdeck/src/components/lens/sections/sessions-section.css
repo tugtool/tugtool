@@ -26,8 +26,13 @@
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  margin: 4px 6px 8px;
+  /* Equal margin on all four sides so the framed list sits evenly inside its
+     section (matches the other two Lens lists). */
+  margin: 6px;
+  /* TugListRow owns the row's own inset; the list adds none block or inline, so
+     the first/last rows hug the frame evenly (no excess top/bottom padding). */
   --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-padding-block: 0;
   scrollbar-gutter: stable;
   /* Frame the list like the session picker's boxes — a hairline border rounded
      at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
@@ -36,6 +41,24 @@
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
   --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Row dividers ALWAYS show in the Lens lists — re-assert the hairline the
+   list-view's "clean selected block" rule drops around a selected / cursor row
+   ([L06]). `!important` deliberately overrides that primitive's `:has()`
+   suppression, whose specificity would otherwise win. */
+.tug-list-view.lens-sessions-list[data-row-layout="flush"]
+  .tug-list-view-cell:not(:last-child) {
+  border-bottom-color: var(--tugx-list-view-divider-color) !important;
+}
+
+/* The phase dot aligns to the TITLE line (top), not the two-line row's vertical
+   center — the dot belongs beside the session name. Mirrors the check column:
+   pin to the content top and center within a title-height line box. */
+.lens-sessions-list .tug-list-row-leading {
+  align-self: flex-start;
+  align-items: center;
+  height: var(--tug-line-height-sm, 1.25rem);
 }
 
 .sessions-card-empty {

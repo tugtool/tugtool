@@ -3,8 +3,10 @@
 .snippets-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 4px 8px;
+  /* No inline padding — the list's own equal margin is the only inset, so the
+     Snippets list is the SAME width as the Sessions / Text Files lists (extra
+     section padding here used to make it narrower). */
+  padding: 0;
   /* Fill the section body's flex allotment so the list can scroll
      internally when the section shrinks (every band stays visible). */
   flex: 1 1 auto;
@@ -27,17 +29,22 @@
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
-  /* Margin insets the container so its keyboard focus ring paints on all
-     four sides instead of clipping the section edges. TugListRow owns the
-     inner inline padding, so the list adds none; `scrollbar-gutter: stable`
-     keeps the rows from hopping when a scrollbar appears. */
-  margin: 2px 6px 4px;
+  /* Equal margin on all four sides — identical to the Sessions / Text Files
+     lists so all three frame the same way and share one width. */
+  margin: 6px;
   --tugx-list-view-padding-inline: 0;
+  --tugx-list-view-padding-block: 0;
   scrollbar-gutter: stable;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
   --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
+}
+
+/* Row dividers always show (see the Sessions list for the rationale). */
+.tug-list-view.lens-snippets-list[data-row-layout="flush"]
+  .tug-list-view-cell:not(:last-child) {
+  border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
 .snippets-error {
@@ -61,25 +68,15 @@
   z-index: 2;
 }
 
-/* The in-place editor fills the row; the CM6 field grows with content. The
-   wrapper is the row's descend-scope focusable — it paints the field frame
-   (the substrate mounts borderless inside `TugMessageEditor`), brightening
-   the border while the caret is inside. */
+/* The in-place editor fills the row edge-to-edge like a display row — NO frame
+   of its own (a bordered, rounded field showed a stray rounded-corner "curl" at
+   the row's edge). The row is in edit mode; the CM6 caret + the section ring are
+   the affordance. The substrate mounts borderless inside `TugMessageEditor`. */
 .snippet-editor {
   /* Inline padding matches the TugListRow inline padding so the open editor
      lines up with the display rows above / below it. */
   padding: 2px 10px;
   outline: none;
-}
-
-.snippet-editor .tug-message-editor {
-  border: 1px solid var(--tug7-element-field-border-normal-plain-rest, rgba(128, 128, 128, 0.35));
-  border-radius: var(--tug-radius-sm, 6px);
-  background: var(--tug7-surface-field-primary-normal-plain-rest, rgba(127, 127, 127, 0.06));
-}
-
-.snippet-editor:focus-within .tug-message-editor {
-  border-color: var(--tug7-element-global-fill-normal-accent-rest, rgba(255, 149, 0, 0.9));
 }
 
 /* The per-row delete ✕ and header + are `TugIconButton`s — their hover /
