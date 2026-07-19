@@ -143,6 +143,22 @@ describe.skipIf(!SHOULD_RUN)("at0240 — Lens focus grammar round-trip", () => {
           );
           expect(await exists(app, SNIPPETS_KBD)).toBe(false);
 
+          // 2b. Tab off the LAST content section wraps back to the FIRST
+          //     (Snippets) — with its keyboard ring, never landing on nothing.
+          //     (An empty Sessions band between them is skipped.)
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+          expect(await exists(app, TEXT_FILES_KBD)).toBe(false);
+          // Return to Text Files so the re-entry step below restores it.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(TEXT_FILES_KBD)}) !== null`,
+            { timeoutMs: 3_000 },
+          );
+
           // 3. Cmd-L out → prior card active; Cmd-L back in → the last key view
           //    (Text Files) re-lights via adoptKeyCard (watch-item #3).
           await dispatch(app, "focus-lens");

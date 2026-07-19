@@ -173,5 +173,14 @@ export function openFileInCard(
     }
   }
 
+  // Save the outgoing card's focus bag before the new card claims focus.
+  // `addCard` activates the fresh card directly (no `transferFocusForActivation`
+  // to run the outgoing save the reuse / newTab / existing paths get), so
+  // without this the previously-focused surface — e.g. the Lens Text Files list
+  // that dispatched this open — loses its saved keyboard key view, and a later
+  // Cmd-L back into it falls to default-focus (wrong section, no ring) instead
+  // of restoring the row the user was on ([L23] save-before-activation).
+  const outgoing = store.getFirstResponderCardId();
+  if (outgoing !== null) store.invokeSaveCallback(outgoing);
   store.addCard("text", seed);
 }

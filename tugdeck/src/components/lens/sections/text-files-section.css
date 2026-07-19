@@ -27,6 +27,10 @@
   margin: 4px 6px 8px;
   --tugx-list-view-padding-inline: 0;
   scrollbar-gutter: stable;
+  /* Framed + rounded like the session picker's boxes (see the Sessions list). */
+  --tugx-list-view-radius: var(--tug-radius-sm);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 .text-files-empty {

@@ -273,21 +273,25 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
 
   return (
     <div className="sessions-section">
-      <TugListView<LensSessionsDataSource>
-        dataSource={dataSource}
-        delegate={delegate}
-        cellRenderers={SESSIONS_CELL_RENDERERS}
-        scrollKey="lens-sessions"
-        inline
-        rowLayout="flush"
-        focusGroup={hasContent ? host.focusGroup : undefined}
-        commitOnEnter="act"
-        initialSelectedIndex={initialSelectedIndex}
-        className="lens-sessions-list"
-      />
       {count === 0 ? (
+        // Render the empty label INSTEAD of the list: an empty `flex: 1 1 auto`
+        // list would grow to fill the section and push the label down, opening a
+        // gap under the band (and paint an empty framed box).
         <div className="sessions-card-empty">No open sessions</div>
-      ) : null}
+      ) : (
+        <TugListView<LensSessionsDataSource>
+          dataSource={dataSource}
+          delegate={delegate}
+          cellRenderers={SESSIONS_CELL_RENDERERS}
+          scrollKey="lens-sessions"
+          inline
+          rowLayout="flush"
+          focusGroup={hasContent ? host.focusGroup : undefined}
+          commitOnEnter="act"
+          initialSelectedIndex={initialSelectedIndex}
+          className="lens-sessions-list"
+        />
+      )}
     </div>
   );
 }

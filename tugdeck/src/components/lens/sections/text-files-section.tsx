@@ -204,22 +204,25 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
 
   return (
     <div className="text-files-section">
-      <TugListView<LensTextFilesDataSource>
-        ref={listRef}
-        dataSource={dataSource}
-        delegate={delegate}
-        cellRenderers={TEXT_FILES_CELL_RENDERERS}
-        scrollKey="lens-text-files"
-        inline
-        rowLayout="flush"
-        focusGroup={hasContent ? host.focusGroup : undefined}
-        commitOnEnter="act"
-        initialSelectedIndex={initialSelectedIndex}
-        className="lens-text-files-list"
-      />
       {count === 0 ? (
+        // Empty label instead of the list — an empty `flex: 1` list would grow
+        // and open a gap under the band (see the Sessions section).
         <div className="text-files-empty">No open or recent files</div>
-      ) : null}
+      ) : (
+        <TugListView<LensTextFilesDataSource>
+          ref={listRef}
+          dataSource={dataSource}
+          delegate={delegate}
+          cellRenderers={TEXT_FILES_CELL_RENDERERS}
+          scrollKey="lens-text-files"
+          inline
+          rowLayout="flush"
+          focusGroup={hasContent ? host.focusGroup : undefined}
+          commitOnEnter="act"
+          initialSelectedIndex={initialSelectedIndex}
+          className="lens-text-files-list"
+        />
+      )}
     </div>
   );
 }

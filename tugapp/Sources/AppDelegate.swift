@@ -1027,6 +1027,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// web view) holds focus, where a web-level ⌘L keybinding never sees the
     /// event. Mirrors tugdeck's ⌘L `focus-lens` keybinding for browser-dev.
     @objc private func focusLens(_ sender: Any) {
+        // Land OS keyboard focus in the web view first — ⌘L fires as a menu key
+        // equivalent even when the native title bar holds focus, where a DOM
+        // focus change alone would be invisible (the keyboard would still be
+        // aimed at the title bar).
+        window.focusWebView()
         sendControl("focus-lens")
     }
 

@@ -37,6 +37,7 @@ import React, {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { Plus, TextQuote, X } from "lucide-react";
@@ -45,6 +46,7 @@ import { getSnippetsStore } from "@/lib/snippets-store";
 import { snippetIncipit, type Snippet } from "@/lib/snippets-doc";
 import { startSnippetDrag } from "@/lib/snippet-drag";
 import { cardServicesStore } from "@/lib/card-services-store";
+import { animate } from "@/components/tugways/tug-animator";
 import { TugListView } from "@/components/tugways/tug-list-view";
 import type {
   TugListViewCellProps,
@@ -57,6 +59,8 @@ import {
   type TugMessageEditorHandle,
 } from "@/components/tugways/tug-message-editor";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -101,7 +105,8 @@ function insertIntoCard(
 /** Row verbs provided by the section body to the module-level cell. */
 interface SnippetsCellContextValue {
   onGripPointerDown: (id: string, event: React.PointerEvent) => void;
-  onDeleteRow: (id: string) => void;
+  /** Open the destructive-delete confirm popover anchored to the row's ✕. */
+  onRequestDelete: (id: string, anchorEl: HTMLElement) => void;
 }
 const SnippetsCellContext =
   React.createContext<SnippetsCellContextValue | null>(null);
@@ -120,19 +125,18 @@ function SnippetsCollapsedSummary(): React.ReactElement {
 }
 
 /** The header `+`: create a snippet and open it (the store sets `editingId`,
- *  the body's descend effect focuses it). */
+ *  the body's descend effect focuses it). `TugIconButton` carries the standard
+ *  ghost hover / focus / active treatment the fold chevron wears. */
 function SnippetsHeaderActions(): React.ReactElement {
   const store = getSnippetsStore();
   return (
-    <button
-      type="button"
-      className="snippets-add-button"
-      title="New snippet"
+    <TugIconButton
+      icon={<Plus size={14} />}
+      size="xs"
       aria-label="New snippet"
+      title="New snippet"
       onClick={() => store.createSnippet(null)}
-    >
-      <Plus size={14} />
-    </button>
+    />
   );
 }
 
@@ -157,20 +161,22 @@ function SnippetDisplayRow({ snippet }: { snippet: Snippet }): React.ReactElemen
       }
       trailing={
         ctx !== null ? (
-          <button
-            type="button"
-            className="snippet-row-delete"
-            title="Delete snippet"
+          <TugIconButton
+            icon={<X size={12} />}
+            size="xs"
+            tone="danger"
             aria-label="Delete snippet"
+            title="Delete snippet"
             onClick={(e) => {
-              // Never let the delete read as a row activation on the cell
-              // wrapper above.
-              e.stopPropagation();
-              ctx.onDeleteRow(snippet.id);
+              // Never let the delete read as a row activation (open) on the
+              // cell wrapper above; open the confirm popover anchored to ✕.
+              e?.stopPropagation();
+              const anchor = e?.currentTarget;
+              if (anchor instanceof HTMLElement) {
+                ctx.onRequestDelete(snippet.id, anchor);
+              }
             }}
-          >
-            <X size={12} />
-          </button>
+          />
         ) : undefined
       }
       trailingReveal="engaged"
@@ -209,7 +215,24 @@ function SnippetEditorRow({
 }): React.ReactElement {
   const manager = useFocusManager();
   const editorRef = useRef<TugMessageEditorHandle | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const focusableId = useId();
+
+  // Animate the editor in on open — a quick fade + settle so the row's switch
+  // from display to editor reads as a motion, not a jump ([L06] via WAAPI, not
+  // React state; reduced-motion is honored by the animator).
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (el === null) return;
+    animate(
+      el,
+      [
+        { opacity: 0, transform: "translateY(-3px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: "--tug-motion-duration-fast", key: "snippet-editor-open" },
+    );
+  }, []);
   // Registers into the cell's per-row FocusModeContext, so `descendIntoRow`
   // finds this wrapper as the row's inner focusable. No key-view behavior:
   // a behavior-less leaf keeps Enter as a newline in the editor and leaves
@@ -289,7 +312,10 @@ function SnippetEditorRow({
   return (
     <div
       className="snippet-editor"
-      ref={(el) => focusableRef(el)}
+      ref={(el) => {
+        wrapRef.current = el;
+        focusableRef(el);
+      }}
       tabIndex={-1}
       onFocus={onFocus}
       onBlur={onBlur}
@@ -373,22 +399,28 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource, snippets.length]);
 
-  // Space/click select only; Enter opens the editor ([P11] — snippets differ
-  // from the monitor lists). Both remember the touched snippet ([P10]).
+  // A mouse click (`onSelect`) OR Enter (`onActivate`) opens the row's editor
+  // and remembers the snippet ([P10]/[P11]). Space never reaches `onSelect` —
+  // the list reserves it (`captureKeys`) so the section keydown creates a new
+  // snippet below the cursor — so `onSelect` fires only from a pointer click,
+  // which must open the snippet (and, via the descend, land the caret in it).
   const delegate = useMemo<TugListViewDelegate>(() => {
-    return {
-      onSelect: (index: number): void => {
-        const row = dataSource.rowAt(index);
-        if (row !== undefined) lastSelectedSnippetId = row.id;
-      },
-      onActivate: (index: number): void => {
-        const row = dataSource.rowAt(index);
-        if (row === undefined) return;
-        lastSelectedSnippetId = row.id;
-        store.beginEdit(row.id);
-      },
+    const open = (index: number): void => {
+      const row = dataSource.rowAt(index);
+      if (row === undefined) return;
+      lastSelectedSnippetId = row.id;
+      store.beginEdit(row.id);
     };
+    return { onSelect: open, onActivate: open };
   }, [dataSource, store]);
+
+  // Destructive-delete confirmation ([D15] controlled `TugConfirmPopover`): the
+  // row ✕ opens the popover anchored to itself instead of deleting immediately.
+  // Local UI state ([L24]) — the pending row id + its anchor element.
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    anchorEl: HTMLElement;
+  } | null>(null);
 
   // Delete `id` and land the cursor on the surviving neighbor (same index,
   // clamped) so the keyboard position never vanishes with the row. Shared by
@@ -420,8 +452,11 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     kindAttr: ROW_KIND_ATTR,
   });
   const cellContext = useMemo<SnippetsCellContextValue>(
-    () => ({ onGripPointerDown, onDeleteRow: deleteSnippetKeepingCursor }),
-    [onGripPointerDown, deleteSnippetKeepingCursor],
+    () => ({
+      onGripPointerDown,
+      onRequestDelete: (id, anchorEl) => setPendingDelete({ id, anchorEl }),
+    }),
+    [onGripPointerDown],
   );
 
   // Read the cursor row id from the engine's projected `data-key-cursor` —
@@ -507,30 +542,51 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
             Snippets are read-only: {snapshot.error}
           </div>
         ) : null}
-        <div className="snippets-list-wrap" ref={listWrapRef}>
-          <BlockDropCaret ref={caretRef} />
-          <SnippetsCellContext value={cellContext}>
-            <TugListView<LensSnippetsDataSource>
-              ref={listRef}
-              dataSource={dataSource}
-              delegate={delegate}
-              cellRenderers={SNIPPETS_CELL_RENDERERS}
-              scrollKey="lens-snippets"
-              inline
-              rowLayout="flush"
-              focusGroup={hasContent ? host.focusGroup : undefined}
-              commitOnEnter="act"
-              captureKeys={SNIPPETS_CAPTURE_KEYS}
-              initialSelectedIndex={initialSelectedIndex}
-              className="lens-snippets-list"
-            />
-          </SnippetsCellContext>
-        </div>
         {snippets.length === 0 ? (
+          // Empty label instead of the list — an empty `flex: 1` list would grow
+          // and open a gap under the band (see the Sessions section).
           <div className="snippets-empty">
             No snippets yet. Press + to add one.
           </div>
-        ) : null}
+        ) : (
+          <div className="snippets-list-wrap" ref={listWrapRef}>
+            <BlockDropCaret ref={caretRef} />
+            <SnippetsCellContext value={cellContext}>
+              <TugListView<LensSnippetsDataSource>
+                ref={listRef}
+                dataSource={dataSource}
+                delegate={delegate}
+                cellRenderers={SNIPPETS_CELL_RENDERERS}
+                scrollKey="lens-snippets"
+                inline
+                rowLayout="flush"
+                focusGroup={hasContent ? host.focusGroup : undefined}
+                commitOnEnter="act"
+                captureKeys={SNIPPETS_CAPTURE_KEYS}
+                initialSelectedIndex={initialSelectedIndex}
+                className="lens-snippets-list"
+              />
+            </SnippetsCellContext>
+          </div>
+        )}
+        {/* One controlled confirm popover serves every row's ✕ — it anchors to
+            whichever button opened it. Confirm deletes (keeping the cursor on a
+            surviving neighbor); cancel / outside-click / Escape dismisses. */}
+        <TugConfirmPopover
+          open={pendingDelete !== null}
+          anchorEl={pendingDelete?.anchorEl ?? null}
+          message="Delete this snippet?"
+          confirmLabel="Delete"
+          confirmRole="danger"
+          side="left"
+          align="center"
+          arrow
+          onConfirm={() => {
+            if (pendingDelete !== null) deleteSnippetKeepingCursor(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
+        />
       </div>
     </ResponderScope>
   );

@@ -408,6 +408,15 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         webView.evaluateJavaScript(script, completionHandler: completionHandler)
     }
 
+    /// Make the WKWebView the window's first responder so keyboard focus lands
+    /// inside the web content. A menu key equivalent (⌘L) fires even when the
+    /// native title bar — not the web view — holds focus; a DOM focus change
+    /// dispatched into tugdeck is invisible while the OS keyboard focus sits on
+    /// the title bar, so the caller pairs this with the control dispatch.
+    func focusWebView() {
+        makeFirstResponder(webView)
+    }
+
     // MARK: - Page zoom API
 
     /// Current zoom factor (1.0 == actual size).

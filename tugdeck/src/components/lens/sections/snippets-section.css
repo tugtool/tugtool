@@ -34,6 +34,10 @@
   margin: 2px 6px 4px;
   --tugx-list-view-padding-inline: 0;
   scrollbar-gutter: stable;
+  /* Framed + rounded like the session picker's boxes (see the Sessions list). */
+  --tugx-list-view-radius: var(--tug-radius-sm);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 .snippets-error {
@@ -78,27 +82,10 @@
   border-color: var(--tug7-element-global-fill-normal-accent-rest, rgba(255, 149, 0, 0.9));
 }
 
-/* Per-row delete button. Reveal (hover / cursor / focus-within) is owned by
-   `TugListRow`'s `trailingReveal="engaged"`; this styles only the button. */
-.snippet-row-delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: var(--tug-radius-sm, 6px);
-  background: transparent;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  cursor: pointer;
-}
-
-.snippet-row-delete:hover {
-  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
+/* The per-row delete ✕ and header + are `TugIconButton`s — their hover /
+   focus / active treatment comes from `tug-button.css` (reveal on row engage
+   is owned by `TugListRow`'s `trailingReveal="engaged"`). No bespoke button
+   CSS here. */
 
 /* The draggable incipit rides the TugListRow content column. */
 .snippet-row-label {
@@ -113,26 +100,6 @@
 .snippet-row-label-empty {
   color: var(--tug7-element-global-text-normal-subtle-rest);
   font-style: italic;
-}
-
-/* Header + button — matches the quiet band-action affordances. */
-.snippets-add-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: var(--tug-radius-sm, 6px);
-  background: transparent;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  cursor: pointer;
-}
-
-.snippets-add-button:hover {
-  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* Drag ghost that follows the pointer from a row toward the prompt entry. */

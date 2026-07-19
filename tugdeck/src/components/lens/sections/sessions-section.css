@@ -29,6 +29,13 @@
   margin: 4px 6px 8px;
   --tugx-list-view-padding-inline: 0;
   scrollbar-gutter: stable;
+  /* Frame the list like the session picker's boxes — a hairline border rounded
+     at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
+     frame width joins the key-view ring (see `tug-list-view.css`), so a focused
+     list still totals the caret ring width. */
+  --tugx-list-view-radius: var(--tug-radius-sm);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
 .sessions-card-empty {
