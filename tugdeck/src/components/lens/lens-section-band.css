@@ -8,19 +8,17 @@
  * on-screen, the between-section rule), the drag-state cursor, and the
  * section body (the internal scroll region).
  *
- * Sizing model: a section is a flex item of the non-scrolling
- * `.lens-sections` stack — `flex-basis: auto` (content height) with
- * shrink, so short sections take exactly their content and long ones
- * shrink until their body scrolls. The band itself never shrinks; every
- * section header is therefore always visible.
+ * Sizing model: a section sizes to its content (`flex: 0 0 auto`) and never
+ * scrolls on its own — the enclosing `.lens-sections` stack is the single
+ * scroll region for the whole Lens. The section must NOT establish `overflow`
+ * (a clip context) or the sticky header would pin against the section instead
+ * of the rail scrollport; it stays a plain content-sized flex column.
  */
 
 .lens-section {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
-  min-block-size: 0;
-  overflow: hidden;
+  flex: 0 0 auto;
   border-block-end: 1px solid var(--tug-border-subtle, rgba(128, 128, 128, 0.2));
 }
 
@@ -48,6 +46,7 @@
 .lens-section-body {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-block-size: 0;
+  /* Sizes to its content — the section does not scroll on its own (the
+     `.lens-sections` stack is the single scroll region). */
+  flex: 0 0 auto;
 }

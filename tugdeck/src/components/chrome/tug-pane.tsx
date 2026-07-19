@@ -688,10 +688,12 @@ function snapshotCardRects(
   zoom = 1,
 ): { id: string; rect: Rect }[] {
   const results: { id: string; rect: Rect }[] = [];
-  // Anchored rails are excluded from snap targets — a free pane must
-  // never snap its edge to the Lens.
+  // Every pane is a snap candidate — including anchored rails (the Lens). A free
+  // pane dragged with Option snaps its edge to the Lens's edge just as it does to
+  // any other card, so a card can be abutted to the rail. The rail exposes the
+  // same `getBoundingClientRect` as any pane, so its rect needs no special case.
   const els = document.querySelectorAll<HTMLElement>(
-    ".tug-pane[data-pane-id]:not([data-anchored])",
+    ".tug-pane[data-pane-id]",
   );
   els.forEach((el) => {
     const paneId = el.getAttribute("data-pane-id");

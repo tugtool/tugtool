@@ -1,17 +1,16 @@
 /**
  * text-files-data-source.ts — the `TugListView` data source for the Lens
- * **Text Files** section: the open Text cards, then (when any exist) a
- * "Recent" header divider and the recently-open files that are not currently
- * open.
+ * **Text Files** section: the open Text cards, then the recently-open files
+ * that are not currently open (each carrying its last-opened time for the
+ * "Last opened …" trailing label).
  *
  * Rows:
  *  - `"text-open"` — one per mounted Text card (`componentId === "text"`), in
  *    deck-card order. `id = "open:<cardId>"`; the bound path comes from the
  *    text-card open registry.
- *  - `"text-recents-header"` — an inert `"header"`-role divider, present only
- *    when there is at least one recent to show.
  *  - `"text-recent"` — one per recent-documents MRU path that is not the path
- *    of any open card. `id = "recent:<path>"`.
+ *    of any open card. `id = "recent:<path>"`. `openedAt` is the last-opened
+ *    epoch-ms, or `null` for a file opened before timestamps were tracked.
  *
  * Laws:
  *  - [L02] external state via `useSyncExternalStore` — this IS such a store,
@@ -37,13 +36,13 @@ import {
 } from "@/lib/text-card-open-registry";
 import {
   getReachableRecentDocumentsSnapshot,
+  getRecentOpenedAt,
   subscribeRecentDocuments,
 } from "@/lib/recent-documents";
 
 export type TextFilesRow =
   | { readonly kind: "text-open"; readonly cardId: string; readonly path: string | null; readonly title: string }
-  | { readonly kind: "text-recents-header" }
-  | { readonly kind: "text-recent"; readonly path: string };
+  | { readonly kind: "text-recent"; readonly path: string; readonly openedAt: number | null };
 
 /** The trailing filename of a path (`/a/b/c.txt` → `c.txt`). */
 export function basename(path: string): string {
@@ -71,16 +70,21 @@ export type OpenCardPathResolver = (cardId: string) => string | null;
 const registryPathResolver: OpenCardPathResolver = (cardId) =>
   getOpenTextCard(cardId)?.getPath() ?? null;
 
+/** Resolve a recent path's last-opened epoch-ms. Default reads the MRU store. */
+export type OpenedAtResolver = (path: string) => number | null;
+
 /**
  * Build the row list from the deck snapshot + the recents MRU. Open Text cards
- * first, then — only if any recent survives the open-path filter — a header and
- * the surviving recents. Pure over `(inputs, resolvePath)`: the bound path of
- * each open card comes through `resolvePath` (default: the open registry, not
- * React state; re-read on every recompute), so a test can inject its own.
+ * first, then the surviving recents (no header — a recent row carries its own
+ * "Last opened" label). Pure over `(inputs, resolvePath, resolveOpenedAt)`: the
+ * bound path of each open card comes through `resolvePath` and the last-opened
+ * time through `resolveOpenedAt` (defaults: the registries, re-read on every
+ * recompute), so a test can inject its own.
  */
 export function buildTextFilesRows(
   inputs: Pick<TextFilesInputs, "deck" | "recents">,
   resolvePath: OpenCardPathResolver = registryPathResolver,
+  resolveOpenedAt: OpenedAtResolver = getRecentOpenedAt,
 ): TextFilesRow[] {
   const rows: TextFilesRow[] = [];
   const openPaths = new Set<string>();
@@ -93,9 +97,8 @@ export function buildTextFilesRows(
     rows.push({ kind: "text-open", cardId: card.id, path, title });
   }
   const recents = inputs.recents.filter((p) => !openPaths.has(p));
-  if (recents.length > 0) {
-    rows.push({ kind: "text-recents-header" });
-    for (const path of recents) rows.push({ kind: "text-recent", path });
+  for (const path of recents) {
+    rows.push({ kind: "text-recent", path, openedAt: resolveOpenedAt(path) });
   }
   return rows;
 }
@@ -120,8 +123,6 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
     switch (row.kind) {
       case "text-open":
         return `open:${row.cardId}`;
-      case "text-recents-header":
-        return "recents-header";
       case "text-recent":
         return `recent:${row.path}`;
     }
@@ -131,8 +132,9 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
     return this.rows[index].kind;
   }
 
-  roleForIndex(index: number): TugListViewCellRole {
-    return this.rows[index].kind === "text-recents-header" ? "header" : "cell";
+  roleForIndex(_index: number): TugListViewCellRole {
+    // Every row is a cursorable cell — the "Recent" header divider was retired.
+    return "cell";
   }
 
   subscribe(listener: () => void): () => void {

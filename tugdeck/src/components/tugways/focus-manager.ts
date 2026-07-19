@@ -1357,6 +1357,38 @@ export class FocusContext {
   }
 
   /**
+   * On activation, claim DOM focus for a keyboard key view that no element holds
+   * — the truth half of the focus ring. A keyboard-modality key view paints the
+   * focus ring (`data-key-view-kbd`), which is a PROMISE that keystrokes land on
+   * that element; the promise is only kept when DOM focus actually sits there.
+   *
+   * The seed / late-mount restore (`armKeyboardRestore`, the `registerFocusable`
+   * resume) call `focusKeyView()`, but on cold boot that can run BEFORE this
+   * context is the active key card — `focusKeyView` is gated on `isActive()`, so
+   * it no-ops, and the later `projectAll` re-paints the RING without re-attempting
+   * the focus claim (base-mode activation deliberately doesn't claim DOM focus —
+   * `adoptKeyCard` only does for a pushed destination). The result is a ring with
+   * no first responder behind it (the Lens rail on relaunch): the ring lies and
+   * the keyboard is dead.
+   *
+   * This reconciles that ONE case. It is tightly guarded so an intentional focus
+   * is never overridden: it acts only when the key view wears the keyboard ring
+   * AND `document.activeElement` is nothing (`null` / `<body>`) — i.e. the
+   * activation did not itself place focus. A click / Tab / surface entry lands
+   * DOM focus inside the card first, so `activeElement` is a real element and
+   * this is a no-op; only a restore that stranded focus on `<body>` is repaired.
+   */
+  claimKeyboardFocusIfAdrift(): void {
+    if (typeof document === "undefined") return;
+    if (!this.isActive() || this.keyViewId === null || !this.keyViewKeyboard) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    this.focusKeyView();
+  }
+
+  /**
    * Project the key view onto the DOM: clear `data-key-view` from any element
    * that carries it, then stamp it on the element whose `data-responder-id`
    * or `data-tug-focusable` matches the current key-view id. Gated on active —
@@ -1567,7 +1599,14 @@ export class FocusManager {
   setKeyCard(cardId: string | null): void {
     const changed = this.keyCardId !== cardId;
     this.keyCardId = cardId;
-    this.activeContext().projectAll();
+    const active = this.activeContext();
+    active.projectAll();
+    // Truth half of the focus ring: if this activation projected a keyboard key
+    // view that no element holds (a cold-boot restore that stranded focus on
+    // `<body>` — the Lens rail on relaunch), claim it so the ring never lies.
+    // Guarded to the nothing-is-focused case, so an intentional click / Tab focus
+    // (which already sits in the card) is never overridden ([P21] framework half).
+    active.claimKeyboardFocusIfAdrift();
     // Reconcile the first responder for the now-active card — the per-card FR
     // axis of activation. setKeyCard is the UNIVERSAL activation signal: the
     // provider's `syncKeyCard` fires it for every way a card becomes active

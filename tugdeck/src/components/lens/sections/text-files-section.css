@@ -7,29 +7,26 @@
 .text-files-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
-  /* Fill the section body's flex allotment so the list can scroll
-     internally when the section shrinks (every band stays visible). */
+  /* Sizes to content — the section never scrolls on its own (the whole Lens is
+     one scroll region). */
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-block-size: 0;
+  flex: 0 0 auto;
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. TugListRow owns the inner inline padding;
-   a small margin insets the container so its keyboard focus ring paints uncut,
-   and `scrollbar-gutter: stable` keeps the rows from hopping when a scrollbar
-   appears. */
+   rules regardless of bundle order. The list sizes to content and does NOT
+   scroll internally (the `.lens-sections` stack is the one scroll region), so it
+   runs to its right edge with no per-list scrollbar gutter. TugListRow owns the
+   inner inline padding; a small equal margin insets the frame so the keyboard
+   focus ring paints uncut. */
 .tug-list-view.lens-text-files-list {
-  flex: 1 1 auto;
-  min-block-size: 0;
   height: auto;
   /* Equal margin on all four sides; no list-owned block/inline padding (see the
      Sessions list) so all three Lens lists frame identically. */
   margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  scrollbar-gutter: stable;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -55,12 +52,12 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* The inert "Recent" divider row. */
-.text-files-header {
-  padding: 8px 14px 2px;
+/* The right-aligned "Last opened …" label on a recent row (trailing slot). A
+   recent file is not open, so the row's right side is free for its last-opened
+   time — quiet, single line, never wrapping. */
+.text-files-last-opened {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }

@@ -7,34 +7,32 @@
      Snippets list is the SAME width as the Sessions / Text Files lists (extra
      section padding here used to make it narrower). */
   padding: 0;
-  /* Fill the section body's flex allotment so the list can scroll
-     internally when the section shrinks (every band stays visible). */
-  flex: 1 1 auto;
-  min-block-size: 0;
+  /* Sizes to content — the section never scrolls on its own (the whole Lens is
+     one scroll region). */
+  flex: 0 0 auto;
 }
 
 /* Positioning context for the reorder drop caret ([Q02]); the list view owns
-   the row scroll/hover/cursor, this wrap owns only the caret overlay. */
+   the row hover/cursor, this wrap owns only the caret overlay. Sizes to content
+   (no internal scroll). */
 .snippets-list-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-block-size: 0;
+  flex: 0 0 auto;
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. */
+   rules regardless of bundle order. The list sizes to content and does NOT
+   scroll internally (the `.lens-sections` stack is the one scroll region), so it
+   runs to its right edge with no per-list scrollbar gutter. */
 .tug-list-view.lens-snippets-list {
-  flex: 1 1 auto;
-  min-block-size: 0;
   height: auto;
   /* Equal margin on all four sides — identical to the Sessions / Text Files
      lists so all three frame the same way and share one width. */
   margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  scrollbar-gutter: stable;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -77,6 +75,25 @@
      lines up with the display rows above / below it. */
   padding: 2px 10px;
   outline: none;
+}
+
+/* Flatten the composed `TugTextEditor` substrate to the row surface. `borderless`
+   only transparentizes the border; the substrate still paints a rounded FIELD
+   BACKGROUND (`--tug7-surface-field-*` + `border-radius`), and where that rounded
+   fill meets the transparent row it draws the stray corner "curl". Zero the
+   background, border, and radius in EVERY state (rest / hover / focused, both
+   focus styles) so the open editor is visually indistinguishable from a display
+   row — the CM6 caret and the section's key-view ring are the only affordances.
+   The inner `.cm-editor`'s own rounded clip is zeroed too. Appearance only ([L06]). */
+.snippet-editor .tug-text-editor,
+.snippet-editor .tug-text-editor:hover,
+.snippet-editor .tug-text-editor[data-focused] {
+  background-color: transparent;
+  border-color: transparent;
+  border-radius: 0;
+}
+.snippet-editor .tug-text-editor > .cm-editor {
+  border-radius: 0;
 }
 
 /* The per-row delete ✕ and header + are `TugIconButton`s — their hover /

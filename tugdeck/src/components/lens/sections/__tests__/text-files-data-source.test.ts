@@ -1,8 +1,8 @@
 /**
  * text-files-data-source.test.ts — the Lens Text Files enumeration:
- * open-card rows, the open-path filter over recents, the header only when
- * recents survive, and role/id mapping. Pure logic over `buildTextFilesRows`
- * (with an injected path resolver — no shared registry, no DOM).
+ * open-card rows, the open-path filter over recents, last-opened stamping, and
+ * role/id mapping. Pure logic over `buildTextFilesRows` (with injected path and
+ * opened-at resolvers — no shared registry, no DOM).
  */
 
 import { describe, expect, it } from "bun:test";
@@ -58,26 +58,34 @@ describe("buildTextFilesRows", () => {
     expect(rows.map((r) => r.kind)).toEqual(["text-open", "text-open"]);
   });
 
-  it("adds a header + recents only for recents not already open", () => {
+  it("lists recents not already open, with their last-opened stamp (no header)", () => {
     const rows = buildTextFilesRows(
       {
         deck: deck([["c1", "text"]]),
         recents: ["/proj/open.txt", "/proj/closed.txt"],
       },
       resolver({ c1: "/proj/open.txt" }),
+      (p) => (p === "/proj/closed.txt" ? 1_700_000_000_000 : null),
     );
-    // The open path is filtered out of recents; the still-closed one remains,
-    // preceded by the header.
-    expect(rows.map((r) => r.kind)).toEqual([
-      "text-open",
-      "text-recents-header",
-      "text-recent",
-    ]);
-    const recent = rows[2];
+    // The open path is filtered out of recents; the still-closed one remains —
+    // directly, with no "Recent" header row (retired).
+    expect(rows.map((r) => r.kind)).toEqual(["text-open", "text-recent"]);
+    const recent = rows[1];
     expect(recent.kind === "text-recent" && recent.path).toBe("/proj/closed.txt");
+    expect(recent.kind === "text-recent" && recent.openedAt).toBe(1_700_000_000_000);
   });
 
-  it("emits no header when every recent is already open", () => {
+  it("stamps openedAt null for a recent with no recorded time", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([]), recents: ["/proj/closed.txt"] },
+      resolver({}),
+      () => null,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind === "text-recent" && rows[0].openedAt).toBeNull();
+  });
+
+  it("lists only the open card when every recent is already open", () => {
     const rows = buildTextFilesRows(
       {
         deck: deck([["c1", "text"]]),
@@ -106,13 +114,12 @@ describe("LensTextFilesDataSource", () => {
       recents: ["/proj/closed.txt"],
       registryVersion: 0,
     });
-    expect(ds.numberOfItems()).toBe(3); // open + header + recent
+    expect(ds.numberOfItems()).toBe(2); // open + recent (no header)
     expect(ds.kindForIndex(0)).toBe("text-open");
     expect(ds.idForIndex(0)).toBe("open:lens-tf-uniq");
-    expect(ds.roleForIndex(1)).toBe("header");
-    expect(ds.kindForIndex(1)).toBe("text-recents-header");
-    expect(ds.roleForIndex(2)).toBe("cell");
-    expect(ds.idForIndex(2)).toBe("recent:/proj/closed.txt");
+    expect(ds.roleForIndex(1)).toBe("cell");
+    expect(ds.kindForIndex(1)).toBe("text-recent");
+    expect(ds.idForIndex(1)).toBe("recent:/proj/closed.txt");
 
     const v0 = ds.getVersion();
     ds.setInputsWithoutNotify({

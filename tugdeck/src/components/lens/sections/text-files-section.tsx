@@ -58,17 +58,30 @@ function displayDir(dir: string): string {
   return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 }
 
+/** Compact absolute datetime for the "Last opened" label — "Jul 18, 3:42 PM". */
+function formatLastOpened(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 /** A two-line row on the shared `TugListRow` chrome: filename (title) over its
  *  dimmed directory (subtitle). A recent (not-open) file reads a touch quieter
- *  via `data-recent`. */
+ *  via `data-recent`, and shows its last-opened time right-aligned in the
+ *  trailing slot (recent files are, by definition, not open now). */
 function FileRow({
   name,
   dir,
   recent,
+  openedAt,
 }: {
   name: string;
   dir: string;
   recent?: boolean;
+  openedAt?: number | null;
 }): React.ReactElement {
   return (
     <TugListRow
@@ -77,6 +90,13 @@ function FileRow({
       title={name}
       titleSize="sm"
       subtitle={dir.length > 0 ? displayDir(dir) : undefined}
+      trailing={
+        openedAt != null ? (
+          <span className="text-files-last-opened">
+            Last opened: {formatLastOpened(openedAt)}
+          </span>
+        ) : undefined
+      }
     />
   );
 }
@@ -95,9 +115,14 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
         />
       );
     case "text-recent":
-      return <FileRow name={basename(row.path)} dir={dirname(row.path)} recent />;
-    case "text-recents-header":
-      return <div className="text-files-header">Recent</div>;
+      return (
+        <FileRow
+          name={basename(row.path)}
+          dir={dirname(row.path)}
+          recent
+          openedAt={row.openedAt}
+        />
+      );
   }
 };
 
@@ -107,7 +132,6 @@ const TEXT_FILES_CELL_RENDERERS: Record<
 > = {
   "text-open": TextFilesCell,
   "text-recent": TextFilesCell,
-  "text-recents-header": TextFilesCell,
 };
 
 /** Live collapsed summary: `N open · M recent`. */

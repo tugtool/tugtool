@@ -1,13 +1,11 @@
 /*
  * lens-content.css — the Lens card content chrome ([L06]).
  *
- * The Lens is a fixed stack of sections, every band always visible: the
- * content root fills its pane body and does NOT scroll — each section is
- * a flex band whose BODY scrolls internally when its list outgrows the
- * section's share of the height. Sections size to their content
- * (`flex-basis: auto`) and shrink proportionally when the stack
- * overflows, so a long Text Files list can never push a sibling band
- * off-screen.
+ * The Lens is ONE scroll region — the whole rail scrolls as a single list, not
+ * three per-section scrollers. Every section sizes to its content and the
+ * `.lens-sections` stack is the sole scroll container; the sticky section
+ * headers pin to that scrollport (telescoping via `--tugx-pin-stack-top`) as it
+ * scrolls, so a band's header stays visible while its rows pass under it.
  */
 
 .lens-content {
@@ -32,6 +30,13 @@
   min-block-size: 0;
   gap: var(--tugx-lens-gap);
   padding-inline: var(--tugx-lens-pad-x);
+  /* THE single scroll container for the whole Lens. Sections size to content
+     (they never scroll on their own), so this stack scrolls as a unit.
+     `scrollbar-gutter: stable` reserves the rail's right-edge scrollbar space so
+     the content never hops when the scrollbar appears. */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 /* Section + band styling lives in lens-section-band.css. */

@@ -8,23 +8,20 @@
 .sessions-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
-  /* Fill the section body's flex allotment so the list can scroll
-     internally when the section shrinks (every band stays visible). */
+  /* Sizes to content — the section never scrolls on its own (the whole Lens is
+     one scroll region). */
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  min-block-size: 0;
+  flex: 0 0 auto;
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. TugListRow owns the inner inline padding,
-   so the list adds none; a small margin insets the container so its keyboard
-   focus ring paints on all four sides instead of clipping the section edges.
-   `scrollbar-gutter: stable` reserves the scrollbar's width whether or not it
-   is showing, so the rows never hop when the list grows past its allotment. */
+   rules regardless of bundle order. The list sizes to its content (`height:
+   auto`) and does NOT scroll internally — the `.lens-sections` stack is the one
+   scroll region, so the list runs to its right edge with no per-list scrollbar
+   gutter. TugListRow owns the inner inline padding; a small equal margin insets
+   the framed container so its keyboard focus ring paints on all four sides. */
 .tug-list-view.lens-sessions-list {
-  flex: 1 1 auto;
-  min-block-size: 0;
   height: auto;
   /* Equal margin on all four sides so the framed list sits evenly inside its
      section (matches the other two Lens lists). */
@@ -33,7 +30,6 @@
      the first/last rows hug the frame evenly (no excess top/bottom padding). */
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  scrollbar-gutter: stable;
   /* Frame the list like the session picker's boxes — a hairline border rounded
      at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
      frame width joins the key-view ring (see `tug-list-view.css`), so a focused
@@ -67,20 +63,31 @@
   font-size: 0.875rem;
 }
 
-/* The pulse line rides the row's subtitle slot. */
+/* The pulse line rides the row's subtitle slot. Size + color MATCH the on-card
+   `session-pulse-strip`: the live line reads in the default text tone at the
+   strip's 0.75rem, so a session reads identically in the Lens and on its card. */
 .sessions-monitor-pulse {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* No current pulse line — the "None" placeholder. Matches the on-card strip's
+   placeholder EXACTLY: the muted tone, ROMAN (not italic — the italic was the
+   dead giveaway the Lens didn't match the card). */
+.sessions-monitor-pulse-none {
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* No current pulse line — dimmer still, and italic, so it reads as a state
-   ("None") rather than pulse text. */
-.sessions-monitor-pulse-none {
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  font-style: italic;
+/* The activity sparkline aligns to the pulse line — the row's SECOND line — not
+   the two-line row's vertical center. The sparkline reads the pulse's liveness,
+   so it belongs beside the pulse text (as on the card, where the line and the
+   sparkline share one row). `align-self: flex-end` drops the trailing accessory
+   from the row's centered rest position down onto the subtitle/pulse line. */
+.lens-sessions-list .tug-list-row-trailing {
+  align-self: flex-end;
 }
 
 .sessions-monitor-spark {

@@ -11,8 +11,10 @@ import {
   RECENT_DOCUMENTS_MAX_BYTES,
   RECENT_DOCUMENTS_STORE_LIMIT,
   clearRecentDocuments,
+  coerceOpenedAt,
   coerceRecentDocuments,
   getRecentDocuments,
+  getRecentOpenedAt,
   noteRecentDocument,
   subscribeRecentDocuments,
 } from "@/lib/recent-documents";
@@ -110,15 +112,37 @@ describe("subscribeRecentDocuments", () => {
     expect(count).toBe(2); // no further notifications after unsubscribe
   });
 
-  it("does not fire when a note is a redundant no-op", () => {
+  it("fires on a re-note of the already-newest path (its last-opened advanced)", () => {
     noteRecentDocument("/a.txt");
     let count = 0;
     const unsubscribe = subscribeRecentDocuments(() => {
       count += 1;
     });
-    noteRecentDocument("/a.txt"); // already newest — noteRecentDocument early-returns
-    expect(count).toBe(0);
+    // The MRU order is unchanged, but the last-opened timestamp moved — the
+    // "Last opened …" label must refresh, so listeners fire.
+    noteRecentDocument("/a.txt");
+    expect(count).toBe(1);
     unsubscribe();
+  });
+});
+
+describe("last-opened timestamps", () => {
+  it("records a timestamp on note, cleared on clear", () => {
+    expect(getRecentOpenedAt("/a.txt")).toBeNull();
+    noteRecentDocument("/a.txt");
+    const t = getRecentOpenedAt("/a.txt");
+    expect(typeof t).toBe("number");
+    clearRecentDocuments();
+    expect(getRecentOpenedAt("/a.txt")).toBeNull();
+  });
+
+  it("coerceOpenedAt keeps finite numbers keyed by non-empty path", () => {
+    expect(coerceOpenedAt({ "/a.txt": 5, "": 9, "/b.txt": "x", "/c.txt": 7 })).toEqual({
+      "/a.txt": 5,
+      "/c.txt": 7,
+    });
+    expect(coerceOpenedAt(null)).toEqual({});
+    expect(coerceOpenedAt(["/a.txt"])).toEqual({});
   });
 });
 
