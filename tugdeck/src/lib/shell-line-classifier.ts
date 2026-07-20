@@ -110,6 +110,7 @@ export function autoShellOpener(
   caret: number,
   commands: ReadonlySet<string> | null,
 ): string | null {
+  if (!AUTO_SHELL_DETECTION_ENABLED) return null;
   if (commands === null) return null;
   if (docText.includes("\n")) return null;
   if (caret !== docText.length) return null;
@@ -134,6 +135,7 @@ export function classifyShellLine(
   text: string,
   commands: ReadonlySet<string> | null,
 ): boolean {
+  if (!AUTO_SHELL_DETECTION_ENABLED) return false;
   if (commands === null) return false;
 
   // 1. Length + shape gate. Slash commands are already intercepted; `#` leads a
