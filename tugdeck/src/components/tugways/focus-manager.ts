@@ -2448,6 +2448,9 @@ export class FocusManager {
     const result = ctx.realizeTarget(target, modality, {
       preventScroll: opts?.preventScroll,
     });
+    // A fresh placement is a new claim — it starts a new enforcement
+    // episode with a full reassert budget.
+    this.resetReassertEpisode();
     this.scheduleFocusInvariantCheck("place");
     return result;
   }
@@ -2479,16 +2482,47 @@ export class FocusManager {
   } | null = null;
   private lastInvariantSignature: string | null = null;
   private invariantCheckQueued = false;
+  /**
+   * Consecutive reasserts without an intervening legal pass — the
+   * episode counter behind {@link REASSERT_BUDGET}. A correction whose
+   * target is stolen back by a peer focus enforcer (a trapped Radix
+   * FocusScope whose in-jail sink is momentarily unmounted mid-HMR)
+   * would otherwise re-trigger the watchdog on its own `focusin`
+   * forever. Reset on every legal/exempt pass and on every placement.
+   */
+  private reassertEpisodeCount = 0;
+  private reassertBudgetExhausted = false;
+  private static readonly REASSERT_BUDGET = 4;
 
-  /** Queue a coalesced enforcement pass; safe to call from any writer. */
+  /**
+   * Queue a coalesced enforcement pass; safe to call from any writer.
+   *
+   * A MACROTASK, deliberately. The check's own reassert (`park` /
+   * `regrant` / mirror) fires a synchronous `focusin` whose capture
+   * listener re-schedules this check. On a microtask the re-entry joins
+   * the CURRENT drain — and a peer that synchronously steals focus back
+   * turns the pair into an infinite non-yielding loop that starves the
+   * main thread and blocks the very React commit (an HMR remount, a
+   * dialog close) that would remove the opponent. A macrotask yields to
+   * the event loop between passes, and {@link REASSERT_BUDGET} bounds
+   * the episode, so the worst case is a few corrections and one loud
+   * error — never a hang. Still coalesced: one pending check at a time,
+   * observing settled state.
+   */
   scheduleFocusInvariantCheck(reason: string): void {
     if (typeof document === "undefined") return;
     if (this.invariantCheckQueued) return;
     this.invariantCheckQueued = true;
-    queueMicrotask(() => {
+    window.setTimeout(() => {
       this.invariantCheckQueued = false;
       this.checkFocusInvariant(reason);
-    });
+    }, 0);
+  }
+
+  /** A legal / exempt pass or a fresh placement ends the episode. */
+  private resetReassertEpisode(): void {
+    this.reassertEpisodeCount = 0;
+    this.reassertBudgetExhausted = false;
   }
 
   /**
@@ -2629,7 +2663,9 @@ export class FocusManager {
         );
       }
       ctx.noteGrantLost();
-      this.parkKeySink();
+      if (this.spendReassertBudget(reason, "(grant-lost park)")) {
+        this.parkKeySink();
+      }
       return;
     }
 
@@ -2652,6 +2688,7 @@ export class FocusManager {
       (active !== null && this.isBareNativeControl(active))
     ) {
       this.lastInvariantSignature = null;
+      this.resetReassertEpisode();
       return;
     }
 
@@ -2672,6 +2709,7 @@ export class FocusManager {
       ) === null
     ) {
       this.lastInvariantSignature = null;
+      this.resetReassertEpisode();
       return;
     }
 
@@ -2685,6 +2723,7 @@ export class FocusManager {
     // only ever corrects a real ELEMENT illegally holding the register.
     if (active === null || active === document.body) {
       this.lastInvariantSignature = null;
+      this.resetReassertEpisode();
       return;
     }
 
@@ -2727,6 +2766,9 @@ export class FocusManager {
         );
       }
     }
+    if (!this.spendReassertBudget(reason, `${offender}→${legalDesc}|${route}`)) {
+      return;
+    }
     if (route === "dom-granted") {
       ctx.regrantCurrentTarget();
     } else if (
@@ -2737,6 +2779,30 @@ export class FocusManager {
     } else {
       this.parkKeySink();
     }
+  }
+
+  /**
+   * Spend one unit of the reassert budget. Returns whether the
+   * correction may proceed. On exhaustion the watchdog STANDS DOWN for
+   * the rest of the episode (until a legal pass or a fresh placement
+   * resets it) and logs one error naming the fight — a bounded loss of
+   * hygiene, traded for the guarantee that two focus enforcers can
+   * never lock the app. Keys still route from the engine's target
+   * regardless of where `activeElement` is stranded ([P04]).
+   */
+  private spendReassertBudget(reason: string, fight: string): boolean {
+    if (this.reassertBudgetExhausted) return false;
+    if (this.reassertEpisodeCount >= FocusManager.REASSERT_BUDGET) {
+      this.reassertBudgetExhausted = true;
+      tugDevLogStore.error(
+        "focus-watchdog",
+        `reassert budget exhausted — a peer system is fighting the engine for focus (${fight}); standing down until the next placement (${reason})`,
+        { fight, reason, budget: FocusManager.REASSERT_BUDGET },
+      );
+      return false;
+    }
+    this.reassertEpisodeCount += 1;
+    return true;
   }
 
   // ---- Pointer-placement suppression (one gesture) ----

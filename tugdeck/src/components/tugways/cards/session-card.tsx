@@ -2445,6 +2445,20 @@ export function SessionCardBody({
     // cycle (a slash-command picker, a banner).
     if (cycle.cycling) return;
     if (focusManager?.adoptKeyCard(cardId) === true) return;
+    if (focusManager !== null) {
+      // The engine already holds a realized keyboard position (a
+      // cold-boot restored ring, a popped mode's key view): the reclaim
+      // must not clobber it with a resting-editor claim — the cold-boot
+      // RESTORE path and the mode pop own focus, and a dom-granted
+      // surface stripped by `inert` is re-granted by the watchdog on
+      // its own. Claim only into a VACANT keyboard.
+      if (focusManager.keyView() !== null) return;
+      // Land the resting editor through the engine's one write
+      // primitive — route flip + registered hook — never a raw
+      // delegate focus (the boot-time steal the watchdog ledgered).
+      focusManager.place(cardId, { kind: "engine" }, { modality: "pointer" });
+      return;
+    }
     entryDelegateRef.current?.focus();
   }, [cardLifecycle, cardId, entryDelegateRef, cycle, focusManager]);
 

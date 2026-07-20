@@ -364,6 +364,18 @@ export function TugSetup(): ReactElement {
           aria-describedby={undefined}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
+          {/* In-jail key sink ([P13]): AlertDialog.Content's FocusScope is
+              always trapped — it yanks focus back from anywhere outside the
+              jail. The engine's park must land INSIDE it (the engine parks
+              at the innermost mounted sink), or every park while the wizard
+              is up is answered by a Radix refocus and the two systems
+              fight. */}
+          <div
+            data-tug-key-sink=""
+            tabIndex={-1}
+            className="tug-key-sink"
+            aria-label="Keyboard"
+          />
           {/* Shared one-line modal header (tugx-header.css) — the alert
               header classes with no message: icon centered on the title. */}
           <div className="tug-alert-body" data-icon-role="action">

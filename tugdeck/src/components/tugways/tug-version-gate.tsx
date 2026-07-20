@@ -39,6 +39,18 @@ export function TugVersionGate(): ReactElement {
           data-slot="tug-version-gate"
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
+          {/* In-jail key sink ([P13]): AlertDialog.Content's FocusScope is
+              always trapped — it yanks focus back from anywhere outside the
+              jail. The engine's park must land INSIDE it (the engine parks
+              at the innermost mounted sink), or every park while this gate
+              is up is answered by a Radix refocus and the two systems
+              fight. */}
+          <div
+            data-tug-key-sink=""
+            tabIndex={-1}
+            className="tug-key-sink"
+            aria-label="Keyboard"
+          />
           {/* Shared alert-case modal header (tugx-header.css): icon
               top-aligned to the title, multi-paragraph message below. */}
           <div className="tug-alert-body" data-has-message="true">
