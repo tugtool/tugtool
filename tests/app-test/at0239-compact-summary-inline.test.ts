@@ -1,19 +1,17 @@
 /**
- * at0239-compact-summary-inline.test.ts — the Compaction Summary renders IN
- * PLACE, right above the compaction quiet line at the compaction point, with
- * the transcript otherwise left intact (fix-compact-more, post-pivot).
+ * at0239-compact-summary-inline.test.ts — the compaction point renders IN PLACE
+ * as ONE session-meta bar, with the transcript otherwise left intact.
  *
  * ## Why this exists
  *
  * After `/compact` the transcript stays whole (no turns dropped, no top banner);
- * the compaction point carries the Compaction Summary block stacked above a
- * quiet line ("Session compacted · ~Nk tokens") in the shared Voice-3 register.
- * The pure halves are unit-tested (the reducer appends the `compact` system_note,
- * the store folds `compact_summary` into `compactionSeed`, `deriveContextWindows`
- * stamps the honest window). This drives the **live render**: cold-replay a few
- * turns, then a `compact_boundary` + `compact_summary`, and assert every turn is
- * still present, the summary sits at the compaction point (not the top), and the
- * quiet line renders.
+ * the compaction point carries a single collapsible bar ("Session compacted ·
+ * ~Nk tokens", recap one expand away). The pure halves are unit-tested (the
+ * reducer appends the `compact` system_note, the store folds `compact_summary`
+ * into `compactionSeed`, `deriveContextWindows` stamps the honest window). This
+ * drives the **live render**: cold-replay a few turns, then a `compact_boundary`
+ * + `compact_summary`, and assert every turn is still present and the bar sits
+ * at the compaction point (not the top).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -30,10 +28,11 @@ const TEST_TIMEOUT_MS = 120_000;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const SID = "test-session-A"; // sessionIdFor("A")
 
-// The compaction point wrapper, and the summary + quiet line nested inside it.
+// The compaction point wrapper, and the single session-meta bar nested inside
+// it (label rides the bar's tool-block header name span).
 const COMPACTION = '[data-card-id="A"] [data-slot="compaction-divider"]';
-const SUMMARY_AT_POINT = `${COMPACTION} [data-slot="compaction-carry-forward"]`;
-const QUIET_LINE_AT_POINT = `${COMPACTION} [data-slot="tug-quiet-line"]`;
+const SUMMARY_AT_POINT = `${COMPACTION} [data-slot="session-compaction"]`;
+const BAR_LABEL_AT_POINT = `${SUMMARY_AT_POINT} .tool-call-header-name`;
 
 const SUMMARY_TEXT =
   "This session is being continued from a previous conversation.\n\n" +
@@ -114,10 +113,10 @@ const replayComplete = () => ({
 });
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0239: Compaction Summary renders in place above the compaction quiet line",
+  "AT0239: compaction bar renders in place at the compaction point",
   () => {
     test(
-      "cold replay + compact: transcript intact, summary + quiet line at the compaction point",
+      "cold replay + compact: transcript intact, bar at the compaction point",
       async () => {
         const app = await launchTugApp({ testName: "at0239-compact-summary-inline" });
         const ingest = (decoded: unknown) =>
@@ -156,8 +155,8 @@ describe.skipIf(!SHOULD_RUN)(
           await ingest(compactSummary());
           await ingest(replayComplete());
 
-          // The Compaction Summary appears at the compaction point (nested in
-          // the compaction wrapper), not hoisted to the top of the transcript.
+          // The compaction bar appears at the compaction point (nested in the
+          // compaction wrapper), not hoisted to the top of the transcript.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SUMMARY_AT_POINT)}) !== null`,
             { timeoutMs: 8000 },
@@ -169,11 +168,11 @@ describe.skipIf(!SHOULD_RUN)(
           expect(tx.includes("reply-funfact-TWO")).toBe(true);
           expect(tx.includes("reply-funfact-THREE")).toBe(true);
 
-          // The compaction quiet line renders at the compaction point.
-          const quietLineText = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(QUIET_LINE_AT_POINT)})||{}).textContent || ""`,
+          // The compaction bar's label renders at the compaction point.
+          const barLabel = await app.evalJS<string>(
+            `(document.querySelector(${JSON.stringify(BAR_LABEL_AT_POINT)})||{}).textContent || ""`,
           );
-          expect(quietLineText).toContain("Session compacted");
+          expect(barLabel).toContain("Session compacted");
 
           // No SESSION COMPACTED banner (the transcript-top affordance is gone).
           const bannerPresent = await app.evalJS<boolean>(

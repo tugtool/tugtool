@@ -6,10 +6,10 @@
  *
  * Claude compacts its context — at capacity (auto) or on a native
  * `/compact` dispatched over the stream-json bridge — and emits a
- * `system`/`compact_boundary`. The session card mirrors it as a soft
- * divider — matching the terminal's compaction indicator. The summary
- * itself now rides a dedicated `compact_summary` frame into the
- * carry-forward block (see at0193); this test covers the divider live.
+ * `system`/`compact_boundary`. The session card mirrors it as a single
+ * session-meta bar — a set-off marker at the compaction point. The recap
+ * itself rides a dedicated `compact_summary` frame into the bar's body
+ * (see at0193); this test covers the marker live.
  * The pure halves (`compactionNoteText`, the reducer's
  * `handleCompactBoundary`) are unit-tested; the tugcode emit is covered
  * in `tugcode/src/__tests__/session.test.ts`. This drives the **live
@@ -29,9 +29,9 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const DIVIDER = '[data-slot="compaction-divider"]';
-// The compaction point renders a Voice-3 quiet line (label + muted token count)
-// inside the wrapper; assert its combined text.
-const DIVIDER_LABEL = `${DIVIDER} [data-slot="tug-quiet-line"]`;
+// The compaction point renders ONE session-meta bar (label + trailing token
+// count) inside the wrapper; assert its combined header text.
+const DIVIDER_LABEL = `${DIVIDER} [data-slot="session-compaction"]`;
 const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const TUG_SESSION_ID = "test-session-A"; // bindSession default
 
@@ -110,9 +110,17 @@ describe.skipIf(!SHOULD_RUN)(
           const label = await app.evalJS<string>(
             `(document.querySelector(${JSON.stringify(DIVIDER_LABEL)})||{}).textContent || ""`,
           );
-          // Quiet-line label + muted token subject, concatenated in the DOM.
+          // Bar header label + trailing token count, concatenated in the DOM.
           expect(label).toContain("Session compacted");
           expect(label).toContain("48k tokens");
+
+          // A compaction-only turn stands OUTSIDE the assistant attribution —
+          // the marker bar has no `.tug-transcript-entry` ancestor (no
+          // `Opus …` / `#a` header, per the session-meta treatment).
+          const attributed = await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(DIVIDER)}).closest(".tug-transcript-entry") !== null`,
+          );
+          expect(attributed).toBe(false);
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

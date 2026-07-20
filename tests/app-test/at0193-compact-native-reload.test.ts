@@ -44,8 +44,8 @@ const TEST_TIMEOUT_MS = 120_000;
 const SID = "a7c0d1ea-0000-4000-8000-0000000c0mpact";
 
 const DIVIDER = '[data-slot="compaction-divider"]';
-const CARRY_FORWARD = '[data-card-id="A"] [data-slot="compaction-carry-forward"]';
-// The summary block composes the shared BlockChrome; its title rides the
+const CARRY_FORWARD = '[data-card-id="A"] [data-slot="session-compaction"]';
+// The compaction bar composes the shared BlockChrome; its label rides the
 // tool-block header name span.
 const CARRY_FORWARD_NAME = `${CARRY_FORWARD} .tool-call-header-name`;
 
@@ -169,7 +169,22 @@ describe.skipIf(!SHOULD_RUN)(
           const title = await app.evalJS<string>(
             `(document.querySelector(${JSON.stringify(CARRY_FORWARD_NAME)})||{}).textContent || ""`,
           );
-          expect(title).toBe("Compaction Summary");
+          expect(title).toBe("Session compacted");
+
+          // The bar renders even for a bare boundary, so its presence alone no
+          // longer proves the summary survived reload — expand it and assert
+          // the recap text. The disclosure toggles only when a body exists
+          // (`compactionSeed.summary` repopulated from JSONL), so a click that
+          // reveals the recap IS the durability proof.
+          await app.evalJS<void>(
+            `document.querySelector('${CARRY_FORWARD} [data-slot="tool-call-header-disclosure"]').click()`,
+          );
+          await app.waitForCondition<boolean>(
+            `(document.querySelector(${JSON.stringify(CARRY_FORWARD)})||{}).textContent`.concat(
+              `.includes("This session is being continued")`,
+            ),
+            { timeoutMs: 6000 },
+          );
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {
@@ -183,7 +198,7 @@ describe.skipIf(!SHOULD_RUN)(
               restoring: q('[data-slot="session-card-restoring"]'),
               body: q('[data-slot="session-card"]'),
               divider: q('[data-slot="compaction-divider"]'),
-              carryForward: q('[data-slot="compaction-carry-forward"]'),
+              carryForward: q('[data-slot="session-compaction"]'),
               spawnError: q('[data-testid="session-card-spawn-error-retry"]'),
             };
           })())`;

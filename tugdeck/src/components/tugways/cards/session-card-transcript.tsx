@@ -88,7 +88,6 @@ import {
   ClipboardCheck,
   ClipboardList,
   Cog,
-  Layers,
   Search,
   X,
 } from "lucide-react";
@@ -158,7 +157,6 @@ import {
 } from "@/components/tugways/cards/turn-entry-markdown";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { COMMAND_CLASS } from "@/lib/markdown/enhance-commands";
-import { compactionNoteText } from "@/lib/code-session-store/compaction";
 import { SessionJumpToBottomButton } from "@/components/tugways/cards/session-jump-to-bottom-button";
 import {
   SessionTranscriptTopRow,
@@ -167,7 +165,7 @@ import {
 import { deriveColdRestoreActive } from "@/components/tugways/cards/session-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
-import { SessionCompactionCarryForward } from "@/components/tugways/cards/session-compaction-carry-forward";
+import { SessionCompactionEntry } from "@/components/tugways/cards/session-compaction-entry";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./session-command-block-registry";
 import { composeShellShareText } from "./shell-exchange-view";
@@ -881,29 +879,22 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
     }
     if (message.kind === "system_note") {
       if (message.source === "compact") {
-        // The compaction point, in place: the Compaction Summary renders right
-        // above a quiet line marking where the session compacted — the summary
-        // sits with the compaction that produced it, not hoisted away at the
-        // top. The quiet line uses the shared Voice-3 register ([TugQuietLine])
-        // like task / background notices. The transcript is otherwise intact.
-        // `message.text` is "Session compacted · ~Nk tokens" (or just "Session
-        // compacted"); split so the token count reads as the muted subject.
-        const [compactLabel, ...compactRest] = message.text.split(" · ");
+        // The compaction point, in place: ONE collapsible session-meta bar
+        // ([SessionCompactionEntry]) marking where the session compacted, the
+        // recap one expand away. This inline path fires only for the (rare)
+        // turn that carries compaction alongside other assistant content — a
+        // compaction-only turn is hoisted out of the assistant attribution
+        // entirely by `AssistantTurnCell`.
         elements.push(
           <div
             key={message.messageKey}
             className="session-card-transcript-compaction"
             data-slot="compaction-divider"
           >
-            <TugQuietLine
-              className="session-card-transcript-compaction-line"
-              icon={<Layers size={16} aria-hidden="true" />}
-              label={compactLabel}
-              subject={compactRest.length > 0 ? compactRest.join(" · ") : undefined}
-              tone="quiet"
-              data-tugx-findable=""
+            <SessionCompactionEntry
+              codeSessionStore={session}
+              noteText={message.text}
             />
-            <SessionCompactionCarryForward codeSessionStore={session} />
           </div>,
         );
         continue;
@@ -1274,6 +1265,50 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   );
   const { ResponderScope, cellProps, bodyRef, menu } =
     useTranscriptCellMenu(resolveCopyMarkdown);
+
+  // A compaction-only turn (a `/compact`, or an auto-compact boundary) is not
+  // the model speaking — it is a session-meta event. Render it as a standalone
+  // marker bar OUTSIDE the assistant attribution (no `Opus 4.8 · 1M` / `#a`
+  // header, no Z1B end-state), so the transcript reads it as a boundary rather
+  // than a turn. The turn qualifies when its only content is the compact
+  // `system_note`, ignoring the user's `/compact` command (rendered by the
+  // separate user row) and Claude Code's canned "Compacted" acknowledgement.
+  const compactNote = messages.find(
+    (m) => m.kind === "system_note" && m.source === "compact",
+  );
+  const isCompactionOnlyTurn =
+    compactNote !== undefined &&
+    messages.every(
+      (m) =>
+        m.kind === "user_message" ||
+        (m.kind === "system_note" && m.source === "compact") ||
+        (m.kind === "assistant_text" && m.text.trim() === "Compacted"),
+    );
+  if (
+    isCompactionOnlyTurn &&
+    compactNote !== undefined &&
+    compactNote.kind === "system_note"
+  ) {
+    return (
+      <ResponderScope>
+        <div {...cellProps}>
+          <div
+            ref={(el) => {
+              bodyRef.current = el;
+            }}
+            className="session-card-transcript-compaction"
+            data-slot="compaction-divider"
+          >
+            <SessionCompactionEntry
+              codeSessionStore={codeSessionStore}
+              noteText={compactNote.text}
+            />
+          </div>
+        </div>
+        {menu}
+      </ResponderScope>
+    );
+  }
 
   return (
     <ResponderScope>
