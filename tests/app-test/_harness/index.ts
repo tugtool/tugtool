@@ -169,8 +169,8 @@ const LOGS_DIR = pathResolve(import.meta.dir, "..", "logs");
  * Override per run with `TUGAPP_GESTURE_SETTLE_MS` (0 disables).
  */
 const GESTURE_SETTLE_MS = (() => {
-  const raw = Number(process.env.TUGAPP_GESTURE_SETTLE_MS ?? "400");
-  return Number.isFinite(raw) && raw >= 0 ? raw : 400;
+  const raw = Number(process.env.TUGAPP_GESTURE_SETTLE_MS ?? "200");
+  return Number.isFinite(raw) && raw >= 0 ? raw : 200;
 })();
 
 /**
@@ -181,8 +181,8 @@ const GESTURE_SETTLE_MS = (() => {
  * land nowhere and beep). Override with `TUGAPP_STATE_SETTLE_MS`.
  */
 const STATE_SETTLE_MS = (() => {
-  const raw = Number(process.env.TUGAPP_STATE_SETTLE_MS ?? "1000");
-  return Number.isFinite(raw) && raw >= 0 ? raw : 1000;
+  const raw = Number(process.env.TUGAPP_STATE_SETTLE_MS ?? "500");
+  return Number.isFinite(raw) && raw >= 0 ? raw : 500;
 })();
 
 /** Dwell `STATE_SETTLE_MS` after a state transition resolves. */
