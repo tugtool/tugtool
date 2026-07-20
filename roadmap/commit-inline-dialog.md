@@ -152,7 +152,8 @@ This plan follows the devise skeleton's anchor and label conventions: explicit `
 
 **Implications:**
 - `changes-zones.ts` (`alsoSessionRows`, `alsoOnProjectSummary`, `releasePreflight`) and its tests are deleted; `join-verb-plan.ts` and its tests are deleted ([P10]).
-- Escape already dismisses via the `TugSheet` cancelDialog chain; the Done button calls the same `onClose` the header's X uses today. Return-dismiss rides the `persistentDefaultRing` default-button convention.
+- Escape already dismisses via the `TugSheet` cancelDialog chain; the Done button calls the same `onClose` the header's X uses today. Return-dismiss follows the effort-picker convention (`effort-picker-sheet.tsx`): the Done button sits in a `tug-sheet-actions` row with `focusGroup`/`focusOrder` inside the sheet's trapped focus mode, and `persistentDefaultRing` makes it the sole Return consumer — Return falls through to the ringed default.
+- `SessionChangesView` keeps its `codeSessionStore` prop solely for `NonRepoBody`: Initialize git is a durable verb and keeps its mid-turn disable (`TURN_GATE_HINT`) — the gate does not leave with the commit/join verbs.
 - `use-landing-receipts.ts` shrinks to commit-only ([P07]) since join/release have no UI initiators left.
 
 #### [P03] TugCommitDialog is a user-driven inline dialog at the transcript tail (DECIDED) {#p03-commit-dialog-shape}
@@ -165,7 +166,7 @@ This plan follows the devise skeleton's anchor and label conventions: explicit `
 
 **Implications:**
 - Card-modal like its siblings (inline display + trapped focus, the PermissionDialog/QuestionDialog convention): `useFocusTrap({ active, onEscapeDismiss })`, `useInlineDialogScope` (CANCEL_DIALOG responder + key-view seeding + opener restore), `useSpatialOrder` rings/seams over Cancel/Auto-Message/Commit with a seam down into the editor.
-- Dismissal uses the `useFootHeightReservation` pattern from `session-card-transcript-foot-reservation.ts` so closing never jumps the scroll; opening releases follow-bottom before its reveal scroll (R01).
+- Dismissal must not jump the scroll, but `useFootHeightReservation` in `session-card-transcript-foot-reservation.ts` CANNOT be reused as-is: its presence predicate is hard-wired to `CodeSessionStore` (`pendingApproval !== null || pendingQuestion !== null`) and it is gated to the in-flight assistant cell. Generalize it — parameterize the observed store + presence predicate (`subscribe`/`isDialogPresent`), keeping the [L22] synchronous-notify floor write, the up-only ratchet, and the exported `shouldReserveOnDismiss` pure edge — and have the commit dialog observe `CommitDialogController` with the tail-slot wrapper as the floor element. The existing permission/question call site becomes one parameterization of the generalized hook.
 - Only one of dialog-open / shade-open at a time: `CommitDialogController.show()` hides the shade (`shadeViewController.hide()`) and vice versa.
 
 #### [P04] Cmd-Return commits; Return newlines; Escape cancels (DECIDED) {#p04-keyboard-contract}
@@ -224,7 +225,7 @@ This plan follows the devise skeleton's anchor and label conventions: explicit `
 - The registry exists precisely for this accretion pattern (first-claim matcher walk, total default underneath); the same row then renders identically live and restored.
 
 **Implications:**
-- Registration happens at renderer-module import time; import the module from the transcript's block barrel so the registration is guaranteed loaded before first resolve.
+- Registration happens at renderer-module import time. There is no block barrel: the registry's only consumer is `session-card-transcript.tsx` (which imports `resolveCommandBlock` and calls it at the shell row), so that file takes a side-effect `import "./session-commit-receipt-block"` — guaranteeing registration is loaded before the first resolve.
 - The renderer parses display facts from the `output` string only (no side-band data), so live and restored rows are pixel-identical.
 
 #### [P09] `/commit` always opens the dialog; the two-beat verb dies (DECIDED) {#p09-commit-verb}
@@ -386,6 +387,7 @@ New `tugdeck/src/lib/commit-dialog-controller.ts`, the `ShadeViewController` pat
 | `do_changeset_commit` | fn (modify) | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | ledger write + `summary` on `_ok` |
 | `CommitState.summary` | field | `lib/changeset-verb-store.ts` | additive |
 | `useLandingReceipts` | hook (shrink) | `cards/use-landing-receipts.ts` | commit-only, ingests server `summary` |
+| `useFootHeightReservation` | hook (generalize) | `cards/session-card-transcript-foot-reservation.ts` | parameterized store + presence predicate ([P03]); permission/question site re-parameterized |
 | `slashCommandSurfaces.commit` / `.join` | handlers (rewrite) | `cards/session-card.tsx` | [P09], [P10]; delete `landSessionCommit` |
 | deleted: `lib/commit-verb-plan.ts`, `lib/join-verb-plan.ts`, `session-changes/changes-zones.ts`, `formatCommitReceiptInk`/`formatJoinReceiptInk`/`formatReleaseReceiptInk` | — | — | with their tests; `dashNameFromTrailer` survives in `lib/landing-receipt.ts` |
 | `sessionCommandItem("Commit…", "commit", "session.commit")` | menu item | `tugapp/Sources/AppDelegate.swift` | under Rename Session… ([P12]) |
@@ -473,8 +475,8 @@ New `tugdeck/src/lib/commit-dialog-controller.ts`, the `ShadeViewController` pat
 - `slashCommandSurfaces.join` reduced to a caution bulletin; `join` description updated in `lib/slash-commands.ts`.
 
 **Tasks:**
-- [ ] Remove the editing/landing/dash pieces from `SessionChangesView` and its CSS; add the lower-right `Done` footer: `TugPushButton emphasis="primary"` with `persistentDefaultRing`, calling the existing `onClose` (the shade's Escape path via `TugSheet` cancelDialog is already in place — verify Return activates the ringed default).
-- [ ] `SessionChangesViewProps` loses `onCommit` and `codeSessionStore` (turn gating leaves with the verbs); update the `session-card.tsx` mount.
+- [ ] Remove the editing/landing/dash pieces from `SessionChangesView` and its CSS; add the lower-right `Done` footer per [P02]: a `tug-sheet-actions` row below the scroll region holding `TugPushButton emphasis="primary"` with `persistentDefaultRing` + `focusGroup`/`focusOrder` (the effort-picker mechanism), calling the existing `onClose` (the shade's Escape path via `TugSheet` cancelDialog is already in place — verify Return activates the ringed default).
+- [ ] `SessionChangesViewProps` loses `onCommit` but KEEPS `codeSessionStore` for `NonRepoBody`'s git-init turn gate ([P02]); update the `session-card.tsx` mount.
 - [ ] Rewrite `slashCommandSurfaces.join` per [P10]; delete `planJoinVerb` import and `lib/join-verb-plan.ts`; leave `changeset-verb-store`/`changeset-join-store`/tugcast join handlers untouched.
 - [ ] Do NOT yet touch `slashCommandSurfaces.commit`/`landSessionCommit` — the shade keeps no Commit button but `/commit` beat 2 still lands headlessly until #step-5 replaces it (interim: `plan.kind === "draft"` still opens the shade; acceptable mid-plan state).
 
@@ -525,7 +527,7 @@ New `tugdeck/src/lib/commit-dialog-controller.ts`, the `ShadeViewController` pat
 - `use-landing-receipts.ts` shrunk to commit-only, ingesting the server `summary` verbatim; `formatCommitReceiptInk`/`formatJoinReceiptInk`/`formatReleaseReceiptInk` deleted from `lib/landing-receipt.ts` (+their tests), `dashNameFromTrailer` kept.
 
 **Tasks:**
-- [ ] Renderer: parse sha/subject/counts from `message.output` (S02 shape) and present the standard summary (sha badge + subject + counts) with graceful fallback to raw output on parse miss; register with a matcher claiming trimmed `"/commit"` or `"/commit "`-prefixed commands; ensure the module is imported from the transcript block barrel so registration precedes first resolve.
+- [ ] Renderer: parse sha/subject/counts from `message.output` (S02 shape) and present the standard summary (sha badge + subject + counts) with graceful fallback to raw output on parse miss; register with a matcher claiming trimmed `"/commit"` or `"/commit "`-prefixed commands; add the side-effect `import "./session-commit-receipt-block"` to `session-card-transcript.tsx` per [P08] so registration precedes the first resolve.
 - [ ] Verb store: carry `summary` through `changeset_commit_ok` parsing into `CommitState`.
 - [ ] `useLandingReceipts`: drop the join/release tracking and the client-side formatting; on commit `pending → done`, `ingestShellExchange({ command: "/commit", output: commit.summary, exitCode: 0, … })`.
 
@@ -554,7 +556,8 @@ New `tugdeck/src/lib/commit-dialog-controller.ts`, the `ShadeViewController` pat
 **Tasks:**
 - [ ] Controller per S03, constructed in the card-services wiring next to `changesController`; `show()` hides the shade and vice versa.
 - [ ] Dialog per [P03]: `TugInlineDialog` with trailing actions Cancel (`emphasis="ghost"`), Auto-Message (disabled placeholder this step; wired in #step-6), Commit (`emphasis="primary"`, `persistentDefaultRing`, disabled unless `hasText && !turnInProgress && commit.phase !== "pending"`, `widthStabilize` for "Committing…"); body = `TugMessageEditor` (`lineWrap`, placeholder, `onSubmit` → the same gated land path per [P04]) then `TugChangesList` with dialog-owned `expandedKeys`; empty changeset renders the empty list + disabled Commit ([P09]).
-- [ ] Focus/modality: `useFocusTrap` + `useInlineDialogScope` (Escape → cancel) + `useSpatialOrder` (Cancel/Auto-Message/Commit ring, seam into the editor); microtask-deferred focus claim onto the editor on open; release follow-bottom via `useScroller()` before the reveal scroll and clear the stuck header bottom (R01); `useFootHeightReservation` on dismiss.
+- [ ] Focus/modality: `useFocusTrap` + `useInlineDialogScope` (Escape → cancel) + `useSpatialOrder` (Cancel/Auto-Message/Commit ring, seam into the editor); microtask-deferred focus claim onto the editor on open; release follow-bottom via `useScroller()` (the `lib/smart-scroll.ts` façade) before the reveal scroll and clear the stuck header bottom (R01).
+- [ ] Generalize `useFootHeightReservation` per [P03]: parameterize the observed store + presence predicate, keep the [L22] synchronous-notify ratchet and the `shouldReserveOnDismiss` pure edge, re-parameterize the existing permission/question call site, and wire the commit dialog's tail-slot wrapper as its floor element observing `CommitDialogController`.
 - [ ] Land path in the controller: gates (turn idle, no pending commit, non-empty trimmed message, non-empty changeset) → `changesController.commit(text)` → on verb-store `done`, clear the draft (`setDraft(…, { clear: true })`) and `hide()`; on `error`, surface the detail inline in the dialog (not a bulletin).
 - [ ] Editor ↔ draft store binding per [#draft-sync-discipline]; `show(seedMessage)` writes the seed as an edited draft before opening.
 - [ ] `slashCommandSurfaces.commit` → `commitDialogController.show(argsOrUndefined)`; update the `commit` description in `lib/slash-commands.ts`; delete `commit-verb-plan.ts`.
