@@ -37,7 +37,12 @@ import React, {
 } from "react";
 import {
   CircleCheck,
+  FileMinus,
+  FilePenLine,
+  FilePlus,
+  FileSymlink,
   GitCommitHorizontal,
+  PencilSparkles,
   SquareArrowOutUpRight,
   X,
 } from "lucide-react";
@@ -47,8 +52,6 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
-import { TugCheckbox } from "@/components/tugways/tug-checkbox";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
@@ -148,8 +151,21 @@ function statusToneClass(gitStatus: string): string {
   }
 }
 
-function statusGlyph(gitStatus: string): string {
-  return gitStatus.replace(/\./g, " ");
+/** The lucide status icon for a file, keyed by op — semantic, not the raw
+ *  porcelain code. Colored by {@link statusToneClass} on the wrapping span. */
+function StatusIcon({ gitStatus }: { gitStatus: string }): React.ReactElement {
+  if (gitStatus.startsWith("??")) return <FilePlus size={13} aria-hidden />;
+  const letter = gitStatus.replace(/[.\s]/g, "").charAt(0);
+  switch (letter) {
+    case "A":
+      return <FilePlus size={13} aria-hidden />;
+    case "D":
+      return <FileMinus size={13} aria-hidden />;
+    case "R":
+      return <FileSymlink size={13} aria-hidden />;
+    default:
+      return <FilePenLine size={13} aria-hidden />;
+  }
 }
 
 function isDeleted(op: string, gitStatus: string): boolean {
@@ -361,36 +377,6 @@ function fileBlockBody(
 // File blocks
 // ---------------------------------------------------------------------------
 
-function FileSelectCheckbox({
-  path,
-  senderId,
-  selected,
-  disabled,
-}: {
-  path: string;
-  senderId: string;
-  selected: boolean;
-  disabled: boolean;
-}) {
-  return (
-    <TugCheckbox
-      size="sm"
-      checked={selected}
-      senderId={senderId}
-      disabled={disabled}
-      aria-label={`Include ${path} in the commit`}
-      data-testid="session-changes-file-select"
-      data-path={path}
-    />
-  );
-}
-
-interface RowSelection {
-  senderId: string;
-  selected: boolean;
-  disabled: boolean;
-}
-
 interface FileBlockData {
   path: string;
   git_status: string;
@@ -413,9 +399,8 @@ function changesetFileData(file: ChangesetFile): FileBlockData {
 
 /**
  * Unattributed row data with its bracket-hint text ([P13]): the card
- * session's own hint reads as `likely this session's (bash)` — the one-glance
- * disposition cue, still default-unselected; foreign hints render as
- * provenance only.
+ * session's own hint reads as a terse `likely` badge — the one-glance
+ * disposition cue; foreign hints render as a `seen by N` provenance count.
  */
 function unattributedFileData(
   file: UnattributedFile,
@@ -424,11 +409,9 @@ function unattributedFileData(
   const hintedBy = file.hinted_by ?? [];
   let hint: string | undefined;
   if (ownSessionId !== undefined && hintedBy.includes(ownSessionId)) {
-    hint = "likely this session's (bash)";
+    hint = "likely";
   } else if (hintedBy.length > 0) {
-    hint = `bracket-seen by ${hintedBy.length} other session${
-      hintedBy.length === 1 ? "" : "s"
-    }`;
+    hint = `seen by ${hintedBy.length}`;
   }
   return {
     path: file.path,
@@ -456,7 +439,7 @@ function FileIdentity({
   return (
     <span className="session-changes-file-identity">
       <span className={`session-changes-file-status ${statusToneClass(file.git_status)}`}>
-        {statusGlyph(file.git_status)}
+        <StatusIcon gitStatus={file.git_status} />
       </span>
       <FilePathLink
         path={file.path}
@@ -488,7 +471,6 @@ function ChangesFileBlock({
   item,
   file,
   projectRoot,
-  selection,
   diffSnapshot,
   collapsed,
   onToggle,
@@ -496,7 +478,6 @@ function ChangesFileBlock({
   item: ChangesItem;
   file: FileBlockData;
   projectRoot: string;
-  selection?: RowSelection;
   diffSnapshot: GitDiffSnapshot;
   collapsed: boolean;
   onToggle: (next: boolean) => void;
@@ -525,16 +506,6 @@ function ChangesFileBlock({
         <BlockChrome
           variant="tool"
           phase="idle"
-          leading={
-            selection !== undefined ? (
-              <FileSelectCheckbox
-                path={file.path}
-                senderId={selection.senderId}
-                selected={selection.selected}
-                disabled={selection.disabled}
-              />
-            ) : undefined
-          }
           identity={<FileIdentity file={file} projectRoot={projectRoot} />}
           resultSummary={resultSummary}
           headerActions={
@@ -578,13 +549,11 @@ function fileExpandKey(entryId: string, path: string): string {
  */
 function ChangesEntryFiles({
   item,
-  rowSelection,
   expandedKeys,
   onToggleFile,
   ownSessionId,
 }: {
   item: ChangesFileEntry;
-  rowSelection: (path: string) => RowSelection;
   expandedKeys: ReadonlySet<string>;
   onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
   /** The card session's id — distinguishes own vs foreign bracket hints ([P13]). */
@@ -612,7 +581,6 @@ function ChangesEntryFiles({
           item={item}
           file={file}
           projectRoot={projectRoot}
-          selection={rowSelection(file.path)}
           diffSnapshot={diffSnapshot}
           collapsed={!expandedKeys.has(fileExpandKey(item.id, file.path))}
           onToggle={(next) => onToggleFile(item.id, file.path, next)}
@@ -1054,18 +1022,25 @@ const DRAFT_EDIT_DEBOUNCE_MS = 300;
  * never rendered read-only elsewhere. Streamed generation lands via
  * `restoreState` (programmatic — never reads as a user edit, the [P28]
  * contract); user edits debounce-persist through `changeset_draft_set` with
- * the `edited` pin ([P03]). Regenerate is the one explicit overwrite path —
- * confirmed via `TugConfirmPopover` when the draft is edited — and idle-gates
- * with the other mutating verbs ([P08]); drafting itself stays live mid-turn.
+ * the `edited` pin ([P03]). The AI draft button is the one explicit overwrite
+ * path — confirmed via `TugConfirmPopover` when the draft is edited — and it,
+ * like typing, stays live mid-turn (drafting mutates nothing). Only the
+ * Commit button lands, so only it idle-gates ([P08]).
  */
 function DraftComposer({
   controller,
   entry,
   turnInProgress,
+  canCommit,
+  onCommit,
 }: {
   controller: ChangesRouteController;
   entry: SessionChangesetEntry | null;
   turnInProgress: boolean;
+  /** Whether this session has committable files and no commit is in flight. */
+  canCommit: boolean;
+  /** Land the composer's message as this session's commit ([P04]). */
+  onCommit: (message: string) => void;
 }): React.ReactElement {
   const projectDir = controller.projectDir;
   const ownerId = controller.tugSessionId;
@@ -1075,6 +1050,10 @@ function DraftComposer({
   const persisted = entry?.draft?.message ?? "";
   const edited = entry?.draft?.edited === true;
   const drifted = draftDrifted(entry);
+  // Whether the composer currently holds a non-blank message — gates the
+  // Commit button. Tracked as state (not a ref read) so the button's
+  // enabled-ness updates as the user types or a draft seeds in.
+  const [hasText, setHasText] = useState(() => persisted.trim().length > 0);
 
   // The editor owns the document ([L02] editor-owned zone); these refs
   // mirror what we know is in it — `doc` tracks the current text (user
@@ -1092,6 +1071,7 @@ function DraftComposer({
     editorRef.current?.restoreState(overlay.text);
     docRef.current = overlay.text;
     lastSeededRef.current = overlay.text;
+    setHasText(overlay.text.trim().length > 0);
   }, [overlay.phase, overlay.text]);
 
   // Persisted-message sync: a skill-authored draft (via the probe) or a
@@ -1104,6 +1084,7 @@ function DraftComposer({
     editorRef.current?.restoreState(persisted);
     docRef.current = persisted;
     lastSeededRef.current = persisted;
+    setHasText(persisted.trim().length > 0);
   }, [persisted, overlay.phase]);
 
   const persistEdit = useCallback((): void => {
@@ -1117,6 +1098,7 @@ function DraftComposer({
   const handleChange = useCallback(
     (text: string): void => {
       docRef.current = text;
+      setHasText(text.trim().length > 0);
       if (debounceRef.current !== null) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(persistEdit, DRAFT_EDIT_DEBOUNCE_MS);
     },
@@ -1134,12 +1116,12 @@ function DraftComposer({
     [persistEdit],
   );
 
-  // Regenerate — the only machine-overwrite path ([P03]); an edited draft
-  // interposes an inline confirm before the force. The confirm anchors to
-  // the button's own element (captured via the row ref) so a keyboard
+  // The AI draft button — the only machine-overwrite path ([P03]); an edited
+  // draft interposes an inline confirm before the force. The confirm anchors
+  // to the button's own element (captured via the row ref) so a keyboard
   // activation confirms identically to a click.
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const regenerateRowRef = useRef<HTMLDivElement | null>(null);
+  const draftRowRef = useRef<HTMLDivElement | null>(null);
   const regenerate = useCallback((): void => {
     controller.requestDraft(true);
   }, [controller]);
@@ -1151,13 +1133,13 @@ function DraftComposer({
         ref={editorRef}
         value={persisted}
         onChange={handleChange}
-        placeholder="Commit message — /commit drafts one"
+        placeholder="Write a commit message or use the button to generate one."
         lineWrap
         aria-label="Draft commit message"
         data-testid="session-changes-draft-composer"
         className="session-changes-draft-editor"
       />
-      <div className="session-changes-draft-row" ref={regenerateRowRef}>
+      <div className="session-changes-draft-row" ref={draftRowRef}>
         {overlay.phase === "error" ? (
           <span className="session-changes-draft-note" role="status">
             {overlay.detail ?? "draft failed"}
@@ -1170,25 +1152,38 @@ function DraftComposer({
           <span />
         )}
         <TugPushButton
+          subtype="icon"
+          icon={<PencilSparkles size={14} />}
           size="xs"
-          emphasis="outlined"
+          emphasis="ghost"
           role="action"
-          disabled={turnInProgress || generating}
-          title={turnInProgress ? TURN_GATE_HINT : undefined}
+          disabled={generating}
+          title="Generate a commit message"
+          aria-label="Generate a commit message"
           data-testid="session-changes-draft-regenerate"
           onClick={() => {
             if (edited) setConfirmOpen(true);
             else regenerate();
           }}
+        />
+        <TugPushButton
+          size="xs"
+          emphasis="outlined"
+          role="accent"
+          disabled={turnInProgress || !canCommit || !hasText}
+          title={turnInProgress ? TURN_GATE_HINT : undefined}
+          widthStabilize={{ alternateLabel: "Committing…" }}
+          data-testid="session-changes-commit"
+          onClick={() => onCommit(docRef.current)}
         >
-          {generating ? "Drafting…" : "Regenerate"}
+          Commit
         </TugPushButton>
         <TugConfirmPopover
           open={confirmOpen}
           anchorEl={
-            regenerateRowRef.current?.querySelector<HTMLElement>(
+            draftRowRef.current?.querySelector<HTMLElement>(
               '[data-testid="session-changes-draft-regenerate"]',
-            ) ?? regenerateRowRef.current
+            ) ?? draftRowRef.current
           }
           message="Replace your edited message with a regenerated draft?"
           confirmLabel="Regenerate"
@@ -1207,14 +1202,17 @@ function DraftComposer({
 export interface SessionChangesViewProps {
   /** Repo-relative project directory the card is bound to. */
   projectDir: string | null;
-  /** The per-card Changes controller — selection + commit/draft state ([P07]). */
+  /** The per-card Changes controller — commit/draft state ([P07]). */
   changesController: ChangesRouteController;
   /**
    * The card's Claude session store — read for the turn-in-progress signal
-   * that gates the DURABLE verbs (join, release, git-init) while a turn runs.
-   * Viewing changes mid-turn is free; only durable mutations wait.
+   * that gates the DURABLE verbs (commit, join, release, git-init) while a
+   * turn runs. Viewing changes and drafting mid-turn is free; only durable
+   * mutations wait.
    */
   codeSessionStore: CodeSessionStore;
+  /** Land this session's changeset with the given message ([P04]). */
+  onCommit: (message: string) => void;
   /** Hide the Shade — the header's close affordance ([P05]). */
   onClose?: () => void;
 }
@@ -1223,6 +1221,7 @@ export function SessionChangesView({
   projectDir,
   changesController,
   codeSessionStore,
+  onCommit,
   onClose,
 }: SessionChangesViewProps): React.ReactElement {
   const snap = useSyncExternalStore(
@@ -1238,31 +1237,10 @@ export function SessionChangesView({
     () => codeSessionStore.getSnapshot().canInterrupt === true,
   );
 
-  // The head selection ([P05]): the session's attributed files plus the
-  // project's unattributed files, one selection set. Each row's checkbox is a
-  // chain control ([L11]) whose `toggle` handler here writes the controller's
-  // override; `selected` reads back from the controller snapshot.
+  // This session's changeset commits as one unit ([P05]) — no per-file
+  // election. The file rows are read-only; unattributed files are shown for
+  // awareness but never in this session's commit.
   const sessionFiles = snap.entry?.files ?? [];
-  const entryKey = changesController.entryKey;
-  const selectSender = (path: string): string => `${entryKey}|${path}`;
-  const toggleHandlers = useMemo(() => {
-    const map: Record<string, (checked: boolean) => void> = {};
-    const add = (path: string): void => {
-      map[`${entryKey}|${path}`] = (checked) =>
-        changesController.setSelected(path, checked);
-    };
-    for (const file of sessionFiles) add(file.path);
-    for (const file of snap.unattributed) add(file.path);
-    return map;
-  }, [entryKey, sessionFiles, snap.unattributed, changesController]);
-  const { ResponderScope, responderRef } = useResponderForm({ toggle: toggleHandlers });
-
-  const commitPending = commit.phase === "pending";
-  const rowSelection = (path: string): RowSelection => ({
-    senderId: selectSender(path),
-    selected: snap.selectedPaths.has(path),
-    disabled: commitPending,
-  });
 
   // Per-file collapse state is owned HERE (view scope), keyed by
   // `${entryId}|${path}`, so the Expand All / Collapse All / Diff controls
@@ -1412,64 +1390,59 @@ export function SessionChangesView({
     ) : undefined;
 
   return shell(
-    <ResponderScope>
-      <div
-        ref={responderRef as (el: HTMLDivElement | null) => void}
-        className="session-changes-view-body"
-      >
-        {zone1Empty && !showReceipt ? (
-          <div className="session-changes-clean" role="status">
-            <CircleCheck size={14} />
-            No changes
+    <div className="session-changes-view-body">
+      {zone1Empty && !showReceipt ? (
+        <div className="session-changes-clean" role="status">
+          <CircleCheck size={14} />
+          No changes
+        </div>
+      ) : null}
+      {showReceipt ? (
+        <CommitReceipt
+          sha={commit.sha}
+          receipt={commit.receipt as string}
+          onDismiss={commit.clear}
+        />
+      ) : null}
+      {!zone1Empty || snap.entry?.draft !== undefined ? (
+        <DraftComposer
+          controller={changesController}
+          entry={snap.entry}
+          turnInProgress={turnInProgress}
+          canCommit={hasSessionFiles && commit.phase !== "pending"}
+          onCommit={onCommit}
+        />
+      ) : null}
+      {sessionItem !== null && hasSessionFiles ? (
+        <ChangesEntryFiles
+          item={sessionItem}
+          expandedKeys={expandedKeys}
+          onToggleFile={onToggleFile}
+        />
+      ) : null}
+      {unattributedItem !== null ? (
+        <>
+          <div
+            className="session-changes-section-label"
+            data-slot="session-changes-unattributed-label"
+          >
+            unattributed — no session claims these
           </div>
-        ) : null}
-        {showReceipt ? (
-          <CommitReceipt
-            sha={commit.sha}
-            receipt={commit.receipt as string}
-            onDismiss={commit.clear}
-          />
-        ) : null}
-        {!zone1Empty || snap.entry?.draft !== undefined ? (
-          <DraftComposer
-            controller={changesController}
-            entry={snap.entry}
-            turnInProgress={turnInProgress}
-          />
-        ) : null}
-        {sessionItem !== null && hasSessionFiles ? (
           <ChangesEntryFiles
-            item={sessionItem}
-            rowSelection={rowSelection}
+            item={unattributedItem}
             expandedKeys={expandedKeys}
             onToggleFile={onToggleFile}
+            ownSessionId={changesController.tugSessionId}
           />
-        ) : null}
-        {unattributedItem !== null ? (
-          <>
-            <div
-              className="session-changes-section-label"
-              data-slot="session-changes-unattributed-label"
-            >
-              unattributed — no session claims these
-            </div>
-            <ChangesEntryFiles
-              item={unattributedItem}
-              rowSelection={rowSelection}
-              expandedKeys={expandedKeys}
-              onToggleFile={onToggleFile}
-              ownSessionId={changesController.tugSessionId}
-            />
-          </>
-        ) : null}
-        <AlsoOnProject
-          project={project}
-          ownOwnerId={changesController.tugSessionId}
-          dashes={snap.dashes}
-          turnInProgress={turnInProgress}
-        />
-      </div>
-    </ResponderScope>,
+        </>
+      ) : null}
+      <AlsoOnProject
+        project={project}
+        ownOwnerId={changesController.tugSessionId}
+        dashes={snap.dashes}
+        turnInProgress={turnInProgress}
+      />
+    </div>,
     headerActions,
   );
 }

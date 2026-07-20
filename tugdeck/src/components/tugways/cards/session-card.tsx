@@ -2994,6 +2994,47 @@ export function SessionCardBody({
     return false;
   };
 
+  // The commit landing path ([P04]/[P08]): the four gates, then land and
+  // consume the draft on success. Shared by `/commit` beat 2 and the Changes
+  // shade's Commit button — one land path, one gate set.
+  const landSessionCommit = (message: string): void => {
+    const notify = paneBulletinRef.current;
+    const text = message.trim();
+    if (codeSessionStore.getSnapshot().canInterrupt === true) {
+      notify?.caution("Can't commit while a turn is in flight");
+      return;
+    }
+    const verbStore = getChangesetVerbStore();
+    if (verbStore?.commitState(changesController.entryKey).phase === "pending") {
+      notify?.caution("A commit is already in progress");
+      return;
+    }
+    if (changesController.getSnapshot().committedPaths.size === 0) {
+      shadeViewController.show("changes");
+      notify?.caution("Nothing to commit — this session has no changes");
+      return;
+    }
+    if (text.length === 0) {
+      notify?.caution("Nothing to land — the draft message is empty");
+      return;
+    }
+    changesController.commit(text);
+    if (verbStore === null) return;
+    const unsubscribe = verbStore.subscribe(() => {
+      const phase = verbStore.commitState(changesController.entryKey).phase;
+      if (phase === "pending") return;
+      unsubscribe();
+      if (phase === "done") {
+        getChangesetDraftStore()?.setDraft(
+          changesController.projectDir,
+          "session",
+          changesController.tugSessionId,
+          { clear: true },
+        );
+      }
+    });
+  };
+
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => {
@@ -3248,48 +3289,6 @@ export function SessionCardBody({
       const readyMessage =
         overlayText ?? (persistedText.length > 0 ? persistedText : null);
 
-      // Beat 2: the four landing gates ([P08]) — the exact set the retired
-      // `!changes commit` handler enforced — then land, and consume the
-      // draft on success.
-      const landCommit = (message: string): void => {
-        if (codeSessionStore.getSnapshot().canInterrupt === true) {
-          notify?.caution("Can't commit while a turn is in flight");
-          return;
-        }
-        if (
-          getChangesetVerbStore()?.commitState(changesController.entryKey)
-            .phase === "pending"
-        ) {
-          notify?.caution("A commit is already in progress");
-          return;
-        }
-        if (changesController.getSnapshot().selectedPaths.size === 0) {
-          shadeViewController.show("changes");
-          notify?.caution("Select at least one file to commit");
-          return;
-        }
-        if (message.length === 0) {
-          notify?.caution("Nothing to land — the draft message is empty");
-          return;
-        }
-        changesController.commit(message);
-        // On a successful landing the draft is consumed ([P04]): clear the
-        // persisted row and drop the local selection overrides.
-        const verbStore = getChangesetVerbStore();
-        if (verbStore === null) return;
-        const unsubscribe = verbStore.subscribe(() => {
-          const phase = verbStore.commitState(changesController.entryKey).phase;
-          if (phase === "pending") return;
-          unsubscribe();
-          if (phase === "done") {
-            draftStore?.setDraft(projectDirForDraft, "session", ownerId, {
-              clear: true,
-            });
-            changesController.clearSelectionOverrides();
-          }
-        });
-      };
-
       const plan = planCommitVerb(args, readyMessage);
       if (plan.kind === "draft") {
         // Beat 1: the shade is where the draft is reviewed and edited.
@@ -3306,14 +3305,14 @@ export function SessionCardBody({
           if (o.phase === "drafting") return;
           unsubscribe();
           if (o.phase === "ready" && o.text.trim().length > 0) {
-            landCommit(o.text.trim());
+            landSessionCommit(o.text.trim());
           } else {
             notify?.caution("Draft generation failed — nothing was landed");
           }
         });
         return;
       }
-      landCommit(plan.message);
+      landSessionCommit(plan.message);
     },
     // `/join` — the dash-lane landing verb ([P05]): bare opens the shade's
     // dash lane (previewing when exactly one dash exists); `/join <name>`
@@ -3863,6 +3862,7 @@ export function SessionCardBody({
                       projectDir={projectDir}
                       changesController={changesController}
                       codeSessionStore={codeSessionStore}
+                      onCommit={landSessionCommit}
                       onClose={() => shadeViewController.hide()}
                     />
                   </TugSheetContent>

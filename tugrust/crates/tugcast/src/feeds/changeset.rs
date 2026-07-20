@@ -62,6 +62,15 @@ impl ChangesetBumper {
     }
 }
 
+/// Whether a porcelain-v2 XY status is a structural op — a delete, rename, or
+/// new-untracked file. These are the ops the sole-holder bracket promotion
+/// claims: you don't hand-save a deletion, so a lone bracket sweep over one is
+/// the session's own shell work. A plain content modify (`.M`/`M.`) is not
+/// structural — that's the ambiguous case attribution stays conservative on.
+fn status_is_structural(status: &str) -> bool {
+    status == "??" || status.chars().any(|c| matches!(c, 'A' | 'D' | 'R'))
+}
+
 /// Per-owner aggregation while folding event rows into the snapshot.
 struct OwnerAgg {
     display_name: String,
@@ -218,18 +227,22 @@ pub(crate) async fn compose_snapshot(
         file.last_touched = file.last_touched.max(pfe.event.at);
     }
 
-    // Resolve ownership per path with **proof** rows the only evidence
-    // ([D112]) — correlation never decides, not even for the bracket's own
-    // session:
+    // Resolve ownership per path with **proof** rows the leading evidence
+    // ([D112]) — correlation never decides on its own, with one promotion:
     //
     // - Some session proof-owns the path → strip it from every owner that
     //   only bracket-grabbed it (their contamination); mark `shared` iff more
     //   than one session proof-owns it (genuine same-file contention).
-    // - No proof owner → strip the path from every bracket holder, however
-    //   many: the same delta that sweeps up another session's save sweeps up
-    //   the user's own hand-save during the command, and the user's editor
-    //   has no session to claim it back. The path falls to `unattributed`
-    //   below — visible, an explicit per-file election on the card.
+    // - No proof owner, one bracket holder, structural op → promote it. A
+    //   delete / rename / new-untracked file is the session's own shell work
+    //   (`git rm`, `mv`, a heredoc `>`), never an incidental editor hand-save
+    //   caught in the window — you don't hand-save a deletion. The sole
+    //   holder claims it.
+    // - No proof owner, otherwise → strip the path from every bracket holder:
+    //   the same delta that sweeps up another session's save sweeps up the
+    //   user's own hand-save during the command, and the user's editor has no
+    //   session to claim it back. A plain content modify is exactly that
+    //   ambiguous case; the path falls to `unattributed` below.
     let all_paths: HashSet<String> = owners
         .values()
         .flat_map(|agg| agg.files.keys().cloned())
@@ -246,7 +259,19 @@ pub(crate) async fn compose_snapshot(
             .filter(|(_, agg)| agg.files.contains_key(path))
             .map(|(id, _)| id.clone())
             .collect();
+        // Sole-holder structural promotion: keep the file on its one bracket
+        // holder rather than stripping it to unattributed.
+        let promoted_holder: Option<&String> = (proof_ids.is_none()
+            && holders.len() == 1
+            && owners
+                .get(&holders[0])
+                .and_then(|agg| agg.files.get(path))
+                .is_some_and(|f| status_is_structural(&f.git_status)))
+        .then(|| &holders[0]);
         for id in &holders {
+            if promoted_holder == Some(id) {
+                continue;
+            }
             if !proof_ids.is_some_and(|ids| ids.contains(id)) {
                 if let Some(agg) = owners.get_mut(id) {
                     if agg.files.remove(path).is_some() {
@@ -819,8 +844,15 @@ mod tests {
         let (_dir, root) = init_repo();
         std::fs::write(root.join("owned.txt"), "x").unwrap();
         std::fs::write(root.join("both.txt"), "x").unwrap();
-        std::fs::write(root.join("tainted.txt"), "x").unwrap();
         std::fs::write(root.join("hand-edit.txt"), "x").unwrap();
+        // tainted.txt is tracked and then content-modified: a plain modify is
+        // the ambiguous op the sole-holder promotion must NOT claim (the same
+        // delta could be the user's hand-save of a tracked file). Structural
+        // ops are covered by `compose_promotes_sole_holder_structural_op`.
+        std::fs::write(root.join("tainted.txt"), "base\n").unwrap();
+        git(&root, &["add", "tainted.txt"]);
+        git(&root, &["commit", "-q", "--amend", "--no-edit"]);
+        std::fs::write(root.join("tainted.txt"), "modified\n").unwrap();
 
         let ledger = SessionLedger::open_in_memory().unwrap();
         ledger
@@ -851,6 +883,9 @@ mod tests {
         let mut tainted = event("sess-alpha", "tu-4", &root.join("tainted.txt"), &root);
         tainted.origin = "bash".to_owned();
         tainted.ambiguous = true;
+        // tainted.txt is tracked, so its event must post-date the base commit
+        // to stay live (the row-liveness cut is the last commit time).
+        tainted.at = 9_000_000_000_000;
         ledger.record_file_event(&tainted).unwrap();
         // An event whose file was since committed/reverted must drop out.
         ledger
@@ -925,6 +960,73 @@ mod tests {
             tainted.hinted_by,
             vec!["sess-alpha".to_string()],
             "the bracket holder surfaces as a hint, never an attribution"
+        );
+    }
+
+    #[tokio::test]
+    async fn compose_promotes_sole_holder_structural_op() {
+        // The screenshot case: the session's shell deleted a tracked file
+        // (`git rm` / `rm`), so only a bracket saw it — no Edit/Write proof
+        // row. A delete has no editor hand-save story, so a sole bracket
+        // holder claims it. A structural op with two bracket holders stays
+        // ambiguous.
+        let (_dir, root) = init_repo();
+        // committed.txt exists in base; delete it → worktree delete (`.D`).
+        std::fs::remove_file(root.join("committed.txt")).unwrap();
+        // contested.txt: a new untracked file two sessions' brackets both saw
+        // — the sole-holder guard keeps it unattributed.
+        std::fs::write(root.join("contested.txt"), "x").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for s in ["sess-alpha", "sess-beta"] {
+            ledger
+                .record_spawn(s, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+        }
+        ledger.rename("sess-alpha", Some("alpha work")).unwrap();
+
+        let mut del = event("sess-alpha", "tu-del", &root.join("committed.txt"), &root);
+        del.origin = "bash".to_owned();
+        del.op = "deleted".to_owned();
+        // committed.txt is tracked; its event must post-date the base commit
+        // to stay live (the row-liveness cut is the last commit time).
+        del.at = 9_000_000_000_000;
+        ledger.record_file_event(&del).unwrap();
+        for (s, tu) in [("sess-alpha", "tu-c1"), ("sess-beta", "tu-c2")] {
+            let mut grab = event(s, tu, &root.join("contested.txt"), &root);
+            grab.origin = "bash".to_owned();
+            ledger.record_file_event(&grab).unwrap();
+        }
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+
+        // committed.txt is claimed by its sole bracket holder.
+        let alpha = snapshot
+            .changesets
+            .iter()
+            .find_map(|e| match e {
+                ChangesetEntry::Session {
+                    owner_id, files, ..
+                } if owner_id == "sess-alpha" => Some(files),
+                _ => None,
+            })
+            .expect("sess-alpha entry");
+        let alpha_paths: Vec<&str> = alpha.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            alpha_paths, ["committed.txt"],
+            "a sole-holder delete is promoted to attribution"
+        );
+        assert!(alpha[0].git_status.contains('D'));
+
+        // contested.txt has two bracket holders — still ambiguous.
+        let unattributed: Vec<&str> = snapshot
+            .unattributed
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
+        assert_eq!(
+            unattributed, ["contested.txt"],
+            "a structural op with two holders stays unattributed"
         );
     }
 

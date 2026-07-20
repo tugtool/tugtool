@@ -1,22 +1,19 @@
 /**
  * changes-route-controller — the per-card Changes view-route store ([P07]).
  *
- * On the `±` route the Session card commits the *head selection*: its own
- * session's changed files plus the project's unattributed files, one
- * selection set, one `changeset_commit` ([P05]). The controller is the
- * [L02]-conformant meeting point between the prompt entry (which reads the
- * selection at submit time) and the ChangesView (which draws the
- * checkboxes).
+ * On the `±` route the Session card commits its session's changeset as one
+ * unit ([P05]): every file this session is attributed to, one
+ * `changeset_commit`. There is no per-file election — an AI session emits a
+ * unified changeset; a file you don't want in it is a conversation with the
+ * AI, not a checkbox. Unattributed files (no session claims them) are shown
+ * for awareness but never swept into this session's commit.
  *
  * It opens NO feed of its own — the per-workspace `CHANGESET` feed (0x23)
  * is retired. Instead it subscribes to the app-level `ChangesetAllStore`
  * singleton (`CHANGESET_ALL`, 0x24 — the same store the Lens reads) and
  * derives its slice as a filtered projection: this card's project by
  * `workspace_key`, its session entry by `owner_id`, the project's dash
- * entries, and the unattributed bucket. Selection is layered on top as an
- * override map over the default rule: `!shared` for session files,
- * always-OFF for unattributed (no owner claims them — inclusion is an
- * explicit election, mirroring the CLI's exit-3 refusal).
+ * entries, and the unattributed bucket.
  *
  * The commit and draft triggers are pass-throughs to the shipping app-level
  * verb / draft stores keyed by one identity (`entryKey` /
@@ -33,8 +30,6 @@ import {
 import { getChangesetDraftStore } from "./changeset-draft-store";
 import { getChangesetVerbStore } from "./changeset-verb-store";
 import type {
-  ChangesetDraftSelection,
-  ChangesetFile,
   DashChangesetEntry,
   ProjectChangeset,
   SessionChangesetEntry,
@@ -65,56 +60,8 @@ export interface ChangesRouteSnapshot {
   unattributed: UnattributedFile[];
   /** The project header (real feed project, or a placeholder before first emit). */
   project: ProjectChangeset;
-  /** Repo-relative paths currently selected for commit (session files by default; unattributed only by explicit election). */
-  selectedPaths: ReadonlySet<string>;
-}
-
-/** The commit-selection default for a session file: on unless shared. */
-export function sessionFileDefaultSelected(file: ChangesetFile): boolean {
-  return !file.shared;
-}
-
-/**
- * Persisted selection dispositions → override map ([P02]): `include` paths
- * override ON, `exclude` paths override OFF. The inverse of
- * {@link selectionFromOverrides}.
- */
-export function overridesFromSelection(
-  selection: ChangesetDraftSelection | null | undefined,
-): Map<string, boolean> {
-  const map = new Map<string, boolean>();
-  for (const path of selection?.include ?? []) map.set(path, true);
-  for (const path of selection?.exclude ?? []) map.set(path, false);
-  return map;
-}
-
-/**
- * Override map → persisted selection dispositions ([P02]): deltas against
- * the default rule only — an override that matches the default (or names a
- * file no longer in the snapshot) drops out, so the persisted row never
- * accretes stale paths.
- */
-export function selectionFromOverrides(
-  snapshot: ChangesRouteSnapshot,
-  overrides: ReadonlyMap<string, boolean>,
-): ChangesetDraftSelection {
-  const defaults = new Map<string, boolean>();
-  for (const file of snapshot.entry?.files ?? []) {
-    defaults.set(file.path, sessionFileDefaultSelected(file));
-  }
-  for (const file of snapshot.unattributed) {
-    if (!defaults.has(file.path)) defaults.set(file.path, false);
-  }
-  const include: string[] = [];
-  const exclude: string[] = [];
-  for (const [path, on] of overrides) {
-    const def = defaults.get(path);
-    if (def === undefined || on === def) continue;
-    (on ? include : exclude).push(path);
-  }
-  include.sort();
-  exclude.sort();
-  return { include, exclude };
+  /** Repo-relative paths this session's commit lands — its full attributed set. */
+  committedPaths: ReadonlySet<string>;
 }
 
 /**
@@ -153,14 +100,14 @@ function placeholderProject(binding: ChangesRouteBinding): ProjectChangeset {
 
 /**
  * Pure derivation of a card's Changes slice from the aggregate snapshot.
- * Scoped to one workspace (`buildItems` scoped to a single project), with
- * the same placeholder-project fallback and the same selection defaults an
- * `override` map is layered over. Exported for unit tests.
+ * Scoped to one workspace, with the placeholder-project fallback. The
+ * committed set is the session's full attributed file list — no per-file
+ * election; unattributed files are surfaced but never committed by this
+ * session. Exported for unit tests.
  */
 export function deriveChangesRouteSnapshot(
   data: WorkspacesChangesetSnapshot,
   binding: ChangesRouteBinding,
-  overrides: ReadonlyMap<string, boolean>,
 ): ChangesRouteSnapshot {
   const project =
     data.projects.find((p) => p.workspace_key === binding.workspaceKey) ??
@@ -176,30 +123,16 @@ export function deriveChangesRouteSnapshot(
     }
   }
 
-  const selectedPaths = new Set<string>();
-  const consider = (path: string, defaultOn: boolean): void => {
-    const on = overrides.has(path) ? (overrides.get(path) as boolean) : defaultOn;
-    if (on) selectedPaths.add(path);
-  };
-  if (entry !== null) {
-    for (const file of entry.files) {
-      consider(file.path, sessionFileDefaultSelected(file));
-    }
-  }
-  // Unattributed files default OFF: no owner claims them, so including one
-  // in a commit is an explicit per-file election — the card mirror of the
-  // CLI's exit-3 refusal ([D112]; a default set never absorbs work the
-  // session can't account for).
-  for (const file of project.unattributed) {
-    consider(file.path, false);
-  }
+  const committedPaths = new Set<string>(
+    entry?.files.map((file) => file.path) ?? [],
+  );
 
   return {
     entry,
     dashes,
     unattributed: project.unattributed,
     project,
-    selectedPaths,
+    committedPaths,
   };
 }
 
@@ -223,9 +156,6 @@ export class ChangesRouteController {
   private readonly _allStore: ChangesetAllStore | null;
   private readonly _unsubscribe: () => void;
   private readonly _listeners = new Set<() => void>();
-  private readonly _overrides = new Map<string, boolean>();
-  /** One-shot: the persisted draft selection has seeded the override map. */
-  private _selectionSeeded = false;
   private _snapshot: ChangesRouteSnapshot;
 
   constructor(
@@ -239,39 +169,17 @@ export class ChangesRouteController {
     this.entryKey = `session:${binding.tugSessionId}`;
     this._allStore = allStore;
     this._snapshot = this._derive();
-    this._maybeSeedSelection();
     this._unsubscribe =
       allStore !== null ? allStore.subscribe(() => this._recompute()) : () => {};
   }
 
   private _derive(): ChangesRouteSnapshot {
     const data = this._allStore?.getSnapshot() ?? EMPTY_SNAPSHOT;
-    return deriveChangesRouteSnapshot(data, this._binding, this._overrides);
-  }
-
-  /**
-   * Seed the override map from the entry's persisted draft selection
-   * ([P02]) — once, the first time a draft carrying dispositions appears.
-   * Local overrides made before the snapshot arrived win (the user's live
-   * hand beats the stored echo); later snapshots never re-seed, so a
-   * toggle-then-echo round-trip can't clobber newer local state.
-   */
-  private _maybeSeedSelection(): boolean {
-    if (this._selectionSeeded) return false;
-    const selection = this._snapshot.entry?.draft?.selection;
-    if (selection === undefined) return false;
-    this._selectionSeeded = true;
-    if (this._overrides.size > 0) return false;
-    const seeded = overridesFromSelection(selection);
-    if (seeded.size === 0) return false;
-    for (const [path, on] of seeded) this._overrides.set(path, on);
-    this._snapshot = this._derive();
-    return true;
+    return deriveChangesRouteSnapshot(data, this._binding);
   }
 
   private _recompute(): void {
     this._snapshot = this._derive();
-    this._maybeSeedSelection();
     for (const listener of [...this._listeners]) listener();
   }
 
@@ -285,42 +193,6 @@ export class ChangesRouteController {
   };
 
   getSnapshot = (): ChangesRouteSnapshot => this._snapshot;
-
-  // ── Selection ──────────────────────────────────────────────────────────
-
-  /** Whether a path is currently selected for commit. */
-  isSelected(path: string): boolean {
-    return this._snapshot.selectedPaths.has(path);
-  }
-
-  /** Override the default selection for a path. Persists the disposition
-   *  deltas into the entry's draft immediately ([P02] — selection rides the
-   *  draft, so it survives restart and reads machine-globally). */
-  setSelected(path: string, on: boolean): void {
-    this._overrides.set(path, on);
-    // A human disposition decision: never let a later snapshot echo re-seed
-    // over it.
-    this._selectionSeeded = true;
-    this._recompute();
-    getChangesetDraftStore()?.setDraft(
-      this.projectDir,
-      this.draftOwnerKind,
-      this.tugSessionId,
-      { selection: selectionFromOverrides(this._snapshot, this._overrides) },
-    );
-  }
-
-  /** The selected repo-relative paths, in the snapshot's set order. */
-  selectedPaths(): string[] {
-    return [...this._snapshot.selectedPaths];
-  }
-
-  /** Drop all selection overrides back to the defaults. */
-  clearSelectionOverrides(): void {
-    if (this._overrides.size === 0) return;
-    this._overrides.clear();
-    this._recompute();
-  }
 
   // ── Triggers ───────────────────────────────────────────────────────────
 
@@ -339,7 +211,7 @@ export class ChangesRouteController {
    * ([P07]). No-op when the selection is empty or no store is attached.
    */
   commit(message: string): void {
-    const files = this.selectedPaths();
+    const files = [...this._snapshot.committedPaths];
     if (files.length === 0) return;
     this._lastCommitMessage = message;
     // Carry the session's display name + id so `do_changeset_commit` appends a
