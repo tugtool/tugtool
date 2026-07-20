@@ -1,6 +1,10 @@
 import { describe, it, expect } from "bun:test";
 
-import { autoShellOpener, classifyShellLine } from "../shell-line-classifier";
+import {
+  AUTO_SHELL_DETECTION_ENABLED,
+  autoShellOpener,
+  classifyShellLine,
+} from "../shell-line-classifier";
 
 // A representative login-PATH set. The classifier keys the first command token
 // against this; unknown names fall to Code unless path-shaped.
@@ -93,13 +97,18 @@ const MUST_CODE: readonly string[] = [
   "do you think this is thread safe",
 ];
 
+// Auto-detection is parked off (`AUTO_SHELL_DETECTION_ENABLED = false`): both
+// entry points short-circuit to Code / null. The corpora below document the
+// intended verdicts as the hook — gate each positive-detection assertion on the
+// flag so the suite stays correct in both states.
+
 describe("classifyShellLine — MUST classify shell", () => {
   it("has at least 30 command lines", () => {
     expect(MUST_SHELL.length).toBeGreaterThanOrEqual(30);
   });
   for (const line of MUST_SHELL) {
     it(`shell: ${line}`, () => {
-      expect(classifyShellLine(line, COMMANDS)).toBe(true);
+      expect(classifyShellLine(line, COMMANDS)).toBe(AUTO_SHELL_DETECTION_ENABLED);
     });
   }
 });
@@ -137,20 +146,26 @@ describe("classifyShellLine — gates", () => {
   });
 
   it("routes a path-shaped executable not in the set", () => {
-    expect(classifyShellLine("./bin/tool --run", COMMANDS)).toBe(true);
+    expect(classifyShellLine("./bin/tool --run", COMMANDS)).toBe(
+      AUTO_SHELL_DETECTION_ENABLED,
+    );
   });
 });
 
 describe("autoShellOpener — live `!shell` chip insert gate", () => {
+  // The opener token when detection is on, else null (parked off).
+  const opened = (token: string): string | null =>
+    AUTO_SHELL_DETECTION_ENABLED ? token : null;
+
   it("fires on an unambiguous PATH command + trailing space, caret at end", () => {
-    expect(autoShellOpener("git ", 4, COMMANDS)).toBe("git");
-    expect(autoShellOpener("ls ", 3, COMMANDS)).toBe("ls");
-    expect(autoShellOpener("cargo ", 6, COMMANDS)).toBe("cargo");
+    expect(autoShellOpener("git ", 4, COMMANDS)).toBe(opened("git"));
+    expect(autoShellOpener("ls ", 3, COMMANDS)).toBe(opened("ls"));
+    expect(autoShellOpener("cargo ", 6, COMMANDS)).toBe(opened("cargo"));
   });
 
   it("fires on a path-shaped executable", () => {
-    expect(autoShellOpener("./run.sh ", 9, COMMANDS)).toBe("./run.sh");
-    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS)).toBe("~/bin/tool");
+    expect(autoShellOpener("./run.sh ", 9, COMMANDS)).toBe(opened("./run.sh"));
+    expect(autoShellOpener("~/bin/tool ", 11, COMMANDS)).toBe(opened("~/bin/tool"));
   });
 
   it("never fires on ambiguous openers or stopword-ish commands", () => {

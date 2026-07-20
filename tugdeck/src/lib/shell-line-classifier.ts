@@ -53,7 +53,7 @@ const STOPWORDS: ReadonlySet<string> = new Set([
  * their full logic as the hook — gate the classifier's verdict here, or flip
  * this back to `true`, to re-enable.
  */
-const AUTO_SHELL_DETECTION_ENABLED = false;
+export const AUTO_SHELL_DETECTION_ENABLED = false;
 
 /** A leading `NAME=value` environment-assignment token (skipped to find the command). */
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
