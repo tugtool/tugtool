@@ -52,6 +52,8 @@ Investigation found the parts largely built: tugcast already handles `changeset_
 5. Native `/commit` (double-duty) and `/join` local slash verbs; retirement of `!changes commit|describe` sub-verbs, Claude's built-in `/commit`, and the Z5 "Generate a commit message" prompt-row button.
 6. Landing receipts as transcript ink; History join badges; release receipts.
 6a. Release hardening: shade-only gesture with a discard preflight, draft cleanup on release/join, and the empty-dash join→release handoff ([P14]).
+6b. `tugutil context` → `tugutil preflight` rename ([P16]) — "context" is AI-reserved vocabulary.
+6c. The shade becomes a presentation style of `TugSheet` — card-modal over the transcript, prompt entry live ([P17]); `TugShade` retires.
 7. `tugplug:commit` → `tugplug:draft` rename; `implement` skill ending hands off to `/join`.
 8. Laws/docs updates.
 
@@ -200,17 +202,17 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 #### [P07] Skills draft; humans land (DECIDED) {#p07-skills-draft}
 
-**Decision:** `tugplug/skills/commit` renames to `tugplug/skills/draft`: it gathers via plain `tugutil context`, decides dispositions (hint doctrine), authors the message, writes it with `tugutil draft set`, and reports — it **never commits**. The `implement` skill's ending changes from "run `tugutil dash join` in a terminal" to writing the dash's join draft (`tugutil draft set --owner dash:<name>`) and pointing at `/join <name>`.
+**Decision:** `tugplug/skills/commit` renames to `tugplug/skills/draft`: it gathers via plain `tugutil preflight` ([P16]), decides dispositions (hint doctrine), authors the message, writes it with `tugutil draft set`, and reports — it **never commits**. The `implement` skill's ending changes from "run `tugutil dash join` in a terminal" to writing the dash's join draft (`tugutil draft set --owner dash:<name>`) and pointing at `/join <name>`.
 
 **Rationale:** the misnomer resolves by renaming to what it does; fire-and-forget was about never blocking in conversation — a draft in an editor is not a confirmation prompt, it's a document awaiting a byline.
 
 **Implications:** SKILL.md rewrite; tugplug/CLAUDE.md skill roster update; the git-policy exception list in the repo CLAUDE.md updates (the draft skill no longer commits).
 
-#### [P08] Landing gates (DECIDED) {#p08-gates}
+#### [P08] Landing gates: idle-only, enforced at the affordance (DECIDED) {#p08-gates}
 
-**Decision:** Every landing (commit or join) requires: no inflight turn (`codeSessionStore.getSnapshot().canInterrupt !== true`), no pending landing for the same key (verb/join store phase), non-empty selection (commit) or clean-or-resolved preview (join), and a non-empty message. Refusals surface as pane bulletins (`notify?.caution`), never silent.
+**Decision:** Every landing (commit or join) requires: the session lifecycle **idle** (one exported predicate over `codeSessionStore`'s lifecycle state — not the `canInterrupt` proxy), no pending landing for the same key (verb/join store phase), non-empty selection (commit) or clean-or-resolved preview (join), and a non-empty message. The idle gate is enforced at **two levels**: dispatch (`/commit`/`/join` beat 2 refuses with a pane bulletin, `notify?.caution`, never silent) **and** affordance — while non-idle, every mutating control in the shade renders disabled with a reason (Regenerate, dash Join, dash Release; the release path already does this via `turnInProgress`, the doctrine makes it uniform). **Drafting stays live mid-turn**: reading diffs, flipping dispositions, and editing the message while a turn runs is the workflow's promise — only the mutating verbs idle-gate.
 
-**Rationale:** these are the proven gates of the existing `!changes commit` handler; a turn in flight means files may still be moving under the selection.
+**Rationale:** these are the proven gates of the existing `!changes commit` handler, strengthened per user ruling — a turn in flight means files may still be moving under the selection, so the *feature* must read as unavailable, not merely bounce at dispatch.
 
 #### [P09] Receipts are transcript ink; History badges joins (DECIDED) {#p09-receipts}
 
@@ -220,7 +222,7 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 
 #### [P10] All text entry on the TugTextEditor substrate (DECIDED) {#p10-substrate}
 
-**Decision:** The draft composer is `TugMessageEditor` (which composes `TugTextEditor`); any future text input this plan adds does the same. No browser-native text inputs.
+**Decision:** The draft composer is `TugMessageEditor` (which composes `TugTextEditor`); any future text input this plan adds does the same. No browser-native text inputs. This covers **display** as well as editing: the draft message is never rendered as read-only text outside the composer — the composer *is* the display (streamed generation lands in it via `restoreState`; edits happen in place).
 
 **Rationale:** user mandate; the substrate carries the responder registrations (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) that native inputs go dead without, and `TugMessageEditor`'s user-edit-only `onChange` is precisely the [P03] signal.
 
@@ -256,6 +258,22 @@ This plan follows the devise-skeleton v4 conventions: explicit `{#anchor}` on ev
 **Decision:** The Z5-shaped "Generate a commit message" button in the prompt row (`tug-prompt-entry.tsx`, shown only while the Changes shade is up) is removed in Step 7, with the `!changes describe` idiom it fronts.
 
 **Rationale:** its job is fully absorbed — `/commit` beat 1 *is* generation (Table T01), and the shade's **Regenerate** button is the explicit in-room path. A second casual generation trigger in chrome is exactly the class of accident [P03]'s edited-pin exists to prevent; leaving it would keep two generation affordances with different confirm semantics.
+
+#### [P16] `tugutil context` renames to `tugutil preflight` (DECIDED) {#p16-preflight-rename}
+
+**Decision:** "context" is AI-reserved vocabulary in Tug — it never names changes/commit machinery. The gathering verb renames `tugutil context` → `tugutil preflight`, through the whole stack: the clap verb (`cli.rs`, `changes.rs::run_context` → `run_preflight`), the core symbols (`tugchanges_core::{context, ContextOptions, ContextReport}` → `{preflight, PreflightOptions, PreflightReport}`), and the `--json` envelope label. `context` remains a **hidden clap alias** for one release — shipped Tug.app bundles carry skill text that says `tugutil context`, and a hard cut would strand them; the alias drops in a follow-on.
+
+**Rationale:** the word already means the AI's working set everywhere else in the suite; overloading it for git gathering misleads. And `preflight` is this plan's own vocabulary — the join preflight and release discard preflight ([P14]) are the same act: the readout you take before a landing. The CLI now says what the workflow says: **Preflight → Draft → Land.**
+
+**Implications:** rename lands in #step-3 (the CLI step) so #step-10's skill rewrite is born saying `tugutil preflight`; the doc sweep (`tuglaws/tracking-changes.md`, `tuglaws/INDEX.md`, `tugplug/skills/history/SKILL.md`; archives untouched) threads into #step-11.
+
+#### [P17] The shade is a presentation style of TugSheet (DECIDED) {#p17-shade-as-sheet}
+
+**Decision:** `TugSheet` gains `presentation="shade"`: full card width, top-anchored, bottom-resizable via the grabber (height fraction persisted through the existing tugbank `SHADE_HEIGHT_DOMAIN`), with TugSheet's modal machinery — scrim, focus trap, `inert` scope, chain-native `cancelDialog` close (Escape / Cmd-.). The standalone `TugShade` component retires; **both** the Changes and History views migrate onto the new presentation (History becomes modal too — read-mostly, modality costs nothing, and one substrate beats two). **Carve-out:** the shade presentation's modal scope covers the **transcript region only** — the prompt entry strip stays **outside** the inert scope, live beneath the sheet's bottom edge. This is a deliberate exception to TugSheet's whole-pane-body-inert contract, unique to this presentation.
+
+**Rationale:** TugShade was designed as an inspection layer ("no scrim, no focus trap, no modality" — its own header) and this plan turns the shade into the room where landings are reviewed and armed; an action surface wants modal scope. Mechanically it's a merge, not an invention: TugSheet already owns pane-modal stacking/scrim/inert/close; TugShade contributes exactly what it lacks (full-width top-anchored geometry, persisted-frac grabber). The carve-out resolves the collision with [P01]/[P04]: beat 2 of `/commit` (and `/join`) is *typed* — an inert prompt entry would kill the landing gesture. Modality over the content, liveness where landings execute (user ruling).
+
+**Implications:** new #step-3a builds the presentation and migrates Changes/History **before** the composer/zone work (#step-4–#step-6 build inside the shade and should build on the final substrate); the State Zone Mapping gains the sheet's height/modality rows; Escape leaves the shade via the chain ([L11]).
 
 ---
 
@@ -318,6 +336,8 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 | Landing phases (commit/join round-trips) | external | existing `changeset-verb-store` / `changeset-join-store` | [L02] |
 | Receipt block presence | external | session command block registry entries | [L02] |
 | Composer focus/responders | responder chain | `TugTextEditor`'s own registrations | [L11], [L03] |
+| Shade height fraction | server (tugbank) | sheet `shade` presentation grabber → `SHADE_HEIGHT_DOMAIN`; drag via custom property, no per-move re-render | [L02], [L06] |
+| Shade open/close + modality | external + chain | `shadeViewController` drives the sheet; `cancelDialog` chain close; inert scope excludes the prompt entry ([P17]) | [L02], [L11] |
 
 ---
 
@@ -346,6 +366,8 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 | receipt block renderer | component | `cards/session-command-block-registry.ts` (+ block component) | Spec S04 |
 | join badge | render | `session-history/session-history-view.tsx` | `Tug-Dash:` trailer parse ([P09]) |
 | `draft` verbs | CLI | `tugutil/src/cli.rs`, `tugutil/src/draft.rs` | Spec S02, Spec S05 (canonical `--project`) |
+| `preflight` verb (rename) | CLI + core | `tugutil/src/cli.rs`, `tugutil/src/changes.rs`, `tugchanges-core` | [P16]; hidden `context` alias, one release |
+| `presentation="shade"` | prop + styles | `tugways/tug-sheet.tsx`, `tug-sheet.css` | [P17]; ports TugShade grabber + persistence; `tug-shade.tsx`/`.css` deleted |
 | `dash_draft_message` | fn (modify) | `tugdash-core/src/ops.rs` | repoint to `changes.changeset_drafts` via `changes_db_path()`; Spec S05 read |
 | local-name collision filter | fn | `tugdeck/src/lib/session-metadata-store.ts` (or the popup merge site) | suppresses Claude-advertised commands shadowed by `LOCAL_SLASH_COMMANDS` |
 
@@ -390,7 +412,8 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 |---|---|---|---|
 | #step-1 | Draft rows: machine-global, edited, selection | pending | — |
 | #step-2 | `changeset_draft_set` verb + edited gate | pending | — |
-| #step-3 | `tugutil draft` CLI + aggregate probe | pending | — |
+| #step-3 | `tugutil draft` CLI + aggregate probe + preflight rename | pending | — |
+| #step-3a | TugSheet shade presentation; retire TugShade | pending | — |
 | #step-4 | Zone 1 composer (TugMessageEditor) | pending | — |
 | #step-5 | Zone split + Also-line + jump links | pending | — |
 | #step-6 | Bracket hints through compose to the shade | pending | — |
@@ -448,31 +471,56 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 
 ---
 
-#### Step 3: `tugutil draft` CLI + aggregate probe {#step-3}
+#### Step 3: `tugutil draft` CLI + aggregate probe + preflight rename {#step-3}
 
 **Depends on:** #step-1
 
-**Commit:** `tugutil draft set/show/clear; drafts-version probe in the aggregate`
+**Commit:** `tugutil draft set/show/clear; drafts probe; context renames to preflight`
 
-**References:** [P11], [P12], Spec S02, Spec S05, Risk R01, (#r01-aggregate-poll)
+**References:** [P11], [P12], [P16], Spec S02, Spec S05, Risk R01, (#r01-aggregate-poll)
 
 **Tasks:**
 - [ ] New `tugutil/src/draft.rs` + `cli.rs` wiring per Spec S02; WAL write to `changes.changeset_drafts` via `tugcore::instance::changes_db_path()`; `--project` canonicalized on write per Spec S05; plain + `--json` output.
 - [ ] Add the 2 s `MAX(updated_at)` probe arm to `ChangesetAllFeed`'s select loop in `changeset_all.rs`; bump only on change; update the module-header doctrine comment.
+- [ ] Preflight rename ([P16]): clap verb `context` → `preflight` with hidden `context` alias; `changes.rs::run_context` → `run_preflight`; `tugchanges_core::{context, ContextOptions, ContextReport}` → `{preflight, PreflightOptions, PreflightReport}`; `--json` envelope label; `cli.rs` long_about wording.
 
 **Tests:**
 - [ ] Rust integration (`tugutil/tests/`): `draft set` → `draft show` round-trip under `TUG_CHANGES_DB` isolation; include/exclude serialization.
 - [ ] Rust integration (cross-process spelling, Spec S05): `tugutil draft set` with a symlinked/raw `--project` spelling → tugcast-side compose (`compose_snapshot` with the same `TUG_CHANGES_DB`) finds and attaches the draft to the entry.
 - [ ] Rust: probe fires the bump exactly once per external write.
+- [ ] Rust integration: `tugutil preflight` produces the readout; `tugutil context` (hidden alias) still resolves.
 
 **Checkpoint:**
 - [ ] `cargo nextest run` green.
 
 ---
 
+#### Step 3A: TugSheet shade presentation; retire TugShade {#step-3a}
+
+**Depends on:** #step-1
+
+**Commit:** `Shade becomes a TugSheet presentation; TugShade retires`
+
+**References:** [P17], (#p17-shade-as-sheet, #state-zone-mapping)
+
+**Artifacts:** `presentation="shade"` on `TugSheetContent`; migrated Changes + History mounts in `session-card.tsx`; deleted `tug-shade.tsx`/`tug-shade.css`.
+
+**Tasks:**
+- [ ] Add the `shade` presentation to `tug-sheet.tsx`/`tug-sheet.css`: full pane width, top-anchored, bottom grabber porting TugShade's drag mechanics and tugbank persistence (`SHADE_HEIGHT_DOMAIN`, `persistKey`, `--tug-shade-frac`-style custom-property drag — no React state per pointer move, [L06]).
+- [ ] Modal scope per [P17]: scrim + `inert` + focus trap cover the **transcript region only**; the prompt entry strip stays outside the inert scope and live. Escape / Cmd-. leave via the chain-native `cancelDialog` path ([L11]).
+- [ ] Migrate the Changes and History mounts in `session-card.tsx` (`shadeViewController` show/hide/toggle drives sheet open/close); delete `tug-shade.tsx` + `tug-shade.css`.
+
+**Tests:**
+- [ ] bun: height-fraction persistence round-trip through the sheet presentation (same `persistKey` semantics as before).
+
+**Checkpoint:**
+- [ ] `bun test` + `bunx vite build` green; manual: shade opens modal over the transcript, transcript inert, prompt entry types, grabber resizes and persists, Escape closes; Maker ▸ Reload clean.
+
+---
+
 #### Step 4: Zone 1 composer {#step-4}
 
-**Depends on:** #step-2
+**Depends on:** #step-2, #step-3a
 
 **Commit:** `Mount the draft composer in the Changes shade`
 
@@ -615,7 +663,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 **References:** [P07], [P11], Spec S02, (#p07-skills-draft)
 
 **Tasks:**
-- [ ] Move `tugplug/skills/commit/` → `tugplug/skills/draft/`; rewrite SKILL.md: gather (`tugutil context`, plain, no glue), decide dispositions (hint doctrine), author message, `tugutil draft set --owner session:$TUG_SESSION_ID …`, report selections + rationale; never commit; explicit note that `/commit` is the user's landing gesture.
+- [ ] Move `tugplug/skills/commit/` → `tugplug/skills/draft/`; rewrite SKILL.md: gather (`tugutil preflight`, plain, no glue — [P16] name from birth), decide dispositions (hint doctrine), author message, `tugutil draft set --owner session:$TUG_SESSION_ID …`, report selections + rationale; never commit; explicit note that `/commit` is the user's landing gesture.
 - [ ] `tugplug/skills/implement/SKILL.md` ending: write the join draft (`tugutil draft set --owner dash:<name>` with a rounds digest) and point the user at `/join <name>`; drop the terminal-join instruction.
 - [ ] `tugplug/CLAUDE.md` roster + repo `CLAUDE.md` git-policy exception list updates.
 
@@ -638,6 +686,7 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 **Tasks:**
 - [ ] `tuglaws/tracking-changes.md`: "The landing workflow" section — lifecycle, draft doctrine ([P02]/[P03]), gates ([P08]), receipts ([P09]), verb ownership ([P11]), git-is-read-only policy.
 - [ ] `tuglaws/design-decisions.md`: new global decision for the consolidation.
+- [ ] Preflight rename doc sweep ([P16]): `tuglaws/tracking-changes.md`, `tuglaws/INDEX.md`, `tugplug/skills/history/SKILL.md` say `tugutil preflight`; roadmap archives untouched.
 
 **Checkpoint:**
 - [ ] Docs cross-references resolve (anchors, [D##] cites); no hard-wrapped prose.
@@ -675,6 +724,9 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 - [ ] Drafts are machine-global, survive restart/reload, and edited drafts are clobber-proof (tests green).
 - [ ] Zone 2 collapses to one line and jump-links to owner sessions.
 - [ ] Releasing a dash with work shows the discard preflight, leaves a receipt, and clears its join draft; the Z5 Generate button is gone ([P14]/[P15]).
+- [ ] `tugutil preflight` is the gathering verb everywhere (skills, laws, help text); `context` survives only as the hidden alias ([P16]).
+- [ ] The shade is a `TugSheet` presentation: modal over the transcript, prompt entry live beneath it, `TugShade` deleted ([P17]).
+- [ ] Landing affordances render disabled while the session is non-idle; drafting stays live mid-turn ([P08]).
 - [ ] Full suite green: `cargo nextest run`, `bun test`, `bunx vite build`, `just app-test`.
 
 **Acceptance tests:** the Step 3/8 Rust integration tests and Step 7 matcher tests are the anchors.
