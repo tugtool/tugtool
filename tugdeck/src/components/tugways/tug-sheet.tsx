@@ -79,6 +79,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import * as FocusScopeRadix from "@radix-ui/react-focus-scope";
@@ -99,7 +100,16 @@ import {
   useSavedComponentState,
 } from "./use-component-state-preservation";
 import { TugSheetStackingContext } from "./tug-sheet-stacking-context";
+import {
+  DEFAULT_SHADE_FRAC,
+  clampShadeFrac,
+  readPersistedShadeFrac,
+  subscribeShadeHeightDomain,
+  writePersistedShadeFrac,
+} from "./shade-height";
 import { icons } from "lucide-react";
+
+export { SHADE_HEIGHT_DOMAIN } from "./shade-height";
 
 /* ---------------------------------------------------------------------------
  * Presentation styles
@@ -121,6 +131,16 @@ import { icons } from "lucide-react";
  *   - `"scale-fade"` The panel fades in while scaling up from slightly
  *                    smaller, and fades out while scaling back down.
  *                    No directional slide. The default.
+ *   - `"shade"`      NOT just a transition — a distinct panel geometry
+ *                    ([P17]): full slot width, top-anchored, rendered IN
+ *                    PLACE (no pane-frame portal) inside a positioned
+ *                    wrapper the consumer provides, with a bottom grabber
+ *                    that drags the height fraction (persisted via
+ *                    tugbank under `persistKey`). Modal scope covers the
+ *                    consumer's `modalScopeSelector` element only — the
+ *                    deliberate carve-out that keeps the prompt entry
+ *                    live beneath the shade's bottom edge. Enters and
+ *                    exits with the `top` window-shade motion.
  *
  * The resting (pre-enter / post-exit) state for each style is declared
  * in `tug-sheet.css` keyed on `data-tug-sheet-presentation` so the
@@ -128,7 +148,7 @@ import { icons } from "lucide-react";
  * no first-paint flash. The keyframes below must stay in sync with
  * those resting states.
  */
-export type TugSheetPresentation = "top" | "bottom" | "scale-fade";
+export type TugSheetPresentation = "top" | "bottom" | "scale-fade" | "shade";
 
 /**
  * How wide the sheet panel sits within its host pane.
@@ -203,6 +223,12 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
       { transform: "scale(1)", opacity: 1 },
       { transform: "scale(0.96)", opacity: 0 },
     ],
+  },
+  // The shade descends like the `top` window-shade; its wrapper (the
+  // consumer's positioned pane) clips the slide.
+  shade: {
+    enter: [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }],
+    exit: [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
   },
 };
 
@@ -288,6 +314,14 @@ export interface TugSheetProps {
    * `setOpen` directly. Marked state-preserving per [A9] / [AT0026].
    */
   componentStatePreservationKey?: string;
+  /**
+   * Observer for open-state commits — NOT a controlled-mode prop (the sheet
+   * still owns its own state). Lets a consumer that mirrors the sheet's
+   * visibility in an external store (e.g. the Session card's
+   * `shadeViewController`) hear a self-initiated close (Escape / Cmd-. /
+   * `cancelDialog`) and re-sync.
+   */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** Serialized shape of `TugSheet`'s preserved state. */
@@ -307,7 +341,7 @@ interface TugSheetState {
  * ```
  */
 export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
-  function TugSheet({ defaultOpen = false, responderId: responderIdProp, children, componentStatePreservationKey }, ref) {
+  function TugSheet({ defaultOpen = false, responderId: responderIdProp, children, componentStatePreservationKey, onOpenChange }, ref) {
     const savedSheetState = useSavedComponentState<TugSheetState>(
       componentStatePreservationKey,
     );
@@ -320,9 +354,13 @@ export const TugSheet = React.forwardRef<TugSheetHandle, TugSheetProps>(
     const fallbackResponderId = useId();
     const responderId = responderIdProp ?? fallbackResponderId;
 
-    const handleOpenChange = useCallback((next: boolean) => {
-      setOpen(next);
-    }, []);
+    const handleOpenChange = useCallback(
+      (next: boolean) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      },
+      [onOpenChange],
+    );
 
     // Opt-in Component State Preservation Protocol. Hook no-ops when
     // `componentStatePreservationKey` is undefined or rendered outside
@@ -539,6 +577,27 @@ export interface TugSheetContentProps {
    * See {@link ShowSheetOptions.onCommitDisposition}.
    */
   onCommitDisposition?: "retain" | "relinquish";
+  /**
+   * Tugbank key the `shade` presentation's height fraction persists under
+   * (shades sharing a key share a height). Required for
+   * `presentation="shade"`; ignored otherwise.
+   */
+  persistKey?: string;
+  /**
+   * Pixel floor for the shade's height — it can never be dragged shorter.
+   * Shade presentation only. @default 160
+   */
+  shadeMinHeight?: number;
+  /** Accessible label for the shade's resize grabber. @default "Resize" */
+  grabberLabel?: string;
+  /**
+   * Selector (queried within the host pane chrome) for the element that goes
+   * `inert` while the sheet is open. Defaults to `.tug-pane-body` — the
+   * whole-pane-body modal contract. The `shade` presentation passes a
+   * narrower region ([P17]'s carve-out: the transcript slot, leaving the
+   * prompt entry live).
+   */
+  modalScopeSelector?: string;
   /** Arbitrary content. */
   children?: React.ReactNode;
 }
@@ -573,6 +632,10 @@ export function TugSheetContent({
   hideHeader = false,
   hideHeaderRule = false,
   onCommitDisposition = "retain",
+  persistKey,
+  shadeMinHeight = 160,
+  grabberLabel = "Resize",
+  modalScopeSelector,
   children,
 }: TugSheetContentProps) {
   const { open, onOpenChange, contentId, responderId } = useTugSheetContext();
@@ -714,6 +777,9 @@ export function TugSheetContent({
   // transformed) so the entrance animation on the panel doesn't skew it — no
   // rAF/commit sequencing needed ([L05]).
   useLayoutEffect(() => {
+    // The shade's height is fraction-driven CSS against its slot — no
+    // canvas clamp applies.
+    if (presentation === "shade") return;
     const content = sheetContentRef.current;
     const clip = clipRef.current;
     if (content === null || clip === null || paneFrameEl === null) return;
@@ -791,7 +857,7 @@ export function TugSheetContent({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [paneFrameEl, mounted, maxHostFraction, aspectLockContent]);
+  }, [paneFrameEl, mounted, maxHostFraction, aspectLockContent, presentation]);
 
   // ---- Drag-resize ([D15] resizable sheets) ----
   //
@@ -1036,10 +1102,12 @@ export function TugSheetContent({
   // (multiple sheets, future modal-class surfaces sharing the chrome).
   // No-op fallback when no TugPane ancestor is in scope. [D18]
   useLayoutEffect(() => {
-    if (!open) return;
+    // The shade owns its own scrim element scoped to its slot ([P17]) —
+    // raising the whole-pane scrim would dim the live prompt entry.
+    if (!open || presentation === "shade") return;
     paneScrim.show();
     return () => paneScrim.hide();
-  }, [open, paneScrim]);
+  }, [open, paneScrim, presentation]);
 
   // Dev warning: aria-labelledby requires a target.
   if (process.env.NODE_ENV !== "production" && !title) {
@@ -1072,9 +1140,11 @@ export function TugSheetContent({
   // open ([L03]/[L06]). The toggle is the shared `usePaneInert` primitive
   // (also used by `TugControlBar`); the trigger capture below stays here
   // because focus-restore-on-close is sheet-specific.
+  // The `modalScopeSelector` narrows the inert region below the whole pane
+  // body (the shade's transcript-only carve-out, [P17]).
   const paneBody = useMemo(
-    () => cardEl?.querySelector(".tug-pane-body") ?? null,
-    [cardEl],
+    () => cardEl?.querySelector(modalScopeSelector ?? ".tug-pane-body") ?? null,
+    [cardEl, modalScopeSelector],
   );
   // Capture the focused element before the body becomes inert (setting
   // `inert` blurs focus into the body), so close can restore it. Declared
@@ -1145,7 +1215,115 @@ export function TugSheetContent({
     focusManager?.focusKeyView();
   }
 
+  // ---- Shade height fraction ([P17], ported from TugShade) ----
+  //
+  // Persisted fraction via tugbank ([L02]); re-renders when any shade
+  // sharing the key commits a new height. The drag writes the fraction
+  // straight onto the panel's `--tug-shade-frac` custom property ([L06] —
+  // zero re-renders while dragging); release persists.
+  const getShadeFracSnapshot = useCallback(
+    () => (persistKey !== undefined ? readPersistedShadeFrac(persistKey) : null),
+    [persistKey],
+  );
+  const persistedShadeFrac = useSyncExternalStore(
+    subscribeShadeHeightDomain,
+    getShadeFracSnapshot,
+  );
+  const shadeFrac = persistedShadeFrac ?? DEFAULT_SHADE_FRAC;
+
+  const handleShadeGrabberPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || persistKey === undefined) return;
+      const root = sheetContentRef.current;
+      // The shade's containing block is its positioned wrapper (the
+      // consumer's slot pane) — the box the height fraction resolves
+      // against.
+      const slot = root?.offsetParent ?? null;
+      if (root === null || slot === null) return;
+      event.preventDefault();
+      const grabber = event.currentTarget;
+      grabber.setPointerCapture(event.pointerId);
+      const slotRect = slot.getBoundingClientRect();
+      if (slotRect.height <= 0) return;
+      let liveFrac = shadeFrac;
+
+      const onMove = (move: PointerEvent): void => {
+        liveFrac = clampShadeFrac((move.clientY - slotRect.top) / slotRect.height);
+        root.style.setProperty("--tug-shade-frac", String(liveFrac));
+      };
+      const onUp = (): void => {
+        grabber.removeEventListener("pointermove", onMove);
+        grabber.removeEventListener("pointerup", onUp);
+        grabber.removeEventListener("pointercancel", onUp);
+        writePersistedShadeFrac(persistKey, liveFrac);
+      };
+      grabber.addEventListener("pointermove", onMove);
+      grabber.addEventListener("pointerup", onUp);
+      grabber.addEventListener("pointercancel", onUp);
+    },
+    [persistKey, shadeFrac],
+  );
+
   if (!mounted) return null;
+
+  // ---- Shade presentation ([P17]) — rendered in place, no portal ----
+  //
+  // The consumer mounts this inside a positioned wrapper over the region
+  // the shade covers (the Session card's view slot pane). The scrim fills
+  // that wrapper only, and `modalScopeSelector` narrows the inert region
+  // to match — everything outside (the prompt entry) stays live. The
+  // modal machinery is the sheet's own: focus trap, chain-native
+  // `cancelDialog` close (Escape / Cmd-.), lifecycle events.
+  if (presentation === "shade") {
+    return (
+      <TugSheetStackingContext.Provider value={true}>
+        <div className="tug-sheet-shade-scrim" data-slot="tug-sheet-shade-scrim" />
+        <FocusScopeRadix.FocusScope
+          trapped={false}
+          loop
+          onMountAutoFocus={handleMountAutoFocus}
+          onUnmountAutoFocus={handleUnmountAutoFocus}
+        >
+          <div
+            ref={composedContentRef}
+            id={contentId}
+            className="tug-sheet-shade"
+            role="dialog"
+            aria-label={title}
+            aria-describedby={description ? descriptionId : undefined}
+            data-slot="tug-sheet"
+            data-tug-sheet-presentation="shade"
+            style={{
+              ["--tug-shade-frac" as string]: String(shadeFrac),
+              minHeight: `${shadeMinHeight}px`,
+            }}
+            onKeyDown={handleKeyDown}
+            onMouseDown={suppressButtonFocusShift}
+          >
+            <ResponderScope>
+              {/* The consumer owns the shade's chrome (its BlockStrip
+                  header row) and content — the panel is a flex column;
+                  the grabber is the only chrome this presentation adds. */}
+              <div className="tug-sheet-shade-body">
+                <FocusModeScope>{children}</FocusModeScope>
+              </div>
+            </ResponderScope>
+            <div
+              className="tug-sheet-shade-grabber"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label={grabberLabel}
+              data-tug-focus="refuse"
+              data-no-activate=""
+              onPointerDown={handleShadeGrabberPointerDown}
+            >
+              <div className="tug-sheet-shade-grabber-handle" />
+            </div>
+          </div>
+        </FocusScopeRadix.FocusScope>
+      </TugSheetStackingContext.Provider>
+    );
+  }
 
   return createPortal(
     // Single clip element positioned by CSS inside the pane frame.

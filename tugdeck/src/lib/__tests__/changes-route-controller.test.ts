@@ -10,6 +10,9 @@ import { describe, it, expect } from "bun:test";
 
 import {
   deriveChangesRouteSnapshot,
+  draftDrifted,
+  overridesFromSelection,
+  selectionFromOverrides,
   sessionFileDefaultSelected,
   type ChangesRouteBinding,
 } from "@/lib/changes-route-controller";
@@ -115,6 +118,82 @@ describe("deriveChangesRouteSnapshot", () => {
     // arrive with the whole unattributed bucket pre-selected — that would
     // one-click sweep another session's work under this session's name.
     expect(snap.selectedPaths.size).toBe(0);
+  });
+});
+
+describe("selection ⇄ overrides mapping ([P02])", () => {
+  it("persisted selection seeds the override map in both directions", () => {
+    const overrides = overridesFromSelection({
+      include: ["notes/scratch.md"],
+      exclude: ["tugdeck/src/lib/changeset-types.ts"],
+    });
+    expect(overrides.get("notes/scratch.md")).toBe(true);
+    expect(overrides.get("tugdeck/src/lib/changeset-types.ts")).toBe(false);
+
+    // Round-trip: layering those overrides over the fixture defaults maps
+    // back to the same deltas.
+    const snap = deriveChangesRouteSnapshot(DATA, BINDING, overrides);
+    const selection = selectionFromOverrides(snap, overrides);
+    expect(selection.include).toEqual(["notes/scratch.md"]);
+    expect(selection.exclude).toEqual(["tugdeck/src/lib/changeset-types.ts"]);
+  });
+
+  it("absent or empty selection yields no overrides", () => {
+    expect(overridesFromSelection(undefined).size).toBe(0);
+    expect(overridesFromSelection(null).size).toBe(0);
+    expect(overridesFromSelection({ include: [], exclude: [] }).size).toBe(0);
+  });
+
+  it("drops default-matching and stale-path overrides from the persisted deltas", () => {
+    const overrides = new Map<string, boolean>([
+      // Matches the default (clean session file defaults ON) — not a delta.
+      ["tugdeck/src/lib/changeset-types.ts", true],
+      // Matches the default (shared defaults OFF) — not a delta.
+      ["tugrust/crates/tugcast/src/feeds/changeset.rs", false],
+      // A file no longer in the snapshot — dropped, never accretes.
+      ["gone/file.rs", true],
+    ]);
+    const snap = deriveChangesRouteSnapshot(DATA, BINDING, overrides);
+    const selection = selectionFromOverrides(snap, overrides);
+    expect(selection.include).toEqual([]);
+    expect(selection.exclude).toEqual([]);
+  });
+
+  it("captures genuine deltas: shared file on, clean file off, unattributed elected", () => {
+    const overrides = new Map<string, boolean>([
+      ["tugrust/crates/tugcast/src/feeds/changeset.rs", true],
+      ["tugdeck/src/lib/changeset-types.ts", false],
+      ["notes/scratch.md", true],
+    ]);
+    const snap = deriveChangesRouteSnapshot(DATA, BINDING, overrides);
+    const selection = selectionFromOverrides(snap, overrides);
+    expect(selection.include).toEqual([
+      "notes/scratch.md",
+      "tugrust/crates/tugcast/src/feeds/changeset.rs",
+    ]);
+    expect(selection.exclude).toEqual(["tugdeck/src/lib/changeset-types.ts"]);
+  });
+});
+
+describe("draftDrifted", () => {
+  it("plumbs the drift boolean from file touches vs the draft timestamp", () => {
+    const snap = deriveChangesRouteSnapshot(DATA, BINDING, NO_OVERRIDES);
+    const entry = snap.entry;
+    expect(entry).not.toBeNull();
+    // Fixture: draft.updated_at (1752264130000) is newer than both files'
+    // last_touched — no drift.
+    expect(draftDrifted(entry)).toBe(false);
+    // A file touched after the draft was written → drift.
+    const drifted = {
+      ...entry!,
+      files: entry!.files.map((f, i) =>
+        i === 0 ? { ...f, last_touched: 1752264999999 } : f,
+      ),
+    };
+    expect(draftDrifted(drifted)).toBe(true);
+    // No draft, no drift.
+    expect(draftDrifted({ ...entry!, draft: undefined })).toBe(false);
+    expect(draftDrifted(null)).toBe(false);
   });
 });
 

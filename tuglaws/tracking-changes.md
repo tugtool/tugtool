@@ -17,7 +17,7 @@ The resolution is a strict division of labor:
 | **Capture** | tugcast (`feeds/agent_bridge.rs`, `feeds/attribution.rs`) | *Who* changed this file, *how*? | Advisory — annotates, never gates |
 | **Read / commit** | tugchanges-core (+ `tugutil` CLI) | *What* is dirty, and what gets committed? | `git status --untracked-files=all` is the universe |
 
-The invariant that falls out ([D112], `commit-tool-fixes` [P01]): **a dirty file is never invisible.** Every dirty path appears in `tugutil context` in exactly one bucket; a default `tugutil commit` either accounts for every one of them or refuses. Capture hardening (brackets, `-uall`, the turn fallback) improves attribution *quality*; it is never load-bearing for commit *correctness*.
+The invariant that falls out ([D112], `commit-tool-fixes` [P01]): **a dirty file is never invisible.** Every dirty path appears in `tugutil preflight` in exactly one bucket; a default `tugutil commit` either accounts for every one of them or refuses. Capture hardening (brackets, `-uall`, the turn fallback) improves attribution *quality*; it is never load-bearing for commit *correctness*.
 
 ---
 
@@ -158,12 +158,30 @@ The net effect of refusal + `--tree` + `left_behind`: a half-commit is impossibl
 
 ---
 
+## The landing workflow
+
+The workflow layer over the soundness axioms above ([D116]): every change lands through one lifecycle — **Preflight → Draft → Land** — in two lanes (main-lane commit, dash-lane join), one room (the Changes shade), one landing gesture (the prompt-entry verbs `/commit` and `/join`).
+
+**The Draft is the unit of work.** The maintained draft — message + selection dispositions + edited-provenance — is durable and **machine-global** (`changes.changeset_drafts`, the same [D112] scope axiom as `file_events`: the working tree is machine-global, so the truth about its proposed landing must be too). It is editable in place in the shade's composer (a `TugMessageEditor` over the `TugTextEditor` substrate — the composer *is* the display; the message is never rendered read-only elsewhere), and its `fingerprint` detects drift: on mismatch the shade shows a "changes moved since this draft" marker, advisory only — the human is looking right at it.
+
+**Edited drafts are never machine-clobbered.** Once a human (or a skill — a skill-authored draft is an authored draft) has touched the message, `edited=1` pins it: the draft engine and non-forced draft requests never overwrite it. The shade's explicit **Regenerate** — confirmed inline when the draft is edited — is the only overwrite path, and it resets the pin. Selection dispositions are the user's, not the scribe's: a regeneration replaces the message and carries the selection forward.
+
+**Skills draft; humans land.** The `draft` skill gathers via plain `tugutil preflight`, decides dispositions per the hint doctrine, authors the message, and writes it with `tugutil draft set` — never commits. The `implement` skill ends by writing the dash's join draft. Landing is an act of the session's human: `/commit` (two-beat: no ready draft → open the shade and generate; ready draft → land it; an explicit message wins; `now` collapses the beats) and `/join <name>` (preview in memory, then squash-land with the join draft as the message; conflicts route into the shade's resolve flow; an empty dash routes to its release affordance).
+
+**Landing gates are idle-only, enforced at the affordance.** Every landing requires the session idle (a turn in flight means files may still be moving under the selection), no pending round-trip for the same key, a non-empty selection (commit) or a clean-or-resolved preview (join), and a non-empty message. Refusals surface as pane bulletins, never silently; while non-idle, the shade's mutating controls render disabled with a reason. **Drafting stays live mid-turn** — reading diffs, flipping dispositions, and editing the message never wait; only the mutating verbs gate. Release is shade-only ([D116]): destruction requires walking to the room, and a dash with work shows the discard preflight (rounds + subjects + dirt) before the destructive confirm.
+
+**Receipts are transcript ink.** A successful landing appends a non-context row to the session's transcript — verb, short sha, subject, counts; joins carry their dash provenance; releases name what was discarded. History badges join commits by the `Tug-Dash:` trailer already on the squash message.
+
+**One verb owner; the CLI is the API.** Every button and skill path resolves to a `tugutil` verb or a tugcast CONTROL verb backed by the same core: `tugutil draft set|show|clear` (a WAL co-writer on `changes.db`, the [D112] contract), `tugutil commit`, `tugutil dash join`. Raw git remains read-only spelunking by written policy — ONLY THE USER LANDS.
+
+---
+
 ## Consumers
 
 | Consumer | Path | Notes |
 |---|---|---|
-| `tugutil context` / `commit` | tugchanges-core via the CLI (`tugutil/src/changes.rs`) | The bucket surface; JSON envelope fields are additive |
-| The commit skill | `tugplug/skills/commit/SKILL.md` | Runs plain `tugutil context` (no `--json`, no jq/python/grep glue), must dispose of every `unattributed` file — the `likely this session's (bash bracket)` hint informs the election; treats exit 3 as "re-run with a disposition flag", never as "fall back to raw git" |
+| `tugutil preflight` / `commit` | tugchanges-core via the CLI (`tugutil/src/changes.rs`) | The bucket surface; JSON envelope fields are additive |
+| The draft skill | `tugplug/skills/draft/SKILL.md` | Runs plain `tugutil preflight` (no `--json`, no jq/python/grep glue), must dispose of every `unattributed` file — the `likely this session's (bash bracket)` hint informs the election — and writes the landing draft via `tugutil draft set`; it never commits |
 | Session card commit button | `tugcast feeds/changeset.rs::run_changeset_commit` | Calls `commit()` with an explicit `paths` set → bypasses bucketing, can never hit the refusal; maps `CommitError` back to its `String` error |
 | Changeset card / feed | `feeds/changeset.rs`, `feeds/changeset_all.rs` ([D113]) | Composes live ledger rows per project (same liveness rule); marks per-file multi-owner paths `shared`; the card's default selection is `!shared` for session files and **OFF for unattributed** (inclusion is an explicit per-file election — the card mirror of the exit-3 refusal) |
 | Dash commits | tugdash-core (`tugutil dash commit`) | A **separate** file-selection path on an isolated single-writer worktree; not governed by the bucket contract (auditing it for the same narrowing shape is a recorded follow-on) |

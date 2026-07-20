@@ -158,6 +158,18 @@ export const LOCAL_SLASH_COMMANDS = [
     takesArgs: true,
   },
   {
+    name: "commit",
+    description:
+      "Land this session's changes — drafts a message first, lands on the second /commit",
+    takesArgs: true,
+  },
+  {
+    name: "join",
+    description:
+      "Join a dash into its base — previews first, lands the squash with its join draft",
+    takesArgs: true,
+  },
+  {
     name: "logout",
     description: "Log out of Claude and return to setup",
   },

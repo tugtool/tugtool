@@ -139,14 +139,14 @@ fn changes_json_emits_envelope_with_the_changed_file() {
 }
 
 #[test]
-fn context_plain_is_directly_readable_no_reshaping_needed() {
+fn preflight_plain_is_directly_readable_no_reshaping_needed() {
     // The default (non-JSON) read-out must carry everything a commit agent
     // needs — header, per-file op·origin, buckets — so nothing has to be piped
     // through jq/python/grep.
     let (_repo, root) = init_repo();
     let ledger = seed_ledger(&root);
     let mut cmd = tug(ledger.path());
-    cmd.args(["context", "--session", "work"]);
+    cmd.args(["preflight", "--session", "work"]);
     cmd.args(project_arg(&root));
 
     let (code, stdout, _) = run(cmd);
@@ -195,7 +195,7 @@ fn a_bash_bracket_row_hints_but_never_auto_commits() {
         .unwrap();
 
     let mut cmd = tug(ledger.path());
-    cmd.args(["context", "--session", "work"]);
+    cmd.args(["preflight", "--session", "work"]);
     cmd.args(project_arg(&root));
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
@@ -233,17 +233,17 @@ fn a_bash_bracket_row_hints_but_never_auto_commits() {
 }
 
 #[test]
-fn context_json_matches_s02_shape() {
+fn preflight_json_matches_s02_shape() {
     let (_repo, root) = init_repo();
     let ledger = seed_ledger(&root);
     let mut cmd = tug(ledger.path());
-    cmd.args(["context", "--json", "--session", "work"]);
+    cmd.args(["preflight", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
     let (code, stdout, _) = run(cmd);
     assert_eq!(code, 0);
     let v = parse(&stdout);
-    assert_eq!(v["command"], "context");
+    assert_eq!(v["command"], "preflight");
     let data = &v["data"];
     assert_eq!(data["session"], "work");
     assert_eq!(data["branch"], "main");
@@ -251,7 +251,7 @@ fn context_json_matches_s02_shape() {
     assert!(!data["head"].as_str().unwrap().is_empty());
     let files = data["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);
-    // Context always carries a diff — a created file gets a real add-diff.
+    // Preflight always carries a diff — a created file gets a real add-diff.
     let diff = files[0]["diff"].as_str().unwrap();
     assert!(diff.contains("feature.rs"), "add-diff present: {diff}");
     let commits = data["recent_commits"].as_array().unwrap();
@@ -430,12 +430,12 @@ fn status_porcelain(root: &Path) -> String {
 }
 
 #[test]
-fn context_surfaces_an_unattributed_file_with_a_diff() {
+fn preflight_surfaces_an_unattributed_file_with_a_diff() {
     let (_repo, root) = init_repo();
     std::fs::write(root.join("orphan.rs"), "orphan\n").unwrap();
     let ledger = seed_ledger(&root);
     let mut cmd = tug(ledger.path());
-    cmd.args(["context", "--json", "--session", "work"]);
+    cmd.args(["preflight", "--json", "--session", "work"]);
     cmd.args(project_arg(&root));
 
     let (code, stdout, _) = run(cmd);
@@ -626,4 +626,139 @@ fn tree_commits_attributed_unattributed_and_shared() {
         status_porcelain(&root).trim().is_empty(),
         "tree clean after --tree commit"
     );
+}
+
+#[test]
+fn preflight_hidden_context_alias_still_resolves() {
+    // Shipped Tug.app bundles carry skill text that says `tugutil context`;
+    // the alias holds for one release ([P16]).
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let mut cmd = tug(ledger.path());
+    cmd.args(["context", "--json", "--session", "work"]);
+    cmd.args(project_arg(&root));
+
+    let (code, stdout, _) = run(cmd);
+    assert_eq!(code, 0);
+    let v = parse(&stdout);
+    // The alias resolves to the renamed verb — envelope speaks `preflight`.
+    assert_eq!(v["command"], "preflight");
+}
+
+#[test]
+fn draft_set_show_round_trip_with_selection() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+
+    let mut set = tug(ledger.path());
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "session:work",
+        "--message",
+        "Land the feature\n\n- add feature.rs",
+        "--include",
+        "notes/scratch.md",
+        "--exclude",
+        "shared.rs",
+    ]);
+    set.args(project_arg(&root));
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    let mut show = tug(ledger.path());
+    show.args(["draft", "show", "--json", "--owner", "session:work"]);
+    show.args(project_arg(&root));
+    let (code, stdout, _) = run(show);
+    assert_eq!(code, 0);
+    let v = parse(&stdout);
+    assert_eq!(v["command"], "draft show");
+    let data = &v["data"];
+    assert!(
+        data["message"].as_str().unwrap().starts_with("Land the feature"),
+        "{data}"
+    );
+    // A CLI-authored draft is an authored draft — always edited.
+    assert_eq!(data["edited"], true);
+    assert_eq!(data["selection"]["include"][0], "notes/scratch.md");
+    assert_eq!(data["selection"]["exclude"][0], "shared.rs");
+
+    // Plain show prints the message directly (no glue needed).
+    let mut plain = tug(ledger.path());
+    plain.args(["draft", "show", "--owner", "session:work"]);
+    plain.args(project_arg(&root));
+    let (code, stdout, _) = run(plain);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Land the feature"), "{stdout}");
+    assert!(stdout.contains("include: notes/scratch.md"), "{stdout}");
+
+    // Clear deletes; a second show errors.
+    let mut clear = tug(ledger.path());
+    clear.args(["draft", "clear", "--owner", "session:work"]);
+    clear.args(project_arg(&root));
+    let (code, _, _) = run(clear);
+    assert_eq!(code, 0);
+    let mut gone = tug(ledger.path());
+    gone.args(["draft", "show", "--owner", "session:work"]);
+    gone.args(project_arg(&root));
+    let (code, _, stderr) = run(gone);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("no draft on file"), "{stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn draft_set_canonicalizes_a_symlinked_project_spelling() {
+    // Spec S05: writers store `project_dir` canonical. A draft written under
+    // a symlink spelling of the checkout must land under the canonical
+    // spelling — and read back through either spelling.
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let link_dir = tempfile::tempdir().unwrap();
+    let link = link_dir.path().join("linked-repo");
+    std::os::unix::fs::symlink(&root, &link).unwrap();
+
+    let mut set = tug(ledger.path());
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "dash:snippets",
+        "--message",
+        "Join the snippets work",
+        "--project",
+    ]);
+    set.arg(&link);
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    // The stored spelling is canonical.
+    let changes = Connection::open(ledger.path().join("changes.db")).unwrap();
+    let stored: String = changes
+        .query_row(
+            "SELECT project_dir FROM changeset_drafts WHERE owner_kind = 'dash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, root.to_string_lossy());
+
+    // The dash owner normalizes to the branch-ref id.
+    let owner_id: String = changes
+        .query_row(
+            "SELECT owner_id FROM changeset_drafts WHERE owner_kind = 'dash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(owner_id, "tugdash/snippets");
+
+    // Show through the raw symlink spelling still finds it.
+    let mut show = tug(ledger.path());
+    show.args(["draft", "show", "--owner", "dash:snippets", "--project"]);
+    show.arg(&link);
+    let (code, stdout, _) = run(show);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Join the snippets work"), "{stdout}");
 }

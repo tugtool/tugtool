@@ -550,6 +550,15 @@ pub struct ChangesetDraftRow {
     pub message: String,
     /// Epoch milliseconds of the last regeneration.
     pub updated_at: i64,
+    /// True once a human has touched the message — an edited draft is
+    /// never machine-clobbered; only an explicit forced regenerate resets
+    /// it.
+    pub edited: bool,
+    /// Persisted selection dispositions: a JSON
+    /// `{"include": [paths], "exclude": [paths]}` of repo-relative
+    /// overrides against the default selection rule, or `None` when the
+    /// defaults stand.
+    pub selection: Option<String>,
 }
 
 /// Result of a successful `trash` call.
@@ -772,12 +781,28 @@ impl SessionLedger {
         ("at", "INTEGER"),
     ];
 
-    /// The `(name, declared-type)` columns the current `changeset_drafts`
-    /// `CREATE TABLE` defines, in order. Drafts are advisory and
-    /// fully-regenerable (the maintained-draft engine recomposes on the next
-    /// cycle), so a drifted on-disk shape is resolved by the same
-    /// DROP-and-recreate guard as `file_events`, not a migration.
+    /// The `(name, declared-type)` columns the current
+    /// `changes.changeset_drafts` `CREATE TABLE` defines, in order. Drafts
+    /// are advisory and fully-regenerable (the maintained-draft engine
+    /// recomposes on the next cycle), so a drifted on-disk shape is resolved
+    /// by the same DROP-and-recreate guard as `file_events`, not a migration.
     const CHANGESET_DRAFTS_SCHEMA: &'static [(&'static str, &'static str)] = &[
+        ("owner_kind", "TEXT"),
+        ("owner_id", "TEXT"),
+        ("project_dir", "TEXT"),
+        ("fingerprint", "TEXT"),
+        ("message", "TEXT"),
+        ("updated_at", "INTEGER"),
+        ("edited", "INTEGER"),
+        ("selection", "TEXT"),
+    ];
+
+    /// The column shape of the legacy per-instance `changeset_drafts` table
+    /// (pre-machine-global storage, before `edited`/`selection`). Guards the
+    /// legacy table so the one-shot copy into `changes.changeset_drafts`
+    /// below never trips over a drifted shape; a drifted legacy table is
+    /// simply dropped (drafts are regenerable).
+    const LEGACY_CHANGESET_DRAFTS_SCHEMA: &'static [(&'static str, &'static str)] = &[
         ("owner_kind", "TEXT"),
         ("owner_id", "TEXT"),
         ("project_dir", "TEXT"),
@@ -816,9 +841,16 @@ impl SessionLedger {
             "changes.file_events",
             Self::FILE_EVENTS_SCHEMA,
         )?;
+        // Legacy per-instance changeset_drafts (pre-machine-global): guard
+        // its shape before the migration below copies it into `changes`.
         Self::rebuild_table_if_schema_drifted(
             conn,
             "changeset_drafts",
+            Self::LEGACY_CHANGESET_DRAFTS_SCHEMA,
+        )?;
+        Self::rebuild_table_if_schema_drifted(
+            conn,
+            "changes.changeset_drafts",
             Self::CHANGESET_DRAFTS_SCHEMA,
         )?;
         Self::migrate_sessions_first_to_last_user_prompt(conn)?;
@@ -1162,18 +1194,25 @@ impl SessionLedger {
             -- deletes changes.file_events rows explicitly.
             DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
 
-            CREATE TABLE IF NOT EXISTS changeset_drafts (
+            -- Maintained changeset drafts — machine-global like file_events
+            -- ([D112]): the working tree is machine-global, so the truth
+            -- about its proposed landing must be too. Two app instances on
+            -- one checkout see one draft.
+            CREATE TABLE IF NOT EXISTS changes.changeset_drafts (
                 owner_kind   TEXT NOT NULL,
                 owner_id     TEXT NOT NULL,
                 project_dir  TEXT NOT NULL,
                 fingerprint  TEXT NOT NULL,
                 message      TEXT NOT NULL,
                 updated_at   INTEGER NOT NULL,
+                edited       INTEGER NOT NULL DEFAULT 0,
+                selection    TEXT,
                 PRIMARY KEY (owner_kind, owner_id, project_dir)
             );
             ",
         )?;
         Self::migrate_instance_file_events_to_changes(conn)?;
+        Self::migrate_instance_changeset_drafts_to_changes(conn)?;
         Ok(())
     }
 
@@ -1205,6 +1244,39 @@ impl SessionLedger {
             FROM main.file_events;
 
             DROP TABLE main.file_events;
+            ",
+        )?;
+        Ok(())
+    }
+
+    /// One-shot migration of maintained drafts to the shared changes ledger
+    /// ([D112] scope axiom): copy any legacy per-instance
+    /// `main.changeset_drafts` rows into `changes.changeset_drafts`
+    /// (`INSERT OR IGNORE` on the `(owner_kind, owner_id, project_dir)` PK —
+    /// a machine-global row, being newer truth, wins over a legacy one),
+    /// then drop the legacy table. Legacy rows predate `edited`/`selection`
+    /// and take the column defaults (unedited, no overrides). No-op when
+    /// the legacy table is absent (fresh DBs never create it).
+    fn migrate_instance_changeset_drafts_to_changes(conn: &Connection) -> Result<(), LedgerError> {
+        let legacy_exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM main.sqlite_master
+             WHERE type = 'table' AND name = 'changeset_drafts'",
+            [],
+            |r| r.get(0),
+        )?;
+        if legacy_exists == 0 {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "
+            INSERT OR IGNORE INTO changes.changeset_drafts (
+                owner_kind, owner_id, project_dir,
+                fingerprint, message, updated_at)
+            SELECT owner_kind, owner_id, project_dir,
+                   fingerprint, message, updated_at
+            FROM main.changeset_drafts;
+
+            DROP TABLE main.changeset_drafts;
             ",
         )?;
         Ok(())
@@ -2513,9 +2585,10 @@ impl SessionLedger {
     pub fn upsert_changeset_draft(&self, row: &ChangesetDraftRow) -> Result<(), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
-            "INSERT OR REPLACE INTO changeset_drafts (
-                owner_kind, owner_id, project_dir, fingerprint, message, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO changes.changeset_drafts (
+                owner_kind, owner_id, project_dir, fingerprint, message, updated_at,
+                edited, selection
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 row.owner_kind,
                 row.owner_id,
@@ -2523,6 +2596,8 @@ impl SessionLedger {
                 row.fingerprint,
                 row.message,
                 row.updated_at,
+                row.edited as i64,
+                row.selection,
             ],
         )?;
         Ok(())
@@ -2537,8 +2612,9 @@ impl SessionLedger {
     ) -> Result<Option<ChangesetDraftRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at
-             FROM changeset_drafts
+            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at,
+                    edited, selection
+             FROM changes.changeset_drafts
              WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
         )?;
         let mut rows = stmt.query_map(
@@ -2551,6 +2627,36 @@ impl SessionLedger {
         }
     }
 
+    /// The drafts version: `MAX(updated_at)` across every maintained draft,
+    /// `None` when the table is empty. The aggregate feed's 2 s probe reads
+    /// this to observe out-of-process writes (`tugutil draft set`) — [P12].
+    pub fn changeset_drafts_version(&self) -> Result<Option<i64>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let version = conn.query_row(
+            "SELECT MAX(updated_at) FROM changes.changeset_drafts",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(version)
+    }
+
+    /// Delete one maintained draft (post-landing cleanup: a committed entry,
+    /// a joined or released dash). A no-op when no row matches.
+    pub fn delete_changeset_draft(
+        &self,
+        owner_kind: &str,
+        owner_id: &str,
+        project_dir: &str,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "DELETE FROM changes.changeset_drafts
+             WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
+            params![owner_kind, owner_id, project_dir],
+        )?;
+        Ok(())
+    }
+
     /// Every maintained draft recorded against `project_dir` — the
     /// compose-time bulk read that attaches drafts to their entries.
     pub fn changeset_drafts_for_project(
@@ -2559,8 +2665,9 @@ impl SessionLedger {
     ) -> Result<Vec<ChangesetDraftRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at
-             FROM changeset_drafts
+            "SELECT owner_kind, owner_id, project_dir, fingerprint, message, updated_at,
+                    edited, selection
+             FROM changes.changeset_drafts
              WHERE project_dir = ?1",
         )?;
         let rows = stmt
@@ -3026,6 +3133,8 @@ fn changeset_draft_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<C
         fingerprint: row.get(3)?,
         message: row.get(4)?,
         updated_at: row.get(5)?,
+        edited: row.get::<_, i64>(6)? != 0,
+        selection: row.get(7)?,
     })
 }
 
@@ -5288,7 +5397,78 @@ mod tests {
             fingerprint: fingerprint.to_owned(),
             message: message.to_owned(),
             updated_at: 1_700_000_000_000,
+            edited: false,
+            selection: None,
         }
+    }
+
+    #[test]
+    fn changeset_draft_round_trip_preserves_edited_and_selection() {
+        let l = SessionLedger::open_in_memory().unwrap();
+        let mut row = sample_draft("session", "s1", "/proj", "fp-1", "Hand-tuned message");
+        row.edited = true;
+        row.selection = Some(r#"{"include":["a.rs"],"exclude":["shared.rs"]}"#.to_owned());
+        l.upsert_changeset_draft(&row).unwrap();
+        assert_eq!(
+            l.changeset_draft("session", "s1", "/proj").unwrap(),
+            Some(row.clone())
+        );
+        assert_eq!(l.changeset_drafts_for_project("/proj").unwrap(), vec![row]);
+    }
+
+    #[test]
+    fn legacy_per_instance_changeset_drafts_migrate_into_changes() {
+        // Drafts written by a pre-machine-global build live in
+        // `main.changeset_drafts`; opening the ledger copies them into the
+        // attached changes schema and drops the local table.
+        let tmp = NamedTempFile::new().expect("temp file");
+        let path = tmp.path().to_path_buf();
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE changeset_drafts (
+                    owner_kind   TEXT NOT NULL,
+                    owner_id     TEXT NOT NULL,
+                    project_dir  TEXT NOT NULL,
+                    fingerprint  TEXT NOT NULL,
+                    message      TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    PRIMARY KEY (owner_kind, owner_id, project_dir)
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO changeset_drafts
+                    (owner_kind, owner_id, project_dir, fingerprint, message, updated_at)
+                 VALUES ('session', 's1', '/proj', 'fp-1', 'Legacy draft', 42)",
+                [],
+            )
+            .unwrap();
+        }
+        let l = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .unwrap();
+        let migrated = l
+            .changeset_draft("session", "s1", "/proj")
+            .unwrap()
+            .expect("legacy draft migrated");
+        assert_eq!(migrated.message, "Legacy draft");
+        assert_eq!(migrated.updated_at, 42);
+        assert!(!migrated.edited, "legacy rows default unedited");
+        assert!(migrated.selection.is_none());
+        // The legacy table is gone from the instance db.
+        let conn = Connection::open(&path).unwrap();
+        let legacy: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM main.sqlite_master
+                 WHERE type = 'table' AND name = 'changeset_drafts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy, 0);
     }
 
     #[test]

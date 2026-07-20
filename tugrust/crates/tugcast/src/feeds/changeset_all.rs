@@ -15,6 +15,14 @@
 //! write, and that `WorkspaceRegistry::get_or_create`/`release` fire when a
 //! project's first/last session card opens/closes — plus a poll fallback that
 //! catches hand edits. Emission is diff-suppressed.
+//!
+//! One deliberate exception to "every recompute is driven by a real event"
+//! ([P12], Risk R01): out-of-process draft writes (`tugutil draft set`, a
+//! skill authoring a landing draft) are invisible to this process's bump. A
+//! 2 s drafts-version probe (`MAX(updated_at)` over
+//! `changes.changeset_drafts`) fires the existing bump only when the value
+//! moves — the event is real (a draft write), only its *observation* is
+//! polled, the same relationship `git_watch` has to git state.
 
 use std::sync::Arc;
 
@@ -76,9 +84,16 @@ impl SnapshotFeed for ChangesetAllFeed {
 
         let mut previous: Option<WorkspacesChangesetSnapshot> = None;
 
+        // The drafts-version probe ([P12]): observe out-of-process draft
+        // writes by polling `MAX(updated_at)`; fire the bump only on change.
+        let mut probe = tokio::time::interval(std::time::Duration::from_secs(2));
+        probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last_drafts_version = drafts_version(self.ledger.as_deref());
+
         // Compose the initial snapshot immediately, then recompute only when the
         // bump fires — every recompute is driven by a real event (an attributed
-        // write, an open/close, or a workspace's event-driven git watch). No poll.
+        // write, an open/close, a workspace's event-driven git watch, or a
+        // probed draft write). The probe tick itself never recomputes.
         loop {
             let snapshot = compose_aggregate(&self.registry, self.ledger.as_deref()).await;
 
@@ -92,16 +107,32 @@ impl SnapshotFeed for ChangesetAllFeed {
                 previous = Some(snapshot);
             }
 
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    info!("aggregate changeset feed shutting down");
-                    break;
+            'wait: loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        info!("aggregate changeset feed shutting down");
+                        return;
+                    }
+                    _ = self.bump.notified() => break 'wait,
+                    _ = probe.tick(), if self.ledger.is_some() => {
+                        let version = drafts_version(self.ledger.as_deref());
+                        if version != last_drafts_version {
+                            last_drafts_version = version;
+                            self.bump.notify_one();
+                        }
+                    }
                 }
-                _ = self.bump.notified() => {}
             }
         }
     }
 }
+
+/// The current drafts version: `MAX(updated_at)` over
+/// `changes.changeset_drafts`, `None` when no ledger or no rows.
+fn drafts_version(ledger: Option<&SessionLedger>) -> Option<i64> {
+    ledger.and_then(|l| l.changeset_drafts_version().ok().flatten())
+}
+
 
 /// Compose one aggregate snapshot over the registry's current entries.
 ///
@@ -155,15 +186,25 @@ pub(crate) async fn compose_aggregate(
         }
 
         // The unattributed bucket's maintained draft (Spec S10), attached only
-        // when the bucket has files.
+        // when the bucket has files. Spec S05 spelling contract: query the
+        // canonical project spelling first, fall back to the raw one.
         let unattributed_draft = if snapshot.unattributed.is_empty() {
             None
         } else {
             ledger
                 .and_then(|l| {
-                    l.changeset_draft("unattributed", "", &dir_str)
+                    let canonical = crate::path_resolver::CanonicalPath::from_raw(&project_dir);
+                    let row = l
+                        .changeset_draft("unattributed", "", canonical.as_str())
                         .ok()
-                        .flatten()
+                        .flatten();
+                    if row.is_some() || canonical.as_str() == dir_str {
+                        row
+                    } else {
+                        l.changeset_draft("unattributed", "", &dir_str)
+                            .ok()
+                            .flatten()
+                    }
                 })
                 .as_ref()
                 .map(super::changeset::draft_from_row)
@@ -480,5 +521,33 @@ mod tests {
 
         drop(entry);
         cancel.cancel();
+    }
+
+    /// The drafts-version probe's change detection ([P12]): the version moves
+    /// exactly once per external write — one bump per write, none while quiet.
+    #[test]
+    fn drafts_version_moves_once_per_write() {
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        assert_eq!(drafts_version(Some(&ledger)), None, "empty table");
+
+        let mut row = crate::session_ledger::ChangesetDraftRow {
+            owner_kind: "session".to_string(),
+            owner_id: "s1".to_string(),
+            project_dir: "/proj".to_string(),
+            fingerprint: "fp".to_string(),
+            message: "Draft".to_string(),
+            updated_at: 100,
+            edited: true,
+            selection: None,
+        };
+        ledger.upsert_changeset_draft(&row).unwrap();
+        let after_first = drafts_version(Some(&ledger));
+        assert_eq!(after_first, Some(100), "one write moves the version once");
+        // Quiet reads stay put — a probe tick with no write never bumps.
+        assert_eq!(drafts_version(Some(&ledger)), after_first);
+
+        row.updated_at = 200;
+        ledger.upsert_changeset_draft(&row).unwrap();
+        assert_eq!(drafts_version(Some(&ledger)), Some(200));
     }
 }

@@ -276,3 +276,110 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
   background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
+
+/* Zone 1 draft composer ([P02]/[P10]) — the entry's editable landing draft.
+   The TugMessageEditor substrate owns the field chrome; this block frames it
+   with the Regenerate row beneath. */
+.session-changes-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
+}
+.session-changes-draft-editor {
+  border-radius: 4px;
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.06));
+}
+.session-changes-draft-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* Drift / error note — advisory only, never blocks a landing ([P02]). */
+.session-changes-draft-note {
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-caution-default-rest, var(--tug7-element-global-text-normal-muted-rest));
+}
+
+/* Zone 2 — "Also on this project" ([P06]): distinct section grammar so
+   other owners' work never reads in the session-file voice. Collapsed to
+   one summary line by default. */
+.session-changes-zone2 {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  margin-top: 6px;
+}
+.session-changes-zone2-line {
+  appearance: none;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-zone2-line:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+.session-changes-zone2-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 6px;
+}
+.session-changes-zone2-session {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.session-changes-zone2-jump {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-accent-default-rest, var(--tug7-element-global-text-normal-default-rest));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.session-changes-zone2-name {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+.session-changes-zone2-meta {
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Release discard preflight ([P14]) — names what dies before the confirm. */
+.session-changes-release-preflight {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
+}
+.session-changes-release-summary {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-danger-default-rest, var(--tug7-element-global-text-normal-default-rest));
+}
+.session-changes-release-subjects {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.6875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Bracket-hint provenance on unattributed rows ([P13]) — the one-glance
+   disposition cue; a hint is never an attribution. */
+.session-changes-file-hint {
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}

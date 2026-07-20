@@ -24,10 +24,10 @@ tugcore.workspace = true
 tugutil-core.workspace = true
 tugdash-core.workspace = true
 tugchanges-core.workspace = true
+rusqlite.workspace = true
 ureq = { version = "3", features = ["json"] }
 
 [dev-dependencies]
 tempfile.workspace = true
 assert_cmd.workspace = true
-rusqlite.workspace = true
 serial_test = "3"

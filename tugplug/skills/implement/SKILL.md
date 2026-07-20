@@ -63,7 +63,7 @@ convention:
   **absolute paths into the worktree** for *every* read, write, edit, and test from
   then on.
 - **Never write to the base checkout once you're in a worktree.** Not code, not the
-  plan, not the ledger. The only path back is `tugutil dash join`. A stray write to the
+  plan, not the ledger. The only path back is the user's `/join`. A stray write to the
   base root will also block `join` (its preflight requires the base clean).
 - If the plan lived on the base branch, work on its **worktree copy** — read the
   original by path once, then edit only the copy inside the worktree.
@@ -188,6 +188,15 @@ the worktree's cwd — independent of the user's main instance. Confirm it's liv
 
 **Stop here.** Do not merge. The build is the user's to vet and test.
 
+Before you stop, write the dash's **join draft** — the squash message the user's
+`/join` lands with. Compose it from the run's rounds (a subject line naming the
+plan's deliverable, then a terse digest of what the rounds landed), and write it:
+```bash
+tugutil draft set --owner dash:<name> --message "<subject + rounds digest>"
+```
+Then point the user at the landing gesture: **`/join <name>`** in the Session card
+previews the merge and lands the squash with that draft as its message.
+
 ### 4. Iterate (interactive)
 
 The user tests and reports issues. Fix them on the worktree, run the relevant
@@ -203,20 +212,16 @@ surface:
 Loop until the user is satisfied. A follow-up "now do Steps 6-8" is just another
 `implement` run against the same plan and dash.
 
-### 5. Join (only on the user's word)
+### 5. Join (the user's landing gesture)
 
-Do **not** merge until the user explicitly asks. When they do, preview the join first
-so any conflict surfaces without touching a tree:
-```bash
-tugutil dash join <name> --preview --json
-tugutil dash join <name>
-```
-`--preview` runs the merge in memory (`git merge-tree`) and lists conflicted paths;
-the plain form squash-merges `tugdash/<name>` into the base branch (`main` for this
-repo) and cleans up the worktree + branch. The intersection-aware preflight only blocks
-on base dirt that overlaps the dash's changed files; if a join is interrupted mid-teardown,
-`tugutil dash join <name> --continue` resumes it. If preflight balks, tell the user to commit
-or stash their unrelated base-checkout changes first.
+The landing is the user's: **`/join <name>`** in the Session card previews the merge
+(in-memory `git merge-tree` — nothing is touched until it's clean) and squash-lands
+the dash into its base with the join draft you wrote in phase 3 as the message.
+Conflicts route into the shade's resolve flow. Do not run the join yourself, and do
+not merge on the user's behalf — your part ends at the draft. If the user reports the
+join blocked on base dirt, the preflight is intersection-aware: only base changes
+overlapping the dash's files block; unrelated base dirt should be committed or
+stashed first.
 
 ## Guardrails
 
@@ -226,7 +231,7 @@ or stash their unrelated base-checkout changes first.
   dependency. No ledger → fall back (walk from Step 1, infer done-state from dash
   rounds / git, confirm before skipping).
 - **Never commit to the base branch.** All commits go to the dash worktree via
-  `tugutil dash commit`. The user owns the base branch; `dash join` is the only path
+  `tugutil dash commit`. The user owns the base branch; their `/join` is the only path
   back, and only on their say-so.
 - **Keep the task list in lockstep.** One task per selected step, created up front;
   flip to in-progress when you start a step, complete when its ledger entry flips to

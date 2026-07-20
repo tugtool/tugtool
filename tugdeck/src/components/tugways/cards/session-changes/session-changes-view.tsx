@@ -1,6 +1,7 @@
 /**
  * `SessionChangesView` — the Changes view-route's working surface
- * ([P01]/[P05]). On the `±` route this rides a TugShade over the live
+ * ([P01]/[P05]). On the `±` route this rides the TugSheet `shade`
+ * presentation over the live
  * transcript and shows the card's changed files: the session's attributed
  * files plus the project's
  * unattributed files as one selection set (the head selection the prompt
@@ -80,9 +81,27 @@ import type {
   SessionChangesetEntry,
   UnattributedFile,
 } from "@/lib/changeset-types";
-import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import {
+  draftDrifted,
+  type ChangesRouteController,
+} from "@/lib/changes-route-controller";
+import {
+  alsoOnProjectSummary,
+  alsoSessionRows,
+  releasePreflight,
+} from "./changes-zones";
+import { buildSessionRows } from "@/components/lens/sections/sessions-data-source";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import {
+  getChangesetDraftStore,
+  useChangesetDraft,
+} from "@/lib/changeset-draft-store";
+import {
+  TugMessageEditor,
+  type TugMessageEditorHandle,
+} from "@/components/tugways/tug-message-editor";
+import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import { TugShade } from "@/components/tugways/tug-shade";
 
 // ---------------------------------------------------------------------------
 // Item model — one entry (session / unattributed / dash) the ported
@@ -378,6 +397,8 @@ interface FileBlockData {
   op: string;
   origin: string;
   shared: boolean;
+  /** Bracket-hint provenance text ([P13]), when a bracket saw this path. */
+  hint?: string;
 }
 
 function changesetFileData(file: ChangesetFile): FileBlockData {
@@ -390,13 +411,32 @@ function changesetFileData(file: ChangesetFile): FileBlockData {
   };
 }
 
-function unattributedFileData(file: UnattributedFile): FileBlockData {
+/**
+ * Unattributed row data with its bracket-hint text ([P13]): the card
+ * session's own hint reads as `likely this session's (bash)` — the one-glance
+ * disposition cue, still default-unselected; foreign hints render as
+ * provenance only.
+ */
+function unattributedFileData(
+  file: UnattributedFile,
+  ownSessionId?: string,
+): FileBlockData {
+  const hintedBy = file.hinted_by ?? [];
+  let hint: string | undefined;
+  if (ownSessionId !== undefined && hintedBy.includes(ownSessionId)) {
+    hint = "likely this session's (bash)";
+  } else if (hintedBy.length > 0) {
+    hint = `bracket-seen by ${hintedBy.length} other session${
+      hintedBy.length === 1 ? "" : "s"
+    }`;
+  }
   return {
     path: file.path,
     git_status: file.git_status,
     op: "",
     origin: "",
     shared: false,
+    hint,
   };
 }
 
@@ -431,6 +471,14 @@ function FileIdentity({
       ) : null}
       {provenance !== null ? (
         <span className="session-changes-file-provenance">{provenance}</span>
+      ) : null}
+      {file.hint !== undefined ? (
+        <span
+          className="session-changes-file-hint"
+          data-testid="session-changes-file-hint"
+        >
+          {file.hint}
+        </span>
       ) : null}
     </span>
   );
@@ -533,11 +581,14 @@ function ChangesEntryFiles({
   rowSelection,
   expandedKeys,
   onToggleFile,
+  ownSessionId,
 }: {
   item: ChangesFileEntry;
   rowSelection: (path: string) => RowSelection;
   expandedKeys: ReadonlySet<string>;
   onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
+  /** The card session's id — distinguishes own vs foreign bracket hints ([P13]). */
+  ownSessionId?: string;
 }) {
   const projectRoot = item.project.project_dir;
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(item);
@@ -550,7 +601,7 @@ function ChangesEntryFiles({
 
   const files =
     item.kind === "unattributed"
-      ? item.files.map(unattributedFileData)
+      ? item.files.map((file) => unattributedFileData(file, ownSessionId))
       : item.entry.files.map(changesetFileData);
 
   return (
@@ -591,6 +642,8 @@ function DashActions({
   const resolve = useChangesetJoinResolve(projectRoot, dashName);
   const release = useChangesetRelease(entryKey);
   const [confirmingRelease, setConfirmingRelease] = useState(false);
+  // What releasing would destroy — shapes the confirm ([P14]).
+  const preflight = releasePreflight(item.entry);
 
   useEffect(() => {
     if (join.phase === "done") resolve.clear();
@@ -794,8 +847,42 @@ function DashActions({
         >
           Join
         </TugPushButton>
-        {confirmingRelease ? (
-          <>
+        {!confirmingRelease ? (
+          <TugPushButton
+            size="sm"
+            emphasis="ghost"
+            role="action"
+            disabled={turnInProgress}
+            title={turnInProgress ? TURN_GATE_HINT : undefined}
+            onClick={() => setConfirmingRelease(true)}
+            data-testid="session-changes-dash-release"
+          >
+            Release
+          </TugPushButton>
+        ) : null}
+      </div>
+      {confirmingRelease ? (
+        <div
+          className="session-changes-release-preflight"
+          data-testid="session-changes-release-preflight"
+        >
+          {preflight.kind === "discard" ? (
+            <>
+              <div className="session-changes-release-summary">
+                Releasing discards {preflight.rounds} round
+                {preflight.rounds === 1 ? "" : "s"}
+                {preflight.dirty ? " · a dirty worktree" : ""}.
+              </div>
+              {preflight.subjects.length > 0 ? (
+                <ul className="session-changes-release-subjects">
+                  {preflight.subjects.map((subject, i) => (
+                    <li key={`${i}-${subject}`}>{subject}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : null}
+          <div className="session-changes-dash-action-row">
             <TugPushButton
               size="sm"
               emphasis="outlined"
@@ -819,19 +906,9 @@ function DashActions({
             >
               Keep
             </TugPushButton>
-          </>
-        ) : (
-          <TugPushButton
-            size="sm"
-            emphasis="ghost"
-            role="action"
-            onClick={() => setConfirmingRelease(true)}
-            data-testid="session-changes-dash-release"
-          >
-            Release
-          </TugPushButton>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : null}
       {release.phase === "error" ? (
         <div className="session-changes-dash-error">Release failed: {release.error}</div>
       ) : null}
@@ -968,6 +1045,165 @@ function NonRepoBody({
 // The view
 // ---------------------------------------------------------------------------
 
+/** Debounce for persisting composer edits into the draft (Spec S01). */
+const DRAFT_EDIT_DEBOUNCE_MS = 300;
+
+/**
+ * Zone 1's draft composer ([P02]/[P10]): the entry's persisted draft message
+ * in a `TugMessageEditor` — the composer IS the display; the message is
+ * never rendered read-only elsewhere. Streamed generation lands via
+ * `restoreState` (programmatic — never reads as a user edit, the [P28]
+ * contract); user edits debounce-persist through `changeset_draft_set` with
+ * the `edited` pin ([P03]). Regenerate is the one explicit overwrite path —
+ * confirmed via `TugConfirmPopover` when the draft is edited — and idle-gates
+ * with the other mutating verbs ([P08]); drafting itself stays live mid-turn.
+ */
+function DraftComposer({
+  controller,
+  entry,
+  turnInProgress,
+}: {
+  controller: ChangesRouteController;
+  entry: SessionChangesetEntry | null;
+  turnInProgress: boolean;
+}): React.ReactElement {
+  const projectDir = controller.projectDir;
+  const ownerId = controller.tugSessionId;
+  const overlay = useChangesetDraft(projectDir, "session", ownerId);
+  const editorRef = useRef<TugMessageEditorHandle | null>(null);
+
+  const persisted = entry?.draft?.message ?? "";
+  const edited = entry?.draft?.edited === true;
+  const drifted = draftDrifted(entry);
+
+  // The editor owns the document ([L02] editor-owned zone); these refs
+  // mirror what we know is in it — `doc` tracks the current text (user
+  // edits + programmatic seeds), `lastSeeded` the last programmatic seed.
+  // A snapshot sync only lands when the doc is unsynced-edit-free
+  // (`doc === lastSeeded`), so a server echo can never eat local typing.
+  const docRef = useRef(persisted);
+  const lastSeededRef = useRef(persisted);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Streamed generation fills the composer live (programmatic restore).
+  useEffect(() => {
+    if (overlay.phase !== "drafting") return;
+    if (overlay.text === docRef.current) return;
+    editorRef.current?.restoreState(overlay.text);
+    docRef.current = overlay.text;
+    lastSeededRef.current = overlay.text;
+  }, [overlay.phase, overlay.text]);
+
+  // Persisted-message sync: a skill-authored draft (via the probe) or a
+  // finished regeneration seeds in — only while the field holds no
+  // unsynced user edits.
+  useEffect(() => {
+    if (overlay.phase === "drafting") return;
+    if (persisted === docRef.current) return;
+    if (docRef.current !== lastSeededRef.current) return;
+    editorRef.current?.restoreState(persisted);
+    docRef.current = persisted;
+    lastSeededRef.current = persisted;
+  }, [persisted, overlay.phase]);
+
+  const persistEdit = useCallback((): void => {
+    debounceRef.current = null;
+    getChangesetDraftStore()?.setDraft(projectDir, "session", ownerId, {
+      message: docRef.current,
+      edited: true,
+    });
+  }, [projectDir, ownerId]);
+
+  const handleChange = useCallback(
+    (text: string): void => {
+      docRef.current = text;
+      if (debounceRef.current !== null) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(persistEdit, DRAFT_EDIT_DEBOUNCE_MS);
+    },
+    [persistEdit],
+  );
+
+  // Unmount with a pending debounce: flush, never drop the user's words.
+  useEffect(
+    () => () => {
+      if (debounceRef.current !== null) {
+        clearTimeout(debounceRef.current);
+        persistEdit();
+      }
+    },
+    [persistEdit],
+  );
+
+  // Regenerate — the only machine-overwrite path ([P03]); an edited draft
+  // interposes an inline confirm before the force. The confirm anchors to
+  // the button's own element (captured via the row ref) so a keyboard
+  // activation confirms identically to a click.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const regenerateRowRef = useRef<HTMLDivElement | null>(null);
+  const regenerate = useCallback((): void => {
+    controller.requestDraft(true);
+  }, [controller]);
+  const generating = overlay.phase === "drafting";
+
+  return (
+    <div className="session-changes-draft" data-slot="session-changes-draft">
+      <TugMessageEditor
+        ref={editorRef}
+        value={persisted}
+        onChange={handleChange}
+        placeholder="Commit message — /commit drafts one"
+        lineWrap
+        aria-label="Draft commit message"
+        data-testid="session-changes-draft-composer"
+        className="session-changes-draft-editor"
+      />
+      <div className="session-changes-draft-row" ref={regenerateRowRef}>
+        {overlay.phase === "error" ? (
+          <span className="session-changes-draft-note" role="status">
+            {overlay.detail ?? "draft failed"}
+          </span>
+        ) : drifted ? (
+          <span className="session-changes-draft-note" role="status">
+            changes moved since this draft
+          </span>
+        ) : (
+          <span />
+        )}
+        <TugPushButton
+          size="xs"
+          emphasis="outlined"
+          role="action"
+          disabled={turnInProgress || generating}
+          title={turnInProgress ? TURN_GATE_HINT : undefined}
+          data-testid="session-changes-draft-regenerate"
+          onClick={() => {
+            if (edited) setConfirmOpen(true);
+            else regenerate();
+          }}
+        >
+          {generating ? "Drafting…" : "Regenerate"}
+        </TugPushButton>
+        <TugConfirmPopover
+          open={confirmOpen}
+          anchorEl={
+            regenerateRowRef.current?.querySelector<HTMLElement>(
+              '[data-testid="session-changes-draft-regenerate"]',
+            ) ?? regenerateRowRef.current
+          }
+          message="Replace your edited message with a regenerated draft?"
+          confirmLabel="Regenerate"
+          confirmRole="action"
+          onConfirm={() => {
+            setConfirmOpen(false);
+            regenerate();
+          }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export interface SessionChangesViewProps {
   /** Repo-relative project directory the card is bound to. */
   projectDir: string | null;
@@ -1075,15 +1311,16 @@ export function SessionChangesView({
       }
     />
   );
+  // The view fills the sheet's shade body ([P17]): the header strip pinned
+  // above, the scrolling view below. The shade panel (geometry, scrim,
+  // grabber, modality, Escape close) is `TugSheetContent
+  // presentation="shade"` — mounted by the Session card around this view.
   const shell = (
     children: React.ReactNode,
     actions?: React.ReactNode,
   ): React.ReactElement => (
-    <TugShade
-      persistKey="session-card"
-      grabberLabel="Resize the Changes view"
-      header={buildHeader(actions)}
-    >
+    <>
+      <div className="tug-sheet-shade-header">{buildHeader(actions)}</div>
       <div
         className="session-changes-view"
         data-slot="session-changes-view"
@@ -1091,7 +1328,7 @@ export function SessionChangesView({
       >
         {children}
       </div>
-    </TugShade>
+    </>
   );
 
   if (project.no_repo) {
@@ -1117,8 +1354,9 @@ export function SessionChangesView({
         }
       : null;
   const hasSessionFiles = sessionFiles.length > 0;
-  const empty =
-    !hasSessionFiles && unattributedItem === null && snap.dashes.length === 0;
+  // Zone 1 emptiness is this-session-scoped ([P06]): Zone 2's dashes and
+  // other sessions never make this session read as having work.
+  const zone1Empty = !hasSessionFiles && unattributedItem === null;
   const showReceipt = commit.phase === "done" && commit.receipt !== null;
 
   // The head entries (session + unattributed) the banner controls act on —
@@ -1179,7 +1417,7 @@ export function SessionChangesView({
         ref={responderRef as (el: HTMLDivElement | null) => void}
         className="session-changes-view-body"
       >
-        {empty && !showReceipt ? (
+        {zone1Empty && !showReceipt ? (
           <div className="session-changes-clean" role="status">
             <CircleCheck size={14} />
             No changes
@@ -1190,6 +1428,13 @@ export function SessionChangesView({
             sha={commit.sha}
             receipt={commit.receipt as string}
             onDismiss={commit.clear}
+          />
+        ) : null}
+        {!zone1Empty || snap.entry?.draft !== undefined ? (
+          <DraftComposer
+            controller={changesController}
+            entry={snap.entry}
+            turnInProgress={turnInProgress}
           />
         ) : null}
         {sessionItem !== null && hasSessionFiles ? (
@@ -1213,23 +1458,120 @@ export function SessionChangesView({
               rowSelection={rowSelection}
               expandedKeys={expandedKeys}
               onToggleFile={onToggleFile}
+              ownSessionId={changesController.tugSessionId}
             />
           </>
         ) : null}
-        {snap.dashes.map((entry) => (
-          <ChangesDashEntry
-            key={entry.owner_id}
-            item={{
-              kind: "dash",
-              id: `dash:${project.project_dir}:${entry.owner_id}`,
-              project,
-              entry,
-            }}
-            turnInProgress={turnInProgress}
-          />
-        ))}
+        <AlsoOnProject
+          project={project}
+          ownOwnerId={changesController.tugSessionId}
+          dashes={snap.dashes}
+          turnInProgress={turnInProgress}
+        />
       </div>
     </ResponderScope>,
     headerActions,
+  );
+}
+
+/**
+ * Zone 2 — "Also on this project" ([P06]): every other owner's work on this
+ * checkout, collapsed by default to one summary line. Expanding shows one
+ * row per owner: session rows named by display name with the
+ * `focus-session-card` jump (the exact affordance the Lens Sessions section
+ * uses; unlinked when no open card resolves, [Q02]) and dash lanes in dash
+ * grammar with their Join/Release affordances. Renders nothing when no
+ * other owner has work — the shade stays purely this-session.
+ */
+function AlsoOnProject({
+  project,
+  ownOwnerId,
+  dashes,
+  turnInProgress,
+}: {
+  project: ProjectChangeset;
+  ownOwnerId: string;
+  dashes: DashChangesetEntry[];
+  turnInProgress: boolean;
+}): React.ReactElement | null {
+  // Collapsed/expanded is per-card, non-durable view state ([L19]).
+  const [expanded, setExpanded] = useState(false);
+  // The session→card mapping reuses the Lens's binding source ([P06]).
+  const bindings = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    cardSessionBindingStore.getSnapshot,
+  );
+  const sessions = alsoSessionRows(project, ownOwnerId);
+  const summary = alsoOnProjectSummary(sessions, dashes);
+  if (summary === null) return null;
+
+  const cardIdFor = (sessionId: string): string | null => {
+    for (const row of buildSessionRows(bindings)) {
+      if (row.tugSessionId === sessionId) return row.cardId;
+    }
+    return null;
+  };
+
+  return (
+    <div className="session-changes-zone2" data-slot="session-changes-zone2">
+      <button
+        type="button"
+        className="session-changes-zone2-line"
+        data-tug-focus="refuse"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        data-testid="session-changes-also-line"
+      >
+        {summary}
+      </button>
+      {expanded ? (
+        <div className="session-changes-zone2-body">
+          {sessions.map((row) => {
+            const cardId = cardIdFor(row.ownerId);
+            return (
+              <div
+                key={row.ownerId}
+                className="session-changes-zone2-session"
+                data-testid="session-changes-zone2-session"
+              >
+                {cardId !== null ? (
+                  <button
+                    type="button"
+                    className="session-changes-zone2-jump"
+                    data-tug-focus="refuse"
+                    title="Front this session's card"
+                    onClick={() =>
+                      dispatchAction({ action: "focus-session-card", cardId })
+                    }
+                  >
+                    {row.displayName}
+                  </button>
+                ) : (
+                  <span className="session-changes-zone2-name">
+                    {row.displayName}
+                  </span>
+                )}
+                <span className="session-changes-zone2-meta">
+                  {row.fileCount} file{row.fileCount === 1 ? "" : "s"}
+                  {row.live ? " · live" : ""}
+                </span>
+              </div>
+            );
+          })}
+          {dashes.map((entry) => (
+            <ChangesDashEntry
+              key={entry.owner_id}
+              item={{
+                kind: "dash",
+                id: `dash:${project.project_dir}:${entry.owner_id}`,
+                project,
+                entry,
+              }}
+              turnInProgress={turnInProgress}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

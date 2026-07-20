@@ -867,23 +867,33 @@ fn with_dash_trailers(repo: &Path, name: &str, branch: &str, message: &str) -> S
     tugchanges_core::append_trailers(message, &trailers)
 }
 
+/// The maintained join draft for a dash, read read-only from the
+/// machine-global changes ledger (`tugcore::instance::changes_db_path()`,
+/// `TUG_CHANGES_DB` overridable) — drafts are machine-global like the
+/// working tree they describe. Spec S05 spelling contract: writers store
+/// `project_dir` canonical, so query the canonical spelling and fall back
+/// to the raw one when it differs.
 pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
-    let db = sessions_db_file()?;
+    let db = tugcore::instance::changes_db_path();
     let conn =
         rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
-    let project = std::fs::canonicalize(repo)
+    let raw = repo.to_string_lossy().into_owned();
+    let canonical = std::fs::canonicalize(repo)
         .unwrap_or_else(|_| repo.to_path_buf())
         .to_string_lossy()
         .into_owned();
-    conn.query_row(
-        "SELECT message FROM changeset_drafts \
-         WHERE owner_kind = 'dash' AND owner_id = ?1 AND project_dir = ?2",
-        rusqlite::params![branch, project],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
-    .filter(|m| !m.trim().is_empty())
+    let read = |project: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT message FROM changeset_drafts \
+             WHERE owner_kind = 'dash' AND owner_id = ?1 AND project_dir = ?2",
+            rusqlite::params![branch, project],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|m| !m.trim().is_empty())
+    };
+    read(&canonical).or_else(|| (canonical != raw).then(|| read(&raw)).flatten())
 }
 
 /// The scoped integrate/join commit message: explicit override → maintained
@@ -1069,9 +1079,11 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     .and_then(|s| s.parse::<i64>().ok())
     .unwrap_or(0);
     if ahead == 0 {
+        // Names the release verb generically ([P14]) — no raw terminal
+        // instruction; each surface fronts its own release affordance.
         return Err(format!(
-            "Nothing to join: dash '{}' has no commits past '{}'. Use 'tugdash release {}' to discard it.",
-            name, base_branch, name
+            "Nothing to join: dash '{}' has no commits past '{}'. Release it to discard.",
+            name, base_branch
         ));
     }
 
@@ -1678,6 +1690,103 @@ mod tests {
         assert!(
             dlog.contains("joined"),
             "dash-log should record join: {dlog}"
+        );
+    }
+
+    /// A join with no explicit message uses the dash's maintained draft from
+    /// the machine-global changes ledger (`TUG_CHANGES_DB`) as its squash
+    /// message — pins `dash_draft_message` reading
+    /// `changes.changeset_drafts`, not the legacy per-instance `sessions.db`.
+    #[serial]
+    #[test]
+    fn test_dash_join_uses_changes_ledger_draft_message() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        // Seed the machine-global draft row under the canonical repo
+        // spelling (Spec S05 write contract).
+        let changes_db = temp.path().join("changes.db");
+        {
+            let conn = rusqlite::Connection::open(&changes_db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE changeset_drafts (
+                    owner_kind   TEXT NOT NULL,
+                    owner_id     TEXT NOT NULL,
+                    project_dir  TEXT NOT NULL,
+                    fingerprint  TEXT NOT NULL,
+                    message      TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    edited       INTEGER NOT NULL DEFAULT 0,
+                    selection    TEXT,
+                    PRIMARY KEY (owner_kind, owner_id, project_dir)
+                );",
+            )
+            .unwrap();
+            let project = fs::canonicalize(repo)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            conn.execute(
+                "INSERT INTO changeset_drafts
+                    (owner_kind, owner_id, project_dir, fingerprint, message, updated_at, edited)
+                 VALUES ('dash', 'tugdash/draft-dash', ?1, 'fp', 'Land the drafted work', 1, 1)",
+                rusqlite::params![project],
+            )
+            .unwrap();
+        }
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::set_var("TUG_CHANGES_DB", &changes_db);
+        }
+
+        create("draft-dash", Some("Test".to_string())).unwrap();
+        let worktree = repo.join(".tug/worktrees/draft-dash");
+        fs::write(worktree.join("f.txt"), "x\n").unwrap();
+        commit("draft-dash", "Add f", None).unwrap();
+
+        // Preview first (`/join`'s beat 1): in-memory, clean, mutates nothing.
+        let preview = join(
+            "draft-dash",
+            JoinOptions {
+                preview: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(preview.previewed);
+        assert!(preview.conflicts.is_empty(), "clean preview");
+        assert!(preview.commit_hash.is_none(), "a preview lands nothing");
+        assert!(
+            worktree.exists() && branch_present(repo, "tugdash/draft-dash"),
+            "a preview tears nothing down"
+        );
+
+        // Execute: the squash message comes from the ledger draft.
+        join("draft-dash", JoinOptions::default()).unwrap();
+
+        // SAFETY: serial test; clear before the next test resolves the path.
+        unsafe {
+            std::env::remove_var("TUG_CHANGES_DB");
+        }
+
+        let log = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["log", "-1", "--format=%B"])
+            .output()
+            .unwrap();
+        let body = String::from_utf8_lossy(&log.stdout);
+        assert!(
+            body.contains("tugdash(draft-dash): Land the drafted work"),
+            "squash message comes from the changes-ledger draft: {body}"
+        );
+        assert!(
+            body.contains("Tug-Dash: tugdash/draft-dash onto "),
+            "the squash carries the Tug-Dash trailer: {body}"
         );
     }
 

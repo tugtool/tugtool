@@ -19,6 +19,7 @@
 import { useSyncExternalStore } from "react";
 
 import type { TugConnection } from "../connection";
+import type { ChangesetDraftSelection } from "./changeset-types";
 import { FeedId } from "../protocol";
 
 export type DraftOverlayPhase = "idle" | "drafting" | "ready" | "error";
@@ -60,13 +61,50 @@ export class ChangesetDraftStore {
    * Request an on-demand draft for one entry ([P05], Spec S01). Fires the
    * `changeset_draft_request` CONTROL verb; the reply rides the existing
    * `changeset_draft_state`/`changeset_draft_delta` stream this store already
-   * consumes. Generation always regenerates (no fingerprint gate).
+   * consumes. `force` is the confirmed Regenerate — the only path that
+   * overwrites an edited draft ([P03]); a non-forced request on an edited
+   * draft replies `ready` without a scribe call.
    */
-  requestDraft(projectDir: string, ownerKind: string, ownerId: string): void {
+  requestDraft(
+    projectDir: string,
+    ownerKind: string,
+    ownerId: string,
+    force = false,
+  ): void {
     this._connection.sendControlFrame("changeset_draft_request", {
       project_dir: projectDir,
       owner_kind: ownerKind,
       owner_id: ownerId,
+      force,
+    });
+  }
+
+  /**
+   * Partially upsert one entry's persisted draft ([P02], Spec S01): the
+   * composer's debounced message edits (`edited: true` — the [P03] pin
+   * rides the write), immediate selection-disposition writes, and the
+   * post-landing `clear`. Absent fields leave the stored value untouched;
+   * `selection: null` clears the overrides.
+   */
+  setDraft(
+    projectDir: string,
+    ownerKind: string,
+    ownerId: string,
+    fields: {
+      message?: string;
+      selection?: ChangesetDraftSelection | null;
+      edited?: boolean;
+      clear?: boolean;
+    },
+  ): void {
+    this._connection.sendControlFrame("changeset_draft_set", {
+      project_dir: projectDir,
+      owner_kind: ownerKind,
+      owner_id: ownerId,
+      ...(fields.message !== undefined ? { message: fields.message } : {}),
+      ...(fields.selection !== undefined ? { selection: fields.selection } : {}),
+      edited: fields.edited === true,
+      ...(fields.clear === true ? { clear: true } : {}),
     });
   }
 

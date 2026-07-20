@@ -1,6 +1,6 @@
-//! The `context`, `log`, and `diff` operations.
+//! The `preflight`, `log`, and `diff` operations.
 //!
-//! `context` is the one-shot the `commit` skill runs (Spec S01): the working
+//! `preflight` is the one-shot readout a landing starts from (Spec S01): the working
 //! tree bucketed into `files` (this session's `attributed` changes),
 //! `unattributed` (dirty with no ledger rows), and `foreign` (claimed only by
 //! other sessions) — all diffed (a created/untracked file carries a synthesized
@@ -17,20 +17,20 @@ use crate::changes::{Change, ChangesError, ChangesOptions, ForeignChange, resolv
 use crate::git::{self, FileStat};
 
 // ---------------------------------------------------------------------------
-// context
+// preflight
 // ---------------------------------------------------------------------------
 
-/// Options for [`context`] (Spec S02). `session` defaults from
+/// Options for [`preflight`] (Spec S02). `session` defaults from
 /// `$TUG_SESSION_ID`; `project` defaults to cwd (and must match how `commit`
 /// resolves the repo); `log_limit` is the recent-commit depth (default 10).
 #[derive(Debug, Clone)]
-pub struct ContextOptions {
+pub struct PreflightOptions {
     pub session: Option<String>,
     pub project: Option<PathBuf>,
     pub log_limit: u32,
 }
 
-impl Default for ContextOptions {
+impl Default for PreflightOptions {
     fn default() -> Self {
         Self {
             session: None,
@@ -47,11 +47,11 @@ pub struct LogEntry {
     pub subject: String,
 }
 
-/// The `context` result (Spec S01). `files` is the `attributed` bucket;
+/// The `preflight` result (Spec S01). `files` is the `attributed` bucket;
 /// `unattributed` and `foreign` are additive — they complete the working-tree
 /// universe so nothing dirty is invisible ([P01]).
 #[derive(Debug, Clone, Serialize)]
-pub struct ContextReport {
+pub struct PreflightReport {
     pub session: String,
     pub project: String,
     pub repo_root: String,
@@ -65,10 +65,10 @@ pub struct ContextReport {
 
 const DEFAULT_LOG_LIMIT: u32 = 10;
 
-/// Run the `context` operation (Spec S02) — the session's changed files
+/// Run the `preflight` operation (Spec S02) — the session's changed files
 /// (always diffed) plus branch/head and recent commits. Surfaces the exit-2
 /// ledger-resolution cases as typed [`ChangesError`]s, like `changes`.
-pub fn context(opts: ContextOptions) -> Result<ContextReport, ChangesError> {
+pub fn preflight(opts: PreflightOptions) -> Result<PreflightReport, ChangesError> {
     let resolved = resolve_changes(&ChangesOptions {
         session: opts.session.clone(),
         project: opts.project.clone(),
@@ -85,7 +85,7 @@ pub fn context(opts: ContextOptions) -> Result<ContextReport, ChangesError> {
         .unwrap_or_default();
     let recent_commits = recent_commits(&repo_root, opts.log_limit);
 
-    Ok(ContextReport {
+    Ok(PreflightReport {
         session: resolved.session,
         project: repo_root.to_string_lossy().into_owned(),
         repo_root: repo_root.to_string_lossy().into_owned(),
@@ -100,7 +100,7 @@ pub fn context(opts: ContextOptions) -> Result<ContextReport, ChangesError> {
 
 /// The `limit` most-recent commits as `{sha, subject}`, via
 /// `git log --format=%h%x00%s -n <limit>`. Empty on any git failure (an unborn
-/// HEAD, a non-repo) — context still composes, just without history.
+/// HEAD, a non-repo) — the preflight still composes, just without history.
 fn recent_commits(repo_root: &Path, limit: u32) -> Vec<LogEntry> {
     let limit_arg = format!("-n{limit}");
     let out = match git::git_stdout(repo_root, &["log", "--format=%h%x00%s", &limit_arg]) {
@@ -265,7 +265,7 @@ fn diff_stats(repo_root: &Path, scope: &[&str]) -> Result<Vec<FileStat>, String>
     Ok(git::file_stats(&numstat, &name_status))
 }
 
-// The `context`/`log`/`diff` ops are proven end-to-end at the CLI integration
+// The `preflight`/`log`/`diff` ops are proven end-to-end at the CLI integration
 // layer (Step 6, against the built binary + a seeded sessions.db); the unit
 // tests below cover the parse + range-shaping logic that has no git dependency,
 // plus the temp-repo behaviors this module owns directly.

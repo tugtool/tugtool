@@ -234,6 +234,11 @@ pub(crate) async fn compose_snapshot(
         .values()
         .flat_map(|agg| agg.files.keys().cloned())
         .collect();
+    // Bracket hints ([P13]): the correlation-only holders stripped below are
+    // recorded per path instead of dropped silently — they surface on the
+    // unattributed rows as `hinted_by` provenance (a hint for the
+    // disposition decision, never an attribution).
+    let mut bracket_hints: HashMap<String, Vec<String>> = HashMap::new();
     for path in &all_paths {
         let proof_ids = proof_owners.get(path);
         let holders: Vec<String> = owners
@@ -244,7 +249,9 @@ pub(crate) async fn compose_snapshot(
         for id in &holders {
             if !proof_ids.is_some_and(|ids| ids.contains(id)) {
                 if let Some(agg) = owners.get_mut(id) {
-                    agg.files.remove(path);
+                    if agg.files.remove(path).is_some() {
+                        bracket_hints.entry(path.clone()).or_default().push(id.clone());
+                    }
                 }
             }
         }
@@ -263,13 +270,20 @@ pub(crate) async fn compose_snapshot(
     // `apply_session_rows`, so the card still lists every open session.
     owners.retain(|_, agg| !agg.files.is_empty());
 
-    // Unattributed: dirty files no owner claims.
+    // Unattributed: dirty files no owner claims, each carrying the bracket
+    // holders that saw it change ([P13]).
     let unattributed: Vec<UnattributedFile> = dirty
         .iter()
         .filter(|(path, _)| !owners.values().any(|agg| agg.files.contains_key(*path)))
-        .map(|(path, git_status)| UnattributedFile {
-            path: path.clone(),
-            git_status: git_status.clone(),
+        .map(|(path, git_status)| {
+            let mut hinted_by = bracket_hints.get(path).cloned().unwrap_or_default();
+            hinted_by.sort();
+            hinted_by.dedup();
+            UnattributedFile {
+                path: path.clone(),
+                git_status: git_status.clone(),
+                hinted_by,
+            }
         })
         .collect();
 
@@ -290,36 +304,58 @@ pub(crate) async fn compose_snapshot(
     // persists drafts for eligible entries, but gating here keeps a stale
     // draft off an entry that has since gone clean.
     if let Some(ledger) = ledger {
-        if let Ok(drafts) = ledger.changeset_drafts_for_project(&project_dir.to_string_lossy()) {
-            let by_owner: HashMap<(&str, &str), &crate::session_ledger::ChangesetDraftRow> = drafts
-                .iter()
-                .map(|d| ((d.owner_kind.as_str(), d.owner_id.as_str()), d))
-                .collect();
-            for entry in &mut changesets {
-                match entry {
-                    ChangesetEntry::Session {
-                        owner_id,
-                        files,
-                        draft,
-                        ..
-                    } if !files.is_empty() => {
-                        *draft = by_owner
-                            .get(&("session", owner_id.as_str()))
-                            .map(|row| draft_from_row(row));
-                    }
-                    ChangesetEntry::Dash {
-                        owner_id,
-                        rounds,
-                        worktree_dirty,
-                        draft,
-                        ..
-                    } if *rounds > 0 || *worktree_dirty => {
-                        *draft = by_owner
-                            .get(&("dash", owner_id.as_str()))
-                            .map(|row| draft_from_row(row));
-                    }
-                    _ => {}
+        // Spec S05 spelling contract: writers store `project_dir` canonical;
+        // query the canonical spelling and union the raw one when it differs
+        // (the same legacy-tolerant pattern as the file_events read above),
+        // so a draft written under either spelling still attaches.
+        let drafts = {
+            let raw = project_dir.to_string_lossy();
+            let canonical = CanonicalPath::from_raw(project_dir);
+            let mut drafts = ledger
+                .changeset_drafts_for_project(canonical.as_str())
+                .unwrap_or_default();
+            if canonical.as_str() != raw {
+                drafts.extend(
+                    ledger
+                        .changeset_drafts_for_project(&raw)
+                        .unwrap_or_default(),
+                );
+            }
+            drafts
+        };
+        // First writer wins in the map, so a canonical-spelling row
+        // shadows any raw-spelling duplicate on the same owner key.
+        let mut by_owner: HashMap<(&str, &str), &crate::session_ledger::ChangesetDraftRow> =
+            HashMap::new();
+        for d in &drafts {
+            by_owner
+                .entry((d.owner_kind.as_str(), d.owner_id.as_str()))
+                .or_insert(d);
+        }
+        for entry in &mut changesets {
+            match entry {
+                ChangesetEntry::Session {
+                    owner_id,
+                    files,
+                    draft,
+                    ..
+                } if !files.is_empty() => {
+                    *draft = by_owner
+                        .get(&("session", owner_id.as_str()))
+                        .map(|row| draft_from_row(row));
                 }
+                ChangesetEntry::Dash {
+                    owner_id,
+                    rounds,
+                    worktree_dirty,
+                    draft,
+                    ..
+                } if *rounds > 0 || *worktree_dirty => {
+                    *draft = by_owner
+                        .get(&("dash", owner_id.as_str()))
+                        .map(|row| draft_from_row(row));
+                }
+                _ => {}
             }
         }
     }
@@ -449,6 +485,13 @@ pub(crate) fn draft_from_row(row: &crate::session_ledger::ChangesetDraftRow) -> 
         fingerprint: row.fingerprint.clone(),
         message: row.message.clone(),
         updated_at: row.updated_at,
+        edited: row.edited,
+        // A selection that fails to parse (hand-mangled row) reads as no
+        // overrides rather than poisoning the snapshot.
+        selection: row
+            .selection
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
     }
 }
 
@@ -598,6 +641,25 @@ async fn dash_entries(repo_root: &Path) -> Vec<ChangesetEntry> {
         .map(|out| parse_name_status(&out))
         .unwrap_or_default();
 
+        // Round subjects, newest first — what the release discard
+        // preflight lists ([P14]). Empty when the dash has no rounds.
+        let round_subjects = if rounds > 0 {
+            git_stdout(
+                repo_root,
+                &["log", "--format=%s", &format!("{base}..{branch}")],
+            )
+            .await
+            .map(|out| {
+                out.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
         entries.push(ChangesetEntry::Dash {
             owner_id: branch.to_owned(),
             display_name: name.to_owned(),
@@ -606,6 +668,7 @@ async fn dash_entries(repo_root: &Path) -> Vec<ChangesetEntry> {
             worktree: worktree_rel,
             worktree_dirty,
             files,
+            round_subjects,
             draft: None,
         });
     }
@@ -851,6 +914,18 @@ mod tests {
             .map(|f| f.path.as_str())
             .collect();
         assert_eq!(unattributed, ["hand-edit.txt", "tainted.txt"]);
+
+        // Bracket hints ([P13]): the stripped correlation-only holder is
+        // recorded as `hinted_by` on the bracket-swept path; a plain hand
+        // edit no bracket saw carries none.
+        let hand_edit = &snapshot.unattributed[0];
+        assert!(hand_edit.hinted_by.is_empty(), "no bracket saw hand-edit.txt");
+        let tainted = &snapshot.unattributed[1];
+        assert_eq!(
+            tainted.hinted_by,
+            vec!["sess-alpha".to_string()],
+            "the bracket holder surfaces as a hint, never an attribution"
+        );
     }
 
     #[tokio::test]
@@ -1035,6 +1110,7 @@ mod tests {
                     worktree: ".tug/worktrees/demo".to_owned(),
                     worktree_dirty: false,
                     files: Vec::new(),
+                    round_subjects: Vec::new(),
                     draft: None,
                 },
                 ChangesetEntry::Session {

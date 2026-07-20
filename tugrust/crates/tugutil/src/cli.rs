@@ -1,9 +1,10 @@
 //! CLI argument parsing for the unified `tugutil` binary.
 //!
 //! One command tree over three surfaces: the top-level git verbs
-//! (`changes`/`context`/`commit`/`log`/`diff`, backed by `tugchanges_core`), the
-//! `dash` namespace (worktree work units, backed by `tugdash_core`), and the
-//! `host` namespace (instance/gate/state-dir/tell/init plumbing).
+//! (`changes`/`preflight`/`commit`/`log`/`diff`/`draft`, backed by
+//! `tugchanges_core`), the `dash` namespace (worktree work units, backed by
+//! `tugdash_core`), and the `host` namespace (instance/gate/state-dir/tell/init
+//! plumbing).
 
 use std::path::PathBuf;
 
@@ -21,7 +22,7 @@ const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"
 #[command(version = VERSION)]
 #[command(about = "tugutil — changes & commits, dashes, and host plumbing")]
 #[command(
-    long_about = "tugutil — the unified Tug developer CLI.\n\nTop-level verbs own this session's git surface: changes (which files this\nsession changed), context (one-shot commit context), commit (stage → commit →\nstructured receipt), log, and diff. `tugutil dash …` drives worktree-isolated work\nunits; `tugutil host …` is instance/project plumbing (instance, gate, state-dir,\ntell, init)."
+    long_about = "tugutil — the unified Tug developer CLI.\n\nTop-level verbs own this session's git surface: changes (which files this\nsession changed), preflight (the one-shot readout a landing starts from),\ncommit (stage → commit → structured receipt), draft (the maintained landing\ndraft), log, and diff. `tugutil dash …` drives worktree-isolated work units;\n`tugutil host …` is instance/project plumbing (instance, gate, state-dir,\ntell, init)."
 )]
 pub struct Cli {
     /// Increase output verbosity
@@ -57,8 +58,12 @@ pub enum Commands {
         #[arg(long)]
         diff: bool,
     },
-    /// One-shot commit context: changed files (with diff), branch/head, recent commits.
-    Context {
+    /// One-shot landing preflight: changed files (with diff), branch/head, recent commits.
+    ///
+    /// (`context` remains a hidden alias for one release — shipped skill
+    /// text still says `tugutil context`.)
+    #[command(alias = "context")]
+    Preflight {
         /// Session id (default: $TUG_SESSION_ID).
         #[arg(long)]
         session: Option<String>,
@@ -121,6 +126,10 @@ pub enum Commands {
         project: Option<PathBuf>,
     },
 
+    /// The maintained landing draft (set/show/clear) — Spec S02.
+    #[command(subcommand)]
+    Draft(DraftCommands),
+
     /// Worktree-isolated work units (create/commit/join/release/list/show).
     #[command(subcommand)]
     Dash(DashCommands),
@@ -146,6 +155,49 @@ impl From<CliStrategy> for JoinStrategy {
             CliStrategy::Rebase => JoinStrategy::Rebase,
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum DraftCommands {
+    /// Write (or partially update) the maintained draft for an owner.
+    ///
+    /// A skill-authored draft is an authored draft: rows written here always
+    /// carry `edited=1`, so the draft engine never clobbers them.
+    Set {
+        /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        #[arg(long)]
+        owner: String,
+        /// Project dir (default: cwd); canonicalized on write.
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// The draft commit message (subject, optional body).
+        #[arg(long)]
+        message: Option<String>,
+        /// Paths elected into the landing beyond the default rule.
+        #[arg(long, num_args = 1..)]
+        include: Vec<String>,
+        /// Paths excluded from the landing against the default rule.
+        #[arg(long, num_args = 1..)]
+        exclude: Vec<String>,
+    },
+    /// Print the maintained draft for an owner.
+    Show {
+        /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        #[arg(long)]
+        owner: String,
+        /// Project dir (default: cwd).
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
+    /// Delete the maintained draft for an owner.
+    Clear {
+        /// Owner: `session:<id>`, `dash:<name>`, or `unattributed`.
+        #[arg(long)]
+        owner: String,
+        /// Project dir (default: cwd).
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

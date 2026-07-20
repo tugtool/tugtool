@@ -8,16 +8,16 @@
 
 pub mod changes;
 pub mod commit;
-pub mod context;
 pub mod git;
 mod ledger;
+pub mod preflight;
 pub mod trailer;
 
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
 pub use commit::{Aggregate, CommitError, CommitOptions, CommitReceipt, LeftBehind, commit};
-pub use context::{
-    ContextOptions, ContextReport, DiffOptions, DiffReport, LogEntry, LogOptions, LogReport,
-    context, diff, log,
+pub use preflight::{
+    DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
+    diff, log, preflight,
 };
 pub use git::{
     DiffFile, DiffFileStatus, FileStat, NumstatEntry, StatusEntry, StatusReport, file_stats,

@@ -165,6 +165,10 @@ pub struct GitLogCommit {
     pub author: String,
     /// Author date, `--date=short` (`YYYY-MM-DD`).
     pub date: String,
+    /// The `Tug-Dash:` trailer value (`tugdash/<name> onto <base>`) when the
+    /// commit landed as a dash join — the History join badge ([P09]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tug_dash: Option<String>,
 }
 
 /// A HEAD-moved signal, broadcast on the GIT_HEAD feed (0x27) whenever a
@@ -240,6 +244,12 @@ pub struct UnattributedFile {
     pub path: String,
     /// Porcelain-v2 XY status pair.
     pub git_status: String,
+    /// Sessions whose live bracket rows saw the path change ([P13]) —
+    /// correlation-only holders compose used to strip silently. A hint for
+    /// the disposition decision, never an attribution: the file stays
+    /// unattributed and default-unselected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hinted_by: Vec<String>,
 }
 
 /// The maintained commit-message draft for a changeset entry (Spec S10), the
@@ -255,6 +265,27 @@ pub struct ChangesetDraft {
     pub message: String,
     /// Epoch milliseconds of the last regeneration.
     pub updated_at: i64,
+    /// True once a human has touched the message — an edited draft is never
+    /// machine-clobbered.
+    #[serde(default)]
+    pub edited: bool,
+    /// Persisted selection dispositions: repo-relative path overrides
+    /// against the default selection rule, when any exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<ChangesetDraftSelection>,
+}
+
+/// The persisted selection overrides riding a [`ChangesetDraft`]: deltas
+/// against the default rule (session files on unless shared, unattributed
+/// off). Paths are repo-relative.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ChangesetDraftSelection {
+    /// Paths elected into the landing beyond the default rule.
+    #[serde(default)]
+    pub include: Vec<String>,
+    /// Paths excluded from the landing against the default rule.
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 /// One owner's slice of the workspace's dirty state on the CHANGESET feed.
@@ -295,6 +326,10 @@ pub enum ChangesetEntry {
         worktree_dirty: bool,
         /// `base..branch` name-status files.
         files: Vec<ChangesetFile>,
+        /// Round commit subjects, newest first (`git log base..branch`) —
+        /// what the release discard preflight lists ([P14]).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        round_subjects: Vec<String>,
         /// The maintained draft — the dash's eventual squash/join message
         /// ([P23], Spec S10) — when one exists.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -598,12 +633,14 @@ mod tests {
                     subject: "add feature".to_string(),
                     author: "Ada Lovelace".to_string(),
                     date: "2026-07-15".to_string(),
+                    tug_dash: Some("tugdash/feature onto main".to_string()),
                 },
                 GitLogCommit {
                     sha: "89abcdef0123456789abcdef0123456789abcdef".to_string(),
                     subject: "initial".to_string(),
                     author: "Grace Hopper".to_string(),
                     date: "2026-07-14".to_string(),
+                    tug_dash: None,
                 },
             ],
         };
@@ -860,10 +897,13 @@ mod tests {
             worktree: ".tug/worktrees/tugdash__x".to_string(),
             worktree_dirty: true,
             files: vec![],
+            round_subjects: vec![],
             draft: Some(ChangesetDraft {
                 fingerprint: "fp".to_string(),
                 message: "Do the thing".to_string(),
                 updated_at: 5,
+                edited: false,
+                selection: None,
             }),
         };
         let json = serde_json::to_string(&dash).unwrap();

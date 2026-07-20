@@ -34,6 +34,9 @@ export interface ChangesetFile {
 export interface UnattributedFile {
   path: string;
   git_status: string;
+  /** Sessions whose live bracket rows saw the path change ([P13]) — a hint
+   *  for the disposition decision, never an attribution. */
+  hinted_by?: string[];
 }
 
 /** The maintained commit-message draft for a changeset entry (Spec S10). */
@@ -44,6 +47,18 @@ export interface ChangesetDraft {
   message: string;
   /** Epoch milliseconds of the last regeneration. */
   updated_at: number;
+  /** True once a human has touched the message — never machine-clobbered. */
+  edited?: boolean;
+  /** Persisted selection dispositions against the default rule. */
+  selection?: ChangesetDraftSelection;
+}
+
+/** Repo-relative path overrides riding a draft's persisted selection. */
+export interface ChangesetDraftSelection {
+  /** Paths elected into the landing beyond the default rule. */
+  include?: string[];
+  /** Paths excluded from the landing against the default rule. */
+  exclude?: string[];
 }
 
 /** Files attributed to one Claude session. */
@@ -76,6 +91,9 @@ export interface DashChangesetEntry {
   /** True when the dash worktree has uncommitted changes. */
   worktree_dirty: boolean;
   files: ChangesetFile[];
+  /** Round commit subjects, newest first — the release discard preflight
+   *  lists these ([P14]). */
+  round_subjects?: string[];
   /** The maintained draft — the dash's eventual join message ([P23]). */
   draft?: ChangesetDraft;
 }
@@ -122,7 +140,10 @@ export function isUnattributedFile(value: unknown): value is UnattributedFile {
   return (
     isRecord(value) &&
     typeof value.path === "string" &&
-    typeof value.git_status === "string"
+    typeof value.git_status === "string" &&
+    (value.hinted_by === undefined ||
+      (Array.isArray(value.hinted_by) &&
+        value.hinted_by.every((s) => typeof s === "string")))
   );
 }
 
@@ -133,8 +154,19 @@ export function isOptionalChangesetDraft(value: unknown): boolean {
     isRecord(value) &&
     typeof value.fingerprint === "string" &&
     typeof value.message === "string" &&
-    typeof value.updated_at === "number"
+    typeof value.updated_at === "number" &&
+    (value.edited === undefined || typeof value.edited === "boolean") &&
+    isOptionalDraftSelection(value.selection)
   );
+}
+
+/** A present selection must be include/exclude string arrays; absent is valid. */
+function isOptionalDraftSelection(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const isPathArray = (v: unknown): boolean =>
+    v === undefined || (Array.isArray(v) && v.every((p) => typeof p === "string"));
+  return isPathArray(value.include) && isPathArray(value.exclude);
 }
 
 export function isChangesetEntry(value: unknown): value is ChangesetEntry {
@@ -156,7 +188,10 @@ export function isChangesetEntry(value: unknown): value is ChangesetEntry {
       typeof value.base === "string" &&
       typeof value.rounds === "number" &&
       typeof value.worktree === "string" &&
-      typeof value.worktree_dirty === "boolean"
+      typeof value.worktree_dirty === "boolean" &&
+      (value.round_subjects === undefined ||
+        (Array.isArray(value.round_subjects) &&
+          value.round_subjects.every((s) => typeof s === "string")))
     );
   }
   return false;

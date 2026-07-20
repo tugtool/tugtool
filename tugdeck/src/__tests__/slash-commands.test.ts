@@ -15,6 +15,7 @@ import {
   type CommandLineAtom,
 } from "@/lib/slash-commands";
 import { isBangCommand, matchBangCommandLine } from "@/lib/bang-commands";
+import { planCommitVerb } from "@/lib/commit-verb-plan";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   CompletionItem,
@@ -50,6 +51,51 @@ describe("matchLocalSlashCommand", () => {
     for (const input of ["/vim", "/theme", "permissions", "hello /permissions", "", "/"]) {
       expect(matchLocalSlashCommand(input)).toBeNull();
     }
+  });
+
+  test("/commit matches locally in every form — never falls through to claude", () => {
+    // The pinned shadowing contract ([P04]): a matched local command is
+    // dispatched via RUN_SLASH_COMMAND and never reaches codeSessionStore.send,
+    // so claude's built-in /commit is dead. All three Table T01 invocations
+    // must match.
+    expect(matchLocalSlashCommand("/commit")).toEqual({ name: "commit", args: "" });
+    expect(matchLocalSlashCommand("/commit now")).toEqual({
+      name: "commit",
+      args: "now",
+    });
+    expect(matchLocalSlashCommand("/commit Fix the flux capacitor")).toEqual({
+      name: "commit",
+      args: "Fix the flux capacitor",
+    });
+  });
+});
+
+describe("planCommitVerb (Table T01)", () => {
+  test("bare /commit: beat 1 with no ready draft, beat 2 with one", () => {
+    expect(planCommitVerb("", null)).toEqual({ kind: "draft" });
+    expect(planCommitVerb("", "Draft message")).toEqual({
+      kind: "land",
+      message: "Draft message",
+    });
+  });
+
+  test("/commit <message>: the explicit message wins over the draft", () => {
+    expect(planCommitVerb("Fix the thing", null)).toEqual({
+      kind: "land",
+      message: "Fix the thing",
+    });
+    expect(planCommitVerb("Fix the thing", "Draft message")).toEqual({
+      kind: "land",
+      message: "Fix the thing",
+    });
+  });
+
+  test("/commit now: generate-then-land without a draft, plain land with one", () => {
+    expect(planCommitVerb("now", null)).toEqual({ kind: "generate-then-land" });
+    expect(planCommitVerb("now", "Draft message")).toEqual({
+      kind: "land",
+      message: "Draft message",
+    });
   });
 });
 
@@ -113,6 +159,23 @@ describe("mergeCommandProviders", () => {
       namesProvider("permissions"),
     );
     expect(labels(merged, "permi")).toEqual(["permissions"]);
+  });
+
+  test("claude's advertised commit loses to the local /commit entry", () => {
+    // Exactly one /commit in the popup ([P04]): the session card lists the
+    // local provider FIRST, so first-wins dedup resolves the name to the
+    // local entry (described as Tug's landing verb) and claude's built-in
+    // duplicate never shows. A non-colliding claude entry survives.
+    const merged = mergeCommandProviders(
+      localCommandCompletionProvider(),
+      namesProvider("commit", "tugplug:devise"),
+    );
+    const items = merged("commit");
+    const commitItems = items.filter((i) => i.label === "commit");
+    expect(commitItems).toHaveLength(1);
+    expect(commitItems[0].description).toContain("Land this session's changes");
+    // The non-colliding claude entry survives the merge.
+    expect(items.some((i) => i.label === "tugplug:devise")).toBe(true);
   });
 });
 

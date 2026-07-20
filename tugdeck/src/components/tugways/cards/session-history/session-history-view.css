@@ -43,3 +43,16 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Join badge ([P09]) — a commit that landed as a dash join reads
+   differently from a hand commit. */
+.session-history-join-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--tug7-element-global-text-accent-default-rest, var(--tug7-element-global-text-normal-muted-rest));
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.1));
+  white-space: nowrap;
+}

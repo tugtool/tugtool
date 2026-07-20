@@ -9,9 +9,10 @@ Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a
 **ONLY THE USER CAN COMMIT TO GIT.** Do not run `git commit`, `git push`, or any git commands that modify the repository history unless explicitly instructed by the user. You may run read-only git commands like `git status`, `git diff`, `git log`, etc.
 
 **Exceptions:**
-- The `/tugplug:commit` skill: when the user invokes it, commit immediately without asking for confirmation.
-- Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the same commit style as the `/tugplug:commit` skill. Report each commit hash and message.
-- The `implement` and `dash` skills commit on their **dash worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user-invoked `tugutil dash join`.
+- Autonomous implementation: when the user explicitly authorizes autonomous sub-step execution (e.g., "go on your own"), commit after each sub-step using the `/tugplug:draft` skill's message style. Report each commit hash and message.
+- The `implement` and `dash` skills commit on their **dash worktree** (never on `main`) via `tugutil dash commit`, as part of running a recipe / dash. `main` is only updated by the user's landing gestures.
+
+The `/tugplug:draft` skill **never commits** — it authors the session's landing draft via `tugutil draft set`. Landing is the user's act: `/commit` (main lane) and `/join <name>` (dash lane) in the Session card are the landing gestures.
 
 ## Repository Structure
 
@@ -22,7 +23,7 @@ Tugtool is a developer tool suite. Its centerpiece is the **Session card** — a
 | `tugcode/` | Claude Code bridge (stream-json IPC); bun-compiled binary |
 | `tugdeck/` | Web frontend (the Session card lives here) |
 | `tugapp/` | Swift macOS app (Tug.app host) |
-| `tugplug/` | Claude Code plugin (agentless skills: devise/implement/dash/vet/audit/commit) |
+| `tugplug/` | Claude Code plugin (agentless skills: devise/implement/dash/vet/audit/draft) |
 | `tuglaws/` | Architecture laws + design decisions — the curated durable doc surface |
 | `roadmap/` | Implementation plans (recipes) |
 | `tests/` | App-test harness that drives the real Tug.app |

@@ -425,3 +425,123 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 .tug-sheet-actions .tug-button {
   min-width: 5rem;
 }
+
+/* ---- Shade presentation ([P17]) — ported from the retired TugShade ----
+ *
+ * The shade shares the pane's content surface so its body reads as card
+ * ground, not a floating dialog; the bottom-edge shadow is what says
+ * "over". `--tugx-shade-alpha` is the tunable translucency of the WHOLE
+ * shade — surface, header, and every row fade together so the transcript
+ * reads faintly through even when the shade is packed with content.
+ * 1 = fully opaque; lower reveals more of the transcript. */
+
+body {
+  --tugx-shade-alpha: 0.96;
+  --tugx-shade-bg: var(--tug7-surface-global-primary-normal-content-rest);
+  --tugx-shade-border: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-shade-shadow: 0 6px 16px var(--tug7-element-global-shadow-normal-md-rest);
+  --tugx-shade-handle: var(--tug7-element-global-border-normal-default-rest);
+  /* The grabber highlights to the SELECTED-control fill (the same token a
+     selected TugOptionGroup item uses) — "this control is engaged". */
+  --tugx-shade-handle-active: var(--tug7-surface-toggle-primary-normal-on-rest);
+}
+
+/* The shade's scrim: fills the consumer's positioned wrapper (the region
+   the shade modalizes — the transcript slot), NOT the whole pane. Pointer
+   dead zone over the covered region; everything outside the wrapper (the
+   prompt entry) stays live ([P17]). */
+/* @tug-renders-on: --tugx-pane-scrim-bg */
+.tug-sheet-shade-scrim {
+  position: absolute;
+  inset: 0;
+  background-color: var(--tugx-pane-scrim-bg);
+  pointer-events: auto;
+}
+
+/* The shade panel. Positioned by its wrapper (absolute, anchored to the
+   top). Height is CONTENT-DRIVEN (`fit-content`) but capped by the height
+   fraction: `--tug-shade-frac` is the MAX fraction of the slot the shade
+   may take (written by the grabber drag [L06], seeded from the persisted
+   tugbank value). A short list sizes to its content and leaves the rest
+   of the (scrimmed) transcript visible; a long one fills up to the
+   fraction and scrolls inside. The inline `min-height` floor keeps the
+   grabber reachable. */
+.tug-sheet-shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: fit-content;
+  max-height: calc(var(--tug-shade-frac, 0.58) * 100%);
+  display: flex;
+  flex-direction: column;
+  background-color: var(--tugx-shade-bg);
+  border-bottom: 1px solid var(--tugx-shade-border);
+  box-shadow: var(--tugx-shade-shadow);
+  /* Element-level translucency: the whole shade (surface + content) fades
+     uniformly so the transcript reads through even when packed [L06]. */
+  opacity: var(--tugx-shade-alpha);
+  pointer-events: auto;
+}
+
+/* Body region — fills the shade above the grabber. The consumer composes
+   its own header strip (a BlockStrip at `altitude="section"`) and
+   scrolling content inside. */
+.tug-sheet-shade-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+/* A consumer header strip pinned above the scrolling content — kept out
+   of the scroll flow. The BlockStrip owns its own token contract [L20]. */
+.tug-sheet-shade-header {
+  flex: 0 0 auto;
+}
+
+/* Grabber strip — the full-width drag target on the bottom edge. */
+.tug-sheet-shade-grabber {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--tug-space-2xs) 0 var(--tug-space-xs);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-content-rest */
+.tug-sheet-shade-grabber-handle {
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--tugx-shade-handle);
+}
+
+.tug-sheet-shade-grabber:hover .tug-sheet-shade-grabber-handle,
+.tug-sheet-shade-grabber:active .tug-sheet-shade-grabber-handle {
+  background-color: var(--tugx-shade-handle-active);
+}
+
+/* Shade resting state — off-screen above its wrapper before the JS enter
+   animation runs (the window-shade drop), mirroring the `top` rule the
+   `.tug-sheet-content` presentations declare. Reduced motion resets to
+   the presented geometry, exactly as above. */
+.tug-sheet-shade[data-tug-sheet-presentation="shade"] {
+  transform: translateY(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tug-sheet-shade[data-tug-sheet-presentation="shade"] {
+    transform: none;
+  }
+}
+
+body[data-tug-motion="off"] .tug-sheet-shade[data-tug-sheet-presentation="shade"] {
+  transform: none;
+}

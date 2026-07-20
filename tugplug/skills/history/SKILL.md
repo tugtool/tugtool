@@ -31,7 +31,7 @@ with specific shas.
 
 - **This session's changes (for "what did I change / commit here?"):**
   ```
-  tugutil context --json
+  tugutil preflight --json
   ```
   The files `$TUG_SESSION_ID` changed (each with its diff), the branch/head, and
   recent commit subjects.
@@ -65,7 +65,7 @@ with specific shas.
   ```
 
 Run these in the project checkout (the session's cwd is the project root). Prefer
-`tugutil log` / `tugutil context` for the timeline and this session's work; reach
+`tugutil log` / `tugutil preflight` for the timeline and this session's work; reach
 for raw `git log --grep` / `git show` / `git log --follow` for trailer, term, and
 per-file history. Chain a few — a first `tugutil log`/grep to find candidate shas,
 then `git show <sha>` to read them.

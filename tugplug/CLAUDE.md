@@ -16,19 +16,22 @@ The plugin ships **agentless, main-loop-driven** skills — there are no sub-age
 - **`dash`** — quick, plan-less worktree-isolated task, same agentless model as
   `implement` but without a plan.
 
-**Assessment & commit:**
+**Assessment & drafting:**
 
 - **`vet`** — pre-implementation: assess a plan (or step range) against the tuglaws
   and the real code, then rule "fixups needed" or "clear to implement". Read-only.
 - **`audit`** — post-implementation: audit the built code (or step range) against the
   tuglaws and the real diff, then rule "fixups needed" or "good shape". Read-only.
-- **`commit`** — analyze the working changes, stage deliberately, and make a clean
-  conventional commit immediately (no confirmation prompt).
+- **`draft`** — analyze the working changes, decide per-file dispositions, and author
+  the session's landing draft via `tugutil draft set`. **Never commits** — the user
+  lands the draft with `/commit` in the Session card. *(was `commit`, which committed
+  fire-and-forget; skills draft, humans land.)*
 
 The lifecycle skills run in the main conversation and ride the `tugutil dash` CLI
-(`create` → `commit` per step/round → `join`). The flow is
+(`create` → `commit` per step/round). The flow is
 `/tugplug:devise` → `/tugplug:vet` → `/tugplug:implement` (or just `/tugplug:dash`) →
-`/tugplug:audit` → review → `tugutil dash join`.
+`/tugplug:audit` → review → the user's `/join <name>` in the Session card (the
+implement run leaves the dash's join draft behind for it).
 
 **Location discipline (critical):** no skill assumes a plan directory — `roadmap/`,
 `.tugtool/`, and any other home are never hardcoded. A plan is always an explicit

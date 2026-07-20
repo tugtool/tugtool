@@ -13,6 +13,7 @@ import {
   isChangesetEntry,
   isChangesetFile,
   isChangesetSnapshot,
+  isOptionalChangesetDraft,
   isProjectChangeset,
   isWorkspacesChangesetSnapshot,
   type ChangesetSnapshot,
@@ -63,6 +64,41 @@ describe("changeset wire contract", () => {
     const missingUnattributed = { ...(golden as Record<string, unknown>) };
     delete missingUnattributed.unattributed;
     expect(isChangesetSnapshot(missingUnattributed)).toBe(false);
+  });
+
+  test("draft guard accepts old and new shapes", () => {
+    // Pre-edited/selection shape (legacy wire) is still valid.
+    expect(
+      isOptionalChangesetDraft({ fingerprint: "fp", message: "m", updated_at: 1 }),
+    ).toBe(true);
+    // The extended shape rides through.
+    expect(
+      isOptionalChangesetDraft({
+        fingerprint: "fp",
+        message: "m",
+        updated_at: 1,
+        edited: true,
+        selection: { include: ["a.rs"], exclude: [] },
+      }),
+    ).toBe(true);
+    // Absent draft is valid; malformed extensions are not.
+    expect(isOptionalChangesetDraft(undefined)).toBe(true);
+    expect(
+      isOptionalChangesetDraft({
+        fingerprint: "fp",
+        message: "m",
+        updated_at: 1,
+        edited: "yes",
+      }),
+    ).toBe(false);
+    expect(
+      isOptionalChangesetDraft({
+        fingerprint: "fp",
+        message: "m",
+        updated_at: 1,
+        selection: { include: [42] },
+      }),
+    ).toBe(false);
   });
 
   test("CHANGESET feed id is registered at 0x23", () => {

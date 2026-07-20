@@ -33,9 +33,9 @@ import type React from "react";
 import { History as HistoryIcon, X } from "lucide-react";
 
 import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
+import { dashNameFromTrailer } from "@/lib/landing-receipt";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
-import { TugShade } from "@/components/tugways/tug-shade";
 import {
   gitLogStore,
   type GitLogCommit,
@@ -62,6 +62,9 @@ function useGitLogSnapshot(): GitLogStoreSnapshot {
 
 function CommitBlock({ commit }: { commit: GitLogCommit }): React.ReactElement {
   const meta = `${commit.sha.slice(0, 10)} · ${commit.author} · ${commit.date}`;
+  // A commit that landed as a dash join carries the `Tug-Dash:` trailer;
+  // History badges it so joins read differently from hand commits ([P09]).
+  const dashName = dashNameFromTrailer(commit.tug_dash);
   return (
     <div className="session-history-commit" data-testid="session-history-commit">
       <BlockChrome
@@ -70,6 +73,14 @@ function CommitBlock({ commit }: { commit: GitLogCommit }): React.ReactElement {
         identity={
           <span className="session-history-commit-subject" title={commit.subject}>
             {commit.subject}
+            {dashName !== null ? (
+              <span
+                className="session-history-join-badge"
+                data-testid="session-history-join-badge"
+              >
+                from dash {dashName}
+              </span>
+            ) : null}
           </span>
         }
         resultSummary={{ kind: "text", text: meta }}
@@ -111,11 +122,13 @@ export function SessionHistoryView({
     gitLogStore()?.requestLog(projectDir);
   }, [active, projectDir, snapshot.requestedRoot, snapshot.phase]);
 
+  // The view fills the sheet's shade body ([P17]): the header strip pinned
+  // above, the scrolling view below. The shade panel (geometry, scrim,
+  // grabber, modality, Escape close) is `TugSheetContent
+  // presentation="shade"` — mounted by the Session card around this view.
   const shell = (children: React.ReactNode): React.ReactElement => (
-    <TugShade
-      persistKey="session-card"
-      grabberLabel="Resize the History view"
-      header={
+    <>
+      <div className="tug-sheet-shade-header">
         <BlockStrip
           altitude="section"
           className="tool-call-header"
@@ -138,8 +151,7 @@ export function SessionHistoryView({
             ) : undefined
           }
         />
-      }
-    >
+      </div>
       <div
         className="session-history-view"
         data-slot="session-history-view"
@@ -147,7 +159,7 @@ export function SessionHistoryView({
       >
         {children}
       </div>
-    </TugShade>
+    </>
   );
 
   if (projectDir === null) {

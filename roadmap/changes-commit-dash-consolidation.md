@@ -410,19 +410,19 @@ A local transcript block (registered in `session-command-block-registry.ts`) ren
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Draft rows: machine-global, edited, selection | pending | — |
-| #step-2 | `changeset_draft_set` verb + edited gate | pending | — |
-| #step-3 | `tugutil draft` CLI + aggregate probe + preflight rename | pending | — |
-| #step-3a | TugSheet shade presentation; retire TugShade | pending | — |
-| #step-4 | Zone 1 composer (TugMessageEditor) | pending | — |
-| #step-5 | Zone split + Also-line + jump links | pending | — |
-| #step-6 | Bracket hints through compose to the shade | pending | — |
-| #step-7 | `/commit` double-duty verb; retire `!changes` sub-verbs | pending | — |
-| #step-8 | `/join` verb over preview/execute | pending | — |
-| #step-9 | Receipt ink + History join badges | pending | — |
-| #step-10 | Skill rename commit→draft; implement ending | pending | — |
-| #step-11 | Laws + docs | pending | — |
-| #step-12 | Integration checkpoint | pending | — |
+| #step-1 | Draft rows: machine-global, edited, selection | done | 45ae095d1 |
+| #step-2 | `changeset_draft_set` verb + edited gate | done | 3463eda82 |
+| #step-3 | `tugutil draft` CLI + aggregate probe + preflight rename | done | 785248d60 |
+| #step-3a | TugSheet shade presentation; retire TugShade | done | 3bc3f16e3 |
+| #step-4 | Zone 1 composer (TugMessageEditor) | done | 12b717b7a |
+| #step-5 | Zone split + Also-line + jump links | done | 75399bde6 |
+| #step-6 | Bracket hints through compose to the shade | done | c3bbd2ff7 |
+| #step-7 | `/commit` double-duty verb; retire `!changes` sub-verbs | done | e89e66d18 |
+| #step-8 | `/join` verb over preview/execute | done | 7510a3427 |
+| #step-9 | Receipt ink + History join badges | done | ace163f5c |
+| #step-10 | Skill rename commit→draft; implement ending | done | a41d0f0e9 |
+| #step-11 | Laws + docs | done | 03995e940 |
+| #step-12 | Integration checkpoint | done | — (verification only; manual walkthroughs in the vetting phase) |
 
 #### Step 1: Draft rows — machine-global, edited, selection {#step-1}
 

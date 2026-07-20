@@ -4,6 +4,7 @@ mod changes;
 mod cli;
 mod commands;
 mod dash;
+mod draft;
 mod host;
 mod output;
 mod splash;
@@ -34,11 +35,11 @@ fn main() -> ExitCode {
             all,
             diff,
         }) => changes::finish(changes::run_changes(session, project, all, diff, json)),
-        Some(Commands::Context {
+        Some(Commands::Preflight {
             session,
             project,
             log_limit,
-        }) => changes::finish(changes::run_context(session, project, log_limit, json)),
+        }) => changes::finish(changes::run_preflight(session, project, log_limit, json)),
         Some(Commands::Commit {
             message,
             session,
@@ -68,6 +69,17 @@ fn main() -> ExitCode {
             session,
             project,
         }) => changes::finish(changes::run_diff(range, staged, session, project, json)),
+        Some(Commands::Draft(cmd)) => changes::finish(match cmd {
+            cli::DraftCommands::Set {
+                owner,
+                project,
+                message,
+                include,
+                exclude,
+            } => draft::run_set(owner, project, message, include, exclude, json),
+            cli::DraftCommands::Show { owner, project } => draft::run_show(owner, project, json),
+            cli::DraftCommands::Clear { owner, project } => draft::run_clear(owner, project, json),
+        }),
 
         // Dashes (tugdash_core) and host plumbing (command modules).
         Some(Commands::Dash(cmd)) => dash::dispatch(cmd, json, quiet),

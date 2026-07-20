@@ -38,6 +38,9 @@ import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry
 import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
+import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
+import { planCommitVerb } from "@/lib/commit-verb-plan";
+import { planJoinVerb } from "@/lib/join-verb-plan";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
@@ -97,7 +100,7 @@ import {
   TugListView,
   type TugListViewDelegate,
 } from "../tug-list-view";
-import { useTugSheet } from "../tug-sheet";
+import { TugSheet, TugSheetContent, useTugSheet, type TugSheetHandle } from "../tug-sheet";
 import { presentAlertSheet } from "../tug-alert-sheet";
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponderForm } from "../use-responder-form";
@@ -174,6 +177,7 @@ import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
 import { sessionCardTitleOverride } from "@/lib/session-card-title";
 import { useSessionCardObserver } from "./use-session-card-observer";
+import { useLandingReceipts } from "./use-landing-receipts";
 import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
@@ -2149,6 +2153,9 @@ export function SessionCardBody({
   const shadeViewController = shadeViewControllerRef.current;
 
   useSessionCardObserver(cardId, codeSessionStore);
+  // Landing receipts as transcript ink ([P09], Spec S04): every successful
+  // commit/join/release for this card's project leaves a non-context row.
+  useLandingReceipts(codeSessionStore, changesController);
   // Publishes the two Shade-visibility booleans so the Swift Session menu can
   // pick its Show/Hide verb (Spec S04).
   useMenuStatePublication(
@@ -2169,6 +2176,36 @@ export function SessionCardBody({
   );
   const activeView: "transcript" | "changes" | "history" =
     shadeView === "none" ? "transcript" : shadeView;
+  // The Changes / History shades are TugSheet `shade` presentations
+  // ([P17]); the controller's view choice drives their imperative handles.
+  // A self-initiated sheet close (Escape / Cmd-. / the chain's
+  // `cancelDialog`) re-syncs the controller through `onOpenChange` — guarded
+  // on the live snapshot so a swap (changes → history) closing the outgoing
+  // sheet never clobbers the incoming choice.
+  const changesSheetRef = useRef<TugSheetHandle | null>(null);
+  const historySheetRef = useRef<TugSheetHandle | null>(null);
+  useEffect(() => {
+    if (shadeView === "changes") changesSheetRef.current?.open();
+    else changesSheetRef.current?.close();
+    if (shadeView === "history") historySheetRef.current?.open();
+    else historySheetRef.current?.close();
+  }, [shadeView]);
+  const handleChangesSheetOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && shadeViewController.getSnapshot() === "changes") {
+        shadeViewController.hide();
+      }
+    },
+    [shadeViewController],
+  );
+  const handleHistorySheetOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && shadeViewController.getSnapshot() === "history") {
+        shadeViewController.hide();
+      }
+    },
+    [shadeViewController],
+  );
   // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
   // active `/find` holds a non-empty query — no route gate. [L02].
   const findActive = useSyncExternalStore(
@@ -3189,6 +3226,165 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
+    // `/commit` — the double-duty landing verb ([P04], Table T01): with no
+    // ready draft, beat 1 opens the Changes shade and generates one; with a
+    // ready draft (or an explicit message / `now`), beat 2 applies the
+    // landing gates and lands. Claude's built-in `/commit` is shadowed dead
+    // by this local match.
+    commit: (args) => {
+      const notify = paneBulletinRef.current;
+      const projectDirForDraft = changesController.projectDir;
+      const ownerId = changesController.tugSessionId;
+      const draftStore = getChangesetDraftStore();
+      // Ready draft = a finished generation still in the overlay, or a
+      // persisted non-empty draft message on the entry.
+      const overlay = draftStore?.overlay(projectDirForDraft, "session", ownerId);
+      const overlayText =
+        overlay?.phase === "ready" && overlay.text.trim().length > 0
+          ? overlay.text.trim()
+          : null;
+      const persistedText =
+        changesController.getSnapshot().entry?.draft?.message?.trim() ?? "";
+      const readyMessage =
+        overlayText ?? (persistedText.length > 0 ? persistedText : null);
+
+      // Beat 2: the four landing gates ([P08]) — the exact set the retired
+      // `!changes commit` handler enforced — then land, and consume the
+      // draft on success.
+      const landCommit = (message: string): void => {
+        if (codeSessionStore.getSnapshot().canInterrupt === true) {
+          notify?.caution("Can't commit while a turn is in flight");
+          return;
+        }
+        if (
+          getChangesetVerbStore()?.commitState(changesController.entryKey)
+            .phase === "pending"
+        ) {
+          notify?.caution("A commit is already in progress");
+          return;
+        }
+        if (changesController.getSnapshot().selectedPaths.size === 0) {
+          shadeViewController.show("changes");
+          notify?.caution("Select at least one file to commit");
+          return;
+        }
+        if (message.length === 0) {
+          notify?.caution("Nothing to land — the draft message is empty");
+          return;
+        }
+        changesController.commit(message);
+        // On a successful landing the draft is consumed ([P04]): clear the
+        // persisted row and drop the local selection overrides.
+        const verbStore = getChangesetVerbStore();
+        if (verbStore === null) return;
+        const unsubscribe = verbStore.subscribe(() => {
+          const phase = verbStore.commitState(changesController.entryKey).phase;
+          if (phase === "pending") return;
+          unsubscribe();
+          if (phase === "done") {
+            draftStore?.setDraft(projectDirForDraft, "session", ownerId, {
+              clear: true,
+            });
+            changesController.clearSelectionOverrides();
+          }
+        });
+      };
+
+      const plan = planCommitVerb(args, readyMessage);
+      if (plan.kind === "draft") {
+        // Beat 1: the shade is where the draft is reviewed and edited.
+        shadeViewController.show("changes");
+        changesController.requestDraft();
+        return;
+      }
+      if (plan.kind === "generate-then-land") {
+        shadeViewController.show("changes");
+        changesController.requestDraft();
+        if (draftStore === null) return;
+        const unsubscribe = draftStore.subscribe(() => {
+          const o = draftStore.overlay(projectDirForDraft, "session", ownerId);
+          if (o.phase === "drafting") return;
+          unsubscribe();
+          if (o.phase === "ready" && o.text.trim().length > 0) {
+            landCommit(o.text.trim());
+          } else {
+            notify?.caution("Draft generation failed — nothing was landed");
+          }
+        });
+        return;
+      }
+      landCommit(plan.message);
+    },
+    // `/join` — the dash-lane landing verb ([P05]): bare opens the shade's
+    // dash lane (previewing when exactly one dash exists); `/join <name>`
+    // previews and, when clean with a join draft on file, lands the squash
+    // with that draft as the message. An empty dash routes to its release
+    // affordance ([P14]); conflicts land in the shade's resolve flow.
+    join: (args) => {
+      const notify = paneBulletinRef.current;
+      const snap = changesController.getSnapshot();
+      const plan = planJoinVerb(
+        args,
+        snap.dashes.map((d) => ({
+          name: d.display_name,
+          ownerId: d.owner_id,
+          rounds: d.rounds,
+          dirty: d.worktree_dirty,
+        })),
+      );
+      // Every branch lands the user in the shade's dash lane.
+      shadeViewController.show("changes");
+      if (plan.kind === "open-lane") return;
+      if (plan.kind === "unknown") {
+        notify?.caution(`No dash named “${plan.name}”`);
+        return;
+      }
+      if (plan.kind === "release-handoff") {
+        notify?.caution(
+          `Nothing to join — release “${plan.dash.name}” to discard it`,
+        );
+        return;
+      }
+      // The join gates ([P08]): idle-only, no doubled round-trip.
+      if (codeSessionStore.getSnapshot().canInterrupt === true) {
+        notify?.caution("Can't join while a turn is in flight");
+        return;
+      }
+      const projectRoot = snap.project.project_dir;
+      const entryKey = `dash:${projectRoot}:${plan.dash.ownerId}`;
+      const verbStore = getChangesetVerbStore();
+      if (verbStore === null) return;
+      if (verbStore.joinState(entryKey).phase === "pending") {
+        notify?.caution("A join is already in progress");
+        return;
+      }
+      const draftReady =
+        (snap.dashes
+          .find((d) => d.owner_id === plan.dash.ownerId)
+          ?.draft?.message?.trim() ?? "").length > 0;
+      verbStore.join(entryKey, projectRoot, plan.dash.name, { preview: true });
+      if (!plan.autoLand) return;
+      // Named form: a clean preview with a ready join draft lands in the
+      // same gesture (squash; the backend's message resolution uses the
+      // maintained dash draft). Conflicts stay in the shade's resolve flow;
+      // a clean preview with no draft waits for the shade's Confirm.
+      const unsubscribe = verbStore.subscribe(() => {
+        const state = verbStore.joinState(entryKey);
+        if (state.phase === "pending") return;
+        unsubscribe();
+        if (state.phase !== "preview" || state.conflicts.length > 0) return;
+        if (!draftReady) {
+          notify?.caution(
+            "Joins cleanly — no join draft on file; confirm from the shade",
+          );
+          return;
+        }
+        if (codeSessionStore.getSnapshot().canInterrupt === true) return;
+        verbStore.join(entryKey, projectRoot, plan.dash.name, {
+          preview: false,
+        });
+      });
+    },
   };
 
   // Surface for each bang routing (`lib/bang-commands.ts`), keyed by name —
@@ -3238,55 +3434,17 @@ export function SessionCardBody({
       findSession.setQuery(query);
       findSession.next();
     },
-    // `!changes` ([P04]) — the Changes Shade is chrome, summoned by typing but
-    // never hidden by it ([P05]). Bare shows it; `describe` shows + kicks off an
-    // AI draft; `commit <message>` runs the gated durable commit (the exact
-    // gates the retired `±` route enforced); anything else is a usage caution
-    // (free text must never guess a commit).
+    // `!changes` — the bare routing to the Changes shade ([P04]): the shade
+    // is chrome, summoned by typing but never hidden by it. The retired
+    // `describe`/`commit` sub-verbs live on as `/commit`'s two beats.
     changes: (arg) => {
-      const notify = paneBulletinRef.current;
       const trimmed = arg.trim();
-      if (trimmed.length === 0) {
-        shadeViewController.show("changes");
-        return;
+      shadeViewController.show("changes");
+      if (trimmed.length > 0) {
+        paneBulletinRef.current?.caution(
+          "!changes opens the shade — use /commit to draft and land",
+        );
       }
-      const verb = trimmed.slice(0, trimmed.search(/\s|$/));
-      const rest = trimmed.slice(verb.length).trim();
-      if (verb === "describe") {
-        shadeViewController.show("changes");
-        changesController.requestDraft();
-        return;
-      }
-      if (verb === "commit") {
-        const message = rest;
-        // Same gates the `±` route's commit branch enforced: no overlap with a
-        // running turn, no double-commit, a non-empty selection, a non-empty
-        // message. A refused commit surfaces a bulletin instead of silently
-        // dropping.
-        if (codeSessionStore.getSnapshot().canInterrupt === true) {
-          notify?.caution("Can't commit while a turn is in flight");
-          return;
-        }
-        if (
-          getChangesetVerbStore()?.commitState(changesController.entryKey)
-            .phase === "pending"
-        ) {
-          notify?.caution("A commit is already in progress");
-          return;
-        }
-        if (changesController.getSnapshot().selectedPaths.size === 0) {
-          shadeViewController.show("changes");
-          notify?.caution("Select at least one file to commit");
-          return;
-        }
-        if (message.length === 0) {
-          notify?.caution("Usage: !changes commit <message>");
-          return;
-        }
-        changesController.commit(message);
-        return;
-      }
-      notify?.caution("Usage: !changes [describe | commit <message>]");
     },
     // `!history` ([P04]) — bare shows the History Shade; a question wraps in the
     // `/tugplug:history` skill and sends ON the record so the answer streams in
@@ -3666,17 +3824,14 @@ export function SessionCardBody({
               {effectiveHeaderContent}
             </div>
             {/*
-              Route-driven view slot ([P01]/[P02]). The transcript, the
-              Changes view, and the History view are ALL mounted; the
-              transcript pane is ALWAYS visible — the Changes/History views
-              ride a TugShade descending over it from the top, so the live
-              tail keeps streaming in view beneath the working layer. CSS
-              hides the inactive Shade pane via `data-active-view` ([L06])
-              so scroll position, in-progress selection, and streaming state
-              survive a route flip and the transcript's mount identity stays
-              stable ([L26]). The find overlay, Z2 status bar, and PULSE
-              strip stay OUTSIDE the slot — Find is a target-route over the
-              transcript.
+              Route-driven view slot ([P01]/[P02]). The transcript pane is
+              ALWAYS visible and its mount identity stays stable ([L26]);
+              the Changes/History views ride the TugSheet `shade`
+              presentation ([P17]) descending over it from the top — modal
+              over the transcript region only, while the prompt entry stays
+              live beneath the shade's bottom edge. The find overlay, Z2
+              status bar, and PULSE strip stay OUTSIDE the slot — Find is a
+              target-route over the transcript.
             */}
             <div className="session-view-slot" data-active-view={activeView}>
               <div className="session-view-pane" data-view="transcript">
@@ -3693,19 +3848,45 @@ export function SessionCardBody({
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
-                <SessionChangesView
-                  projectDir={projectDir}
-                  changesController={changesController}
-                  codeSessionStore={codeSessionStore}
-                  onClose={() => shadeViewController.hide()}
-                />
+                <TugSheet
+                  ref={changesSheetRef}
+                  onOpenChange={handleChangesSheetOpenChange}
+                >
+                  <TugSheetContent
+                    title="Changes"
+                    presentation="shade"
+                    persistKey="session-card"
+                    grabberLabel="Resize the Changes view"
+                    modalScopeSelector='.session-view-pane[data-view="transcript"]'
+                  >
+                    <SessionChangesView
+                      projectDir={projectDir}
+                      changesController={changesController}
+                      codeSessionStore={codeSessionStore}
+                      onClose={() => shadeViewController.hide()}
+                    />
+                  </TugSheetContent>
+                </TugSheet>
               </div>
               <div className="session-view-pane" data-view="history">
-                <SessionHistoryView
-                  projectDir={projectDir}
-                  active={activeView === "history"}
-                  onClose={() => shadeViewController.hide()}
-                />
+                <TugSheet
+                  ref={historySheetRef}
+                  onOpenChange={handleHistorySheetOpenChange}
+                >
+                  <TugSheetContent
+                    title="History"
+                    presentation="shade"
+                    persistKey="session-card"
+                    grabberLabel="Resize the History view"
+                    modalScopeSelector='.session-view-pane[data-view="transcript"]'
+                  >
+                    <SessionHistoryView
+                      projectDir={projectDir}
+                      active={activeView === "history"}
+                      onClose={() => shadeViewController.hide()}
+                    />
+                  </TugSheetContent>
+                </TugSheet>
               </div>
             </div>
             <FindWrapOverlay findSession={findSession} cardRef={sessionCardRootRef} />
@@ -3806,12 +3987,9 @@ export function SessionCardBody({
             <TugPromptEntry
               ref={entryDelegateRef}
               id={`${cardId}-entry`}
-              // Code is the only resting mode ([P01]); `changesController`
-              // supplies the AI commit-draft stream that lands in the editor
-              // as a `/changes commit` line ([P04]/S05). The Z5 "Generate a
-              // commit message" button shows only while the Changes Shade is up.
-              changesController={changesController}
-              changesShadeVisible={activeView === "changes"}
+              // Code is the only resting mode ([P01]). Draft generation now
+              // lives in the Changes shade's composer ([P02]/[P15]) — the
+              // entry carries no changeset plumbing.
               // The editor stands down (read-only + caret off + dimmed)
               // while an inline dialog owns the keyboard and while cycling
               // (the cycling-mode indicator, [P12] revised: reuse the

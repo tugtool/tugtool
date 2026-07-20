@@ -41,6 +41,9 @@ export interface GitLogCommit {
   author: string;
   /** Author date, `--date=short` (`YYYY-MM-DD`). */
   date: string;
+  /** The `Tug-Dash:` trailer value when the commit landed as a dash join —
+   *  drives the History join badge ([P09]). */
+  tug_dash?: string;
 }
 
 /** A single-shot recent-commits payload from tugcast (GIT_LOG feed). */

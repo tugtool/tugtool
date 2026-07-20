@@ -105,11 +105,13 @@
   display: flex;
   flex-direction: column;
 }
-/* The transcript pane is ALWAYS visible — the Changes/History views ride a
-   TugShade OVER it, so the live tail keeps streaming beneath the working
-   layer. Each Shade pane is a full-slot overlay wrapper: it takes no flex
-   space, ignores pointer events itself (the Shade re-enables them), and
-   only the active one displays. */
+/* The transcript pane is ALWAYS visible — the Changes/History views ride
+   the TugSheet `shade` presentation OVER it ([P17]), so the live tail keeps
+   streaming beneath the working layer (scrimmed while the shade is up).
+   Each shade pane is a full-slot overlay wrapper: it takes no flex space,
+   ignores pointer events itself (the shade's scrim/panel re-enable them),
+   clips the shade's slide-in, and is empty while its sheet is closed —
+   the sheet mounts and unmounts its own content. */
 .session-view-pane[data-view="changes"],
 .session-view-pane[data-view="history"] {
   flex: none;
@@ -117,12 +119,7 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
-}
-.session-view-slot:not([data-active-view="changes"])
-  .session-view-pane[data-view="changes"],
-.session-view-slot:not([data-active-view="history"])
-  .session-view-pane[data-view="history"] {
-  display: none;
+  overflow: hidden;
 }
 
 /* Changes / History slot views. Each fills its pane and scrolls its own

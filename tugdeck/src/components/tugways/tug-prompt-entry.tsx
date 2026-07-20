@@ -49,7 +49,6 @@ import {
   GitCommitHorizontal,
   History as HistoryIcon,
   MessageSquareDashed,
-  PencilSparkles,
   Plus,
   Search,
   Square,
@@ -136,11 +135,9 @@ import { logSessionLifecycle } from "@/lib/session-lifecycle-log";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { HistoryEntry } from "@/lib/prompt-history-store";
 import { DEFAULT_ROUTE } from "@/lib/route-constants";
-import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
 import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
-import { useChangesetDraft } from "@/lib/changeset-draft-store";
 import type { FindSession } from "@/lib/find-session";
 
 // ---------------------------------------------------------------------------
@@ -632,19 +629,6 @@ export interface TugPromptEntryProps {
    */
   id: string;
   /**
-   * The per-card Changes controller ([P07]) — the selection + commit/draft
-   * store the entry reads to stream an AI commit draft into the editor as a
-   * `/changes commit <draft>` line ([P04]/S05). Present only on the Session
-   * card; absent on hosts (the gallery) with no changeset plumbing.
-   */
-  changesController?: ChangesRouteController;
-  /**
-   * Whether the card's Changes Shade is currently showing. Gates the Z5
-   * "Generate a commit message" button — it appears (left of the submit
-   * button) only while Changes is up, and is disabled during a running turn.
-   */
-  changesShadeVisible?: boolean;
-  /**
    * Responder id that owns this entry's local slash commands — the
    * card's command-handling scope (typically `${cardId}-card-content`).
    * When a typed `/command` matches the local registry, the entry routes
@@ -975,8 +959,6 @@ export const TugPromptEntry = React.forwardRef<
 >(function TugPromptEntry(props, ref) {
   const {
     id,
-    changesController,
-    changesShadeVisible = false,
     localCommandTargetId,
     codeSessionStore,
     shellSessionStore,
@@ -1427,40 +1409,6 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     submitButtonModeRef.current = submitButtonMode;
   }, [submitButtonMode]);
-
-  // ── Changes-route (±) reactive state ([P05]/[P06]) ─────────────────────────
-  // The commit composer IS this one prompt editor on the `±` route: the draft
-  // AI-generates and streams straight into it, and submit commits the head
-  // selection. All three read the per-card controller + app-level draft/commit
-  // stores through `useSyncExternalStore` ([L02]); hooks run unconditionally
-  // with empty-string keys when no controller is present (the gallery), where
-  // the stores answer idle.
-  const changesDraft = useChangesetDraft(
-    changesController?.projectDir ?? "",
-    "session",
-    changesController?.tugSessionId ?? "",
-  );
-  const changesDrafting = changesDraft.phase === "drafting";
-
-  // Stream a generated draft INTO the editor as a `/changes commit <draft>`
-  // command line ([P04]/S05): a leading `changes` command atom + " commit " +
-  // the streaming text. `restoreState` is programmatic — it does not read as a
-  // user edit — so the deltas land as the editor's content; once the stream ends
-  // the user owns the text (edit freely, then submit to run the local-command
-  // commit intercept). Gated on the drafting phase + this card's controller
-  // identity (`changesDraft` is keyed by the card's project + session), never on
-  // a route. [L03] the overlay enters via the store hook; the seed runs as an
-  // effect off its committed text.
-  useLayoutEffect(() => {
-    if (!changesDrafting) return;
-    const editor = textEditorRef.current;
-    editor?.restoreState(
-      buildEditingStateFromDraftRestore(
-        `${TUG_ATOM_CHAR} commit ${changesDraft.text}`,
-        [{ kind: "atom", type: "command", label: "changes", value: "changes" }],
-      ),
-    );
-  }, [changesDrafting, changesDraft.text]);
 
   // Per-route history providers. One provider per route — each holds
   // its own cursor + in-memory "return to draft" cache, so the user's
@@ -2732,31 +2680,6 @@ export const TugPromptEntry = React.forwardRef<
 
   const entryToolbarTrailing = (
     <>
-            {/*
-              Z5 "Generate a commit message" button ([P06] revised) — a Z5-shaped
-              button left of the submit button, shown ONLY while the Changes
-              Shade is up. It requests an on-demand AI commit draft (the streamed
-              text flows into the editor as a `/changes commit` line, per the seed
-              effect above). Disabled while a turn runs — a commit-draft
-              generation must not overlap a Claude turn — and while a draft is
-              already streaming. During a turn with a typed draft this is the
-              third Z5 button: Generate (disabled) · `+` queue · Stop.
-            */}
-            {changesShadeVisible && changesController !== undefined && (
-              <TugPushButton
-                className="tug-prompt-entry-generate-button"
-                subtype="icon"
-                size="lg"
-                emphasis="outlined"
-                role="action"
-                disabled={snap.canInterrupt === true || changesDrafting}
-                onClick={() => changesController.requestDraft()}
-                aria-label="Generate a commit message"
-                title="Generate a commit message"
-                data-testid="changes-generate-draft"
-                icon={<PencilSparkles size={16} strokeWidth={2.5} />}
-              />
-            )}
             {/*
               Z5 `+` queue button — mounted alongside the primary Stop
               button while a turn runs (mode `stop`). CSS-gated on the

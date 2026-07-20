@@ -1,20 +1,21 @@
-//! Changes & commits — the git surface of `tugutil` (`changes`, `context`, `commit`,
-//! `log`, `diff`). A thin shell over [`tugchanges_core`]: parse arguments, call the
-//! typed library API, and format the outcome as `--json` (the shared
-//! `{schema_version, command, status, data, issues}` envelope) or a plain read-out.
+//! Changes & commits — the git surface of `tugutil` (`changes`, `preflight`,
+//! `commit`, `log`, `diff`). A thin shell over [`tugchanges_core`]: parse
+//! arguments, call the typed library API, and format the outcome as `--json`
+//! (the shared `{schema_version, command, status, data, issues}` envelope) or a
+//! plain read-out.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tugchanges_core::{
-    ChangesError, ChangesOptions, CommitError, CommitOptions, ContextOptions, DiffOptions,
-    LogOptions,
+    ChangesError, ChangesOptions, CommitError, CommitOptions, DiffOptions, LogOptions,
+    PreflightOptions,
 };
 
 use crate::output::print_ok;
 
 /// A CLI failure carrying its intended exit code. Exit 2 is the ledger's
-/// "can't resolve the session" outcome (`changes`/`context`); exit 3 is the
+/// "can't resolve the session" outcome (`changes`/`preflight`); exit 3 is the
 /// `commit` refusal ([P03], unattributed files with no disposition); exit 1 is a
 /// real error. Keeping the code with the message lets `main` map cleanly instead
 /// of collapsing them the way a bare `String` would.
@@ -99,26 +100,26 @@ pub fn run_changes(
     Ok(())
 }
 
-pub fn run_context(
+pub fn run_preflight(
     session: Option<String>,
     project: Option<PathBuf>,
     log_limit: u32,
     json: bool,
 ) -> Result<(), AppError> {
-    let report = tugchanges_core::context(ContextOptions {
+    let report = tugchanges_core::preflight(PreflightOptions {
         session,
         project,
         log_limit,
     })?;
     if json {
-        print_ok("context", &report);
+        print_ok("preflight", &report);
     } else {
-        print_context_plain(&report);
+        print_preflight_plain(&report);
     }
     Ok(())
 }
 
-/// The default (non-`--json`) `context` read-out: a complete, directly-readable
+/// The default (non-`--json`) `preflight` read-out: a complete, directly-readable
 /// summary of everything a commit needs — no `jq`/`python`/`grep` reshaping.
 /// Each attributed file carries its `op·origin` and, when contended, a
 /// `shared` marker naming the other owner(s); `foreign` files name their owner
@@ -126,7 +127,7 @@ pub fn run_context(
 /// tagged `likely this session's (bash bracket)`; the disposition hint spells
 /// out how to clear a non-empty `unattributed` bucket (the exit-3 case). Empty
 /// buckets are omitted, so a clean session stays terse.
-fn print_context_plain(report: &tugchanges_core::ContextReport) {
+fn print_preflight_plain(report: &tugchanges_core::PreflightReport) {
     println!(
         "branch {}  head {}  session {}",
         report.branch, report.head, report.session

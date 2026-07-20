@@ -253,7 +253,9 @@ pub async fn build_git_log_snapshot(
             "core.quotepath=false",
             "log",
             &limit_arg,
-            "--format=%H%x1f%an%x1f%ad%x1f%s",
+            // The 5th field is the `Tug-Dash:` trailer value (empty when
+            // absent) — what the History join badge reads ([P09]).
+            "--format=%H%x1f%an%x1f%ad%x1f%s%x1f%(trailers:key=Tug-Dash,valueonly,separator=%x00)",
             "--date=short",
         ],
     )
@@ -271,25 +273,34 @@ pub async fn build_git_log_snapshot(
     }
 }
 
-/// Parse `%H%x1f%an%x1f%ad%x1f%s` records — one commit per line — into
-/// [`GitLogCommit`]s. Lines with fewer than four fields are skipped with a
-/// `warn!`.
+/// Parse `%H%x1f%an%x1f%ad%x1f%s%x1f<trailer>` records — one commit per
+/// line — into [`GitLogCommit`]s. The trailing field is the `Tug-Dash:`
+/// trailer value (empty when the commit carries none; a repeated trailer's
+/// values are NUL-joined and only the first is kept). Lines with fewer than
+/// four fields are skipped with a `warn!`.
 fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
     let mut commits = Vec::new();
     for line in output.lines() {
         if line.is_empty() {
             continue;
         }
-        let fields: Vec<&str> = line.splitn(4, LOG_FIELD_SEP).collect();
+        let fields: Vec<&str> = line.splitn(5, LOG_FIELD_SEP).collect();
         if fields.len() < 4 {
             warn!(line, "skipping malformed git log record");
             continue;
         }
+        let tug_dash = fields
+            .get(4)
+            .and_then(|raw| raw.split('\0').next())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned);
         commits.push(GitLogCommit {
             sha: fields[0].to_string(),
             author: fields[1].to_string(),
             date: fields[2].to_string(),
             subject: fields[3].to_string(),
+            tug_dash,
         });
     }
     commits

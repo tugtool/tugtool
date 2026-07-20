@@ -87,6 +87,12 @@ struct EngineDeps {
 /// `true` when a generation was spawned, `false` when no eligible entry matched
 /// (nothing to draft). Does NOT await the scribe run — the caller is the
 /// router's per-client socket loop, which must not park (R02, [P03]).
+///
+/// [P03] edited gate: once a human has touched the draft (`edited=1`), a
+/// non-`force` request never overwrites it — the entry replies `ready`
+/// (the persisted draft is the answer) and no scribe runs. An explicit
+/// `force` (the shade's confirmed Regenerate) spends a scribe call and
+/// resets `edited`.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_on_demand_draft(
     control_tx: broadcast::Sender<Frame>,
@@ -98,6 +104,7 @@ pub fn spawn_on_demand_draft(
     project_dir: &str,
     owner_kind: &str,
     owner_id: &str,
+    force: bool,
 ) -> bool {
     let deps = EngineDeps {
         control_tx,
@@ -115,10 +122,40 @@ pub fn spawn_on_demand_draft(
     };
     let key = entry.key;
     let target = entry.target;
+    if !force {
+        let edited = read_draft(&deps.ledger, &key.owner_kind, &key.owner_id, &key.project_dir)
+            .map(|row| row.edited)
+            .unwrap_or(false);
+        if edited {
+            send_state(&deps, &key, "ready", None);
+            return true;
+        }
+    }
     tokio::spawn(async move {
         generate_for_entry(&deps, &key, &target).await;
     });
     true
+}
+
+/// Read the persisted draft for an entry under the Spec S05 spelling
+/// contract: query the canonical project spelling first, fall back to the
+/// raw one when it differs.
+pub(crate) fn read_draft(
+    ledger: &SessionLedger,
+    owner_kind: &str,
+    owner_id: &str,
+    project_dir: &str,
+) -> Option<ChangesetDraftRow> {
+    let canonical = crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir));
+    if let Ok(Some(row)) = ledger.changeset_draft(owner_kind, owner_id, canonical.as_str()) {
+        return Some(row);
+    }
+    if canonical.as_str() != project_dir {
+        if let Ok(Some(row)) = ledger.changeset_draft(owner_kind, owner_id, project_dir) {
+            return Some(row);
+        }
+    }
+    None
 }
 
 /// Pull the eligible entries out of a snapshot with their generation targets.
@@ -254,13 +291,23 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
 
     match result {
         Ok(message) => {
+            // Selection dispositions are the user's, not the scribe's — a
+            // regeneration replaces the message but carries them forward.
+            let selection = read_draft(&deps.ledger, &key.owner_kind, &key.owner_id, &key.project_dir)
+                .and_then(|existing| existing.selection);
+            // Spec S05 write contract: the stored project spelling is
+            // canonical, whatever spelling the snapshot carried.
+            let canonical_project =
+                crate::path_resolver::CanonicalPath::from_raw(Path::new(&key.project_dir));
             let row = ChangesetDraftRow {
                 owner_kind: key.owner_kind.clone(),
                 owner_id: key.owner_id.clone(),
-                project_dir: key.project_dir.clone(),
+                project_dir: canonical_project.as_str().to_owned(),
                 fingerprint,
                 message,
                 updated_at: now_millis(),
+                edited: false,
+                selection,
             };
             if let Err(err) = deps.ledger.upsert_changeset_draft(&row) {
                 warn!(error = %err, "draft-engine: persist failed");
@@ -514,7 +561,7 @@ fn send_delta(deps: &EngineDeps, key: &EntryKey, text: &str) {
     ));
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -696,6 +743,17 @@ mod tests {
         owner_id: &str,
         project: &str,
     ) -> bool {
+        request_force(fake, ledger, snapshot, owner_id, project, false)
+    }
+
+    fn request_force(
+        fake: Arc<FakeScribe>,
+        ledger: Arc<SessionLedger>,
+        snapshot: WorkspacesChangesetSnapshot,
+        owner_id: &str,
+        project: &str,
+        force: bool,
+    ) -> bool {
         let (control_tx, _rx) = broadcast::channel(64);
         spawn_on_demand_draft(
             control_tx,
@@ -707,6 +765,7 @@ mod tests {
             project,
             "session",
             owner_id,
+            force,
         )
     }
 
@@ -767,6 +826,125 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn edited_draft_survives_non_forced_request() {
+        let (_dir, root) = init_repo();
+        let project = root.to_string_lossy().to_string();
+        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
+        let fake = FakeScribe::new("machine message");
+
+        // A human-touched draft is on file.
+        ledger
+            .upsert_changeset_draft(&ChangesetDraftRow {
+                owner_kind: "session".to_string(),
+                owner_id: "s1".to_string(),
+                project_dir: project.clone(),
+                fingerprint: "fp".to_string(),
+                message: "Hand-tuned message".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: Some(r#"{"include":["a.txt"]}"#.to_string()),
+            })
+            .unwrap();
+
+        // A non-forced request matches but never spends a scribe call or
+        // touches the row ([P03]).
+        let matched = request(
+            fake.clone(),
+            ledger.clone(),
+            session_snapshot(&project, "M"),
+            "s1",
+            &project,
+        );
+        assert!(matched, "the entry matched — the gate is not a no-entry miss");
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "no scribe call");
+        let row = ledger
+            .changeset_draft("session", "s1", &project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.message, "Hand-tuned message");
+        assert!(row.edited);
+    }
+
+    #[tokio::test]
+    async fn forced_request_regenerates_and_resets_edited() {
+        let (_dir, root) = init_repo();
+        let project = root.to_string_lossy().to_string();
+        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
+        let fake = FakeScribe::new("Regenerated message");
+
+        ledger
+            .upsert_changeset_draft(&ChangesetDraftRow {
+                owner_kind: "session".to_string(),
+                owner_id: "s1".to_string(),
+                project_dir: project.clone(),
+                fingerprint: "fp".to_string(),
+                message: "Hand-tuned message".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: Some(r#"{"include":["a.txt"]}"#.to_string()),
+            })
+            .unwrap();
+
+        assert!(request_force(
+            fake.clone(),
+            ledger.clone(),
+            session_snapshot(&project, "M"),
+            "s1",
+            &project,
+            true,
+        ));
+        wait_for_calls(&fake, 1).await;
+        let row = loop {
+            let row = ledger
+                .changeset_draft("session", "s1", &project)
+                .unwrap()
+                .unwrap();
+            if row.message == "Regenerated message" {
+                break row;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        assert!(!row.edited, "force resets the edited pin");
+        assert_eq!(
+            row.selection.as_deref(),
+            Some(r#"{"include":["a.txt"]}"#),
+            "selection dispositions carry across a regeneration"
+        );
+    }
+
+    /// Spec S05 read contract: a draft stored under the canonical project
+    /// spelling is found through a raw (symlink) spelling of the same
+    /// checkout.
+    #[cfg(unix)]
+    #[test]
+    fn read_draft_unions_canonical_and_raw_spellings() {
+        let (_dir, root) = init_repo();
+        let canonical = root.to_string_lossy().to_string();
+        let link_dir = tempfile::tempdir().unwrap();
+        let link = link_dir.path().join("linked-repo");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .upsert_changeset_draft(&ChangesetDraftRow {
+                owner_kind: "session".to_string(),
+                owner_id: "s1".to_string(),
+                project_dir: canonical.clone(),
+                fingerprint: "fp".to_string(),
+                message: "Canonical-spelled draft".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+
+        let via_raw = read_draft(&ledger, "session", "s1", &link.to_string_lossy())
+            .expect("found through the raw spelling");
+        assert_eq!(via_raw.message, "Canonical-spelled draft");
     }
 
     #[tokio::test]

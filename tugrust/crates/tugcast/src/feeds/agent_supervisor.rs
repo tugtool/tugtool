@@ -1447,11 +1447,13 @@ fn changeset_commit_message(request: &ChangesetCommitPayload) -> String {
 
 /// Parsed `changeset_draft_request` (Spec S01): the entry identity an on-demand
 /// draft is requested for. `owner_id` may be empty (the unattributed pseudo-
-/// entry), so it is not filtered non-empty.
+/// entry), so it is not filtered non-empty. `force` is the confirmed
+/// Regenerate — the only path that overwrites an edited draft ([P03]).
 struct ChangesetDraftRequestPayload {
     project_dir: String,
     owner_kind: String,
     owner_id: String,
+    force: bool,
 }
 
 fn parse_changeset_draft_request_payload(
@@ -1477,10 +1479,85 @@ fn parse_changeset_draft_request_payload(
         .and_then(|v| v.as_str())
         .ok_or(ControlError::Malformed)?
         .to_string();
+    let force = value
+        .get("force")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     Ok(ChangesetDraftRequestPayload {
         project_dir,
         owner_kind,
         owner_id,
+        force,
+    })
+}
+
+/// Parsed `changeset_draft_set` (Spec S01): a partial upsert of one draft
+/// row — the composer's debounced message edits, immediate selection-toggle
+/// writes, and the post-landing `clear`. Absent fields leave the stored
+/// value untouched; `selection: null` clears the overrides; `clear: true`
+/// deletes the whole row.
+struct ChangesetDraftSetPayload {
+    project_dir: String,
+    owner_kind: String,
+    owner_id: String,
+    message: Option<String>,
+    /// `None` = field absent (keep); `Some(None)` = explicit null (clear);
+    /// `Some(Some(json))` = replace with the serialized overrides.
+    selection: Option<Option<String>>,
+    edited: bool,
+    clear: bool,
+}
+
+fn parse_changeset_draft_set_payload(
+    payload: &[u8],
+) -> Result<ChangesetDraftSetPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let owner_kind = value
+        .get("owner_kind")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let owner_id = value
+        .get("owner_id")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let message = value
+        .get("message")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let selection = value.get("selection").map(|v| {
+        if v.is_null() {
+            None
+        } else {
+            Some(v.to_string())
+        }
+    });
+    let edited = value
+        .get("edited")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let clear = value
+        .get("clear")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Ok(ChangesetDraftSetPayload {
+        project_dir,
+        owner_kind,
+        owner_id,
+        message,
+        selection,
+        edited,
+        clear,
     })
 }
 
@@ -2283,6 +2360,13 @@ impl AgentSupervisor {
             "changeset_draft_request" => match parse_changeset_draft_request_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_draft_request(&parsed);
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_draft_set" => match parse_changeset_draft_set_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_draft_set(&parsed);
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3484,9 +3568,88 @@ impl AgentSupervisor {
             &request.project_dir,
             &request.owner_kind,
             &request.owner_id,
+            request.force,
         );
         if !matched {
             Self::send_changeset_draft_error(&self.control_tx, request, "nothing to generate");
+        }
+    }
+
+    /// Handle a `changeset_draft_set` CONTROL request (Spec S01): a partial
+    /// upsert of one draft row — message edits, selection dispositions, or
+    /// the post-landing `clear`. Writes go through the ledger under the
+    /// canonical project spelling (Spec S05); the global aggregate bump fires
+    /// so the next frame carries the change.
+    fn do_changeset_draft_set(&self, request: &ChangesetDraftSetPayload) {
+        let Some(ledger) = self.session_ledger.clone() else {
+            return;
+        };
+        let canonical =
+            crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(
+                &request.project_dir,
+            ));
+        if request.clear {
+            let _ = ledger.delete_changeset_draft(
+                &request.owner_kind,
+                &request.owner_id,
+                canonical.as_str(),
+            );
+            if canonical.as_str() != request.project_dir {
+                let _ = ledger.delete_changeset_draft(
+                    &request.owner_kind,
+                    &request.owner_id,
+                    &request.project_dir,
+                );
+            }
+            self.registry.changeset_all_bump().notify_one();
+            return;
+        }
+        let existing = crate::feeds::draft_engine::read_draft(
+            &ledger,
+            &request.owner_kind,
+            &request.owner_id,
+            &request.project_dir,
+        );
+        let (fingerprint, prior_message, prior_edited, prior_selection) = existing
+            .map(|e| (e.fingerprint, e.message, e.edited, e.selection))
+            .unwrap_or_default();
+        let row = crate::session_ledger::ChangesetDraftRow {
+            owner_kind: request.owner_kind.clone(),
+            owner_id: request.owner_id.clone(),
+            project_dir: canonical.as_str().to_owned(),
+            fingerprint,
+            message: request.message.clone().unwrap_or(prior_message),
+            updated_at: crate::feeds::draft_engine::now_millis(),
+            // Monotonic through this verb: a human touch pins the draft;
+            // only a confirmed forced regenerate resets it ([P03]).
+            edited: request.edited || prior_edited,
+            selection: match &request.selection {
+                Some(replacement) => replacement.clone(),
+                None => prior_selection,
+            },
+        };
+        if let Err(err) = ledger.upsert_changeset_draft(&row) {
+            warn!(error = %err, "changeset_draft_set: persist failed");
+            return;
+        }
+        self.registry.changeset_all_bump().notify_one();
+    }
+
+    /// Post-landing cleanup for a dash's join draft ([P14]): joins and
+    /// releases both delete the `dash:<branch>` row (canonical and raw
+    /// project spellings), so a reused dash name never inherits a dead
+    /// dash's clobber-protected message.
+    fn clear_dash_draft(
+        ledger: &crate::session_ledger::SessionLedger,
+        project_dir: &str,
+        dash: &str,
+    ) {
+        let owner_id = format!("tugdash/{dash}");
+        let canonical =
+            crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(project_dir));
+        let _ = ledger.delete_changeset_draft("dash", &owner_id, canonical.as_str());
+        if canonical.as_str() != project_dir {
+            let _ = ledger.delete_changeset_draft("dash", &owner_id, project_dir);
         }
     }
 
@@ -3624,8 +3787,12 @@ impl AgentSupervisor {
             Ok(Ok(outcome)) => {
                 // A real join that landed a commit shrinks the changeset set —
                 // refresh the card. A preview (or a conflict-aborted join)
-                // mutated nothing, so no bump.
+                // mutated nothing, so no bump. The landed dash's join draft
+                // dies with it ([P14]).
                 if !outcome.previewed && outcome.commit_hash.is_some() {
+                    if let Some(ledger) = self.session_ledger.as_deref() {
+                        Self::clear_dash_draft(ledger, project_dir, &request.dash);
+                    }
                     self.registry.changeset_all_bump().notify_one();
                 }
                 let body = serde_json::json!({
@@ -3828,6 +3995,11 @@ impl AgentSupervisor {
 
         match result {
             Ok(Ok(outcome)) => {
+                // The released dash's join draft dies with it ([P14]) — a
+                // reused name must never inherit the dead dash's message.
+                if let Some(ledger) = self.session_ledger.as_deref() {
+                    Self::clear_dash_draft(ledger, project_dir, &request.dash);
+                }
                 self.registry.changeset_all_bump().notify_one();
                 let body = serde_json::json!({
                     "action": "changeset_release_ok",
@@ -6705,6 +6877,113 @@ mod tests {
         assert_eq!(body["action"], "changeset_draft_state");
         assert_eq!(body["state"], "error");
         assert_eq!(body["detail"], "nothing to generate");
+    }
+
+    #[tokio::test]
+    async fn changeset_draft_set_partially_upserts_and_clears() {
+        let (mut sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        let ledger = sup.session_ledger.clone().unwrap();
+
+        // A message write creates the row with the edited pin.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "project_dir": "/proj",
+            "owner_kind": "session",
+            "owner_id": "s1",
+            "message": "Hand-tuned message",
+            "edited": true,
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_set", &payload, 1).await;
+        let row = ledger
+            .changeset_draft("session", "s1", "/proj")
+            .unwrap()
+            .expect("row created");
+        assert_eq!(row.message, "Hand-tuned message");
+        assert!(row.edited);
+        assert!(row.selection.is_none());
+
+        // A selection-only write keeps the message and the edited pin
+        // (edited is monotonic through this verb).
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "project_dir": "/proj",
+            "owner_kind": "session",
+            "owner_id": "s1",
+            "selection": {"include": ["a.rs"], "exclude": []},
+            "edited": false,
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_set", &payload, 1).await;
+        let row = ledger
+            .changeset_draft("session", "s1", "/proj")
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.message, "Hand-tuned message");
+        assert!(row.edited, "edited survives a selection-only write");
+        assert!(row.selection.as_deref().unwrap().contains("a.rs"));
+
+        // An explicit null clears the selection without touching the message.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "project_dir": "/proj",
+            "owner_kind": "session",
+            "owner_id": "s1",
+            "selection": serde_json::Value::Null,
+            "edited": false,
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_set", &payload, 1).await;
+        let row = ledger
+            .changeset_draft("session", "s1", "/proj")
+            .unwrap()
+            .unwrap();
+        assert!(row.selection.is_none());
+        assert_eq!(row.message, "Hand-tuned message");
+
+        // `clear` deletes the row (the post-landing path).
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "project_dir": "/proj",
+            "owner_kind": "session",
+            "owner_id": "s1",
+            "edited": false,
+            "clear": true,
+        }))
+        .unwrap();
+        sup.handle_control("changeset_draft_set", &payload, 1).await;
+        assert!(
+            ledger
+                .changeset_draft("session", "s1", "/proj")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn releasing_or_joining_a_dash_clears_its_draft() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        ledger
+            .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                owner_kind: "dash".to_string(),
+                owner_id: "tugdash/snippets".to_string(),
+                project_dir: "/proj".to_string(),
+                fingerprint: "fp".to_string(),
+                message: "Join the snippets work".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+
+        AgentSupervisor::clear_dash_draft(&ledger, "/proj", "snippets");
+
+        // A same-named future dash starts with no inherited draft ([P14]).
+        assert!(
+            ledger
+                .changeset_draft("dash", "tugdash/snippets", "/proj")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
