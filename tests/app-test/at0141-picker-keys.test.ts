@@ -199,6 +199,31 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         // walk below starts there.
         await app.waitForCondition<boolean>(hasKeyView(SESSIONS), { timeoutMs: 8000 });
 
+        // The seed is the SINGLE focus authority: exactly one element in the
+        // picker wears the keyboard ring, and it is the Sessions list — the
+        // path <input> holds neither the ring nor DOM focus. Regression pin
+        // for the double-focus (ring on the Sessions list AND caret+ring on
+        // the path field at once), which happened when the engine parked the
+        // sink for the native input instead of granting it focus, leaving the
+        // sheet's Radix FocusScope mount-autofocus as a second authority on
+        // the field.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(PICKER_FORM)} + " [data-key-view-kbd], " + ${JSON.stringify(PICKER_FORM)} + "[data-key-view-kbd]").length`,
+          ),
+        ).toBe(1);
+        expect(await app.evalJS<boolean>(hasKeyView(SESSIONS))).toBe(true);
+        expect(
+          await app.evalJS<boolean>(
+            `(function(){
+              var input = document.querySelector(${JSON.stringify(PATH)});
+              return input !== null &&
+                input.hasAttribute("data-key-view-kbd") === false &&
+                document.activeElement !== input;
+            })()`,
+          ),
+        ).toBe(true);
+
         // Walk forward to Open (the last stop). Between Sessions and Open sit
         // Move-all-to-Trash (present only when the path has sessions) and
         // Cancel, so the hop count is host-dependent — walk, don't count.

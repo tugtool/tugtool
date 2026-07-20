@@ -760,6 +760,24 @@ export class FocusContext {
         : "engine-routed";
     }
     if (this.route === "dom-granted") return this.grantTextSurface();
+    // A key view that resolves to a bare native text control (an
+    // <input>/<textarea>/<select> with no contract-bound responder) is a
+    // text surface by nature: GRANT it real DOM focus rather than park
+    // the sink. It is exactly the element class the watchdog treats as a
+    // legal focus holder (isBareNativeControl), so grant and legality
+    // stay symmetric. Without this the sink parks and the native field
+    // never receives a caret — a second focus authority (a Radix
+    // FocusScope mount-autofocus, the browser's own default) fills the
+    // vacuum, and the ring (engine key view) and the caret (that other
+    // authority) split across two elements. grantTextSurface's generic
+    // branch focuses the intrinsically-focusable element and is
+    // idempotent when it already holds focus.
+    const kvEl = this.keyViewElement();
+    if (kvEl !== null && this.coord.isBareNativeControl(kvEl)) {
+      const granted = this.grantTextSurface();
+      this.coord.settleResponderForKeyView();
+      return granted;
+    }
     // Accessibility mode ([P10]): real DOM focus mirrors the engine-routed
     // key view so assistive tech tracks it natively; the sink is never
     // focused while a key view exists. Falls through to the park when
@@ -2622,8 +2640,13 @@ export class FocusManager {
    * `contenteditable` never gets this pass: editors are contract-bound
    * substrates, and an uncontracted contenteditable holding focus is
    * exactly the steal class the watchdog exists to correct.
+   *
+   * Coordinator-facing: `FocusContext.focusKeyView` reads the same
+   * predicate so the engine GRANTS DOM focus to exactly the element
+   * class the watchdog will not correct — grant and legality stay
+   * symmetric.
    */
-  private isBareNativeControl(el: HTMLElement): boolean {
+  isBareNativeControl(el: HTMLElement): boolean {
     const tag = el.tagName;
     if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return false;
     const responderEl = el.closest<HTMLElement>("[data-responder-id]");
