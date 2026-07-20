@@ -86,6 +86,8 @@ import { TugCopyBadge } from "../tug-copy-badge";
 import { group } from "../tug-animator";
 import { TugBox } from "../tug-box";
 import { TugFileChooser } from "../tug-file-chooser";
+import type { TugComboBoxItem } from "../tug-combo-box";
+import { TugIconButton } from "../tug-icon-button";
 import { TugPushButton } from "../tug-push-button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
@@ -198,16 +200,13 @@ import {
 import { lastAssistantCopyText } from "./turn-entry-markdown";
 import { compactionProgressStore } from "@/lib/compaction-progress-store";
 import { CompactionProgressSheet } from "./compaction-progress-sheet";
-import {
-  useSessionRecentsDataSource,
-  useSessionsDataSource,
-} from "@/lib/session-picker-data-source";
+import { useSessionsDataSource } from "@/lib/session-picker-data-source";
 import {
   PickerCellProvider,
-  RECENTS_CELL_RENDERERS,
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./session-picker-cells";
+import { caseInsensitiveSubstring } from "@/lib/text-match";
 import "./session-card.css";
 
 // ---------------------------------------------------------------------------
@@ -1184,22 +1183,23 @@ function noticeText(notice: PickerNotice): string {
  * [#step-picker-keys]). The picker lives inside a `TugSheet`, which already
  * pushes a trapped engine focus mode (`useFocusTrap`); authoring the picker's
  * controls into this one group makes them stops in that mode's Tab walk, read
- * top-to-bottom: path field → Recents → Sessions → Move-all-to-Trash → Cancel →
- * Open. There is no toggle — the sheet's mode IS the picker's base mode (unlike
- * the connected card's toggleable ⌥⇥ cycle). Conditionally-rendered lists (empty
- * Recents / not-ready Sessions) and a disabled stop (Move-all-to-Trash with
- * nothing to trash, Open with no valid path) simply drop out of the walk via the
- * engine's rendered/interactive filters; the order leaves a gap the walk skips.
+ * top-to-bottom: path combo box → Sessions → Move-all-to-Trash → Cancel → Open.
+ * There is no toggle — the sheet's mode IS the picker's base mode (unlike the
+ * connected card's toggleable ⌥⇥ cycle). A not-ready Sessions list and a
+ * disabled stop (Move-all-to-Trash with nothing to trash, Open with no valid
+ * path) simply drop out of the walk via the engine's rendered/interactive
+ * filters; the order leaves a gap the walk skips. Order `1` (the former Recents
+ * list, now folded into the path combo box's own dropdown) is intentionally
+ * vacant — the stops below keep their authored focus-keys.
  */
 const PICKER_CYCLE_GROUP = "session-picker-cycle";
 const PICKER_ORDER_PATH = 0;
 // The native "Browse…" folder button sits just after the path field in reading
-// order. It takes a fractional order so it slots between PATH (0) and RECENTS
-// (1) in the Tab walk WITHOUT renumbering the stops below it — their authored
-// focus-keys (`session-picker-cycle:1…5`) are a stable contract the app-tests and a
-// baked corpus snapshot address by string, so they must not shift.
+// order. It takes a fractional order so it slots between PATH (0) and the next
+// stop in the Tab walk WITHOUT renumbering the stops below it — their authored
+// focus-keys (`session-picker-cycle:2…5`) are a stable contract the app-tests
+// and a baked corpus snapshot address by string, so they must not shift.
 const PICKER_ORDER_BROWSE = 0.5;
-const PICKER_ORDER_RECENTS = 1;
 const PICKER_ORDER_SESSIONS = 2;
 const PICKER_ORDER_TRASH_ALL = 3;
 const PICKER_ORDER_CANCEL = 4;
@@ -1212,6 +1212,32 @@ const PICKER_ORDER_OPEN = 5;
  */
 const pickerFocusKey = (order: number): string =>
   `${PICKER_CYCLE_GROUP}:${order}`;
+
+/**
+ * Render `text` with `<mark>` highlights at `matches` (UTF-16 code-unit
+ * half-open ranges) — the recents dropdown's substring emphasis. Empty
+ * `matches` → the text unmarked.
+ */
+function renderRecentHighlight(
+  text: string,
+  matches: ReadonlyArray<readonly [number, number]>,
+): React.ReactNode {
+  if (matches.length === 0) return text;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  for (const [start, end] of matches) {
+    if (start > cursor) parts.push(text.slice(cursor, start));
+    parts.push(
+      <mark key={`m-${start}`} className="session-card-picker-match">
+        {text.slice(start, end)}
+      </mark>,
+    );
+    cursor = end;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
 
 function SessionProjectPickerForm({
   notice,
@@ -1230,10 +1256,6 @@ function SessionProjectPickerForm({
   // `group:order`, so no element ref is needed for the seed.
   const defaultFocusPlacedRef = useRef(false);
   const userTouchedFieldRef = useRef(false);
-  // True while the path field's completion menu is open — the Recent Project
-  // Paths list steps aside (keeps its layout space) so the floating overlay
-  // never visually collides with it.
-  const [pathMenuOpen, setPathMenuOpen] = useState(false);
   // Form's outer DOM node — used to scope the anchor querySelector for
   // the form-owned trash-confirmation popover so the lookup never
   // walks outside the picker form's own subtree.
@@ -1283,25 +1305,21 @@ function SessionProjectPickerForm({
     getSessionLedgerStore()?.refresh(trimmedPath);
   }, [trimmedPath]);
 
-  // One-shot input seed — the effect lives just below the data sources (the
-  // Recents data source must be in scope to read the most-recent path).
+  // One-shot input seed (effect below).
   const didSeedPathRef = useRef(false);
 
-  // Two data sources for the master/detail layout: Recents (always
-  // visible — clicking one fills the input but the list does not
-  // collapse) above Sessions (always visible — placeholder when no
-  // path / ledger pending).
-  const recentsDataSource = useSessionRecentsDataSource(recents, trimmedPath);
+  // The Sessions list for the currently-typed project path (always visible —
+  // placeholder when no path / ledger pending). Recents are no longer a
+  // separate list: they seed the path combo box's own dropdown (below).
   const sessionsDataSource = useSessionsDataSource(
     trimmedPath,
     sessionLedger,
   );
 
   // One-shot seed so first open isn't a dead-end: if the input is empty,
-  // prefer the most-recent project (what the Recents list's old
-  // `selectionRequired` mode filled in on mount), then the Swift-provided
-  // hint, then the backend home directory. Skipped once a value is present so
-  // later tugbank / host-facts ticks can't overwrite a user edit.
+  // prefer the most-recent project, then the Swift-provided hint, then the
+  // backend home directory. Skipped once a value is present so later tugbank /
+  // host-facts ticks can't overwrite a user edit.
   useLayoutEffect(() => {
     if (didSeedPathRef.current) return;
     if (path !== "") {
@@ -1309,18 +1327,15 @@ function SessionProjectPickerForm({
       return;
     }
     if (recents.length > 0) {
-      const first = recentsDataSource.rowAt(0);
-      if (first.kind === "path-recent") {
-        didSeedPathRef.current = true;
-        setPath(first.path);
-      }
+      didSeedPathRef.current = true;
+      setPath(recents[0]);
       return;
     }
     const seed = initialProjectPath !== "" ? initialProjectPath : (hostFacts?.home ?? "");
     if (seed === "") return;
     didSeedPathRef.current = true;
     setPath(seed);
-  }, [path, recents.length, initialProjectPath, hostFacts, recentsDataSource]);
+  }, [path, recents, initialProjectPath, hostFacts]);
 
   // Session selection. Owned here, read by cells via context. Open
   // resolves submission per [Spec S02].
@@ -1436,31 +1451,20 @@ function SessionProjectPickerForm({
     }
   }, []);
 
-  // Recents trash request — mirrors the sessions handler. Declared here (above
-  // `useResponder`) so it's in scope for the action binding; the rest of the
-  // recents-trash flow (anchor, remove, confirm) lives just below the sessions
-  // block.
+  // Recents-trash pending state. The recents now live in the path combo box's
+  // dropdown, which portals outside this form's DOM subtree — so a chain
+  // dispatch (which walks the DOM for a responder) can't route from there. The
+  // trash button uses a direct `onClick` instead, setting this state and
+  // capturing the button element as the confirm popover's anchor (below).
   const [pendingTrashRecentPath, setPendingTrashRecentPath] = useState<
     string | null
   >(null);
-  const handleRequestTrashRecent = useCallback((event: ActionEvent) => {
-    const v = event.value;
-    if (
-      v !== null &&
-      typeof v === "object" &&
-      "path" in v &&
-      typeof (v as { path: unknown }).path === "string"
-    ) {
-      setPendingTrashRecentPath((v as { path: string }).path);
-    }
-  }, []);
 
   const { ResponderScope: PickerFormResponderScope, responderRef: pickerFormResponderRef } =
     useResponder({
       id: formResponderId,
       actions: {
         [TUG_ACTIONS.REQUEST_TRASH_SESSION]: handleRequestTrashSession,
-        [TUG_ACTIONS.REQUEST_TRASH_RECENT]: handleRequestTrashRecent,
       },
     });
 
@@ -1498,29 +1502,15 @@ function SessionProjectPickerForm({
   // both single-row and bottom-button paths.
   const pendingTrashMessage = "Move to Trash?";
 
-  // ---- Recent Project Paths trash (mirrors the sessions per-row flow) ----
+  // ---- Recent Project Paths trash ----
   //
-  // `pendingTrashRecentPath` + `handleRequestTrashRecent` are declared above
-  // (next to `useResponder`). Here: anchor resolution, the remove action, and
-  // the confirm/cancel callbacks.
+  // `pendingTrashRecentPath` is declared above (next to `useResponder`). The
+  // dropdown trash button captures its own element as the confirm popover's
+  // anchor directly on click (see the combo-box seed builder), since the
+  // portaled dropdown is outside this form's DOM subtree. Here: the remove
+  // action and the confirm/cancel callbacks.
   const [pendingTrashRecentAnchorEl, setPendingTrashRecentAnchorEl] =
     useState<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    if (pendingTrashRecentPath === null) {
-      setPendingTrashRecentAnchorEl(null);
-      return;
-    }
-    const root = formRootRef.current;
-    if (root === null) return;
-    const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(pendingTrashRecentPath)
-        : pendingTrashRecentPath;
-    const selector = `[data-recent-path="${escaped}"] [data-slot="tug-icon-button"]`;
-    const el = root.querySelector<HTMLElement>(selector);
-    setPendingTrashRecentAnchorEl(el ?? null);
-  }, [pendingTrashRecentPath]);
 
   // Remove one path from the recents list. Optimistically updates the tugbank
   // cache (so the list re-renders immediately) then persists via PUT.
@@ -1542,10 +1532,12 @@ function SessionProjectPickerForm({
       trashRecent(pendingTrashRecentPath);
     }
     setPendingTrashRecentPath(null);
+    setPendingTrashRecentAnchorEl(null);
   }, [pendingTrashRecentPath, trashRecent]);
 
   const handleCancelTrashRecent = useCallback(() => {
     setPendingTrashRecentPath(null);
+    setPendingTrashRecentAnchorEl(null);
   }, []);
 
   const trashAll = useCallback((): void => {
@@ -1620,36 +1612,67 @@ function SessionProjectPickerForm({
     submitWith(selection);
   }, [submitWith, selection]);
 
-  // Set the project-path input from the recent at `index`. Shared by
-  // the Recents `TugListView`'s two activation surfaces so the path
-  // the user sees can never drift between them:
-  //
-  //  - `onSelectionChange` — `TugListView`'s de-duplicated selection
-  //    mirror. Fires the mount-time seed (the list runs in
-  //    `selectionRequired` mode and seeds its owned selection to the
-  //    first recent, filling the input before any click) and again
-  //    when the owned selected index moves to a different row. It
-  //    does NOT fire on a re-activation of the already-selected row —
-  //    the index did not change.
-  //  - `delegate.onSelect` — fires on EVERY activation (click /
-  //    Space / Enter), the already-selected row included. This is the
-  //    surface that makes the fill unconditional: once the user has
-  //    hand-edited the input, clicking the highlighted recent still
-  //    restores that recent's path.
-  const applyRecentPath = useCallback(
-    (index: number): void => {
-      const row = recentsDataSource.rowAt(index);
-      if (row.kind === "path-recent") setPath(row.path);
-    },
-    [recentsDataSource],
-  );
+  // Open the recent-path trash confirmation. Anchored to the path field (a
+  // stable element that never unmounts), so the dropdown is free to close when
+  // the confirm takes focus without stranding the popover. Shared by the mouse
+  // click and the Shift+Delete keyboard path.
+  const requestTrashRecent = useCallback((recentPath: string): void => {
+    setPendingTrashRecentPath(recentPath);
+    setPendingTrashRecentAnchorEl(inputRef.current);
+  }, []);
 
-  // Recents list delegate — routes every activation back through
-  // `applyRecentPath`. Memoized for a stable identity across renders,
-  // matching `sessionsDelegate` below.
-  const recentsDelegate = useMemo<TugListViewDelegate>(
-    () => ({ onSelect: applyRecentPath }),
-    [applyRecentPath],
+  // Seed source for the path combo box's dropdown: the recent project paths,
+  // filtered to those matching the typed query (all when the query is empty, so
+  // the dropdown opens like a menu), each rendered with `<mark>` highlights on
+  // the matched substring. Choosing a row fills the input (the combo box's own
+  // commit); the trailing trash — or Shift+Delete on the highlighted row —
+  // removes the recent. The confirm popover anchors to the trash button element
+  // (captured from the click, or resolved by path for the keyboard path), since
+  // the dropdown portals outside this form and a form-scoped lookup wouldn't
+  // find it.
+  const buildRecentsSeed = useCallback(
+    (query: string): TugComboBoxItem[] => {
+      const q = query.trim();
+      const items: TugComboBoxItem[] = [];
+      for (const recentPath of recents) {
+        const match = caseInsensitiveSubstring(q, recentPath);
+        if (q !== "" && match === null) continue;
+        const matches = match?.matches ?? [];
+        const pathShort =
+          recentPath.split("/").filter(Boolean).slice(-1)[0] ?? recentPath;
+        items.push({
+          value: recentPath,
+          label: (
+            <span
+              className="session-card-picker-path-recent"
+              data-testid="session-card-picker-path-recent"
+              title={recentPath}
+              aria-label={recentPath}
+            >
+              {renderRecentHighlight(recentPath, matches)}
+            </span>
+          ),
+          rowData: {
+            "data-recent-path": recentPath,
+            "data-pending-trash":
+              pendingTrashRecentPath === recentPath ? "true" : undefined,
+          },
+          onRemove: () => requestTrashRecent(recentPath),
+          trailing: (
+            <TugIconButton
+              icon={<Trash2 size={14} aria-hidden="true" />}
+              aria-label={`Remove ${pathShort} from recent paths`}
+              title={`Remove ${pathShort} from recent paths`}
+              tone="danger"
+              className="session-card-picker-recent-trash"
+              onClick={() => requestTrashRecent(recentPath)}
+            />
+          ),
+        });
+      }
+      return items;
+    },
+    [recents, pendingTrashRecentPath, requestTrashRecent],
   );
 
   // Sessions list delegate — onSelect updates the session selection
@@ -1677,33 +1700,28 @@ function SessionProjectPickerForm({
     [sessionsDataSource],
   );
 
-  // Arrow navigation over the two lists is owned by the focus engine: each
+  // Arrow navigation over the Sessions list is owned by the focus engine: the
   // `TugListView` is authored as one single-select cycle stop, so ↑/↓ move the
-  // cursor within whichever list holds the key view AND select the landed row —
-  // the recent path / session selection follows the cursor (no separate Space
-  // step). A single-select list does not consume Return: it falls through to the
-  // picker's default action (Open, which keeps its ring the whole time via
-  // `persistentDefaultRing`), so arrowing to a row and pressing Return opens it.
-  // Per-row trash stays mouse-driven (the row trash icons are focus-refusing
-  // pointer affordances); keyboard users trash via the Move-all-to-Trash stop.
+  // cursor within it AND select the landed row — the session selection follows
+  // the cursor (no separate Space step). A single-select list does not consume
+  // Return: it falls through to the picker's default action (Open, which keeps
+  // its ring the whole time via `persistentDefaultRing`), so arrowing to a row
+  // and pressing Return opens it. Per-row trash stays mouse-driven (the row
+  // trash icons are focus-refusing pointer affordances); keyboard users trash
+  // via the Move-all-to-Trash stop.
 
-  // Cell-context value — `currentPath` drives path-recent's
-  // `data-selected`; `selection` drives session cells' selection
-  // state; `pendingTrashSessionId` drives the matching row's
-  // `data-pending-trash="true"` marker so its trash icon stays
-  // visible + highlighted while the form-owned confirm popover is
-  // up. The per-row trash flow does NOT pass a callback through
-  // context; the trash button dispatches `request-trash-session`
-  // through the chain, and the form's chain handler above owns the
-  // response.
+  // Cell-context value for the Sessions list: `selection` drives session cells'
+  // selection state; `pendingTrashSessionId` drives the matching row's
+  // `data-pending-trash="true"` marker so its trash icon stays visible +
+  // highlighted while the form-owned confirm popover is up. The per-row trash
+  // flow dispatches `request-trash-session` through the chain, and the form's
+  // chain handler above owns the response.
   const cellContextValue = useMemo(
     () => ({
-      currentPath: trimmedPath,
       selection,
       pendingTrashSessionId,
-      pendingTrashRecentPath,
     }),
-    [trimmedPath, selection, pendingTrashSessionId, pendingTrashRecentPath],
+    [selection, pendingTrashSessionId],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -1780,6 +1798,12 @@ function SessionProjectPickerForm({
       )}
       <label className="session-card-picker-field">
         <span className="session-card-picker-label">Project path</span>
+        {/*
+          The path field is a combo box: typing filters the recent projects
+          (its seed) AND completes filesystem paths, both in one dropdown; a
+          click / chevron / ArrowDown opens the recents as a menu; the Browse
+          button is the native-picker escape hatch.
+        */}
         <TugFileChooser
           ref={inputRef}
           value={path}
@@ -1793,7 +1817,8 @@ function SessionProjectPickerForm({
           base={path !== "" ? path : "/"}
           kind="directory"
           onSubmit={submit}
-          onOpenChange={setPathMenuOpen}
+          seed={buildRecentsSeed}
+          menuMode
           placeholder="/path/to/project"
           focusGroup={PICKER_CYCLE_GROUP}
           focusOrder={PICKER_ORDER_PATH}
@@ -1801,34 +1826,6 @@ function SessionProjectPickerForm({
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
-        <div
-          className="session-card-picker-section"
-          data-completing={pathMenuOpen ? "true" : undefined}
-        >
-          <span className="session-card-picker-label">Recent Project Paths</span>
-          <div className="session-card-picker-recents-host">
-            {recents.length > 0 ? (
-              <TugListView
-                dataSource={recentsDataSource}
-                rowLayout="flush"
-                delegate={recentsDelegate}
-                cellRenderers={RECENTS_CELL_RENDERERS}
-                scrollKey="session-card-picker-recents"
-                className="session-card-picker-recents-list"
-                focusGroup={PICKER_CYCLE_GROUP}
-                focusOrder={PICKER_ORDER_RECENTS}
-                singleSelect
-              />
-            ) : (
-              <div
-                className="session-card-picker-empty"
-                data-testid="session-card-picker-recents-empty"
-              >
-                No recent projects
-              </div>
-            )}
-          </div>
-        </div>
         <div className="session-card-picker-section">
           <span className="session-card-picker-label">
             Sessions
@@ -1985,15 +1982,19 @@ function SessionProjectPickerForm({
         onCancel={handleCancelTrash}
       />
       {/* Form-owned confirm popover for removing a Recent Project Path,
-          anchored to the requesting row's trash icon. Mirrors the sessions
-          popover above. */}
+          anchored to the (stable) path field. The message names the path since
+          the anchor is the field, not the specific dropdown row. */}
       <TugConfirmPopover
         open={pendingTrashRecentPath !== null}
         anchorEl={pendingTrashRecentAnchorEl}
-        message="Remove from recent paths?"
+        message={
+          pendingTrashRecentPath !== null
+            ? `Remove ${pendingTrashRecentPath} from recent paths?`
+            : "Remove from recent paths?"
+        }
         confirmLabel="Remove"
         confirmRole="danger"
-        side="left"
+        side="bottom"
         onConfirm={handleConfirmTrashRecent}
         onCancel={handleCancelTrashRecent}
       />

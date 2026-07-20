@@ -4,60 +4,47 @@
  *
  * ## What this gates (failure modes, not busywork)
  *
- * The picker (the "Choose Session" sheet) used to hand-roll its own arrow model
- * (`handleArrowKey` + a parallel `PickerSelection`) and its controls were not
- * focus stops at all. This step retires that and authors the controls into the
- * sheet's already-trapped engine focus mode as one group — path field (0) →
- * Browse folder button (0.5) → Recents (1) → Sessions (2) → Move-all-to-Trash
- * (3) → Cancel (4) → Open (5) — so the engine's Tab walk owns navigation, each
- * `TugListView` is ONE item-group
- * stop that arrow-roves internally, and `armKeyboardRestore` seeds the ring on
- * the Sessions list (its cursor rests on the "New session" row, so one Return
- * falls through to the persistent-default Open). Each assertion below fails
- * loudly if a seam breaks:
+ * The picker (the "Choose Session" sheet) authors its controls into the sheet's
+ * already-trapped engine focus mode as one group — path combo box (0) → Browse
+ * folder button (0.5) → Sessions (2) → Move-all-to-Trash (3) → Cancel (4) →
+ * Open (5) — so the engine's Tab walk owns navigation (order 1, the former
+ * Recents list, is now folded into the path combo box's own dropdown, so that
+ * slot is vacant). `armKeyboardRestore` seeds the ring on the Sessions list (its
+ * cursor rests on the "New session" row, so one Return falls through to the
+ * persistent-default Open). Each assertion below fails loudly if a seam breaks:
  *
  *   - **Seed (A):** the ring rests on the Sessions list at open ([P12] Picker →
  *     New session via the focus-key seed). Fails if the smart-latch
- *     `.focus()`→`armKeyboardRestore` swap regressed or the list wasn't
- *     authored. The walk then Tabs forward to Open (skipping the
- *     conditionally-disabled Move-all-to-Trash stop, whichever way the host's
- *     session count leaves it).
+ *     `.focus()`→`armKeyboardRestore` swap regressed or the list wasn't authored.
  *   - **Walk owns Tab + wraps (B):** Tab from Open (the last stop) wraps to the
  *     path field (order 0) and lands DOM focus on the real `<input>`. Fails if
  *     the engine walk didn't take over Tab in the sheet, the field isn't a stop,
  *     or the wrap is wrong.
- *   - **Path field releases Tab when its menu is closed (C):** Tab leaves the
- *     field for Recents. Fails if the `data-tug-tab-consume` marker is stuck on
- *     (Tab would be eaten and stay on the field).
- *   - **List = one stop with internal roving (D):** on Recents, ArrowDown moves
- *     the cursor to a different row while the *container* keeps the key view;
- *     then Tab leaves the container. Fails if rows became individual stops (Tab
- *     would step row-to-row) or the list didn't rove.
- *
- * Escape → Cancel is PRE-EXISTING sheet behavior this step does not touch (no
- * Escape wiring was added), and the engine already guarantees the persistent
- * trap cannot swallow it: the act dispatch defers Escape for a trapped mode to
- * the surface ([R04]). It rides the sheet's React-delegated `onKeyDown` cancel
- * ladder, which the synthetic-keydown path below can't faithfully drive, so it
- * stays a by-eye check rather than a flaky assertion.
+ *   - **Path field releases Tab when its dropdown is closed (C):** Tab leaves the
+ *     field for the Browse button, then Sessions (NOT a Recents stop — there is
+ *     none). Fails if the `data-tug-tab-consume` marker is stuck on (Tab would be
+ *     eaten and stay on the field), or a stale Recents stop reappeared.
+ *   - **Combo box dropdown is keyboard-driven (D):** on the path field, ArrowDown
+ *     opens the dropdown seeded with the recent projects; ArrowDown moves the
+ *     highlight; Enter commits the highlighted recent into the field and closes
+ *     the dropdown, with the key view still resting on the field. Fails if the
+ *     dropdown didn't open, didn't rove, or Enter didn't commit the pick.
  *
  * ## Why synthetic keystrokes here (not `nativeKey`)
  *
  * The keystrokes are dispatched as real `keydown` events on the focused element,
  * which travel the SAME document-level capture pipeline a hardware key does — the
- * engine's Tab-walk listener, `focusNext`, the list's arrow-rove handler, the act
- * dispatch, and the sheet's Escape ladder all run for real. What this skips is
- * only the OS→WebView delivery layer (exercised by at0140's `nativeKey`), which
- * this step does not touch. Native delivery is also impractical here: the picker
- * form scrolls its seeded commit-home (Open) into view, which pushes the top
- * field off-screen, and a native click to take OS key focus would land on an
- * off-screen target. The engine integration is what this step changes, and that
- * is what these synthetic events exercise end-to-end.
+ * engine's Tab-walk listener, `focusNext`, the combo box's own key handler, and
+ * the act dispatch all run for real. What this skips is only the OS→WebView
+ * delivery layer (exercised by at0140's `nativeKey`), which this step does not
+ * touch. Native delivery is also impractical here: the picker form scrolls its
+ * seeded commit-home (Open) into view, which pushes the top field off-screen, and
+ * a native click to take OS key focus would land on an off-screen target.
  *
- * The completion-menu-open Tab-consume case (Tab accepts a match instead of
- * leaving) needs a live `/api/fs/complete` backend the bare harness lacks, so it
- * is verified by-eye; the closed-menu release (C) is the testable half and is the
- * regression that actually bites.
+ * The filesystem-completion half of the dropdown (typing completes real paths)
+ * needs a live `/api/fs/complete` backend the bare harness lacks, so it is
+ * verified by-eye; the seed (recents) half — the testable one — is what (D)
+ * drives, and it is the regression that actually bites.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -72,13 +59,14 @@ const TEST_TIMEOUT_MS = 120_000;
 // the same attribute the engine lands `data-key-view-kbd` on, so it doubles as
 // the key-view probe target and is immune to DOM-structure churn.
 const PATH = '[data-tug-focus-key="session-picker-cycle:0"]';
-// The native "Browse…" folder button sits between the path field and Recents in
-// the walk, at a fractional order so the stops below keep their stable keys.
+// The native "Browse…" folder button sits between the path field and the next
+// stop, at a fractional order so the stops below keep their stable keys.
 const BROWSE = '[data-tug-focus-key="session-picker-cycle:0.5"]';
-const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
 const SESSIONS = '[data-tug-focus-key="session-picker-cycle:2"]';
 const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
 const PICKER_FORM = ".session-card-picker-form";
+// The portaled combo-box dropdown and its keyboard-highlighted row.
+const DROPDOWN = ".tug-combo-box-menu";
 
 // Real directories that exist on the macOS test host, so the path-seed (first
 // recent) leaves Open ENABLED whether or not a tugcast backend answers the
@@ -129,14 +117,12 @@ async function tabUntil(
   throw new Error(`tab walk never reached ${selector} within ${maxTabs} tabs`);
 }
 
-// The `data-recent-path` of the Recents row currently wearing the movement
-// cursor (`data-key-cursor`), or null. Proves the cursor roves WITHIN the single
-// list stop.
-const CURSORED_RECENT = `(function(){
-  var row = document.querySelector('.session-card-picker-recents-list [data-key-cursor]');
-  if (row === null) return null;
-  var host = row.closest('[data-recent-path]') || row.querySelector('[data-recent-path]') || row;
-  return host ? (host.getAttribute('data-recent-path') || row.textContent) : row.textContent;
+// The `data-recent-path` of the dropdown row currently highlighted (the
+// keyboard-selected `.tug-completion-menu-item-selected`), or null. Proves the
+// highlight roves within the open dropdown.
+const ACTIVE_RECENT = `(function(){
+  var row = document.querySelector('${DROPDOWN} .tug-completion-menu-item-selected');
+  return row ? row.getAttribute('data-recent-path') : null;
 })()`;
 
 // DOM focus is on the path field's real <input> (the engine landed the caret on
@@ -182,13 +168,14 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         // An UNBOUND session card presents its picker. Do NOT bind a session.
         await app.waitForCondition<boolean>(PICKER_OPEN, { timeoutMs: 8000 });
 
-        // Populate Recents in-process so the list mounts as a cycle stop and the
-        // path-seed fills the field (→ Open enabled → seed lands on Open).
+        // Populate Recents in-process so they seed the path combo box's dropdown
+        // and the path-seed fills the field (→ Open enabled → seed lands on the
+        // Sessions list). Wait on the field carrying a seeded value.
         await app.evalJS<null>(
           `(window.__tug.setTugbankValue(${JSON.stringify("dev.tugtool.dev")}, ${JSON.stringify("recent-projects")}, { kind: "json", value: { paths: ${JSON.stringify(SEED_RECENTS)} } }), null)`,
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(RECENTS)}) !== null`,
+          `(function(){ var el = document.querySelector(${JSON.stringify(PATH)}); return el !== null && el.value.length > 0; })()`,
           { timeoutMs: 8000 },
         );
 
@@ -235,32 +222,38 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         await app.waitForCondition<boolean>(hasKeyView(PATH), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(PATH_INPUT_FOCUSED)).toBe(true);
 
-        // (C) The completion menu is closed, so the path field does NOT own Tab:
-        // Tab leaves it for the Browse button (the next stop), then Recents. If
-        // the tab-consume marker were stuck on, the key view would stay on the field.
+        // (C) The dropdown is closed, so the path field does NOT own Tab: Tab
+        // leaves it for the Browse button (the next stop), then Sessions — there
+        // is NO Recents stop between them anymore. If the tab-consume marker were
+        // stuck on, the key view would stay on the field.
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(BROWSE), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(false);
         await pressKey(app, "Tab");
-        await app.waitForCondition<boolean>(hasKeyView(RECENTS), { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(hasKeyView(SESSIONS), { timeoutMs: 6000 });
 
-        // (D) Recents is ONE stop with internal arrow-roving. Landing on it seeds
-        // the cursor on a row; ArrowDown moves the cursor to a DIFFERENT row while
-        // the container keeps the key view (not a per-row Tab stop).
-        await app.waitForCondition<boolean>(`${CURSORED_RECENT} !== null`, { timeoutMs: 6000 });
-        const firstCursor = await app.evalJS<string | null>(CURSORED_RECENT);
+        // (D) The recents live in the path combo box's own dropdown. Return to the
+        // path field, then ArrowDown opens the dropdown (seeded with the recents)
+        // and a second ArrowDown moves the highlight to a DIFFERENT row.
+        await tabUntil(app, PATH, 6);
+        await app.waitForCondition<boolean>(PATH_INPUT_FOCUSED, { timeoutMs: 6000 });
         await pressKey(app, "ArrowDown");
         await app.waitForCondition<boolean>(
-          `${CURSORED_RECENT} !== null && ${CURSORED_RECENT} !== ${JSON.stringify(firstCursor)}`,
+          `document.querySelector(${JSON.stringify(DROPDOWN)}) !== null`,
           { timeoutMs: 6000 },
         );
-        // Still the single key view — the arrow roved WITHIN it.
-        expect(await app.evalJS<boolean>(hasKeyView(RECENTS))).toBe(true);
+        await app.waitForCondition<boolean>(`${ACTIVE_RECENT} !== null`, { timeoutMs: 6000 });
+        const firstActive = await app.evalJS<string | null>(ACTIVE_RECENT);
+        await pressKey(app, "ArrowDown");
+        await app.waitForCondition<boolean>(
+          `${ACTIVE_RECENT} !== null && ${ACTIVE_RECENT} !== ${JSON.stringify(firstActive)}`,
+          { timeoutMs: 6000 },
+        );
 
-        // Return commits the roved recent into the path field (the list's
-        // `delegate.onSelect` via the engine act dispatch) — the keyboard equivalent
-        // of clicking the row. Fails if Return didn't route through onSelect.
-        const rovedRecent = await app.evalJS<string | null>(CURSORED_RECENT);
+        // Enter commits the highlighted recent into the field and closes the
+        // dropdown — the keyboard equivalent of clicking the row. The key view
+        // stays on the path field (Enter committed the pick, it did not leave).
+        const rovedRecent = await app.evalJS<string | null>(ACTIVE_RECENT);
         await pressKey(app, "Enter");
         await app.waitForCondition<boolean>(
           `(function(){
@@ -269,11 +262,11 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
           })()`,
           { timeoutMs: 6000 },
         );
-
-        // Tab now LEAVES the list (one stop, not one-per-row): the key view moves
-        // off the Recents container.
-        await pressKey(app, "Tab");
-        await app.waitForCondition<boolean>(`${hasKeyView(RECENTS)} === false`, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(DROPDOWN)}) === null`,
+          { timeoutMs: 6000 },
+        );
+        expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(true);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {

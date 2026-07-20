@@ -1,6 +1,6 @@
 /**
- * session-picker-cells.tsx — cell renderers for the Dev picker's two
- * `TugListView` lists (Recents + Sessions).
+ * session-picker-cells.tsx — cell renderers for the Dev picker's Sessions
+ * `TugListView`.
  *
  * Each renderer is a `TugListViewCellRenderer<...>` that takes the
  * typed row payload from `dataSource.rowAt(p.index)` and paints the
@@ -8,23 +8,11 @@
  * [tugplan-session-picker-redesign §D17](
  * ../../../roadmap/tugplan-session-picker-redesign.md#d17-pure-renderer-rule):
  * no `useState`, no `useRef`, no `useEffect` / `useLayoutEffect`, no
- * `useImperativeHandle`. Selection state, the live path, and the
- * confirmation flow all live above the list — in `SessionProjectPickerForm`,
- * the chain responder. The cells read what they need through
- * `PickerCellContext`.
- *
- * Recents cells:
- *  - `path-recent` — composes a `pill`-variant `TugListRow` (the
- *    variant is inherited from the Recents list's `rowLayout` via
- *    `TugListRowLayoutContext`, not repeated per cell). Selection is
- *    owned by `TugListView`'s `selectionRequired` mode; the list view
- *    passes the owned selected state in through the cell's `selected`
- *    prop, which the cell forwards to `TugListRow` so the pill paints
- *    its selected treatment. The form's `onSelectionChange` /
- *    `delegate.onSelect` fill the project-path input from the
- *    selected (or re-activated) recent. Match ranges from the matcher
- *    (attached by the picker form's data source) drive `<mark>`
- *    highlights inside the path text.
+ * `useImperativeHandle`. Selection state and the confirmation flow live above
+ * the list — in `SessionProjectPickerForm`, the chain responder. The cells read
+ * what they need through `PickerCellContext`. (The recent project paths are no
+ * longer a list here — they seed the path combo box's dropdown in
+ * `session-card.tsx`.)
  *
  * Sessions cells:
  *  - `session-new` — single-row "New session". Selected when
@@ -38,9 +26,7 @@
  *
  * Click semantics:
  *  - All non-disabled cells route through the wrapper's onClick to
- *    `delegate.onSelect` (the form's delegate dispatches navigation
- *    for path-recent, selection update for session-* per [D03],
- *    [D04]).
+ *    `delegate.onSelect` (the form's delegate updates the session selection).
  *  - The trash control is a click-focus-refusing `TugIconButton` per
  *    [D16], authored into its row's focus scope
  *    (`PICKER_ROW_TRASH_FOCUS_GROUP`) so ArrowRight on the row
@@ -53,7 +39,7 @@
  *
  * Laws:
  *  - [L02] external state via `useSyncExternalStore` — the data
- *    sources supply rows via `useSyncExternalStore` at the
+ *    source supplies rows via `useSyncExternalStore` at the
  *    `TugListView` level; cells just render.
  *  - [L06] visual-state changes via DOM attributes (`data-selected`,
  *    `data-disabled`, `data-state`) and CSS, not React state on the
@@ -65,10 +51,8 @@
  *    `session-card.css`.
  *
  * Decisions:
- *  - tugplan-session-picker-redesign [D02] role-flat-list (cell-only
- *    after the master/detail rework — headers are JSX, footers are
- *    buttons), [D04] path-recent navigation + selected state,
- *    [D13] shared-text-matcher,
+ *  - tugplan-session-picker-redesign [D02] role-flat-list (cell-only —
+ *    headers are JSX, footers are buttons),
  *    [D14] no per-cell floating surfaces,
  *    [D16] trailing in-list actions use TugIconButton,
  *    [D17] pure-renderer rule for cells.
@@ -88,7 +72,6 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 import type {
   SessionsRow,
-  SessionRecentsDataSource,
   SessionsDataSource,
 } from "@/lib/session-picker-data-source";
 import {
@@ -127,13 +110,6 @@ export type PickerSelection =
   | { readonly kind: "session-resume"; readonly sessionId: string };
 
 interface PickerCellContextValue {
-  /**
-   * The live project-path text. A recents row highlights exactly when its
-   * path equals this; when the typed path matches no recent, none highlight.
-   * The path input and the recents list are two views of one value —
-   * whichever surface the user touches writes it, the other reflects.
-   */
-  readonly currentPath: string;
   /** Current session selection. `null` when no session row is selected. */
   readonly selection: PickerSelection | null;
   /**
@@ -144,19 +120,11 @@ interface PickerCellContextValue {
    * is up — Mac-menu-open style. `null` when no trash is pending.
    */
   readonly pendingTrashSessionId: string | null;
-  /**
-   * Recent path whose trash-confirmation popover is currently open. The
-   * matching recents row marks itself `data-pending-trash="true"` so its trash
-   * icon stays visible while the popover is up. `null` when none pending.
-   */
-  readonly pendingTrashRecentPath: string | null;
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
-  currentPath: "",
   selection: null,
   pendingTrashSessionId: null,
-  pendingTrashRecentPath: null,
 };
 
 const PickerCellContext = createContext<PickerCellContextValue>(NULL_CONTEXT);
@@ -167,112 +135,6 @@ export const PickerCellProvider = PickerCellContext.Provider;
 function usePickerCellContext(): PickerCellContextValue {
   return useContext(PickerCellContext);
 }
-
-// ---------------------------------------------------------------------------
-// Highlight rendering
-// ---------------------------------------------------------------------------
-
-/**
- * Render `text` with `<mark>` highlights at `matches` (UTF-16 code
- * unit half-open ranges). Empty `matches` → return text unmarked.
- */
-function renderHighlighted(
-  text: string,
-  matches: ReadonlyArray<readonly [number, number]>,
-): React.ReactNode {
-  if (matches.length === 0) return text;
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  for (const [start, end] of matches) {
-    if (start > cursor) parts.push(text.slice(cursor, start));
-    parts.push(
-      <mark key={`m-${start}`} className="session-card-picker-match">
-        {text.slice(start, end)}
-      </mark>,
-    );
-    cursor = end;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts;
-}
-
-// ---------------------------------------------------------------------------
-// Recents cell — path-recent
-// ---------------------------------------------------------------------------
-
-/**
- * Path-recent cell. Composes a `TugListRow` — `flush` variant inherited
- * from the Recents list's `rowLayout` — and renders the path text with
- * `<mark>` highlights at the matcher's match ranges as the row's
- * `children`. This is a sanctioned `children` escape hatch per the
- * list-view house rules ([list-view-usage.md]): the content is not a
- * plain string but monospace, RTL middle-ellipsis path text carrying
- * inline `<mark>` search highlights, which `TugLabel`'s string `title`
- * cannot express. The `.session-card-picker-path-recent` rule supplies the
- * consistent (mono) typography.
- *
- * Selection mirrors the typed project path: the row highlights exactly when
- * its path equals `currentPath` (from `PickerCellContext`), and none highlight
- * when the typed path matches no recent. Clicking a recent writes that path
- * back through `delegate.onSelect`, so the input and this list stay two views
- * of one value.
- */
-export const PathRecentCell: TugListViewCellRenderer<SessionRecentsDataSource> = ({
-  index,
-  dataSource,
-}: TugListViewCellProps<SessionRecentsDataSource>) => {
-  const { currentPath, pendingTrashRecentPath } = usePickerCellContext();
-  const row = dataSource.rowAt(index);
-  // Highlight only when this recent IS the typed path (exact match); none
-  // highlight when the typed path matches no recent. Derived from the one
-  // shared value, so the list always agrees with the input.
-  const isSelected = row.path === currentPath;
-  // While this row's trash-confirm popover is up, keep its icon visible
-  // (Mac-menu-open style) — mirrors the Sessions list's per-row trash.
-  const isPendingTrash = pendingTrashRecentPath === row.path;
-  const pathShort = row.path.split("/").filter(Boolean).slice(-1)[0] ?? row.path;
-  return (
-    <TugListRow
-      mono
-      selected={isSelected}
-      trailingReveal="engaged"
-      data-recent-path={row.path}
-      data-pending-trash={isPendingTrash ? "true" : undefined}
-      trailing={
-        <TugIconButton
-          icon={<Trash2 size={14} aria-hidden="true" />}
-          aria-label={`Remove ${pathShort} from recent paths`}
-          title={`Remove ${pathShort} from recent paths`}
-          tone="danger"
-          className="session-card-picker-recent-trash"
-          focusGroup={PICKER_ROW_TRASH_FOCUS_GROUP}
-          focusOrder={0}
-          dispatch={{
-            action: TUG_ACTIONS.REQUEST_TRASH_RECENT,
-            value: { path: row.path },
-            phase: "discrete",
-          }}
-        />
-      }
-    >
-      <div
-        className="session-card-picker-path-recent"
-        data-testid="session-card-picker-path-recent"
-        title={row.path}
-        aria-label={row.path}
-      >
-        {renderHighlighted(row.path, row.matches)}
-      </div>
-    </TugListRow>
-  );
-};
-
-export const RECENTS_CELL_RENDERERS: Record<
-  string,
-  TugListViewCellRenderer<SessionRecentsDataSource>
-> = {
-  "path-recent": PathRecentCell,
-};
 
 // ---------------------------------------------------------------------------
 // Sessions cells — session-new, session-resume, loading
@@ -328,6 +190,16 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   const snippet =
     titleText.length > 0 ? truncateForDisplay(titleText, 64) : null;
 
+  // The mnemonic adjective-noun tag (`row.tag`) is the session's friendly
+  // identity. Lead the metadata line with it so it's always visible alongside
+  // the summary title and the UUID — UNLESS it's already the title (an untitled
+  // session falls back to the tag as its title), where repeating it would double.
+  const tagText = row.tag?.trim() ?? "";
+  const showTag = tagText.length > 0 && tagText !== titleText;
+  const metaSubtitle = showTag
+    ? `${tagText} · ${formatSessionRowSubtitle(row)}`
+    : formatSessionRowSubtitle(row);
+
   const subtitleText = isLive
     ? "Live in another card"
     : isTerminalLive
@@ -338,7 +210,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
           : "In use in a terminal"
       : isFailed
         ? "Couldn't resume — JSONL missing"
-        : formatSessionRowSubtitle(row);
+        : metaSubtitle;
 
   const idShort = row.session_id.slice(0, 8);
 

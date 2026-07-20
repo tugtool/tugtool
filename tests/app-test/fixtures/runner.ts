@@ -14,7 +14,6 @@ import type { App } from "../_harness";
 import type { SeededFixtureSession } from "./resolve";
 
 export const PICKER_FORM = ".session-card-picker-form";
-export const RECENTS = '[data-tug-focus-key="session-picker-cycle:1"]';
 export const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
 export const TRANSCRIPT =
   '[data-card-id="A"] [data-testid="session-card-transcript"]';
@@ -55,6 +54,26 @@ function clickElement(app: App, selector: string): Promise<boolean> {
   );
 }
 
+/**
+ * Set the picker's project-path combo box to `path` via a React-compatible
+ * value write (the native `HTMLInputElement.value` setter + an `input` event),
+ * then blur so the dropdown the typing opened doesn't overlay the sessions list.
+ * Returns false if the field isn't present.
+ */
+function setPickerPath(app: App, path: string): Promise<boolean> {
+  return app.evalJS<boolean>(
+    `(function(){
+      var input = document.querySelector(".session-card-picker-form input");
+      if (input === null) return false;
+      var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(input, ${JSON.stringify(path)});
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.blur();
+      return true;
+    })()`,
+  );
+}
+
 export interface OpenFixtureOpts {
   /** Saved card-state bag to inject (Phase B restore). */
   cardStates?: Record<string, unknown>;
@@ -83,24 +102,12 @@ export async function openFixtureSession(
     `document.querySelector(${JSON.stringify(PICKER_FORM)}) !== null`,
     { timeoutMs: 8000 },
   );
-  await app.evalJS<null>(
-    `(window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [${JSON.stringify(seeded.projectDir)}] } }), null)`,
-  );
-  await app.waitForCondition<boolean>(
-    `document.querySelector(${JSON.stringify(RECENTS)}) !== null`,
-    { timeoutMs: 8000 },
-  );
-  // The picker one-shot-seeds the path field from the host hint / home the
-  // moment it mounts — usually BEFORE the tugbank recents push above lands —
-  // so the field cannot be assumed to auto-fill from the seeded recent.
-  // Click the seeded Recents row instead (a recent click fills the input;
-  // the list stays put), then wait for the fill.
-  expect(
-    await clickElement(
-      app,
-      `.session-card-picker-recents-list [data-recent-path=${JSON.stringify(seeded.projectDir)}]`,
-    ),
-  ).toBe(true);
+  // The recents now seed the path combo box's dropdown (not a separate list).
+  // The picker one-shot-seeds the field from the host hint on mount, so it can't
+  // be assumed to hold the seeded project dir — drive the field directly with a
+  // React-compatible value write (the native setter + an `input` event), then
+  // blur so the combo box dropdown the typing opened doesn't overlay the list.
+  expect(await setPickerPath(app, seeded.projectDir)).toBe(true);
   await app.waitForCondition<boolean>(
     `(function(){
       var el = document.querySelector(".session-card-picker-form input");

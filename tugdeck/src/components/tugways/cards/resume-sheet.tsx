@@ -175,10 +175,8 @@ function ResumeSheetBody({
           are inert (no row pre-highlighted, no trash popover pending). */}
       <PickerCellProvider
         value={{
-          currentPath: projectDir,
           selection: null,
           pendingTrashSessionId: null,
-          pendingTrashRecentPath: null,
         }}
       >
         <div className="resume-sheet-list">

@@ -34,7 +34,12 @@ input.tug-file-chooser-input {
 }
 
 /* The completion overlay shows directory paths verbatim, in monospace, undoing
-   TugPushButton-style casing concerns (it's a plain <li>). */
+   TugPushButton-style casing concerns (it's a plain <li>). The combo-box label
+   truncates (see `.tug-combo-box-menu .tug-completion-menu-label`); direction:rtl
+   makes that truncation Finder-style — an ellipsis at the START so the meaningful
+   tail of a long path stays visible. `plaintext` keeps the path's own LTR order. */
 .tug-completion-menu[data-slot="tug-file-chooser-overlay"] .tug-completion-menu-label {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  direction: rtl;
+  unicode-bidi: plaintext;
 }

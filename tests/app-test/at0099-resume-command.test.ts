@@ -32,7 +32,9 @@ const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const SHEET = '[data-slot="tug-sheet"]';
 const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 const SHEET_SESSIONS = `${SHEET} .session-card-picker-sessions-list`;
-const SHEET_RECENTS = `${SHEET} .session-card-picker-recents-host`;
+// The full picker's distinguishing chrome is the project-path combo box field;
+// the /resume overlay is sessions-only and never renders it.
+const SHEET_PATH_FIELD = `${SHEET} .session-card-picker-field`;
 const RESUME_CANCEL = `${SHEET} [data-testid="resume-cancel"]`;
 
 let projectDir = "";
@@ -111,15 +113,15 @@ describe.skipIf(!SHOULD_RUN)("AT0099: /resume focused sessions overlay", () => {
         );
 
         // Sessions-only chrome: the sessions list is present; the full
-        // picker's project-path / recents chrome is NOT.
-        const chrome = await app.evalJS<{ hasSessions: boolean; hasRecents: boolean }>(
+        // picker's project-path combo box field is NOT.
+        const chrome = await app.evalJS<{ hasSessions: boolean; hasPathField: boolean }>(
           `({
              hasSessions: document.querySelector(${JSON.stringify(SHEET_SESSIONS)}) !== null,
-             hasRecents: document.querySelector(${JSON.stringify(SHEET_RECENTS)}) !== null,
+             hasPathField: document.querySelector(${JSON.stringify(SHEET_PATH_FIELD)}) !== null,
            })`,
         );
         expect(chrome.hasSessions).toBe(true);
-        expect(chrome.hasRecents).toBe(false);
+        expect(chrome.hasPathField).toBe(false);
 
         // Cancel → overlay dismisses, the live session is untouched.
         await app.nativeClickAtElement(RESUME_CANCEL);

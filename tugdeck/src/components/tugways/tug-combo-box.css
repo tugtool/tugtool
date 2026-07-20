@@ -1,0 +1,85 @@
+/* @tug-pairings: none — layout only. The field brings its own chrome from the
+   composed TugInput; the overlay borrows tug-completion-menu.css; the chevron
+   and item trailing reuse existing global text/selection tokens ([L20]). */
+
+/* Field row: the input, an optional chevron toggle, and an optional trailing
+   escape accessory. */
+.tug-combo-box {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+.tug-combo-box > .tug-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Chevron toggle — a borderless glyph tucked against the field's trailing edge.
+   A negative margin pulls it back over the input's inner padding so it reads as
+   part of the field rather than a separate control. */
+.tug-combo-box-chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: calc(-1 * var(--tug-space-2xs));
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+  border-radius: var(--tug-radius-xs);
+}
+
+.tug-combo-box-chevron:hover {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.tug-combo-box-chevron > svg {
+  transition: transform 120ms ease;
+}
+
+.tug-combo-box-chevron[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+/* ---------------------------------------------------------------------------
+   Overlay list — combo-box variant of the completion menu
+   ---------------------------------------------------------------------------
+   The base look comes from tug-completion-menu.css. The combo box shows whole
+   values (paths, names) per row with an optional trailing action, so the label
+   claims the row width and ellipsis-truncates rather than acting as a fixed
+   tab-stop column, and rows center their content. */
+
+.tug-combo-box-menu .tug-completion-menu-item {
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+.tug-combo-box-menu .tug-completion-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Trailing per-row action (e.g. a delete). Hidden at rest; revealed on hover,
+   on the keyboard-selected row, or while its own confirmation is pending, so
+   the row reads clean until the user engages it. */
+.tug-combo-box-item-trailing {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+}
+
+.tug-combo-box-menu .tug-completion-menu-item:hover .tug-combo-box-item-trailing,
+.tug-combo-box-menu .tug-completion-menu-item-selected .tug-combo-box-item-trailing,
+.tug-combo-box-item[data-pending-trash="true"] .tug-combo-box-item-trailing {
+  opacity: 1;
+}

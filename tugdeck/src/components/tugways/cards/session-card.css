@@ -902,16 +902,9 @@
   gap: var(--tug-space-md);
 }
 
-/* While the path field's completion menu is open, fade the Recent Project
-   Paths block to a faint ghost (keeps its layout space) so the floating
-   overlay reads clearly without fully erasing the list. [L06] via DOM attr. */
-.session-card-picker-section[data-completing="true"] {
-  opacity: 0.05;
-}
-
-/* Keep a recents row's trash icon visible while its confirm popover is open
-   (Mac-menu-open style), mirroring the Sessions list. The row carries
-   `data-pending-trash="true"`; its trailing slot is hover-revealed by default. */
+/* Keep a session row's trash icon visible while its confirm popover is open
+   (Mac-menu-open style). The row carries `data-pending-trash="true"`; its
+   trailing slot is hover-revealed by default. */
 .tug-list-row[data-pending-trash="true"] .tug-list-row-trailing {
   opacity: 1;
   visibility: visible;
@@ -961,36 +954,21 @@
   inline-size: 16rem;
 }
 
-/* Project-path input — mono family so the typed path and the recent
-   paths in the list below read as one family. The smoothing pins
-   mirror `.session-card-picker-path-recent` exactly so the two surfaces
-   never disagree on macOS subpixel rendering. Scoped under
-   `.session-card-picker-field` (specificity 0,2,0) so it wins over
-   `.tug-input`'s `font-family: inherit` regardless of stylesheet
-   load order. */
-.session-card-picker-field .session-card-picker-path-input {
-  font-family: var(--tug-font-family-mono);
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
-}
-
 /* ----------------------------------------------------------------------------
-   .session-card-picker — master/detail picker body (Recents + Sessions)
+   .session-card-picker — picker body (path combo box + Sessions)
    ----------------------------------------------------------------------------
-   Vertical master/detail: a Recents section (master, always visible)
-   above a Sessions section (detail, always visible). Each section is a
-   header label stacked over a fixed-height, bordered list host — no
-   enclosing TugBox. The header label uses the same uppercase treatment
-   as the `Project path` label (and the former TugBox legends); the
-   bordered host frames the list, and the list carries its own row
-   structure (the `flush` hairline dividers, the rows' hover / selected
-   fills).
+   The path field is a combo box whose dropdown holds the recent projects
+   (portaled, styled by `tug-combo-box.css` + the file-chooser overlay rules);
+   below it, the Sessions section is a header label stacked over a bordered list
+   host. The header label uses the same uppercase treatment as the `Project path`
+   label; the bordered host frames the list, and the list carries its own row
+   structure (the `flush` hairline dividers, the rows' hover / selected fills).
    ----------------------------------------------------------------------------- */
 
 /* A picker section — header label stacked above its list host.
    Mirrors `.session-card-picker-field` (the `Project path` label + its
-   input) so the three stacked label-over-content groups read as one
-   family down the sheet. */
+   combo box) so the stacked label-over-content groups read as one family
+   down the sheet. */
 .session-card-picker-section {
   display: flex;
   flex-direction: column;
@@ -1009,7 +987,6 @@
    (it is the scroll container, so it clips its own rows to the radius). No
    border / overflow / ring drawn here — the component owns all of it. */
 /* @tug-renders-on: surface.global.neutral.default */
-.session-card-picker-recents-host,
 .session-card-picker-sessions-host {
   display: flex;
   flex-direction: column;
@@ -1046,45 +1023,10 @@
   max-height: 14.5rem;
 }
 
-/* The Recents list fills its host edge-to-edge — zero block + inline
-   padding so the rows sit flush to the bordered host on every side.
-   Content-height capped at the section's max (the former fixed height); the
-   list scrolls past it. The `flush` zero row gap and hairline dividers come
-   from `rowLayout="flush"` in `tug-list-view.css`. */
-.session-card-picker-recents-list.tug-list-view {
-  --tugx-list-view-padding-block: 0;
-  --tugx-list-view-padding-inline: 0;
-  height: auto;
-  max-height: 7.5rem;
-}
-
-/* path-recent — the path text inside a `mono` `flush` `TugListRow`. The
-   row type (`mono`) owns the mono family, the compact `xs` size that
-   matches the size="sm" `Project path` input, the dense padding, and the
-   macOS smoothing pin. This rule owns only the path-display nicety the
-   row type does not: Finder-style ellipsis-at-START truncation (RTL), so
-   the meaningful tail of a long path stays visible. Text color is left
-   to `TugListRow`'s cascade — the path inherits it (selected → white). */
-.session-card-picker-recents-list .session-card-picker-path-recent {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
-  unicode-bidi: plaintext;
-}
-
-/* The whole recent row is a click target — the `TugListView` cell
-   wrapper owns activation; the pointer cursor is the affordance. */
-.session-card-picker-recents-list .tug-list-view-cell {
-  cursor: pointer;
-}
-
-/* Match-range highlight (the matcher attaches ranges when the typed
-   input is a substring of the path). No horizontal padding — even
-   1px of inline-box padding shifts surrounding text when ranges
-   appear/disappear (e.g., clicking a recent makes its full path
-   match), and the bg + border-radius read as a highlight on their
-   own. */
+/* Match-range highlight (the matcher attaches ranges when the typed input is a
+   substring of a recent path). No horizontal padding — even 1px of inline-box
+   padding shifts surrounding text when ranges appear/disappear, and the bg +
+   border-radius read as a highlight on their own. */
 /* @tug-renders-on: surface.global.data.tinted */
 .session-card-picker-match {
   background: var(--tug7-surface-global-data-tinted-default-rest);
@@ -1092,13 +1034,11 @@
   border-radius: var(--tug-radius-2xs, 2px);
 }
 
-/* On a selected recents row the path equals the typed path, so the
-   matcher marks the whole string — its own tinted fill + dark text
-   would stack on the selection fill and defeat the row's color swap
-   (the path would stay dark on the blue). Drop the mark's fill and let
-   it inherit the row's selected-text color like the rest of the row. */
-.session-card-picker-recents-list
-  .tug-list-row[data-selected="true"]
+/* On the keyboard-highlighted dropdown row the accent selection surface takes
+   over; the mark's own tinted fill + dark text would stack on it and stay dark
+   on the accent. Drop the fill and inherit the row's selected-text color. */
+.tug-combo-box-menu
+  .tug-completion-menu-item-selected
   .session-card-picker-match {
   background: transparent;
   color: inherit;
