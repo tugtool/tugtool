@@ -168,3 +168,59 @@ describe("session-restore — zero-turn fresh-spawn hold", () => {
     );
   });
 });
+
+describe("session-restore — has_jsonl resume gating", () => {
+  // Capture the `spawn_session` frame's `session_mode` for a binding by
+  // decoding the JSON payload the restore pass sends (controlFrame encodes
+  // `{ action, ...params }` as JSON bytes).
+  function spawnModeFor(binding: CardBinding): string | undefined {
+    const sent: string[] = [];
+    const capturing = {
+      send: (_feedId: number, payload: Uint8Array) => {
+        sent.push(new TextDecoder().decode(payload));
+      },
+      onFrame: () => () => {},
+      sendControlFrame: () => {},
+    } as unknown as TugConnection;
+    TOUCHED_CARD_IDS.add(binding.card_id);
+    const deck = createFakeDeck([{ id: binding.card_id, componentId: "session" }]);
+    restoreSessions(
+      deck as unknown as Parameters<typeof restoreSessions>[0],
+      capturing,
+    );
+    publishListCardBindingsOk({ bindings: [binding] });
+    return sent
+      .map((s) => JSON.parse(s) as { action?: string; session_mode?: string })
+      .find((f) => f.action === "spawn_session")?.session_mode;
+  }
+
+  it("a zero-turn binding WITH has_jsonl resumes (does not fresh-spawn)", () => {
+    // The pretty-earth-2 regression: claude wrote a full transcript but the
+    // ledger's live `record_turn` counter stayed 0, so `turn_count === 0`.
+    // Gating on `turn_count` alone fresh-spawned it (`mode=new`), whose
+    // `--session-id` collided with the on-disk JSONL and crash-looped the
+    // card to `errored`. `has_jsonl` must route it to resume.
+    expect(
+      spawnModeFor({
+        card_id: "session-hasjsonl-card",
+        session_id: "sess-hasjsonl",
+        project_dir: "/work/hasjsonl",
+        state: "closed",
+        turn_count: 0,
+        has_jsonl: true,
+      }),
+    ).toBe("resume");
+  });
+
+  it("a zero-turn binding with neither has_jsonl nor is_alive fresh-spawns", () => {
+    expect(
+      spawnModeFor({
+        card_id: "session-nojsonl-card",
+        session_id: "sess-nojsonl",
+        project_dir: "/work/nojsonl",
+        state: "closed",
+        turn_count: 0,
+      }),
+    ).toBe("new");
+  });
+});

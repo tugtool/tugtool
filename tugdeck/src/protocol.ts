@@ -222,6 +222,19 @@ export interface CardBinding {
    * conservative when running against a stale server.
    */
   is_alive?: boolean;
+  /**
+   * True iff an on-disk JSONL transcript exists (size > 0) for this
+   * `session_id` — the exact file a `mode=resume` spawn would target. This is
+   * the reliable resume signal: unlike `turn_count` (the ledger's live
+   * `record_turn` counter, which stays 0 when claude wrote the transcript
+   * outside a live turn), it stats the real file. The resume gate keys on it
+   * so a session with a transcript is never mis-routed to `mode=new` (whose
+   * `--session-id` would collide and crash-loop the card to `errored`).
+   *
+   * Older server builds won't emit the field; treat the absence as `false`
+   * (the `turn_count`/`is_alive` clauses still gate resume conservatively).
+   */
+  has_jsonl?: boolean;
   /** Session title (user `/rename` or auto `aiTitle`); seeds the chip on restore.
    *  `name_user_set` gates whether the chip shows it or falls back to the hash. */
   name?: string | null;

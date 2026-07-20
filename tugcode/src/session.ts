@@ -4013,18 +4013,27 @@ export class SessionManager {
         return;
       }
 
-      // Definitive classification wins; mode is the fallback.
+      // Definitive classification wins; mode is the fallback. A stale
+      // `--resume` id ("No conversation found") and a `new`-mode `--session-id`
+      // that collides with an existing transcript ("is already in use") are
+      // both non-retrying resume failures: re-spawning with the same args just
+      // hits the same wall. Route both to the bridge's `resume_failed` path
+      // (which clears the binding and offers the picker) rather than letting
+      // the bridge read the exit as a generic crash and burn its retry budget
+      // on three identical collisions before locking the card as `errored`.
       const classification = this.claudeStderrClassification;
       const isResumeFailure =
         classification === "resume_failed" ||
+        classification === "collision" ||
         (classification === null && sessionMode === "resume");
-      const isCollision = classification === "collision";
 
       if (isResumeFailure) {
         const reason =
-          classification === "resume_failed"
-            ? `claude reported "No conversation found" (stale --resume id)`
-            : `claude exited with code ${code} during resume init (likely stale id)`;
+          classification === "collision"
+            ? `claude reported session id "${sessionId}" is already in use`
+            : classification === "resume_failed"
+              ? `claude reported "No conversation found" (stale --resume id)`
+              : `claude exited with code ${code} during resume init (likely stale id)`;
         logSessionLifecycle("tugcode.resume_failed", {
           stale_session_id: sessionId,
           reason,
@@ -4041,9 +4050,7 @@ export class SessionManager {
           0,
         );
       } else {
-        const reason = isCollision
-          ? `claude reported session id "${sessionId}" is already in use`
-          : `claude exited with code ${code} during fresh init`;
+        const reason = `claude exited with code ${code} during fresh init`;
         await writeLineAndExit(
           {
             type: "error",

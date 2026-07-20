@@ -2297,10 +2297,13 @@ describe("SessionManager behavioral", () => {
     expect((failed[0] as any).reason).toContain("No conversation found");
   });
 
-  // Fix #4: stderr "is already in use" classifies as collision in any
-  // mode — fresh-collision now surfaces a clean error frame instead
-  // of routing through the bridge's crash-budget retry path.
-  test("stderr 'is already in use' classifies as collision (fresh mode)", async () => {
+  // A `--session-id` collision ("is already in use") is a deterministic,
+  // non-retrying failure: re-spawning with the same args just re-collides.
+  // It routes to the `resume_failed` IPC (the bridge's non-retrying path
+  // that clears the binding and offers the picker), NOT a generic `error`
+  // frame — an `error` frame reads to the bridge as a crash and burns the
+  // crash budget on three identical collisions before locking the card.
+  test("stderr 'is already in use' emits a non-retrying resume_failed", async () => {
     const id = crypto.randomUUID();
     const manager = new SessionManager(`/tmp/init-stderr-coll-${Date.now()}`, id);
     const m = makeWatcherMock({
@@ -2321,11 +2324,12 @@ describe("SessionManager behavioral", () => {
       exitStub.restore();
     }
 
-    const errors = emitted.filter((e: any) => e?.type === "error");
-    expect(errors.length).toBe(1);
-    expect((errors[0] as any).message).toContain("already in use");
     const failed = emitted.filter((e: any) => e?.type === "resume_failed");
-    expect(failed.length).toBe(0);
+    expect(failed.length).toBe(1);
+    expect((failed[0] as any).reason).toContain("already in use");
+    expect((failed[0] as any).stale_session_id).toBe(id);
+    const errors = emitted.filter((e: any) => e?.type === "error");
+    expect(errors.length).toBe(0);
   });
 
   test("handlePermissionMode updates permissionManager state", () => {

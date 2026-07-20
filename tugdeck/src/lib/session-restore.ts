@@ -26,17 +26,18 @@
  *   1. `restoreSessions` sends a `list_card_bindings` CONTROL
  *      request and waits for the `list_card_bindings_ok` response.
  *      Each binding is matched against the deck's dev cards by
- *      `card_id`. The match's `turn_count` and `is_alive` decide the
- *      mode:
- *      - `turn_count > 0` OR `is_alive` → `spawn_session(mode=resume)`
- *        with the persisted `session_id`. Two routes into resume:
- *        committed turns on disk (claude reopens the JSONL and
- *        replays history), or a live tugcode subprocess holding
- *        mid-turn state — the in-flight-first-turn case where a
- *        permission / question is pending and no JSONL has been
- *        written yet.
- *      - `turn_count === 0` AND not `is_alive` → `spawn_session(mode=new)`
- *        with a fresh `session_id` but the same `project_dir`. The
+ *      `card_id`. The match's `has_jsonl`, `turn_count`, and `is_alive`
+ *      decide the mode:
+ *      - `has_jsonl` OR `turn_count > 0` OR `is_alive` →
+ *        `spawn_session(mode=resume)` with the persisted `session_id`.
+ *        Routes into resume: an on-disk JSONL transcript (`has_jsonl` —
+ *        the reliable signal; claude reopens the JSONL and replays
+ *        history), the ledger's live turn counter, or a live tugcode
+ *        subprocess holding mid-turn state — the in-flight-first-turn
+ *        case where a permission / question is pending and no JSONL has
+ *        been written yet.
+ *      - none of the above → `spawn_session(mode=new)` with a fresh-in-
+ *        place session under the same `session_id` and `project_dir`. The
  *        card opens to its bound project with a fresh claude session.
  *   2. The expectation is recorded in `sessionRestoreRegistry` with a
  *      10-second timeout. `SessionCardContent` subscribes to the
@@ -61,7 +62,7 @@
  *
  * Resumability: every non-failed binding surfaces in
  * `list_card_bindings_ok` regardless of `turn_count`. Sessions with
- * a JSONL (`turn_count > 0`) or a live subprocess (`is_alive`) take
+ * a JSONL (`has_jsonl`) or a live subprocess (`is_alive`) take
  * the `mode=resume` path; everything else falls back to
  * `mode=new`-with-same-project_dir so the card still opens to its
  * bound project without dropping the user back to the picker.
@@ -480,29 +481,31 @@ export function restoreSessions(
       if (!sessionCardIds.has(binding.card_id)) continue;
       if (fired.has(binding.card_id)) continue;
       fired.add(binding.card_id);
-      // Resume when EITHER (a) there is a JSONL on disk (`turn_count > 0`,
-      // committed turns to replay) OR (b) the live supervisor still
-      // holds a subprocess entry for this session (`is_alive`). Case
-      // (b) covers the **in-flight first turn**: the user submitted,
-      // claude is mid-response or blocked on a permission/question
-      // control_request, but no turn has committed to JSONL yet —
-      // resuming hands the card back to the same tugcode subprocess
-      // so the in-flight snapshot path delivers the partial assistant
-      // text and any pending `control_request_forward`. Without
-      // `is_alive` we'd take the fresh-spawn branch below and orphan
-      // the live session. The fallback `=== true` keeps the gate
-      // conservative when running against a server that doesn't emit
-      // the field yet.
+      // Resume when ANY of: (a) an on-disk JSONL transcript exists
+      // (`has_jsonl` — the exact file a `mode=resume` spawn targets),
+      // (b) the ledger recorded live turns (`turn_count > 0`), or (c) the
+      // live supervisor still holds a subprocess entry (`is_alive`). Case
+      // (c) covers the **in-flight first turn**: the user submitted, claude
+      // is mid-response or blocked on a permission/question control_request,
+      // but no turn has committed to JSONL yet — resuming hands the card back
+      // to the same tugcode subprocess so the in-flight snapshot path
+      // delivers the partial assistant text and any pending
+      // `control_request_forward`. Without `is_alive` we'd take the
+      // fresh-spawn branch below and orphan the live session.
       //
-      // The `turn_count > 0` clause is a content proxy, not a true
-      // basis: `CardBinding` carries no `file_size`, so unlike the picker
-      // visibility gate ([P09]) this can't key on bytes directly. It is
-      // safe because a session with on-disk content always opens with a
-      // genuine user submission — the invariant `turn_count >= 1 ⇐
-      // file_size > 0` — so the canonical (strict) count never drops a
-      // resumable session below 1 and mis-routes it to `mode=new`.
+      // `has_jsonl` is the primary, reliable content signal. `turn_count` was
+      // the original proxy but is unsound: claude writes the JSONL itself, so
+      // a session can carry a full transcript while the ledger's live
+      // `record_turn` counter stays 0 (the turns never flowed through a live
+      // `turn_complete`). Such a session has `turn_count === 0` yet is fully
+      // resumable — gating on `turn_count` alone mis-routed it to `mode=new`,
+      // whose `--session-id` collided with the existing JSONL and crash-looped
+      // the card to `errored`. Keying on `has_jsonl` closes that hole; the
+      // `turn_count`/`is_alive` clauses remain as conservative fallbacks for
+      // an older server that emits neither the file-presence signal.
       const isAlive = binding.is_alive === true;
-      if (binding.turn_count > 0 || isAlive) {
+      const hasJsonl = binding.has_jsonl === true;
+      if (hasJsonl || binding.turn_count > 0 || isAlive) {
         fireRestore(
           binding.card_id,
           binding.session_id,

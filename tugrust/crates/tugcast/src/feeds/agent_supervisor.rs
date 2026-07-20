@@ -1277,6 +1277,31 @@ fn build_listed_union(
     listed
 }
 
+/// The session mode to stamp on an `Idle` rebound entry when a client spawn
+/// request's mode differs from the entry's current mode.
+///
+/// Normally the request wins — a rebound-but-not-yet-spawned entry adopts the
+/// request's intent (a card can legitimately open fresh in place). The one
+/// exception: never downgrade to `New` while the entry still holds a persisted
+/// `claude_session_id`. A `new`-mode spawn reuses the id via `--session-id`,
+/// which collides with the existing on-disk transcript ("Session ID … is
+/// already in use") and crash-loops the card to `errored`. The client only
+/// requests `New` for such an entry by mis-classifying a session that has a
+/// JSONL as turn-count-zero on restore; hold the ledger-derived mode instead.
+/// A genuine discard clears `claude_session_id` first (`do_reset`), so this
+/// guard never blocks a real fresh-in-place spawn.
+fn reconcile_idle_session_mode(
+    current: SessionMode,
+    requested: SessionMode,
+    has_claude_session_id: bool,
+) -> SessionMode {
+    if requested == SessionMode::New && has_claude_session_id {
+        current
+    } else {
+        requested
+    }
+}
+
 /// Owned form of a parsed CONTROL payload.
 struct OwnedControlPayload {
     card_id: String,
@@ -2750,7 +2775,11 @@ impl AgentSupervisor {
                 && entry.spawn_state == SpawnState::Idle
                 && entry.session_mode != session_mode
             {
-                entry.session_mode = session_mode;
+                entry.session_mode = reconcile_idle_session_mode(
+                    entry.session_mode,
+                    session_mode,
+                    entry.claude_session_id.is_some(),
+                );
             }
             // Stamp the resolved permission mode onto the entry the same way:
             // on the fresh insert, or while still `Idle` (rebound but not yet
@@ -4138,11 +4167,30 @@ impl AgentSupervisor {
             }
             alive
         };
+        // Direct JSONL-presence signal. `turn_count` (the ledger's live
+        // `record_turn` counter) is an unreliable proxy for "has a transcript
+        // to resume": claude writes the JSONL itself, so a session can carry a
+        // full on-disk transcript while the ledger count stays 0 (the turns
+        // never flowed through a live `turn_complete`). A restore that trusts
+        // `turn_count` then mis-routes such a session to a `new`-mode spawn,
+        // whose `--session-id` collides with the existing JSONL and crash-loops
+        // the card to `errored`. `has_jsonl` stats the exact file the resume
+        // would target, so the client can gate on the real thing. Targeted
+        // per-card stats (not a boot walk) under a directory the app already
+        // reads — no new TCC surface.
+        let claude_root = ledger.claude_projects_root().to_path_buf();
         let bindings: Vec<serde_json::Value> = rows
             .into_iter()
             .filter_map(|row| {
                 let card_id = row.card_id?;
                 let is_alive = live_session_ids.contains(&row.session_id);
+                let has_jsonl = {
+                    let (dir, _canonical) =
+                        crate::session_ledger::claude_project_dir(&claude_root, &row.project_dir);
+                    let path = dir.join(format!("{}.jsonl", row.session_id));
+                    crate::external_sessions::stat_size_mtime(&path)
+                        .is_some_and(|(size, _mtime)| size > 0)
+                };
                 Some(serde_json::json!({
                     "card_id": card_id,
                     "session_id": row.session_id,
@@ -4150,6 +4198,7 @@ impl AgentSupervisor {
                     "state": row.state,
                     "turn_count": row.turn_count,
                     "is_alive": is_alive,
+                    "has_jsonl": has_jsonl,
                     "name": row.name,
                     "name_user_set": row.name_user_set,
                     "tag": row.tag,
@@ -10217,6 +10266,75 @@ mod tests {
         assert_eq!(live["is_alive"], true);
         assert_eq!(dead["turn_count"], 0);
         assert_eq!(dead["is_alive"], false);
+    }
+
+    /// `list_card_bindings` reports `has_jsonl: true` for a session whose
+    /// on-disk transcript exists under `claude_projects_root`, and `false`
+    /// for one with no file — the reliable resume signal, independent of the
+    /// ledger's `turn_count`. The regression it guards: a session with a
+    /// transcript but `turn_count == 0` (claude wrote the JSONL outside a
+    /// live `record_turn`) was mis-routed on restore to a `mode=new` spawn
+    /// whose `--session-id` collided and crash-looped the card to `errored`.
+    #[tokio::test]
+    async fn list_card_bindings_reports_has_jsonl_from_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
+                .unwrap(),
+        );
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+
+        // Both rows have `turn_count == 0`; only "withfile" has a transcript
+        // on disk.
+        ledger
+            .record_spawn("withfile", "ws-1", "/proj/withfile", "card-With", 1_000, None)
+            .unwrap();
+        ledger
+            .record_spawn("nofile", "ws-1", "/proj/nofile", "card-No", 2_000, None)
+            .unwrap();
+        seed_external_jsonl(&claude_root, "/proj/withfile", "withfile", "resume me");
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_card_bindings",
+        }))
+        .unwrap();
+        sup.handle_control("list_card_bindings", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_card_bindings_ok");
+        let bindings = response["bindings"].as_array().expect("bindings array");
+        let by_card: std::collections::HashMap<&str, &serde_json::Value> = bindings
+            .iter()
+            .map(|b| (b["card_id"].as_str().unwrap(), b))
+            .collect();
+        assert_eq!(by_card["card-With"]["turn_count"], 0);
+        assert_eq!(
+            by_card["card-With"]["has_jsonl"], true,
+            "a session with an on-disk transcript reports has_jsonl"
+        );
+        assert_eq!(
+            by_card["card-No"]["has_jsonl"], false,
+            "a session with no transcript reports has_jsonl false"
+        );
+    }
+
+    /// The `Idle`-entry spawn-mode reconciliation ([`reconcile_idle_session_mode`]):
+    /// the client request normally wins, but a `New` request never downgrades an
+    /// entry that still holds a persisted `claude_session_id` (that spawn would
+    /// `--session-id`-collide with the existing transcript).
+    #[test]
+    fn reconcile_idle_session_mode_holds_resume_against_a_new_collision() {
+        use SessionMode::{New, Resume};
+        // The bug shape: rebound as Resume, client (mis)requests New while a
+        // claude session id is persisted → hold Resume.
+        assert_eq!(reconcile_idle_session_mode(Resume, New, true), Resume);
+        // No persisted id (a genuine fresh/discarded session) → honor New.
+        assert_eq!(reconcile_idle_session_mode(Resume, New, false), New);
+        // A resume request is always honored, id present or not.
+        assert_eq!(reconcile_idle_session_mode(New, Resume, true), Resume);
+        assert_eq!(reconcile_idle_session_mode(New, Resume, false), Resume);
     }
 
     #[tokio::test]
