@@ -23,7 +23,10 @@ import type { CompletionProvider } from "@/lib/tug-text-types";
 import type { ArgumentHintResolver } from "@/components/tugways/tug-text-editor/argument-hint-extension";
 import type { PastedCommandResolver } from "@/components/tugways/tug-text-editor/clipboard-filters";
 import type { AtomSegment } from "@/lib/tug-atom-img";
-import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
+import {
+  resolveInlineGhostName,
+  type InlineCommandMatcher,
+} from "@/lib/inline-command-ghost";
 import { resolveArgumentHint } from "@/lib/slash-argument-hint";
 import { LOCAL_SLASH_COMMANDS, type LocalSlashCommandSpec } from "@/lib/slash-commands";
 import { isHiddenSlashCommand } from "@/lib/slash-supported";
@@ -135,22 +138,20 @@ export function useSessionCardServices(cardId: string): SessionCardServices | nu
     [services, commandMatchProvider],
   );
 
-  // Inline ghost matcher: scan the ranked catalog for the best full-name,
-  // case-insensitive prefix-extension of the typed query, returning the catalog
-  // name (so the painted suffix carries canonical casing). Returns null when
-  // nothing prefix-extends the query — the only case the ghost stays dark (a
-  // leaf-only or fuzzy match never ghosts; the popup, not the ghost, is where
-  // fuzzy discovery happens). Read live through the provider closure [L07].
+  // Inline ghost matcher: scan the ranked catalog for the best case-insensitive
+  // prefix-extension of the typed query, preferring a full-name hit and falling
+  // back to a namespaced command's leaf (`/dev` → `devise` for `tugplug:devise`)
+  // so plugin commands ghost too. Returns null when nothing prefix-extends the
+  // query — the only case the ghost stays dark (a fuzzy-only match never ghosts;
+  // the popup, not the ghost, is where fuzzy discovery happens). Read live
+  // through the provider closure [L07].
   const inlineCommandMatcher = useMemo<InlineCommandMatcher>(() => {
     if (commandMatchProvider === null) return () => null;
-    return (query: string): string | null => {
-      if (query.length === 0) return null;
-      const q = query.toLowerCase();
-      const hit = commandMatchProvider(query).find((item) =>
-        item.label.toLowerCase().startsWith(q),
+    return (query: string): string | null =>
+      resolveInlineGhostName(
+        commandMatchProvider(query).map((item) => item.label),
+        query,
       );
-      return hit ? hit.label : null;
-    };
   }, [commandMatchProvider]);
 
   // Argument-hint resolver: maps an accepted command atom's value to its

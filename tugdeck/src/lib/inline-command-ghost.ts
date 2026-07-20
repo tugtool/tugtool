@@ -33,6 +33,37 @@ import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
  */
 export type InlineCommandMatcher = (query: string) => string | null;
 
+/**
+ * Resolve the ghost's completion name from a ranked catalog of command names
+ * (best first) against the typed `query`. Returns the first name that
+ * case-insensitively prefix-extends the query, trying each name's full form
+ * first and then its **leaf** — the part after the last `:` — for namespaced
+ * plugin commands (`tugplug:devise`), where the user types the leaf (`/dev`),
+ * not the qualified name. The returned name always prefix-extends `query`, so
+ * it satisfies {@link computeInlineGhost}'s contract (the painted suffix is a
+ * plain slice). Null when nothing prefix-extends the query.
+ *
+ * The leaf is completed as ordinary text: mid-text a slash command never runs
+ * (see the module docstring), so `/dev` → `/devise` is exactly the literal the
+ * user is writing, with no plugin qualifier.
+ */
+export function resolveInlineGhostName(
+  rankedNames: readonly string[],
+  query: string,
+): string | null {
+  if (query.length === 0) return null;
+  const q = query.toLowerCase();
+  for (const name of rankedNames) {
+    if (name.toLowerCase().startsWith(q)) return name;
+    const colon = name.lastIndexOf(":");
+    if (colon >= 0) {
+      const leaf = name.slice(colon + 1);
+      if (leaf.toLowerCase().startsWith(q)) return leaf;
+    }
+  }
+  return null;
+}
+
 /** A resolved inline ghost: where it sits and what it completes to. */
 export interface InlineGhost {
   /** Document offset of the leading `/` of the mid-text command token. */

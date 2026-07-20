@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   computeInlineGhost,
+  resolveInlineGhostName,
   GHOST_BOUNDARY_CASES,
   type InlineCommandMatcher,
 } from "../inline-command-ghost";
@@ -91,6 +92,47 @@ describe("computeInlineGhost — no ghost", () => {
     const leafOnly: InlineCommandMatcher = (q) =>
       "tugplug:commit".startsWith(q.toLowerCase()) ? "tugplug:commit" : null;
     expect(computeInlineGhost("hi /com", "hi /com".length, leafOnly)).toBeNull();
+  });
+});
+
+describe("resolveInlineGhostName", () => {
+  const ranked = ["compact", "tugplug:devise", "tugplug:commit"];
+
+  test("returns a full-name prefix extension", () => {
+    expect(resolveInlineGhostName(ranked, "comp")).toBe("compact");
+  });
+
+  test("completes a namespaced plugin command via its leaf", () => {
+    // `/dev` must ghost `devise` — the leaf of `tugplug:devise` — as plain
+    // text; the qualified name is never painted mid-text.
+    expect(resolveInlineGhostName(ranked, "dev")).toBe("devise");
+    // `/comm` doesn't full-name-extend anything, so the leaf of the plugin
+    // command wins.
+    expect(resolveInlineGhostName(ranked, "comm")).toBe("commit");
+  });
+
+  test("prefers a full-name hit over a leaf hit at the same query", () => {
+    // "com" full-name-extends "compact" (first in the ranked list) before the
+    // leaf of "tugplug:commit" is reached.
+    expect(resolveInlineGhostName(["compact", "tugplug:commit"], "com")).toBe(
+      "compact",
+    );
+  });
+
+  test("empty query and no match resolve to null", () => {
+    expect(resolveInlineGhostName(ranked, "")).toBeNull();
+    expect(resolveInlineGhostName(ranked, "zzz")).toBeNull();
+  });
+});
+
+describe("computeInlineGhost — plugin leaf via the resolver", () => {
+  test("mid-text /dev ghosts the plugin command's leaf", () => {
+    const catalog = ["tugplug:devise"];
+    const m: InlineCommandMatcher = (q) => resolveInlineGhostName(catalog, q);
+    const g = computeInlineGhost("examples: /dev", "examples: /dev".length, m);
+    expect(g).not.toBeNull();
+    expect(g!.name).toBe("devise");
+    expect(g!.suffix).toBe("ise");
   });
 });
 
