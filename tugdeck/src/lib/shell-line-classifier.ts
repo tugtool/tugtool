@@ -44,6 +44,17 @@ const STOPWORDS: ReadonlySet<string> = new Set([
   "just", "like", "want", "need", "make", "sure",
 ]);
 
+/**
+ * Master switch for auto `!shell` detection — both the live-typing chip insert
+ * ({@link autoShellOpener}) and the submit-time silent route
+ * ({@link classifyShellLine}). Parked off: a first-word/PATH heuristic misfires
+ * on prose openers that are also executables (`write …`, `apply …`). Detection
+ * stays off until a model classifier can judge intent. The functions below keep
+ * their full logic as the hook — gate the classifier's verdict here, or flip
+ * this back to `true`, to re-enable.
+ */
+const AUTO_SHELL_DETECTION_ENABLED = false;
+
 /** A leading `NAME=value` environment-assignment token (skipped to find the command). */
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 

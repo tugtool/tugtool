@@ -2715,7 +2715,7 @@ export const TugPromptEntry = React.forwardRef<
           className="tug-prompt-entry-command-picker"
           emphasis="filled"
           role="accent"
-          size="sm"
+          size="lg"
           subtype="icon"
           icon={
             <span className="tug-prompt-entry-bang-glyph" aria-hidden="true">

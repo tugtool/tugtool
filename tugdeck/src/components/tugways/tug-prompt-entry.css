@@ -124,7 +124,7 @@ body {
  * Bold and slightly larger than the UI text so it reads as a mark, not a
  * letter; line-height 1 keeps it centered in the icon box. */
 .tug-prompt-entry-bang-glyph {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1;
 }
