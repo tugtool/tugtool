@@ -819,6 +819,18 @@ export function transferFocusForActivation(
   // card. The blur safety net deterministically removes it so the
   // user cannot keep typing into a card they just deactivated.
   blurFocusInOutgoingCard(store, outgoingCardId, incomingCardId);
+
+  // Step 7 — Activation callback (mirror image of the Step 1
+  // deactivation callback).
+  //
+  // Fires after focus has landed on the incoming card, so consumers
+  // run with the card interactive again. The text card uses this to
+  // recheck its file against disk (files outside the FILESYSTEM
+  // watcher's workspace roots get no change events, so a click into
+  // the card is the moment an external edit is caught); the editor
+  // engines use it to drop their inactive scroll/draft snapshots.
+  // Idempotent for every registered consumer.
+  store.invokeActivationCallback(incomingCardId, "transfer-for-activation");
 }
 
 /**
