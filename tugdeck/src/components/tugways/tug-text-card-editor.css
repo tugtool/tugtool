@@ -89,6 +89,22 @@ body {
   outline: none;
 }
 
+/* A caret-bearing text editor is its own focus affordance — the native
+ * caret marks where the keyboard is, so the app-owned key-view ring
+ * (`[data-key-view-kbd]`, focus-ring.css) must not also outline the whole
+ * editing surface. The engine stamps that attribute on the host (the
+ * responder element it resolves the key view to), so unlike the inner
+ * `.cm-editor` above the host itself matches the global ring rule: a fresh
+ * untitled buffer auto-focuses through the engine while the last input was
+ * the ⌥⌘N accelerator, so the host inherits keyboard modality and rings.
+ * The Session card's prompt editor is spared the same ring by its
+ * `[data-cycling]` context; the Text card has none, so it opts out here —
+ * focus-ring.css names the caret editor as a surface that keeps
+ * `outline: none`. */
+.tug-text-card-editor[data-key-view-kbd] {
+  outline: none;
+}
+
 /* ---- Invisibles ---- */
 
 /* `highlightWhitespace()` marks BOTH spaces and tabs; the two settings
