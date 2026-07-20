@@ -54,6 +54,20 @@ class SessionTagStore {
     }
     for (const listener of this.listeners) listener();
   }
+
+  /**
+   * Non-clobbering populate for the broadcast/seed paths (`session_updated`,
+   * `list_sessions_ok`, card-binding rows, the spawn ack). A tag is monotonic —
+   * once minted it never legitimately becomes blank — so a `null`/blank push
+   * (a row read before the tag landed, or a stale echo) must NOT wipe a good
+   * cached tag back to the id-hash fallback. Only a real value writes; a blank
+   * is a no-op. A different real value still overwrites (server suffixed a
+   * collision). Explicit clears go through `setTag`.
+   */
+  seedTag(tugSessionId: string, tag: string | null): void {
+    if ((tag?.trim() ?? "").length === 0) return;
+    this.setTag(tugSessionId, tag);
+  }
 }
 
 /** Module-scope singleton — mirrors the other per-card stores' usage shape. */

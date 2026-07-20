@@ -46,6 +46,21 @@ class SessionNameStore {
     }
     for (const listener of this.listeners) listener();
   }
+
+  /**
+   * Non-clobbering populate for the seed paths (`list_sessions_ok`, card-binding
+   * rows, the spawn ack). These fire whenever a card binds or a listing lands —
+   * they must fill in a known user name, but a seed carrying no name (a row that
+   * is unnamed, or read before the name landed) must NOT wipe a good cached name
+   * back to the id-hash. Only a real value writes; a blank is a no-op. The
+   * authoritative `session_updated` push keeps using `setName`, whose
+   * `name_user_set=false`→clear is by design (an auto title never fronts the
+   * chip).
+   */
+  seedName(tugSessionId: string, name: string | null): void {
+    if ((name?.trim() ?? "").length === 0) return;
+    this.setName(tugSessionId, name);
+  }
 }
 
 /** Module-scope singleton — mirrors the other per-card stores' usage shape. */

@@ -20,6 +20,21 @@ describe("sessionTagStore", () => {
     expect(sessionTagStore.getTag("s-clear")).toBe(null);
   });
 
+  test("seedTag writes a real value but a blank never clobbers a good tag", () => {
+    sessionTagStore.setTag("s-seed", "stout-finch");
+    // A row read before the tag landed pushes null — must NOT wipe the tag.
+    sessionTagStore.seedTag("s-seed", null);
+    sessionTagStore.seedTag("s-seed", "   ");
+    expect(sessionTagStore.getTag("s-seed")).toBe("stout-finch");
+    // A different real value still overwrites (server suffixed a collision).
+    sessionTagStore.seedTag("s-seed", "stout-finch-2");
+    expect(sessionTagStore.getTag("s-seed")).toBe("stout-finch-2");
+    // seedTag also populates a previously-empty entry.
+    expect(sessionTagStore.getTag("s-seed-fresh")).toBe(null);
+    sessionTagStore.seedTag("s-seed-fresh", "azure-heron");
+    expect(sessionTagStore.getTag("s-seed-fresh")).toBe("azure-heron");
+  });
+
   test("an unchanged set does not notify subscribers", () => {
     let notifications = 0;
     const unsubscribe = sessionTagStore.subscribe(() => {

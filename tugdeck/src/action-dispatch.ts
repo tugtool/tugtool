@@ -887,6 +887,20 @@ export function initActionDispatch(
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
     });
+    // Seed the chip's name/tag caches straight off the bind ack so a bound
+    // card shows its identity immediately — never stranded on the id-hash
+    // waiting for a later frame. A mid-turn resume binds via this ack alone:
+    // `session_updated` only fires at turn boundaries, so without this the
+    // chip sits on the hash for the whole in-flight turn even though the
+    // ledger holds a good name/tag. Non-clobbering (`seed*`): a fresh spawn's
+    // ack carries no row yet, and its `null`s must not wipe the optimistic
+    // tag `provisionSpawnTag` already set. The ledger stays authoritative via
+    // the later `session_updated` push.
+    const ackName = typeof payload.name === "string" ? payload.name : null;
+    const ackNameUserSet = payload.name_user_set === true;
+    const ackTag = typeof payload.tag === "string" ? payload.tag : null;
+    sessionNameStore.seedName(tugSessionId, ackNameUserSet ? ackName : null);
+    sessionTagStore.seedTag(tugSessionId, ackTag);
   });
 
   // session_updated: tugcast supervisor broadcasts these on every
@@ -910,9 +924,11 @@ export function initActionDispatch(
         decoded.fields.name_user_set ? (decoded.fields.name ?? null) : null,
       );
       // Make the optimistic provisional tag authoritative: the echoed row
-      // carries the server's claimed-or-suffixed tag (unconditional — the tag
-      // has no user-set gate; it always fronts the session when present).
-      sessionTagStore.setTag(decoded.session_id, decoded.fields.tag);
+      // carries the server's claimed-or-suffixed tag (the tag has no user-set
+      // gate; it always fronts the session when present). Non-clobbering — a
+      // row read before the tag landed carries `null`, which must not wipe the
+      // optimistic tag back to the id-hash.
+      sessionTagStore.seedTag(decoded.session_id, decoded.fields.tag);
     }
     publishSessionUpdated(decoded);
   });
@@ -943,10 +959,10 @@ export function initActionDispatch(
     // session renamed in a prior run reads correctly once listed. Only a user
     // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const row of rows) {
-      sessionNameStore.setName(row.session_id, row.name_user_set ? row.name : null);
+      sessionNameStore.seedName(row.session_id, row.name_user_set ? row.name : null);
       // Seed the chip's tag cache from the listed rows so a bound session reads
       // its ledger tag once listed (or re-resumed after a legacy backfill).
-      sessionTagStore.setTag(row.session_id, row.tag);
+      sessionTagStore.seedTag(row.session_id, row.tag);
     }
     publishListSessionsOk({
       project_dir: projectDir,
@@ -1017,10 +1033,10 @@ export function initActionDispatch(
     // in a prior run shows its name the moment its card rebinds. Only a user
     // `/rename` feeds the chip; an auto `aiTitle` leaves it on the hash.
     for (const b of rows) {
-      sessionNameStore.setName(b.session_id, b.name_user_set ? (b.name ?? null) : null);
+      sessionNameStore.seedName(b.session_id, b.name_user_set ? (b.name ?? null) : null);
       // Seed the chip's tag cache on restore so a session's mnemonic shows the
       // moment its card rebinds (parity with the name seed).
-      sessionTagStore.setTag(b.session_id, b.tag ?? null);
+      sessionTagStore.seedTag(b.session_id, b.tag ?? null);
     }
     publishListCardBindingsOk({ bindings: rows });
   });

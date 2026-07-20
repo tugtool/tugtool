@@ -3125,6 +3125,20 @@ impl AgentSupervisor {
         } else {
             entry_arc.lock().await.session_mode
         };
+        // Carry the ledger's name/tag on the ack so tugdeck seeds the Z4B
+        // chip's caches at bind time. A resume (row already exists) binds via
+        // this ack alone: `session_updated` only pushes at turn boundaries, so
+        // without this a mid-turn resume shows the id-hash for the whole
+        // in-flight turn even though the ledger holds a good name/tag. A fresh
+        // spawn's row doesn't exist yet (the bridge writes it on
+        // `session_init`) — `None`/`false` here, which the client seeds
+        // non-clobberingly so it can't wipe the optimistic tag.
+        let (row_name, row_name_user_set, row_tag) = self
+            .session_ledger
+            .as_ref()
+            .and_then(|ledger| ledger.get(tug_session_id.as_str()).ok().flatten())
+            .map(|row| (row.name, row.name_user_set, row.tag))
+            .unwrap_or((None, false, None));
         let ack = serde_json::json!({
             "action": "spawn_session_ok",
             "card_id": card_id,
@@ -3136,6 +3150,9 @@ impl AgentSupervisor {
             // field — `project_dir` is informational for UI display.
             "project_dir": project_dir_str,
             "session_mode": effective_mode.as_wire_str(),
+            "name": row_name,
+            "name_user_set": row_name_user_set,
+            "tag": row_tag,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,

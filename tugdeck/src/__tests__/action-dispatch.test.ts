@@ -884,6 +884,53 @@ describe("initActionDispatch: spawn_session_ok", () => {
     cardSessionBindingStore.clearBinding("card-ack-fallback");
   });
 
+  it("seeds the chip name/tag caches from a resume ack so a mid-turn bind shows identity", async () => {
+    const { sessionNameStore } = await import("../lib/session-name-store");
+    const { sessionTagStore } = await import("../lib/session-tag-store");
+
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({
+      action: "spawn_session_ok",
+      card_id: "card-ack-seed",
+      tug_session_id: "sess-ack-seed",
+      workspace_key: "/work/canonical",
+      name: "commit-inline-dialog",
+      name_user_set: true,
+      tag: "stout-finch",
+    });
+
+    expect(sessionNameStore.getName("sess-ack-seed")).toBe("commit-inline-dialog");
+    expect(sessionTagStore.getTag("sess-ack-seed")).toBe("stout-finch");
+  });
+
+  it("a fresh-spawn ack (no row yet) does not clobber the optimistic tag", async () => {
+    const { sessionTagStore } = await import("../lib/session-tag-store");
+
+    // provisionSpawnTag set an optimistic tag before the ack round-trips.
+    sessionTagStore.setTag("sess-ack-fresh", "azure-heron");
+
+    const conn = createMockConnection();
+    const deck = createMockDeckManager();
+    initActionDispatch(conn as any, deck as any);
+
+    dispatchAction({
+      action: "spawn_session_ok",
+      card_id: "card-ack-fresh",
+      tug_session_id: "sess-ack-fresh",
+      workspace_key: "/work/canonical",
+      // Fresh spawn: the ledger row doesn't exist yet, so the ack carries
+      // no name/tag. The null tag must not wipe the optimistic one.
+      name: null,
+      name_user_set: false,
+      tag: null,
+    });
+
+    expect(sessionTagStore.getTag("sess-ack-fresh")).toBe("azure-heron");
+  });
+
   it("ignores malformed ack payloads (missing workspace_key) without setting a binding", async () => {
     const { cardSessionBindingStore } =
       await import("../lib/card-session-binding-store");
