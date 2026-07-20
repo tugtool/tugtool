@@ -432,6 +432,9 @@ export function beginsTokenAt(
  *   - Caret is before the trigger anchor (user backspaced past it).
  *   - Caret is on the trigger but the trigger no longer begins a token
  *     (user typed text immediately before it).
+ *   - Caret has moved past the trigger's own token (crossed whitespace
+ *     into a new word) — an abandoned run must not swallow later text or
+ *     shadow a fresh trigger typed after it.
  *   - The query text would contain a newline.
  */
 export function deriveQueryUpdate(
@@ -456,11 +459,9 @@ export function deriveQueryUpdate(
     return { kind: "cancel" };
   }
   const queryStart = state.anchorOffset + 1;
-  const queryEnd = scanForwardForTokenEnd(
-    doc,
-    Math.max(selection.head, queryStart),
-  );
-  const query = doc.sliceString(queryStart, queryEnd);
+  const tokenEnd = scanForwardForTokenEnd(doc, queryStart);
+  if (selection.head > tokenEnd) return { kind: "cancel" };
+  const query = doc.sliceString(queryStart, tokenEnd);
   if (query.includes("\n")) return { kind: "cancel" };
   if (query === state.query) return { kind: "unchanged" };
   return { kind: "query", value: query };

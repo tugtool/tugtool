@@ -149,6 +149,46 @@ describe("word-savvy query derivation", () => {
     expect(field.query).toBe("srcfile");
   });
 
+  test("an abandoned run cancels once the caret crosses whitespace", () => {
+    // An unmatched "/foo" shows no popup, so nothing accepts and clears
+    // the field. Typing a space moves the caret out of the trigger token
+    // and must cancel the session rather than swallow the space into the
+    // query — otherwise the still-active run shadows every later trigger.
+    const opened = makeState("", 0).update({
+      changes: { from: 0, insert: "/foo" },
+      selection: EditorSelection.cursor(4),
+      userEvent: "input.type",
+    }).state;
+    expect(opened.field(completionField).active).toBe(true);
+
+    const spaced = opened.update({
+      changes: { from: 4, insert: " " },
+      selection: EditorSelection.cursor(5),
+      userEvent: "input.type",
+    }).state;
+    expect(spaced.field(completionField).active).toBe(false);
+  });
+
+  test("a trigger typed after an abandoned run opens fresh", () => {
+    // The end-to-end reported bug: "/foo " then "@" must open FILE
+    // completion, not append "@" to the dead slash run's query.
+    const afterAbandoned = makeState("", 0)
+      .update({
+        changes: { from: 0, insert: "/foo " },
+        selection: EditorSelection.cursor(5),
+        userEvent: "input.type",
+      })
+      .state.update({
+        changes: { from: 5, insert: "@" },
+        selection: EditorSelection.cursor(6),
+        userEvent: "input.type",
+      }).state;
+    const field = afterAbandoned.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.trigger).toBe("@");
+    expect(field.anchorOffset).toBe(5);
+  });
+
   test("deleting the trigger character cancels the session", () => {
     const opened = makeState("", 0).update({
       changes: { from: 0, insert: "@" },
