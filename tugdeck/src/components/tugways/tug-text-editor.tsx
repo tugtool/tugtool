@@ -152,6 +152,7 @@ import {
 import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import { atomicRangesExt } from "./tug-text-editor/atomic-ranges";
 import { commandAtomDemotionFilter } from "./tug-text-editor/atom-integrity";
+import { atomTypeOverExt } from "./tug-text-editor/atom-type-over";
 import { atomBindExt } from "./tug-text-editor/atom-bind";
 import {
   clipboardExtension,
@@ -1076,6 +1077,10 @@ function buildExtensions(
     // an edit that pushes it off position 0 demotes the chip to its
     // literal `/name` text in the same transaction.
     commandAtomDemotionFilter,
+    // Typing a character over a selection that covers an atom replaces it —
+    // CM stamps the atom widget `contentEditable="false"`, so WebKit drops
+    // the keystroke; this dispatches the replacement itself.
+    atomTypeOverExt,
     // Bind each atom to its abutting punctuation so a wrap can't strand
     // a comma (etc.) on the next row — atoms are replaced elements, which
     // would otherwise carry a break opportunity on both edges.
