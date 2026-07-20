@@ -13,12 +13,13 @@
  *    **Escape** ascends the row scope (the wrapper's handler — the surface
  *    owns its Escape) and the resulting **blur** commits; **⌘Return**
  *    commits and chains a new snippet. **Space** selects only.
- *  - Section verbs while the list holds the key view: **Delete** removes the
- *    cursor row (read from the projected `data-key-cursor`) and lands the
- *    cursor on the surviving neighbor, **⌘N** creates below the cursor,
- *    **⌘Z / ⇧⌘Z** undo/redo (via a chain responder, active only in list mode
- *    so the editor's CM6 undo wins while typing). Each display row also
- *    carries a hover-reveal delete button for the pointer.
+ *  - Section verbs while the list holds the key view (delivered via the
+ *    list's `onKeyViewKey` delegate — the [P05] channel): **Space** creates
+ *    below the cursor, **Delete** removes the cursor row (read from the
+ *    projected `data-key-cursor`) and lands the cursor on the surviving
+ *    neighbor, **⌘Z / ⇧⌘Z** undo/redo (via a chain responder, active only
+ *    in list mode so the editor's CM6 undo wins while typing). Each display
+ *    row also carries a hover-reveal delete button for the pointer.
  *  - A row's incipit is draggable into a session prompt (`startSnippetDrag`);
  *    the grip reorders (commit on drop, [Q02]).
  *
@@ -87,8 +88,9 @@ import "./snippets-section.css";
 const ROW_SELECTOR = ".snippet-row-content[data-snippet-id]";
 const ROW_KIND_ATTR = "data-snippet-id";
 
-// Space is reserved so the section's keydown can create a new snippet below the
-// cursor (Things-style) rather than the engine's default item-container select.
+// Space is reserved so the section's key-view delegate can create a new
+// snippet below the cursor (Things-style) rather than the engine's default
+// item-container select.
 const SNIPPETS_CAPTURE_KEYS: readonly string[] = [" "];
 
 // The section's remembered selection — the last-touched snippet id, mapped to
@@ -583,51 +585,43 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   }, [cursorCell, snapshot.doc.snippets]);
 
   // Section verbs — Space / ⌘N create a new snippet below the cursor (the
-  // Things-style gesture), Delete removes the cursor row. Bubble phase: the
-  // engine leaves Delete / ⌘N as passthrough, and yields Space because the list
-  // reserves it via `captureKeys` (otherwise Space would resolve to the
-  // item-container select). Only in list mode; the editor owns keys while open.
-  const onSectionKeyDown = useCallback(
-    (e: React.KeyboardEvent): void => {
-      if (editingId !== null) return; // the editor owns keys while open
-      const target = e.target as HTMLElement | null;
-      if (
-        target !== null &&
-        (target.tagName === "TEXTAREA" ||
-          target.tagName === "INPUT" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      const createBelowCursor = (): void => {
-        e.preventDefault();
-        // `createSnippet(afterId)` inserts after `afterId` and opens the new
-        // row for editing (its descend effect focuses the caret). A null cursor
-        // (empty list / no landing) appends at the end.
-        store.createSnippet(cursorSnippetId());
-      };
+  // Things-style gesture), Delete removes the cursor row. Delivered through
+  // the list's key-view delegate (`onKeyViewKey` — the [P05] channel): in
+  // engine-routed mode keydown lands on the key sink, never in this
+  // subtree, so a bubble-phase container `onKeyDown` is structurally dead.
+  // The list reserves Space via `captureKeys` (otherwise it would resolve
+  // to the item-container select before reaching this delegate). Only in
+  // list mode; the editor owns keys while open (dom-granted — the delegate
+  // never fires — plus the `editingId` guard for the descended-scope
+  // fallback delivery).
+  const onSectionKeyViewKey = useCallback(
+    (e: KeyboardEvent): boolean => {
+      if (editingId !== null) return false; // the editor owns keys while open
       if (e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        createBelowCursor();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) {
-        createBelowCursor();
-        return;
+        // `createSnippet(afterId)` inserts after `afterId` and opens the new
+        // row for editing (its descend effect focuses the caret). A null
+        // cursor (empty list / no landing) appends at the end.
+        store.createSnippet(cursorSnippetId());
+        return true;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         const id = cursorSnippetId();
         // Anchor to the row's ✕ (revealed on the cursor row) so the popover opens
         // beside it, exactly as the mouse path does; fall back to the cell.
         const anchor = cursorDeleteButton() ?? cursorCell();
-        if (id === null || anchor === null) return;
-        e.preventDefault();
+        if (id === null || anchor === null) return false;
         // Destructive — raise the SAME confirm popover the mouse ✕ does, anchored
         // to the cursor row. Confirm deletes (keeping the cursor on a neighbor).
         setPendingDelete({ id, anchorEl: anchor });
+        return true;
       }
+      return false;
     },
     [editingId, store, cursorSnippetId, cursorCell, cursorDeleteButton],
   );
+  // ⌘/⌃ chords never reach the key-view delegate (they belong to the
+  // bindings tier), so the old ⌘N-in-list-mode alias does not ride it;
+  // Space and the band's + button are the create gestures.
 
   // ⌘Z / ⇧⌘Z route through the responder chain as UNDO/REDO. Handle them only
   // in list mode: while editing, omit the handlers so the chain walks past to
@@ -653,7 +647,6 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       <div
         ref={responderRef as (el: HTMLDivElement | null) => void}
         className="snippets-section"
-        onKeyDown={onSectionKeyDown}
       >
         {snapshot.error !== null ? (
           <div className="snippets-error" role="status">
@@ -683,6 +676,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
                 activateOnDoubleClick
                 selectionRequired
                 captureKeys={SNIPPETS_CAPTURE_KEYS}
+                onKeyViewKey={onSectionKeyViewKey}
                 onSelectionChange={onSelectionChange}
                 initialSelectedIndex={initialSelectedIndex}
                 className="lens-snippets-list"

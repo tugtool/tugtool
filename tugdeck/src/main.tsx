@@ -121,6 +121,22 @@ declare global {
      * Release builds never reach this path (`#if DEBUG`-gated).
      */
     __tugPersistInTestMode?: boolean;
+    /**
+     * DEBUG-only escape hatch on test-mode's boot-restore bypass.
+     * When `true` AND `__tugTestMode` is also `true`, the
+     * `DeckManager` constructor honors the tugbank-sourced boot
+     * arguments (layout, card-state bags, focused card id) instead of
+     * starting empty — the production cold-boot restore channel
+     * (constructor deck restore → CardHost mount-time
+     * `applyBagFocus`), which `seedDeckState`'s post-mount cache
+     * merge cannot drive. Quit-and-relaunch tests pair this with
+     * `__tugPersistInTestMode` and a per-test `TUGBANK_PATH`.
+     *
+     * Set by a `WKUserScript` injected at `atDocumentStart` when the
+     * Swift host starts with `TUGAPP_RESTORE_IN_TEST_MODE=1`.
+     * Release builds never reach this path (`#if DEBUG`-gated).
+     */
+    __tugRestoreInTestMode?: boolean;
   }
 }
 

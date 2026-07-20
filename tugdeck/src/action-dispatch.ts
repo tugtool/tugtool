@@ -60,6 +60,7 @@ import { notifySpawnRejected } from "./lib/session-restore";
 import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
+import { keyboardAccessStore } from "./keyboard-access-store";
 import { decodeSessionUpdated, normalizeSessionRow } from "./protocol";
 import type {
   CardBinding,
@@ -132,6 +133,13 @@ const handlers = new Map<string, ActionHandler>();
 
 /** Module-level flag to prevent duplicate reload calls */
 let reloadPending = false;
+
+/**
+ * Whether the current `accessibility` keyboard-access mode was flipped on
+ * by VoiceOver detection (vs. persisted by the user). VoiceOver turning
+ * off undoes only a detection-driven flip.
+ */
+let voiceOverDroveAccessibility = false;
 
 /** Module-level reference to the theme setter, populated by TugThemeProvider on mount. */
 let themeSetterRef: ((theme: string) => void) | null = null;
@@ -229,6 +237,7 @@ export function registerAction(action: string, handler: ActionHandler): void {
 export function _resetForTest(): void {
   handlers.clear();
   reloadPending = false;
+  voiceOverDroveAccessibility = false;
   themeSetterRef = null;
   themeGetterRef = null;
   responderChainManagerRef = null;
@@ -1120,6 +1129,34 @@ export function initActionDispatch(
       services.codeSessionStore,
       exchanges as ReadonlyArray<Record<string, unknown>>,
     );
+  });
+
+  // voiceover-changed: the host's VoiceOver signal ([P10]). The Swift
+  // side observes `NSWorkspace.shared.isVoiceOverEnabled` and sends a
+  // control frame with `enabled: <bool>` on launch, on frontend
+  // (re)connect, and on every change. VoiceOver on flips the
+  // keyboard-access mode to `accessibility` (the focus-follows mirror —
+  // real DOM focus on every key view, the one pattern every AT
+  // handles). VoiceOver off undoes only a flip detection itself made —
+  // a user who persisted `accessibility` without VoiceOver (Switch
+  // Control, full-keyboard users) keeps it. `persist: false` — the flip
+  // is environment detection, not a user setting, so it never
+  // overwrites the persisted tugbank preference.
+  registerAction("voiceover-changed", (payload) => {
+    const enabled = payload.enabled;
+    if (typeof enabled !== "boolean") {
+      console.warn("voiceover-changed: missing or invalid enabled", payload);
+      return;
+    }
+    if (enabled) {
+      if (keyboardAccessStore.getMode() !== "accessibility") {
+        voiceOverDroveAccessibility = true;
+        keyboardAccessStore.setMode("accessibility", { persist: false });
+      }
+    } else if (voiceOverDroveAccessibility) {
+      voiceOverDroveAccessibility = false;
+      keyboardAccessStore.setMode("standard", { persist: false });
+    }
   });
 
   // app-lifecycle: route macOS `NSApplicationDelegate` events into the

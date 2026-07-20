@@ -28,10 +28,19 @@ enum TestHarnessUserScript {
     /// itself stays in place for ordinary in-app tests so the
     /// developer's real `~/.tugbank.db` is never touched. See
     /// cold-boot harness docs ([AT0014]).
+    ///
+    /// When `TUGAPP_RESTORE_IN_TEST_MODE=1` is set, also injects
+    /// `__tugRestoreInTestMode = true`: `deck-manager`'s constructor
+    /// then honors the tugbank-sourced boot arguments (layout, card
+    /// bags, focused card) instead of starting empty — the true
+    /// cold-boot restore channel for quit-and-relaunch tests.
     static func install(into config: WKWebViewConfiguration) {
         var source = "window.__tugTestMode = true;"
         if ProcessInfo.processInfo.environment["TUGAPP_PERSIST_IN_TEST_MODE"] == "1" {
             source += "\nwindow.__tugPersistInTestMode = true;"
+        }
+        if ProcessInfo.processInfo.environment["TUGAPP_RESTORE_IN_TEST_MODE"] == "1" {
+            source += "\nwindow.__tugRestoreInTestMode = true;"
         }
         let script = WKUserScript(
             source: source,

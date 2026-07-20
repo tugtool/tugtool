@@ -286,6 +286,18 @@ function shouldPersistInTestMode(): boolean {
   return typeof window !== "undefined" && window.__tugPersistInTestMode === true;
 }
 
+/**
+ * Read the DEBUG-only `__tugRestoreInTestMode` flag. When `true` AND
+ * `__tugTestMode` is also `true`, the constructor honors the
+ * tugbank-sourced boot arguments (layout, card-state bags, focused
+ * card id) instead of starting empty — the production cold-boot
+ * restore channel for quit-and-relaunch harness tests. See
+ * `tugapp/Sources/TestHarness/TestHarnessUserScript.swift`.
+ */
+function shouldRestoreInTestMode(): boolean {
+  return typeof window !== "undefined" && window.__tugRestoreInTestMode === true;
+}
+
 export class DeckManager implements IDeckManagerStore {
   private container: HTMLElement;
   private connection: TugConnection;
@@ -583,15 +595,20 @@ export class DeckManager implements IDeckManagerStore {
     // starts empty. The harness drives state exclusively via
     // `seedDeckState`; silently honoring a stray pre-populated layout
     // would couple test scenarios to whatever happened to be in
-    // tugbank when the run started.
-    this.initialLayout = this.testMode ? null : (initialLayout ?? null);
+    // tugbank when the run started. The `__tugRestoreInTestMode`
+    // escape hatch re-enables the boot restore for quit-and-relaunch
+    // tests that pair a per-test `TUGBANK_PATH` with
+    // `__tugPersistInTestMode` — there the persisted state is the
+    // test's own, and the constructor restore IS the code under test.
+    const dropBootState = this.testMode && !shouldRestoreInTestMode();
+    this.initialLayout = dropBootState ? null : (initialLayout ?? null);
     this.initialTheme = initialTheme ?? BASE_THEME_NAME;
 
-    if (initialCardStates && !this.testMode) {
+    if (initialCardStates && !dropBootState) {
       this.cardStateCache = new Map(initialCardStates);
     }
 
-    this.initialFocusedCardId = this.testMode ? undefined : initialFocusedCardId;
+    this.initialFocusedCardId = dropBootState ? undefined : initialFocusedCardId;
 
     container.style.position = "relative";
 

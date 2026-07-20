@@ -1,5 +1,7 @@
 <!-- devise-skeleton v4 -->
 
+> **SUPERSEDED.** This plan shipped the one-target/one-primitive model, but its keyboard story — DOM focus as the router, a DOM-focus-derived ring projection, and "every ringable stop must be DOM-focusable" — was inverted by [keyboard-as-engine-state.md](keyboard-as-engine-state.md): the engine's `FocusTarget` now routes keys directly, `document.activeElement` parks on a key sink for every non-text target (text surfaces alone are dom-granted), the settled-focus derivation was deleted in favor of a reasserting watchdog with an attributed steal ledger, and engine-routed stops render no `tabindex`. The durable contract lives in `tuglaws/focus-language.md` § One writer. This document is kept as the historical record of the by-construction phase.
+
 ## Focus by Construction {#focus-by-construction}
 
 **Purpose:** Collapse tugdeck's seven hand-reconciled focus registers into one authoritative per-card focus target with a single write primitive, so the focus ring and the keyboard event flow are the same projection of the same value — making "the ring paints on the Lens but keystrokes go to the prompt" structurally unrepresentable.

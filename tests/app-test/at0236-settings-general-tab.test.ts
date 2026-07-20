@@ -32,9 +32,7 @@ const SIDE_GROUP = `[data-testid="settings-lens-side"]`;
 const LEFT_SEGMENT = `${SIDE_GROUP} [data-choice-value="left"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 async function railLeft(app: App): Promise<number> {

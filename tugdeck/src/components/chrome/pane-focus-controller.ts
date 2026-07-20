@@ -111,6 +111,7 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 import { useDeckManager } from "@/deck-manager-context";
 import { transferFocusForActivation } from "@/focus-transfer";
+import { getFocusManager } from "@/components/tugways/focus-manager";
 
 export function usePaneFocusController(
   deckRootRef: React.RefObject<HTMLDivElement | null>,
@@ -296,6 +297,14 @@ export function usePaneFocusController(
       // first responder to a different card — including from a deselected
       // canvas (`null` outgoing).
       activationClick = outgoingCardId !== pane.activeCardId;
+      // The same classification stands the engine's pointer placement
+      // down for this gesture: the activation transfer realizes the
+      // card's recorded destination, and the provider's later placement
+      // pass must not overwrite it (first-click-activates — the click
+      // activates, it does not place).
+      if (activationClick) {
+        getFocusManager()?.suppressPointerPlacementOnce();
+      }
       transferFocusForActivation({
         outgoingCardId,
         incomingCardId: pane.activeCardId,

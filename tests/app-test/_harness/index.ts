@@ -159,6 +159,51 @@ export const EXPECTED_SURFACE_VERSION = "1.8.0" as const;
 const LOGS_DIR = pathResolve(import.meta.dir, "..", "logs");
 
 /**
+ * Human-cadence settle after EVERY synthetic gesture, enforced at the
+ * harness choke point so no test can blast events faster than a person
+ * could produce them. CGEvent posts return as soon as the event is in the
+ * window server's queue — long before the app has dispatched, handled, and
+ * repainted — and back-to-back posts routinely outrun focus transitions,
+ * scroll settles, and animation frames in ways no real user ever does. A
+ * deliberate test tour runs at roughly two gestures a second, not twenty.
+ * Override per run with `TUGAPP_GESTURE_SETTLE_MS` (0 disables).
+ */
+const GESTURE_SETTLE_MS = (() => {
+  const raw = Number(process.env.TUGAPP_GESTURE_SETTLE_MS ?? "400");
+  return Number.isFinite(raw) && raw >= 0 ? raw : 400;
+})();
+
+/**
+ * Settle after the big state transitions — launch handshake,
+ * `seedDeckState`, `bindSession` — before the harness lets ANY further
+ * driving happen. A person cannot act on an app that is still painting its
+ * first frame; a test must not either (keys posted into the launch window
+ * land nowhere and beep). Override with `TUGAPP_STATE_SETTLE_MS`.
+ */
+const STATE_SETTLE_MS = (() => {
+  const raw = Number(process.env.TUGAPP_STATE_SETTLE_MS ?? "1000");
+  return Number.isFinite(raw) && raw >= 0 ? raw : 1000;
+})();
+
+/** Dwell `STATE_SETTLE_MS` after a state transition resolves. */
+async function settleAfterStateChange<T>(p: Promise<T>): Promise<T> {
+  const v = await p;
+  if (STATE_SETTLE_MS > 0) {
+    await new Promise<void>((r) => setTimeoutNative(r, STATE_SETTLE_MS));
+  }
+  return v;
+}
+
+/** Await the gesture RPC, then dwell `GESTURE_SETTLE_MS` before returning. */
+async function settleAfterGesture<T>(p: Promise<T>): Promise<T> {
+  const v = await p;
+  if (GESTURE_SETTLE_MS > 0) {
+    await new Promise<void>((r) => setTimeoutNative(r, GESTURE_SETTLE_MS));
+  }
+  return v;
+}
+
+/**
  * Resolved per-run paths for a Tug.app launch.
  */
 interface ResolvedLaunch {
@@ -340,8 +385,29 @@ export class App {
    * Replace `DeckState` atomically and optionally merge card-state
    * bags or drive cold-boot focus restore.
    */
+  /**
+   * Dispatch a registered control action (`window.__tug.dispatchControlAction`)
+   * and settle like any other state transition — a control action typically
+   * opens / focuses / rearranges a surface, and the next gesture must not
+   * land while that surface is still appearing.
+   */
+  dispatchControlAction(
+    action: string,
+    payload?: Record<string, unknown>,
+  ): Promise<void> {
+    const args =
+      payload === undefined
+        ? JSON.stringify(action)
+        : `${JSON.stringify(action)}, ${JSON.stringify(payload)}`;
+    return settleAfterStateChange(
+      this.evalJS<void>(`window.__tug.dispatchControlAction(${args})`),
+    );
+  }
+
   seedDeckState(args: SeedDeckStateArgs): Promise<void> {
-    return client.seedDeckState(this as HarnessCaller, args);
+    return settleAfterStateChange(
+      client.seedDeckState(this as HarnessCaller, args),
+    );
   }
 
   /** Read the deck's current active card (first-responder). */
@@ -594,7 +660,9 @@ export class App {
       sessionMode?: "new" | "resume";
     },
   ): Promise<void> {
-    return client.bindSession(this as HarnessCaller, cardId, options);
+    return settleAfterStateChange(
+      client.bindSession(this as HarnessCaller, cardId, options),
+    );
   }
 
   /**
@@ -1439,6 +1507,13 @@ export async function launchTugApp(
     }
   }
 
+  // The app just finished its boot handshake; give it a human beat to
+  // finish launching (first paint, focus establishment) before any test
+  // code can drive it.
+  if (STATE_SETTLE_MS > 0) {
+    await new Promise<void>((r) => setTimeoutNative(r, STATE_SETTLE_MS));
+  }
+
   return new App({
     rpc,
     version: String(serverVersion),
@@ -1522,6 +1597,7 @@ function resolveLaunchOptions(opts: LaunchTugAppOptions): ResolvedLaunch {
     env: {
       ...process.env,
       ...(opts.persistInTestMode ? { TUGAPP_PERSIST_IN_TEST_MODE: "1" } : {}),
+      ...(opts.restoreInTestMode ? { TUGAPP_RESTORE_IN_TEST_MODE: "1" } : {}),
       ...(opts.keepSetup ? { TUGAPP_TEST_KEEP_SETUP: "1" } : {}),
       ...(opts.env ?? {}),
       TUGAPP_TEST_SOCKET: socketPath,

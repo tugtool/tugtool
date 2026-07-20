@@ -34,9 +34,7 @@ const gripSel = (kind: string): string =>
   `${sectionSel(kind)} [data-testid="lens-section-grip"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 async function domOrder(app: App): Promise<string[]> {

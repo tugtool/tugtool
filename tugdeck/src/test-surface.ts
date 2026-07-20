@@ -467,6 +467,9 @@ export interface TugTestSurface {
    * §"Bringing DOM focus in sync with chain state".
    */
   setFirstResponder(responderId: string): void;
+
+  /** The chain's current first responder id, or `null`. */
+  getFirstResponderId(): string | null;
   getCaretState(cardId: string): CaretState | null;
   getFormControlValue(cardId: string, componentStatePreservationKey: string): string | null;
   assertHostRootRegistered(cardId: string): boolean;
@@ -488,14 +491,18 @@ export interface TugTestSurface {
   getComputedStyleValue(selector: string, property: string): string;
 
   /**
-   * The focus engine's invariant-tripwire report: the cumulative count of
-   * ring-without-a-keyboard-sink violations observed this session, and the
-   * most recent violation (both elements named). `null` when no
-   * `FocusManager` is mounted. Tests assert `violations === 0` (or, while a
-   * known drift is being pinned, that the drift was detected and named).
+   * The focus engine's watchdog report: `violations` counts genuine
+   * incoherence (a granted surface gone — the engine lied), `reasserted`
+   * counts route corrections, and `steals` is the attributed per-offender
+   * ledger of raw focus writes the watchdog corrected. `null` when no
+   * `FocusManager` is mounted. Tests assert `violations === 0` and steal
+   * BUDGETS (the ledger stays flat across interactions where no raw focus
+   * write should occur).
    */
   getFocusInvariantReport(): {
     violations: number;
+    reasserted: number;
+    steals: Record<string, number>;
     last: {
       ringed: string;
       active: string;
@@ -1136,6 +1143,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       // pointerdown/focusin promotion cannot produce. `makeFirstResponder`
       // no-ops with a dev-warn for an unregistered id.
       getResponderChainManager()?.makeFirstResponder(responderId);
+    },
+
+    getFirstResponderId(): string | null {
+      return getResponderChainManager()?.getFirstResponder() ?? null;
     },
 
     getFocusedCardId(): string | null {

@@ -29,9 +29,7 @@ const TEST_TIMEOUT_MS = 60_000;
 const MENU_BUTTON = `.tug-pane[data-anchored] [data-testid="tug-pane-title-bar-menu-button"]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 /** Rendered rail section kinds, top-to-bottom. */

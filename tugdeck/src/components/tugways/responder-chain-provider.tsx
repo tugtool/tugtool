@@ -47,6 +47,7 @@ import { isSyntheticEscape } from "./internal/synthetic-escape";
 // ---- Fallback context menu ----
 
 import "./tug-menu.css";
+import "./tug-key-sink.css";
 
 /**
  * Minimal "No Actions" context menu shown when a right-click lands on an
@@ -275,21 +276,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("focusin", onFocusChange, { capture: true });
     document.addEventListener("focusout", onFocusChange, { capture: true });
 
-    // ---- Derived key view ([P02]) ----
-    // The key view derives from real DOM focus. `focusin` reflects
-    // synchronously (the destination is known); `focusout` defers a
-    // microtask because a handoff between siblings fires it with a
-    // transient `<body>` active element before the destination's `focusin`
-    // — reading synchronously there would flicker the ring (the same
-    // load-bearing defer `use-companion-popup-binding` documents).
-    const reflectOnFocusIn = (): void => {
-      focusManager.reflectSettledFocus();
+    // ---- Keyboard-route enforcement (the watchdog, Spec S03) ----
+    // Every settled focus change triggers an enforcement pass: the engine
+    // computes the one legal `activeElement` from its own state (sink /
+    // granted surface / key-view element) and reasserts it when reality
+    // differs — it never derives state FROM the register. Microtask-
+    // coalesced inside the manager, so a focusout's transient `<body>`
+    // active element is only ever observed settled.
+    const enforceOnFocusIn = (): void => {
+      focusManager.enforceKeyboardRoute("focusin");
     };
-    const reflectOnFocusOut = (): void => {
-      queueMicrotask(() => focusManager.reflectSettledFocus());
+    const enforceOnFocusOut = (): void => {
+      focusManager.enforceKeyboardRoute("focusout");
     };
-    document.addEventListener("focusin", reflectOnFocusIn, { capture: true });
-    document.addEventListener("focusout", reflectOnFocusOut, { capture: true });
+    document.addEventListener("focusin", enforceOnFocusIn, { capture: true });
+    document.addEventListener("focusout", enforceOnFocusOut, { capture: true });
 
     // Late-bind the responder chain manager to the CardLifecycle so
     // activations can promote the key responder. DeckManager
@@ -562,6 +563,24 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       };
       // An editor leaf owns its keys ([P04]) — never act on a captured key.
       if (focusManager.keyViewCaptures(focusKey)) return;
+      // A text surface really holding DOM focus owns Space/Enter for typing
+      // — a granted editor, a state-keyed field, or a bare native control
+      // the target union cannot name. (The settled-focus derivation used to
+      // coarsen the key view away from behaviors here; with the keyboard
+      // engine-routed, the guard is structural instead.) Escape stays with
+      // the ladder below.
+      if (key !== "Escape") {
+        const typing = document.activeElement;
+        if (
+          typing instanceof HTMLElement &&
+          (typing.isContentEditable ||
+            typing.tagName === "INPUT" ||
+            typing.tagName === "TEXTAREA" ||
+            typing.tagName === "SELECT")
+        ) {
+          return;
+        }
+      }
       // An editor advertising it owns keys *right now* (an open completion sets
       // `data-tug-tab-consume`) keeps Escape too — [P04]'s "Tab/Escape are
       // captured only transiently by an open completion": Escape closes the
@@ -674,6 +693,118 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
+    // ---- Key-view delegation ([P05] / Spec S04) ----
+    // The engine's key-delivery channel to components: after the walk /
+    // spatial / bindings / act stages decline a key, the current key view's
+    // behavior `onKey` gets it — the replacement for element-attached keydown
+    // listeners, which die structurally once keys route from the engine's
+    // target (keydown lands on the sink, never in a component subtree).
+    // Registered after `actDispatchListener`, occupying the same precedence
+    // slot element-capture handlers had (document capture runs before element
+    // capture on the way down). The manager gates dom-granted mode and ⌘/⌃
+    // chords structurally; the editable-active guard here is the migration
+    // belt while DOM focus still lands on granted surfaces via the settled
+    // derivation (it becomes redundant once the route is enforced).
+    function keyViewDelegateListener(event: KeyboardEvent): void {
+      if (event.defaultPrevented) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.isContentEditable ||
+          active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+      if (focusManager.dispatchKeyToKeyView(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }
+
+    // ---- Engine scroll-key route ([Q02]) ----
+    // Bare PageUp / PageDown / Home / End in engine-routed mode, after every
+    // earlier stage (including the key-view delegate — a ringed list owns its
+    // own Page keys) declined them. Element-attached scroll handling and the
+    // browser's native focus-driven key scrolling both require DOM focus
+    // inside the scroll container, which engine-routed mode never grants — so
+    // the engine routes the intent itself: first through the responder chain's
+    // established transcript paging actions (the same handlers the ⌥⌘↑/↓ and
+    // ⌥⇧⌘↑/↓ chords drive, [D07]-coherent), then a generic region scroll via
+    // the `tug-region-scroll-set` channel every scroll region listens on.
+    function engineScrollKeyListener(event: KeyboardEvent): void {
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const k = event.key;
+      if (k !== "PageUp" && k !== "PageDown" && k !== "Home" && k !== "End") return;
+      if (focusManager.keyboardRoute() === "dom-granted") return;
+      // Migration belt (like the delegate listener above): an editable active
+      // element owns its Page/Home/End keys for the caret.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        (active.isContentEditable ||
+          active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+      // (1) The key card's own paging actions — the transcript's entry-aligned
+      // steps, follow-bottom coherent.
+      const action =
+        k === "PageUp"
+          ? TUG_ACTIONS.PREVIOUS_TURN
+          : k === "PageDown"
+            ? TUG_ACTIONS.NEXT_TURN
+            : k === "Home"
+              ? TUG_ACTIONS.FIRST_TURN
+              : TUG_ACTIONS.LAST_TURN;
+      const { handled, continuation } = manager.sendToKeyCardForContinuation({
+        action,
+        phase: "discrete",
+      });
+      if (handled) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        continuation?.();
+        return;
+      }
+      // (2) Generic fallback: page the key card's first live scroll region
+      // through the `tug-region-scroll-set` channel (SmartScroll-coherent —
+      // the same event CardHost's cold-boot restore uses).
+      const cardId = focusManager.keyCard();
+      if (cardId === null) return;
+      const scope = document.querySelector(
+        `[data-card-id="${CSS.escape(cardId)}"]`,
+      );
+      if (scope === null) return;
+      const region = Array.from(
+        scope.querySelectorAll<HTMLElement>("[data-tug-scroll-key]"),
+      ).find(
+        (el) => el.offsetParent !== null && el.scrollHeight > el.clientHeight,
+      );
+      if (region === undefined) return;
+      const page = Math.max(40, region.clientHeight - 48);
+      const max = region.scrollHeight - region.clientHeight;
+      const top =
+        k === "Home"
+          ? 0
+          : k === "End"
+            ? max
+            : k === "PageUp"
+              ? Math.max(0, region.scrollTop - page)
+              : Math.min(max, region.scrollTop + page);
+      region.dispatchEvent(
+        new CustomEvent("tug-region-scroll-set", {
+          detail: { top, left: region.scrollLeft },
+          bubbles: false,
+          cancelable: true,
+        }),
+      );
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+
     // ---- Stages 2-4: bubble-phase listener ----
     function bubbleListener(event: KeyboardEvent): void {
       // Stage 2: keyboard navigation -- Enter-key default-button activation.
@@ -701,10 +832,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             active.isContentEditable ||
             (active.tagName === "BUTTON" && !activeIsRefusingButton));
         if (!skipActivation) {
-          // The Enter target is the ringed control: when a focus-refusing button
-          // holds DOM focus it IS that control — activate it directly. Otherwise
-          // the ring is on a non-button stop (a list / field / item-group), so
-          // press the pane's default button ([P14] "Return's home").
+          // The Enter target is the ringed control. In engine-routed mode no
+          // control holds native focus (the keyboard is parked on the sink),
+          // so the ringed KEY VIEW is the control Enter presses — activated
+          // through the engine ([P08]: the old focus-refusing-button special
+          // case is now the universal case; a refusing button that still
+          // holds DOM focus keeps the direct path). When the ring is on a
+          // non-control stop (a list / field / item-group), Enter falls to
+          // the pane's default button ([P14] "Return's home").
           //
           // Pane-scope the default-button fallback. A `Return` belongs to the
           // pane the user is working in (the first responder's pane); a default
@@ -714,7 +849,19 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           let defaultButton: HTMLElement | null = null;
           if (activeIsRefusingButton) {
             defaultButton = active;
-          } else {
+          } else if (focusManager.keyboardRoute() === "engine-routed") {
+            const ringed = document.querySelector<HTMLElement>(
+              "[data-key-view-kbd]",
+            );
+            if (
+              ringed !== null &&
+              (ringed.tagName === "BUTTON" ||
+                ringed.getAttribute("role") === "button")
+            ) {
+              defaultButton = ringed;
+            }
+          }
+          if (defaultButton === null) {
             const frId = manager.getFirstResponder();
             const frEl =
               frId !== null && typeof document !== "undefined"
@@ -947,7 +1094,89 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return card.querySelector(DIALOG_ISLAND_SELECTOR);
     }
 
+    // ---- Pointer-driven placement (Risk R01's mitigation) ----
+    // Click transitions are ENGINE-FIRST: a pointerdown that resolves to an
+    // engine-addressable target places it (pointer modality) at capture
+    // phase, BEFORE the browser's mousedown focus default — so the settled
+    // state after any click is already legal, or one watchdog pass from it.
+    // Resolution is structural: a `data-tug-state-key` control places as
+    // state-key; a registered focusable places by id; a responder places
+    // only when it declared a focus contract (a real text surface). A click
+    // that resolves to nothing engine-addressable while a text surface holds
+    // the grant places `none` — the keyboard leaves the surface (matching
+    // the pre-inversion blur) and parks at the engine.
+    function placeFromPointer(target: EventTarget | null): void {
+      const el =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      if (el === null) return;
+      const cardEl = el.closest<HTMLElement>("[data-card-id]");
+      if (cardEl === null) return; // canvas / pane chrome: not a focus target
+      const cardId = cardEl.getAttribute("data-card-id");
+      if (cardId === null) return;
+      // Cross-card ACTIVATION click (Mac first-click-activates): the click
+      // activates the card; it does not also place. The activation
+      // transfer realizes the card's RECORDED destination (its resting
+      // editor, a pushed dialog trap) — a pointer place here would
+      // overwrite that recorded target with whatever sat under the click
+      // (or `none` for prose), stripping the caret the transfer is about
+      // to land. Placement from a pointer applies only within the key
+      // card, matching pane-focus-controller's browser-default
+      // suppression for the same gesture.
+      if (cardId !== focusManager.keyCard()) return;
+      const marker = el.closest<HTMLElement>(
+        "[data-tug-state-key], [data-tug-focusable], [data-responder-id]",
+      );
+      if (marker !== null) {
+        const stateKey = marker.getAttribute("data-tug-state-key");
+        if (stateKey !== null) {
+          focusManager.place(cardId, { kind: "state-key", key: stateKey }, {
+            modality: "pointer",
+            preventScroll: true,
+          });
+          return;
+        }
+        const focusableId = marker.getAttribute("data-tug-focusable");
+        if (focusableId !== null) {
+          focusManager.place(cardId, { kind: "focusable", id: focusableId }, {
+            modality: "pointer",
+          });
+          return;
+        }
+        const responderId = marker.getAttribute("data-responder-id");
+        if (
+          responderId !== null &&
+          focusManager.responderHasFocusContract(responderId)
+        ) {
+          focusManager.place(cardId, { kind: "responder", responderId }, {
+            modality: "pointer",
+          });
+          return;
+        }
+      }
+      // Nothing engine-addressable under the click (transcript prose, a
+      // contract-less container). If a text surface currently holds the
+      // grant, the keyboard leaves it — place `none` so the route flips to
+      // engine-routed and the sink parks (a park provably preserves the
+      // text selection a drag is creating). Otherwise leave everything: the
+      // key view survives (Tab resumes from it) and the watchdog re-parks
+      // the browser's transient mousedown focus.
+      if (focusManager.keyboardRoute() === "dom-granted") {
+        focusManager.place(cardId, { kind: "none" }, { modality: "pointer" });
+      }
+    }
+
     function promoteOnPointerDown(event: PointerEvent): void {
+      // Consume the activation-click one-shot FIRST — before any early
+      // return — so a refused or redirected activation click cannot
+      // leave the latch armed for the next gesture. When armed, the
+      // activation transfer owns this gesture's placement and the
+      // pointer place below stands down.
+      const placementSuppressed =
+        focusManager.consumePointerPlacementSuppression();
       // Focus-refusing controls skip first-responder promotion.
       // This is safe because controls use targeted dispatch
       // (sendToTarget parent) — the first responder is irrelevant
@@ -969,11 +1198,11 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         promoteFromTarget(redirect);
         return;
       }
-      // Chain promotion only: the key view no longer seeds from chain state.
-      // A click that moves browser focus re-derives the key view through the
-      // settled-focus reflection (click-to-focus with the pointer modality);
-      // a click that doesn't move focus leaves the key view alone.
+      // Chain promotion, then the engine placement: the click's focus
+      // transition is driven by the engine at pointerdown (ahead of the
+      // browser's mousedown focus default), never derived after the fact.
       promoteFromTarget(event.target as Node | null);
+      if (!placementSuppressed) placeFromPointer(event.target);
     }
 
     function preventFocusOnMouseDown(event: MouseEvent): void {
@@ -995,6 +1224,52 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     function promoteOnFocusIn(event: FocusEvent): void {
       if (isFocusRefusing(event.target)) return;
       promoteFromTarget(event.target as Node | null);
+      // Granted-surface legalization: a text surface that claims DOM focus
+      // through its own channel becomes the engine's dom-granted target —
+      // structurally scoped so the grant can never launder a cross-card
+      // steal:
+      //  - a `data-tug-state-key` native control anywhere (form controls
+      //    are the state-key class of [P02]; sheet autofocus and label
+      //    clicks are their normal claim channels);
+      //  - a contract responder ONLY when its card is the key card (a
+      //    card's own content claiming focus while its card is active is
+      //    the activation-consistent grant — `cardDidActivate` /
+      //    `sheetDidHide` reclaims; a NON-key-card editor claiming focus
+      //    is exactly the steal class the watchdog corrects).
+      const el =
+        event.target instanceof HTMLElement ? event.target : null;
+      if (el === null) return;
+      const stateKeyEl = el.closest<HTMLElement>("[data-tug-state-key]");
+      if (stateKeyEl !== null) {
+        const key = stateKeyEl.getAttribute("data-tug-state-key");
+        const cardId = stateKeyEl
+          .closest<HTMLElement>("[data-card-id]")
+          ?.getAttribute("data-card-id");
+        if (key !== null && cardId !== undefined && cardId !== null) {
+          focusManager.place(cardId, { kind: "state-key", key }, {
+            modality: focusManager.inputSource(),
+            preventScroll: true,
+          });
+        }
+        return;
+      }
+      const responderEl = el.closest<HTMLElement>("[data-responder-id]");
+      if (responderEl === null) return;
+      const responderId = responderEl.getAttribute("data-responder-id");
+      if (
+        responderId === null ||
+        !focusManager.responderHasFocusContract(responderId)
+      ) {
+        return;
+      }
+      const cardId = responderEl
+        .closest<HTMLElement>("[data-card-id]")
+        ?.getAttribute("data-card-id");
+      if (cardId == null || focusManager.keyCard() !== cardId) return;
+      focusManager.place(cardId, { kind: "responder", responderId }, {
+        modality: focusManager.inputSource(),
+        preventScroll: true,
+      });
     }
 
     // ---- Fallback context menu ----
@@ -1033,6 +1308,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("keydown", arrowNavListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
     document.addEventListener("keydown", actDispatchListener, { capture: true });
+    document.addEventListener("keydown", keyViewDelegateListener, { capture: true });
+    document.addEventListener("keydown", engineScrollKeyListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
     document.addEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
@@ -1046,6 +1323,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("keydown", arrowNavListener, { capture: true });
       document.removeEventListener("keydown", captureListener, { capture: true });
       document.removeEventListener("keydown", actDispatchListener, { capture: true });
+      document.removeEventListener("keydown", keyViewDelegateListener, { capture: true });
+      document.removeEventListener("keydown", engineScrollKeyListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
       document.removeEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
@@ -1054,8 +1333,8 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       selectionGuard.detach();
       document.removeEventListener("focusin", onFocusChange, { capture: true });
       document.removeEventListener("focusout", onFocusChange, { capture: true });
-      document.removeEventListener("focusin", reflectOnFocusIn, { capture: true });
-      document.removeEventListener("focusout", reflectOnFocusOut, { capture: true });
+      document.removeEventListener("focusin", enforceOnFocusIn, { capture: true });
+      document.removeEventListener("focusout", enforceOnFocusOut, { capture: true });
       registerEditCapsRefresher(null);
       unsubscribeEditCaps();
       unsubscribeKeyboardAccess();
@@ -1077,6 +1356,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     <ResponderChainContext.Provider value={manager}>
       <FocusManagerContext.Provider value={focusManager}>
         {children}
+        {/* The engine-owned key sink (Spec S01): the one legal
+            `document.activeElement` while the keyboard route is
+            engine-routed. Rendered by the provider so it exists exactly
+            as long as the engine does. A parking register, not an ARIA
+            composite — no `aria-activedescendant` (invalid from a
+            sibling); the screen-reader story is the accessibility-mode
+            focus-follows mirror, under which the sink is never focused.
+            Quiet `aria-label` rather than `aria-hidden` (a focusable
+            element must not be aria-hidden). Excluded from the walk and
+            the focusable registry by construction (it registers
+            nothing). */}
+        <div
+          data-tug-key-sink=""
+          tabIndex={-1}
+          className="tug-key-sink"
+          aria-label="Keyboard"
+        />
       </FocusManagerContext.Provider>
       {fallbackMenu && createPortal(
         <FallbackContextMenu

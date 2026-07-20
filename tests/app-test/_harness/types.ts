@@ -481,6 +481,25 @@ export interface LaunchTugAppOptions {
   persistInTestMode?: boolean;
 
   /**
+   * Restore the deck from tugbank at boot instead of starting empty.
+   * Test mode normally discards the tugbank-sourced boot arguments so
+   * `seedDeckState` is the sole source of state; this flag makes the
+   * `DeckManager` constructor honor the persisted layout, card-state
+   * bags, and focused-card id — the production cold-boot restore
+   * channel (constructor deck restore → CardHost mount-time
+   * `applyBagFocus`), which `seedDeckState`'s cache-merge cannot
+   * drive. Pair with `persistInTestMode` and a per-test
+   * `TUGBANK_PATH`: a prior launch persists on quit, this launch
+   * restores from the same file with no seeding.
+   *
+   * Sets `TUGAPP_RESTORE_IN_TEST_MODE=1` on the launched Tug.app's
+   * environment; Swift's `TestHarnessUserScript` injects
+   * `window.__tugRestoreInTestMode = true`, which `deck-manager`
+   * reads in its constructor.
+   */
+  restoreInTestMode?: boolean;
+
+  /**
    * Override the harness-minted instance ID. When unset, the harness
    * generates `apptest-<uuid>` per launch — each `launchTugApp` call
    * gets its own per-instance data dir, tugbank, and tmux session.

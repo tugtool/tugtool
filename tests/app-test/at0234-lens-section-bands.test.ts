@@ -43,9 +43,7 @@ const MISSING_PATHS = [
 ];
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 function priorCardDeck() {

@@ -305,25 +305,45 @@ export function captureFocus(cardRoot: HTMLElement): FocusSnapshot {
   // (focus has moved to a sibling card by save time) the right
   // answer is "preserve the previous bag.focus", not "use a stale
   // fallback" — that policy lives in the CardHost assembler so the
-  // capture function itself can stay a pure read of the current DOM.
+  // capture function itself can stay a pure read of the current DOM
+  // + engine state.
   const active = cardRoot.ownerDocument.activeElement;
-  if (!(active instanceof HTMLElement)) return { kind: "none" };
-  if (!cardRoot.contains(active)) return { kind: "none" };
+  if (active instanceof HTMLElement && cardRoot.contains(active)) {
+    const componentStatePreservationKey = active.getAttribute("data-tug-state-key");
+    if (componentStatePreservationKey !== null && componentStatePreservationKey !== "") {
+      return { kind: "form-control", componentStatePreservationKey };
+    }
 
-  const componentStatePreservationKey = active.getAttribute("data-tug-state-key");
-  if (componentStatePreservationKey !== null && componentStatePreservationKey !== "") {
-    return { kind: "form-control", componentStatePreservationKey };
+    const focusKey = active.getAttribute("data-tug-focus-key");
+    if (focusKey !== null && focusKey !== "") {
+      // Carry the engine's keyboard-ring modality so it resumes on restore
+      // (`data-key-view-kbd` is projected onto the key-view focusable).
+      return { kind: "dom", focusKey, keyboard: active.hasAttribute("data-key-view-kbd") };
+    }
+
+    for (const selector of COMPONENT_OWNED_SELECTORS) {
+      if (active.closest(selector)) return { kind: "engine" };
+    }
   }
 
-  const focusKey = active.getAttribute("data-tug-focus-key");
-  if (focusKey !== null && focusKey !== "") {
-    // Carry the engine's keyboard-ring modality so it resumes on restore
-    // (`data-key-view-kbd` is projected onto the key-view focusable).
-    return { kind: "dom", focusKey, keyboard: active.hasAttribute("data-key-view-kbd") };
-  }
-
-  for (const selector of COMPONENT_OWNED_SELECTORS) {
-    if (active.closest(selector)) return { kind: "engine" };
+  // DOM focus is not inside the card (or classifies as nothing) — the
+  // keyboard-as-engine-state case: an engine-routed key view parks
+  // `document.activeElement` on the key sink, so the card's focus truth
+  // lives in the ENGINE, not the register. Serialize from the key view's
+  // projected element when it belongs to this card: `data-key-view` is
+  // stamped on exactly one element (the engine's projection), and its
+  // `data-tug-focus-key` is the same stable identity the DOM branch above
+  // reads. The kbd attribute carries the ring modality, exactly as above.
+  const keyViewEl = cardRoot.querySelector<HTMLElement>("[data-key-view]");
+  if (keyViewEl !== null) {
+    const focusKey = keyViewEl.getAttribute("data-tug-focus-key");
+    if (focusKey !== null && focusKey !== "") {
+      return {
+        kind: "dom",
+        focusKey,
+        keyboard: keyViewEl.hasAttribute("data-key-view-kbd"),
+      };
+    }
   }
 
   return { kind: "none" };
@@ -1210,7 +1230,20 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
     const scroll = contentEl
       ? { x: contentEl.scrollLeft, y: contentEl.scrollTop }
       : undefined;
-    const content = cardStatePreservationCallbacksRef.current?.onSave();
+    // Content axis: live capture when the owning factory is mounted;
+    // otherwise forward the cached bag's content unchanged. The
+    // `feedsReady` guard above doesn't cover every owner-unmounted
+    // window — a session card sitting in its pre-bind phase has
+    // `feedIds.length === 0` (feedsReady true) yet no preservation
+    // callbacks, and a save fired there (e.g. the dirty debounce
+    // tripped by a sibling tab's selectionchange on the shared pane
+    // content element) would otherwise assemble a content-less bag
+    // and destroy the persisted prompt draft before the late-mounting
+    // editor ever restores it. Per [L23], an internal save must not
+    // drop an axis it cannot currently capture.
+    const content =
+      cardStatePreservationCallbacksRef.current?.onSave() ??
+      store.getCardState(cardId)?.content;
     // Scope form-control capture to THIS card's subtree so sibling cards in
     // the same pane (tab-group) never contaminate each other's values.
     const cardRoot = contentEl ? findCardRoot(contentEl, cardId) : null;
@@ -1287,7 +1320,19 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
       const active = cardRoot.ownerDocument.activeElement;
       const focusInsideCard =
         active instanceof HTMLElement && cardRoot.contains(active);
-      if (focusInsideCard) {
+      // Keyboard-as-engine-state: an engine-routed key view parks DOM
+      // focus on the key sink, which lives OUTSIDE every card — but the
+      // keyboard truth is this card's key-view projection. When the sink
+      // holds focus and this card carries the projected `[data-key-view]`,
+      // the card IS the focused card and `captureFocus` serializes from
+      // the projection; forwarding the previous bag here would blank the
+      // user's live keyboard position on every save.
+      const engineHoldsCard =
+        !focusInsideCard &&
+        active instanceof HTMLElement &&
+        active.hasAttribute("data-tug-key-sink") &&
+        cardRoot.querySelector("[data-key-view]") !== null;
+      if (focusInsideCard || engineHoldsCard) {
         const captured = captureFocus(cardRoot);
         if (ownsSelectionAndFocus) {
           if (captured.kind === "dom" || captured.kind === "form-control") {
@@ -1386,10 +1431,18 @@ export function CardHost({ cardId, hostStackId, componentId, isActive = true }: 
   // framework concerns that don't depend on real feed data. The
   // production path is unchanged: `__tugTestMode` is set only when
   // launched via `TUGAPP_TEST_SOCKET`, in DEV builds.
+  // The bypass is itself bypassed under `__tugRestoreInTestMode`:
+  // quit-and-relaunch tests exist to drive the production cold-boot
+  // path, and the late feeds-gated mount (a session card's editor
+  // arriving only when its feeds land) is a load-bearing part of that
+  // path — short-circuiting it would hide exactly the late-mount
+  // races those tests pin.
   const isTestMode =
     typeof window !== "undefined" && window.__tugTestMode === true;
+  const isRestoreTest =
+    typeof window !== "undefined" && window.__tugRestoreInTestMode === true;
   const feedsReady =
-    isTestMode || feedIds.length === 0 || feedData.size > 0;
+    (isTestMode && !isRestoreTest) || feedIds.length === 0 || feedData.size > 0;
 
   // Stable context value carrying both the cardId and the register
   // callback. A memoized object is cheaper to stabilize than threading

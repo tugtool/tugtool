@@ -143,19 +143,20 @@ describe.skipIf(!SHOULD_RUN)("at0246 — focus boot invariant", () => {
             { timeoutMs: 6_000 },
           );
 
-          // Honesty: the ring and the keyboard settle on the same element.
-          // Timing out here means the boot ended with a ring the keyboard
-          // cannot reach — the exact bug this suite exists to forbid.
+          // Honesty: the keyboard settles at an engine-legal register. Under
+          // keyboard-as-engine-state the ring no longer implies DOM focus on
+          // the ringed element — an engine-routed ring's legal activeElement
+          // is the KEY SINK (keys route from the engine's target); a granted
+          // surface's is the surface itself. Timing out here means the boot
+          // ended with the keyboard somewhere the engine does not govern.
           await app.waitForCondition<boolean>(
             `(() => {
               const ringed = document.querySelector('[data-key-view-kbd]');
               if (ringed === null) return false;
               const active = document.activeElement;
-              return (
-                active instanceof HTMLElement &&
-                active !== document.body &&
-                (ringed === active || ringed.contains(active) || active.contains(ringed))
-              );
+              if (!(active instanceof HTMLElement) || active === document.body) return false;
+              if (active.hasAttribute("data-tug-key-sink")) return true;
+              return ringed === active || ringed.contains(active) || active.contains(ringed);
             })()`,
             { timeoutMs: 8_000 },
           );
@@ -171,7 +172,8 @@ describe.skipIf(!SHOULD_RUN)("at0246 — focus boot invariant", () => {
               ringed !== null &&
               active instanceof HTMLElement &&
               active !== document.body &&
-              (ringed === active || ringed.contains(active) || active.contains(ringed));
+              (active.hasAttribute("data-tug-key-sink") ||
+                ringed === active || ringed.contains(active) || active.contains(ringed));
             const report = window.__tug.getFocusInvariantReport();
             return {
               agree,

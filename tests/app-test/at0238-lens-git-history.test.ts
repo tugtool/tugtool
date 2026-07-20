@@ -61,9 +61,7 @@ function gitOut(args: string[]): string {
 }
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 async function bodyText(app: App): Promise<string> {

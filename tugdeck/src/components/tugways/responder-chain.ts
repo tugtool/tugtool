@@ -573,6 +573,17 @@ export class ResponderChainManager {
     return this.nodes.has(id);
   }
 
+  /**
+   * Whether `id` is a registered responder that supplied a substrate `focus`
+   * callback (the [D03] focus contract). The focus engine's keyboard-route
+   * classification reads this: a responder WITH a focus contract owns a real
+   * text surface (caret / IME / selection — the dom-granted class), while a
+   * responder without one is an ordinary engine-routed stop.
+   */
+  responderHasFocusContract(id: string): boolean {
+    return this.nodes.get(id)?.focus !== undefined;
+  }
+
   focusResponder(id: string): void {
     const node = this.nodes.get(id);
     if (!node) {

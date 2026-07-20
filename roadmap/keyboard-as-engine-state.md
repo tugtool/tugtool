@@ -420,15 +420,15 @@ The classification is computed inside `realizeTarget` at commit time and cached 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The true relaunch pin (reproduction) | pending | — |
-| #step-2 | Key sink + route classification | pending | — |
-| #step-3 | Engine-routed key dispatch + handler inventory | pending | — |
-| #step-4 | Transactional realizeTarget | pending | — |
-| #step-5 | Watchdog replaces derivation | pending | — |
-| #step-6 | Sweep: tabindex, refuse, Enter path, Radix audit | pending | — |
-| #step-7 | Accessibility: focus-follows mirror + host VoiceOver signal | pending | — |
-| #step-8 | Tuglaws rewrite | pending | — |
-| #step-9 | Integration checkpoint: unskip the pin, full sweep | pending | — |
+| #step-1 | The true relaunch pin (reproduction) | done | df3e1de8e |
+| #step-2 | Key sink + route classification | done | b3b466c56 |
+| #step-3 | Engine-routed key dispatch + handler inventory | done | 35fcb9d18 |
+| #step-4 | Transactional realizeTarget | done | 2310322bb |
+| #step-5 | Watchdog replaces derivation | done | b9482cb4f |
+| #step-6 | Sweep: tabindex, refuse, Enter path, Radix audit | done | 28b2350d8 |
+| #step-7 | Accessibility: focus-follows mirror + host VoiceOver signal | done | 092e7a0d0 |
+| #step-8 | Tuglaws rewrite | done | 970dcf269 |
+| #step-9 | Integration checkpoint: unskip the pin, full sweep | done | 07ab9503d |
 
 #### Step 1: The true relaunch pin (reproduction) {#step-1}
 
@@ -447,8 +447,10 @@ The classification is computed inside `realizeTarget` at commit time and cached 
 - [ ] Phase A (pre-quit ring lands on the list) passes live; Phase B recorded failing, then skipped.
 
 **Checkpoint:**
-- [ ] `just app-test at0247-relaunch-lens-keyboard.test.ts` → VERDICT: PASS (with Phase B skipped)
-- [ ] The header comment contains the observed pre-fix failure (which assertion, what the report said).
+- [x] `just app-test at0247-relaunch-lens-keyboard.test.ts` → VERDICT: PASS (with Phase B skipped)
+- [x] The header comment contains the observed pre-fix failure (which assertion, what the report said).
+
+**Outcome (df3e1de8e):** The reproduction did NOT reproduce. Driven on the true cold-boot channel (new `restoreInTestMode` harness flag → constructor deck restore; restore-mode `feedsReady` gating so the session editor mounts late; late `bindSession` as the thief), Phase B passes against pre-rework main: ring restored, `violations: 0`, ArrowDown moves the cursor, and the late-bound editor never takes `activeElement` (the bind-path focus claim is card-activation-gated). Receipt in the test header. at0247 therefore lands LIVE from Step 1 as the cold-boot regression pin; #step-9's unskip task becomes verification-only.
 
 ---
 

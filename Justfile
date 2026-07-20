@@ -1067,6 +1067,18 @@ app-test *FILES:
             tugrust/target/debug/tugutil host instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
         esac
     done < <(tugrust/target/debug/tugutil host instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+    # Registry-blind orphan backstop. An app that spawned but hung
+    # BEFORE its test socket accepted (e.g. a mid-run dist rebuild
+    # broke the splash load) is invisible to every layer above: the
+    # harness's connect-failure catch kills only the `open -n -W`
+    # wrapper (it never learned the GUI PID), and the instance-registry
+    # stop above never saw it (registration happens later in boot).
+    # Kill by EXACT binary path: the apptest bundle lives in THIS
+    # worktree's own DerivedData, and the gate guarantees no
+    # legitimate instance of it is running when a sweep starts — so a
+    # path-scoped pkill reaps exactly this orphan class and can never
+    # touch a developer's real Tug.app or another worktree's bundle.
+    pkill -f "$APP_BIN" 2>/dev/null || true
     sleep 0.3
 
     # Reap orphaned per-instance tmux servers from ungracefully-killed
@@ -1124,6 +1136,10 @@ app-test *FILES:
                 tugrust/target/debug/tugutil host instance stop "$ID" --timeout 2 >/dev/null 2>&1 || true ;;
             esac
         done < <(tugrust/target/debug/tugutil host instance list 2>/dev/null | tail -n +2 | awk '{print $1}')
+        # Registry-blind orphan backstop (same rationale as the
+        # clean-slate copy above): reap any apptest app that hung
+        # before registering, by its worktree-scoped binary path.
+        pkill -f "$APP_BIN" 2>/dev/null || true
         # Reap any private tmux servers (and stale socket files) the
         # stopped apptest instances left behind, so a run leaves nothing.
         reap_orphan_tmux_servers

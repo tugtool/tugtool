@@ -68,6 +68,19 @@ export interface KeyViewBehavior extends ComponentKeyDeclaration {
   onDescend?: () => void;
   /** Optional cleanup when the engine ascends out of this component's descended scope. */
   onAscend?: () => void;
+  /**
+   * Delegated key delivery ([P05] / Spec S04): the engine's replacement for an
+   * element-attached keydown listener, which is structurally unreachable once
+   * keys route from the engine's target (in engine-routed mode, keydown lands
+   * on the key sink — a component subtree never sees it). Invoked by the
+   * provider's document-capture `keyViewDelegateListener` via
+   * {@link FocusManager.dispatchKeyToKeyView}, after the walk / spatial /
+   * bindings / act stages have declined the key. Return `true` = handled (the
+   * listener consumes the event), `false` = fall through. Never invoked in
+   * dom-granted mode (the granted surface owns its keys) and never for ⌘/⌃
+   * chords (those belong to the bindings).
+   */
+  onKey?: (event: KeyboardEvent) => boolean;
 }
 
 /**
@@ -127,6 +140,36 @@ export type FocusTarget =
  *  ring reads (`keyboard` paints it, `pointer` does not). */
 export type FocusModality = "keyboard" | "pointer";
 
+/**
+ * The keyboard route of a placement — derived structurally from the
+ * {@link FocusTarget} kind plus the responder registry, never a per-call flag:
+ *
+ *  - `dom-granted` — the target is a real text surface (an `engine` card
+ *    editor, a `state-key` native form control, or a `responder` whose
+ *    substrate registered a `focus` contract — the CM6 editors). Such a
+ *    surface genuinely needs the platform focus register (caret, IME,
+ *    composition, native selection), so DOM focus is granted to it.
+ *  - `engine-routed` — everything else (`focusable`, `focus-key`, a
+ *    `responder` without a focus contract, `none`). Keys route from the
+ *    engine's own target; `document.activeElement` is parked on the key
+ *    sink and carries no routing authority.
+ */
+export type KeyboardRoute = "engine-routed" | "dom-granted";
+
+/**
+ * DOM marker of an engine-owned key sink — a visually-hidden focusable
+ * element the engine parks `document.activeElement` on while the keyboard
+ * route is `engine-routed`; a deterministic, checkable identity for "the
+ * keyboard is engine-owned" (`<body>` cannot carry a role or a quiet
+ * label). `ResponderChainProvider` renders the always-mounted root sink; a
+ * surface that JAILS focus (a Radix-modal trap, whose FocusScope refocuses
+ * into itself whenever focus leaves it) hosts its own sink inside the jail
+ * so parking never crosses the jailer's boundary. The engine parks at the
+ * INNERMOST sink (last in document order — portaled surfaces append), and
+ * any sink is a legal park.
+ */
+export const KEY_SINK_ATTRIBUTE = "data-tug-key-sink";
+
 /** Options for {@link FocusManager.place}. */
 export interface PlaceOptions {
   /**
@@ -150,15 +193,27 @@ export interface PlaceOptions {
   preventScroll?: boolean;
 }
 
-/** Result of a {@link FocusManager.place} call. */
+/**
+ * Result of a {@link FocusManager.place} call. Placement is TRANSACTIONAL
+ * ([P06]): `realizeTarget` resolves the target to a live destination FIRST
+ * and only then commits (key view, ring projection, keyboard route, focus
+ * move — one pass). There is no partial outcome: either the whole commit
+ * ran (`"placed"`), or nothing painted and the previous target's key view,
+ * ring, and route all stand (`"recorded"` / `"unrealized"`).
+ */
 export type PlaceResult =
-  /** The target realized: key view set, DOM focus moved, ring projected. */
+  /** The target resolved and committed: key view set, ring projected,
+   *  route classified, DOM focus moved. */
   | "placed"
   /** `cardId` is not the key card: the target was recorded in that card's
-   *  context (projected on its next activation), no DOM side effects. */
+   *  context (registry kinds also realize their CACHE half — key view +
+   *  route, both projection-gated), no DOM side effects; projected on the
+   *  card's next activation ([P20]). */
   | "recorded"
-  /** The target names an element/registration not present yet; the record
-   *  stands and realization retries when it appears. */
+  /** Resolution failed — the target names a registration/element that is
+   *  not present or not rendered. Nothing painted, no route change; the
+   *  record stands, and a keyboard `focus-key` placement arms
+   *  `pendingRealizeKey` so a matching late mount re-runs the placement. */
   | "unrealized";
 
 // ---- Focus modes ----
@@ -495,9 +550,9 @@ export class FocusContext {
     // target names a `focus-key` whose focusable wasn't mounted at
     // placement time; this registration may be it. Re-running the placement
     // (not a bespoke ring resume) keeps the one-primitive rule — the
-    // realization is the same atomic pass, and `focusKeyView` runs under
-    // the placement-in-flight mark so its `focusin` can't re-derive the
-    // key view back to keyboard=false.
+    // realization is the same atomic pass, and nothing derives state from
+    // the `focusin` it fires (the watchdog only ever enforces engine state
+    // onto the register).
     if (
       this.pendingRealizeKey !== null &&
       record.group !== "" &&
@@ -618,6 +673,34 @@ export class FocusContext {
   }
 
   /**
+   * Deliver a key to the current key view's `onKey` delegate (Spec S04) —
+   * the delegation half of [P05]. Tries the key view's own behavior first;
+   * while descended into a NON-trapped scope (a list row), falls back one
+   * level to the behavior of the container the scope was descended from
+   * (`restoreKeyView`). That fallback is the honest replacement for the
+   * container's element-capture listener, which used to see a descendant's
+   * keydown only because the event bubbled through its DOM subtree —
+   * delivery the engine now provides explicitly (ArrowLeft-ascend, Home/End
+   * from inside a row scope). Returns whether a delegate handled the key.
+   */
+  dispatchKeyToKeyView(event: KeyboardEvent): boolean {
+    const behavior = this.keyViewBehavior();
+    if (behavior?.onKey?.(event) === true) return true;
+    const top = this.modeStack[this.modeStack.length - 1];
+    if (
+      top !== undefined &&
+      !top.trapped &&
+      top.restoreKeyView !== null &&
+      top.restoreKeyView !== this.keyViewId
+    ) {
+      const container =
+        this.focusables.get(top.restoreKeyView)?.behavior?.() ?? null;
+      if (container?.onKey?.(event) === true) return true;
+    }
+    return false;
+  }
+
+  /**
    * Ascend one scope level: pop the current (top) focus mode, restoring the key
    * view captured when it was pushed, and move DOM focus to it. The engine half
    * of Escape ([P02]); a no-op (returns `false`) at the base mode, so a bare
@@ -655,76 +738,144 @@ export class FocusContext {
   }
 
   /**
-   * Move DOM focus to the current key-view element, so keystrokes land on it
-   * after the Tab walk advances. Mirrors the chain's `focusResponder` DOM-walk
-   * fallback: focus the element itself when it is intrinsically focusable or
-   * carries a non-negative tabindex, else its first tabbable descendant.
+   * Land the KEYBOARD for the current key view, per its route ([P01]/[P04]):
+   * a dom-granted key view (a responder with a focus contract — a text
+   * surface) is GRANTED real DOM focus via {@link grantTextSurface}; an
+   * engine-routed key view parks `document.activeElement` on the key sink —
+   * keys route from the engine's target either way, so the park is hygiene,
+   * not a routing precondition. Re-derives the route from the current key
+   * view first, so restore paths (ascend / mode pop / cycle exit) that write
+   * the key view directly stay route-coherent without a placement.
    *
-   * Gated on active: only the key card's context moves DOM focus, so a background
-   * card popping a mode (its dialog unmounting) never steals focus from the card
-   * the user is in. A guarded no-op with no document or no key view. Returns
-   * whether focus moved.
+   * Gated on active: only the key card's context lands the keyboard, so a
+   * background card popping a mode (its dialog unmounting) never steals
+   * focus from the card the user is in. Returns whether the keyboard landed.
    */
   focusKeyView(): boolean {
     if (!this.isActive()) return false;
+    if (typeof document === "undefined") return false;
+    if (this.keyViewId !== null) {
+      this.route = this.coord.responderHasFocusContract(this.keyViewId)
+        ? "dom-granted"
+        : "engine-routed";
+    }
+    if (this.route === "dom-granted") return this.grantTextSurface();
+    // Accessibility mode ([P10]): real DOM focus mirrors the engine-routed
+    // key view so assistive tech tracks it natively; the sink is never
+    // focused while a key view exists. Falls through to the park when
+    // there is no key-view element to mirror.
+    if (
+      this.coord.keyboardAccessMode() === "accessibility" &&
+      this.coord.mirrorKeyViewFocus()
+    ) {
+      this.coord.settleResponderForKeyView();
+      return true;
+    }
+    const parked = this.coord.parkKeySink();
+    // The park moves no useful focusin, so the chain register tracks the
+    // key view explicitly (see settleResponderForKeyView).
+    this.coord.settleResponderForKeyView();
+    return parked;
+  }
+
+  /**
+   * The GRANT half of a dom-granted placement ([P06]): move DOM focus to the
+   * current key-view text surface. Honors the responder focus contract first,
+   * with the generic DOM walk as fallback. Called only when the route is
+   * dom-granted — engine-routed realization never touches DOM focus except
+   * to park the sink.
+   */
+  private grantTextSurface(): boolean {
     if (this.keyViewId === null || typeof document === "undefined") return false;
     const id = this.keyViewId;
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
         ? CSS.escape(id)
         : id;
-    // Mark the placement in flight for the synchronous `focusin` this
-    // `.focus()` fires (see `FocusManager.reflectSettledFocus`), so the
-    // asserted key view + modality survive the derivation.
-    this.coord.beginPlacement();
-    try {
-      // Honor the responder focus contract first ([D03] #focus-contract): a
-      // substrate that owns a non-trivial focus surface (the prompt editor's
-      // CodeMirror `view.focus()`) declares how it takes focus, and the engine
-      // must NOT re-implement that with a generic DOM walk — the walk lands on a
-      // child input/button or nothing, never on a contenteditable caret. When the
-      // key view is a registered responder, route through it so restoring the
-      // editor key view lands the caret by construction.
-      if (this.coord.focusKeyViewViaContract(id)) return true;
-      // Generic fallback for focusable-only key views (chips, list rows, tab
-      // bars) that declare no focus contract: focus the element itself when it is
-      // intrinsically focusable or carries a non-negative tabindex, else its first
-      // tabbable descendant.
-      const el = document.querySelector<HTMLElement>(
-        `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
-      );
-      if (!el) return false;
-      const tabIndexAttr = el.getAttribute("tabindex");
-      const intrinsicallyFocusable =
-        el instanceof HTMLButtonElement ||
-        el instanceof HTMLInputElement ||
-        el instanceof HTMLTextAreaElement ||
-        el instanceof HTMLSelectElement ||
-        el instanceof HTMLAnchorElement;
-      const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
-      // `preventScroll` on every engine focus write: scroll-position writes
-      // belong to SmartScroll / the owning surface ([D07]) — a focus write must
-      // never let the browser auto-scroll an off-viewport target into view.
-      // Idempotency on both branches: a redundant re-`focus()` during a mount
-      // commit can drop focus to body in WebKit — when the resolved element
-      // already holds focus, the placement is already true.
-      if (intrinsicallyFocusable || hasFocusableTabIndex) {
-        if (document.activeElement !== el) el.focus({ preventScroll: true });
-        return true;
-      }
-      const tabbable = el.querySelector<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-      if (tabbable) {
-        if (document.activeElement !== tabbable) {
-          tabbable.focus({ preventScroll: true });
-        }
-        return true;
-      }
-      return false;
-    } finally {
-      this.coord.endPlacement();
+    // Idempotency before the contract call: when the surface ALREADY holds
+    // DOM focus (a focusin-driven placement legalizing the surface's own
+    // claim), re-invoking the substrate's `focus()` would disturb the state
+    // the surface just established (CM6's focus path normalizes the caret,
+    // clobbering a freshly-restored selection). The placement's word is
+    // already true; only the chain register needs settling.
+    const hostEl = document.querySelector<HTMLElement>(
+      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+    );
+    const active = document.activeElement;
+    if (
+      hostEl !== null &&
+      active instanceof HTMLElement &&
+      (hostEl === active || hostEl.contains(active))
+    ) {
+      this.coord.settleResponderRegister(id);
+      return true;
     }
+    // Honor the responder focus contract first ([D03] #focus-contract): a
+    // substrate that owns a non-trivial focus surface (the prompt editor's
+    // CodeMirror `view.focus()`) declares how it takes focus, and the engine
+    // must NOT re-implement that with a generic DOM walk — the walk lands on a
+    // child input/button or nothing, never on a contenteditable caret. When the
+    // key view is a registered responder, route through it so restoring the
+    // editor key view lands the caret by construction.
+    if (this.coord.focusKeyViewViaContract(id)) return true;
+    // Generic fallback: focus the element itself when it is intrinsically
+    // focusable or carries a non-negative tabindex, else its first tabbable
+    // descendant.
+    const el = document.querySelector<HTMLElement>(
+      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
+    );
+    if (!el) return false;
+    const tabIndexAttr = el.getAttribute("tabindex");
+    const intrinsicallyFocusable =
+      el instanceof HTMLButtonElement ||
+      el instanceof HTMLInputElement ||
+      el instanceof HTMLTextAreaElement ||
+      el instanceof HTMLSelectElement ||
+      el instanceof HTMLAnchorElement;
+    const hasFocusableTabIndex = tabIndexAttr !== null && parseInt(tabIndexAttr, 10) >= 0;
+    // `preventScroll` on every engine focus write: scroll-position writes
+    // belong to SmartScroll / the owning surface ([D07]) — a focus write must
+    // never let the browser auto-scroll an off-viewport target into view.
+    // Idempotency on both branches: a redundant re-`focus()` during a mount
+    // commit can drop focus to body in WebKit — when the resolved element
+    // already holds focus, the placement is already true.
+    if (intrinsicallyFocusable || hasFocusableTabIndex) {
+      if (document.activeElement !== el) el.focus({ preventScroll: true });
+      return true;
+    }
+    const tabbable = el.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (tabbable) {
+      if (document.activeElement !== tabbable) {
+        tabbable.focus({ preventScroll: true });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Re-run the current target's realization — the watchdog's re-grant lever
+   * for a dom-granted route whose granted surface lost DOM focus to a raw
+   * write. Same commit path as a placement (idempotent when already true);
+   * preserves the current ring modality.
+   */
+  regrantCurrentTarget(): PlaceResult {
+    return this.realizeTarget(
+      this.currentTarget,
+      this.keyViewKeyboard ? "keyboard" : "pointer",
+      { preventScroll: true },
+    );
+  }
+
+  /**
+   * The watchdog's incoherence fallback (Spec S03): the granted surface is
+   * gone. Fall the route back to engine-routed so the keyboard keeps
+   * working on the enclosing engine target instead of going dead.
+   */
+  noteGrantLost(): void {
+    this.route = "engine-routed";
   }
 
   // ---- Focus target (record + realize) ----
@@ -744,9 +895,42 @@ export class FocusContext {
   // a stop that mounts later.
   private pendingRealizeKey: string | null = null;
 
+  // The keyboard route of the current target — the derived cache
+  // {@link keyboardRoute} reads. Recomputed inside {@link realizeTarget}
+  // at every successful commit; a failed realization leaves it standing
+  // (the previous target's route keeps routing keys). Starts
+  // `engine-routed`: with no target placed, keys belong to the engine.
+  private route: KeyboardRoute = "engine-routed";
+
   /** The card's recorded focus target. */
   target(): FocusTarget {
     return this.currentTarget;
+  }
+
+  /** The keyboard route of this context's current target (Spec S02). */
+  keyboardRoute(): KeyboardRoute {
+    return this.route;
+  }
+
+  /**
+   * Classify a target's keyboard route (Spec S02) — pure derivation from the
+   * target kind plus the responder registry's focus-contract declaration.
+   * Never a per-call flag: there is no way to author a contradiction.
+   */
+  private classifyRoute(target: FocusTarget): KeyboardRoute {
+    switch (target.kind) {
+      case "engine":
+      case "state-key":
+        return "dom-granted";
+      case "responder":
+        return this.coord.responderHasFocusContract(target.responderId)
+          ? "dom-granted"
+          : "engine-routed";
+      case "focusable":
+      case "focus-key":
+      case "none":
+        return "engine-routed";
+    }
   }
 
   /** Record the card's focus target (bookkeeping half of a placement). */
@@ -773,6 +957,14 @@ export class FocusContext {
    * seed needs for its [P20] activation restore. The `engine` kind is the
    * one with un-gated side effects, so `place` never realizes it for a
    * background context.
+   *
+   * TRANSACTIONAL ([P06]): every kind resolves its target to a live,
+   * registered/rendered destination FIRST; only on success does it commit
+   * (key view + ring projection + route + focus move, one pass). A failed
+   * resolution returns `"unrealized"` with NO state change beyond
+   * `pendingRealizeKey` arming for keyboard `focus-key` placements — no
+   * paint, no route flip, the previous target stands. A ring is never lit
+   * over a destination that is not there.
    */
   realizeTarget(
     target: FocusTarget,
@@ -781,8 +973,21 @@ export class FocusContext {
   ): PlaceResult {
     switch (target.kind) {
       case "none":
+        this.route = this.classifyRoute(target);
+        // No destination: the keyboard is engine-owned at nothing — park
+        // the sink (active context only) so `activeElement` is legal.
+        if (this.isActive()) this.coord.parkKeySink();
         return "placed";
       case "focusable": {
+        // Resolve: the id must name a registered, rendered focusable.
+        // Placing an unregistered/unrendered id used to stamp the key-view
+        // cache anyway — a ring promise over nothing (the paint-before-land
+        // hole, by-id variant).
+        const record = this.focusables.get(target.id);
+        if (record === undefined || !this.isRecordRendered(record)) {
+          return "unrealized";
+        }
+        this.route = this.classifyRoute(target);
         this.setKeyView(target.id, modality === "keyboard");
         this.focusKeyView();
         return "placed";
@@ -795,6 +1000,7 @@ export class FocusContext {
           if (`${record.group}:${record.order}` !== target.focusKey) continue;
           if (!this.isRecordRendered(record)) continue;
           this.pendingRealizeKey = null;
+          this.route = this.classifyRoute(target);
           this.setKeyView(record.id, modality === "keyboard");
           this.focusKeyView();
           return "placed";
@@ -805,8 +1011,16 @@ export class FocusContext {
         return "unrealized";
       }
       case "responder": {
+        // Resolve: a registered responder node, or (in a DOM) a connected
+        // element carrying the responder id. DOM-free with no chain is
+        // permissive — the pure-logic suites drive responder placements
+        // against bare managers, and there is no registry to contradict.
+        if (!this.coord.responderTargetResolvable(target.responderId)) {
+          return "unrealized";
+        }
         // `focusKeyView` honors the responder focus contract first, so a
         // substrate (CM6 editor) lands its own caret.
+        this.route = this.classifyRoute(target);
         this.setKeyView(target.responderId, modality === "keyboard");
         this.focusKeyView();
         return "placed";
@@ -831,6 +1045,7 @@ export class FocusContext {
         // Idempotency: a redundant mount-time re-`focus()` can drop focus
         // to body in WebKit; when the control already holds focus, the
         // placement's word is already true.
+        this.route = this.classifyRoute(target);
         if (el.ownerDocument.activeElement !== el) {
           el.focus(
             opts?.preventScroll === true ? { preventScroll: true } : undefined,
@@ -849,6 +1064,7 @@ export class FocusContext {
         if (store === null || !store.hasEngineHooks(this.cardId)) {
           return "unrealized";
         }
+        this.route = this.classifyRoute(target);
         store.invokeEnginePaintMirrorAsActive(this.cardId);
         return "placed";
       }
@@ -1576,6 +1792,17 @@ export class FocusContext {
     // The default ring tracks the same signal, so it is recomputed in lockstep
     // with the key view ([P14] one filled+ring per scope).
     this.syncDefaultRingDomAttribute();
+    // Accessibility mode ([P10]): every projection of an engine-routed key
+    // view re-mirrors real DOM focus onto it. Arrow-roving moves the key
+    // view through `refreshKeyViewProjection` without a placement, so the
+    // projection is the one choke point that sees every move.
+    if (
+      el !== null &&
+      this.route === "engine-routed" &&
+      this.coord.keyboardAccessMode() === "accessibility"
+    ) {
+      this.coord.mirrorKeyViewFocus();
+    }
     // Every projection is a promise about where the keyboard is; verify it
     // once the surrounding task's paint-then-focus pair has settled.
     this.coord.scheduleFocusInvariantCheck("projection");
@@ -1694,14 +1921,6 @@ export class FocusManager {
 
   // ---- Chain attachment ----
   private chain: ResponderChainManager | null = null;
-  // Set while the engine's own placement is landing DOM focus (a
-  // `focusKeyView` inside `place`/ascend/pop-restore). The `focusin` that
-  // programmatic `.focus()` fires synchronously would otherwise re-derive
-  // the key view mid-placement with the input latch's modality, overriding
-  // the modality the placement asserted (a keyboard restore's ring, an
-  // Escape-exit's deliberate ringlessness). The engine already wrote cache
-  // + projection itself; the derivation defers to the placement in flight.
-  private placementInFlight = false;
 
   constructor() {
     this.defaultContext = new FocusContext(this, null);
@@ -1907,10 +2126,9 @@ export class FocusManager {
    * `restoreFirstResponder` / `settleFirstResponderForActivation` can reach it. The
    * provider calls this from the same `useLayoutEffect` that installs the
    * chain's document listeners, and `detach` from its cleanup. The key view
-   * is NOT seeded from chain notifications: it derives from real DOM focus
-   * changes ({@link reflectSettledFocus}) — the chain register can move with
-   * no focus event (`makeFirstResponder`), and such a move carries no
-   * keyboard-position information.
+   * is NOT seeded from chain notifications: only placements write it — the
+   * chain register can move with no focus event (`makeFirstResponder`), and
+   * such a move carries no keyboard-position information.
    */
   attach(chain: ResponderChainManager): void {
     this.chain = chain;
@@ -1921,105 +2139,26 @@ export class FocusManager {
     this.chain = null;
   }
 
-  // ---- Derived key view (projection follows DOM focus) ----
+  // ---- Keyboard-route enforcement (the watchdog, Spec S03) ----
+  //
+  // `document.activeElement` is a peripheral register with no interception
+  // point — substrates, Radix, and WebKit's own defaults can write it at any
+  // moment. The engine therefore never DERIVES state from it; it ENFORCES
+  // state onto it. Per route there is exactly one legal answer: the key sink
+  // (engine-routed), the granted surface or a descendant (dom-granted), or
+  // the key-view element itself (accessibility mode). The watchdog computes
+  // the legal element from current engine state at check time and reasserts
+  // on sight — it never adopts what it finds. A steal cannot steal the
+  // keyboard (keys never routed through the stolen register), so
+  // reassertion is cleanup, not conflict resolution.
 
   /**
-   * Derive the active context's key view from the settled DOM focus — THE
-   * projection writer for every native focus motion ([P02]-by-construction:
-   * the ring can only paint where the keyboard actually is, because this is
-   * how the ring learns where to paint). Called by the provider's capture
-   * `focusin` listener synchronously, and by its `focusout` listener through
-   * a microtask (a focus handoff between siblings fires `focusout` with a
-   * transient `<body>` active element before the destination's `focusin`;
-   * reading synchronously there would flicker the ring — the same
-   * load-bearing defer `use-companion-popup-binding` documents).
-   *
-   *  - Engine placement in flight → skip: the placement wrote cache +
-   *    projection itself with an asserted modality (a keyboard restore's
-   *    ring, an Escape-exit's deliberate ringlessness); the synchronous
-   *    `focusin` inside its `.focus()` must not overwrite that with the
-   *    input latch.
-   *  - Focus inside the key card's universe → the innermost
-   *    `[data-tug-focusable]` / `[data-responder-id]` ancestor becomes the
-   *    key view; the ring paints iff the input latch says keyboard.
-   *  - Focus settled in a FOREIGN card → skip entirely: an activation is in
-   *    flight (the incoming card's context takes over via `setKeyCard`), and
-   *    writing the foreign id here would corrupt the active context's saved
-   *    key view ([P20] restore). The tripwire still reports a foreign steal
-   *    that never activates.
-   *  - Focus settled on `<body>` / nothing → the key view id survives (Tab
-   *    resumes from it) but the ring clears: a ring is a promise of a
-   *    keyboard sink, and there is none.
+   * Trigger enforcement: called by the provider's `focusin`/`focusout`
+   * capture listeners, microtask-coalesced through
+   * {@link scheduleFocusInvariantCheck} so it always sees settled state.
    */
-  reflectSettledFocus(): void {
-    if (typeof document === "undefined") return;
-    if (this.placementInFlight) return;
-    const active = document.activeElement;
-    const ctx = this.activeContext();
-    const owner =
-      active instanceof HTMLElement && active !== document.body
-        ? active.closest<HTMLElement>("[data-tug-focusable], [data-responder-id]")
-        : null;
-    if (owner === null) {
-      ctx.refreshKeyViewProjection(false);
-      this.scheduleFocusInvariantCheck("blur-settled");
-      return;
-    }
-    const id =
-      owner.getAttribute("data-tug-focusable") ??
-      owner.getAttribute("data-responder-id");
-    if (id === null) return;
-    // Focus settled where the key view already is: the keyboard didn't move,
-    // so there is no new information — and re-applying the input latch here
-    // would OVERRIDE an engine-asserted modality (a band-click / Cmd-L
-    // keyboard placement whose deferred focusout microtask lands after the
-    // placement window closes; an Escape-exit's deliberate ringlessness).
-    // The placement's word stands.
-    if (id === ctx.keyView()) return;
-    // A member of the active context's current focus mode is accepted
-    // regardless of DOM universe: a trapped surface's fields register into
-    // its mode but may be DOM-portaled outside the card (a sheet in the
-    // canvas overlay root) — the same membership the Tab walk uses, so a
-    // click can never place the key view somewhere Tab could not.
-    if (ctx.currentModeMember(id)) {
-      ctx.setKeyView(id, this.lastInputSource === "keyboard");
-      return;
-    }
-    // While a trapped mode is current, the trap owns the key view: focus
-    // settling on a non-member (pane chrome, a stray in-card control) must
-    // not steal the trapped default's ring ([P16]/[P20]).
-    if (ctx.currentFocusModeTrapped()) return;
-    if (!this.elementInActiveUniverse(owner)) return;
-    ctx.setKeyView(id, this.lastInputSource === "keyboard");
-  }
-
-  /**
-   * Whether `el` is related to the key card's subtree — inside the key card
-   * or containing it (the card's pane, the deck root). An element in a
-   * DIFFERENT card is foreign: its focus must not rewrite the active
-   * context's key view. `true` with no key card (the default context spans
-   * the deck) or when the key card has no DOM element. NOTE: a surface
-   * DOM-portaled outside its card (a sheet in the canvas overlay root) reads
-   * as foreign here and is deliberately SKIPPED (not cleared) by the caller —
-   * its trap machinery owns its key view, exactly as before.
-   */
-  private elementInActiveUniverse(el: HTMLElement): boolean {
-    if (this.keyCardId === null) return true;
-    if (typeof document === "undefined") return true;
-    const cardEl = document.querySelector(
-      `[data-card-id="${cssEscapeId(this.keyCardId)}"]`,
-    );
-    if (cardEl === null) return true;
-    return cardEl.contains(el) || el.contains(cardEl);
-  }
-
-  /** Mark the engine's own placement as landing DOM focus (see
-   *  {@link reflectSettledFocus}); paired in a `try`/`finally`. */
-  beginPlacement(): void {
-    this.placementInFlight = true;
-  }
-  endPlacement(): void {
-    this.placementInFlight = false;
+  enforceKeyboardRoute(reason: string): void {
+    this.scheduleFocusInvariantCheck(reason);
   }
 
   /**
@@ -2038,6 +2177,171 @@ export class FocusManager {
     if (this.chain === null || !this.chain.hasResponder(keyViewId)) return false;
     this.chain.focusResponder(keyViewId);
     return true;
+  }
+
+  /**
+   * Settle the chain's first-responder register on `id` WITHOUT moving DOM
+   * focus — the already-focused half of a grant ({@link
+   * FocusContext.grantTextSurface}'s idempotency path). No-op when the id
+   * is not a registered responder or already first.
+   */
+  settleResponderRegister(id: string): void {
+    if (this.chain === null || !this.chain.hasResponder(id)) return;
+    if (this.chain.getFirstResponder() === id) return;
+    this.chain.makeFirstResponder(id);
+  }
+
+  /**
+   * Settle the chain's first responder onto the CURRENT key view's nearest
+   * responder — the engine-placement half of what `focusin` promotion used
+   * to do when key views held real DOM focus. An engine-routed placement
+   * parks the sink (which carries no responder and fires no useful
+   * `focusin`), so the register must track the key view explicitly, or
+   * responder-scoped dispatch (accelerators, the cancel ladder) strands on
+   * whatever coarse container the activation settle left (the Lens's
+   * Escape focus-out lives on a content-local responder the upward walk
+   * only reaches when FR starts at or below it).
+   */
+  settleResponderForKeyView(): void {
+    if (this.chain === null || typeof document === "undefined") return;
+    const keyViewId = this.activeContext().keyView();
+    if (keyViewId === null) return;
+    if (this.chain.hasResponder(keyViewId)) {
+      this.settleResponderRegister(keyViewId);
+      return;
+    }
+    const el = this.elementForFocusKey(keyViewId);
+    if (el === null) return;
+    const responder = this.chain.findResponderForTarget(el);
+    if (responder !== null && this.chain.getFirstResponder() !== responder) {
+      this.chain.makeFirstResponder(responder);
+    }
+  }
+
+  /**
+   * Whether `id` names a registered responder that declared a `focus`
+   * contract ([D03]) — the structural declaration the keyboard-route
+   * classification reads (Spec S02). `false` without a chain: with no
+   * responder registry there are no text surfaces to grant to.
+   */
+  responderHasFocusContract(id: string): boolean {
+    return this.chain?.responderHasFocusContract(id) ?? false;
+  }
+
+  /**
+   * Whether a `responder`-kind target can be realized right now ([P06]
+   * resolve half): the id names a registered responder node, or a connected
+   * DOM element carries it as `data-responder-id`. Permissive when neither
+   * a chain nor a document exists (bare-manager pure-logic suites): with no
+   * registry there is nothing to contradict the placement.
+   */
+  responderTargetResolvable(id: string): boolean {
+    if (this.chain !== null && this.chain.hasResponder(id)) return true;
+    if (typeof document === "undefined") return this.chain === null;
+    const el = document.querySelector(
+      `[data-responder-id="${cssEscapeId(id)}"]`,
+    );
+    if (el !== null && el.isConnected) return true;
+    // A chain is attached and doesn't know the id, and no element carries
+    // it: unrealizable.
+    return this.chain === null;
+  }
+
+  /**
+   * The keyboard route of the active context's current target (Spec S02) —
+   * the mode every key listener and the watchdog read.
+   */
+  keyboardRoute(): KeyboardRoute {
+    return this.activeContext().keyboardRoute();
+  }
+
+  /**
+   * Deliver a key to the active context's key-view delegate (Spec S04). The
+   * provider's `keyViewDelegateListener` calls this after the walk / spatial /
+   * bindings / act stages decline a key. Structurally gated: never in
+   * dom-granted mode (the granted surface really holds DOM focus and owns its
+   * keys) and never for ⌘/⌃ chords (bindings territory).
+   */
+  dispatchKeyToKeyView(event: KeyboardEvent): boolean {
+    if (event.metaKey || event.ctrlKey) return false;
+    if (this.keyboardRoute() === "dom-granted") return false;
+    return this.activeContext().dispatchKeyToKeyView(event);
+  }
+
+  /**
+   * Park `document.activeElement` on the engine-owned key sink (Spec S01).
+   * Idempotent (a no-op when the sink is already active); `preventScroll`
+   * on the focus write like every engine focus move ([D07]). Parking is
+   * hygiene, not a routing precondition — keys route from the engine's
+   * target whether or not the park has landed ([P04]). Returns whether the
+   * sink holds focus after the call.
+   */
+  parkKeySink(): boolean {
+    if (typeof document === "undefined") return false;
+    // Innermost sink wins: a focus-jailing surface (a Radix-modal trap)
+    // hosts its own sink inside the jail, and portaled surfaces append —
+    // the last sink in document order is the one whose park never crosses
+    // a jailer's boundary.
+    const sinks = document.querySelectorAll<HTMLElement>(
+      `[${KEY_SINK_ATTRIBUTE}]`,
+    );
+    if (sinks.length === 0) return false;
+    const sink = sinks[sinks.length - 1];
+    if (document.activeElement === sink) return true;
+    sink.focus({ preventScroll: true });
+    return document.activeElement === sink;
+  }
+
+  /**
+   * The element carrying an added `tabindex="-1"` from the last
+   * accessibility-mode mirror grant, or `null`. Engine-routed key views
+   * render with no tabindex; the mirror adds one at grant time and removes
+   * it when the mirror moves on, so a return to `standard` mode leaves no
+   * stray tabindex'd elements for WebKit's mousedown focus default to land
+   * on.
+   */
+  private mirroredTabindexEl: HTMLElement | null = null;
+
+  /**
+   * Accessibility-mode grant ([P10]): move real DOM focus to the active
+   * context's key-view element so assistive tech tracks the engine's key
+   * view natively — real focus on real widgets is the one pattern every AT
+   * handles. The element regains a `tabindex="-1"` at grant time when it
+   * renders without one; `preventScroll` like every engine focus write
+   * ([D07]). Idempotent: focus already on (or inside) the key-view element
+   * is left alone. Returns whether the key view holds focus after the call.
+   */
+  mirrorKeyViewFocus(): boolean {
+    if (typeof document === "undefined") return false;
+    const keyViewId = this.activeContext().keyView();
+    const el = keyViewId !== null ? this.elementForFocusKey(keyViewId) : null;
+    if (el === null) return false;
+    if (this.mirroredTabindexEl !== null && this.mirroredTabindexEl !== el) {
+      this.mirroredTabindexEl.removeAttribute("tabindex");
+      this.mirroredTabindexEl = null;
+    }
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && (el === active || el.contains(active))) {
+      return true;
+    }
+    if (!el.hasAttribute("tabindex")) {
+      el.setAttribute("tabindex", "-1");
+      this.mirroredTabindexEl = el;
+    }
+    el.focus({ preventScroll: true });
+    return document.activeElement === el;
+  }
+
+  /**
+   * Remove the mirror's added `tabindex` bookkeeping — called when the
+   * keyboard-access mode returns to `standard`, so the no-tabindex render
+   * doctrine holds again by construction.
+   */
+  private clearMirrorArtifacts(): void {
+    if (this.mirroredTabindexEl !== null) {
+      this.mirroredTabindexEl.removeAttribute("tabindex");
+      this.mirroredTabindexEl = null;
+    }
   }
 
   /**
@@ -2148,23 +2452,25 @@ export class FocusManager {
     return result;
   }
 
-  // ---- Focus-invariant tripwire ----
+  // ---- Enforcement + report (tripwire-as-enforcement, Spec S03) ----
   //
-  // The keyboard focus ring (`data-key-view-kbd`) is a promise that keystrokes
-  // land on the ringed element. The tripwire verifies the promise after every
-  // projection and every settled focus change: when a ring is painted,
-  // `document.activeElement` must be the ringed element, inside it, or an
-  // ancestor of it (a roving container focuses a member cell; a responder key
-  // view focuses its inner editor surface — both are containment). A disjoint
-  // active element, or focus resting on `body`, is a ring with nothing behind
-  // it — the drift this engine exists to make impossible. Violations are
-  // logged (never thrown) via `tugDevLogStore.error` naming both elements, so
-  // a drift announces itself in the dev panel instead of presenting as a
-  // silently dead keyboard. Checks are microtask-coalesced so a
-  // paint-then-focus pair inside one task is observed only in its settled
-  // state, and deduped by signature so a stable drift logs once.
+  // `violations` is reserved for genuine incoherence the watchdog cannot fix
+  // (a dom-granted route whose granted surface is gone — corrected by
+  // falling the route back to engine-routed, but reported loudly).
+  // `reasserted` counts corrections; `steals` is the per-offender ledger —
+  // the trap for present and future raw focus writes. A corrected steal is
+  // never silently absorbed: any offender that is not known-benign browser
+  // churn logs at `warn` in the dev panel. Checks are microtask-coalesced
+  // so a paint-then-focus pair inside one task is observed only in its
+  // settled state, and reassertion is signature-deduped so a stable
+  // offender logs once per episode. No `document.hasFocus()` gate: state
+  // coherence is checked regardless of OS focus, and the park `.focus()` is
+  // attempted regardless (it sets `activeElement` even in an unfocused
+  // document).
 
   private invariantViolationCount = 0;
+  private reassertedCount = 0;
+  private stealsByOffender: Map<string, number> = new Map();
   private lastInvariantViolation: {
     ringed: string;
     active: string;
@@ -2174,7 +2480,7 @@ export class FocusManager {
   private lastInvariantSignature: string | null = null;
   private invariantCheckQueued = false;
 
-  /** Queue a coalesced focus-invariant check; safe to call from any writer. */
+  /** Queue a coalesced enforcement pass; safe to call from any writer. */
   scheduleFocusInvariantCheck(reason: string): void {
     if (typeof document === "undefined") return;
     if (this.invariantCheckQueued) return;
@@ -2186,12 +2492,15 @@ export class FocusManager {
   }
 
   /**
-   * The tripwire's cumulative report — read by the test surface so app-tests
-   * can assert "zero violations" (or, while a known drift exists, "the drift
-   * was detected and named").
+   * The watchdog's cumulative report — read by the test surface. App-tests
+   * assert `violations === 0` (the engine never lied) and steal BUDGETS
+   * (`steals` stays flat across interactions where no raw focus write
+   * should occur).
    */
   focusInvariantReport(): {
     violations: number;
+    reasserted: number;
+    steals: Record<string, number>;
     last: {
       ringed: string;
       active: string;
@@ -2201,61 +2510,282 @@ export class FocusManager {
   } {
     return {
       violations: this.invariantViolationCount,
+      reasserted: this.reassertedCount,
+      steals: Object.fromEntries(this.stealsByOffender),
       last: this.lastInvariantViolation,
     };
   }
 
+  /**
+   * Resolve the one legal `activeElement` for the current engine state
+   * (Spec S03). `null` for dom-granted means the granted surface is GONE —
+   * the incoherence case.
+   */
+  private legalKeyboardElement(): {
+    legal: HTMLElement | null;
+    route: KeyboardRoute;
+  } {
+    const ctx = this.activeContext();
+    const route = ctx.keyboardRoute();
+    // Accessibility mode ([P10]): real DOM focus mirrors the engine-routed
+    // key view. Dom-granted routes keep their standard resolution — the
+    // granted surface already IS real DOM focus, and the key view can lag
+    // the focusin promotion for `engine` / `state-key` targets.
+    if (this.accessMode === "accessibility" && route === "engine-routed") {
+      const keyViewId = ctx.keyView();
+      const el = keyViewId !== null ? this.elementForFocusKey(keyViewId) : null;
+      return { legal: el, route };
+    }
+    if (route === "dom-granted") {
+      const target = ctx.target();
+      if (target.kind === "state-key") {
+        const scope =
+          ctx.cardId !== null
+            ? document.querySelector(
+                `[data-card-id="${cssEscapeId(ctx.cardId)}"]`,
+              )
+            : document;
+        return {
+          legal:
+            scope?.querySelector<HTMLElement>(
+              `[data-tug-state-key="${cssEscapeId(target.key)}"]`,
+            ) ?? null,
+          route,
+        };
+      }
+      if (target.kind === "engine") {
+        // The engine hook owns its own focus surface; the card element is
+        // the containment boundary the engine can name.
+        const cardEl =
+          ctx.cardId !== null
+            ? document.querySelector<HTMLElement>(
+                `[data-card-id="${cssEscapeId(ctx.cardId)}"]`,
+              )
+            : null;
+        return { legal: cardEl, route };
+      }
+      const keyViewId = ctx.keyView();
+      return {
+        legal: keyViewId !== null ? this.elementForFocusKey(keyViewId) : null,
+        route,
+      };
+    }
+    const sinks = document.querySelectorAll<HTMLElement>(
+      `[${KEY_SINK_ATTRIBUTE}]`,
+    );
+    return {
+      legal: sinks.length > 0 ? sinks[sinks.length - 1] : null,
+      route,
+    };
+  }
+
+  /**
+   * Whether `el` is a bare native form control — an `<input>` / `<textarea>`
+   * / `<select>` whose nearest responder ancestor declares NO focus
+   * contract. Such controls are the `state-key` CLASS of [P02] (text
+   * surfaces by nature) even when they carry no engine identity the target
+   * union can name, so holding focus on one is always legal. A
+   * `contenteditable` never gets this pass: editors are contract-bound
+   * substrates, and an uncontracted contenteditable holding focus is
+   * exactly the steal class the watchdog exists to correct.
+   */
+  private isBareNativeControl(el: HTMLElement): boolean {
+    const tag = el.tagName;
+    if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return false;
+    const responderEl = el.closest<HTMLElement>("[data-responder-id]");
+    if (responderEl === null) return true;
+    const id = responderEl.getAttribute("data-responder-id");
+    return id === null || !this.responderHasFocusContract(id);
+  }
+
   private checkFocusInvariant(reason: string): void {
     if (typeof document === "undefined") return;
-    // An OS-deactivated window keeps its activeElement but delivers no keys;
-    // agreement is unknowable there, so only check while the document holds
-    // real keyboard focus.
-    if (!document.hasFocus()) return;
-    const ringed = document.querySelector<HTMLElement>("[data-key-view-kbd]");
-    if (ringed === null) {
+    const ctx = this.activeContext();
+    const { legal, route } = this.legalKeyboardElement();
+    const active =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    // Incoherence the watchdog cannot fix: a dom-granted route whose
+    // granted surface is gone. Fall back to engine-routed (the enclosing
+    // target keeps routing keys) and report loudly.
+    if (route === "dom-granted" && legal === null) {
+      const activeDesc = describeElementForInvariant(active);
+      const signature = `grant-lost→${activeDesc}`;
+      if (signature !== this.lastInvariantSignature) {
+        this.lastInvariantSignature = signature;
+        this.invariantViolationCount += 1;
+        this.lastInvariantViolation = {
+          ringed: "(granted surface gone)",
+          active: activeDesc,
+          keyCard: this.keyCardId,
+          reason,
+        };
+        tugDevLogStore.warn(
+          "focus-invariant",
+          `dom-granted route with no granted surface — falling back to engine-routed (${reason})`,
+          { active: activeDesc, keyCard: this.keyCardId, reason },
+        );
+      }
+      ctx.noteGrantLost();
+      this.parkKeySink();
+      return;
+    }
+
+    const isLegal =
+      active !== null &&
+      legal !== null &&
+      (legal === active || legal.contains(active));
+    // ANY sink is a legal park (a jailing surface hosts its own; see
+    // KEY_SINK_ATTRIBUTE), and a bare native form control is legal by
+    // class. In accessibility mode a sink park is legal only while there
+    // is no key view to mirror — with one present, the mirror is the one
+    // legal answer (Spec S03) and a stale park gets corrected onto it.
+    const sinkIsLegalPark =
+      active !== null &&
+      active.hasAttribute(KEY_SINK_ATTRIBUTE) &&
+      !(this.accessMode === "accessibility" && ctx.keyView() !== null);
+    if (
+      isLegal ||
+      sinkIsLegalPark ||
+      (active !== null && this.isBareNativeControl(active))
+    ) {
       this.lastInvariantSignature = null;
       return;
     }
-    const active = document.activeElement;
-    const agree =
-      active instanceof HTMLElement &&
+
+    // Jurisdiction: the watchdog governs the ENGINE's universe. An element
+    // with no engine identity anywhere in its ancestry — not inside any
+    // card, carrying no focusable / responder / state-key marker — is
+    // foreign DOM the engine does not own (a dev overlay, a body-portaled
+    // utility menu, a harness fixture). Correcting it would fight a system
+    // the engine knows nothing about; leave it alone. Every governed
+    // surface (cards, portaled sheets whose fields register focusables)
+    // stays in scope by construction.
+    if (
+      active !== null &&
       active !== document.body &&
-      (ringed === active || ringed.contains(active) || active.contains(ringed));
-    if (agree) {
+      active.closest("[data-card-id]") === null &&
+      active.closest(
+        "[data-tug-focusable], [data-responder-id], [data-tug-state-key]",
+      ) === null
+    ) {
       this.lastInvariantSignature = null;
       return;
     }
-    const ringedDesc = describeElementForInvariant(ringed);
-    const activeDesc = describeElementForInvariant(active);
-    const signature = `${ringedDesc}→${activeDesc}`;
-    if (signature === this.lastInvariantSignature) return;
-    this.lastInvariantSignature = signature;
-    this.invariantViolationCount += 1;
-    this.lastInvariantViolation = {
-      ringed: ringedDesc,
-      active: activeDesc,
-      keyCard: this.keyCardId,
-      reason,
-    };
-    tugDevLogStore.error(
-      "focus-invariant",
-      `keyboard ring without a keyboard sink: ring on ${ringedDesc} but DOM focus is ${activeDesc}`,
-      {
-        ringed: ringedDesc,
-        active: activeDesc,
-        keyCard: this.keyCardId,
-        reason,
-      },
-    );
+
+    // Focus resting on `<body>` / nothing is NOT corrected: parking is
+    // hygiene, not a routing precondition ([P04]) — keys route from the
+    // engine's target regardless, and placements park at commit time. More
+    // load-bearing: a blur-to-body is routinely the TRANSIENT middle of the
+    // browser's own mousedown/teardown focus sequence, and writing focus
+    // inside that window fights the browser's pending default (the click's
+    // focus never lands, a drag-selection anchor is disturbed). The engine
+    // only ever corrects a real ELEMENT illegally holding the register.
+    if (active === null || active === document.body) {
+      this.lastInvariantSignature = null;
+      return;
+    }
+
+    // The engine's own projected key view receiving browser focus (a
+    // clicked stop taking mousedown focus) is not a steal — ring and
+    // router agree; only the register is off. Correct quietly.
+    const ctxKeyView = ctx.keyView();
+    const keyViewEl =
+      ctxKeyView !== null ? this.elementForFocusKey(ctxKeyView) : null;
+    const ownStop =
+      keyViewEl !== null &&
+      (keyViewEl === active ||
+        keyViewEl.contains(active) ||
+        active.contains(keyViewEl));
+
+    // Reassert the legal element, and ledger the correction. The offender
+    // is attributed so a raw focus write introduced next month announces
+    // itself in the dev panel instead of being silently absorbed.
+    const offender = describeElementForInvariant(active);
+    const legalDesc = describeElementForInvariant(legal);
+    const signature = `${offender}→${legalDesc}|${route}`;
+    if (signature !== this.lastInvariantSignature) {
+      this.lastInvariantSignature = signature;
+      this.reassertedCount += 1;
+      if (ownStop) {
+        tugDevLogStore.debug(
+          "focus-watchdog",
+          `re-${route === "dom-granted" ? "granting" : "parking"} after browser focus on the engine's own stop ${offender} (${reason})`,
+          { offender, legal: legalDesc, route, reason },
+        );
+      } else {
+        this.stealsByOffender.set(
+          offender,
+          (this.stealsByOffender.get(offender) ?? 0) + 1,
+        );
+        tugDevLogStore.warn(
+          "focus-watchdog",
+          `raw focus write corrected: ${offender} took activeElement while the route is ${route}; reasserting ${legalDesc} (${reason})`,
+          { offender, legal: legalDesc, route, reason },
+        );
+      }
+    }
+    if (route === "dom-granted") {
+      ctx.regrantCurrentTarget();
+    } else if (
+      this.accessMode === "accessibility" &&
+      this.mirrorKeyViewFocus()
+    ) {
+      // Accessibility mode reasserts the mirror, not the sink ([P10]).
+    } else {
+      this.parkKeySink();
+    }
+  }
+
+  // ---- Pointer-placement suppression (one gesture) ----
+
+  /**
+   * One-shot latch armed by the pane activation classifier for a
+   * cross-card ACTIVATION click (Mac first-click-activates: the click
+   * that brings a background card forward activates it and does not
+   * also place). The activation transfer realizes the card's RECORDED
+   * destination; the provider's pointerdown placement pass — which runs
+   * later in the same dispatch, after the card has already become the
+   * key card — would otherwise overwrite that destination with whatever
+   * sat under the click (or strip a just-granted editor with a `none`
+   * place on prose). Mirrors pane-focus-controller's mousedown
+   * `preventDefault` for the same gesture.
+   */
+  private pointerPlacementSuppressedOnce = false;
+
+  /** Arm the one-shot: the current pointer gesture is an activation click. */
+  suppressPointerPlacementOnce(): void {
+    this.pointerPlacementSuppressedOnce = true;
+  }
+
+  /**
+   * Consume the one-shot. Called once per pointerdown at the provider's
+   * promotion-listener entry (before any early return, so a refused or
+   * redirected click cannot leave a stale latch for the next gesture).
+   */
+  consumePointerPlacementSuppression(): boolean {
+    const armed = this.pointerPlacementSuppressedOnce;
+    this.pointerPlacementSuppressedOnce = false;
+    return armed;
   }
 
   // ---- Keyboard-access mode (deck-global) ----
 
-  /** Set the keyboard-access mode every context's walk reads. */
+  /**
+   * Set the keyboard-access mode every context's walk reads. A flip
+   * re-lands the keyboard for the current key view so the register
+   * matches the new mode immediately: to `accessibility`, the mirror
+   * grants real DOM focus to the key view ([P10]); back to `standard`,
+   * the park resumes and the mirror's added `tabindex` is removed.
+   */
   setKeyboardAccessMode(mode: KeyboardAccessMode): void {
     if (this.accessMode === mode) return;
     this.accessMode = mode;
+    if (mode === "standard") this.clearMirrorArtifacts();
     this.touch();
+    this.activeContext().focusKeyView();
   }
 
   /** The current keyboard-access mode. */

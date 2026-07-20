@@ -1,0 +1,19 @@
+/*
+ * The engine-owned key sink (Spec S01) — the single visually-hidden
+ * focusable element the focus engine parks `document.activeElement` on
+ * while the keyboard route is engine-routed.
+ *
+ * Hidden but focusable: fixed-position 1×1, transparent, out of the hit
+ * path. NEVER `display: none` or `visibility: hidden` — both make an
+ * element unfocusable, and the sink's entire job is to hold focus.
+ */
+.tug-key-sink {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  outline: none;
+}

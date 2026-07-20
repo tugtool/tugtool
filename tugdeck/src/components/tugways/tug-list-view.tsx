@@ -1024,6 +1024,19 @@ export interface TugListViewProps<
   captureKeys?: readonly string[];
 
   /**
+   * Consumer key delegate on the engine's key-view channel ([P05] of
+   * keyboard-as-engine-state). Invoked while this list holds the key view,
+   * AFTER the list's own movement keys decline the event — the delegated
+   * replacement for a bubble-phase container `onKeyDown` around the list,
+   * which never fires in engine-routed mode (keydown lands on the key
+   * sink, not in this subtree). Return `true` = handled (the engine
+   * consumes the event). Pair with {@link captureKeys} for keys the act
+   * dispatch would otherwise resolve first (e.g. reserve Space so a
+   * section-verb delegate sees it instead of the item-container select).
+   */
+  onKeyViewKey?: (event: KeyboardEvent) => boolean;
+
+  /**
    * ARIA role for the scroll container. Defaults to `"list"`. Override for a
    * list that is semantically a selection group — e.g. `"radiogroup"` (a
    * single-select option list) or `"group"` (a multi-select one). The cell
@@ -1107,24 +1120,6 @@ const SCROLL_CORRECTION_THRESHOLD_PX = 4;
  * paths agree on the fallback identity.
  */
 const DEFAULT_CELL_ROLE: TugListViewCellRole = "cell";
-
-/**
- * True when `target` is an editable element — `<input>`,
- * `<textarea>`, `<select>`, or any `contenteditable` host. The
- * `cellsPerEntry` keyboard handler skips these so PageUp / PageDown
- * typed into a cell's own editable descendant stays caret movement
- * rather than transcript navigation. Mirrors SmartScroll's own
- * editable-target guard.
- */
-function isEditableEventTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === "INPUT"
-    || target.tagName === "TEXTAREA"
-    || target.tagName === "SELECT"
-    || target.isContentEditable
-  );
-}
 
 /**
  * Resolve the effective selected index for `selectionRequired` mode.
@@ -1248,6 +1243,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       commitOnEnter,
       activateOnDoubleClick = false,
       captureKeys,
+      onKeyViewKey,
       listRole = "list",
       itemRole = "listitem",
       spatialCursor = false,
@@ -3194,6 +3190,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       () => (captureKeys !== undefined ? new Set(captureKeys) : null),
       [captureKeys],
     );
+    // Live ref for the movement-key delegate defined below ([L07]): the
+    // behavior thunk must be stable while the delegate always runs current
+    // closures. Assigned every render where `handleListKey` is defined.
+    const handleListKeyRef = React.useRef<(e: KeyboardEvent) => boolean>(
+      () => false,
+    );
+    // Consumer key delegate ([L07] live ref): tried after the list's own
+    // movement keys decline. See the `onKeyViewKey` prop.
+    const onKeyViewKeyRef = React.useRef<
+      ((e: KeyboardEvent) => boolean) | undefined
+    >(undefined);
+    onKeyViewKeyRef.current = onKeyViewKey;
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
@@ -3215,6 +3223,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         onSelect: selectCursorRow,
         onAct: enterActs ? actCursorRow : selectCursorRow,
         onDescend: descendCursorRow,
+        onKey: (e: KeyboardEvent) =>
+          handleListKeyRef.current(e) ||
+          (onKeyViewKeyRef.current?.(e) ?? false),
       }),
       [
         singleSelect,
@@ -3405,170 +3416,99 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     });
 
-    // Movement keys (capture phase, so this runs ahead of SmartScroll's own
-    // bubble keydown and the `pageByEntry` handler — `stopImmediatePropagation`
-    // claims a handled key). Arrows / Home / End move one row; Page moves a
-    // viewport of rows and snaps to the nearest cursorable row. Space / Enter /
-    // Escape are NOT handled here — the engine's act dispatch owns them.
-    React.useLayoutEffect(() => {
-      if (!focusEngineActive) return;
+    // Movement keys — delivered through the engine's key-view delegation
+    // channel (behavior `onKey`, [P05]/Spec S04) instead of an element
+    // keydown listener: in engine-routed mode keydown never enters this
+    // subtree, so element delivery is structurally dead. The engine invokes
+    // `onKey` when this list is the key view — and, via the descended-scope
+    // fallback, when the key view is an in-row focusable of one of THIS
+    // list's row scopes (the ArrowLeft-ascend case). Arrows / Home / End
+    // move one row; Page moves a viewport of rows and snaps to the nearest
+    // cursorable row. Space / Enter / Escape are NOT handled here — the
+    // engine's act dispatch owns them. Read through a live ref so the
+    // behavior thunk stays stable while always running current closures
+    // ([L07], same pattern as the cursor handle).
+    const handleListKey = (e: KeyboardEvent): boolean => {
+      if (e.metaKey || e.ctrlKey) return false;
       const scrollEl = scrollContainerRef.current;
-      if (scrollEl === null) return;
-      const handler = (e: KeyboardEvent): void => {
-        if (e.defaultPrevented || e.metaKey || e.ctrlKey) return;
-        if (isEditableEventTarget(e.target)) return;
-        // Tree-style ascend: while descended into one of THIS list's row
-        // scopes (the container is no longer the key view; the key view is an
-        // in-row focusable), a bare ArrowLeft pops the scope back to the
-        // container — the symmetric exit to Right's descend. The spatial
-        // navigator provably yields this arrow in a row scope (no declared
-        // order, no cursor handle), so this handler is its owner. Gated on
-        // the TOP mode being one of our row scopes: with a popover or other
-        // surface above it, Left belongs to that surface, not the list.
-        if (
-          e.key === "ArrowLeft" &&
-          !e.altKey &&
-          !e.shiftKey &&
-          manager !== null &&
-          !scrollEl.hasAttribute("data-key-view-kbd") &&
-          manager.currentFocusMode().startsWith(`${focusableId}-row-`)
-        ) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          manager.ascend();
-          return;
-        }
-        // Move the cursor only while the container itself holds the keyboard key
-        // view. After Enter descends onto an inner focusable the container is no
-        // longer the key view — arrows then belong to the descended component,
-        // not the list cursor.
-        if (!scrollEl.hasAttribute("data-key-view-kbd")) return;
-        const total = dataSourceRef.current.numberOfItems();
-        if (total === 0) return;
-        const cur = cursorIndexRef.current;
-        // Tree-style descend ([P02] disclosure model): Right enters a row whose
-        // content has navigable focusables, mirroring Enter — in BOTH selection
-        // models. A single-select row stays a pick on Enter (never descends —
-        // Return falls through to the surface default); Right is its one way
-        // in to a focusable accessory. Ascend is Escape or Left. Other rows
-        // ignore Right (no horizontal movement in a vertical list).
-        if (e.key === "ArrowRight" && rowFirstFocusableId(cur) !== null) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          descendCursorRow();
-          return;
-        }
-        const pageStep = (): number =>
-          Math.max(
-            1,
-            Math.floor(
-              (scrollEl.clientHeight || 0) /
-                Math.max(1, heightForIndex(Math.max(0, cur))),
-            ) - 1,
-          );
-        let next = -1;
-        switch (e.key) {
-          case "ArrowDown":
-            next = cur < 0 ? firstCursorableRow() : stepCursorableRow(cur, 1);
-            break;
-          case "ArrowUp":
-            next = cur < 0 ? lastCursorableRow() : stepCursorableRow(cur, -1);
-            break;
-          case "Home":
-            next = firstCursorableRow();
-            break;
-          case "End":
-            next = lastCursorableRow();
-            break;
-          case "PageDown":
-            next = cursorableNear((cur < 0 ? firstCursorableRow() : cur) + pageStep(), 1);
-            break;
-          case "PageUp":
-            next = cursorableNear((cur < 0 ? lastCursorableRow() : cur) - pageStep(), -1);
-            break;
-          default:
-            return;
-        }
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (next >= 0 && next !== cur) {
-          moveCursorTo(next, true);
-          // Single-select: selection follows the cursor — commit the landed row
-          // so there is no separate Space step ([P12] picker shape).
-          if (singleSelectRef.current) selectCursorRow();
-        } else if (next >= 0) scrollIndexIntoView(next, "nearest");
-      };
-      scrollEl.addEventListener("keydown", handler, true);
-      return () => scrollEl.removeEventListener("keydown", handler, true);
-    }, [
-      focusEngineActive,
-      heightForIndex,
-      firstCursorableRow,
-      lastCursorableRow,
-      stepCursorableRow,
-      cursorableNear,
-      moveCursorTo,
-      scrollIndexIntoView,
-      selectCursorRow,
-      rowFirstFocusableId,
-      descendCursorRow,
-      manager,
-      focusableId,
-    ]);
-
-    // PageUp / PageDown by entry ([L02] DOM event listener installed
-    // in a `useLayoutEffect` per [L03]; no React state crosses the
-    // scroll write). Opt-in via `pageByEntry` — omitted means the
-    // keys fall through to the browser default. Installed once;
-    // re-runs only when the opt-in flips.
-    //
-    // PageUp / PageDown ONLY — the macOS Opt+Arrow alias is deliberately
-    // absent. Opt+Arrow is editor word-movement, so claiming it here
-    // shadowed a caret key; a consumer that wants turn-by-turn arrow
-    // navigation binds a non-editor chord (e.g. Opt-Cmd-Arrow) to the
-    // handle's `pageByEntry` method instead, which also works from
-    // anywhere in the consumer's surface rather than only when focus is
-    // inside this scroll container.
-    //
-    // Capture phase. SmartScroll's own keydown listener
-    // (`smart-scroll.ts`) is registered bubble-phase on this same
-    // container; a capture-phase listener runs first regardless of
-    // registration order, so when this handler claims a key,
-    // `stopImmediatePropagation` reaches that bubble listener and
-    // keeps SmartScroll from also entering its dragging phase /
-    // disengaging follow-bottom for a key this handler has already
-    // resolved. The scroll write itself still routes through
-    // SmartScroll so the [D07] follow-bottom intent stays coherent:
-    // PageUp disengages, PageDown onto the last cell re-engages.
-    React.useLayoutEffect(() => {
-      // The listbox cursor handler ([P01]) owns Page keys when the list is
-      // authored into a focus group — don't also install the scroll-only pager.
-      if (pageByEntry !== true || focusEngineActive) return;
-      const scrollEl = scrollContainerRef.current;
-      if (scrollEl === null) return;
-
-      const handleNavKey = (e: KeyboardEvent): void => {
-        if (e.defaultPrevented) return;
-        const isUp = e.key === "PageUp";
-        const isDown = e.key === "PageDown";
-        if (!isUp && !isDown) return;
-        // A keydown inside an editable descendant is caret movement.
-        if (isEditableEventTarget(e.target)) return;
-
-        if (!pageByEntryStep(isUp ? "up" : "down")) return;
-
-        // This handler owns the key — suppress the browser's
-        // viewport-height page scroll and SmartScroll's keydown
-        // handler (see the capture-phase note above).
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      };
-
-      scrollEl.addEventListener("keydown", handleNavKey, true);
-      return () => {
-        scrollEl.removeEventListener("keydown", handleNavKey, true);
-      };
-    }, [pageByEntry, focusEngineActive, pageByEntryStep]);
+      if (scrollEl === null) return false;
+      // Tree-style ascend: while descended into one of THIS list's row
+      // scopes (the container is no longer the key view; the key view is an
+      // in-row focusable), a bare ArrowLeft pops the scope back to the
+      // container — the symmetric exit to Right's descend. The spatial
+      // navigator provably yields this arrow in a row scope (no declared
+      // order, no cursor handle), so this delegate is its owner. Gated on
+      // the TOP mode being one of our row scopes: with a popover or other
+      // surface above it, Left belongs to that surface, not the list.
+      if (
+        e.key === "ArrowLeft" &&
+        !e.altKey &&
+        !e.shiftKey &&
+        manager !== null &&
+        !scrollEl.hasAttribute("data-key-view-kbd") &&
+        manager.currentFocusMode().startsWith(`${focusableId}-row-`)
+      ) {
+        manager.ascend();
+        return true;
+      }
+      // Move the cursor only while the container itself holds the keyboard key
+      // view. After Enter descends onto an inner focusable the container is no
+      // longer the key view — arrows then belong to the descended component,
+      // not the list cursor.
+      if (!scrollEl.hasAttribute("data-key-view-kbd")) return false;
+      const total = dataSourceRef.current.numberOfItems();
+      if (total === 0) return false;
+      const cur = cursorIndexRef.current;
+      // Tree-style descend ([P02] disclosure model): Right enters a row whose
+      // content has navigable focusables, mirroring Enter — in BOTH selection
+      // models. A single-select row stays a pick on Enter (never descends —
+      // Return falls through to the surface default); Right is its one way
+      // in to a focusable accessory. Ascend is Escape or Left. Other rows
+      // ignore Right (no horizontal movement in a vertical list).
+      if (e.key === "ArrowRight" && rowFirstFocusableId(cur) !== null) {
+        descendCursorRow();
+        return true;
+      }
+      const pageStep = (): number =>
+        Math.max(
+          1,
+          Math.floor(
+            (scrollEl.clientHeight || 0) /
+              Math.max(1, heightForIndex(Math.max(0, cur))),
+          ) - 1,
+        );
+      let next = -1;
+      switch (e.key) {
+        case "ArrowDown":
+          next = cur < 0 ? firstCursorableRow() : stepCursorableRow(cur, 1);
+          break;
+        case "ArrowUp":
+          next = cur < 0 ? lastCursorableRow() : stepCursorableRow(cur, -1);
+          break;
+        case "Home":
+          next = firstCursorableRow();
+          break;
+        case "End":
+          next = lastCursorableRow();
+          break;
+        case "PageDown":
+          next = cursorableNear((cur < 0 ? firstCursorableRow() : cur) + pageStep(), 1);
+          break;
+        case "PageUp":
+          next = cursorableNear((cur < 0 ? lastCursorableRow() : cur) - pageStep(), -1);
+          break;
+        default:
+          return false;
+      }
+      if (next >= 0 && next !== cur) {
+        moveCursorTo(next, true);
+        // Single-select: selection follows the cursor — commit the landed row
+        // so there is no separate Space step ([P12] picker shape).
+        if (singleSelectRef.current) selectCursorRow();
+      } else if (next >= 0) scrollIndexIntoView(next, "nearest");
+      return true;
+    };
+    handleListKeyRef.current = handleListKey;
 
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
@@ -3729,18 +3669,20 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         style={separatorStyle}
         role={listRole}
         // A subordinate list adds no Tab stop of its own (the filter input owns
-        // focus); an authored or interactive list is a native / engine focus
-        // stop at `0`. A read-only, un-authored listing (`interactive={false}`,
-        // e.g. the dev transcript) renders NO tabindex at all: a `0`/`-1`
-        // container is still mouse-focusable, so a click on inert content
-        // would move DOM focus onto the scroll container and steal the caret
-        // from the surface that owns it (the prompt entry, a sheet's field).
+        // focus); an un-authored interactive list is a native focus stop at
+        // `0`. An ENGINE-authored list renders NO tabindex ([P08] of the
+        // keyboard-as-engine-state plan): the walk owns Tab and the ring is
+        // engine-projected, so DOM focusability buys nothing — and any
+        // tabindex'd container is still mouse-focusable, inviting mousedown
+        // focus churn the watchdog then has to park. The same no-tabindex
+        // rule covers subordinate lists (zero stops by contract) and
+        // read-only listings (`interactive={false}`, e.g. the dev
+        // transcript), where a focusable container would steal the caret
+        // from the surface that owns it.
         tabIndex={
-          keyboardSubordinate
-            ? -1
-            : !interactive && !focusEngineActive
-              ? undefined
-              : 0
+          focusEngineActive || keyboardSubordinate || !interactive
+            ? undefined
+            : 0
         }
       >
         <div
@@ -3779,15 +3721,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             //    `data-disabled` / `aria-disabled` so CSS and assistive
             //    tech reflect the state. The movement cursor already skips
             //    it via `isCursorableRow`.
-            //  - A read-only, un-authored listing (`interactive={false}`)
-            //    renders NO tabindex on its wrappers: `-1` is still
-            //    mouse-focusable, so a click on the row's content would
-            //    move DOM focus onto the inert wrapper and steal the caret
-            //    from the surface that owns it.
-            const wrapperTabIndex =
-              rowsAreNativeStops && !interactive
+            //  - An engine-authored or subordinate list renders NO tabindex
+            //    on its wrappers ([P08]): the movement cursor is the row
+            //    affordance, and `-1` wrappers are still mouse-focusable —
+            //    pointless focus churn for the watchdog to park. The same
+            //    applies to a read-only, un-authored listing
+            //    (`interactive={false}`), where a focusable wrapper would
+            //    steal the caret from the surface that owns it.
+            const wrapperTabIndex = !rowsAreNativeStops
+              ? undefined
+              : !interactive
                 ? undefined
-                : rowsAreNativeStops && interactive && role === "cell" && enabled
+                : role === "cell" && enabled
                   ? 0
                   : -1;
             const wrapperRoleAttr = role === "cell" ? undefined : role;

@@ -26,11 +26,9 @@
  * `data-responder-id`) and lands back on the alert's own handler — the
  * same short self-loop used by TugConfirmPopover. [L11]
  *
- * The Radix `AlertDialog.Cancel` / `AlertDialog.Action` wrappers are
- * retained so their accessibility affordances (Enter-to-confirm,
- * initial focus on the action button, Escape-to-cancel via
- * DismissableLayer) continue to work. When Radix's internal click
- * fires `onOpenChange(false)` alongside our chain dispatch, the
+ * The Radix `Dialog.Close` wrappers around both buttons are retained so
+ * the built-in close affordance continues to work. When Radix's internal
+ * click fires `onOpenChange(false)` alongside our chain dispatch, the
  * second resolveAndClose call is a no-op because the resolver ref was
  * already nulled by the first.
  *
@@ -64,7 +62,16 @@
 import "./tug-alert.css";
 
 import React from "react";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
+// Plain Dialog, not AlertDialog ([P13] of the keyboard-as-engine-state
+// plan): AlertDialog.Content force-focuses its Cancel button on open from
+// an internal composed handler that runs regardless of the user handler's
+// `preventDefault` — a raw focus write the engine cannot prevent, only
+// correct (one ledgered steal per alert open, forever). Dialog.Content's
+// open-autofocus IS preventable, so the engine owns the landing. The
+// alertdialog semantics AlertDialog provided are kept explicit below:
+// `role="alertdialog"` on the content, and outside interactions never
+// dismiss (`onInteractOutside` prevented).
+import * as AlertDialog from "@radix-ui/react-dialog";
 import { icons } from "lucide-react";
 import { TugPushButton } from "./tug-push-button";
 import { TugListRow } from "./tug-list-row";
@@ -303,7 +310,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     // Primary handler — resolves the pending promise and closes the
     // dialog. Shared by the chain action handlers, the no-provider
     // fallback on button click, and the Radix onOpenChange dismissal
-    // path (Escape, Cmd+., AlertDialog.Cancel/Action's built-in close).
+    // path (Escape, Cmd+., AlertDialog.Close/Action's built-in close).
     // Idempotent: a second call with the resolver already null just
     // closes redundantly, which matches the "two converging close
     // paths" expectation when Radix's Cancel/Action wrappers fire
@@ -445,7 +452,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
       icon?: string;
       emphasis: TugButtonEmphasis;
       role: TugButtonRole;
-      /** Wrapped in AlertDialog.Action + the Return default. */
+      /** Wrapped in AlertDialog.Close + the Return default. */
       isDefault: boolean;
       onClick: () => void;
     }
@@ -577,7 +584,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
     // (the imperative alert() sets fresh overrides before opening).
 
     // Radix-level dismissal (Escape via DismissableLayer, Cmd+. via
-    // onKeyDown, AlertDialog.Cancel/Action built-in close) routes
+    // onKeyDown, AlertDialog.Close/Action built-in close) routes
     // through here. Convert any open→false transition to a cancel so
     // the pending promise resolves with false. The cancel-and-close is
     // idempotent, so Radix's own close after a chain-dispatched
@@ -624,6 +631,11 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             ref={responderRef as (el: HTMLDivElement | null) => void}
             className="tug-alert-content"
             data-slot="tug-alert"
+            // The alertdialog semantics AlertDialog used to provide, kept
+            // explicit on the plain Dialog primitive ([P13]): the role, and
+            // outside interactions never dismiss — the user must respond.
+            role="alertdialog"
+            onInteractOutside={(e) => e.preventDefault()}
             onMouseDown={suppressButtonFocusShift}
             // The engine seeds the default button as the key view ([P14]); stop
             // Radix's own first-focusable walk so the two don't fight.
@@ -643,6 +655,19 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
             }}
           >
             <FocusModeScope>
+            {/* The alert's own key sink ([P13]): Radix AlertDialog's trapped
+                FocusScope refocuses into itself whenever focus leaves it, so
+                the engine's park must land INSIDE the jail — the engine
+                always parks at the innermost mounted sink (see
+                KEY_SINK_ATTRIBUTE). Without this, every park while the
+                alert is open is answered by a raw Radix refocus onto the
+                first tabbable button. */}
+            <div
+              data-tug-key-sink=""
+              tabIndex={-1}
+              className="tug-key-sink"
+              aria-label="Keyboard"
+            />
             {/* Registers the button-row arrow ring against the alert's trap
                 mode. Must mount INSIDE FocusModeScope so the context-form
                 `useSpatialOrder` reads the trap scope, not the outer one. */}
@@ -688,7 +713,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                 />
                 <div className="tug-alert-actions">
                   {hasCancel && (
-                    <AlertDialog.Cancel asChild>
+                    <AlertDialog.Close asChild>
                       <TugPushButton
                         size="sm"
                         emphasis="outlined"
@@ -698,9 +723,9 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                       >
                         {cancelLabel}
                       </TugPushButton>
-                    </AlertDialog.Cancel>
+                    </AlertDialog.Close>
                   )}
-                  <AlertDialog.Action asChild>
+                  <AlertDialog.Close asChild>
                     <TugPushButton
                       size="sm"
                       emphasis="primary"
@@ -712,13 +737,13 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                     >
                       {confirmLabel}
                     </TugPushButton>
-                  </AlertDialog.Action>
+                  </AlertDialog.Close>
                 </div>
               </>
             ) : (
               <div className="tug-alert-actions">
                 {hasCancel && (
-                  <AlertDialog.Cancel asChild>
+                  <AlertDialog.Close asChild>
                     <TugPushButton
                       size="sm"
                       emphasis="outlined"
@@ -728,7 +753,7 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                     >
                       {cancelLabel}
                     </TugPushButton>
-                  </AlertDialog.Cancel>
+                  </AlertDialog.Close>
                 )}
                 {actionButtons.map((b) => {
                   const button = (
@@ -746,9 +771,9 @@ export const TugAlert = React.forwardRef<TugAlertHandle, TugAlertProps>(
                   // Exactly one action button is the semantic Radix Action (the
                   // Return default); the rest are plain buttons in the arrow ring.
                   return b.isDefault ? (
-                    <AlertDialog.Action asChild key={b.key}>
+                    <AlertDialog.Close asChild key={b.key}>
                       {button}
-                    </AlertDialog.Action>
+                    </AlertDialog.Close>
                   ) : (
                     <React.Fragment key={b.key}>{button}</React.Fragment>
                   );

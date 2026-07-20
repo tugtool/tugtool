@@ -201,30 +201,36 @@ export function useFocusTrap({
       // The user dismissed by clicking some other surface: let that surface keep
       // focus (Radix's default), do not restore.
       if (wasExternalRef.current) return;
-      // Two restore paths, mirroring the old service-popup binding. Each
-      // `preventDefault`s ONLY when it actually restores — so a surface opened
-      // with nothing to restore (e.g. a context menu on a bare, non-focusable
-      // region: no key view, no first responder) falls through to Radix's default
-      // close-focus instead of being stranded on `<body>`.
-      //  - a KEYBOARD key view owns close-focus (the surface was opened from a
-      //    cycle / Tab stop): re-project the engine's restored ring onto the DOM;
-      //  - otherwise (mouse-opened — the key view is null or a ringless control
-      //    like a refuse trigger button): restore the captured first responder's
-      //    DOM focus. The trap's pop already reinstated the chain first responder,
-      //    so focusing it lands DOM focus where the user was (e.g. the editor),
-      //    not on a trigger button that briefly held the key view.
+      // Three restore paths:
+      //  - a KEYBOARD key view owns close-focus (the surface was opened from
+      //    a cycle / Tab stop): land the engine's restored key view — a
+      //    routed park or grant;
+      //  - a mouse-opened close whose restored first responder is a CONTRACT
+      //    text surface (the editor the user was in): restore its caret via
+      //    the focus contract;
+      //  - anything else is engine-routed: NO element gets a DOM focus
+      //    restore (buttons no longer hold DOM focus — the old
+      //    `focusResponder` on a contract-less card container DOM-walked
+      //    onto the card's first button, a raw write the watchdog ledgered
+      //    on every mouse-opened close). Prevent Radix's trigger refocus
+      //    and land the keyboard through the engine (the park).
       if (manager.keyView() !== null && manager.keyViewIsKeyboard()) {
         event.preventDefault();
         manager.focusKeyView();
         return;
       }
-      if (chain !== null) {
-        const firstResponder = chain.getFirstResponder();
-        if (firstResponder !== null) {
-          event.preventDefault();
-          chain.focusResponder(firstResponder);
-        }
+      const firstResponder = chain?.getFirstResponder() ?? null;
+      if (
+        chain !== null &&
+        firstResponder !== null &&
+        manager.responderHasFocusContract(firstResponder)
+      ) {
+        event.preventDefault();
+        chain.focusResponder(firstResponder);
+        return;
       }
+      event.preventDefault();
+      manager.focusKeyView();
     },
     [manager, chain, closeDisposition, wasExternalRef],
   );

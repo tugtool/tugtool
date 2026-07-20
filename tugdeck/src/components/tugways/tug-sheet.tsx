@@ -1133,11 +1133,16 @@ export function TugSheetContent({
       focusManager?.focusKeyView();
       return;
     }
-    // Mouse-opened sheet: restore focus to the trigger element on close.
-    if (triggerElRef.current && "focus" in triggerElRef.current) {
-      e.preventDefault();
-      (triggerElRef.current as HTMLElement).focus();
-    }
+    // Mouse-opened sheet: the trigger is (almost always) a button — an
+    // engine-routed stop that no longer holds DOM focus. A raw trigger
+    // `.focus()` here was a ledgered steal on every mouse-opened close;
+    // instead, prevent Radix's own trigger refocus and land the keyboard
+    // through the engine (a routed park, or a grant if a text surface owns
+    // the restored key view). A trigger that IS a text control gets its
+    // focus back through the same routed landing (its responder holds the
+    // restored register).
+    e.preventDefault();
+    focusManager?.focusKeyView();
   }
 
   if (!mounted) return null;

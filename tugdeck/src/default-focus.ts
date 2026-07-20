@@ -141,7 +141,20 @@ export function traceApplyDefaultFocus(
   site: string,
   cardId: string,
   cardRoot: HTMLElement,
-  opts?: { preventScroll?: boolean },
+  opts?: {
+    preventScroll?: boolean;
+    /**
+     * Engine-first claim ([P08] of keyboard-as-engine-state): when
+     * provided, the callback is offered the resolved target and returns
+     * whether the ENGINE now owns the claim — either it placed a
+     * nameable target through the one primitive, or it deliberately
+     * makes no DOM focus claim for an engine-routed stop (buttons no
+     * longer hold DOM focus; the keyboard rests at the engine). When it
+     * returns `true` the raw `.focus()` below is skipped entirely; the
+     * raw call survives only for engine-less bootstraps.
+     */
+    placeViaEngine?: (target: HTMLElement) => boolean;
+  },
 ): void {
   const doc = cardRoot.ownerDocument;
   const activeBefore = formatElement(doc.activeElement);
@@ -166,10 +179,13 @@ export function traceApplyDefaultFocus(
   const { el: target, selector: targetSelector } =
     resolveDefaultFocusTarget(cardRoot);
   if (target !== null) {
-    if (opts?.preventScroll === true) {
-      target.focus({ preventScroll: true });
-    } else {
-      target.focus();
+    const engineOwned = opts?.placeViaEngine?.(target) === true;
+    if (!engineOwned) {
+      if (opts?.preventScroll === true) {
+        target.focus({ preventScroll: true });
+      } else {
+        target.focus();
+      }
     }
   }
 

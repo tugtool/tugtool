@@ -123,6 +123,7 @@
 
 import { flushSync } from "react-dom";
 
+import { getResponderChainManager } from "./action-dispatch";
 import { isEngineManagedCard } from "./card-registry";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { selectionGuard } from "./components/tugways/selection-guard";
@@ -534,9 +535,15 @@ export function applyBagFocus(
           preventScroll: options?.preventScroll,
         });
       });
-    } else if (doc.activeElement !== el) {
+    } else if (fm === null && doc.activeElement !== el) {
       // No engine mounted (headless bootstrap): the direct claim, with the
-      // same idempotency guard.
+      // same idempotency guard. With an engine MOUNTED, an element the
+      // target union cannot name (a plain default-focus button with no
+      // focus-key / state-key) gets NO DOM focus claim: engine-routed
+      // stops no longer hold DOM focus ([P08] of keyboard-as-engine-state
+      // — a raw claim here was the boot-time steal the watchdog ledgered
+      // on every card activation), and the keyboard rests at the engine
+      // until the user walks or clicks to a stop.
       measureFocusClaim(`${site}:framework`, cardId, doc, () => {
         el.focus(
           options?.preventScroll === true ? { preventScroll: true } : undefined,
@@ -582,13 +589,66 @@ export function applyBagFocus(
     return "applied";
   }
 
-  // default-focus
-  traceApplyDefaultFocus(
-    `${site}-default`,
-    cardId,
-    resolution.cardRoot,
-    options?.preventScroll === true ? { preventScroll: true } : undefined,
-  );
+  // default-focus. Engine-first: a nameable default target places through
+  // the one primitive; an unnameable one (the plain first-tabbable
+  // catch-all) gets NO DOM focus claim while an engine is mounted ([P08]
+  // — engine-routed stops no longer hold DOM focus, and the raw claim was
+  // a per-activation steal in the watchdog's ledger). The keyboard rests
+  // at the engine; Tab and clicks reach the stops. The raw `.focus()`
+  // inside `traceApplyDefaultFocus` survives only for engine-less
+  // bootstraps (gallery previews, headless).
+  traceApplyDefaultFocus(`${site}-default`, cardId, resolution.cardRoot, {
+    ...(options?.preventScroll === true ? { preventScroll: true } : {}),
+    placeViaEngine: (target) => {
+      const fm = getFocusManager();
+      if (fm === null) return false;
+      const focusKey = target.getAttribute("data-tug-focus-key");
+      if (focusKey !== null && focusKey !== "") {
+        fm.place(cardId, { kind: "focus-key", focusKey }, {
+          modality: "pointer",
+          preventScroll: true,
+        });
+        return true;
+      }
+      const stateKey = target.getAttribute("data-tug-state-key");
+      if (stateKey !== null && stateKey !== "") {
+        fm.place(cardId, { kind: "state-key", key: stateKey }, {
+          modality: "pointer",
+          preventScroll: true,
+        });
+        return true;
+      }
+      const responderId = target
+        .closest("[data-responder-id]")
+        ?.getAttribute("data-responder-id");
+      if (
+        responderId !== undefined &&
+        responderId !== null &&
+        fm.responderHasFocusContract(responderId)
+      ) {
+        fm.place(cardId, { kind: "responder", responderId }, {
+          modality: "pointer",
+          preventScroll: true,
+        });
+        return true;
+      }
+      // Unnameable engine-routed stop: no DOM focus claim — but the raw
+      // claim used to do a SECOND job through its focusin (chain
+      // promotion), and that half must survive: settle the first
+      // responder on the target's nearest responder so accelerators and
+      // the cancel ladder route into the card's content (the Lens's
+      // Escape focus-out lives on a content-local responder the upward
+      // walk can only reach when FR starts at or below it).
+      const chain = getResponderChainManager();
+      if (chain !== null) {
+        const responder = chain.findResponderForTarget(target);
+        if (responder !== null && chain.getFirstResponder() !== responder) {
+          chain.makeFirstResponder(responder);
+        }
+      }
+      return true;
+    },
+  });
   return "applied";
 }
 

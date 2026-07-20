@@ -53,6 +53,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// the deck is live. Flushed to `open-file` control frames once
     /// `bridgeFrontendReady` fires; opened immediately when already live.
     private var pendingOpenPaths: [String] = []
+    /// KVO handle for `NSWorkspace.shared.isVoiceOverEnabled`. The signal
+    /// rides the `voiceover-changed` control frame so tugdeck can flip its
+    /// keyboard-access mode (the focus-follows accessibility mirror); the
+    /// current state is also re-sent on every `bridgeFrontendReady` so a
+    /// fresh or reconnected frontend converges without waiting for a
+    /// toggle.
+    private var voiceOverObservation: NSKeyValueObservation?
     private var makerMenu: NSMenuItem!
     private var aboutMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
@@ -192,6 +199,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             alert.runModal()
             NSApp.terminate(nil)
             return
+        }
+
+        // VoiceOver detection: observe the workspace flag for live
+        // toggles. The current state is (re)sent on every
+        // `bridgeFrontendReady`, so the observation only needs to cover
+        // changes while the frontend is up.
+        voiceOverObservation = NSWorkspace.shared.observe(
+            \.isVoiceOverEnabled, options: [.new]
+        ) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.sendVoiceOverState() }
         }
 
         // Setup process manager
@@ -384,6 +401,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// can distinguish a replay from a literal OS notification — the
     /// observer behavior is the same; the discriminator is for
     /// diagnostics.
+    /// Send the current VoiceOver state through the `voiceover-changed`
+    /// control frame. tugdeck flips its keyboard-access mode on it: on →
+    /// the focus-follows accessibility mirror (real DOM focus tracks the
+    /// engine's key view, the pattern every assistive tech handles); off →
+    /// back to standard, unless the user persisted accessibility mode
+    /// themselves. Idempotent on the receiving side, so re-sends on
+    /// reconnect are safe.
+    private func sendVoiceOverState() {
+        let enabled = NSWorkspace.shared.isVoiceOverEnabled
+        NSLog("AppDelegate: sendVoiceOverState (enabled=%d)", enabled ? 1 : 0)
+        processManager.sendControl("voiceover-changed", params: ["enabled": enabled])
+    }
+
     private func replayLifecycleState() {
         let active = NSApp.isActive
         let hidden = NSApp.isHidden
@@ -1807,6 +1837,11 @@ extension AppDelegate: BridgeDelegate {
             // (cold launch by dropping a file on the icon). Control frames
             // reach the renderer now that frontendReady has fired.
             self.flushPendingOpenPaths()
+
+            // Current VoiceOver state, on mount and on every reconnect —
+            // the frontend's keyboard-access mode converges without
+            // waiting for a toggle.
+            self.sendVoiceOverState()
 
             // First frontendReady is the initial mount — no replay
             // needed (the OS hasn't told tugdeck anything that needs

@@ -43,9 +43,7 @@ const SNIPPETS_KBD = `.lens-content .lens-snippets-list[data-key-view-kbd]`;
 const TEXT_FILES_KBD = `.lens-content .lens-text-files-list[data-key-view-kbd]`;
 
 async function dispatch(app: App, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
+  await app.dispatchControlAction(action);
 }
 
 async function exists(app: App, selector: string): Promise<boolean> {
