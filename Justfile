@@ -202,6 +202,7 @@ ci: lint test
 # The script auto-discovers crates by globbing tugdeck/crates/*/Cargo.toml
 # and normalizes pkg/.gitignore so the built artifacts can be committed
 # without `git add -f`. See tuglaws/wasm-crates.md for the convention.
+# Build every WASM crate under tugdeck/crates/.
 wasm:
     scripts/build-wasm.sh
 
@@ -239,6 +240,7 @@ wasm:
 # kernel notices the signature change under its live mmap'd code and
 # SIGKILLs tugcast — the WebView then flashes a disconnect banner
 # during what should be a smooth handoff. Quitting first avoids that.
+# Build a Debug bundle and (re)launch the cwd-derived debug instance.
 app-debug: build wasm
     #!/usr/bin/env bash
     set -euo pipefail
@@ -371,6 +373,7 @@ launch-release:
 # AND the tugcast registry entry — `just app-debug` then re-launches
 # fresh, instead of LaunchServices bringing the previous (stale)
 # Tug.app to front.
+# Stop the cwd-derived debug instance (idempotent).
 stop-debug:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -415,6 +418,7 @@ stop:
 
 # One-line wrapper around `tugutil host instance list`. Forwards any extra
 # args (e.g. `--json`).
+# List running Tug instances (wraps `tugutil host instance list`).
 instances *FLAGS:
     tugrust/target/debug/tugutil host instance list {{FLAGS}}
 
@@ -448,6 +452,7 @@ logs-release:
 # worktree's instance state first (bundle, LaunchServices entry,
 # per-instance data dir, optionally TCC), then removes the worktree.
 # Eliminates the "did I forget to clean up first" failure mode.
+# Tug-aware `git worktree remove` — tears down instance state first.
 worktree-remove WORKTREE *FLAGS:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -786,6 +791,7 @@ lab-cycle OS="sequoia":
 # cert via openssl. Real Developer ID certs have stable designated
 # requirements (signed by Apple), so TCC Accessibility grants
 # persist across rebuilds without a fragile self-signed shim.
+# Verify a Developer ID Application cert is installed (one-time per machine).
 setup-dev-signing:
     scripts/setup-dev-signing.sh
 
@@ -801,6 +807,7 @@ setup-dev-signing:
 #
 # Idempotent: reports "nothing to remove" and exits 0 if the
 # sentinel doesn't exist.
+# Clear the per-machine code-sign drift sentinel.
 teardown-dev-signing:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1325,6 +1332,7 @@ app-test-build *FILES:
 # the Accessibility pane. Drag the revealed app into the list (or use
 # "+"), and toggle it on. The entry is named "Tug (apptest)" so it's
 # distinct from the interactive "Tug" debug instance.
+# One-time Accessibility grant for the app-test identity.
 app-test-grant:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1351,10 +1359,12 @@ app-test-grant:
 # Useful after a Swift / harness change or right after `just build-app`
 # to confirm the pipeline still works without running the full sweep.
 # Runtime ~20-30s (vs ~3min for the full sweep).
+# Fast smoke: bridge + handshake + one AT scenario (~20-30s).
 app-test-smoke: (app-test "harness-smoke/smoke.test.ts" "harness-smoke/version-handshake.test.ts" "at0001-tab-switch-fc.test.ts")
 
 # Remove the interactive debug build's per-variant DerivedData (matches
 # `app-debug` — the cwd-derived debug variant, e.g. Tug-debug / Tug-worktree).
+# Remove the interactive debug build's per-variant DerivedData.
 clean-debug:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1377,6 +1387,7 @@ clean-rust:
 # Wipe every build artifact: ALL per-variant Xcode DerivedData (debug,
 # release, apptest, worktree — plus the legacy shared per-project default)
 # and the Rust target/.
+# Wipe every build artifact: all per-variant DerivedData + the Rust target/.
 clean-all: clean-rust
     #!/usr/bin/env bash
     set -euo pipefail
