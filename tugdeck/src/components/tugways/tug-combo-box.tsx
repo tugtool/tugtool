@@ -56,7 +56,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
 import { TugInput } from "./tug-input";
-import { useFocusable } from "./use-focusable";
+import { useFocusable, useFocusManager } from "./use-focusable";
 import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
@@ -229,6 +229,19 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       register: focusGroup !== undefined,
       consumesTab: () => open,
     });
+
+    // Promote this field to the engine key view on a pointer press. The
+    // document-level pointer promotion ([placeFromPointer]) resolves the target
+    // card via `closest([data-card-id])` and bails when the click lands in a
+    // sheet portaled OUTSIDE the card subtree (the session picker) — so without
+    // this, clicking the field takes DOM focus while the ring stays on whatever
+    // the engine last placed (e.g. the sessions list), splitting focus across two
+    // elements. Placing by our own registered id needs no card ancestor.
+    const focusManager = useFocusManager();
+    const promoteSelf = useCallback(() => {
+      if (focusGroup === undefined) return;
+      focusManager?.place(null, { kind: "focusable", id: focusableId }, { modality: "pointer" });
+    }, [focusManager, focusGroup, focusableId]);
 
     const setInputRef = useCallback(
       (el: HTMLInputElement | null) => {
@@ -504,7 +517,12 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
           onKeyDown={onKeyDown}
           onFocus={onFocus}
           onBlur={onBlur}
-          onMouseDown={menuMode ? () => openMenu() : undefined}
+          onMouseDown={() => {
+            // Move the engine key view to this field (the portaled-sheet pointer
+            // promotion can't), then open the menu in menu mode.
+            promoteSelf();
+            if (menuMode) openMenu();
+          }}
         />
         {menuMode && (
           <button
@@ -519,6 +537,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
             // the toggle doesn't blur-close the list under itself.
             onMouseDown={(event) => {
               event.preventDefault();
+              promoteSelf();
               toggleMenu();
             }}
           >
