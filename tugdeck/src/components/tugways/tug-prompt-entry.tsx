@@ -103,6 +103,10 @@ import {
   replaceAtomsEffect,
   type PositionedAtom,
 } from "./tug-text-editor/atom-decoration";
+import {
+  setWaveCaretActive,
+  waveCaretExtension,
+} from "./tug-text-editor/wave-caret";
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
@@ -1378,6 +1382,8 @@ export const TugPromptEntry = React.forwardRef<
   commitRouteRef.current = commitRoute;
   const commitSnapRef = useRef(commitSnap);
   commitSnapRef.current = commitSnap;
+  const commitDraftingRef = useRef(commitDrafting);
+  commitDraftingRef.current = commitDrafting;
   const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
   // Read the live commit message: strip the `!changes` chip back off the draft.
@@ -1435,13 +1441,18 @@ export const TugPromptEntry = React.forwardRef<
       inCommitRouteRef.current = false;
       clearCommitPersistTimer();
       editor.restoreState(EMPTY_EDIT_STATE);
+      editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
     }
   }, [commitActive, clearCommitPersistTimer]);
 
   // Auto-Message stream ([P06]): the scribe's draft fills the editor live while
-  // `drafting` (keeping the leading `!changes` chip), and the caret is re-claimed
-  // when it settles (`drafting → ready`) so the generated message is editable.
+  // `drafting` (keeping the leading `!changes` chip). The editor is read-only
+  // for the duration (so the user can't interfere), and a wave caret rides the
+  // stream's tail in place of the (suppressed) native caret. On settle
+  // (`drafting → ready`) the generated message becomes editable; on a cancel
+  // (`→ idle`) or failure (`→ error`) the field reverts to the persisted
+  // pre-draft message. Either way the caret is re-claimed and the wave cleared.
   const prevCommitDraftPhaseRef = useRef(commitSnap?.draftPhase ?? "idle");
   useLayoutEffect(() => {
     const phase = commitSnap?.draftPhase ?? "idle";
@@ -1452,11 +1463,24 @@ export const TugPromptEntry = React.forwardRef<
     if (editor === null) return;
     if (phase === "drafting") {
       editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
-    } else if (prevPhase === "drafting" && phase === "ready") {
-      editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
+      if (prevPhase !== "drafting") {
+        editor.view()?.dispatch({ effects: setWaveCaretActive.of(true) });
+      }
+    } else if (prevPhase === "drafting") {
+      const restored =
+        phase === "ready"
+          ? commitSnap?.draftText ?? ""
+          : commitSnap?.persistedMessage ?? "";
+      editor.restoreState(buildCommitRouteState(restored));
+      editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
     }
-  }, [commitActive, commitSnap?.draftPhase, commitSnap?.draftText]);
+  }, [
+    commitActive,
+    commitSnap?.draftPhase,
+    commitSnap?.draftText,
+    commitSnap?.persistedMessage,
+  ]);
 
   // Cancel the commit route (Cancel button + Escape): persist the typed message
   // so a re-entry resumes it, then exit. Land-success exits through the
@@ -1476,25 +1500,54 @@ export const TugPromptEntry = React.forwardRef<
   const handleCommitAutoMessage = useCallback(() => {
     const controller = commitRouteRef.current;
     if (controller === undefined) return;
+    // Already streaming — the button is lit but inert; ignore a re-trigger.
+    if (commitDraftingRef.current) return;
     if (readCommitMessage().trim().length > 0) setCommitConfirmOpen(true);
     else controller.requestDraft(false);
   }, [readCommitMessage]);
 
+  // Cancel an in-flight Auto-Message draft ([P06]) — the Z5 cancel button,
+  // Escape, or Cmd-. while the scribe streams. Aborts only the scribe child
+  // (never the session's turn); the terminal `cancelled` state reverts the
+  // composer and drops the wave caret. Distinct from `cancelCommitRoute`, which
+  // exits the whole route when nothing is drafting.
+  const cancelCommitDraft = useCallback(() => {
+    commitRouteRef.current?.cancelDraft();
+  }, []);
+
   // In the commit route, a bare Escape cancels the route ([P03]) — captured on
   // the entry root before the editor's own keymap sees it, mirroring the retired
   // dialog's Escape ownership. A modified Escape is left alone.
+  //
+  // While the Auto-Message scribe streams ([P06]) the same capture-phase listener
+  // takes over Escape AND Cmd-. and routes them to a DRAFT cancel — never the
+  // route exit and, crucially, never the session-turn interrupt. When a turn is
+  // in flight the window-level keybinding claims CANCEL_DIALOG before this
+  // listener runs; that path is handled inside the CANCEL_DIALOG responder below
+  // (it also cancels the draft first). This listener is the backstop for the
+  // no-turn case, where CANCEL_DIALOG is unregistered and the event reaches here.
   useLayoutEffect(() => {
     if (!commitActive) return;
     const el = rootRef.current;
     if (el === null) return;
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (
-        e.key === "Escape" &&
-        !e.metaKey &&
+      const bareEscape =
+        e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      const cmdPeriod =
+        (e.key === "." || e.key === "Period") &&
+        e.metaKey &&
         !e.ctrlKey &&
         !e.altKey &&
-        !e.shiftKey
-      ) {
+        !e.shiftKey;
+      if (commitDraftingRef.current) {
+        if (bareEscape || cmdPeriod) {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelCommitDraft();
+        }
+        return;
+      }
+      if (bareEscape) {
         e.preventDefault();
         e.stopPropagation();
         cancelCommitRoute();
@@ -1502,7 +1555,7 @@ export const TugPromptEntry = React.forwardRef<
     };
     el.addEventListener("keydown", onKeyDown, true);
     return () => el.removeEventListener("keydown", onKeyDown, true);
-  }, [commitActive, cancelCommitRoute]);
+  }, [commitActive, cancelCommitRoute, cancelCommitDraft]);
 
   // Shell share ([P08]). A Share click on an exchange row parks its
   // composed text on the shell store; this effect observes the slot,
@@ -1980,6 +2033,9 @@ export const TugPromptEntry = React.forwardRef<
       // had its turn — keeps Escape silent without stealing the
       // completion-dismiss gesture.
       Prec.lowest(keymap.of([{ key: "Escape", run: () => true }])),
+      // Auto-Message wave caret ([P06]): inert until `setWaveCaretActive`
+      // toggles it while the scribe streams the commit draft.
+      waveCaretExtension,
     ],
     [],
   );
@@ -2505,6 +2561,16 @@ export const TugPromptEntry = React.forwardRef<
       ...(snap.canInterrupt && !snap.interruptInFlight
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
+              // While the Auto-Message scribe streams ([P06]), Escape / Cmd-.
+              // cancel the DRAFT — never the running turn. This handler is
+              // reached first (a turn is in flight, so the window keybinding
+              // claims CANCEL_DIALOG here), so intercepting drafting BEFORE
+              // `popInteractive` is what keeps the cancel from leaking into the
+              // session. The backend aborts only the scribe child.
+              if (commitDraftingRef.current) {
+                cancelCommitDraft();
+                return;
+              }
               // A visible slash-command / file completion popup owns Escape
               // first: dismiss it and bail. The capture-phase keybinding
               // routes Escape here BEFORE the editor's bubble-phase keymap
@@ -3008,20 +3074,28 @@ export const TugPromptEntry = React.forwardRef<
         size="lg"
         emphasis="outlined"
         role="danger"
-        onClick={cancelCommitRoute}
-        aria-label="Cancel commit"
+        // While drafting, the X cancels the Auto-Message (not the whole route);
+        // otherwise it exits the commit route ([P06]).
+        onClick={commitDrafting ? cancelCommitDraft : cancelCommitRoute}
+        aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+        title={commitDrafting ? "Cancel auto-message" : undefined}
         icon={<X size={16} strokeWidth={2.5} />}
       />
       <TugPushButton
         className="tug-prompt-entry-commit-auto"
         subtype="icon"
         size="lg"
-        emphasis="outlined"
+        // Stays lit for the whole composition ([P06]): the button becomes a
+        // real filled accent button while the scribe streams (its own tokens,
+        // not a hand-rolled pose), and `data-drafting` neutralizes pointer
+        // input (CSS) so a click can't re-request.
+        emphasis={commitDrafting ? "filled" : "outlined"}
         role="accent"
-        disabled={commitDrafting}
+        data-drafting={commitDrafting ? "" : undefined}
+        aria-pressed={commitDrafting || undefined}
         onClick={handleCommitAutoMessage}
         aria-label="Auto-message"
-        title="Generate a commit message"
+        title={commitDrafting ? "Composing…" : "Generate a commit message"}
         data-testid="tug-prompt-entry-commit-auto"
         icon={<PencilSparkles size={16} strokeWidth={2} />}
       />
@@ -3031,7 +3105,12 @@ export const TugPromptEntry = React.forwardRef<
         size="lg"
         emphasis="filled"
         role="action"
-        disabled={commitPending || commitSnap === null || !commitSnap.canLandIgnoringMessage}
+        disabled={
+          commitDrafting ||
+          commitPending ||
+          commitSnap === null ||
+          !commitSnap.canLandIgnoringMessage
+        }
         onClick={performSubmit}
         aria-label="Commit"
         title={
@@ -3165,6 +3244,10 @@ export const TugPromptEntry = React.forwardRef<
                 '[data-testid="tug-prompt-entry-commit-auto"]',
               ) ?? rootRef.current
             }
+            // Pop above the Auto-Message button with a pointer aimed at it, so
+            // the confirm reads as belonging to that control ([P06]).
+            side="top"
+            arrow
             message="Replace message?"
             confirmLabel="OK"
             confirmRole="danger"

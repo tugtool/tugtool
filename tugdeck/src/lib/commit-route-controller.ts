@@ -248,6 +248,20 @@ export class CommitRouteController {
   }
 
   /**
+   * Cancel an in-flight auto-message draft ([P06]) — the Z5 cancel button,
+   * Escape, or Cmd-. while the scribe streams. Aborts only the draft's scribe
+   * child; the session's turn is untouched. A no-op when nothing is drafting.
+   */
+  cancelDraft(): void {
+    const { changesController } = this.deps;
+    getChangesetDraftStore()?.cancelDraft(
+      changesController.projectDir,
+      "session",
+      changesController.tugSessionId,
+    );
+  }
+
+  /**
    * Land the commit ([P09]): re-check the gates against live state, send the
    * commit, and on success clear the draft and exit the route. On error the
    * route stays active and the snapshot's `commitError` surfaces inline.

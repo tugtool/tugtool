@@ -1133,6 +1133,11 @@ pub struct AgentSupervisor {
     /// latest snapshot ([P03]). `None` (its unset state) when the draft path
     /// isn't wired (tests, or a boot without the aggregate feed).
     pub changeset_watch: std::sync::OnceLock<watch::Receiver<Frame>>,
+    /// In-flight Auto-Message generation tasks, keyed by entry identity. A
+    /// `changeset_draft_cancel` (or a superseding request) aborts the live
+    /// handle; aborting kills only that draft's headless scribe child, never
+    /// the interactive session's turn ([P06]).
+    pub draft_tasks: crate::feeds::draft_engine::DraftTaskRegistry,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -1513,6 +1518,45 @@ fn parse_changeset_draft_request_payload(
         owner_kind,
         owner_id,
         force,
+    })
+}
+
+/// Parsed `changeset_draft_cancel` ([P06]): the entry identity whose in-flight
+/// Auto-Message the user cancelled. Same identity shape as the request; no
+/// force / message fields.
+struct ChangesetDraftCancelPayload {
+    project_dir: String,
+    owner_kind: String,
+    owner_id: String,
+}
+
+fn parse_changeset_draft_cancel_payload(
+    payload: &[u8],
+) -> Result<ChangesetDraftCancelPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let owner_kind = value
+        .get("owner_kind")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let owner_id = value
+        .get("owner_id")
+        .and_then(|v| v.as_str())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(ChangesetDraftCancelPayload {
+        project_dir,
+        owner_kind,
+        owner_id,
     })
 }
 
@@ -2231,6 +2275,7 @@ impl AgentSupervisor {
             cancel,
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
             changeset_watch: std::sync::OnceLock::new(),
+            draft_tasks: crate::feeds::draft_engine::DraftTaskRegistry::default(),
         };
         (sup, merger_register_rx)
     }
@@ -2385,6 +2430,13 @@ impl AgentSupervisor {
             "changeset_draft_request" => match parse_changeset_draft_request_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_draft_request(&parsed);
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "changeset_draft_cancel" => match parse_changeset_draft_cancel_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_draft_cancel(&parsed);
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3610,6 +3662,7 @@ impl AgentSupervisor {
             Arc::clone(&self.registry),
             scribe,
             resolver,
+            &self.draft_tasks,
             snapshot,
             &request.project_dir,
             &request.owner_kind,
@@ -3618,6 +3671,29 @@ impl AgentSupervisor {
         );
         if !matched {
             Self::send_changeset_draft_error(&self.control_tx, request, "nothing to generate");
+        }
+    }
+
+    /// Handle a `changeset_draft_cancel` CONTROL request ([P06]): the user
+    /// cancelled an in-flight Auto-Message (the Z5 cancel button, Escape, or
+    /// Cmd-.). Aborts the entry's live generation task — killing only its
+    /// headless scribe child — and broadcasts a terminal `cancelled` state so
+    /// the composer drops the wave caret and re-opens for typing. A no-op when
+    /// nothing was drafting.
+    fn do_changeset_draft_cancel(&self, request: &ChangesetDraftCancelPayload) {
+        let aborted = crate::feeds::draft_engine::cancel_draft(
+            &self.draft_tasks,
+            &request.project_dir,
+            &request.owner_kind,
+            &request.owner_id,
+        );
+        if aborted {
+            crate::feeds::draft_engine::send_draft_cancelled(
+                &self.control_tx,
+                &request.project_dir,
+                &request.owner_kind,
+                &request.owner_id,
+            );
         }
     }
 

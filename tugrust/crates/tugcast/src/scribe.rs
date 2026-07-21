@@ -200,7 +200,11 @@ fn draft_ask(style_rules: &str) -> String {
          bullet points. The subject MUST follow the house scoped format \
          `scope(topic): specific summary` (e.g. `tugdash(changesets-m03b): …`, \
          `plan(update): …`) — scoped and specific, NEVER a bare one-word subject \
-         like `Fix`. Output only the commit message text, nothing else.\n\n\
+         like `Fix`. NEVER hard-wrap text to a column width: the subject is one \
+         unbroken line, each bullet is one unbroken line however long, and the \
+         only newlines you emit are the structural blank line before the body \
+         and the single break between bullets. Output only the commit message \
+         text, nothing else.\n\n\
          Follow these project style rules:\n{}\n",
         style_rules.trim()
     )

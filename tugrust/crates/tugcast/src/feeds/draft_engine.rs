@@ -14,11 +14,13 @@
 //! CONTROL frames (Spec S10, [P24]). Generation runs on a detached task so the
 //! caller — the router's per-client socket loop — never parks awaiting it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinHandle;
 use tracing::warn;
 
 use tugcast_core::types::{ChangesetEntry, WorkspacesChangesetSnapshot};
@@ -39,6 +41,34 @@ struct EntryKey {
     project_dir: String,
     owner_kind: String,
     owner_id: String,
+}
+
+/// The in-flight generation tasks, keyed by an entry's canonical identity. A
+/// live handle is aborted on [`cancel_draft`] (the user cancelling an
+/// Auto-Message) or superseded when a fresh request for the same entry spawns.
+/// Aborting the task drops the scribe's `kill_on_drop` child, so only that
+/// draft's headless `claude` process dies — the interactive session's own turn
+/// is a wholly separate worker and is never touched ([P06]).
+pub type DraftTaskRegistry = Arc<StdMutex<HashMap<DraftIdentity, JoinHandle<()>>>>;
+
+/// Canonical `(project, owner_kind, owner_id)` key into [`DraftTaskRegistry`].
+/// Canonicalized so a raw-spelled cancel request finds a canonical-keyed task,
+/// mirroring `read_draft`'s Spec S05 tolerance.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct DraftIdentity {
+    project: String,
+    owner_kind: String,
+    owner_id: String,
+}
+
+fn draft_identity(project_dir: &str, owner_kind: &str, owner_id: &str) -> DraftIdentity {
+    DraftIdentity {
+        project: crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir))
+            .as_str()
+            .to_owned(),
+        owner_kind: owner_kind.to_owned(),
+        owner_id: owner_id.to_owned(),
+    }
 }
 
 /// A file in a head-flavor entry, carrying everything the fingerprint and the
@@ -100,6 +130,7 @@ pub fn spawn_on_demand_draft(
     registry: Arc<WorkspaceRegistry>,
     scribe: ScribeContext,
     resolver: SessionResolver,
+    tasks: &DraftTaskRegistry,
     snapshot: WorkspacesChangesetSnapshot,
     project_dir: &str,
     owner_kind: &str,
@@ -138,10 +169,67 @@ pub fn spawn_on_demand_draft(
             return true;
         }
     }
-    tokio::spawn(async move {
+    // Register the generation so a cancel (or a superseding request) can abort
+    // it. A fresh request for the same entry supersedes the in-flight one —
+    // abort the old task before spawning, so two scribes never race to persist.
+    let identity = draft_identity(&key.project_dir, &key.owner_kind, &key.owner_id);
+    let handle = tokio::spawn(async move {
         generate_for_entry(&deps, &key, &target).await;
     });
+    if let Ok(mut map) = tasks.lock() {
+        if let Some(old) = map.insert(identity, handle) {
+            old.abort();
+        }
+    }
     true
+}
+
+/// Abort an in-flight Auto-Message generation for one entry ([P06]). Returns
+/// `true` when a live task was found and aborted (the caller then emits the
+/// terminal `cancelled` state); `false` when nothing was drafting (an already
+/// -settled or never-started draft — a stray finished handle is reaped without
+/// a state emit, since it already broadcast `ready`/`error`). Aborting drops
+/// the scribe's `kill_on_drop` child; the session's own turn is untouched.
+pub fn cancel_draft(
+    tasks: &DraftTaskRegistry,
+    project_dir: &str,
+    owner_kind: &str,
+    owner_id: &str,
+) -> bool {
+    let identity = draft_identity(project_dir, owner_kind, owner_id);
+    let Ok(mut map) = tasks.lock() else {
+        return false;
+    };
+    let Some(handle) = map.remove(&identity) else {
+        return false;
+    };
+    if handle.is_finished() {
+        return false;
+    }
+    handle.abort();
+    true
+}
+
+/// Broadcast the terminal `cancelled` `changeset_draft_state` for a cancelled
+/// Auto-Message — the same wire shape `send_state` emits, so the client overlay
+/// resets identically.
+pub fn send_draft_cancelled(
+    control_tx: &broadcast::Sender<Frame>,
+    project_dir: &str,
+    owner_kind: &str,
+    owner_id: &str,
+) {
+    let body = serde_json::json!({
+        "action": "changeset_draft_state",
+        "project_dir": project_dir,
+        "owner_kind": owner_kind,
+        "owner_id": owner_id,
+        "state": "cancelled",
+    });
+    let _ = control_tx.send(Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("changeset_draft_state serializes"),
+    ));
 }
 
 /// Read the persisted draft for an entry under the Spec S05 spelling
@@ -768,6 +856,7 @@ mod tests {
             Arc::new(WorkspaceRegistry::new_for_test()),
             scribe_ctx(fake),
             Arc::new(|_| None),
+            &DraftTaskRegistry::default(),
             snapshot,
             project,
             "session",
@@ -1001,6 +1090,78 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    /// A scribe that never returns — models a generation still in flight, so a
+    /// cancel has a live task to abort. The `run` future sleeps well past the
+    /// test's own timeout; `cancel_draft`'s `handle.abort()` drops it.
+    struct HangingScribe {
+        started: Arc<tokio::sync::Notify>,
+    }
+    impl ScribeSpawner for HangingScribe {
+        fn run(
+            &self,
+            _model: String,
+            _prompt: String,
+            _deltas: ScribeDeltas,
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
+            let started = self.started.clone();
+            Box::pin(async move {
+                started.notify_one();
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+                Ok(String::new())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_draft_aborts_an_in_flight_generation() {
+        let (_dir, root) = init_repo();
+        let project = root.to_string_lossy().to_string();
+        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
+        let started = Arc::new(tokio::sync::Notify::new());
+        let scribe = ScribeContext {
+            spawner: Arc::new(HangingScribe {
+                started: started.clone(),
+            }),
+            model: Arc::new(|| "sonnet".to_string()),
+        };
+        let (control_tx, _rx) = broadcast::channel(64);
+        let tasks = DraftTaskRegistry::default();
+
+        assert!(spawn_on_demand_draft(
+            control_tx.clone(),
+            ledger.clone(),
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            scribe,
+            Arc::new(|_| None),
+            &tasks,
+            session_snapshot(&project, "M"),
+            &project,
+            "session",
+            "s1",
+            false,
+        ));
+
+        // Wait until the scribe is actually running (the task is registered).
+        started.notified().await;
+        assert_eq!(tasks.lock().unwrap().len(), 1, "task registered while live");
+
+        // Cancel finds the live task and aborts it; the registry empties and no
+        // draft row is ever persisted (the scribe never returned).
+        assert!(cancel_draft(&tasks, &project, "session", "s1"));
+        assert!(tasks.lock().unwrap().is_empty(), "cancelled task removed");
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            ledger
+                .changeset_draft("session", "s1", &project)
+                .unwrap()
+                .is_none(),
+            "a cancelled generation persists nothing"
+        );
+
+        // A second cancel with nothing in flight is a no-op false.
+        assert!(!cancel_draft(&tasks, &project, "session", "s1"));
     }
 
     #[test]

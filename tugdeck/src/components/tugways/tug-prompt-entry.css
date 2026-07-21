@@ -176,6 +176,15 @@ body {
   height: var(--tug-control-size-lg, 2.25rem);
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
+/* Auto-Message in flight ([P06]): the pencil-sparkles button stays lit (a real
+   filled accent button, set via `emphasis` in the composer) for the whole
+   composition. It must not respond to a second press while the scribe streams —
+   the wave caret is the progress tell and the X to its left is the cancel — so
+   neutralize pointer input without dimming (dimming would read as disabled). */
+.tug-prompt-entry-commit-auto[data-drafting] {
+  pointer-events: none;
+}
+
 /* An empty commit message disables the Commit button. Gated on the composer's
    `data-commit-empty` bridge (the message with the leading `!changes` chip
    stripped), NOT `data-empty` — the chip itself makes the doc non-empty. No

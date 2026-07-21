@@ -80,6 +80,21 @@ export class ChangesetDraftStore {
   }
 
   /**
+   * Cancel an in-flight Auto-Message generation for one entry ([P06]). Fires
+   * the `changeset_draft_cancel` CONTROL verb; the backend aborts only that
+   * draft's headless scribe child (never the session's turn) and replies a
+   * terminal `cancelled` `changeset_draft_state`, which this store folds back
+   * to the idle overlay.
+   */
+  cancelDraft(projectDir: string, ownerKind: string, ownerId: string): void {
+    this._connection.sendControlFrame("changeset_draft_cancel", {
+      project_dir: projectDir,
+      owner_kind: ownerKind,
+      owner_id: ownerId,
+    });
+  }
+
+  /**
    * Partially upsert one entry's persisted draft ([P02], Spec S01): the
    * composer's debounced message edits (`edited: true` — the [P03] pin
    * rides the write), immediate selection-disposition writes, and the
@@ -141,6 +156,11 @@ export class ChangesetDraftStore {
     } else if (state === "error") {
       const detail = typeof body.detail === "string" ? body.detail : "draft failed";
       this._set(key, { phase: "error", text: prev?.text ?? "", detail });
+    } else if (state === "cancelled") {
+      // A user cancel ([P06]): the generation was aborted mid-stream. Fold
+      // straight back to idle — the composer reverts to its persisted message
+      // (no partial draft is kept).
+      this._set(key, IDLE);
     }
   }
 

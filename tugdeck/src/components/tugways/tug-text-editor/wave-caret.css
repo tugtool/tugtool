@@ -1,0 +1,11 @@
+/* wave-caret — seats the AI-thinking wave glyph inline at the streamed draft's
+   tail, aligned to the prose baseline so it reads as a live caret ([P06]).
+   The bars + running pulse come from tug-progress-wave.css; this only handles
+   inline placement next to the text. */
+.tug-commit-wave-caret {
+  vertical-align: text-bottom;
+  margin-inline-start: 2px;
+  /* The accent tint marks it as the scribe's cursor, not editor chrome. The
+     bars inherit it: their fill resolves to `currentColor` by default. */
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}

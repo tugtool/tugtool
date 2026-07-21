@@ -56,6 +56,19 @@ describe("changeset draft overlay", () => {
     expect(overlay.text).toBe("partial");
   });
 
+  test("cancelled folds the overlay back to idle, dropping the partial", () => {
+    const store = attachChangesetDraftStore(fakeConn);
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
+    _ingestDraftFrameForTest({ action: "changeset_draft_delta", ...KEY, text: "half a message" });
+    expect(store.overlay("/p", "session", "s1").phase).toBe("drafting");
+
+    _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "cancelled" });
+    const overlay = store.overlay("/p", "session", "s1");
+    expect(overlay.phase).toBe("idle");
+    expect(overlay.text).toBe("");
+    expect(overlay.detail).toBe(null);
+  });
+
   test("unrelated entries stay idle", () => {
     const store = attachChangesetDraftStore(fakeConn);
     _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
