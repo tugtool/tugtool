@@ -20,6 +20,39 @@ import { TAG_ADJECTIVES, TAG_NOUNS } from "@/lib/session-tag-lexicon";
 /** Re-roll attempts before giving up and letting the ledger suffix the tag. */
 const MINT_REROLL_CAP = 8;
 
+/** Empty exclusion set for a derivation that needs no re-roll (see below). */
+const NO_KNOWN: ReadonlySet<string> = new Set();
+
+/**
+ * Deterministic `[0, 1)` PRNG seeded by a string — an FNV-1a hash of `seed`
+ * driving a mulberry32 generator. Same seed → same stream, every call.
+ */
+function seededRng(seed: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  let a = h >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * A stable `adjective-noun` tag derived deterministically from `seed` (a session
+ * id) — the friendly face for a session the ledger has no minted tag for yet
+ * (e.g. an external terminal session surfaced in the chooser). Same id → same
+ * tag, every render, with no store or persistence; a real minted `row.tag` (when
+ * present) always takes precedence at the call site.
+ */
+export function deriveStableTag(seed: string): string {
+  return mintTag(NO_KNOWN, seededRng(seed));
+}
+
 /**
  * Mint a fresh `adjective-noun` tag not present in `known`.
  *
@@ -51,7 +84,10 @@ export function mintTag(
 export function matchesTagQuery(row: SessionRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return true;
-  const haystacks = [row.tag, row.name, row.last_user_prompt];
+  // Include the derived stable tag so a session displayed under its derived
+  // adj-noun name (an untagged external session) is searchable by that name too.
+  const derivedTag = (row.tag?.trim() ?? "").length > 0 ? null : deriveStableTag(row.session_id);
+  const haystacks = [row.tag, derivedTag, row.name, row.last_user_prompt];
   return haystacks.some(
     (field) => field !== null && field.toLowerCase().includes(needle),
   );
