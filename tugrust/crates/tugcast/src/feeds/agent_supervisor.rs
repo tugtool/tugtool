@@ -3749,11 +3749,46 @@ impl AgentSupervisor {
         match crate::feeds::changeset::run_changeset_commit(dir, &request.files, &message).await {
             Ok(receipt) => {
                 self.registry.changeset_all_bump().notify_one();
+                let summary = crate::feeds::changeset::format_commit_summary(
+                    &receipt.sha,
+                    &message,
+                    &receipt.numstat,
+                );
+                // Persist the landing to the shell ledger so the transcript's
+                // commit row survives Maker ▸ Reload and cold boot (restored via
+                // `list_shell_exchanges`, [P07]). Only when the deck passed a
+                // `session_id` to key the row; a ledger error warns but never
+                // fails the commit (R02). No live SHELL frame is emitted — the
+                // initiating client paints the live row from `summary` on the
+                // `_ok`; other decks converge on their next restore.
+                if let (Some(session_id), Some(ledger)) =
+                    (request.session_id.as_deref(), self.shell_ledger.as_ref())
+                {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    if let Err(e) =
+                        ledger.record_exchange(&crate::shell_ledger::NewShellExchange {
+                            tug_session_id: session_id.to_string(),
+                            command: "/commit".to_string(),
+                            output: summary.clone(),
+                            exit_code: Some(0),
+                            cwd: project_dir.to_string(),
+                            cwd_after: None,
+                            started_at_ms: now,
+                            settled_at_ms: now,
+                        })
+                    {
+                        warn!(error = %e, "failed to persist /commit to the shell ledger");
+                    }
+                }
                 let body = serde_json::json!({
                     "action": "changeset_commit_ok",
                     "project_dir": project_dir,
                     "sha": receipt.sha,
                     "receipt": receipt.numstat,
+                    "summary": summary,
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
@@ -10216,6 +10251,107 @@ mod tests {
 
         let response = drain_until_action(&mut rx, "list_shell_exchanges_ok");
         assert_eq!(response["exchanges"].as_array().unwrap().len(), 0);
+    }
+
+    /// A `changeset_commit` with a `session_id` persists exactly one `/commit`
+    /// row to the shell ledger whose `output` is the server-formatted summary
+    /// echoed on `changeset_commit_ok` ([P07], S02); a commit without a
+    /// `session_id` writes no row (R02).
+    #[tokio::test]
+    async fn changeset_commit_persists_the_landing_to_the_shell_ledger() {
+        fn git(dir: &std::path::Path, args: &[&str]) {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().canonicalize().expect("canonicalize");
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@t"]);
+        git(&repo, &["config", "user.name", "t"]);
+        std::fs::write(repo.join("a.txt"), "one\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+
+        let shell_ledger = Arc::new(crate::shell_ledger::ShellLedger::open_in_memory().unwrap());
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, mut rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        registry
+            .get_or_create(&repo, CancellationToken::new())
+            .expect("register repo");
+        let (mut sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            registry,
+            CancellationToken::new(),
+        );
+        sup.set_shell_ledger(Arc::clone(&shell_ledger));
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        // Commit with a session_id → one ledger row keyed by the session.
+        std::fs::write(repo.join("a.txt"), "one\ntwo\n").unwrap();
+        let request = ChangesetCommitPayload {
+            project_dir: repo.to_string_lossy().into_owned(),
+            files: vec!["a.txt".to_string()],
+            message: "Add a second line".to_string(),
+            session_name: Some("web".to_string()),
+            session_id: Some("sess".to_string()),
+        };
+        sup.do_changeset_commit(&request).await;
+
+        let ok = drain_until_action(&mut rx, "changeset_commit_ok");
+        let summary = ok["summary"].as_str().expect("summary on _ok");
+        assert!(summary.starts_with("committed "), "summary: {summary}");
+        assert!(summary.contains("1 file(s) · +1 −0"), "summary: {summary}");
+
+        let rows = shell_ledger.list_exchanges("sess").expect("list");
+        assert_eq!(rows.len(), 1, "exactly one /commit row");
+        assert_eq!(rows[0].command, "/commit");
+        assert_eq!(rows[0].exit_code, Some(0));
+        assert_eq!(rows[0].cwd, request.project_dir);
+        // The ledger row's output is byte-identical to the live summary.
+        assert_eq!(rows[0].output, summary);
+
+        // A commit without a session_id writes no row.
+        std::fs::write(repo.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+        let bare = ChangesetCommitPayload {
+            project_dir: repo.to_string_lossy().into_owned(),
+            files: vec!["a.txt".to_string()],
+            message: "Add a third line".to_string(),
+            session_name: None,
+            session_id: None,
+        };
+        sup.do_changeset_commit(&bare).await;
+        let _ = drain_until_action(&mut rx, "changeset_commit_ok");
+        assert_eq!(
+            shell_ledger.list_exchanges("sess").expect("list").len(),
+            1,
+            "the session-less commit added no ledger row",
+        );
     }
 
     /// `list_card_bindings` reports `is_alive: true` for a session

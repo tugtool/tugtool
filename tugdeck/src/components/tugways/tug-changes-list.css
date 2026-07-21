@@ -1,0 +1,119 @@
+/* TugChangesList — the reusable file-rows-with-diffs surface ([P01], S01).
+   Extracted from the Changes shade under the `tug-changes-list-` prefix.
+   Appearance only ([L06]); interactions are wired in the component. */
+
+/* The wrapper carries the component's data-slot but lays out nothing of its
+   own — its children (labels + file lists) participate directly in the host's
+   flex column so hosts keep their existing inter-block spacing. */
+.tug-changes-list {
+  display: contents;
+}
+
+.tug-changes-list-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.tug-changes-list-file-block {
+  min-width: 0;
+}
+
+.tug-changes-list-file-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.8125rem;
+}
+
+.tug-changes-list-file-block-notice {
+  margin: 4px 0;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  opacity: 0.7;
+}
+
+.tug-changes-list-file-status {
+  flex-shrink: 0;
+  width: 2ch;
+  white-space: pre;
+}
+
+.tug-changes-list-status-added {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+.tug-changes-list-status-deleted {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+.tug-changes-list-status-modified {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+.tug-changes-list-status-renamed {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+.tug-changes-list-status-untracked {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-changes-list-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tug-changes-list-file-path--link {
+  cursor: pointer;
+}
+.tug-changes-list-file-path--link:hover {
+  text-decoration: underline;
+}
+
+.tug-changes-list-file-provenance {
+  flex-shrink: 0;
+  padding-left: var(--tug-space-md);
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  font-size: 0.6875rem;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- Shared badge ---- */
+
+.tug-changes-list-badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+.tug-changes-list-badge-shared {
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+/* ---- Unattributed section label ---- */
+
+.tug-changes-list-section-label {
+  font-size: 0.625rem;
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+  padding: var(--tug-space-xs) var(--tug-space-sm) 0;
+  border-top: 1px solid var(--tug7-element-tone-border-normal-neutral-rest);
+  margin-top: var(--tug-space-xs);
+}
+
+/* Bracket-hint provenance on unattributed rows ([P13]) — the one-glance
+   disposition cue; a hint is never an attribution. */
+.tug-changes-list-file-hint {
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}

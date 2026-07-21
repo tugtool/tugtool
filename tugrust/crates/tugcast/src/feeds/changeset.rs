@@ -772,6 +772,35 @@ pub(crate) async fn run_changeset_commit(
     .map_err(|e| format!("commit task panicked: {e}"))?
 }
 
+/// The standard post-commit summary (Spec S02), formatted server-side so the
+/// live ink row and the row restored from the shell ledger are byte-identical.
+///
+/// ```text
+/// committed <sha[0..10]> — <subject>
+/// <N> file(s) · +<added> −<removed>
+/// ```
+///
+/// `<subject>` is the message's first line; `<N>` the count of numstat lines;
+/// `added`/`removed` the summed numstat columns (a binary `-` column counts 0).
+pub(crate) fn format_commit_summary(sha: &str, message: &str, numstat: &str) -> String {
+    let short = &sha[..sha.len().min(10)];
+    let subject = message.lines().next().unwrap_or("").trim();
+    let mut files = 0usize;
+    let mut added = 0u64;
+    let mut removed = 0u64;
+    for line in numstat.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        files += 1;
+        let mut cols = line.split('\t');
+        // Binary files report `-` for both counts — parse failures count 0.
+        added += cols.next().and_then(|c| c.trim().parse::<u64>().ok()).unwrap_or(0);
+        removed += cols.next().and_then(|c| c.trim().parse::<u64>().ok()).unwrap_or(0);
+    }
+    format!("committed {short} — {subject}\n{files} file(s) · +{added} −{removed}")
+}
+
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
 /// on any failure.
 async fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
@@ -1386,6 +1415,38 @@ mod tests {
             err.contains("no-such-file.txt"),
             "stderr detail names the bad path: {err}"
         );
+    }
+
+    #[test]
+    fn format_commit_summary_single_file() {
+        let s = format_commit_summary(
+            "0123456789abcdef",
+            "Fix the thing",
+            "3\t1\tsrc/a.rs",
+        );
+        assert_eq!(s, "committed 0123456789 — Fix the thing\n1 file(s) · +3 −1");
+    }
+
+    #[test]
+    fn format_commit_summary_multi_line_message_takes_first_line() {
+        let s = format_commit_summary(
+            "abcdef0123456789",
+            "Subject line\n\nA longer body paragraph.",
+            "10\t2\tsrc/a.rs\n4\t0\tsrc/b.rs",
+        );
+        assert_eq!(s, "committed abcdef0123 — Subject line\n2 file(s) · +14 −2");
+    }
+
+    #[test]
+    fn format_commit_summary_counts_binary_columns_as_zero() {
+        // A binary file reports `-` for both counts; it counts toward the file
+        // total but adds 0 to the ± sums.
+        let s = format_commit_summary(
+            "ffffffffffffffff",
+            "Add an image",
+            "-\t-\tassets/logo.png\n5\t3\tsrc/a.rs",
+        );
+        assert_eq!(s, "committed ffffffffff — Add an image\n2 file(s) · +5 −3");
     }
 
     #[test]

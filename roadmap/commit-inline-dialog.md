@@ -428,14 +428,14 @@ New `tugdeck/src/lib/commit-dialog-controller.ts`, the `ShadeViewController` pat
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extract TugChangesList | pending | — |
-| #step-2 | Read-only shade + /join interim | pending | — |
-| #step-3 | Durable commit record (tugcast) | pending | — |
-| #step-4 | Commit-receipt renderer + slimmed receipts | pending | — |
-| #step-5 | CommitDialogController + TugCommitDialog + /commit rewire | pending | — |
-| #step-6 | Auto-Message affordance | pending | — |
-| #step-7 | Session ▸ Commit… menu item | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Extract TugChangesList | done | 9b361db36 |
+| #step-2 | Read-only shade + /join interim | done | aeed8d02a |
+| #step-3 | Durable commit record (tugcast) | done | 6ae99e08d |
+| #step-4 | Commit-receipt renderer + slimmed receipts | done | 9b6db2b85 |
+| #step-5 | CommitDialogController + TugCommitDialog + /commit rewire | done | 8e7d5cdb7 |
+| #step-6 | Auto-Message affordance | done | c6567647a |
+| #step-7 | Session ▸ Commit… menu item | done | 6f259c837 |
+| #step-8 | Integration checkpoint | done | 7d2dfc7a3 |
 
 #### Step 1: Extract TugChangesList {#step-1}
 

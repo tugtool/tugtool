@@ -1,0 +1,30 @@
+/* SessionCommitReceiptBlock — the `/commit` receipt header ([P08]). Mirrors
+   the Git Commit receipt grammar (subject on the left, count + sha chips
+   pinned right) so a session commit reads at the same altitude as a bash
+   commit receipt. Appearance only ([L06]). */
+
+.commit-receipt-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.commit-receipt-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tugx-block-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-receipt-chips {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  color: var(--tugx-block-text-color);
+}

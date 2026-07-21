@@ -824,6 +824,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Clear Session", "clear", "session.new"))
         sessionMenu.addItem(sessionCommandItem("Resume Session…", "resume", "session.resume"))
         sessionMenu.addItem(sessionCommandItem("Rename Session…", "rename", "session.rename"))
+        sessionMenu.addItem(sessionCommandItem("Commit…", "commit", "session.commit"))
         sessionMenu.addItem(NSMenuItem.separator())
 
         // Permission Mode — a native radio submenu over the four

@@ -9,13 +9,17 @@
  *    alias/bucket system to make an override legitimate, so a repeat
  *    is always a wiring mistake.
  *  - Matchers resolve in registration order — first claim wins.
- *  - The skeleton ships EMPTY ([P05]): bespoke renderers (git status,
- *    ls, build progress) are follow-ons; none register at module load.
+ *  - A reset registry resolves everything to the generic default (the
+ *    total-default contract with no registrations).
+ *
+ * Each test resets the registry first, so module-load registrations (the
+ * shipped `commit-receipt` renderer, [P08]) don't leak in and the synthetic
+ * registrations below are the whole population under test.
  *
  * @module components/tugways/cards/__tests__/session-command-block-registry
  */
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   _resetCommandBlockRegistryForTests,
@@ -29,13 +33,17 @@ import { ShellExchangeBlock } from "../shell-exchange-block";
 const RendererA: CommandBlockRenderer = () => null;
 const RendererB: CommandBlockRenderer = () => null;
 
+beforeEach(() => {
+  _resetCommandBlockRegistryForTests();
+});
 afterEach(() => {
   _resetCommandBlockRegistryForTests();
 });
 
 describe("session-command-block-registry", () => {
-  test("the skeleton ships empty — no bespoke renderers at module load ([P05])", () => {
+  test("a reset registry is empty — everything resolves to the default", () => {
     expect(registeredCommandBlocks()).toEqual([]);
+    expect(resolveCommandBlock("/commit")).toBe(ShellExchangeBlock);
   });
 
   test("resolution is total: any command defaults to the generic exchange block", () => {

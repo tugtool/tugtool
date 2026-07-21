@@ -107,7 +107,13 @@ import {
 import { useDeckManager } from "@/deck-manager-context";
 import { SessionThinkingBlock } from "@/components/tugways/chrome/session-thinking-block";
 import { SessionZ1B } from "@/components/tugways/cards/session-card-z1b";
-import { useFootHeightReservation } from "@/components/tugways/cards/session-card-transcript-foot-reservation";
+import {
+  useFootHeightReservation,
+  codeSessionDialogPresence,
+} from "@/components/tugways/cards/session-card-transcript-foot-reservation";
+import { TugCommitDialog } from "@/components/tugways/cards/session-commit-dialog";
+import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import type { CommitDialogController } from "@/lib/commit-dialog-controller";
 import { formatAtomTextForCopy } from "@/components/tugways/cards/tug-atom-text-body";
 import { TugAtomMarkdownBody } from "@/components/tugways/cards/tug-atom-markdown-body";
 import { SessionContextAttachments } from "@/components/tugways/cards/session-context-attachments";
@@ -168,6 +174,9 @@ import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
 import { SessionCompactionEntry } from "@/components/tugways/cards/session-compaction-entry";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./session-command-block-registry";
+// Side-effect import: registers the bespoke `/commit` receipt renderer with
+// the command-block registry before the first `resolveCommandBlock` call ([P08]).
+import "./session-commit-receipt-block";
 import { composeShellShareText } from "./shell-exchange-view";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
@@ -1250,8 +1259,12 @@ const AssistantTurnCell = React.memo(function AssistantTurnCell({
   // `codeSessionStore` directly [L22] — the floor is set in the
   // synchronous store-notify callback while the dialog is still
   // mounted. See `session-card-transcript-foot-reservation`.
+  const footPresence = useMemo(
+    () => codeSessionDialogPresence(codeSessionStore),
+    [codeSessionStore],
+  );
   const { floorRef: footFloorRef } = useFootHeightReservation(
-    codeSessionStore,
+    footPresence,
     !isCommitted && isLastAssistant,
   );
 
@@ -1551,6 +1564,12 @@ export interface SessionTranscriptHostProps {
    * unchanged.
    */
   renderTurnTrailing?: TurnTrailingRenderer;
+  /** Per-card Changes controller — feeds the transcript-tail commit dialog its
+   *  changeset snapshot ([P03]). */
+  changesController: ChangesRouteController;
+  /** Per-card commit-dialog controller — drives the tail-slot `TugCommitDialog`
+   *  open state ([P03]). */
+  commitDialogController: CommitDialogController;
 }
 
 /**
@@ -1634,6 +1653,8 @@ export const SessionTranscriptHost = forwardRef<
     responseStore,
     findSession,
     renderTurnTrailing,
+    changesController,
+    commitDialogController,
   },
   ref,
 ) {
@@ -2063,6 +2084,22 @@ export const SessionTranscriptHost = forwardRef<
   // Inner `TugListView` handle — the parent reaches `scrollToBottom`
   // through the `SessionTranscriptHandle` exposed below.
   const listViewRef = useRef<TugListViewHandle | null>(null);
+
+  // Foot reservation for the transcript-tail commit dialog ([P03]): dismissing
+  // the dialog shrinks the tail slot, which would hop the scroll — the
+  // generalized reservation holds the slot's height on close, observing the
+  // commit-dialog controller (always live — the tail slot never unmounts).
+  const commitDialogPresence = useMemo(
+    () => ({
+      subscribe: commitDialogController.subscribe,
+      isDialogPresent: () => commitDialogController.getSnapshot().open,
+    }),
+    [commitDialogController],
+  );
+  const { floorRef: commitDialogFloorRef } = useFootHeightReservation(
+    commitDialogPresence,
+    true,
+  );
   useImperativeHandle(
     ref,
     () => ({
@@ -2379,6 +2416,19 @@ export const SessionTranscriptHost = forwardRef<
                   codeSessionStore={codeSessionStore}
                   cardId={cardId}
                 />
+              }
+              // The transcript-resident commit dialog ([P03]/[Q02]): a
+              // dedicated slot at the tail of the scroller (after the last
+              // entry, inside the scroll façade providers so it reads
+              // `useScroller()`). Its foot reservation is inside the component.
+              trailingContent={
+                <div ref={commitDialogFloorRef}>
+                  <TugCommitDialog
+                    controller={commitDialogController}
+                    changesController={changesController}
+                    codeSessionStore={codeSessionStore}
+                  />
+                </div>
               }
               // Freeze the per-commit scroll battery across the restore
               // replay, each load-previous bracket, and the post-reveal

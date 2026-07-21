@@ -615,6 +615,16 @@ export interface TugListViewProps<
   leadingContent?: React.ReactNode;
 
   /**
+   * A permanent, un-indexed element rendered AFTER the last row, inside the
+   * scroller (so a consumer that reads `useScroller()` resolves the list's
+   * scroll façade) and after the cells so it rides the live edge. Un-indexed
+   * like {@link leadingContent}, so it never perturbs `numberOfItems` or the
+   * anchor math. Used by the Session card to host the transcript-tail
+   * `TugCommitDialog` ([P03]).
+   */
+  trailingContent?: React.ReactNode;
+
+  /**
    * Initial auto-follow-bottom intent. When `true`, the list view
    * pins to the bottom on mount and on every data-source growth /
    * height-index update while the last item is in the rendered
@@ -1219,6 +1229,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       scrollKey,
       className,
       leadingContent,
+      trailingContent,
       followBottom,
       batchLoading = false,
       onFirstSettle,
@@ -3823,6 +3834,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             );
           })}
         </div>
+        {/* Trailing content — a permanent, un-indexed element after the last
+            row, inside the scroll façade providers so a hosted dialog reads
+            `useScroller()` (see `trailingContent` prop). */}
+        {trailingContent !== undefined ? (
+          <div className="tug-list-view-trailing" data-slot="tug-list-view-trailing">
+            {trailingContent}
+          </div>
+        ) : null}
         </TugListRowLayoutProvider>
         </ScrollerProvider>
         </OuterScrollportProvider>

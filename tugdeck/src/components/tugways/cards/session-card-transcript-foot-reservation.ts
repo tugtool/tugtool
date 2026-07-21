@@ -65,6 +65,41 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
 // ---------------------------------------------------------------------------
+// Presence source — what the hook observes
+// ---------------------------------------------------------------------------
+
+/**
+ * The store the reservation observes, generalized ([P03]): a subscribe seam
+ * plus a synchronous presence predicate. The permission/question foot dialog
+ * reads `CodeSessionStore` (see {@link codeSessionDialogPresence}); the
+ * transcript-tail `TugCommitDialog` reads its `CommitDialogController`. The
+ * predicate must be readable synchronously inside the store's notify callback
+ * so the floor is written while the dismissing surface is still in the DOM
+ * ([L22]).
+ */
+export interface DialogPresenceSource {
+  subscribe: (listener: () => void) => () => void;
+  isDialogPresent: () => boolean;
+}
+
+/**
+ * The `CodeSessionStore` presence source: a permission dialog foots the cell
+ * and a question lives in place at its tool block — either grows-then-shrinks
+ * the in-flight cell, so both count as "present".
+ */
+export function codeSessionDialogPresence(
+  store: CodeSessionStore,
+): DialogPresenceSource {
+  return {
+    subscribe: store.subscribe,
+    isDialogPresent: () => {
+      const snap = store.getSnapshot();
+      return snap.pendingApproval !== null || snap.pendingQuestion !== null;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Pure decision
 // ---------------------------------------------------------------------------
 
@@ -100,13 +135,14 @@ export interface FootReservationRefs {
 }
 
 /**
- * Manage the foot height-reservation floor for one assistant cell by
- * observing `store` directly. Subscribes only while `inFlight` (the one
- * cell that can host a foot dialog). Returns a stable ref-setter for the
- * floor element.
+ * Manage the foot height-reservation floor for one floored element by
+ * observing `source` directly ([P03] — parameterized over the store +
+ * presence predicate). Subscribes only while `inFlight` (the assistant cell
+ * gates on being the in-flight last cell; the commit dialog's tail slot is
+ * always live). Returns a stable ref-setter for the floor element.
  */
 export function useFootHeightReservation(
-  store: CodeSessionStore,
+  source: DialogPresenceSource,
   inFlight: boolean,
 ): FootReservationRefs {
   const floorElRef = useRef<HTMLDivElement | null>(null);
@@ -150,33 +186,27 @@ export function useFootHeightReservation(
   // only one that can host a foot dialog.
   useLayoutEffect(() => {
     if (!inFlight) return;
-    // Seed from the live store: a question/permission may already be pending
-    // when this cell mounts (a cold restore mid-question), so reserve at once.
-    dialogPresentRef.current =
-      store.getSnapshot().pendingApproval !== null ||
-      store.getSnapshot().pendingQuestion !== null;
+    // Seed from the live source: a dialog may already be present when this
+    // element mounts (a cold restore mid-question), so reserve at once.
+    dialogPresentRef.current = source.isDialogPresent();
     if (dialogPresentRef.current) ratchet();
     let wasDialogPresent = dialogPresentRef.current;
-    const onStoreChange = (): void => {
+      const onStoreChange = (): void => {
       const floorEl = floorElRef.current;
-      const snap = store.getSnapshot();
-      // A pending PERMISSION dialog foots here, and a pending QUESTION lives in
-      // place at its tool block — both grow then shrink this cell (the question
-      // via its chat-about ↔ wizard toggle and its answer morph). Treat either
-      // as "present" and hold the cell at its tallest height across the whole
-      // interaction so neither sub-mode switch nor the morph hops the scroll.
-      const isDialogPresent =
-        snap.pendingApproval !== null || snap.pendingQuestion !== null;
+      // The observed surface grows then shrinks the floored element; hold it
+      // at its tallest height across the whole interaction so neither a
+      // sub-mode switch nor a dismissal hops the scroll.
+      const isDialogPresent = source.isDialogPresent();
       dialogPresentRef.current = isDialogPresent;
       if (floorEl !== null && (isDialogPresent || wasDialogPresent)) {
-        // Reserve continuously while pending, and once more on the dismissal
+        // Reserve continuously while present, and once more on the dismissal
         // edge (the surface is still in the DOM in this synchronous notify,
-        // before React unmounts it) so the floor is in place before the morph.
+        // before React unmounts it) so the floor is in place before the shrink.
         ratchet();
       }
       wasDialogPresent = isDialogPresent;
     };
-    const unsubscribe = store.subscribe(onStoreChange);
+    const unsubscribe = source.subscribe(onStoreChange);
     return () => {
       unsubscribe();
       // Release on teardown (the turn committed, so `inFlight` flipped,
@@ -185,7 +215,7 @@ export function useFootHeightReservation(
       // the result never overtook it.
       clearFloor();
     };
-  }, [store, inFlight, clearFloor, ratchet]);
+  }, [source, inFlight, clearFloor, ratchet]);
 
   // Disconnect the observer on unmount.
   useEffect(

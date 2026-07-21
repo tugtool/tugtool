@@ -159,14 +159,12 @@ export const LOCAL_SLASH_COMMANDS = [
   },
   {
     name: "commit",
-    description:
-      "Land this session's changes — drafts a message first, lands on the second /commit",
+    description: "Open the commit dialog to author a message and land this session's changes",
     takesArgs: true,
   },
   {
     name: "join",
-    description:
-      "Join a dash into its base — previews first, lands the squash with its join draft",
+    description: "Join a dash into its base (shell for now — dialog coming)",
     takesArgs: true,
   },
   {

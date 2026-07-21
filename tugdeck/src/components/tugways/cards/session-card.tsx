@@ -39,8 +39,7 @@ import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
 import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
-import { planCommitVerb } from "@/lib/commit-verb-plan";
-import { planJoinVerb } from "@/lib/join-verb-plan";
+import { CommitDialogController } from "@/lib/commit-dialog-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
@@ -2153,6 +2152,24 @@ export function SessionCardBody({
   }
   const shadeViewController = shadeViewControllerRef.current;
 
+  // The transcript-resident commit dialog's per-card open state + land path
+  // ([P03], Spec S03). User-driven (`/commit`, Session ▸ Commit…), so it rides
+  // its own controller rather than `CodeSessionStore`'s reducer. Mutually
+  // exclusive with the shade.
+  const commitDialogControllerRef = useRef<CommitDialogController | null>(null);
+  if (commitDialogControllerRef.current === null) {
+    commitDialogControllerRef.current = new CommitDialogController({
+      changesController,
+      shadeViewController,
+      codeSessionStore,
+    });
+  }
+  const commitDialogController = commitDialogControllerRef.current;
+  useEffect(
+    () => () => commitDialogController.dispose(),
+    [commitDialogController],
+  );
+
   useSessionCardObserver(cardId, codeSessionStore);
   // Landing receipts as transcript ink ([P09], Spec S04): every successful
   // commit/join/release for this card's project leaves a non-context row.
@@ -2995,47 +3012,6 @@ export function SessionCardBody({
     return false;
   };
 
-  // The commit landing path ([P04]/[P08]): the four gates, then land and
-  // consume the draft on success. Shared by `/commit` beat 2 and the Changes
-  // shade's Commit button — one land path, one gate set.
-  const landSessionCommit = (message: string): void => {
-    const notify = paneBulletinRef.current;
-    const text = message.trim();
-    if (codeSessionStore.getSnapshot().canInterrupt === true) {
-      notify?.caution("Can't commit while a turn is in flight");
-      return;
-    }
-    const verbStore = getChangesetVerbStore();
-    if (verbStore?.commitState(changesController.entryKey).phase === "pending") {
-      notify?.caution("A commit is already in progress");
-      return;
-    }
-    if (changesController.getSnapshot().committedPaths.size === 0) {
-      shadeViewController.show("changes");
-      notify?.caution("Nothing to commit — this session has no changes");
-      return;
-    }
-    if (text.length === 0) {
-      notify?.caution("Nothing to land — the draft message is empty");
-      return;
-    }
-    changesController.commit(text);
-    if (verbStore === null) return;
-    const unsubscribe = verbStore.subscribe(() => {
-      const phase = verbStore.commitState(changesController.entryKey).phase;
-      if (phase === "pending") return;
-      unsubscribe();
-      if (phase === "done") {
-        getChangesetDraftStore()?.setDraft(
-          changesController.projectDir,
-          "session",
-          changesController.tugSessionId,
-          { clear: true },
-        );
-      }
-    });
-  };
-
   const slashCommandSurfaces: Record<LocalCommandName, (args: string) => void> = {
     permissions: () => permissionRulesSheet.openRulesSheet(),
     model: () => {
@@ -3268,122 +3244,24 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
-    // `/commit` — the double-duty landing verb ([P04], Table T01): with no
-    // ready draft, beat 1 opens the Changes shade and generates one; with a
-    // ready draft (or an explicit message / `now`), beat 2 applies the
-    // landing gates and lands. Claude's built-in `/commit` is shadowed dead
-    // by this local match.
+    // `/commit` — always opens `TugCommitDialog` inline in the transcript
+    // ([P09]). A `/commit <message>` seeds the editor with the args as an
+    // edited draft ([P05]); the `now` keyword loses its meaning (args are just
+    // the message). Claude's built-in `/commit` stays shadowed dead by this
+    // local match.
     commit: (args) => {
-      const notify = paneBulletinRef.current;
-      const projectDirForDraft = changesController.projectDir;
-      const ownerId = changesController.tugSessionId;
-      const draftStore = getChangesetDraftStore();
-      // Ready draft = a finished generation still in the overlay, or a
-      // persisted non-empty draft message on the entry.
-      const overlay = draftStore?.overlay(projectDirForDraft, "session", ownerId);
-      const overlayText =
-        overlay?.phase === "ready" && overlay.text.trim().length > 0
-          ? overlay.text.trim()
-          : null;
-      const persistedText =
-        changesController.getSnapshot().entry?.draft?.message?.trim() ?? "";
-      const readyMessage =
-        overlayText ?? (persistedText.length > 0 ? persistedText : null);
-
-      const plan = planCommitVerb(args, readyMessage);
-      if (plan.kind === "draft") {
-        // Beat 1: the shade is where the draft is reviewed and edited.
-        shadeViewController.show("changes");
-        changesController.requestDraft();
-        return;
-      }
-      if (plan.kind === "generate-then-land") {
-        shadeViewController.show("changes");
-        changesController.requestDraft();
-        if (draftStore === null) return;
-        const unsubscribe = draftStore.subscribe(() => {
-          const o = draftStore.overlay(projectDirForDraft, "session", ownerId);
-          if (o.phase === "drafting") return;
-          unsubscribe();
-          if (o.phase === "ready" && o.text.trim().length > 0) {
-            landSessionCommit(o.text.trim());
-          } else {
-            notify?.caution("Draft generation failed — nothing was landed");
-          }
-        });
-        return;
-      }
-      landSessionCommit(plan.message);
+      const message = args.trim();
+      commitDialogController.show(message.length > 0 ? message : undefined);
     },
-    // `/join` — the dash-lane landing verb ([P05]): bare opens the shade's
-    // dash lane (previewing when exactly one dash exists); `/join <name>`
-    // previews and, when clean with a join draft on file, lands the squash
-    // with that draft as the message. An empty dash routes to its release
-    // affordance ([P14]); conflicts land in the shade's resolve flow.
-    join: (args) => {
-      const notify = paneBulletinRef.current;
-      const snap = changesController.getSnapshot();
-      const plan = planJoinVerb(
-        args,
-        snap.dashes.map((d) => ({
-          name: d.display_name,
-          ownerId: d.owner_id,
-          rounds: d.rounds,
-          dirty: d.worktree_dirty,
-        })),
+    // `/join` — degraded to a caution bulletin for the interim ([P10]): the
+    // dash join/resolve/release UI left with the read-only shade, and
+    // `TugJoinDialog` (modeled on `TugCommitDialog`) is the named follow-on.
+    // Shell joins suffice meanwhile; the verb-store and tugcast join/release
+    // machinery stay intact but unreferenced by UI.
+    join: () => {
+      paneBulletinRef.current?.caution(
+        "Joins land via the shell for now — TugJoinDialog is coming",
       );
-      // Every branch lands the user in the shade's dash lane.
-      shadeViewController.show("changes");
-      if (plan.kind === "open-lane") return;
-      if (plan.kind === "unknown") {
-        notify?.caution(`No dash named “${plan.name}”`);
-        return;
-      }
-      if (plan.kind === "release-handoff") {
-        notify?.caution(
-          `Nothing to join — release “${plan.dash.name}” to discard it`,
-        );
-        return;
-      }
-      // The join gates ([P08]): idle-only, no doubled round-trip.
-      if (codeSessionStore.getSnapshot().canInterrupt === true) {
-        notify?.caution("Can't join while a turn is in flight");
-        return;
-      }
-      const projectRoot = snap.project.project_dir;
-      const entryKey = `dash:${projectRoot}:${plan.dash.ownerId}`;
-      const verbStore = getChangesetVerbStore();
-      if (verbStore === null) return;
-      if (verbStore.joinState(entryKey).phase === "pending") {
-        notify?.caution("A join is already in progress");
-        return;
-      }
-      const draftReady =
-        (snap.dashes
-          .find((d) => d.owner_id === plan.dash.ownerId)
-          ?.draft?.message?.trim() ?? "").length > 0;
-      verbStore.join(entryKey, projectRoot, plan.dash.name, { preview: true });
-      if (!plan.autoLand) return;
-      // Named form: a clean preview with a ready join draft lands in the
-      // same gesture (squash; the backend's message resolution uses the
-      // maintained dash draft). Conflicts stay in the shade's resolve flow;
-      // a clean preview with no draft waits for the shade's Confirm.
-      const unsubscribe = verbStore.subscribe(() => {
-        const state = verbStore.joinState(entryKey);
-        if (state.phase === "pending") return;
-        unsubscribe();
-        if (state.phase !== "preview" || state.conflicts.length > 0) return;
-        if (!draftReady) {
-          notify?.caution(
-            "Joins cleanly — no join draft on file; confirm from the shade",
-          );
-          return;
-        }
-        if (codeSessionStore.getSnapshot().canInterrupt === true) return;
-        verbStore.join(entryKey, projectRoot, plan.dash.name, {
-          preview: false,
-        });
-      });
     },
   };
 
@@ -3845,6 +3723,8 @@ export function SessionCardBody({
                   responseStore={responseStore}
                   findSession={findSession}
                   renderTurnTrailing={effectiveRenderTurnTrailing}
+                  changesController={changesController}
+                  commitDialogController={commitDialogController}
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
@@ -3863,7 +3743,6 @@ export function SessionCardBody({
                       projectDir={projectDir}
                       changesController={changesController}
                       codeSessionStore={codeSessionStore}
-                      onCommit={landSessionCommit}
                       onClose={() => shadeViewController.hide()}
                     />
                   </TugSheetContent>

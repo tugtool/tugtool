@@ -1,0 +1,49 @@
+/* TugCommitDialog — the transcript-tail commit dialog ([P03]). The dialog
+   chrome is TugInlineDialog (--tugx-idialog-*); this file owns only the body
+   layout (editor over the changes list) and the error line. Appearance only
+   ([L06]). */
+
+.session-commit-dialog {
+  /* The scrim's bright-island marker + the cancel-responder root. Not
+     focusable — clicking inert chrome establishes no focus state. */
+  display: block;
+}
+
+.session-commit-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-commit-dialog-editor {
+  border-radius: 4px;
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.06));
+}
+
+/* Drafting status row ([P06]) — the Bot avatar + wave while the scribe
+   generates, borrowed from the /btw grammar. */
+.session-commit-dialog-drafting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-commit-dialog-drafting-avatar {
+  display: inline-flex;
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+.session-commit-dialog-drafting-label {
+  font-style: italic;
+}
+
+.session-commit-dialog-error {
+  font-size: 0.75rem;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+.session-commit-dialog-empty {
+  padding: var(--tug-space-sm) 0;
+  font-size: 0.8125rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
