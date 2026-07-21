@@ -4,8 +4,8 @@
  * open/reveal context menu), a `+N −M` badge, and a pop-out-to-a-card diff
  * affordance, over a `git diff HEAD` body that expands and collapses in place.
  *
- * Extracted from the Changes shade so both the read-only shade and the
- * transcript `TugCommitDialog` compose the same rows. The component owns diff
+ * Extracted from the Changes shade so both the read-only glance and the commit
+ * route's rising sheet compose the same rows. The component owns diff
  * fetching — one `GitDiffStore` per entry, dropped on unmount — and nothing
  * else: per-file collapse is CONTROLLED by the host (`expandedKeys` +
  * `onToggleFile`) so each host keeps its own fold-all / whole-diff chrome.

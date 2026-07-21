@@ -1,14 +1,18 @@
 /**
- * at0253-commit-dialog.test.ts — the transcript-resident `TugCommitDialog`
- * open/dismiss drives, and the read-only Changes shade open/dismiss ([P03],
- * [P02], #step-8).
+ * at0253-commit-dialog.test.ts — the commit route open/dismiss drives ([P03]
+ * revised, [D117]).
  *
- * Cheap drives only: typing `/commit` opens the dialog at the transcript tail
- * (its `data-slot` appears), and Escape dismisses it; ⇧⌘C opens the read-only
- * Changes shade (its Done button appears), and Escape dismisses it. The full
- * commit round-trip is NOT app-testable — the replay workspace's changeset
- * entries live ~2s — so it is covered at the Rust layer instead. The dialog
- * opens regardless of changeset state ([P09]), so no real changes are needed.
+ * The commit dialog was retired: `/commit` (and `!changes`) now enters the
+ * *commit route* — a bottom-anchored commit sheet rises from the top of Z2 and
+ * the prompt entry becomes the message editor, so Z5 shows the cancel /
+ * auto-message / commit icon rail. Cheap drives only: typing `/commit` (or
+ * `!changes`) enters the route — the rising commit sheet panel appears AND the
+ * Z5 Commit button appears — and Escape exits it (both vanish). The route
+ * activates regardless of changeset state ([P09]) — an empty changeset shows the
+ * "No changes" sheet with the Commit button disabled-but-present — so no real
+ * changes are needed. The full commit round-trip is covered at the Rust layer
+ * (the replay workspace's changeset entries live ~2s). The read-only Changes
+ * glance (⇧⌘C / Swift menu) is unchanged and untouched by this redesign.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -26,8 +30,12 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
-const COMMIT_DIALOG = `${CARD} [data-slot="session-commit-dialog"]`;
-const CHANGES_DONE = `${CARD} [data-testid="session-changes-done"]`;
+// The Z5 Commit button is the commit route's tell: present exactly while the
+// route is active (the retired dialog's `data-slot` is gone).
+const COMMIT_BUTTON = `${CARD} [data-testid="tug-prompt-entry-commit-button"]`;
+// The bottom-anchored commit sheet: the TugSheet mounts its shade panel only
+// while open, so this is present exactly while the route's sheet has risen.
+const COMMIT_SHEET = `${CARD} .session-view-pane[data-view="commit"] [data-slot="tug-sheet"]`;
 
 let projectDir = "";
 
@@ -63,9 +71,9 @@ function deckShape() {
 
 const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!SHOULD_RUN)("AT0253: commit dialog + read-only shade", () => {
+describe.skipIf(!SHOULD_RUN)("AT0253: commit route + read-only shade", () => {
   test(
-    "/commit opens the dialog (Escape dismisses); ⇧⌘C opens the read-only shade (Escape dismisses)",
+    "/commit and !changes enter the commit route — the sheet rises and Z5 shows Commit; Escape exits",
     async () => {
       const app = await launchTugApp({ testName: "at0253-commit-dialog" });
       try {
@@ -94,7 +102,7 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit dialog + read-only shade", () => {
           { timeoutMs: 8000 },
         );
 
-        // ── /commit opens the dialog at the transcript tail ──────────────────
+        // ── /commit enters the route: the sheet rises AND Z5 shows Commit ────
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.nativeType("/commit");
         await settle();
@@ -102,19 +110,21 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit dialog + read-only shade", () => {
         await settle();
         await app.nativeKey("Return", ["cmd"]); // submit → run /commit
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(COMMIT_DIALOG)}) !== null`,
+          `document.querySelector(${JSON.stringify(COMMIT_SHEET)}) !== null &&
+           document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) !== null`,
           { timeoutMs: 6000 },
         );
 
-        // Escape dismisses the dialog.
+        // Escape exits the route (sheet drops, composer restores its prompt draft).
         await settle();
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(COMMIT_DIALOG)}) === null`,
+          `document.querySelector(${JSON.stringify(COMMIT_SHEET)}) === null &&
+           document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) === null`,
           { timeoutMs: 4000 },
         );
 
-        // ── `!changes` opens the read-only Changes shade ─────────────────────
+        // ── !changes routes into the SAME commit route ───────────────────────
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.nativeType("!changes");
         await settle();
@@ -122,19 +132,18 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit dialog + read-only shade", () => {
         await settle();
         await app.nativeKey("Return", ["cmd"]);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHANGES_DONE)}) !== null`,
+          `document.querySelector(${JSON.stringify(COMMIT_SHEET)}) !== null &&
+           document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) !== null`,
           { timeoutMs: 6000 },
         );
-
-        // Escape dismisses the shade.
         await settle();
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHANGES_DONE)}) === null`,
+          `document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) === null`,
           { timeoutMs: 4000 },
         );
 
-        // The card and its transcript survived both open/dismiss cycles.
+        // The card and its transcript survived every open/dismiss cycle.
         const after = await app.evalJS<{ cardPresent: boolean; userRows: number }>(
           `({
              cardPresent: document.querySelector(${JSON.stringify(CARD)}) !== null,

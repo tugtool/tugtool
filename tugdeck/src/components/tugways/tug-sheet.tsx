@@ -232,6 +232,17 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
   },
 };
 
+/**
+ * Motion for a bottom-anchored shade (`shadeAnchor="bottom"`) — the mirror of
+ * the `shade` entry above: the panel rises from below its wrapper into place
+ * and drops back on dismiss. Kept beside {@link SHEET_PRESENTATION_MOTION} so
+ * the enter/exit resolver picks it when the shade is bottom-anchored.
+ */
+const SHADE_BOTTOM_MOTION: SheetPresentationMotion = {
+  enter: [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
+  exit: [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
+};
+
 /* ---------------------------------------------------------------------------
  * Internal context
  * ---------------------------------------------------------------------------*/
@@ -596,6 +607,26 @@ export interface TugSheetContentProps {
    * owns the height. Shade presentation only. @default false
    */
   shadeAutoSize?: boolean;
+  /**
+   * Which edge of the slot the `shade` presentation anchors to ([P17]).
+   * `"top"` (default) is the window-shade drop from the header; `"bottom"`
+   * mirrors it — the shade is pinned to the slot's bottom edge (the top of
+   * the Z2 status bar) and rises upward over the transcript, with a
+   * `border-top` and an upward shadow. Bottom-anchored shades carry no
+   * grabber (they pair with `shadeAutoSize`). Shade presentation only.
+   * @default "top"
+   */
+  shadeAnchor?: "top" | "bottom";
+  /**
+   * Present the shade WITHOUT claiming focus ([P17] passive shade). The scrim
+   * and the transcript-inert modality still apply, but the shade installs no
+   * focus trap, does not auto-focus its content on open, and restores nothing
+   * on close — focus stays wherever it was (the live prompt entry below the
+   * shade). For the commit route, where the composer is the message editor and
+   * the rising changes sheet is a passive display beside it. Shade presentation
+   * only. @default false
+   */
+  shadePassive?: boolean;
   /** Accessible label for the shade's resize grabber. @default "Resize" */
   grabberLabel?: string;
   /**
@@ -643,6 +674,8 @@ export function TugSheetContent({
   persistKey,
   shadeMinHeight = 160,
   shadeAutoSize = false,
+  shadeAnchor = "top",
+  shadePassive = false,
   grabberLabel = "Resize",
   modalScopeSelector,
   children,
@@ -758,7 +791,9 @@ export function TugSheetContent({
   // engine must NOT also move DOM focus in `popFocusMode`, which would double-write
   // against the unmount-autofocus writer.
   const { FocusModeScope } = useFocusTrap({
-    active: open,
+    // Passive shade ([P17]): no trap — focus stays in the live prompt entry
+    // below the shade, which is the message editor for the commit route.
+    active: open && !shadePassive,
     closeDisposition: closeDispositionRef,
     deferDomFocusToTeardown: true,
     // [P01] The engine's Escape ladder owns the sheet's Escape now: when the
@@ -1061,7 +1096,11 @@ export function TugSheetContent({
     if (!contentEl) return;
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    g.animate(contentEl, SHEET_PRESENTATION_MOTION[presentation].enter, {
+    const motion =
+      presentation === "shade" && shadeAnchor === "bottom"
+        ? SHADE_BOTTOM_MOTION
+        : SHEET_PRESENTATION_MOTION[presentation];
+    g.animate(contentEl, motion.enter, {
       key: "sheet-content",
       easing: "ease-out",
     });
@@ -1079,7 +1118,7 @@ export function TugSheetContent({
       // didn't complete; subscribers will hear about the next
       // transition (will-hide / did-hide) instead.
     });
-  }, [open, mounted, cardIdForLifecycle, sheetLifecycle, presentation, paneFrameEl]);
+  }, [open, mounted, cardIdForLifecycle, sheetLifecycle, presentation, shadeAnchor, paneFrameEl]);
 
   // Exit animation: runs when !open && mounted (DOM still present for animation).
   useLayoutEffect(() => {
@@ -1091,7 +1130,11 @@ export function TugSheetContent({
     }
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
-    g.animate(contentEl, SHEET_PRESENTATION_MOTION[presentation].exit, {
+    const motion =
+      presentation === "shade" && shadeAnchor === "bottom"
+        ? SHADE_BOTTOM_MOTION
+        : SHEET_PRESENTATION_MOTION[presentation];
+    g.animate(contentEl, motion.exit, {
       key: "sheet-content",
       easing: "ease-in",
     });
@@ -1101,7 +1144,7 @@ export function TugSheetContent({
       // Animation interrupted — unmount anyway to avoid stuck state.
       setMounted(false);
     });
-  }, [open, mounted, presentation]);
+  }, [open, mounted, presentation, shadeAnchor]);
 
   // Scrim show/hide: raise the host pane's built-in scrim while the
   // sheet is open. The cleanup return guarantees a balanced decrement
@@ -1174,6 +1217,12 @@ export function TugSheetContent({
   }
 
   function handleMountAutoFocus(e: Event) {
+    // Passive shade ([P17]): never claim focus on open — the composer below the
+    // shade keeps the caret. Stop Radix from focusing the first tabbable.
+    if (shadePassive) {
+      e.preventDefault();
+      return;
+    }
     // Decide close-focus ownership now, before the FocusScope moves focus into
     // the sheet (which would change the key view): if a keyboard key view is
     // present, the engine owns the close-focus restore and the sheet defers.
@@ -1188,6 +1237,12 @@ export function TugSheetContent({
   }
 
   function handleUnmountAutoFocus(e: Event) {
+    // Passive shade ([P17]): the composer never lost focus, so there is nothing
+    // to restore — leave the caret where it is and stop Radix's trigger refocus.
+    if (shadePassive) {
+      e.preventDefault();
+      return;
+    }
     // Relinquish disposition ([P15] generalized): the engine's
     // `relinquishFocusMode` (fired by the trap's pop) is the single close-focus
     // authority — it exits the enclosing cycle to its resting destination. The
@@ -1302,6 +1357,7 @@ export function TugSheetContent({
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             data-tug-sheet-presentation="shade"
+            data-shade-anchor={shadeAnchor}
             data-autosize={shadeAutoSize ? "true" : undefined}
             style={{
               ["--tug-shade-frac" as string]: String(shadeFrac),

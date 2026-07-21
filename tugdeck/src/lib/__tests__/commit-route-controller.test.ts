@@ -1,0 +1,165 @@
+import { beforeEach, describe, expect, it } from "bun:test";
+
+import {
+  CommitRouteController,
+  evaluateCommitLandGate,
+} from "@/lib/commit-route-controller";
+import { ShadeViewController } from "@/lib/shade-view-controller";
+import { _resetChangesetDraftStoreForTest } from "@/lib/changeset-draft-store";
+import { _resetChangesetVerbStoreForTest } from "@/lib/changeset-verb-store";
+import type { ChangesRouteController } from "@/lib/changes-route-controller";
+import type { CodeSessionStore } from "@/lib/code-session-store";
+
+// Detach the app-level verb / draft singletons so this suite runs hermetically
+// regardless of order — another test file may have attached them to a mock
+// connection whose `setDraft` frame would throw inside `enter()`.
+beforeEach(() => {
+  _resetChangesetDraftStoreForTest();
+  _resetChangesetVerbStoreForTest();
+});
+
+describe("evaluateCommitLandGate", () => {
+  const base = {
+    turnInProgress: false,
+    commitPhase: "idle" as const,
+    message: "fix",
+    fileCount: 2,
+  };
+
+  it("passes when idle, not pending, changeset and message non-empty", () => {
+    expect(evaluateCommitLandGate(base)).toEqual({ ok: true });
+  });
+
+  it("fails first on a running turn, before every other reason", () => {
+    expect(
+      evaluateCommitLandGate({
+        turnInProgress: true,
+        commitPhase: "pending",
+        message: "",
+        fileCount: 0,
+      }),
+    ).toEqual({ ok: false, reason: "turn" });
+  });
+
+  it("fails on a pending commit before the changeset / message checks", () => {
+    expect(
+      evaluateCommitLandGate({ ...base, commitPhase: "pending", message: "", fileCount: 0 }),
+    ).toEqual({ ok: false, reason: "pending" });
+  });
+
+  it("fails on an empty changeset before the message check", () => {
+    expect(
+      evaluateCommitLandGate({ ...base, fileCount: 0, message: "" }),
+    ).toEqual({ ok: false, reason: "empty-changeset" });
+  });
+
+  it("fails on an empty (whitespace) message when everything else is ready", () => {
+    expect(evaluateCommitLandGate({ ...base, message: "   " })).toEqual({
+      ok: false,
+      reason: "empty-message",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minimal fakes — the controller only reads `subscribe` / `getSnapshot` /
+// identity fields off these; the verb + draft singletons are absent in tests
+// (the controller's derivation tolerates null).
+// ---------------------------------------------------------------------------
+
+function fakeChangesController(fileCount: number): ChangesRouteController {
+  return {
+    entryKey: "session:s1",
+    projectDir: "/p",
+    tugSessionId: "s1",
+    subscribe: () => () => {},
+    getSnapshot: () => ({
+      entry: null,
+      dashes: [],
+      unattributed: [],
+      project: { project_dir: "/p" },
+      committedPaths: new Set(Array.from({ length: fileCount }, (_, i) => `f${i}`)),
+    }),
+    commit: () => {},
+    requestDraft: () => {},
+  } as unknown as ChangesRouteController;
+}
+
+function fakeCodeSessionStore(canInterrupt: boolean): CodeSessionStore {
+  return {
+    subscribe: () => () => {},
+    getSnapshot: () => ({ canInterrupt }),
+  } as unknown as CodeSessionStore;
+}
+
+describe("CommitRouteController", () => {
+  it("enter / exit toggles the active flag and fires listeners", () => {
+    const shade = new ShadeViewController();
+    const controller = new CommitRouteController({
+      changesController: fakeChangesController(2),
+      shadeViewController: shade,
+      codeSessionStore: fakeCodeSessionStore(false),
+    });
+    let fires = 0;
+    controller.subscribe(() => {
+      fires += 1;
+    });
+
+    expect(controller.getSnapshot().active).toBe(false);
+    controller.enter("fix the thing");
+    expect(controller.getSnapshot().active).toBe(true);
+    expect(controller.getSnapshot().seedMessage).toBe("fix the thing");
+    controller.exit();
+    expect(controller.getSnapshot().active).toBe(false);
+    expect(fires).toBeGreaterThanOrEqual(2);
+    controller.dispose();
+  });
+
+  it("entering hides an open shade, and opening a shade exits the route", () => {
+    const shade = new ShadeViewController();
+    const controller = new CommitRouteController({
+      changesController: fakeChangesController(1),
+      shadeViewController: shade,
+      codeSessionStore: fakeCodeSessionStore(false),
+    });
+
+    shade.show("changes");
+    controller.enter();
+    // enter() hid the shade ([P03]).
+    expect(shade.getSnapshot()).toBe("none");
+    expect(controller.getSnapshot().active).toBe(true);
+
+    // Opening a shade while the route is active exits it (mutual exclusion).
+    shade.show("history");
+    expect(controller.getSnapshot().active).toBe(false);
+    controller.dispose();
+  });
+
+  it("reports canLandIgnoringMessage off the turn + changeset state", () => {
+    const idle = new CommitRouteController({
+      changesController: fakeChangesController(2),
+      shadeViewController: new ShadeViewController(),
+      codeSessionStore: fakeCodeSessionStore(false),
+    });
+    expect(idle.getSnapshot().canLandIgnoringMessage).toBe(true);
+    expect(idle.getSnapshot().fileCount).toBe(2);
+    idle.dispose();
+
+    const midTurn = new CommitRouteController({
+      changesController: fakeChangesController(2),
+      shadeViewController: new ShadeViewController(),
+      codeSessionStore: fakeCodeSessionStore(true),
+    });
+    expect(midTurn.getSnapshot().canLandIgnoringMessage).toBe(false);
+    midTurn.dispose();
+
+    const empty = new CommitRouteController({
+      changesController: fakeChangesController(0),
+      shadeViewController: new ShadeViewController(),
+      codeSessionStore: fakeCodeSessionStore(false),
+    });
+    expect(empty.getSnapshot().canLandIgnoringMessage).toBe(false);
+    expect(empty.getSnapshot().fileCount).toBe(0);
+    empty.dispose();
+  });
+});

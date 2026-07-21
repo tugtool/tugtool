@@ -49,10 +49,12 @@ import {
   GitCommitHorizontal,
   History as HistoryIcon,
   MessageSquareDashed,
+  PencilSparkles,
   Plus,
   Search,
   Square,
   SquareTerminal,
+  X,
 } from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
@@ -105,6 +107,7 @@ import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
+import { TugConfirmPopover } from "./tug-confirm-popover";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
@@ -139,6 +142,7 @@ import type { PathCommandsStore } from "@/lib/path-commands-store";
 import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import type { FindSession } from "@/lib/find-session";
+import type { CommitRouteController } from "@/lib/commit-route-controller";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -662,6 +666,14 @@ export interface TugPromptEntryProps {
    */
   findSession?: FindSession;
   /**
+   * The commit route ([P03]): when active, this entry becomes the commit-message
+   * editor — the editor content swaps to the changeset draft, Z5 shows
+   * cancel / auto-message / commit, and submit lands the commit instead of
+   * sending to Claude. Optional; hosts without a changeset (the gallery) omit it
+   * and the entry behaves exactly as before.
+   */
+  commitRoute?: CommitRouteController;
+  /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
    * attempted while an attachment is still processing). The message is
@@ -964,6 +976,7 @@ export const TugPromptEntry = React.forwardRef<
     shellSessionStore,
     pathCommandsStore,
     findSession,
+    commitRoute,
     onAttachmentError,
     sessionMetadataStore,
     historyStore,
@@ -1303,6 +1316,125 @@ export const TugPromptEntry = React.forwardRef<
   // Code is the only resting mode ([P01]); prompt history keys entries by
   // this scalar and the Code provider recalls only these ([P11]).
   const route = DEFAULT_ROUTE;
+
+  // ── Commit route ([P03]) ────────────────────────────────────────────────
+  // When active, this entry is the commit-message editor: the editor content
+  // swaps to the changeset draft (stashing the live prompt draft), Z5 shows
+  // cancel / auto-message / commit, and submit lands the commit. The whole mode
+  // rides one subscribable snapshot ([L02]); the editor's live text is read on
+  // demand (submit / cancel / auto-message) rather than mirrored, so no
+  // per-keystroke React state is introduced ([L22]).
+  const commitSnap = useSyncExternalStore(
+    commitRoute?.subscribe ?? NOOP_SUBSCRIBE,
+    () => commitRoute?.getSnapshot() ?? null,
+  );
+  const commitActive = commitSnap?.active === true;
+  const commitDrafting = commitActive && commitSnap?.draftPhase === "drafting";
+  const inCommitRouteRef = useRef(false);
+  const stashedPromptDraftRef = useRef<TugTextEditingState | null>(null);
+  const prevCommitActiveRef = useRef(false);
+  const commitRouteRef = useRef(commitRoute);
+  commitRouteRef.current = commitRoute;
+  const commitSnapRef = useRef(commitSnap);
+  commitSnapRef.current = commitSnap;
+  const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
+
+  // Content swap on the active transition ([L03] so the doc replacement lands
+  // in the same paint as the mode flip). Enter: stash the prompt draft, seed the
+  // editor from the changeset draft (or the `/commit <message>` seed). Exit:
+  // restore the stashed prompt draft. The commit message itself is durable in
+  // the changeset draft store, so a cancel/re-enter resumes it.
+  useLayoutEffect(() => {
+    const editor = textEditorRef.current;
+    if (editor === null) return;
+    const prev = prevCommitActiveRef.current;
+    prevCommitActiveRef.current = commitActive;
+    if (commitActive && !prev) {
+      stashedPromptDraftRef.current = editor.captureState();
+      inCommitRouteRef.current = true;
+      const seed =
+        commitSnapRef.current?.seedMessage ??
+        commitSnapRef.current?.persistedMessage ??
+        "";
+      editor.restoreState(buildEditingStateFromDraftRestore(seed, []));
+      editor.focus();
+    } else if (!commitActive && prev) {
+      inCommitRouteRef.current = false;
+      editor.restoreState(stashedPromptDraftRef.current ?? EMPTY_EDIT_STATE);
+      stashedPromptDraftRef.current = null;
+      editor.focus();
+    }
+  }, [commitActive]);
+
+  // Auto-Message stream ([P06]): the scribe's draft fills the editor live while
+  // `drafting`, and the caret is re-claimed when it settles (`drafting → ready`)
+  // so the generated message is immediately editable.
+  const prevCommitDraftPhaseRef = useRef(commitSnap?.draftPhase ?? "idle");
+  useLayoutEffect(() => {
+    const phase = commitSnap?.draftPhase ?? "idle";
+    const prevPhase = prevCommitDraftPhaseRef.current;
+    prevCommitDraftPhaseRef.current = phase;
+    if (!commitActive) return;
+    const editor = textEditorRef.current;
+    if (editor === null) return;
+    if (phase === "drafting") {
+      editor.restoreState(
+        buildEditingStateFromDraftRestore(commitSnap?.draftText ?? "", []),
+      );
+    } else if (prevPhase === "drafting" && phase === "ready") {
+      editor.restoreState(
+        buildEditingStateFromDraftRestore(commitSnap?.draftText ?? "", []),
+      );
+      editor.focus();
+    }
+  }, [commitActive, commitSnap?.draftPhase, commitSnap?.draftText]);
+
+  // Cancel the commit route (Cancel button + Escape): persist the typed message
+  // so a re-entry resumes it, then exit. Land-success exits through the
+  // controller's own path (which clears the draft first), so it never routes
+  // here — the persist below only ever runs on a user cancel.
+  const cancelCommitRoute = useCallback(() => {
+    const controller = commitRouteRef.current;
+    if (controller === undefined) return;
+    const text = textEditorRef.current?.captureState().text ?? "";
+    if (text.trim().length > 0) controller.persistMessage(text);
+    controller.exit();
+  }, []);
+
+  // Auto-Message ([P06]): a typed message is protected by the Replace confirm;
+  // an empty field drafts straight away. Read the editor live rather than the
+  // persisted `edited` flag so unsaved typing is guarded too.
+  const handleCommitAutoMessage = useCallback(() => {
+    const controller = commitRouteRef.current;
+    if (controller === undefined) return;
+    const text = textEditorRef.current?.captureState().text ?? "";
+    if (text.trim().length > 0) setCommitConfirmOpen(true);
+    else controller.requestDraft(false);
+  }, []);
+
+  // In the commit route, a bare Escape cancels the route ([P03]) — captured on
+  // the entry root before the editor's own keymap sees it, mirroring the retired
+  // dialog's Escape ownership. A modified Escape is left alone.
+  useLayoutEffect(() => {
+    if (!commitActive) return;
+    const el = rootRef.current;
+    if (el === null) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (
+        e.key === "Escape" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelCommitRoute();
+      }
+    };
+    el.addEventListener("keydown", onKeyDown, true);
+    return () => el.removeEventListener("keydown", onKeyDown, true);
+  }, [commitActive, cancelCommitRoute]);
 
   // Shell share ([P08]). A Share click on an exchange row parks its
   // composed text on the shell store; this effect observes the slot,
@@ -1820,6 +1952,16 @@ export const TugPromptEntry = React.forwardRef<
     const view = editor?.view() ?? null;
     const snap = snapRef.current;
     if (editor === null || view === null) return;
+
+    // Commit route ([P03]): submit lands the commit instead of sending to
+    // Claude. `land` re-checks the gate (turn / pending / empty), so an empty
+    // message or a running turn no-ops here and the message is left intact;
+    // success clears the draft and exits the route (restoring the prompt draft
+    // via the content-swap effect). Nothing else in this function runs.
+    if (inCommitRouteRef.current) {
+      commitRouteRef.current?.land(editor.captureState().text);
+      return;
+    }
 
     // Submit-while-completing: if the completion popup is open with a
     // highlighted item, accept it FIRST so a submit made via the button or
@@ -2733,6 +2875,69 @@ export const TugPromptEntry = React.forwardRef<
     </>
   );
 
+  // ── Commit-route chrome ([P03], Z4A indicator + Z5 icon rail) ────────────
+  // Z4A: a non-interactive commit indicator replaces the `!` routing picker —
+  // the mode is legible and the picker (which seeds bang chips, meaningless
+  // here) is hidden.
+  const commitRouteIndicator = (
+    <span
+      className="tug-prompt-entry-commit-indicator"
+      data-slot="tug-prompt-entry-commit-indicator"
+    >
+      <GitCommitHorizontal size={16} aria-hidden="true" />
+    </span>
+  );
+  // Z5: cancel / auto-message / commit, all icons ([P03]). Cancel exits the
+  // route (danger), Auto-Message drafts (pencil-sparkles; a spinner + disabled
+  // while drafting), Commit lands — JS-disabled on the turn/pending/changeset
+  // gate, and additionally dimmed by CSS when the message is empty
+  // (`data-empty`, so no per-keystroke React state, [L22]).
+  const commitPending = commitSnap?.commitPhase === "pending";
+  const commitToolbarTrailing = (
+    <>
+      <TugPushButton
+        className="tug-prompt-entry-commit-cancel"
+        subtype="icon"
+        size="lg"
+        emphasis="outlined"
+        role="danger"
+        onClick={cancelCommitRoute}
+        aria-label="Cancel commit"
+        icon={<X size={16} strokeWidth={2.5} />}
+      />
+      <TugPushButton
+        className="tug-prompt-entry-commit-auto"
+        subtype="icon"
+        size="lg"
+        emphasis="outlined"
+        role="accent"
+        disabled={commitDrafting}
+        onClick={handleCommitAutoMessage}
+        aria-label="Auto-message"
+        title="Generate a commit message"
+        data-testid="tug-prompt-entry-commit-auto"
+        icon={<PencilSparkles size={16} strokeWidth={2} />}
+      />
+      <TugPushButton
+        className="tug-prompt-entry-commit-button"
+        subtype="icon"
+        size="lg"
+        emphasis="filled"
+        role="action"
+        disabled={commitPending || commitSnap === null || !commitSnap.canLandIgnoringMessage}
+        onClick={performSubmit}
+        aria-label="Commit"
+        title={
+          commitSnap !== null && !commitSnap.canLandIgnoringMessage
+            ? "Unavailable while a turn is running or the changeset is empty"
+            : undefined
+        }
+        data-testid="tug-prompt-entry-commit-button"
+        icon={<ArrowUp size={16} strokeWidth={2.5} />}
+      />
+    </>
+  );
+
   // Render the status row only when there is something to put in it.
   const hasStatusRow =
     statusContent !== undefined || cautionContent !== undefined;
@@ -2791,9 +2996,9 @@ export const TugPromptEntry = React.forwardRef<
           inputAreaTabIndex={editorFocusGroup !== undefined ? -1 : undefined}
           accessoryRow={entryAccessoryRow}
           toolbarClassName="tug-prompt-entry-toolbar"
-          toolbarLeading={entryRoutePopup}
+          toolbarLeading={commitActive ? commitRouteIndicator : entryRoutePopup}
           toolbarCenter={indicatorsContent}
-          toolbarTrailing={entryToolbarTrailing}
+          toolbarTrailing={commitActive ? commitToolbarTrailing : entryToolbarTrailing}
         >
             <TugTextEditor
               ref={textEditorRef}
@@ -2806,13 +3011,21 @@ export const TugPromptEntry = React.forwardRef<
               // `session-card.css` — so the gallery prompt keeps the 20-row cap
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
-              disabled={deactivated}
-              placeholder={placeholder ?? ""}
-              completionProviders={completionProviders}
-              argumentHintResolver={argumentHintResolver}
+              // In the commit route the field is a plain-prose message editor:
+              // read-only while the scribe streams a draft, and the slash / bang
+              // / mention / argument machinery stands down (submit lands the
+              // commit; a `/` popup would be nonsense).
+              disabled={deactivated || commitDrafting}
+              placeholder={
+                commitActive
+                  ? "Write a commit message, or use Auto-Message."
+                  : placeholder ?? ""
+              }
+              completionProviders={commitActive ? undefined : completionProviders}
+              argumentHintResolver={commitActive ? undefined : argumentHintResolver}
               argumentHintRefresh={argumentHintRefresh}
-              pastedCommandResolver={pastedCommandResolver}
-              inlineCommandMatcher={inlineCommandMatcher}
+              pastedCommandResolver={commitActive ? undefined : pastedCommandResolver}
+              inlineCommandMatcher={commitActive ? undefined : inlineCommandMatcher}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}
@@ -2834,6 +3047,26 @@ export const TugPromptEntry = React.forwardRef<
               preserveState={false}
             />
         </TugEntryShell>
+        {/* Replace-message confirm ([P03]): guards a typed commit message from
+            an Auto-Message overwrite, anchored on the pencil-sparkles button. */}
+        {commitActive ? (
+          <TugConfirmPopover
+            open={commitConfirmOpen}
+            anchorEl={
+              rootRef.current?.querySelector<HTMLElement>(
+                '[data-testid="tug-prompt-entry-commit-auto"]',
+              ) ?? rootRef.current
+            }
+            message="Replace message?"
+            confirmLabel="OK"
+            confirmRole="danger"
+            onConfirm={() => {
+              setCommitConfirmOpen(false);
+              commitRouteRef.current?.requestDraft(true);
+            }}
+            onCancel={() => setCommitConfirmOpen(false)}
+          />
+        ) : null}
       </ResponderScope>
   );
 });

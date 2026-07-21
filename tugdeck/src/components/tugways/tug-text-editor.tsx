@@ -1140,9 +1140,8 @@ function buildExtensions(
     keepCaretVisible,
     scrollbarAtCap,
     undoMenuStatePlugin,
-    // `tabMovesFocus` fields (a commit message in a dialog) suppress the
-    // marker so the document-level focus walk advances focus on Tab instead of
-    // the surface swallowing it to indent.
+    // `tabMovesFocus` fields suppress the marker so the document-level focus
+    // walk advances focus on Tab instead of the surface swallowing it to indent.
     initial.tabMovesFocus ? [] : tabConsumeMarker,
   ];
 }

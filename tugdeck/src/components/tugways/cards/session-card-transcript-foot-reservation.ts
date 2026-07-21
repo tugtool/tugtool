@@ -71,8 +71,7 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 /**
  * The store the reservation observes, generalized ([P03]): a subscribe seam
  * plus a synchronous presence predicate. The permission/question foot dialog
- * reads `CodeSessionStore` (see {@link codeSessionDialogPresence}); the
- * transcript-tail `TugCommitDialog` reads its `CommitDialogController`. The
+ * reads `CodeSessionStore` (see {@link codeSessionDialogPresence}). The
  * predicate must be readable synchronously inside the store's notify callback
  * so the floor is written while the dismissing surface is still in the DOM
  * ([L22]).

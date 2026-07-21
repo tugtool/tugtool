@@ -39,7 +39,7 @@ import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
 import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
-import { CommitDialogController } from "@/lib/commit-dialog-controller";
+import { CommitRouteController } from "@/lib/commit-route-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
@@ -2159,22 +2159,23 @@ export function SessionCardBody({
   }
   const shadeViewController = shadeViewControllerRef.current;
 
-  // The transcript-resident commit dialog's per-card open state + land path
-  // ([P03], Spec S03). User-driven (`/commit`, Session ▸ Commit…), so it rides
-  // its own controller rather than `CodeSessionStore`'s reducer. Mutually
-  // exclusive with the shade.
-  const commitDialogControllerRef = useRef<CommitDialogController | null>(null);
-  if (commitDialogControllerRef.current === null) {
-    commitDialogControllerRef.current = new CommitDialogController({
+  // The commit route's per-card state + land path ([P03], Spec S03). User-driven
+  // (`/commit`, `!changes`, Session ▸ Commit…), so it rides its own controller
+  // rather than `CodeSessionStore`'s reducer. Entering the route rises the
+  // commit sheet and turns the prompt entry into the message editor; mutually
+  // exclusive with the read-only shade.
+  const commitRouteControllerRef = useRef<CommitRouteController | null>(null);
+  if (commitRouteControllerRef.current === null) {
+    commitRouteControllerRef.current = new CommitRouteController({
       changesController,
       shadeViewController,
       codeSessionStore,
     });
   }
-  const commitDialogController = commitDialogControllerRef.current;
+  const commitRouteController = commitRouteControllerRef.current;
   useEffect(
-    () => () => commitDialogController.dispose(),
-    [commitDialogController],
+    () => () => commitRouteController.dispose(),
+    [commitRouteController],
   );
 
   useSessionCardObserver(cardId, codeSessionStore);
@@ -2199,22 +2200,35 @@ export function SessionCardBody({
     shadeViewController.subscribe,
     shadeViewController.getSnapshot,
   );
-  const activeView: "transcript" | "changes" | "history" =
-    shadeView === "none" ? "transcript" : shadeView;
-  // The Changes / History shades are TugSheet `shade` presentations
-  // ([P17]); the controller's view choice drives their imperative handles.
-  // A self-initiated sheet close (Escape / Cmd-. / the chain's
+  // The commit route is a fourth mutually-exclusive view over the transcript
+  // slot ([P03]): when active it owns the slot (the rising commit sheet) and
+  // the prompt entry becomes the message editor. It wins over any shade choice
+  // because `enter()` hides the shade first ([P17]).
+  const commitRouteActive = useSyncExternalStore(
+    commitRouteController.subscribe,
+    () => commitRouteController.getSnapshot().active,
+  );
+  const activeView: "transcript" | "changes" | "history" | "commit" =
+    commitRouteActive ? "commit" : shadeView === "none" ? "transcript" : shadeView;
+  // The Changes / History shades and the commit sheet are TugSheet `shade`
+  // presentations ([P17]); the controllers' view choice drives their imperative
+  // handles. A self-initiated sheet close (Escape / Cmd-. / the chain's
   // `cancelDialog`) re-syncs the controller through `onOpenChange` — guarded
   // on the live snapshot so a swap (changes → history) closing the outgoing
   // sheet never clobbers the incoming choice.
   const changesSheetRef = useRef<TugSheetHandle | null>(null);
   const historySheetRef = useRef<TugSheetHandle | null>(null);
+  const commitSheetRef = useRef<TugSheetHandle | null>(null);
   useEffect(() => {
     if (shadeView === "changes") changesSheetRef.current?.open();
     else changesSheetRef.current?.close();
     if (shadeView === "history") historySheetRef.current?.open();
     else historySheetRef.current?.close();
   }, [shadeView]);
+  useEffect(() => {
+    if (commitRouteActive) commitSheetRef.current?.open();
+    else commitSheetRef.current?.close();
+  }, [commitRouteActive]);
   const handleChangesSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open && shadeViewController.getSnapshot() === "changes") {
@@ -2230,6 +2244,17 @@ export function SessionCardBody({
       }
     },
     [shadeViewController],
+  );
+  // The commit sheet is a passive shade with no internal close path; this is
+  // defensive re-sync only — if it ever self-closes while the route is active,
+  // exit the route so the composer restores its prompt draft.
+  const handleCommitSheetOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && commitRouteController.getSnapshot().active) {
+        commitRouteController.exit();
+      }
+    },
+    [commitRouteController],
   );
   // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
   // active `/find` holds a non-empty query — no route gate. [L02].
@@ -3251,14 +3276,14 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
-    // `/commit` — always opens `TugCommitDialog` inline in the transcript
-    // ([P09]). A `/commit <message>` seeds the editor with the args as an
-    // edited draft ([P05]); the `now` keyword loses its meaning (args are just
-    // the message). Claude's built-in `/commit` stays shadowed dead by this
-    // local match.
+    // `/commit` — enters the commit route ([P03]/[P09]): the commit sheet rises
+    // and the prompt entry becomes the message editor. A `/commit <message>`
+    // seeds the composer with the args as an edited draft ([P05]); the `now`
+    // keyword loses its meaning (args are just the message). Claude's built-in
+    // `/commit` stays shadowed dead by this local match.
     commit: (args) => {
       const message = args.trim();
-      commitDialogController.show(message.length > 0 ? message : undefined);
+      commitRouteController.enter(message.length > 0 ? message : undefined);
     },
     // `/join` — degraded to a caution bulletin for the interim ([P10]): the
     // dash join/resolve/release UI left with the read-only shade, and
@@ -3319,17 +3344,13 @@ export function SessionCardBody({
       findSession.setQuery(query);
       findSession.next();
     },
-    // `!changes` — the bare routing to the Changes shade ([P04]): the shade
-    // is chrome, summoned by typing but never hidden by it. The retired
-    // `describe`/`commit` sub-verbs live on as `/commit`'s two beats.
+    // `!changes` — the routing finally routes ([P04]): it enters the commit
+    // route (the rising commit sheet + composer-as-message-editor), the same
+    // surface `/commit` opens. `!changes <message>` seeds the message, exactly
+    // like `/commit <message>`.
     changes: (arg) => {
       const trimmed = arg.trim();
-      shadeViewController.show("changes");
-      if (trimmed.length > 0) {
-        paneBulletinRef.current?.caution(
-          "!changes opens the shade — use /commit to draft and land",
-        );
-      }
+      commitRouteController.enter(trimmed.length > 0 ? trimmed : undefined);
     },
     // `!history` ([P04]) — bare shows the History Shade; a question wraps in the
     // `/tugplug:history` skill and sends ON the record so the answer streams in
@@ -3730,8 +3751,6 @@ export function SessionCardBody({
                   responseStore={responseStore}
                   findSession={findSession}
                   renderTurnTrailing={effectiveRenderTurnTrailing}
-                  changesController={changesController}
-                  commitDialogController={commitDialogController}
                 />
               </div>
               <div className="session-view-pane" data-view="changes">
@@ -3772,6 +3791,38 @@ export function SessionCardBody({
                       projectDir={projectDir}
                       active={activeView === "history"}
                       onClose={() => shadeViewController.hide()}
+                    />
+                  </TugSheetContent>
+                </TugSheet>
+              </div>
+              {/*
+                Commit route ([P03] revised): a bottom-anchored PASSIVE shade
+                that rises from the top of Z2 over the transcript while the
+                prompt entry becomes the message editor. `shadePassive` keeps
+                focus in the composer below; `shadeAnchor="bottom"` + auto-size
+                gives the rise-from-Z2 geometry. Dismissal is the composer's
+                Cancel / Escape, so the view carries no Done / X.
+              */}
+              <div className="session-view-pane" data-view="commit">
+                <TugSheet
+                  ref={commitSheetRef}
+                  onOpenChange={handleCommitSheetOpenChange}
+                >
+                  <TugSheetContent
+                    title="Commit"
+                    presentation="shade"
+                    persistKey="session-card"
+                    shadeAutoSize
+                    shadeAnchor="bottom"
+                    shadePassive
+                    grabberLabel="Resize the Commit view"
+                    modalScopeSelector='.session-view-pane[data-view="transcript"]'
+                  >
+                    <SessionChangesView
+                      projectDir={projectDir}
+                      changesController={changesController}
+                      codeSessionStore={codeSessionStore}
+                      variant="commit"
                     />
                   </TugSheetContent>
                 </TugSheet>
@@ -3905,6 +3956,7 @@ export function SessionCardBody({
               shellSessionStore={shellSessionStore}
               pathCommandsStore={pathCommandsStore}
               findSession={findSession}
+              commitRoute={commitRouteController}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
               // session fault. Surface it as a calm, dismissible bulletin

@@ -619,8 +619,7 @@ export interface TugListViewProps<
    * scroller (so a consumer that reads `useScroller()` resolves the list's
    * scroll façade) and after the cells so it rides the live edge. Un-indexed
    * like {@link leadingContent}, so it never perturbs `numberOfItems` or the
-   * anchor math. Used by the Session card to host the transcript-tail
-   * `TugCommitDialog` ([P03]).
+   * anchor math. A permanent tail slot for a consumer's live-edge chrome.
    */
   trailingContent?: React.ReactNode;
 

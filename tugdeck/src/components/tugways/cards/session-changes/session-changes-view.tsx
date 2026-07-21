@@ -102,6 +102,15 @@ export interface SessionChangesViewProps {
   codeSessionStore: CodeSessionStore;
   /** Hide the shade — the header X, the Done button, Return, and Escape. */
   onClose?: () => void;
+  /**
+   * `"shade"` (default) is the read-only ⇧⌘C glance: header titled "Changes",
+   * a header X and a lower-right Done button, and the sheet's own key view
+   * seeded on Done. `"commit"` is the commit route's rising sheet: header
+   * titled "Commit", NO Done row and NO header X (dismissal is the composer's
+   * Cancel / Escape below the passive shade), and NO key-view seed — the
+   * composer owns focus, not the sheet.
+   */
+  variant?: "shade" | "commit";
 }
 
 export function SessionChangesView({
@@ -109,7 +118,9 @@ export function SessionChangesView({
   changesController,
   codeSessionStore,
   onClose,
+  variant = "shade",
 }: SessionChangesViewProps): React.ReactElement {
+  const isCommit = variant === "commit";
   const snap = useSyncExternalStore(
     changesController.subscribe,
     changesController.getSnapshot,
@@ -146,7 +157,9 @@ export function SessionChangesView({
   // seeds only while the shade is open. The persistent default ring is forced
   // on in CSS ([P14]) so it reads under every open modality, not only keyboard.
   const doneFocusGroup = React.useId();
-  useSeedKeyView(`${doneFocusGroup}:0`);
+  // The commit-route sheet is a passive shade ([P17]): the composer owns focus,
+  // so it seeds no key view.
+  useSeedKeyView(isCommit ? null : `${doneFocusGroup}:0`);
 
   // The shade header is the section band chrome ([P02]) — a `BlockStrip` at
   // `altitude="section"`, grip-less: the Changes glyph + title on the left,
@@ -161,11 +174,13 @@ export function SessionChangesView({
           <GitCommitHorizontal size={14} />
         </span>
       }
-      name="Changes"
+      name={isCommit ? "Commit" : "Changes"}
       actions={
         <>
           {actions}
-          {onClose !== undefined ? (
+          {/* The commit route dismisses via the composer's Cancel / Escape, so
+              the rising sheet carries no header X. */}
+          {onClose !== undefined && !isCommit ? (
             <TugIconButton
               icon={<X size={12} strokeWidth={2.5} />}
               aria-label="Close"
@@ -196,20 +211,24 @@ export function SessionChangesView({
       >
         {children}
       </div>
-      <div className="tug-sheet-actions session-changes-actions">
-        <TugPushButton
-          size="sm"
-          emphasis="primary"
-          persistentDefaultRing
-          focusGroup={doneFocusGroup}
-          focusOrder={0}
-          onClick={() => onClose?.()}
-          data-slot="session-changes-done"
-          data-testid="session-changes-done"
-        >
-          Done
-        </TugPushButton>
-      </div>
+      {/* The commit route's landing lives in Z5 (Commit/Cancel), so the rising
+          sheet has no Done action row — only the read-only glance does. */}
+      {isCommit ? null : (
+        <div className="tug-sheet-actions session-changes-actions">
+          <TugPushButton
+            size="sm"
+            emphasis="primary"
+            persistentDefaultRing
+            focusGroup={doneFocusGroup}
+            focusOrder={0}
+            onClick={() => onClose?.()}
+            data-slot="session-changes-done"
+            data-testid="session-changes-done"
+          >
+            Done
+          </TugPushButton>
+        </div>
+      )}
     </>
   );
 

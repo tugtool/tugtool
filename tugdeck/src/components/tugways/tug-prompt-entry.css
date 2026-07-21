@@ -162,6 +162,26 @@ body {
   cursor: not-allowed;
 }
 
+/* Commit route ([P03]): Z4A shows a static commit indicator (git-commit glyph)
+   in place of the `!` routing picker; Z5 shows the cancel / auto-message /
+   commit icon rail. The Commit button lands on the same empty-input gate as the
+   submit button — an empty message dims it and refuses pointer input, while the
+   turn/pending/changeset gate is the JS `disabled` ([L22]: no per-keystroke
+   React state, the message-empty half is this CSS). */
+.tug-prompt-entry-commit-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tug-control-size-lg, 2.25rem);
+  height: var(--tug-control-size-lg, 2.25rem);
+  color: var(--tug7-element-tone-text-normal-accent-rest);
+}
+.tug-prompt-entry[data-empty="true"] .tug-prompt-entry-commit-button {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
 /* Editor text-stop border ([P10]/[P11]). When the keyboard-focus cycle lands
    on the input area (its last stop), give the WHOLE text component a clear
    focus-ring-coloured border while the editor itself stays blurred (the
