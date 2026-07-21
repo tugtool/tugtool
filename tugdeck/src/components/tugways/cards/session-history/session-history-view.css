@@ -62,10 +62,13 @@
   padding: 2px 8px 6px;
 }
 
-/* Committer identity + complete date, revealed on expand. */
+/* Committer identity + complete date — the full attribution, right-aligned at
+   the bottom of the expanded area. */
 .session-history-commit-meta {
+  margin-top: 2px;
   font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
 }
 
 /* The message body via a read-only TugCodeView (markdown text styling for

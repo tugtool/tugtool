@@ -141,10 +141,10 @@ function useCommitFilesSnapshot(
 }
 
 /**
- * The expanded body: the committer's full identity + complete date, then the
- * message body (markdown text styling for list hanging-indent, [markdownText]),
- * then the commit's changed files. The subject is NOT repeated here — it leads
- * the header row above.
+ * The expanded body: the message body (markdown text styling for list
+ * hanging-indent, [markdownText]), the commit's changed files, and finally the
+ * committer's full identity + complete date, right-aligned at the bottom. The
+ * subject is NOT repeated here — it leads the header row above.
  */
 function CommitDetail({
   commit,
@@ -169,10 +169,6 @@ function CommitDetail({
     })) ?? [];
   return (
     <div className="session-history-commit-body">
-      <div className="session-history-commit-meta">
-        {identity}
-        {fullDate.length > 0 ? ` · ${fullDate}` : null}
-      </div>
       {body.length > 0 ? (
         <TugCodeView
           className="session-history-commit-message-view"
@@ -189,6 +185,10 @@ function CommitDetail({
           No file changes.
         </div>
       ) : null}
+      <div className="session-history-commit-meta">
+        {identity}
+        {fullDate.length > 0 ? ` · ${fullDate}` : null}
+      </div>
     </div>
   );
 }
