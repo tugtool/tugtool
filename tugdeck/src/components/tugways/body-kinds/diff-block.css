@@ -278,6 +278,19 @@ body {
   overflow-wrap: normal;
 }
 
+/* Pure-addition diff (a new file): no before-side line numbers exist, so the
+   before-gutter is a blank column. Drop it in the inline view — the after-gutter
+   line numbers move to the left edge and the content reclaims the width. */
+.tugx-diff[data-no-before="true"][data-view-mode="inline"] .tugx-diff-line {
+  grid-template-columns:
+    var(--tugx-diff-gutter-width)
+    var(--tugx-diff-marker-width)
+    1fr;
+}
+.tugx-diff[data-no-before="true"][data-view-mode="inline"] .tugx-diff-gutter-before {
+  display: none;
+}
+
 .tugx-diff-line[data-kind="context"] {
   background: transparent;
   color: var(--tugx-block-text-color);
@@ -325,6 +338,12 @@ body {
   padding: 0 var(--tugx-diff-content-padding-x);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* Diff content is selectable even where a host suppresses selection — the
+     changes glance rides a `TugSheet`, which sets `user-select: none` as chrome;
+     the file text is content, so it opts back in (the gutters + marker keep
+     their `none` above). */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ---------- Side-by-side view ---------- */

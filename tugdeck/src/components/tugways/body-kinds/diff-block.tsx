@@ -970,6 +970,19 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
     [hunks],
   );
 
+  // A pure-addition diff — a new file (`@@ -0,0 +N @@`) — has no before-side
+  // line numbers at all: every line is an add, so the before-gutter is a blank
+  // column that pushes the real line numbers inward and reads as wasted margin.
+  // Flag it so the CSS drops that column and the after-gutter numbers sit at
+  // the left edge (the content reclaims the width).
+  const hasBeforeSide = React.useMemo(
+    () =>
+      hunks === null
+        ? true
+        : hunks.some((h) => h.lines.some((l) => l.before_lineno != null)),
+    [hunks],
+  );
+
   // -- Render ----------------------------------------------------------------
 
   if (data === undefined) {
@@ -1108,6 +1121,7 @@ export const DiffBlock: React.FC<DiffBlockProps> = ({
       data-collapsed={collapsed ? "true" : "false"}
       data-embedded={embedded ? "true" : undefined}
       data-view-mode={viewMode}
+      data-no-before={!hasBeforeSide ? "true" : undefined}
       className={rootClass}
     >
       {headerHidden ? null : (
