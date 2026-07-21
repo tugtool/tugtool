@@ -357,11 +357,12 @@ export function TugCommitDialog({
           icon={<GitCommitHorizontal />}
           iconRole="default"
           title="Commit"
+          width="wide"
           actions={
             <>
               <TugPushButton
-                emphasis="ghost"
-                role="action"
+                emphasis="outlined"
+                role="danger"
                 size="xs"
                 focusGroup={focusGroup}
                 focusOrder={CANCEL_ORDER}
@@ -428,6 +429,7 @@ export function TugCommitDialog({
               onSubmit={land}
               placeholder="Write a commit message, or use Auto-Message."
               lineWrap
+              tabMovesFocus
               disabled={pose.editorDisabled}
               aria-label="Commit message"
               data-testid="session-commit-dialog-editor"
@@ -466,9 +468,9 @@ export function TugCommitDialog({
               '[data-testid="session-commit-dialog-auto-message"]',
             ) ?? rootElRef.current
           }
-          message="Replace your edited message with a regenerated draft?"
-          confirmLabel="Regenerate"
-          confirmRole="action"
+          message="Replace message?"
+          confirmLabel="OK"
+          confirmRole="danger"
           onConfirm={() => {
             setConfirmOpen(false);
             regenerate();

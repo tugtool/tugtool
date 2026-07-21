@@ -7,18 +7,26 @@
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  align-items: center;
+  /* The badges ride the first line of a message that wraps to up to three
+     lines, so they pin to the top-right rather than centering on the block. */
+  align-items: flex-start;
   gap: var(--tug-space-sm);
 }
 
+/* The full commit message, clamped to three lines — the durable record shows
+   subject + the first body lines instead of a one-line ellipsis. Line breaks in
+   the message are preserved. */
 .commit-receipt-summary {
   flex: 1 1 auto;
   min-width: 0;
   font-weight: var(--tug-font-weight-medium);
   color: var(--tugx-block-text-color);
-  white-space: nowrap;
+  white-space: pre-wrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
 
 .commit-receipt-chips {

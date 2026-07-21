@@ -484,6 +484,14 @@ body {
   pointer-events: auto;
 }
 
+/* Auto-size shade ([P17]): the content owns the height. `fit-content` still
+   applies (declared above); the cap rises from the drag fraction to the full
+   slot height, so a short body sizes small and a long one fills the transcript
+   up to the Z2 status bar and scrolls inside. */
+.tug-sheet-shade[data-autosize="true"] {
+  max-height: 100%;
+}
+
 /* Body region — fills the shade above the grabber. The consumer composes
    its own header strip (a BlockStrip at `altitude="section"`) and
    scrolling content inside. */

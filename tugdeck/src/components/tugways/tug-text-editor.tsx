@@ -728,6 +728,17 @@ export interface TugTextEditorProps
    */
   disabled?: boolean;
   /**
+   * Let Tab move keyboard focus out of the editor instead of indenting. By
+   * default a focused multi-line editor owns Tab (it advertises
+   * `data-tug-tab-consume`, and the higher-prec keymaps insert an indent unit);
+   * when this is set the marker is suppressed, so the document-level focus walk
+   * advances focus on Tab — the right behavior for a short single-purpose field
+   * (a commit message) sitting in a dialog whose action buttons must stay
+   * keyboard-reachable. Mount-time only. [L06]
+   * @default false
+   */
+  tabMovesFocus?: boolean;
+  /**
    * Soft-wrap long lines at the editor's width. When true, adds
    * `EditorView.lineWrapping` (sets `white-space: break-spaces` on
    * `.cm-content`); when false, long lines scroll horizontally.
@@ -938,6 +949,7 @@ function buildExtensions(
     lineNumbers: boolean;
     highlightActiveLineGutter: boolean;
     disabled: boolean;
+    tabMovesFocus: boolean;
   },
   hostExtensions: readonly Extension[],
 ): readonly Extension[] {
@@ -1128,7 +1140,10 @@ function buildExtensions(
     keepCaretVisible,
     scrollbarAtCap,
     undoMenuStatePlugin,
-    tabConsumeMarker,
+    // `tabMovesFocus` fields (a commit message in a dialog) suppress the
+    // marker so the document-level focus walk advances focus on Tab instead of
+    // the surface swallowing it to indent.
+    initial.tabMovesFocus ? [] : tabConsumeMarker,
   ];
 }
 
@@ -1180,6 +1195,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       maxRows = DEFAULT_MAX_ROWS,
       growDirection = "down",
       disabled = false,
+      tabMovesFocus = false,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
       highlightActiveLineGutter: highlightActiveLineGutterProp = false,
@@ -1515,6 +1531,8 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // markdown chunk is still downloading) [L07].
     const markdownTextStylingRef = useRef(markdownTextStyling);
     const disabledRef = useRef(disabled);
+    // Mount-time only (no compartment) — the value never changes at runtime.
+    const tabMovesFocusRef = useRef(tabMovesFocus);
     useLayoutEffect(() => {
       placeholderRef.current = placeholder;
     }, [placeholder]);
@@ -2323,6 +2341,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       const initialLineNumbers = lineNumbersRef.current;
       const initialHighlightActiveLineGutter = highlightActiveLineGutterRef.current;
       const initialDisabled = disabledRef.current;
+      const initialTabMovesFocus = tabMovesFocusRef.current;
 
       const state = EditorState.create({
         doc: "",
@@ -2343,6 +2362,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
             lineNumbers: initialLineNumbers,
             highlightActiveLineGutter: initialHighlightActiveLineGutter,
             disabled: initialDisabled,
+            tabMovesFocus: initialTabMovesFocus,
           },
           extensionsRef.current,
         ),

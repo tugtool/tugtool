@@ -113,10 +113,17 @@ pub fn spawn_on_demand_draft(
         scribe,
         resolver,
     };
+    // Match the project under the Spec S05 spelling contract: the aggregate
+    // keys entries by the canonical path, but the request carries whatever
+    // spelling the card was bound with (a `/u/...` symlink, a raw mount point).
+    // Canonicalize both sides so a raw-spelled request still finds its
+    // canonical-keyed entry — the same tolerance `read_draft` already applies.
+    let req_canonical = crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir));
     let Some(entry) = eligible_entries(snapshot).into_iter().find(|p| {
-        p.key.project_dir == project_dir
-            && p.key.owner_kind == owner_kind
+        p.key.owner_kind == owner_kind
             && p.key.owner_id == owner_id
+            && crate::path_resolver::CanonicalPath::from_raw(Path::new(&p.key.project_dir)).as_str()
+                == req_canonical.as_str()
     }) else {
         return false;
     };
@@ -826,6 +833,29 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn matches_a_raw_spelled_project_against_a_canonical_keyed_entry() {
+        // The aggregate keys entries by the canonical path; the /commit dialog
+        // requests with whatever spelling the card was bound with (a `/u/...`
+        // symlink, a raw mount point). A raw spelling that canonicalizes to the
+        // entry's key must still match ([Spec S05]) — the regression behind the
+        // dialog's "nothing to generate" over a session that owns its files.
+        // On macOS `dir.path()` (`/var/folders/…`) and its canonicalization
+        // (`/private/var/folders/…`) are a real spelling split, so this exercises
+        // the tolerance; where the two coincide the match still holds.
+        let (dir, root) = init_repo();
+        let canonical = root.to_string_lossy().to_string();
+        let raw = dir.path().to_string_lossy().to_string();
+        let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
+        let fake = FakeScribe::new("Change a.txt");
+        let snap = session_snapshot(&canonical, "M");
+        assert!(
+            request(fake.clone(), ledger.clone(), snap, "s1", &raw),
+            "a raw-spelled request ({raw}) must match the canonical-keyed entry ({canonical})"
+        );
+        wait_for_calls(&fake, 1).await;
     }
 
     #[tokio::test]

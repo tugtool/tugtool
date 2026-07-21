@@ -3,7 +3,21 @@
    the shade's own chrome: body layout, empty state, git-init affordance, and
    the Done action row. Appearance only ([L06]). */
 
+/* The scroll region between the pinned header strip and the Done row. It
+   grows to fill the auto-sizing shade and scrolls when the diff overruns; the
+   stable scrollbar gutter reserves the track's width whether or not a scrollbar
+   is showing, so revealing one never hops the content ([P17]). */
+.session-changes-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 .session-changes-view-body {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -12,7 +26,12 @@
 
 /* ---- Empty state ---- */
 
+/* Centered in the available space so a "No changes" shade reads as a compact,
+   balanced card; `flex: 1` fills the body so the message sits at the optical
+   center, the `min-height` keeps the shade from collapsing to a bare line. */
 .session-changes-clean {
+  flex: 1 1 auto;
+  min-height: 88px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -44,4 +63,16 @@
 
 .session-changes-actions {
   padding: 4px 10px 10px;
+}
+
+/* Force the persistent default ring on the Done button ([P14]). It is the
+   shade's sole Return target, but the engine strips `data-default-ring` the
+   instant the keyboard lands on a button — so under a pointer-opened shade Done
+   holds the key view with no keyboard ring and reads ringless. Painting the
+   same outline the `[data-default-ring]` rule paints keeps the double-ring lit
+   under every open modality; when Done is the keyboard key view the identical
+   ring simply coincides. Suppressed while disabled. */
+.session-changes-done:not(:disabled):not([aria-disabled="true"]) {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: var(--tugx-focus-ring-offset);
 }

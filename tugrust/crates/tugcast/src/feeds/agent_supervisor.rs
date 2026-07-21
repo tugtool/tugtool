@@ -3752,7 +3752,7 @@ impl AgentSupervisor {
                 let summary = crate::feeds::changeset::format_commit_summary(
                     &receipt.sha,
                     &message,
-                    &receipt.numstat,
+                    &receipt.files,
                 );
                 // Persist the landing to the shell ledger so the transcript's
                 // commit row survives Maker ▸ Reload and cold boot (restored via

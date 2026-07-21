@@ -868,6 +868,13 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
       title: "Choose Session",
       icon: "FolderOpen",
       displayWidth: "md",
+      // The picker seeds its own focus via the engine (`SessionProjectPickerForm`'s
+      // smart-latch places the key view on the Sessions list, or the path field
+      // when Open is disabled). Suppress Radix's mount-autofocus so it can't ALSO
+      // grab the first tabbable (the path combo box) — a second focus authority
+      // that splits the ring across two elements ("both lists focused"). The
+      // engine is the sole owner, matching TugConfirmPopover / TugAlert.
+      onOpenAutoFocus: (e) => e.preventDefault(),
       // Capture the cascade target at sheet-open time per
       // `tugplan-dev-overlay-framework.md` [D02]. `cardId` is the
       // card-host's responder id; the chain walk from `cardId`
@@ -3736,6 +3743,7 @@ export function SessionCardBody({
                     title="Changes"
                     presentation="shade"
                     persistKey="session-card"
+                    shadeAutoSize
                     grabberLabel="Resize the Changes view"
                     modalScopeSelector='.session-view-pane[data-view="transcript"]'
                   >

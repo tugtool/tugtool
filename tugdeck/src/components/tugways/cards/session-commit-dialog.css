@@ -7,6 +7,13 @@
   /* The scrim's bright-island marker + the cancel-responder root. Not
      focusable — clicking inert chrome establishes no focus state. */
   display: block;
+
+  /* The header cluster carries three heterogeneous labels (Cancel /
+     Auto-Message / Commit), so the uniform 5rem action width the
+     Permission / Question dialogs share would clip "Auto-Message". Size each
+     action button to its own content; the Commit button reserves its wider
+     "Committing…" state via widthStabilize. */
+  --tugx-idialog-action-w: auto;
 }
 
 .session-commit-dialog-body {

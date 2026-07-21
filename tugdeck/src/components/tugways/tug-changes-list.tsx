@@ -464,6 +464,69 @@ export function ChangesFileBlock({
 }
 
 // ---------------------------------------------------------------------------
+// Frozen list — a static, read-only file list for a durable record ([P08])
+// ---------------------------------------------------------------------------
+
+/** One committed file in a frozen list: path, git name-status word, ± counts. */
+export interface FrozenChangesFile {
+  path: string;
+  /** `modified` | `created` | `deleted` | `renamed`. */
+  status: string;
+  added: number;
+  removed: number;
+}
+
+/** Map a name-status word to a synthetic porcelain code the glyph / tone
+ *  helpers key on. */
+function frozenStatusToGitCode(status: string): string {
+  switch (status) {
+    case "created":
+      return "A ";
+    case "deleted":
+      return "D ";
+    case "renamed":
+      return "R ";
+    default:
+      return " M";
+  }
+}
+
+/**
+ * A static, read-only file list for a durable record — a committed changeset
+ * frozen into the `/commit` receipt ([P08]). Renders the same identity rows as
+ * {@link TugChangesList} (status glyph + path + ± counts) reusing its CSS, but
+ * with no live diff fetch, no store, and no expansion: the files are committed,
+ * so there is nothing left to diff against the working tree.
+ */
+export function FrozenChangesList({
+  files,
+}: {
+  files: readonly FrozenChangesFile[];
+}): React.ReactElement {
+  return (
+    <div className="tug-changes-list-file-list tug-changes-list-frozen">
+      {files.map((file) => {
+        const gitStatus = frozenStatusToGitCode(file.status);
+        return (
+          <div key={file.path} className="tug-changes-list-frozen-row">
+            <span className={`tug-changes-list-file-status ${statusToneClass(gitStatus)}`}>
+              <StatusIcon gitStatus={gitStatus} />
+            </span>
+            <span className="tug-changes-list-file-path" title={file.path}>
+              {file.path}
+            </span>
+            <span className="tug-changes-list-frozen-counts">
+              <span className="tug-changes-list-status-added">{`+${file.added}`}</span>
+              <span className="tug-changes-list-status-deleted">{`−${file.removed}`}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Entry file lists + host helpers
 // ---------------------------------------------------------------------------
 

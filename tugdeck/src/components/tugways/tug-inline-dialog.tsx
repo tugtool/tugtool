@@ -88,6 +88,15 @@ import { TugDialogButton } from "./tug-dialog-button";
 // Public types
 // ---------------------------------------------------------------------------
 
+/**
+ * Frame width. `"standard"` (default) is the ≈600 px centered CTA box the
+ * Permission / Question dialogs use. `"wide"` fills the container and drops the
+ * icon-column body inset so information-dense bodies — file diffs, wide lists —
+ * get the full width; the Commit dialog opts in. Purely a resting-geometry flip
+ * ([L06]); every other behavior is identical.
+ */
+export type TugInlineDialogWidth = "standard" | "wide";
+
 /** Tone for the icon's foreground tint. Maps to a `--tugx-idialog-icon-{role}-color` slot. */
 export type TugInlineDialogIconRole =
   | "default"
@@ -139,6 +148,14 @@ export interface TugInlineDialogProps {
    * @default "default"
    */
   iconRole?: TugInlineDialogIconRole;
+  /**
+   * Frame width. Defaults to `"standard"` (the centered ≈600 px CTA box).
+   * `"wide"` fills the container and drops the body's icon-column inset for
+   * information-dense content. See {@link TugInlineDialogWidth}.
+   *
+   * @default "standard"
+   */
+  width?: TugInlineDialogWidth;
   /** Strong call-to-action title. Plain string. */
   title: string;
   /**
@@ -239,6 +256,7 @@ export function shouldRenderOptions(
 export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
   icon,
   iconRole = "default",
+  width = "standard",
   title,
   description,
   leadingActions,
@@ -266,6 +284,7 @@ export const TugInlineDialog: React.FC<TugInlineDialogProps> = ({
     <div
       data-slot="tug-inline-dialog"
       data-icon-role={iconRole}
+      data-width={width}
       className={cn("tug-inline-dialog", className)}
     >
       <div

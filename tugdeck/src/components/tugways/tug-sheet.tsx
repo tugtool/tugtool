@@ -588,6 +588,14 @@ export interface TugSheetContentProps {
    * Shade presentation only. @default 160
    */
   shadeMinHeight?: number;
+  /**
+   * Content-drive the shade's height instead of the drag fraction. The panel
+   * sizes to its content (`fit-content`) and may grow to the full slot height
+   * (the transcript, capped at the Z2 status bar); a short body sizes small.
+   * The drag grabber and the `shadeMinHeight` floor are dropped — the content
+   * owns the height. Shade presentation only. @default false
+   */
+  shadeAutoSize?: boolean;
   /** Accessible label for the shade's resize grabber. @default "Resize" */
   grabberLabel?: string;
   /**
@@ -634,6 +642,7 @@ export function TugSheetContent({
   onCommitDisposition = "retain",
   persistKey,
   shadeMinHeight = 160,
+  shadeAutoSize = false,
   grabberLabel = "Resize",
   modalScopeSelector,
   children,
@@ -1293,9 +1302,12 @@ export function TugSheetContent({
             aria-describedby={description ? descriptionId : undefined}
             data-slot="tug-sheet"
             data-tug-sheet-presentation="shade"
+            data-autosize={shadeAutoSize ? "true" : undefined}
             style={{
               ["--tug-shade-frac" as string]: String(shadeFrac),
-              minHeight: `${shadeMinHeight}px`,
+              // Auto-size hugs its content; the fixed floor (which keeps the
+              // grabber reachable in drag mode) does not apply.
+              ...(shadeAutoSize ? {} : { minHeight: `${shadeMinHeight}px` }),
             }}
             onKeyDown={handleKeyDown}
             onMouseDown={suppressButtonFocusShift}
@@ -1308,17 +1320,21 @@ export function TugSheetContent({
                 <FocusModeScope>{children}</FocusModeScope>
               </div>
             </ResponderScope>
-            <div
-              className="tug-sheet-shade-grabber"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label={grabberLabel}
-              data-tug-focus="refuse"
-              data-no-activate=""
-              onPointerDown={handleShadeGrabberPointerDown}
-            >
-              <div className="tug-sheet-shade-grabber-handle" />
-            </div>
+            {/* The drag grabber is dropped in auto-size mode — the content
+                owns the height, so there is nothing to drag. */}
+            {!shadeAutoSize ? (
+              <div
+                className="tug-sheet-shade-grabber"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={grabberLabel}
+                data-tug-focus="refuse"
+                data-no-activate=""
+                onPointerDown={handleShadeGrabberPointerDown}
+              >
+                <div className="tug-sheet-shade-grabber-handle" />
+              </div>
+            ) : null}
           </div>
         </FocusScopeRadix.FocusScope>
       </TugSheetStackingContext.Provider>

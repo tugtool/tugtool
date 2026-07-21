@@ -776,29 +776,47 @@ pub(crate) async fn run_changeset_commit(
 /// live ink row and the row restored from the shell ledger are byte-identical.
 ///
 /// ```text
-/// committed <sha[0..10]> — <subject>
-/// <N> file(s) · +<added> −<removed>
+/// committed <sha[0..10]> · <N> file(s) · +<added> −<removed>
+/// files: [{"path":"…","status":"modified","added":16,"removed":1}, …]
+/// <full message>
 /// ```
 ///
-/// `<subject>` is the message's first line; `<N>` the count of numstat lines;
-/// `added`/`removed` the summed numstat columns (a binary `-` column counts 0).
-pub(crate) fn format_commit_summary(sha: &str, message: &str, numstat: &str) -> String {
+/// Line 0 is the fixed machine header; line 1 is a `files:` line carrying the
+/// committed files' per-file stats as compact JSON (the receipt's expandable
+/// freeze-dried file list); the whole commit message follows verbatim, so the
+/// receipt can show up to three of its lines. `<N>` / `added` / `removed` are
+/// derived from the same file set (a binary file's absent count is 0).
+pub(crate) fn format_commit_summary(
+    sha: &str,
+    message: &str,
+    files: &[tugchanges_core::FileStat],
+) -> String {
     let short = &sha[..sha.len().min(10)];
-    let subject = message.lines().next().unwrap_or("").trim();
-    let mut files = 0usize;
-    let mut added = 0u64;
-    let mut removed = 0u64;
-    for line in numstat.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        files += 1;
-        let mut cols = line.split('\t');
-        // Binary files report `-` for both counts — parse failures count 0.
-        added += cols.next().and_then(|c| c.trim().parse::<u64>().ok()).unwrap_or(0);
-        removed += cols.next().and_then(|c| c.trim().parse::<u64>().ok()).unwrap_or(0);
+    let message = message.trim();
+    let count = files.len();
+    let added: u64 = files.iter().map(|f| f.added.unwrap_or(0) as u64).sum();
+    let removed: u64 = files.iter().map(|f| f.deleted.unwrap_or(0) as u64).sum();
+    // A local Serialize struct fixes the key order (declaration order) so the
+    // durable string is stable and readable; `serde_json::json!` would sort the
+    // keys alphabetically.
+    #[derive(serde::Serialize)]
+    struct ReceiptFile<'a> {
+        path: &'a str,
+        status: &'a str,
+        added: u32,
+        removed: u32,
     }
-    format!("committed {short} — {subject}\n{files} file(s) · +{added} −{removed}")
+    let entries: Vec<ReceiptFile> = files
+        .iter()
+        .map(|f| ReceiptFile {
+            path: &f.path,
+            status: &f.status,
+            added: f.added.unwrap_or(0),
+            removed: f.deleted.unwrap_or(0),
+        })
+        .collect();
+    let files_json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
+    format!("committed {short} · {count} file(s) · +{added} −{removed}\nfiles: {files_json}\n{message}")
 }
 
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
@@ -1417,36 +1435,68 @@ mod tests {
         );
     }
 
+    fn file_stat(path: &str, status: &str, added: Option<u32>, deleted: Option<u32>) -> tugchanges_core::FileStat {
+        tugchanges_core::FileStat {
+            path: path.to_string(),
+            status: status.to_string(),
+            added,
+            deleted,
+        }
+    }
+
     #[test]
     fn format_commit_summary_single_file() {
         let s = format_commit_summary(
             "0123456789abcdef",
             "Fix the thing",
-            "3\t1\tsrc/a.rs",
+            &[file_stat("src/a.rs", "modified", Some(3), Some(1))],
         );
-        assert_eq!(s, "committed 0123456789 — Fix the thing\n1 file(s) · +3 −1");
+        assert_eq!(
+            s,
+            "committed 0123456789 · 1 file(s) · +3 −1\n\
+             files: [{\"path\":\"src/a.rs\",\"status\":\"modified\",\"added\":3,\"removed\":1}]\n\
+             Fix the thing"
+        );
     }
 
     #[test]
-    fn format_commit_summary_multi_line_message_takes_first_line() {
+    fn format_commit_summary_keeps_the_full_multi_line_message() {
         let s = format_commit_summary(
             "abcdef0123456789",
             "Subject line\n\nA longer body paragraph.",
-            "10\t2\tsrc/a.rs\n4\t0\tsrc/b.rs",
+            &[
+                file_stat("src/a.rs", "modified", Some(10), Some(2)),
+                file_stat("src/b.rs", "created", Some(4), Some(0)),
+            ],
         );
-        assert_eq!(s, "committed abcdef0123 — Subject line\n2 file(s) · +14 −2");
+        assert_eq!(
+            s,
+            "committed abcdef0123 · 2 file(s) · +14 −2\n\
+             files: [{\"path\":\"src/a.rs\",\"status\":\"modified\",\"added\":10,\"removed\":2},\
+             {\"path\":\"src/b.rs\",\"status\":\"created\",\"added\":4,\"removed\":0}]\n\
+             Subject line\n\nA longer body paragraph."
+        );
     }
 
     #[test]
-    fn format_commit_summary_counts_binary_columns_as_zero() {
-        // A binary file reports `-` for both counts; it counts toward the file
-        // total but adds 0 to the ± sums.
+    fn format_commit_summary_counts_binary_absent_columns_as_zero() {
+        // A binary file reports no ± counts (`None`); it counts toward the file
+        // total but adds 0 to the ± sums and serializes as 0.
         let s = format_commit_summary(
             "ffffffffffffffff",
             "Add an image",
-            "-\t-\tassets/logo.png\n5\t3\tsrc/a.rs",
+            &[
+                file_stat("assets/logo.png", "created", None, None),
+                file_stat("src/a.rs", "modified", Some(5), Some(3)),
+            ],
         );
-        assert_eq!(s, "committed ffffffffff — Add an image\n2 file(s) · +5 −3");
+        assert_eq!(
+            s,
+            "committed ffffffffff · 2 file(s) · +5 −3\n\
+             files: [{\"path\":\"assets/logo.png\",\"status\":\"created\",\"added\":0,\"removed\":0},\
+             {\"path\":\"src/a.rs\",\"status\":\"modified\",\"added\":5,\"removed\":3}]\n\
+             Add an image"
+        );
     }
 
     #[test]

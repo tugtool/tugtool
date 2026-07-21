@@ -143,7 +143,8 @@ export function SessionChangesView({
 
   // Seed the sheet's key view onto the Done button so Return dismisses (the
   // effort-picker convention). The shade unmounts this view on close, so this
-  // seeds only while the shade is open.
+  // seeds only while the shade is open. The persistent default ring is forced
+  // on in CSS ([P14]) so it reads under every open modality, not only keyboard.
   const doneFocusGroup = React.useId();
   useSeedKeyView(`${doneFocusGroup}:0`);
 

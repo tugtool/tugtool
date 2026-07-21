@@ -110,6 +110,15 @@ body {
 
 /* ---- Frame ---- */
 
+/* Wide variant ([L06]) — fills the container and drops the icon-column body
+ * inset so a file diff / wide list uses the full width. Only the resting
+ * geometry differs; standard is untouched (Permission / Question dialogs). */
+.tug-inline-dialog[data-width="wide"] {
+  --tugx-idialog-max-width:     100%;
+  --tugx-idialog-content-inset: 0px;
+  --tugx-idialog-content-nudge: 0px;
+}
+
 .tug-inline-dialog {
   display: flex;
   flex-direction: column;

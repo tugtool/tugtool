@@ -108,6 +108,12 @@ export interface TugMessageEditorProps {
   fontSize?: string;
   /** Read-only + non-editable when true. */
   disabled?: boolean;
+  /**
+   * Let Tab move keyboard focus out of the field instead of indenting.
+   * Forwarded to the substrate. Use in a dialog whose action buttons must stay
+   * keyboard-reachable from the message field. @default false
+   */
+  tabMovesFocus?: boolean;
   /** Forwarded to the host wrapper. */
   className?: string;
   /** Test hook, forwarded to the host wrapper. */
@@ -130,6 +136,7 @@ export const TugMessageEditor = React.forwardRef<
     markdownTextStyling,
     fontSize,
     disabled = false,
+    tabMovesFocus = false,
     className,
     "data-testid": dataTestid,
     "aria-label": ariaLabel,
@@ -223,6 +230,7 @@ export const TugMessageEditor = React.forwardRef<
       fontSize={fontSize}
       placeholder={placeholder}
       disabled={disabled}
+      tabMovesFocus={tabMovesFocus}
       onSubmit={onSubmit}
       extensions={messageEditorExtensions}
     />
