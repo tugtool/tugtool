@@ -1,19 +1,26 @@
 /**
  * `TugChangesList` — a read-only list of changed files with inline diffs
- * ([P01], Spec S01). One block per file: a status glyph + path (with an
- * open/reveal context menu), a `+N −M` badge, and a pop-out-to-a-card diff
- * affordance, over a `git diff HEAD` body that expands and collapses in place.
+ * ([P01], Spec S01). One `TugListRow` per file (compact, mono): a status
+ * glyph + path (with an open/reveal context menu), the house `+N −M` badge
+ * pair, a pop-out-to-a-card diff affordance, and a fold cue, over a diff
+ * body that expands and collapses in place. Every row is expandable —
+ * untracked files diff via the backend's synthesized new-file diffs.
  *
- * Extracted from the Changes shade so both the read-only glance and the commit
- * route's rising sheet compose the same rows. The component owns diff
- * fetching — one `GitDiffStore` per entry, dropped on unmount — and nothing
- * else: per-file collapse is CONTROLLED by the host (`expandedKeys` +
+ * Two diff sources share the row renderer:
+ *  - the live list (`TugChangesList`) diffs the working tree (`head`
+ *    flavor, eagerly fetched so the ± badges fill in), and
+ *  - the `/commit` receipt (`CommitChangesList`) diffs one committed sha
+ *    (`commit` flavor, fetched lazily per row on first expand — the counts
+ *    are frozen in the receipt record, so nothing loads until you look).
+ *
+ * The component owns diff fetching — one `GitDiffStore` per entry / per
+ * expanded receipt row, dropped on unmount — and nothing else: live
+ * per-file collapse is CONTROLLED by the host (`expandedKeys` +
  * `onToggleFile`) so each host keeps its own fold-all / whole-diff chrome.
  *
- * Laws: [L02] the per-entry diff store enters React through
- * `useSyncExternalStore`; [L06] status tones and hover affordances paint via
- * CSS, never React state; [L26] per-file collapse is by unmount under a stable
- * `ToolBlockCollapseContext` provider.
+ * Laws: [L02] diff stores enter React through `useSyncExternalStore`;
+ * [L06] status tones and hover affordances paint via CSS, never React
+ * state; [L26] the diff body collapses by unmount.
  *
  * @module components/tugways/tug-changes-list
  */
@@ -25,6 +32,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import {
@@ -38,14 +46,11 @@ import {
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { TugContextMenu } from "@/components/tugways/tug-context-menu";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
-import { BlockChrome } from "@/components/tugways/blocks/block-chrome";
-import type { ToolResultSummary } from "@/components/tugways/blocks/tool-result-summary";
-import {
-  ToolBlockCollapseContext,
-  type ToolBlockCollapseHandle,
-} from "@/components/tugways/blocks/collapse-context";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
+import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -112,11 +117,6 @@ function isDeleted(op: string, gitStatus: string): boolean {
   return op === "deleted" || /D/.test(gitStatus);
 }
 
-/** Whether a file has a `git diff HEAD` to show (untracked files do not). */
-export function hasHeadDiff(gitStatus: string): boolean {
-  return !gitStatus.startsWith("??");
-}
-
 // ---------------------------------------------------------------------------
 // File path link + pop-out
 // ---------------------------------------------------------------------------
@@ -137,6 +137,9 @@ function FilePathLink({
   const handleClick = useCallback(
     (event: React.MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      // Opening the file is the link's own gesture — never also the row's
+      // expand toggle.
+      event.stopPropagation();
       dispatchAction({ action: TUG_ACTIONS.OPEN_FILE, path: absolutePath });
     },
     [absolutePath],
@@ -197,7 +200,10 @@ export function PopOutDiffButton({
       title="Open diff in a card"
       aria-label={label}
       data-testid="tug-changes-list-diff-popout"
-      onClick={() => dispatchAction({ action: TUG_ACTIONS.OPEN_DIFF, descriptor })}
+      onClick={(event) => {
+        event?.stopPropagation();
+        dispatchAction({ action: TUG_ACTIONS.OPEN_DIFF, descriptor });
+      }}
     />
   );
 }
@@ -215,15 +221,13 @@ const DIFF_IDLE_SNAPSHOT: GitDiffSnapshot = {
 
 const DIFF_NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
-/** The whole-entry diff descriptor: `git diff HEAD` scoped to the entry's
- *  diffable paths (head flavor). Null for a non-repo project or an entry with
- *  no diffable file. */
+/** The whole-entry diff descriptor: `git diff HEAD` (untracked included)
+ *  scoped to the entry's paths. Null for a non-repo project or an empty
+ *  entry. */
 export function entryDiffDescriptor(entry: TugChangesListEntry): DiffDescriptor | null {
   if (entry.project.no_repo) return null;
   const files = entry.kind === "unattributed" ? entry.files : entry.entry.files;
-  const paths = files
-    .filter((file) => hasHeadDiff(file.git_status))
-    .map((file) => file.path);
+  const paths = files.map((file) => file.path);
   if (paths.length === 0) return null;
   return { kind: "head", root: entry.project.project_dir, paths };
 }
@@ -231,10 +235,9 @@ export function entryDiffDescriptor(entry: TugChangesListEntry): DiffDescriptor 
 /** The pop-out descriptor for one file (`git diff HEAD` scoped to it). */
 function filePopOutDescriptor(
   project: ProjectChangeset,
-  gitStatus: string,
   path: string,
 ): DiffDescriptor | null {
-  if (project.no_repo || !hasHeadDiff(gitStatus)) return null;
+  if (project.no_repo) return null;
   return { kind: "head", root: project.project_dir, paths: [path] };
 }
 
@@ -263,13 +266,8 @@ export function useEntryDiff(
   return { snapshot, ensureRequested };
 }
 
-/** One file's diff as the body of its block. */
-function fileBlockBody(
-  snapshot: GitDiffSnapshot,
-  path: string,
-  canDiff: boolean,
-): React.ReactNode {
-  if (!canDiff) return null;
+/** One file's diff as the row's expanded body. */
+function fileBlockBody(snapshot: GitDiffSnapshot, path: string): React.ReactNode {
   if (snapshot.phase === "error") {
     return (
       <p className="tug-changes-list-file-block-notice" role="alert">
@@ -308,7 +306,7 @@ function fileBlockBody(
 }
 
 // ---------------------------------------------------------------------------
-// File blocks
+// File rows
 // ---------------------------------------------------------------------------
 
 export interface FileBlockData {
@@ -372,9 +370,6 @@ function FileIdentity({
         : `${file.op} · ${file.origin}`;
   return (
     <span className="tug-changes-list-file-identity">
-      <span className={`tug-changes-list-file-status ${statusToneClass(file.git_status)}`}>
-        <StatusIcon gitStatus={file.git_status} />
-      </span>
       <FilePathLink
         path={file.path}
         op={file.op}
@@ -402,126 +397,92 @@ function FileIdentity({
 }
 
 /**
- * One file's block: identity strip + `+N −M` badge + pop-out, over the inline
- * diff body. Dash-agnostic — the whole-diff `popOut` descriptor, the `canDiff`
- * flag, and the collapse `toolUseId` are supplied by the host so a dash file
- * (which pops the whole range) and a head file share this renderer.
+ * One file's row + expandable diff body, shared by the live list and the
+ * `/commit` receipt: a compact mono `TugListRow` (status glyph leading; path
+ * + badges content; ± counts, pop-out, and fold cue trailing) over a
+ * mount-on-expand diff body ([L26]). The whole row is a click target for the
+ * fold; the path link and trailing controls own their gestures and stop
+ * propagation. Presentation carries no lifecycle dot — a changed file has no
+ * lifecycle.
  */
-export function ChangesFileBlock({
+export function ChangesFileRow({
   file,
   projectRoot,
-  diffSnapshot,
-  collapsed,
+  counts,
+  expanded,
   onToggle,
-  toolUseId,
   popOut,
-  canDiff,
+  body,
 }: {
   file: FileBlockData;
   projectRoot: string;
-  diffSnapshot: GitDiffSnapshot;
-  collapsed: boolean;
-  onToggle: (next: boolean) => void;
-  toolUseId: string;
+  /** The `+N −M` pair when known (live: from the eager entry diff; receipt:
+   *  from the frozen record). Absent → no badges (binary, still loading). */
+  counts: { added: number; removed: number } | null;
+  expanded: boolean;
+  onToggle: (expanded: boolean) => void;
   popOut: DiffDescriptor | null;
-  canDiff: boolean;
-}) {
-  const diffFile = diffSnapshot.payload?.files.find((f) => f.path === file.path);
-  const resultSummary: ToolResultSummary | undefined =
-    diffFile !== undefined && !diffFile.binary
-      ? { kind: "diff", added: diffFile.added, removed: diffFile.removed }
-      : undefined;
-  const handle = useMemo<ToolBlockCollapseHandle>(
-    () => ({ collapsed, toggle: onToggle, toolUseId }),
-    [collapsed, onToggle, toolUseId],
-  );
-  return (
-    <ToolBlockCollapseContext.Provider value={handle}>
-      <div
-        className="tug-changes-list-file-block"
-        data-testid="tug-changes-list-file-block"
-        data-path={file.path}
-      >
-        <BlockChrome
-          variant="tool"
-          phase="idle"
-          identity={<FileIdentity file={file} projectRoot={projectRoot} />}
-          resultSummary={resultSummary}
-          headerActions={
-            popOut !== null ? (
-              <PopOutDiffButton
-                descriptor={popOut}
-                label={`Open diff for ${file.path} in a card`}
-              />
-            ) : undefined
-          }
-        >
-          {fileBlockBody(diffSnapshot, file.path, canDiff)}
-        </BlockChrome>
-      </div>
-    </ToolBlockCollapseContext.Provider>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Frozen list — a static, read-only file list for a durable record ([P08])
-// ---------------------------------------------------------------------------
-
-/** One committed file in a frozen list: path, git name-status word, ± counts. */
-export interface FrozenChangesFile {
-  path: string;
-  /** `modified` | `created` | `deleted` | `renamed`. */
-  status: string;
-  added: number;
-  removed: number;
-}
-
-/** Map a name-status word to a synthetic porcelain code the glyph / tone
- *  helpers key on. */
-function frozenStatusToGitCode(status: string): string {
-  switch (status) {
-    case "created":
-      return "A ";
-    case "deleted":
-      return "D ";
-    case "renamed":
-      return "R ";
-    default:
-      return " M";
-  }
-}
-
-/**
- * A static, read-only file list for a durable record — a committed changeset
- * frozen into the `/commit` receipt ([P08]). Renders the same identity rows as
- * {@link TugChangesList} (status glyph + path + ± counts) reusing its CSS, but
- * with no live diff fetch, no store, and no expansion: the files are committed,
- * so there is nothing left to diff against the working tree.
- */
-export function FrozenChangesList({
-  files,
-}: {
-  files: readonly FrozenChangesFile[];
+  /** The expanded body. Rendered only while `expanded`. */
+  body: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="tug-changes-list-file-list tug-changes-list-frozen">
-      {files.map((file) => {
-        const gitStatus = frozenStatusToGitCode(file.status);
-        return (
-          <div key={file.path} className="tug-changes-list-frozen-row">
-            <span className={`tug-changes-list-file-status ${statusToneClass(gitStatus)}`}>
-              <StatusIcon gitStatus={gitStatus} />
+    <div
+      className="tug-changes-list-file-block"
+      data-testid="tug-changes-list-file-block"
+      data-path={file.path}
+      data-expanded={expanded ? "true" : undefined}
+    >
+      <div
+        className="tug-changes-list-row-hit"
+        onClick={() => onToggle(!expanded)}
+      >
+        <TugListRow
+          variant="flush"
+          density="compact"
+          mono
+          leading={
+            <span
+              className={`tug-changes-list-file-status ${statusToneClass(file.git_status)}`}
+            >
+              <StatusIcon gitStatus={file.git_status} />
             </span>
-            <span className="tug-changes-list-file-path" title={file.path}>
-              {file.path}
+          }
+          trailing={
+            <span
+              className="tug-changes-list-row-trailing"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {counts !== null ? (
+                <DiffSummaryBadges added={counts.added} removed={counts.removed} />
+              ) : null}
+              {popOut !== null ? (
+                <PopOutDiffButton
+                  descriptor={popOut}
+                  label={`Open diff for ${file.path} in a card`}
+                />
+              ) : null}
+              <BlockFoldCue
+                collapsed={!expanded}
+                onToggle={(nextCollapsed) => onToggle(!nextCollapsed)}
+                collapsedLabel="Expand diff"
+                ariaLabelExpand={`Show diff for ${file.path}`}
+                ariaLabelCollapse={`Hide diff for ${file.path}`}
+                size="2xs"
+                subtype="icon"
+                stabilizeScroll={false}
+                data-slot="tug-changes-list-fold"
+              />
             </span>
-            <span className="tug-changes-list-frozen-counts">
-              <span className="tug-changes-list-status-added">{`+${file.added}`}</span>
-              <span className="tug-changes-list-status-deleted">{`−${file.removed}`}</span>
-            </span>
-          </div>
-        );
-      })}
+          }
+        >
+          <FileIdentity file={file} projectRoot={projectRoot} />
+        </TugListRow>
+      </div>
+      {expanded ? (
+        <div className="tug-changes-list-file-diff" data-slot="tug-changes-list-file-diff">
+          {body}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -530,11 +491,12 @@ export function FrozenChangesList({
 // Entry file lists + host helpers
 // ---------------------------------------------------------------------------
 
-/** The diffable file paths of an entry (host builds fold-all key sets). */
+/** The file paths of an entry (host builds fold-all key sets). Every file is
+ *  diffable — untracked files arrive as synthesized new-file diffs. */
 export function diffablePathsOf(entry: TugChangesListEntry): string[] {
-  const files: readonly { path: string; git_status: string }[] =
+  const files: readonly { path: string }[] =
     entry.kind === "unattributed" ? entry.files : entry.entry.files;
-  return files.filter((f) => hasHeadDiff(f.git_status)).map((f) => f.path);
+  return files.map((f) => f.path);
 }
 
 /** The controlled expand key for one file of one entry. */
@@ -577,19 +539,26 @@ function EntryFiles({
 
   return (
     <div className="tug-changes-list-file-list">
-      {files.map((file) => (
-        <ChangesFileBlock
-          key={file.path}
-          file={file}
-          projectRoot={projectRoot}
-          diffSnapshot={diffSnapshot}
-          collapsed={!expandedKeys.has(fileExpandKey(entry.id, file.path))}
-          onToggle={(next) => onToggleFile(entry.id, file.path, next)}
-          toolUseId={fileExpandKey(entry.id, file.path)}
-          popOut={filePopOutDescriptor(entry.project, file.git_status, file.path)}
-          canDiff={hasHeadDiff(file.git_status)}
-        />
-      ))}
+      {files.map((file) => {
+        const diffFile = diffSnapshot.payload?.files.find((f) => f.path === file.path);
+        const counts =
+          diffFile !== undefined && !diffFile.binary
+            ? { added: diffFile.added, removed: diffFile.removed }
+            : null;
+        const expanded = expandedKeys.has(fileExpandKey(entry.id, file.path));
+        return (
+          <ChangesFileRow
+            key={file.path}
+            file={file}
+            projectRoot={projectRoot}
+            counts={counts}
+            expanded={expanded}
+            onToggle={(next) => onToggleFile(entry.id, file.path, !next)}
+            popOut={filePopOutDescriptor(entry.project, file.path)}
+            body={expanded ? fileBlockBody(diffSnapshot, file.path) : null}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -638,6 +607,111 @@ export function TugChangesList({
             ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
           />
         </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Commit list — the `/commit` receipt's file rows ([P08])
+// ---------------------------------------------------------------------------
+
+/** One committed file frozen in a `/commit` receipt: path, git name-status
+ *  word (`modified` | `created` | `deleted` | `renamed`), ± counts. */
+export interface CommitChangesFile {
+  path: string;
+  status: string;
+  added: number;
+  removed: number;
+}
+
+/** Map a name-status word to a synthetic porcelain code the glyph / tone
+ *  helpers key on. */
+function commitStatusToGitCode(status: string): string {
+  switch (status) {
+    case "created":
+      return "A ";
+    case "deleted":
+      return "D ";
+    case "renamed":
+      return "R ";
+    default:
+      return " M";
+  }
+}
+
+/**
+ * One receipt row's lazy commit diff: nothing is fetched until the row first
+ * expands, then a per-row `GitDiffStore` runs the `commit` flavor scoped to
+ * this path. The store is keyed by sha + path (commit diffs are immutable,
+ * so a re-expand reuses the ready snapshot) and dropped on unmount.
+ */
+function CommitFileRow({
+  root,
+  sha,
+  file,
+}: {
+  root: string;
+  sha: string;
+  file: CommitChangesFile;
+}): React.ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const storeId = `commit:${sha}:${file.path}`;
+  const descriptor = useMemo<DiffDescriptor>(
+    () => ({ kind: "commit", root, sha, paths: [file.path] }),
+    [root, sha, file.path],
+  );
+  const { snapshot, ensureRequested } = useEntryDiff(storeId, descriptor);
+  useEffect(() => {
+    if (expanded) ensureRequested();
+  }, [expanded, ensureRequested]);
+  useEffect(() => () => releaseEntryDiffStore(storeId), [storeId]);
+
+  const gitStatus = commitStatusToGitCode(file.status);
+  return (
+    <ChangesFileRow
+      file={{
+        path: file.path,
+        git_status: gitStatus,
+        // A committed file renders no op/origin provenance — the receipt
+        // header already carries the commit identity.
+        op: file.status === "deleted" ? "deleted" : "",
+        origin: "",
+        shared: false,
+      }}
+      projectRoot={root}
+      counts={{ added: file.added, removed: file.removed }}
+      expanded={expanded}
+      onToggle={setExpanded}
+      popOut={descriptor}
+      body={expanded ? fileBlockBody(snapshot, file.path) : null}
+    />
+  );
+}
+
+/**
+ * The committed files of one `/commit` receipt as the same rows as
+ * {@link TugChangesList} — sha-backed instead of working-tree-backed
+ * ([P08]). Counts render instantly from the frozen record; each row's diff
+ * fetches lazily on first expand (a thousand-file commit costs nothing until
+ * you look). A vanished sha (rebase, gc) degrades to an in-body notice while
+ * the rows stay intact.
+ */
+export function CommitChangesList({
+  root,
+  sha,
+  files,
+}: {
+  /** The project dir the commit lives in (resolves the workspace). */
+  root: string;
+  /** The commit's full sha, parsed from the receipt record. */
+  sha: string;
+  files: readonly CommitChangesFile[];
+}): React.ReactElement {
+  return (
+    <div className="tug-changes-list-file-list" data-slot="tug-commit-changes-list">
+      {files.map((file) => (
+        <CommitFileRow key={file.path} root={root} sha={sha} file={file} />
       ))}
     </div>
   );

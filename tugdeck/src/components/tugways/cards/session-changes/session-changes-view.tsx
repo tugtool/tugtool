@@ -13,8 +13,8 @@
  *
  * Laws: [L02] the controller + git-init verb store enter React through
  * `useSyncExternalStore`; [L06] no appearance state in React (status tones and
- * hover affordances paint via CSS); [L26] per-file collapse is by unmount
- * under `TugChangesList`'s collapse context.
+ * hover affordances paint via CSS); [L26] per-file diff bodies collapse by
+ * unmount inside `TugChangesList`'s rows.
  *
  * @module components/tugways/cards/session-changes/session-changes-view
  */

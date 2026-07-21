@@ -152,9 +152,18 @@ export class CommitRouteController {
     const commitError = commit?.error ?? null;
 
     const draftStore = getChangesetDraftStore();
+    // Key the overlay by the aggregate's CANONICAL project spelling, not the
+    // raw path the card was bound with (`changesController.projectDir` can be a
+    // `/u/...` symlink). The backend emits the `changeset_draft_state`/`delta`
+    // frames under the snapshot's canonical `project_dir`, and `changes.project`
+    // is that same snapshot's project — so this string is byte-identical to the
+    // frames, and the live stream lands in the overlay instead of missing it.
     const overlay =
-      draftStore?.overlay(changesController.projectDir, "session", changesController.tugSessionId) ??
-      null;
+      draftStore?.overlay(
+        changes.project.project_dir,
+        "session",
+        changesController.tugSessionId,
+      ) ?? null;
     const draftPhase: DraftOverlayPhase = overlay?.phase ?? "idle";
     const persistedMessage = changes.entry?.draft?.message ?? "";
     // While the scribe streams, the overlay text is the live document; once it

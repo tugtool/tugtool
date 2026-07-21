@@ -189,7 +189,7 @@ pub async fn build_git_diff_snapshot(
             files: Vec::new(),
         };
     }
-    let files = match fetch_git_diff(repo_dir, paths).await {
+    let files = match fetch_git_diff_with_untracked(repo_dir, paths).await {
         Some(output) => parse_git_diff(&output),
         None => Vec::new(),
     };
@@ -199,6 +199,65 @@ pub async fn build_git_diff_snapshot(
         request_id,
         workspace_key: workspace_key.to_string(),
         base: GIT_DIFF_BASE.to_string(),
+        no_repo: false,
+        file_count: files.len() as u32,
+        total_added,
+        total_removed,
+        files,
+    }
+}
+
+/// Assemble a single-shot [`GitDiffSnapshot`] for one **commit** — what the
+/// `/commit` receipt's file rows expand into ([P08]). The diff is the commit
+/// against its first parent via `git diff-tree --no-commit-id --root -M -p`,
+/// which also covers a root commit (diffed against the empty tree). A
+/// non-empty `paths` narrows with a pathspec so a receipt row can fetch just
+/// its own file. A missing sha (rebase, gc) yields an empty snapshot, not an
+/// error — the client shows a notice while the frozen rows stay intact.
+pub async fn build_commit_diff_snapshot(
+    repo_dir: &Path,
+    request_id: String,
+    workspace_key: &str,
+    sha: &str,
+    paths: &[String],
+) -> GitDiffSnapshot {
+    if !is_within_git_worktree(repo_dir).await {
+        return GitDiffSnapshot {
+            request_id,
+            workspace_key: workspace_key.to_string(),
+            base: sha.to_string(),
+            no_repo: true,
+            file_count: 0,
+            total_added: 0,
+            total_removed: 0,
+            files: Vec::new(),
+        };
+    }
+    let mut args: Vec<&str> = vec![
+        "-c",
+        "core.quotepath=false",
+        "diff-tree",
+        "--no-commit-id",
+        "--root",
+        "--no-color",
+        "-M",
+        "-p",
+        sha,
+    ];
+    if !paths.is_empty() {
+        args.push("--");
+        args.extend(paths.iter().map(String::as_str));
+    }
+    let files = match run_git_capture(repo_dir, &args).await {
+        Some(output) => parse_git_diff(&output),
+        None => Vec::new(),
+    };
+    let total_added = files.iter().map(|f| f.added).sum();
+    let total_removed = files.iter().map(|f| f.removed).sum();
+    GitDiffSnapshot {
+        request_id,
+        workspace_key: workspace_key.to_string(),
+        base: sha.to_string(),
         no_repo: false,
         file_count: files.len() as u32,
         total_added,
@@ -445,10 +504,90 @@ async fn run_git_capture(dir: &Path, args: &[&str]) -> Option<String> {
     }
 }
 
+/// List the untracked (non-ignored) files in `repo_dir`, optionally narrowed
+/// to a pathspec — the repo-relative paths `git diff HEAD` cannot show.
+async fn list_untracked_paths(repo_dir: &Path, paths: &[String]) -> Vec<String> {
+    let mut args: Vec<&str> = vec![
+        "-c",
+        "core.quotepath=false",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+    ];
+    if !paths.is_empty() {
+        args.push("--");
+        args.extend(paths.iter().map(String::as_str));
+    }
+    match run_git_capture(repo_dir, &args).await {
+        Some(output) => output.lines().map(str::to_owned).collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Synthesize a new-file unified diff for one untracked `path` via
+/// `git diff --no-index -- /dev/null <path>`. Git prints the standard
+/// `new file mode` / `--- /dev/null` form and exits 1 when the file has
+/// content, so both 0 and 1 are success here.
+async fn synthesize_untracked_diff(repo_dir: &Path, path: &str) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_dir)
+        .args([
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--no-color",
+            "--no-index",
+            "--",
+            "/dev/null",
+            path,
+        ])
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.code() == Some(0) || o.status.code() == Some(1) => {
+            Some(String::from_utf8_lossy(&o.stdout).into_owned())
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            warn!(stderr = %stderr.trim_end(), path, "git diff --no-index failed");
+            None
+        }
+        Err(e) => {
+            warn!(error = %e, path, "failed to execute git diff --no-index");
+            None
+        }
+    }
+}
+
+/// The working-tree diff INCLUDING untracked files: `git diff HEAD` plus a
+/// synthesized new-file diff per untracked path, so a file created but never
+/// committed diffs like any other change. `None` only when the tracked diff
+/// failed AND no untracked file produced output (a `HEAD`-less fresh repo
+/// still yields its untracked files).
+pub(crate) async fn fetch_git_diff_with_untracked(
+    repo_dir: &Path,
+    paths: &[String],
+) -> Option<String> {
+    let tracked = fetch_git_diff(repo_dir, paths).await;
+    let mut combined = tracked.clone().unwrap_or_default();
+    for path in list_untracked_paths(repo_dir, paths).await {
+        if let Some(chunk) = synthesize_untracked_diff(repo_dir, &path).await {
+            combined.push_str(&chunk);
+        }
+    }
+    if tracked.is_none() && combined.is_empty() {
+        None
+    } else {
+        Some(combined)
+    }
+}
+
 /// Fetch the combined `git diff HEAD` output for the working tree, optionally
 /// narrowed to a `-- <paths…>` pathspec. Returns `None` (and logs) on a
-/// non-zero exit or spawn failure. Crate-visible: the scribe composes its
-/// prompt from the same scoped diff text.
+/// non-zero exit or spawn failure. Tracked files only — most callers want
+/// [`fetch_git_diff_with_untracked`], which also covers created-but-never-
+/// committed files.
 pub(crate) async fn fetch_git_diff(repo_dir: &Path, paths: &[String]) -> Option<String> {
     let mut cmd = Command::new("git");
     cmd.args([
@@ -936,6 +1075,94 @@ Binary files a/img.png and b/img.png differ
         let whole = build_git_diff_snapshot(&repo, "req-whole".to_string(), "ws", &[]).await;
         assert_eq!(whole.file_count, 2, "empty pathspec keeps the whole tree");
         assert!(scoped.total_added <= whole.total_added);
+    }
+
+    #[tokio::test]
+    async fn test_build_git_diff_snapshot_includes_untracked_files() {
+        let temp = init_diff_fixture_repo().await;
+        let repo = temp.path().to_path_buf();
+
+        // One tracked modification and one untracked file — NOT `git add`ed,
+        // so `git diff HEAD` alone would miss it.
+        fs::write(repo.join("keep.txt"), "v2\n").unwrap();
+        fs::write(repo.join("fresh.txt"), "line one\nline two\n").unwrap();
+
+        let snapshot = build_git_diff_snapshot(&repo, "req-ut".to_string(), "ws", &[]).await;
+        assert_eq!(snapshot.file_count, 2, "tracked change + untracked file");
+        let fresh = snapshot.files.iter().find(|f| f.path == "fresh.txt").unwrap();
+        assert_eq!(fresh.status, GitDiffFileStatus::Added);
+        assert_eq!(fresh.added, 2);
+        assert_eq!(fresh.removed, 0);
+        assert!(fresh.unified.contains("+line one"));
+
+        // A pathspec narrows untracked synthesis like any other path.
+        let scoped = build_git_diff_snapshot(
+            &repo,
+            "req-ut-scoped".to_string(),
+            "ws",
+            &["fresh.txt".to_string()],
+        )
+        .await;
+        assert_eq!(scoped.file_count, 1);
+        assert_eq!(scoped.files[0].path, "fresh.txt");
+    }
+
+    #[tokio::test]
+    async fn test_build_commit_diff_snapshot_diffs_one_commit() {
+        let temp = init_diff_fixture_repo().await;
+        let repo = temp.path().to_path_buf();
+
+        // A second commit: modify one file, add another.
+        fs::write(repo.join("keep.txt"), "v2\n").unwrap();
+        fs::write(repo.join("born.txt"), "hello\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "second"]).await;
+        let sha = run_git_line(&repo, &["rev-parse", "HEAD"]).await.unwrap();
+
+        let snapshot =
+            build_commit_diff_snapshot(&repo, "req-c".to_string(), "ws", &sha, &[]).await;
+        assert_eq!(snapshot.base, sha);
+        assert_eq!(snapshot.file_count, 2);
+        let by_path = |p: &str| snapshot.files.iter().find(|f| f.path == p).unwrap();
+        assert_eq!(by_path("keep.txt").status, GitDiffFileStatus::Modified);
+        assert_eq!(by_path("born.txt").status, GitDiffFileStatus::Added);
+
+        // A pathspec scopes the commit diff to one row's file.
+        let scoped = build_commit_diff_snapshot(
+            &repo,
+            "req-c-scoped".to_string(),
+            "ws",
+            &sha,
+            &["born.txt".to_string()],
+        )
+        .await;
+        assert_eq!(scoped.file_count, 1);
+        assert_eq!(scoped.files[0].path, "born.txt");
+
+        // The root commit diffs against the empty tree (`--root`).
+        let root_sha = run_git_line(&repo, &["rev-list", "--max-parents=0", "HEAD"])
+            .await
+            .unwrap();
+        let root =
+            build_commit_diff_snapshot(&repo, "req-root".to_string(), "ws", &root_sha, &[]).await;
+        assert_eq!(root.file_count, 3, "the three files of the init commit");
+        assert!(
+            root.files
+                .iter()
+                .all(|f| f.status == GitDiffFileStatus::Added)
+        );
+
+        // A vanished sha degrades to an empty snapshot, not an error.
+        let gone = build_commit_diff_snapshot(
+            &repo,
+            "req-gone".to_string(),
+            "ws",
+            "0000000000000000000000000000000000000000",
+            &[],
+        )
+        .await;
+        assert!(!gone.no_repo);
+        assert_eq!(gone.file_count, 0);
     }
 
     #[tokio::test]

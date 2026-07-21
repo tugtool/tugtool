@@ -577,6 +577,10 @@ async fn main() {
             worktree: Option<String>,
             base: Option<String>,
             branch: Option<String>,
+            /// Commit flavor ([P08]): a present `sha` selects the diff of one
+            /// commit against its first parent — the `/commit` receipt's
+            /// expandable file rows.
+            sha: Option<String>,
         }
         while let Some(frame) = gd_input_rx.recv().await {
             let raw = match serde_json::from_slice::<RawDiffQuery>(&frame.payload) {
@@ -597,31 +601,43 @@ async fn main() {
             let branch = raw.branch;
             let base = raw.base;
             let worktree = raw.worktree;
+            let sha = raw.sha;
             let response_tx = gd_response_tx_loop.clone();
             tokio::spawn(async move {
-                // A present `branch` routes to the dash range flavor; otherwise
-                // the head flavor (today's `git diff HEAD`, whole tree or
-                // pathspec-scoped) runs unchanged.
-                let snapshot = match branch {
-                    Some(branch) => {
-                        crate::feeds::git::build_dash_diff_snapshot(
-                            &entry.project_dir,
-                            request_id,
-                            entry.workspace_key.as_ref(),
-                            worktree.as_deref().unwrap_or_default(),
-                            base.as_deref().unwrap_or("main"),
-                            &branch,
-                        )
-                        .await
-                    }
-                    None => {
-                        crate::feeds::git::build_git_diff_snapshot(
-                            &entry.project_dir,
-                            request_id,
-                            entry.workspace_key.as_ref(),
-                            &paths,
-                        )
-                        .await
+                // A present `sha` routes to the commit flavor; a present
+                // `branch` to the dash range flavor; otherwise the head flavor
+                // (today's `git diff HEAD`, whole tree or pathspec-scoped).
+                let snapshot = if let Some(sha) = sha {
+                    crate::feeds::git::build_commit_diff_snapshot(
+                        &entry.project_dir,
+                        request_id,
+                        entry.workspace_key.as_ref(),
+                        &sha,
+                        &paths,
+                    )
+                    .await
+                } else {
+                    match branch {
+                        Some(branch) => {
+                            crate::feeds::git::build_dash_diff_snapshot(
+                                &entry.project_dir,
+                                request_id,
+                                entry.workspace_key.as_ref(),
+                                worktree.as_deref().unwrap_or_default(),
+                                base.as_deref().unwrap_or("main"),
+                                &branch,
+                            )
+                            .await
+                        }
+                        None => {
+                            crate::feeds::git::build_git_diff_snapshot(
+                                &entry.project_dir,
+                                request_id,
+                                entry.workspace_key.as_ref(),
+                                &paths,
+                            )
+                            .await
+                        }
                     }
                 };
                 match serde_json::to_vec(&snapshot) {

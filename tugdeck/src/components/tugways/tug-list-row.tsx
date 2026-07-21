@@ -85,6 +85,11 @@ export type TugListRowVariant = "flush" | "pill";
 /** Reveal policy for the trailing accessory. */
 export type TugListRowTrailingReveal = "always" | "engaged";
 
+/** Row density. `cozy` is the comfortable default; `compact` collapses the
+ *  block padding to a hairline — the treatment for long enumerations (a
+ *  commit's file list) where vertical economy is the point. */
+export type TugListRowDensity = "cozy" | "compact";
+
 /** Leading selection-indicator column mode.
  *  - `"check"` — a bare checkmark (shown when selected, blank otherwise);
  *  - `"radio"` — a radio dot matching `TugRadioGroup` (a hollow ring, filled with
@@ -103,6 +108,15 @@ export interface TugListRowProps
    * @selector [data-variant="flush"] | [data-variant="pill"]
    */
   variant?: TugListRowVariant;
+
+  /**
+   * Row density. When omitted, falls back to the enclosing
+   * `TugListView`'s `rowDensity` (via `TugListRowLayoutContext`), then
+   * to `cozy`. `compact` collapses the block padding to a hairline for
+   * long enumerations.
+   * @selector [data-density="compact"]
+   */
+  density?: TugListRowDensity;
 
   /** Leading accessory — an icon, status glyph, or image. */
   leading?: React.ReactNode;
@@ -232,6 +246,7 @@ export interface TugListRowProps
 export interface TugListRowLayout {
   variant: TugListRowVariant | null;
   selectedAccent: boolean;
+  density?: TugListRowDensity | null;
 }
 
 const TugListRowLayoutContext = React.createContext<TugListRowLayout | null>(
@@ -263,6 +278,18 @@ export function resolveListRowVariant(
   contextVariant: TugListRowVariant | null,
 ): TugListRowVariant {
   return propVariant ?? contextVariant ?? DEFAULT_LIST_ROW_VARIANT;
+}
+
+/**
+ * Resolve the effective row density. An explicit `density` prop wins;
+ * otherwise the enclosing `TugListView`'s `rowDensity` (via context);
+ * otherwise `cozy`. Pure; exported for tests.
+ */
+export function resolveListRowDensity(
+  propDensity: TugListRowDensity | undefined,
+  contextDensity: TugListRowDensity | null | undefined,
+): TugListRowDensity {
+  return propDensity ?? contextDensity ?? "cozy";
 }
 
 /**
@@ -332,6 +359,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
   function TugListRow(
     {
       variant,
+      density,
       leading,
       trailing,
       trailingReveal = "always",
@@ -353,6 +381,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
   ) {
     const layout = React.useContext(TugListRowLayoutContext);
     const resolvedVariant = resolveListRowVariant(variant, layout?.variant ?? null);
+    const resolvedDensity = resolveListRowDensity(density, layout?.density);
     const contentMode = resolveListRowContentMode(children, title, subtitle);
     // Accent border: explicit prop wins; otherwise inherit the
     // enclosing list view's `selectedAccent`; otherwise off.
@@ -367,6 +396,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
         ref={ref}
         data-slot="tug-list-row"
         data-variant={resolvedVariant}
+        data-density={resolvedDensity === "compact" ? "compact" : undefined}
         data-selected={selected ? "true" : undefined}
         data-disabled={disabled ? "true" : undefined}
         data-selected-accent={resolvedAccent ? "true" : undefined}

@@ -162,4 +162,18 @@ describe("diffDescriptorKey", () => {
   test("whole-tree head key omits paths", () => {
     expect(diffDescriptorKey({ kind: "head" })).toBe("head::");
   });
+
+  test("commit keys carry the sha and sort paths", () => {
+    const a: DiffDescriptor = {
+      kind: "commit",
+      root: "/repo",
+      sha: "abc123",
+      paths: ["b.ts", "a.ts"],
+    };
+    const b: DiffDescriptor = { ...a, paths: ["a.ts", "b.ts"] };
+    expect(diffDescriptorKey(a)).toBe(diffDescriptorKey(b));
+    expect(diffDescriptorKey(a)).toBe("commit:/repo:abc123:a.ts\nb.ts");
+    const other: DiffDescriptor = { ...a, sha: "def456" };
+    expect(diffDescriptorKey(other)).not.toBe(diffDescriptorKey(a));
+  });
 });

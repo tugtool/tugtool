@@ -3,37 +3,44 @@
  * rebinds a dirty Text card ([P11]): a dirty frontmost card falls through
  * to a fresh card instead of tearing its buffer down.
  *
- * The deck default is set through the real `setTugbankClient` seam (not a
- * module mock) so nothing leaks into other files' tugbank assertions. Only
- * the open registry — used solely by `open-file-in-card` — is mocked. The
- * dirty path returns before any focus-transfer / DOM work, so no DOM seam
- * needs stubbing.
+ * The deck default is set through the real `setTugbankClient` seam and the
+ * dirty card is registered through the REAL open registry (registered in
+ * `beforeAll`, unregistered in `afterAll`) — a `mock.module` here would
+ * replace the registry for every later test file in the run (bun module
+ * mocks are process-global), which is exactly the leak that once broke the
+ * Lens Text Files suite. The dirty path returns before any focus-transfer /
+ * DOM work, so no DOM seam needs stubbing.
  */
 
-import { describe, test, expect, mock, beforeAll, afterAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { setTugbankClient } from "@/lib/tugbank-singleton";
+import {
+  registerOpenTextCard,
+  unregisterOpenTextCard,
+} from "@/lib/text-card-open-registry";
+import { openFileInCard } from "@/lib/open-file-in-card";
 
-mock.module("@/lib/text-card-open-registry", () => ({
-  findTextCardByPath: () => null,
-  getOpenTextCard: () => ({
+beforeAll(() => {
+  // Deck default → "reuse".
+  setTugbankClient({
+    get: () => ({ kind: "json", value: { openTarget: "reuse" } }),
+  } as never);
+  // The frontmost card: bound to another path, dirty. `openFile` throws so
+  // the test proves the rebind path is never taken.
+  registerOpenTextCard("c1", {
     getPath: () => "/old.txt",
+    getDisplayName: () => "old.txt",
     isDirty: () => true, // dirty frontmost card
     revealLine: () => {},
     openFile: () => {
       throw new Error("dirty card must not be rebound ([P11])");
     },
-  }),
-}));
-
-let openFileInCard: typeof import("@/lib/open-file-in-card").openFileInCard;
-beforeAll(async () => {
-  // Deck default → "reuse".
-  setTugbankClient({
-    get: () => ({ kind: "json", value: { openTarget: "reuse" } }),
-  } as never);
-  ({ openFileInCard } = await import("@/lib/open-file-in-card"));
+  });
 });
-afterAll(() => setTugbankClient(null));
+afterAll(() => {
+  unregisterOpenTextCard("c1");
+  setTugbankClient(null);
+});
 
 describe("reuse open target + dirty guard ([P11])", () => {
   test("a dirty frontmost card is NOT rebound; a fresh card opens instead", () => {

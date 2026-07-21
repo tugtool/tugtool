@@ -64,15 +64,21 @@ function coerceDescriptor(value: unknown): DiffDescriptor | null {
   const descriptor = (value as { descriptor?: unknown }).descriptor;
   if (typeof descriptor !== "object" || descriptor === null) return null;
   const kind = (descriptor as { kind?: unknown }).kind;
-  if (kind === "head" || kind === "range") return descriptor as DiffDescriptor;
+  if (kind === "head" || kind === "range" || kind === "commit") {
+    return descriptor as DiffDescriptor;
+  }
   return null;
 }
 
 /** The header label for a descriptor's document. */
 function descriptorLabel(descriptor: DiffDescriptor): string {
-  return descriptor.kind === "range"
-    ? `${descriptor.base}…${descriptor.branch}`
-    : "Uncommitted changes (git diff HEAD)";
+  if (descriptor.kind === "range") {
+    return `${descriptor.base}…${descriptor.branch}`;
+  }
+  if (descriptor.kind === "commit") {
+    return `Commit ${descriptor.sha.slice(0, 9)}`;
+  }
+  return "Uncommitted changes (git diff HEAD)";
 }
 
 export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElement {

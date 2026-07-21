@@ -16,6 +16,7 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_LIST_ROW_VARIANT,
   resolveListRowContentMode,
+  resolveListRowDensity,
   resolveListRowSelectedGlyph,
   resolveListRowVariant,
 } from "../tug-list-row";
@@ -35,6 +36,19 @@ describe("resolveListRowVariant", () => {
   test("falls back to the default when neither prop nor context is set", () => {
     expect(resolveListRowVariant(undefined, null)).toBe(DEFAULT_LIST_ROW_VARIANT);
     expect(DEFAULT_LIST_ROW_VARIANT).toBe("flush");
+  });
+});
+
+describe("resolveListRowDensity", () => {
+  test("an explicit prop wins over the layout context and the default", () => {
+    expect(resolveListRowDensity("compact", null)).toBe("compact");
+    expect(resolveListRowDensity("cozy", "compact")).toBe("cozy");
+  });
+
+  test("falls back to the layout context, then cozy", () => {
+    expect(resolveListRowDensity(undefined, "compact")).toBe("compact");
+    expect(resolveListRowDensity(undefined, null)).toBe("cozy");
+    expect(resolveListRowDensity(undefined, undefined)).toBe("cozy");
   });
 });
 

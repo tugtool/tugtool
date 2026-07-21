@@ -103,7 +103,11 @@ import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
 import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
 import { useSavedRegionScroll } from "./use-component-state-preservation";
-import { TugListRowLayoutProvider, type TugListRowVariant } from "./tug-list-row";
+import {
+  TugListRowLayoutProvider,
+  type TugListRowDensity,
+  type TugListRowVariant,
+} from "./tug-list-row";
 import {
   resolveRowSeparator,
   type TugListViewRowSeparator,
@@ -802,6 +806,17 @@ export interface TugListViewProps<
   rowLayout?: TugListRowVariant;
 
   /**
+   * Row density published to descendant `TugListRow`s through
+   * `TugListRowLayoutContext` — `compact` collapses the block padding
+   * to a hairline for long enumerations (a commit's file list). A row
+   * may still override with its own `density` prop. Omitted ⇒ no
+   * context density; rows fall back to `cozy`.
+   *
+   * @selector .tug-list-row[data-density="compact"]
+   */
+  rowDensity?: TugListRowDensity;
+
+  /**
    * Row-divider control. Lifts the hardcoded `flush` hairline into a
    * tunable prop:
    *
@@ -1235,6 +1250,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       inline,
       interactive = true,
       rowLayout,
+      rowDensity,
       rowSeparator,
       selectedAccent = false,
       pageByEntry,
@@ -3636,8 +3652,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // scroll-tick re-renders — the context value churning would re-render
     // every row needlessly.
     const rowLayoutValue = React.useMemo(
-      () => ({ variant: rowLayout ?? null, selectedAccent }),
-      [rowLayout, selectedAccent],
+      () => ({ variant: rowLayout ?? null, selectedAccent, density: rowDensity ?? null }),
+      [rowLayout, selectedAccent, rowDensity],
     );
 
     // Resolve `rowSeparator` into the divider's CSS custom-property

@@ -431,32 +431,17 @@ async fn gather_head(
     git_subjects: &[String],
 ) -> (String, String) {
     let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
-    let diff = crate::feeds::git::fetch_git_diff(repo_dir, &paths)
+    // The untracked-inclusive diff: created-but-never-committed files arrive
+    // as synthesized new-file diffs, so their content reaches both the prompt
+    // and the fingerprint (no side-band (size, mtime) fold-in needed).
+    let diff = crate::feeds::git::fetch_git_diff_with_untracked(repo_dir, &paths)
         .await
         .unwrap_or_default();
-
-    // Untracked files carry no HEAD-side diff, so their content changes are
-    // invisible to `git diff HEAD` — fold in (path, size, mtime) instead.
-    let mut untracked: Vec<(String, u64, i64)> = Vec::new();
-    for file in files {
-        if file.git_status.starts_with("??") {
-            if let Ok(meta) = std::fs::metadata(repo_dir.join(&file.path)) {
-                let size = meta.len();
-                let mtime = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                untracked.push((file.path.clone(), size, mtime));
-            }
-        }
-    }
     let status_pairs: Vec<(String, String)> = files
         .iter()
         .map(|f| (f.path.clone(), f.git_status.clone()))
         .collect();
-    let fingerprint = scribe::fingerprint_head_entry(&status_pairs, &diff, &untracked);
+    let fingerprint = scribe::fingerprint_head_entry(&status_pairs, &diff, &[]);
 
     let file_provenance: Vec<(String, String, String)> = files
         .iter()

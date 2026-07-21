@@ -172,18 +172,22 @@ export interface GitDiffScope {
 }
 
 /**
- * A discriminated diff request ([P19], Spec S08). Two flavors:
+ * A discriminated diff request ([P19], Spec S08). Three flavors:
  *
  * - `head` — `git diff HEAD [-- <paths…>]` in the project at `root`
- *   (sessions / unattributed / the session card's `/diff`). Equivalent to the
- *   legacy {@link GitDiffScope}.
+ *   (sessions / unattributed / the session card's `/diff`), untracked files
+ *   included as synthesized new-file diffs. Equivalent to the legacy
+ *   {@link GitDiffScope}.
  * - `range` — the dash view: committed rounds past `base` **plus** worktree
  *   dirt, resolved as `merge-base(base, branch)` diffed against the worktree
  *   working tree (see `feeds/git.rs::fetch_dash_diff`).
+ * - `commit` — one commit against its first parent (`git diff-tree --root`),
+ *   the `/commit` receipt's expandable file rows ([P08]).
  */
 export type DiffDescriptor =
   | { kind: "head"; root?: string; paths?: string[] }
-  | { kind: "range"; root?: string; worktree: string; base: string; branch: string };
+  | { kind: "range"; root?: string; worktree: string; base: string; branch: string }
+  | { kind: "commit"; root?: string; sha: string; paths?: string[] };
 
 /**
  * Stable identity key for a descriptor — the reuse key for `OPEN_DIFF`'s
@@ -195,6 +199,9 @@ export function diffDescriptorKey(descriptor: DiffDescriptor): string {
     return `range:${descriptor.root ?? ""}:${descriptor.worktree}:${descriptor.base}:${descriptor.branch}`;
   }
   const paths = [...(descriptor.paths ?? [])].sort().join("\n");
+  if (descriptor.kind === "commit") {
+    return `commit:${descriptor.root ?? ""}:${descriptor.sha}:${paths}`;
+  }
   return `head:${descriptor.root ?? ""}:${paths}`;
 }
 
@@ -206,6 +213,9 @@ export function isDiffDescriptor(value: unknown): value is DiffDescriptor {
   if (typeof value !== "object" || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
   if (kind === "head") return true;
+  if (kind === "commit") {
+    return typeof (value as { sha?: unknown }).sha === "string";
+  }
   if (kind === "range") {
     const v = value as { worktree?: unknown; base?: unknown; branch?: unknown };
     return (
@@ -222,6 +232,13 @@ function isRangeDescriptor(
   request: DiffRequest,
 ): request is Extract<DiffDescriptor, { kind: "range" }> {
   return (request as { kind?: string }).kind === "range";
+}
+
+/** True when a request is the commit flavor. */
+function isCommitDescriptor(
+  request: DiffRequest,
+): request is Extract<DiffDescriptor, { kind: "commit" }> {
+  return (request as { kind?: string }).kind === "commit";
 }
 
 /**
@@ -306,6 +323,14 @@ export class GitDiffStore {
       query.worktree = this._scope.worktree;
       query.base = this._scope.base;
       query.branch = this._scope.branch;
+    } else if (isCommitDescriptor(this._scope)) {
+      // Commit flavor: one commit vs. its first parent, optionally scoped.
+      const root = this._scope.root ?? this._projectDir;
+      if (root !== undefined && root.length > 0) query.root = root;
+      query.sha = this._scope.sha;
+      if (this._scope.paths !== undefined && this._scope.paths.length > 0) {
+        query.paths = this._scope.paths;
+      }
     } else {
       // Head flavor (legacy scope or `{kind:"head"}`): whole tree or pathspec.
       const root = this._scope.root ?? this._projectDir;

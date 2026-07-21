@@ -1,31 +1,28 @@
 /**
- * at0228-changeset-aggregate.test.ts — the changeset card, end-to-end, for the
- * three behaviors that can ONLY be verified in the real browser against real
- * dev cards + real git (everything else — snapshot partitioning, the aggregate
- * feed's session-row join, the git_init verb — is covered by Rust unit tests
- * on real content):
+ * at0228-changeset-aggregate.test.ts — the Session card's changes glance,
+ * end-to-end, for the behaviors that can ONLY be verified in the real browser
+ * against real dev cards + real git ([D117]/[D118]; the Lens changeset section
+ * this test originally drove was retired by the Lens Route Rework — the glance
+ * is where these behaviors live now):
  *
- *   1. **Open-session-card filter** — the card shows one session entry per open
- *      session card, and ONLY those. The bootstrap `--source-tree` is registered
- *      (and its workspace has ledger rows) but no session card here is bound to
- *      it, so it must NOT appear.
- *   2. **Init self-heal** — clicking "Initialize git" on a session entry in a
- *      non-repo directory runs `git init`, and the entry flips to a repo on
- *      the next recompute.
- *   3. **File click** — a dirty file (in the project's Unattributed entry)
- *      opens in a Text card.
- *   4. **Diff click** — a modified tracked file's diff affordance opens the
- *      diff sheet scoped to exactly that file (a second modified file stays
- *      out — the pathspec flows through the GIT_DIFF_QUERY round trip).
- *   5. **Card commit** — selecting one file, drafting a message, and
- *      committing runs the changeset_commit verb: HEAD gains exactly that
- *      file, the receipt renders its numstat, and the aggregate recompute
- *      drops the committed row.
+ *   1. **Init self-heal** — the glance on a non-repo project shows the
+ *      "Initialize git" affordance; clicking it runs `git init` and the glance
+ *      flips to file rows on the next recompute.
+ *   2. **Every row expands** ([D118]) — a modified tracked file's row fold cue
+ *      mounts its embedded `DiffBlock` carrying the added line's marker, and an
+ *      UNTRACKED file's row expands the same way (the backend synthesizes its
+ *      new-file diff — the whole `git diff --no-index` → GIT_DIFF_QUERY → row
+ *      body path in one drive). A second click unmounts (collapse-by-unmount).
+ *   3. **File click** — an untracked file's path link opens the file in a Text
+ *      card showing its content.
+ *
+ * The commit round-trip itself is covered at the Rust layer and the route
+ * open/dismiss drives live in at0253.
  *
  * Two dev cards are opened via real `spawn_session(mode=resume)` (the
  * production binding path): one on a non-repo scratch dir, one on a scratch git
- * repo carrying a single untracked file. No synthetic ledger seeding — the file
- * flows through the real compose + wire + render.
+ * repo carrying a modified tracked file and an untracked file. No synthetic
+ * ledger seeding — the files flow through the real compose + wire + render.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -95,17 +92,18 @@ function git(dir: string, args: string[]): void {
 }
 
 const DIRTY_FILE = "at0228-dirty.txt";
-// A distinct marker written as the file's CONTENT, so the file-click assertion
-// can confirm the Text card opened on THIS file (the editor shows content).
+// A distinct marker written as the file's CONTENT: the untracked row's
+// synthesized diff must carry it, and the Text card opened from the path link
+// must show it.
 const DIRTY_CONTENT = "at0228-dirty-marker-9f3a";
-// The added line in the modified tracked file — the diff sheet must show it.
+// The added line in the modified tracked file — the row diff must show it.
 const DIFF_MARKER = "at0228-diff-marker-2e7b";
 
 // Two scratch projects, each opened in its own session card.
 interface Scratch {
   cardId: string;
   sid: string;
-  repo: boolean; // git-init'd + carries an untracked file
+  repo: boolean; // git-init'd + carries the dirty files
   dir: string;
   fixtureDir: string;
 }
@@ -125,16 +123,12 @@ beforeAll(() => {
       git(s.dir, ["config", "user.email", "t@t"]);
       git(s.dir, ["config", "user.name", "t"]);
       writeFileSync(join(s.dir, "committed.txt"), "base\n");
-      writeFileSync(join(s.dir, "other.txt"), "other-base\n");
       git(s.dir, ["add", "."]);
       git(s.dir, ["commit", "-q", "-m", "base"]);
-      // One untracked file — it flows into the card as an unattributed,
-      // clickable file row.
+      // One untracked file — its row must expand into a SYNTHESIZED new-file
+      // diff ([D118]) — and one modified tracked file for the HEAD-diff row.
       writeFileSync(join(s.dir, DIRTY_FILE), `${DIRTY_CONTENT}\n`);
-      // Two modified tracked files — the diff-click assertion scopes the
-      // sheet to one and proves the other stays out.
       writeFileSync(join(s.dir, "committed.txt"), `base\n${DIFF_MARKER}\n`);
-      writeFileSync(join(s.dir, "other.txt"), "other-base\nother-changed\n");
     }
     s.fixtureDir = join(homedir(), ".claude", "projects", encodeProjectDir(s.dir));
     mkdirSync(s.fixtureDir, { recursive: true });
@@ -151,18 +145,6 @@ afterAll(() => {
   }
 });
 
-// The changeset content now lives in the Lens `kind: "sessions"` section
-// (the standalone card is retired). We seed just the two dev cards, open +
-// focus the Lens (`focus-lens`, the same path Swift's menu takes), and scope
-// every selector under the section band.
-const SECTION = '.lens-section[data-lens-section="sessions"]';
-
-async function dispatch(app: Awaited<ReturnType<typeof launchTugApp>>, action: string): Promise<void> {
-  await app.evalJS<void>(
-    `window.__tug.dispatchControlAction(${JSON.stringify(action)})`,
-  );
-}
-
 function deckShape() {
   return {
     cards: [
@@ -170,27 +152,23 @@ function deckShape() {
       { id: "C", componentId: "session", title: "Session C", closable: true },
     ],
     panes: [
-      { id: "p2", position: { x: 740, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
-      { id: "p3", position: { x: 740, y: 620 }, size: { width: 680, height: 560 }, cardIds: ["C"], activeCardId: "C", title: "", acceptsFamilies: ["maker"] },
+      { id: "p2", position: { x: 40, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["B"], activeCardId: "B", title: "", acceptsFamilies: ["maker"] },
+      { id: "p3", position: { x: 740, y: 40 }, size: { width: 680, height: 560 }, cardIds: ["C"], activeCardId: "C", title: "", acceptsFamilies: ["maker"] },
     ],
     activePaneId: "p2",
     hasFocus: true,
   };
 }
 
-const SESSION_IDS_JS = `Array.from(document.querySelectorAll('${SECTION} [data-testid="sessions-entry"][data-session-id]')).map(function(n){ return n.getAttribute("data-session-id"); })`;
+/** The changes glance pane inside one card. */
+const glance = (cardId: string): string =>
+  `[data-card-id="${cardId}"] .session-view-pane[data-view="changes"]`;
 
-function nonRepoProbe(sid: string): string {
-  return `(function(){
-    var entry = document.querySelector('${SECTION} [data-testid="sessions-entry"][data-entry-id="session:${sid}"]');
-    if (!entry) return { present: false, nonRepo: false };
-    return { present: true, nonRepo: entry.querySelector('[data-testid="sessions-non-repo"]') !== null };
-  })()`;
-}
+const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-session-card filter, Init, file click", () => {
+describe.skipIf(!SHOULD_RUN)("AT0228: changes glance — Init self-heal, expandable rows, file click", () => {
   test(
-    "shows exactly the open session-card projects; Init self-heals; a file opens in a Text card",
+    "Init self-heals; modified AND untracked rows expand into diffs; a file opens in a Text card",
     async () => {
       const app = await launchTugApp({ testName: "at0228-changeset-aggregate" });
       try {
@@ -198,164 +176,144 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-session-card filte
         for (const s of SCRATCH) {
           await app.spawnSessionResume(s.cardId, { tugSessionId: s.sid, projectDir: s.dir });
         }
+        // Wait for each card's replay to land (transcript cells render) so the
+        // composer is live before we type into it.
+        for (const s of SCRATCH) {
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll('[data-card-id="${s.cardId}"] [data-tug-list-cell-index]').length >= 2`,
+            { timeoutMs: 30_000 },
+          );
+        }
 
-        // Open + focus the Lens so the Sessions section mounts and its
-        // commit-flow responders are in the active chain (R01). The section
-        // defaults to shown + expanded, so its body renders straight away.
-        await dispatch(app, "focus-lens");
+        // Open each card's changes glance by submitting `/commit` in its
+        // composer (the at0253 drive — the local verb enters the route and
+        // raises the bottom-anchored sheet).
+        const openGlance = async (cardId: string): Promise<void> => {
+          const composer = `[data-card-id="${cardId}"] [data-slot="tug-text-editor"] .cm-content`;
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(composer)}) !== null`,
+            { timeoutMs: 20_000 },
+          );
+          await app.nativeClickAtElement(composer);
+          await app.nativeType("/commit");
+          await settle();
+          // Dismiss the slash-completion popup if (and only if) it opened — a
+          // stray Escape with no popup to consume falls through the chain.
+          const completionOpen = await app.evalJS<boolean>(
+            `document.querySelector('[data-slot="tug-completion-menu"]') !== null`,
+          );
+          if (completionOpen) {
+            await app.nativeKey("Escape");
+            await settle();
+          }
+          await app.nativeKey("Return", ["cmd"]);
+          try {
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(`${glance(cardId)} [data-slot="tug-sheet"]`)}) !== null`,
+              { timeoutMs: 8000 },
+            );
+          } catch (e) {
+            const diag = await app.evalJS<unknown>(
+              `(function(){
+                var card = document.querySelector('[data-card-id="${cardId}"]');
+                var editor = card ? card.querySelector('[data-slot="tug-text-editor"] .cm-content') : null;
+                return {
+                  cardPresent: card !== null,
+                  editorText: editor ? editor.textContent : null,
+                  allCards: Array.from(document.querySelectorAll('[data-card-id]')).map(function(n){ return n.getAttribute('data-card-id'); }),
+                  sheets: document.querySelectorAll('[data-slot="tug-sheet"]').length,
+                  viewPanes: Array.from(document.querySelectorAll('.session-view-pane')).map(function(p){ return p.getAttribute('data-view'); }),
+                  commitButtons: document.querySelectorAll('[data-testid="tug-prompt-entry-commit-button"]').length,
+                  focused: document.activeElement ? (document.activeElement.className || document.activeElement.tagName) : null,
+                };
+              })()`,
+            );
+            console.error("openGlance diagnostics:", JSON.stringify(diag));
+            throw e;
+          }
+        };
+
+        // (1) Init self-heal: the non-repo card's glance shows the Init
+        // affordance; clicking it runs `git init` and the non-repo body yields
+        // to the (empty) changes view on the next recompute.
+        await openGlance(NON_REPO.cardId);
+        const GIT_INIT = `${glance(NON_REPO.cardId)} [data-testid="session-changes-git-init"]`;
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(SECTION)}) !== null &&
-           document.querySelector(${JSON.stringify(
-             `${SECTION} [data-testid="lens-section-body"]`,
-           )}) !== null`,
-          { timeoutMs: 10_000 },
+          `document.querySelector(${JSON.stringify(GIT_INIT)}) !== null`,
+          { timeoutMs: 20_000 },
         );
-
-        // (0) Bulk-collapse controls now live in the section BAND (the
-        // right-aligned header actions), not a body toolbar ([P05]/[P06]): the
-        // Expand-all control resolves inside the Sessions band's actions
-        // cluster while the section is expanded.
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector(${JSON.stringify(
-              `${SECTION} [data-testid="lens-section-band"] [data-testid="sessions-expand-all"]`,
-            )}) !== null`,
-          ),
-          "Expand-all resolves inside the Sessions section band",
-        ).toBe(true);
-
-        // (1) Filter: the section settles on EXACTLY the two open dev cards'
-        // sessions (one row each). The bootstrap source-tree is registered but
-        // unbound to any session card here, so none of its sessions appear.
+        await app.click(GIT_INIT);
         await app.waitForCondition<boolean>(
-          `(function(){
-            var ids = ${SESSION_IDS_JS};
-            return ids.length === 2 &&
-              ids.indexOf(${JSON.stringify(NON_REPO.sid)}) !== -1 &&
-              ids.indexOf(${JSON.stringify(REPO.sid)}) !== -1;
-          })()`,
-          { timeoutMs: 30_000 },
-        );
-        const ids = await app.evalJS<string[]>(SESSION_IDS_JS);
-        expect(ids.sort()).toEqual([NON_REPO.sid, REPO.sid].sort());
-
-        // (2) Init self-heal: the non-repo session entry hosts the Init
-        // affordance; clicking it flips the entry to a repo on the next
-        // recompute.
-        expect(
-          (await app.evalJS<{ nonRepo: boolean }>(nonRepoProbe(NON_REPO.sid))).nonRepo,
-          "the non-repo session entry shows the Init affordance",
-        ).toBe(true);
-        await app.click(
-          `${SECTION} [data-testid="sessions-entry"][data-entry-id="session:${NON_REPO.sid}"] [data-testid="sessions-git-init"]`,
-        );
-        await app.waitForCondition<boolean>(
-          `(function(){ var p = ${nonRepoProbe(NON_REPO.sid)}; return p.present && !p.nonRepo; })()`,
+          `document.querySelector(${JSON.stringify(
+            `${glance(NON_REPO.cardId)} [data-testid="session-changes-non-repo"]`,
+          )}) === null`,
           { timeoutMs: 20_000 },
         );
         expect(existsSync(join(NON_REPO.dir, ".git")), "git init created a .git dir").toBe(true);
 
-        // (3) Diff click: each file is a BlockChrome ([P25]/[P29]); the modified
-        // tracked file's block carries an ENABLED disclosure chevron, the
-        // untracked file's is DISABLED (no HEAD side). Clicking the chevron
-        // mounts the file's embedded `DiffBlock` in the block body carrying the
-        // added line's marker; a second click unmounts it (collapse-by-unmount)
-        // so the later commit leg reads a clean file list.
-        const UNATTRIBUTED = `${SECTION} [data-testid="sessions-entry"][data-entry-id="unattributed:${REPO.dir}"]`;
-        const FILE_BLOCK = `${UNATTRIBUTED} [data-testid="sessions-file-block"][data-path="committed.txt"]`;
-        const DISCLOSURE = `${FILE_BLOCK} [data-slot="tool-call-header-disclosure"]`;
-        const FILE_BODY = `${FILE_BLOCK} [data-slot="tool-block-body"]`;
-        const UNTRACKED_DISCLOSURE = `${UNATTRIBUTED} [data-testid="sessions-file-block"][data-path="${DIRTY_FILE}"] [data-slot="tool-call-header-disclosure"]`;
+        // Exit B's commit route (Escape while B holds focus) so its sheet and
+        // route chrome are down before driving card C.
+        await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
-          `document.querySelector('${DISCLOSURE}') !== null`,
-          { timeoutMs: 20_000 },
+          `document.querySelector(${JSON.stringify(`${glance(NON_REPO.cardId)} [data-slot="tug-sheet"]`)}) === null`,
+          { timeoutMs: 6000 },
+        );
+
+        // (2) Expandable rows on the repo card: both dirty files surface as
+        // rows (the session touched neither, so they land in the project's
+        // unattributed entry) with LIVE fold cues — the untracked row too
+        // ([D118]: no more status-dependent disabled chevron).
+        await openGlance(REPO.cardId);
+        const ROW = (path: string): string =>
+          `${glance(REPO.cardId)} [data-testid="tug-changes-list-file-block"][data-path="${path}"]`;
+        const FOLD = (path: string): string => `${ROW(path)} [data-slot="tug-changes-list-fold"]`;
+        const DIFF_BODY = (path: string): string =>
+          `${ROW(path)} [data-slot="tug-changes-list-file-diff"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${FOLD("committed.txt")}') !== null &&
+           document.querySelector('${FOLD(DIRTY_FILE)}') !== null`,
+          { timeoutMs: 30_000 },
         );
         expect(
           await app.evalJS<boolean>(
-            `(function(){ var d = document.querySelector('${UNTRACKED_DISCLOSURE}'); return d !== null && d.disabled === true; })()`,
+            `(function(){ var d = document.querySelector('${FOLD(DIRTY_FILE)}'); return d !== null && d.disabled !== true; })()`,
           ),
-          "an untracked file's disclosure chevron is disabled (no HEAD side)",
+          "an untracked file's fold cue is live ([D118])",
         ).toBe(true);
-        await app.click(DISCLOSURE);
+
+        // The modified tracked row expands into its HEAD diff…
+        await app.click(FOLD("committed.txt"));
         await app.waitForCondition<boolean>(
           `(function(){
-            var d = document.querySelector('${FILE_BODY}');
-            return d !== null &&
-              (d.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
+            var d = document.querySelector('${DIFF_BODY("committed.txt")}');
+            return d !== null && (d.textContent || "").indexOf(${JSON.stringify(DIFF_MARKER)}) !== -1;
           })()`,
           { timeoutMs: 15_000 },
         );
-        await app.click(DISCLOSURE);
+        // …and collapses by unmount.
+        await app.click(FOLD("committed.txt"));
         await app.waitForCondition<boolean>(
-          `document.querySelector('${FILE_BODY}') === null`,
+          `document.querySelector('${DIFF_BODY("committed.txt")}') === null`,
           { timeoutMs: 8000 },
         );
 
-        // (4) Card commit: deselect all but other.txt in the Unattributed
-        // entry, draft a message, commit. The verb must commit exactly the
-        // selected file (numstat receipt names it; the other two dirty paths
-        // survive on disk), and the aggregate recompute drops the committed
-        // row from the entry.
-        await app.click(`${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="committed.txt"]`);
-        await app.click(`${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="${DIRTY_FILE}"]`);
-        // The commit field is now the CM6 `TugMessageEditor` ([P26]/[P28]): its
-        // document has no `<textarea>.value`, so `app.type` can't drive it. Use
-        // the house CM6-typing pattern — focus the field's `.cm-content` and
-        // `execCommand("insertText", …)` — scoped under the composer block.
-        await app.evalJS<boolean>(
-          `(function(){
-            var el = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-message"] .cm-content');
-            if (el === null) return false;
-            el.focus();
-            // Replace any pre-filled draft so the message is exactly ours.
-            document.execCommand("selectAll");
-            document.execCommand("insertText", false, "at0228 card commit");
-            return true;
-          })()`,
-        );
+        // The UNTRACKED row expands into its synthesized new-file diff — the
+        // content marker arrives as an added line through the real
+        // GIT_DIFF_QUERY round trip.
+        await app.click(FOLD(DIRTY_FILE));
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-message"] .cm-content');
-            return el !== null && (el.textContent || "").indexOf("at0228 card commit") !== -1;
+            var d = document.querySelector('${DIFF_BODY(DIRTY_FILE)}');
+            return d !== null && (d.textContent || "").indexOf(${JSON.stringify(DIRTY_CONTENT)}) !== -1;
           })()`,
-          { timeoutMs: 8000 },
-        );
-        await app.click(`${UNATTRIBUTED} [data-testid="sessions-commit-button"]`);
-        await app.waitForCondition<boolean>(
-          `(function(){
-            var receipt = document.querySelector('${UNATTRIBUTED} [data-testid="sessions-commit-receipt"]');
-            return receipt !== null && (receipt.textContent || "").indexOf("other.txt") !== -1;
-          })()`,
-          { timeoutMs: 20_000 },
-        );
-        // On disk: HEAD holds exactly other.txt; the deselected files are
-        // still dirty.
-        const show = Bun.spawnSync(["git", "-C", REPO.dir, "show", "--numstat", "--format=", "HEAD"]);
-        const numstatPaths = show.stdout
-          .toString()
-          .trim()
-          .split("\n")
-          .map((l) => l.split("\t")[2]);
-        expect(numstatPaths).toEqual(["other.txt"]);
-        const porcelain = Bun.spawnSync(["git", "-C", REPO.dir, "status", "--porcelain"]).stdout.toString();
-        expect(porcelain).toContain(" M committed.txt");
-        expect(porcelain).toContain(`?? ${DIRTY_FILE}`);
-        // The committed row leaves the entry on the next recompute.
-        await app.waitForCondition<boolean>(
-          `document.querySelector('${UNATTRIBUTED} [data-testid="sessions-file-select"][data-path="other.txt"]') === null`,
-          { timeoutMs: 20_000 },
+          { timeoutMs: 15_000 },
         );
 
-        // (5) File click: the repo's untracked file lands in the project's
-        // Unattributed entry as a link; clicking it opens the file in a Text
-        // card.
-        const FILE_LINK = `${SECTION} [data-testid="sessions-entry"][data-entry-id="unattributed:${REPO.dir}"] [data-slot="sessions-file-ref"][title="${DIRTY_FILE}"]`;
-        await app.waitForCondition<boolean>(
-          `document.querySelector('${FILE_LINK}') !== null`,
-          { timeoutMs: 20_000 },
+        // (3) File click: the untracked file's path link opens it in a Text
+        // card showing the marker content.
+        await app.click(
+          `${ROW(DIRTY_FILE)} [data-slot="tug-changes-list-file-ref"][title="${DIRTY_FILE}"]`,
         );
-        await app.click(FILE_LINK);
-        // A Text card opens showing THIS file's content (the marker).
         await app.waitForCondition<boolean>(
           `(function(){
             var eds = document.querySelectorAll('[data-slot="tug-text-card-editor"] .cm-content');
@@ -364,39 +322,8 @@ describe.skipIf(!SHOULD_RUN)("AT0228: changeset card — open-session-card filte
             }
             return false;
           })()`,
-          { timeoutMs: 8000 },
+          { timeoutMs: 10_000 },
         );
-
-        // (6) Nested sticky ([P08]): with the section body scrolled, the
-        // section band stays pinned at the top of the Lens scroll and the
-        // first entry header pins BENEATH it (never slips under the band).
-        const stick = await app.evalJS<{
-          bandTop: number;
-          bandBottom: number;
-          headerTop: number;
-          scrolled: number;
-        } | null>(
-          `(function(){
-            var content = document.querySelector('.lens-content');
-            var band = document.querySelector(${JSON.stringify(
-              `${SECTION} [data-testid="lens-section-band"]`,
-            )});
-            var header = document.querySelector(${JSON.stringify(
-              `${SECTION} [data-testid="sessions-entry"] .tool-call-header`,
-            )});
-            if (!content || !band || !header) return null;
-            content.scrollTop = content.scrollHeight;
-            var b = band.getBoundingClientRect();
-            var h = header.getBoundingClientRect();
-            return { bandTop: b.top, bandBottom: b.bottom, headerTop: h.top, scrolled: content.scrollTop };
-          })()`,
-        );
-        expect(stick, "band + entry header measurable").not.toBeNull();
-        if (stick !== null) {
-          // The entry header's top is at or below the band's bottom — it never
-          // strands under the stuck band (allow 1px for subpixel rounding).
-          expect(stick.headerTop).toBeGreaterThanOrEqual(stick.bandBottom - 1);
-        }
       } finally {
         await app.close();
       }

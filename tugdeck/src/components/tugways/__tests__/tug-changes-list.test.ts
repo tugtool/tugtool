@@ -4,7 +4,6 @@ import {
   diffablePathsOf,
   entryDiffDescriptor,
   fileExpandKey,
-  hasHeadDiff,
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
 import type {
@@ -47,14 +46,6 @@ function unattributedItem(files: UnattributedFile[], proj = project()): TugChang
   return { kind: "unattributed", id: "unattr", project: proj, files };
 }
 
-describe("hasHeadDiff", () => {
-  it("is false for untracked files and true otherwise", () => {
-    expect(hasHeadDiff("??")).toBe(false);
-    expect(hasHeadDiff(".M")).toBe(true);
-    expect(hasHeadDiff("A.")).toBe(true);
-  });
-});
-
 describe("fileExpandKey", () => {
   it("joins entry id and path with a pipe", () => {
     expect(fileExpandKey("sess", "src/a.ts")).toBe("sess|src/a.ts");
@@ -62,9 +53,9 @@ describe("fileExpandKey", () => {
 });
 
 describe("diffablePathsOf", () => {
-  it("keeps tracked paths and drops untracked ones (session entry)", () => {
+  it("keeps every path — untracked files diff via synthesized new-file diffs", () => {
     const item = sessionItem([file("a.ts", ".M"), file("new.ts", "??"), file("b.ts", "A.")]);
-    expect(diffablePathsOf(item)).toEqual(["a.ts", "b.ts"]);
+    expect(diffablePathsOf(item)).toEqual(["a.ts", "new.ts", "b.ts"]);
   });
 
   it("reads from the files array for an unattributed entry", () => {
@@ -72,18 +63,22 @@ describe("diffablePathsOf", () => {
       { path: "u.ts", git_status: ".M" },
       { path: "fresh.ts", git_status: "??" },
     ]);
-    expect(diffablePathsOf(item)).toEqual(["u.ts"]);
+    expect(diffablePathsOf(item)).toEqual(["u.ts", "fresh.ts"]);
   });
 });
 
 describe("entryDiffDescriptor", () => {
-  it("returns a head descriptor scoped to the diffable paths", () => {
+  it("returns a head descriptor scoped to every path, untracked included", () => {
     const item = sessionItem([file("a.ts", ".M"), file("new.ts", "??")]);
-    expect(entryDiffDescriptor(item)).toEqual({ kind: "head", root: "/repo", paths: ["a.ts"] });
+    expect(entryDiffDescriptor(item)).toEqual({
+      kind: "head",
+      root: "/repo",
+      paths: ["a.ts", "new.ts"],
+    });
   });
 
-  it("returns null when no file is diffable", () => {
-    expect(entryDiffDescriptor(sessionItem([file("new.ts", "??")]))).toBeNull();
+  it("returns null for an empty entry", () => {
+    expect(entryDiffDescriptor(sessionItem([]))).toBeNull();
   });
 
   it("returns null for a non-repo project", () => {

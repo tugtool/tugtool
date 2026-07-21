@@ -403,6 +403,15 @@ body {
   -moz-osx-font-smoothing: auto;
 }
 
+/* ---- Density: compact ----
+   Hairline block padding for long enumerations (a commit's file list) —
+   the vertical-economy row. After the `mono` rule so a compact mono row
+   takes the tighter value. */
+.tug-list-row[data-density="compact"] {
+  --tugx-list-row-padding-block: 1px;
+  --tugx-list-row-padding-inline: 8px;
+}
+
 /* ---- Variant: flush ----
    Edge-to-edge, transparent rest, no rounding. Text color is
    inherited from the host surface — a `flush` row paints no

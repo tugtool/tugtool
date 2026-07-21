@@ -157,9 +157,9 @@ import {
   type ToolCallPhase,
 } from "@/lib/code-session-store/tool-call-phase-visual";
 
+import { DiffSummaryBadges } from "./diff-summary-badges";
 import {
   formatToolResultSummary,
-  formatDiffSummaryParts,
   toolResultSummaryRole,
   type ToolResultSummary,
 } from "./tool-result-summary";
@@ -171,31 +171,6 @@ const DOT_SIZE = 14;
 /** Neutral verb-less label for aria strings when a block has no `toolName`. */
 const NEUTRAL_BLOCK_LABEL = "block";
 
-/**
- * A diff stat as two separate `TugBadge`s: `+N` and `−M`, both `ghost`
- * in the neutral `inherit` role — no border, no fill, so they read as the
- * header's own text rather than boxes-in-a-box. The glyphs take the
- * header's own text color too (no green/red tint), so the pair reads as
- * plain metadata. The pair sits inside the summary slot, which carries
- * the bracketing separator pipes.
- */
-function DiffSummaryBadges({
-  summary,
-}: {
-  summary: Extract<ToolResultSummary, { kind: "diff" }>;
-}): React.ReactElement {
-  const parts = formatDiffSummaryParts(summary);
-  return (
-    <>
-      <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.added}>
-        {parts.added}
-      </TugBadge>
-      <TugBadge emphasis="ghost" role="inherit" size="sm" copyText={parts.removed}>
-        {parts.removed}
-      </TugBadge>
-    </>
-  );
-}
 
 export interface BlockHeaderProps {
   /**
@@ -355,7 +330,7 @@ export const BlockHeader = React.forwardRef<
             // color, no green/red tint, so the pair reads as plain metadata
             // (the house monochrome +N −M doctrine, [P27]). Each badge copies
             // its own value on right-click.
-            <DiffSummaryBadges summary={summary} />
+            <DiffSummaryBadges added={summary.added} removed={summary.removed} />
           ) : (
             <TugBadge
               emphasis="ghost"

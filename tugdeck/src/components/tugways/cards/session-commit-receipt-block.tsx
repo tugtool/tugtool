@@ -9,9 +9,11 @@
  * Registration is a side effect of importing this module — the matcher claims
  * trimmed commands that are `/commit` or start with `"/commit "`, so the same
  * row renders identically live and after a restore ([D111] shell-ledger
- * replay). Every display fact is parsed from the `output` string only (no
- * side-band data), so the live and restored rows are pixel-identical; a parse
- * miss falls back to the generic block so raw output always renders.
+ * replay). Every display fact is parsed from the exchange row itself — the
+ * `output` string plus the ledger-persisted `cwd` (the repo dir the commit
+ * diff fetch resolves against) — so the live and restored rows are
+ * pixel-identical; a parse miss falls back to the generic block so raw output
+ * always renders.
  *
  * @module components/tugways/cards/session-commit-receipt-block
  */
@@ -20,7 +22,7 @@ import type React from "react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
-import { FrozenChangesList } from "@/components/tugways/tug-changes-list";
+import { CommitChangesList } from "@/components/tugways/tug-changes-list";
 import { BlockChrome } from "../blocks/block-chrome";
 import {
   registerCommandBlock,
@@ -144,9 +146,14 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
       status="ready"
       copyText={`${sha} ${message}`.trim()}
     >
-      {/* The committed files, frozen into an expandable body ([P08]) — the
-          transcript's history-collapse wrapper supplies the chevron. */}
-      {files.length > 0 ? <FrozenChangesList files={files} /> : null}
+      {/* The committed files as sha-backed changes rows ([P08]) — the same
+          compact rows as the live list, each expanding into the committed
+          hunks (lazy per-row `commit`-flavor fetch). `cwd` is the repo dir
+          the `/commit` ran in — persisted in the ledger, so live and
+          restored rows resolve the same workspace. */}
+      {files.length > 0 ? (
+        <CommitChangesList root={props.message.cwd} sha={sha} files={files} />
+      ) : null}
     </BlockChrome>
   );
 }
