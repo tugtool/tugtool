@@ -1,27 +1,27 @@
 /**
- * commit-route-controller — per-card state + land path for the commit route
- * ([P03], Spec S03, revised for the prefix-chip redesign).
+ * commit-mode-controller — per-card state + land path for commit mode
+ * ([P03], Spec S03).
  *
- * The commit route is "the composer leads with a `!changes` chip": ⇧⌘C /
- * `/commit` / `!changes` insert that chip, turning the prompt entry into the
- * commit-message editor while the bottom-anchored changes sheet is up, and Z5
- * swaps to cancel / auto-message / commit. This controller is the single
- * façade the generic `TugPromptEntry` reads to drive that mode — it holds the
- * `active` flag and folds the four upstream stores (code-session turn state,
- * the changeset snapshot, the draft overlay, the commit verb round-trip) into
- * one referentially-stable snapshot, plus the enter / exit / land / draft
- * triggers.
+ * Commit mode is the prompt entry's one secondary resting mode: ⇧⌘C /
+ * `/commit` / Session ▸ Commit… turn the entry into the commit-message editor
+ * (the editor holds only the message — no routing chip) while the
+ * bottom-anchored changes sheet is up, and Z5 swaps to cancel / auto-message /
+ * commit. This controller is the single façade the generic `TugPromptEntry`
+ * reads to drive the mode — it holds the `active` flag and folds the four
+ * upstream stores (code-session turn state, the changeset snapshot, the draft
+ * overlay, the commit verb round-trip) into one referentially-stable snapshot,
+ * plus the enter / exit / land / draft triggers.
  *
- * The route is orthogonal to the changes sheet's visibility ([P03] revised):
- * the sheet can be up as a read-only glance with no route active, and the
+ * The mode is orthogonal to the changes sheet's visibility ([P03] revised):
+ * the sheet can be up as a read-only glance with no mode active, and the
  * session card owns the coupling (⇧⌘C toggles the sheet and, only when the
- * composer is empty, the route). This controller no longer knows about the
- * shade. The route is transient / in-memory; the composer force-exits on
+ * composer is empty, the mode). This controller no longer knows about the
+ * shade. The mode is transient / in-memory; the composer force-exits on
  * deactivate so the editor's own persistence only ever sees the prompt draft.
  * The commit message itself is durable in the changeset draft store (the
- * debounced `persistMessage` write), so re-entering the route resumes it.
+ * debounced `persistMessage` write), so re-entering the mode resumes it.
  *
- * @module lib/commit-route-controller
+ * @module lib/commit-mode-controller
  */
 
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
@@ -67,10 +67,10 @@ export function evaluateCommitLandGate(input: CommitLandGateInput): CommitLandGa
 }
 
 /** The controller's subscribable snapshot — everything the composer + Z5 read. */
-export interface CommitRouteSnapshot {
-  /** Whether the commit route is active (sheet up, composer in message mode). */
+export interface CommitModeSnapshot {
+  /** Whether commit mode is active (sheet up, composer in message mode). */
   active: boolean;
-  /** The `/commit <message>` seed carried into the route, or null. */
+  /** The `/commit <message>` seed carried into the mode, or null. */
   seedMessage: string | null;
   /**
    * The land gate ignoring message emptiness (turn / pending / changeset). The
@@ -96,21 +96,21 @@ export interface CommitRouteSnapshot {
   draftError: string | null;
 }
 
-export interface CommitRouteControllerDeps {
+export interface CommitModeControllerDeps {
   changesController: ChangesRouteController;
   codeSessionStore: CodeSessionStore;
 }
 
-export class CommitRouteController {
-  private readonly deps: CommitRouteControllerDeps;
+export class CommitModeController {
+  private readonly deps: CommitModeControllerDeps;
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribes: (() => void)[] = [];
 
   private active = false;
   private seedMessage: string | null = null;
-  private snapshot: CommitRouteSnapshot;
+  private snapshot: CommitModeSnapshot;
 
-  constructor(deps: CommitRouteControllerDeps) {
+  constructor(deps: CommitModeControllerDeps) {
     this.deps = deps;
     this.snapshot = this.derive();
 
@@ -136,11 +136,11 @@ export class CommitRouteController {
     };
   };
 
-  getSnapshot = (): CommitRouteSnapshot => this.snapshot;
+  getSnapshot = (): CommitModeSnapshot => this.snapshot;
 
   // ── Derivation ─────────────────────────────────────────────────────────
 
-  private derive(): CommitRouteSnapshot {
+  private derive(): CommitModeSnapshot {
     const { changesController, codeSessionStore } = this.deps;
     const changes = changesController.getSnapshot();
     const fileCount = changes.committedPaths.size;
@@ -211,10 +211,10 @@ export class CommitRouteController {
   // ── Triggers ───────────────────────────────────────────────────────────
 
   /**
-   * Enter the commit route (mark it active). A `/commit <message>` seed is
+   * Enter commit mode (mark it active). A `/commit <message>` seed is
    * written into the changeset draft as an edited draft so [P05] semantics
-   * apply and the composer seeds its `!changes` chip payload from it. The
-   * session card ensures the changes sheet is up.
+   * apply and the composer seeds its message editor from it. The session
+   * card ensures the changes sheet is up.
    */
   enter(seedMessage?: string): void {
     const seed = seedMessage?.trim() ?? "";
@@ -232,7 +232,7 @@ export class CommitRouteController {
     this.fire();
   }
 
-  /** Exit the route (the composer removes the `!changes` chip + payload). */
+  /** Exit the mode (the composer clears back to the prompt). */
   exit(): void {
     if (!this.active) return;
     this.active = false;
@@ -272,8 +272,8 @@ export class CommitRouteController {
 
   /**
    * Land the commit ([P09]): re-check the gates against live state, send the
-   * commit, and on success clear the draft and exit the route. On error the
-   * route stays active and the snapshot's `commitError` surfaces inline.
+   * commit, and on success clear the draft and exit the mode. On error the
+   * mode stays active and the snapshot's `commitError` surfaces inline.
    */
   land(message: string): void {
     const { changesController, codeSessionStore } = this.deps;
@@ -311,7 +311,7 @@ export class CommitRouteController {
 }
 
 /** Field-by-field snapshot equality so `getSnapshot` stays referentially stable. */
-function snapshotsEqual(a: CommitRouteSnapshot, b: CommitRouteSnapshot): boolean {
+function snapshotsEqual(a: CommitModeSnapshot, b: CommitModeSnapshot): boolean {
   return (
     a.active === b.active &&
     a.seedMessage === b.seedMessage &&

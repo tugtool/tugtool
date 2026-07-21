@@ -1,18 +1,17 @@
 /**
- * at0253-commit-dialog.test.ts — the commit route open/dismiss drives ([P03]
- * revised, [D117]).
+ * at0253-commit-dialog.test.ts — commit-mode open/dismiss drives ([P03]
+ * revised, [D119]).
  *
- * The commit dialog was retired: `/commit` (and `!changes`) now enters the
- * *commit route* — a bottom-anchored commit sheet rises from the top of Z2 and
- * the prompt entry becomes the message editor, so Z5 shows the cancel /
- * auto-message / commit icon rail. Cheap drives only: typing `/commit` (or
- * `!changes`) enters the route — the rising commit sheet panel appears AND the
- * Z5 Commit button appears — and Escape exits it (both vanish). The route
- * activates regardless of changeset state ([P09]) — an empty changeset shows the
- * "No changes" sheet with the Commit button disabled-but-present — so no real
- * changes are needed. The full commit round-trip is covered at the Rust layer
- * (the replay workspace's changeset entries live ~2s). ⇧⌘C now toggles this
- * same bottom sheet (and, on an empty composer, the route) — not driven here
+ * `/commit` enters *commit mode* — a bottom-anchored commit sheet rises from
+ * the top of Z2 and the prompt entry becomes the message editor, so Z5 shows
+ * the cancel / auto-message / commit icon rail. Cheap drives only: typing
+ * `/commit` enters the mode — the rising commit sheet panel appears AND the
+ * Z5 Commit button appears — and Escape exits it (both vanish). The mode
+ * activates regardless of changeset state ([P09]) — an empty changeset shows
+ * the "No changes" sheet with the Commit button disabled-but-present — so no
+ * real changes are needed. The full commit round-trip is covered at the Rust
+ * layer (the replay workspace's changeset entries live ~2s). ⇧⌘C toggles this
+ * same bottom sheet (and, on an empty composer, the mode) — not driven here
  * because ⇧⌘C collides with the editor's Copy-as-Plain-Text headless ([D117]).
  */
 
@@ -31,13 +30,13 @@ const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
-// The Z5 Commit button is the commit route's tell: present exactly while the
-// route is active (the retired dialog's `data-slot` is gone).
+// The Z5 Commit button is commit mode's tell: present exactly while the
+// mode is active (the retired dialog's `data-slot` is gone).
 const COMMIT_BUTTON = `${CARD} [data-testid="tug-prompt-entry-commit-button"]`;
 // The bottom-anchored changes sheet: the TugSheet mounts its shade panel only
-// while open, so this is present exactly while the sheet has risen. The route
-// and the sheet are now decoupled ([D117] revised) — entering the route via
-// `/commit` / `!changes` on an empty composer raises this same sheet.
+// while open, so this is present exactly while the sheet has risen. The mode
+// and the sheet are decoupled ([D117] revised) — entering the mode via
+// `/commit` on an empty composer raises this same sheet.
 const COMMIT_SHEET = `${CARD} .session-view-pane[data-view="changes"] [data-slot="tug-sheet"]`;
 
 let projectDir = "";
@@ -74,9 +73,9 @@ function deckShape() {
 
 const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!SHOULD_RUN)("AT0253: commit route + read-only shade", () => {
+describe.skipIf(!SHOULD_RUN)("AT0253: commit mode + read-only shade", () => {
   test(
-    "/commit and !changes enter the commit route — the sheet rises and Z5 shows Commit; Escape exits",
+    "/commit enters commit mode — the sheet rises and Z5 shows Commit; Escape exits",
     async () => {
       const app = await launchTugApp({ testName: "at0253-commit-dialog" });
       try {
@@ -105,7 +104,7 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit route + read-only shade", () => {
           { timeoutMs: 8000 },
         );
 
-        // ── /commit enters the route: the sheet rises AND Z5 shows Commit ────
+        // ── /commit enters the mode: the sheet rises AND Z5 shows Commit ─────
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.nativeType("/commit");
         await settle();
@@ -118,7 +117,7 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit route + read-only shade", () => {
           { timeoutMs: 6000 },
         );
 
-        // Escape exits the route (sheet drops, composer restores its prompt draft).
+        // Escape exits the mode (sheet drops, composer restores its prompt draft).
         await settle();
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
@@ -127,26 +126,7 @@ describe.skipIf(!SHOULD_RUN)("AT0253: commit route + read-only shade", () => {
           { timeoutMs: 4000 },
         );
 
-        // ── !changes routes into the SAME commit route ───────────────────────
-        await app.nativeClickAtElement(PROMPT_INPUT);
-        await app.nativeType("!changes");
-        await settle();
-        await app.nativeKey("Escape"); // dismiss any completion popup
-        await settle();
-        await app.nativeKey("Return", ["cmd"]);
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(COMMIT_SHEET)}) !== null &&
-           document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) !== null`,
-          { timeoutMs: 6000 },
-        );
-        await settle();
-        await app.nativeKey("Escape");
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(COMMIT_BUTTON)}) === null`,
-          { timeoutMs: 4000 },
-        );
-
-        // The card and its transcript survived every open/dismiss cycle.
+        // The card and its transcript survived the open/dismiss cycle.
         const after = await app.evalJS<{ cardPresent: boolean; userRows: number }>(
           `({
              cardPresent: document.querySelector(${JSON.stringify(CARD)}) !== null,

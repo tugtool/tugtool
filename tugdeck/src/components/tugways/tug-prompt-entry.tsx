@@ -46,7 +46,6 @@ import React, {
 
 import {
   ArrowUp,
-  GitCommitHorizontal,
   History as HistoryIcon,
   MessageSquareDashed,
   PencilSparkles,
@@ -146,7 +145,7 @@ import type { PathCommandsStore } from "@/lib/path-commands-store";
 import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier";
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import type { FindSession } from "@/lib/find-session";
-import type { CommitRouteController } from "@/lib/commit-route-controller";
+import type { CommitModeController } from "@/lib/commit-mode-controller";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -161,13 +160,12 @@ const BANG_PICKER_ICONS: Record<string, React.ReactNode> = {
   shell: <SquareTerminal size={14} />,
   btw: <MessageSquareDashed size={14} />,
   find: <Search size={14} />,
-  changes: <GitCommitHorizontal size={14} />,
   history: <HistoryIcon size={14} />,
 };
 
 /**
  * The Z4A picker's roster ([P06], revised): the bang-command registry —
- * ONLY the five routings demoted from sticky routes, each labeled in its
+ * ONLY the four routings demoted from sticky routes, each labeled in its
  * typed `!name` form with its ⌃⌘ chord, so the menu teaches both the
  * shortcut and the typeable syntax as it is used. Picking one seeds its
  * `!name` chip. Deliberately NOT the `/` completion catalog — routings are
@@ -587,31 +585,12 @@ export function computeCommandChipInsert(
 }
 
 /**
- * Build the editor state for the commit route ([P03] prefix model): a leading
- * `!changes` command chip followed by the message text. The chip is the route
- * — `matchBangCommandLine` recognizes it on submit and `extractCommitMessage`
- * strips it back off. Pure; exported for unit tests.
+ * Build the editor state for commit mode ([P03]): the message text, nothing
+ * else — the mode lives in the entry's chrome (Z4A commit chip, Z5 rail),
+ * never as a token inside the document. Pure; exported for unit tests.
  */
-export function buildCommitRouteState(message: string): TugTextEditingState {
-  return computeCommandChipInsert(
-    buildEditingStateFromDraftRestore(message, []),
-    "changes",
-  );
-}
-
-/**
- * Recover the commit message from a route draft ([P03] prefix model): expand
- * the leading `!changes` chip + args into a plain line and return the args. A
- * draft that no longer leads with the chip returns its text verbatim. Pure;
- * exported for unit tests.
- */
-export function extractCommitMessage(
-  text: string,
-  atoms: readonly CommandLineAtom[],
-): string {
-  const line = buildSlashCommandLine(text, atoms);
-  const match = matchBangCommandLine(line);
-  return match !== null && match.name === "changes" ? match.args : text;
+export function buildCommitModeState(message: string): TugTextEditingState {
+  return buildEditingStateFromDraftRestore(message, []);
 }
 
 /**
@@ -705,13 +684,13 @@ export interface TugPromptEntryProps {
    */
   findSession?: FindSession;
   /**
-   * The commit route ([P03]): when active, this entry becomes the commit-message
+   * Commit mode ([P03]): when active, this entry becomes the commit-message
    * editor — the editor content swaps to the changeset draft, Z5 shows
    * cancel / auto-message / commit, and submit lands the commit instead of
    * sending to Claude. Optional; hosts without a changeset (the gallery) omit it
    * and the entry behaves exactly as before.
    */
-  commitRoute?: CommitRouteController;
+  commitMode?: CommitModeController;
   /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
@@ -974,7 +953,7 @@ export interface TugPromptEntryDelegate {
   clear(): void;
   /**
    * Whether the editor holds no user content (zero-length doc). The Session
-   * card reads this to gate the ⇧⌘C commit-route entry ([P03]): ⇧⌘C on an
+   * card reads this to gate the ⇧⌘C commit-mode entry ([P03]): ⇧⌘C on an
    * empty composer enters the route; on a non-empty one it shows the read-only
    * glance only, leaving the in-progress prompt untouched.
    */
@@ -1022,7 +1001,7 @@ export const TugPromptEntry = React.forwardRef<
     shellSessionStore,
     pathCommandsStore,
     findSession,
-    commitRoute,
+    commitMode,
     onAttachmentError,
     sessionMetadataStore,
     historyStore,
@@ -1363,34 +1342,34 @@ export const TugPromptEntry = React.forwardRef<
   // this scalar and the Code provider recalls only these ([P11]).
   const route = DEFAULT_ROUTE;
 
-  // ── Commit route ([P03] prefix model) ───────────────────────────────────
-  // The route IS a leading `!changes` chip in the composer: while it's present
-  // this entry is the commit-message editor (the payload after the chip is the
-  // message), Z5 shows cancel / auto-message / commit, and submit lands the
-  // commit. The whole mode rides one subscribable snapshot ([L02]); the live
-  // message is read on demand (submit / cancel / auto-message / debounced save)
-  // rather than mirrored, so no per-keystroke React state is introduced ([L22]).
+  // ── Commit mode ([P03]) ─────────────────────────────────────────────────
+  // While active this entry is the commit-message editor — the document IS
+  // the message (no routing chip; the mode lives in the chrome), Z5 shows
+  // cancel / auto-message / commit, and submit lands the commit. The whole
+  // mode rides one subscribable snapshot ([L02]); the live message is read on
+  // demand (submit / cancel / auto-message / debounced save) rather than
+  // mirrored, so no per-keystroke React state is introduced ([L22]).
   const commitSnap = useSyncExternalStore(
-    commitRoute?.subscribe ?? NOOP_SUBSCRIBE,
-    () => commitRoute?.getSnapshot() ?? null,
+    commitMode?.subscribe ?? NOOP_SUBSCRIBE,
+    () => commitMode?.getSnapshot() ?? null,
   );
   const commitActive = commitSnap?.active === true;
   const commitDrafting = commitActive && commitSnap?.draftPhase === "drafting";
-  const inCommitRouteRef = useRef(false);
+  const inCommitModeRef = useRef(false);
   const prevCommitActiveRef = useRef(false);
-  const commitRouteRef = useRef(commitRoute);
-  commitRouteRef.current = commitRoute;
+  const commitModeRef = useRef(commitMode);
+  commitModeRef.current = commitMode;
   const commitSnapRef = useRef(commitSnap);
   commitSnapRef.current = commitSnap;
   const commitDraftingRef = useRef(commitDrafting);
   commitDraftingRef.current = commitDrafting;
   const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
-  // Read the live commit message: strip the `!changes` chip back off the draft.
+  // Read the live commit message — the document verbatim.
   const readCommitMessage = useCallback((): string => {
     const view = textEditorRef.current?.view() ?? null;
     if (view === null) return "";
-    return extractCommitMessage(view.state.doc.toString(), getAtomsInState(view.state));
+    return view.state.doc.toString();
   }, []);
 
   // Debounced durable save of the in-progress message ([P05]): every genuine
@@ -1409,8 +1388,8 @@ export const TugPromptEntry = React.forwardRef<
     clearCommitPersistTimer();
     commitPersistTimerRef.current = setTimeout(() => {
       commitPersistTimerRef.current = null;
-      const controller = commitRouteRef.current;
-      if (controller === undefined || !inCommitRouteRef.current) return;
+      const controller = commitModeRef.current;
+      if (controller === undefined || !inCommitModeRef.current) return;
       controller.persistMessage(readCommitMessage());
     }, COMMIT_PERSIST_DEBOUNCE_MS);
   }, [clearCommitPersistTimer, readCommitMessage]);
@@ -1418,36 +1397,45 @@ export const TugPromptEntry = React.forwardRef<
   commitPersistRef.current = scheduleCommitPersist;
   useLayoutEffect(() => clearCommitPersistTimer, [clearCommitPersistTimer]);
 
-  // Chip insert / remove on the active transition ([L03] so the doc change
-  // lands in the same paint as the mode flip). Enter: replace the (empty)
-  // composer with a `!changes` chip + the seed message. Exit: clear the chip +
-  // payload back to empty. The message itself is durable in the changeset draft
-  // store, so a cancel/re-enter resumes it. (Entry is gated on an empty composer
-  // by the session card, so nothing is clobbered here.)
+  // Editor swap on the active transition ([L03] so the doc change lands in
+  // the same paint as the mode flip). Enter: replace the (empty) composer
+  // with the seed message — the message alone; the mode's dress is chrome,
+  // not document content. Exit: clear back to empty. The message itself is
+  // durable in the changeset draft store, so a cancel/re-enter resumes it.
+  // (Entry is gated on an empty composer by the session card, so nothing is
+  // clobbered here.)
   useLayoutEffect(() => {
     const editor = textEditorRef.current;
     if (editor === null) return;
     const prev = prevCommitActiveRef.current;
     prevCommitActiveRef.current = commitActive;
     if (commitActive && !prev) {
-      inCommitRouteRef.current = true;
+      inCommitModeRef.current = true;
       const seed =
         commitSnapRef.current?.seedMessage ??
         commitSnapRef.current?.persistedMessage ??
         "";
-      editor.restoreState(buildCommitRouteState(seed));
+      editor.restoreState(buildCommitModeState(seed));
+      // Seed the `data-commit-empty` gate explicitly: an empty seed over an
+      // empty doc fires no update, so the listener alone can't be trusted to
+      // refresh it on entry.
+      rootRef.current?.setAttribute(
+        "data-commit-empty",
+        String(seed.trim().length === 0),
+      );
       editor.focus();
     } else if (!commitActive && prev) {
-      inCommitRouteRef.current = false;
+      inCommitModeRef.current = false;
       clearCommitPersistTimer();
       editor.restoreState(EMPTY_EDIT_STATE);
+      rootRef.current?.setAttribute("data-commit-empty", "true");
       editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
     }
   }, [commitActive, clearCommitPersistTimer]);
 
   // Auto-Message stream ([P06]): the scribe's draft fills the editor live while
-  // `drafting` (keeping the leading `!changes` chip). The editor is read-only
+  // `drafting`. The editor is read-only
   // for the duration (so the user can't interfere), and a wave caret rides the
   // stream's tail in place of the (suppressed) native caret. On settle
   // (`drafting → ready`) the generated message becomes editable; on a cancel
@@ -1464,7 +1452,7 @@ export const TugPromptEntry = React.forwardRef<
     if (!commitActive) return;
     const editor = textEditorRef.current;
     if (editor === null) return;
-    const streamState = buildCommitRouteState(commitSnap?.draftText ?? "");
+    const streamState = buildCommitModeState(commitSnap?.draftText ?? "");
     if (phase === "drafting") {
       // Stream ephemerally — no per-delta undo events; the settle folds the
       // whole generation into one. On the first delta, remember what we're
@@ -1486,17 +1474,17 @@ export const TugPromptEntry = React.forwardRef<
         // One undo for the whole thing: revert to the pre-draft message with no
         // history event, then apply the final message as the single recorded
         // edit — so ⌘Z removes the generated message and ⌘⇧Z restores it.
-        editor.restoreState(buildCommitRouteState(preDraftMessageRef.current), {
+        editor.restoreState(buildCommitModeState(preDraftMessageRef.current), {
           addToHistory: false,
         });
-        editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
+        editor.restoreState(buildCommitModeState(commitSnap?.draftText ?? ""));
         // Show the START of the generated message, not its tail.
         const view = editor.view();
         if (view !== null) view.scrollDOM.scrollTop = 0;
       } else {
         // Cancel / error: revert to the persisted message, leaving no undo
         // trace (the ephemeral stream never entered history).
-        editor.restoreState(buildCommitRouteState(commitSnap?.persistedMessage ?? ""), {
+        editor.restoreState(buildCommitModeState(commitSnap?.persistedMessage ?? ""), {
           addToHistory: false,
         });
       }
@@ -1510,12 +1498,12 @@ export const TugPromptEntry = React.forwardRef<
     readCommitMessage,
   ]);
 
-  // Cancel the commit route (Cancel button + Escape): persist the typed message
-  // so a re-entry resumes it, then exit. Land-success exits through the
-  // controller's own path (which clears the draft first), so it never routes
-  // here — the persist below only ever runs on a user cancel.
-  const cancelCommitRoute = useCallback(() => {
-    const controller = commitRouteRef.current;
+  // Exit commit mode (Cancel button, the Z4A commit chip, Escape): persist the
+  // typed message so a re-entry resumes it, then exit. Land-success exits
+  // through the controller's own path (which clears the draft first), so it
+  // never routes here — the persist below only ever runs on a user cancel.
+  const exitCommitMode = useCallback(() => {
+    const controller = commitModeRef.current;
     if (controller === undefined) return;
     const message = readCommitMessage();
     if (message.trim().length > 0) controller.persistMessage(message);
@@ -1526,7 +1514,7 @@ export const TugPromptEntry = React.forwardRef<
   // an empty field drafts straight away. Read the editor live rather than the
   // persisted `edited` flag so unsaved typing is guarded too.
   const handleCommitAutoMessage = useCallback(() => {
-    const controller = commitRouteRef.current;
+    const controller = commitModeRef.current;
     if (controller === undefined) return;
     // Already streaming — the button is lit but inert; ignore a re-trigger.
     if (commitDraftingRef.current) return;
@@ -1541,19 +1529,19 @@ export const TugPromptEntry = React.forwardRef<
   // Cancel an in-flight Auto-Message draft ([P06]) — the Z5 cancel button,
   // Escape, or Cmd-. while the scribe streams. Aborts only the scribe child
   // (never the session's turn); the terminal `cancelled` state reverts the
-  // composer and drops the wave caret. Distinct from `cancelCommitRoute`, which
-  // exits the whole route when nothing is drafting.
+  // composer and drops the wave caret. Distinct from `exitCommitMode`, which
+  // exits the whole mode when nothing is drafting.
   const cancelCommitDraft = useCallback(() => {
-    commitRouteRef.current?.cancelDraft();
+    commitModeRef.current?.cancelDraft();
   }, []);
 
-  // In the commit route, a bare Escape cancels the route ([P03]) — captured on
+  // In commit mode, a bare Escape exits the mode ([P03]) — captured on
   // the entry root before the editor's own keymap sees it, mirroring the retired
   // dialog's Escape ownership. A modified Escape is left alone.
   //
   // While the Auto-Message scribe streams ([P06]) the same capture-phase listener
   // takes over Escape AND Cmd-. and routes them to a DRAFT cancel — never the
-  // route exit and, crucially, never the session-turn interrupt. When a turn is
+  // mode exit and, crucially, never the session-turn interrupt. When a turn is
   // in flight the window-level keybinding claims CANCEL_DIALOG before this
   // listener runs; that path is handled inside the CANCEL_DIALOG responder below
   // (it also cancels the draft first). This listener is the backstop for the
@@ -1582,12 +1570,12 @@ export const TugPromptEntry = React.forwardRef<
       if (bareEscape) {
         e.preventDefault();
         e.stopPropagation();
-        cancelCommitRoute();
+        exitCommitMode();
       }
     };
     el.addEventListener("keydown", onKeyDown, true);
     return () => el.removeEventListener("keydown", onKeyDown, true);
-  }, [commitActive, cancelCommitRoute, cancelCommitDraft]);
+  }, [commitActive, exitCommitMode, cancelCommitDraft]);
 
   // Shell share ([P08]). A Share click on an exchange row parks its
   // composed text on the shell store; this effect observes the slot,
@@ -1873,38 +1861,24 @@ export const TugPromptEntry = React.forwardRef<
         // editor's live atom set. Cheap structural-key gate inside.
         const positioned = getAtomsInState(update.state);
         syncComposeImageAtoms(positioned.map((p) => p.segment));
-        // Commit route ([P03] prefix model): the leading `!changes` chip IS the
-        // route. If the user deleted it, exit. Otherwise mirror the message's
+        // Commit mode ([P03]): the document is the message. Mirror its
         // emptiness to the root (`data-commit-empty` CSS-gates the Commit
         // button, [L22]) and schedule a debounced durable save of real edits —
         // skipping our own programmatic seeds / scribe stream (guarded on a
         // user event + non-drafting phase).
-        if (inCommitRouteRef.current) {
-          const head = positioned[0];
-          const leadsWithChangesChip =
-            head !== undefined &&
-            head.position === 0 &&
-            head.segment.type === "command" &&
-            head.segment.value === "changes";
-          if (!leadsWithChangesChip) {
-            commitRouteRef.current?.exit();
-          } else {
-            const message = extractCommitMessage(
-              update.state.doc.toString(),
-              positioned,
+        if (inCommitModeRef.current) {
+          const message = update.state.doc.toString();
+          if (root !== null) {
+            root.setAttribute(
+              "data-commit-empty",
+              String(message.trim().length === 0),
             );
-            if (root !== null) {
-              root.setAttribute(
-                "data-commit-empty",
-                String(message.trim().length === 0),
-              );
-            }
-            const drafting = commitSnapRef.current?.draftPhase === "drafting";
-            const userEdit = update.transactions.some(
-              (tr) => tr.isUserEvent("input") || tr.isUserEvent("delete"),
-            );
-            if (!drafting && userEdit) commitPersistRef.current();
           }
+          const drafting = commitSnapRef.current?.draftPhase === "drafting";
+          const userEdit = update.transactions.some(
+            (tr) => tr.isUserEvent("input") || tr.isUserEvent("delete"),
+          );
+          if (!drafting && userEdit) commitPersistRef.current();
         }
         // Renumber inline image chips if a delete / mid-insert left them
         // out of document order. Cheap synchronous check; the correcting
@@ -2142,16 +2116,14 @@ export const TugPromptEntry = React.forwardRef<
     const snap = snapRef.current;
     if (editor === null || view === null) return;
 
-    // Commit route ([P03]): submit lands the commit instead of sending to
-    // Claude. The message is the draft with its leading `!changes` chip stripped
-    // off. `land` re-checks the gate (turn / pending / empty), so an empty
-    // message or a running turn no-ops here and the draft is left intact;
-    // success clears the draft and exits the route (clearing the chip via the
-    // active-transition effect). Nothing else in this function runs.
-    if (inCommitRouteRef.current) {
-      commitRouteRef.current?.land(
-        extractCommitMessage(view.state.doc.toString(), getAtomsInState(view.state)),
-      );
+    // Commit mode ([P03]): submit lands the commit instead of sending to
+    // Claude. The message is the document verbatim. `land` re-checks the gate
+    // (turn / pending / empty), so an empty message or a running turn no-ops
+    // here and the draft is left intact; success clears the draft and exits
+    // the mode (the active-transition effect clears the editor). Nothing else
+    // in this function runs.
+    if (inCommitModeRef.current) {
+      commitModeRef.current?.land(view.state.doc.toString());
       return;
     }
 
@@ -2198,14 +2170,15 @@ export const TugPromptEntry = React.forwardRef<
       // A draft that doesn't lead with a slash command won't match the
       // registry, so non-command drafts are unaffected.
       const commandLine: string = buildSlashCommandLine(draftText, draftAtoms);
-      // Bang routings first (`lib/bang-commands.ts`): a line leading with `!`
+      // Bang routings (`lib/bang-commands.ts`): a line leading with `!`
       // — a `!name` chip or typed text — routes its payload per-submission
-      // (`!shell`, `!btw`, `!find`, `!changes`, `!history`), with `!<anything
-      // else>` the shell escape hatch (`!git status` runs in the shell). Then
-      // the local slash-command registry (`/model`, `/rewind`, …). Both
-      // dispatch through the same card responder; an arbitrary claude slash
-      // command falls through to `send()`, and a non-command draft matches
-      // neither, so plain prose is untouched.
+      // (`!shell`, `!btw`, `!find`, `!history`), with `!<anything else>` the
+      // shell escape hatch (`!git status` runs in the shell — and so does an
+      // unregistered `!changes`). Then the local slash-command registry
+      // (`/model`, `/rewind`, …). Both dispatch through the same card
+      // responder; an arbitrary claude slash command falls through to
+      // `send()`, and a non-command draft matches neither, so plain prose is
+      // untouched.
       const localCommand =
         matchBangCommandLine(commandLine) ?? matchLocalSlashCommand(commandLine);
       const targetId = localCommandTargetIdRef.current;
@@ -2879,7 +2852,7 @@ export const TugPromptEntry = React.forwardRef<
     editor.focus();
   }, []);
 
-  // Command picker ([P06], revised): open the Z4A menu of the five demoted
+  // Command picker ([P06], revised): open the Z4A menu of the four demoted
   // commands. The menu is a `TugPopupMenu` whose trigger is the Z4A button; ⌘/
   // opens it by focusing that trigger and dispatching a bubbling `Enter`
   // keydown — the Radix trigger opens on Enter/Space/Arrow, not on a bare
@@ -2988,11 +2961,16 @@ export const TugPromptEntry = React.forwardRef<
   // Z4A leading slot — the routing picker ([P06], revised): a `!`-glyph
   // `TugPopupMenu` trigger. The `!` is the honest sigil — this button picks a
   // *routing* (where the input goes), not a slash command (what to do) — and
-  // matches the `!name` chips picking one seeds. The menu lists ONLY the five
+  // matches the `!name` chips picking one seeds. The menu lists ONLY the four
   // bang routings with their ⌃⌘ chord labels (the teaching surface). `⌘/`
   // opens the same menu by activating this trigger. Keeps the leading-slot
   // focus-group registration so the keyboard cycle's walk is unchanged; sets
   // no persistent state.
+  //
+  // In commit mode ([P03]) the button stays in place — the slot must not
+  // shift — but disabled: routings are meaningless while composing a commit
+  // message, and the Z5 ✕ is the mode's way out, so Z4A carries no exit of
+  // its own.
   const entryRoutePopup = (
     <TugPopupMenu
       side="top"
@@ -3012,6 +2990,7 @@ export const TugPromptEntry = React.forwardRef<
           role="accent"
           size="lg"
           subtype="icon"
+          disabled={commitActive}
           icon={
             <span className="tug-prompt-entry-bang-glyph" aria-hidden="true">
               !
@@ -3080,20 +3059,9 @@ export const TugPromptEntry = React.forwardRef<
     </>
   );
 
-  // ── Commit-route chrome ([P03], Z4A indicator + Z5 icon rail) ────────────
-  // Z4A: a non-interactive commit indicator replaces the `!` routing picker —
-  // the mode is legible and the picker (which seeds bang chips, meaningless
-  // here) is hidden.
-  const commitRouteIndicator = (
-    <span
-      className="tug-prompt-entry-commit-indicator"
-      data-slot="tug-prompt-entry-commit-indicator"
-    >
-      <GitCommitHorizontal size={16} aria-hidden="true" />
-    </span>
-  );
+  // ── Commit-mode chrome ([P03], Z5 icon rail) ─────────────────────────────
   // Z5: cancel / auto-message / commit, all icons ([P03]). Cancel exits the
-  // route (danger), Auto-Message drafts (pencil-sparkles; a spinner + disabled
+  // mode (danger), Auto-Message drafts (pencil-sparkles; a spinner + disabled
   // while drafting), Commit lands — JS-disabled on the turn/pending/changeset
   // gate, and additionally dimmed by CSS when the message is empty
   // (`data-empty`, so no per-keystroke React state, [L22]).
@@ -3106,9 +3074,9 @@ export const TugPromptEntry = React.forwardRef<
         size="lg"
         emphasis="outlined"
         role="danger"
-        // While drafting, the X cancels the Auto-Message (not the whole route);
-        // otherwise it exits the commit route ([P06]).
-        onClick={commitDrafting ? cancelCommitDraft : cancelCommitRoute}
+        // While drafting, the X cancels the Auto-Message (not the whole mode);
+        // otherwise it exits commit mode ([P06]).
+        onClick={commitDrafting ? cancelCommitDraft : exitCommitMode}
         aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
         title={commitDrafting ? "Cancel auto-message" : undefined}
         icon={<X size={16} strokeWidth={2.5} />}
@@ -3215,7 +3183,7 @@ export const TugPromptEntry = React.forwardRef<
           inputAreaTabIndex={editorFocusGroup !== undefined ? -1 : undefined}
           accessoryRow={entryAccessoryRow}
           toolbarClassName="tug-prompt-entry-toolbar"
-          toolbarLeading={commitActive ? commitRouteIndicator : entryRoutePopup}
+          toolbarLeading={entryRoutePopup}
           toolbarCenter={indicatorsContent}
           toolbarTrailing={commitActive ? commitToolbarTrailing : entryToolbarTrailing}
         >
@@ -3230,7 +3198,7 @@ export const TugPromptEntry = React.forwardRef<
               // `session-card.css` — so the gallery prompt keeps the 20-row cap
               // while the Dev prompt scrolls at a fraction of the card).
               maxRows={20}
-              // In the commit route the field is a plain-prose message editor:
+              // In commit mode the field is a plain-prose message editor:
               // read-only while the scribe streams a draft, and the slash / bang
               // / mention / argument machinery stands down (submit lands the
               // commit; a `/` popup would be nonsense).
@@ -3285,7 +3253,7 @@ export const TugPromptEntry = React.forwardRef<
             confirmRole="danger"
             onConfirm={() => {
               setCommitConfirmOpen(false);
-              commitRouteRef.current?.requestDraft(true);
+              commitModeRef.current?.requestDraft(true);
             }}
             onCancel={() => setCommitConfirmOpen(false)}
           />

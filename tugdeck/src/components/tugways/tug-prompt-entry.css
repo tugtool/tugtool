@@ -162,20 +162,13 @@ body {
   cursor: not-allowed;
 }
 
-/* Commit route ([P03]): Z4A shows a static commit indicator (git-commit glyph)
-   in place of the `!` routing picker; Z5 shows the cancel / auto-message /
-   commit icon rail. The Commit button lands on the same empty-input gate as the
-   submit button — an empty message dims it and refuses pointer input, while the
-   turn/pending/changeset gate is the JS `disabled` ([L22]: no per-keystroke
-   React state, the message-empty half is this CSS). */
-.tug-prompt-entry-commit-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tug-control-size-lg, 2.25rem);
-  height: var(--tug-control-size-lg, 2.25rem);
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
+/* Commit mode ([P03]): Z4A keeps the `!` routing picker in place but disabled
+   (routings are meaningless while composing a message; the Z5 ✕ is the way
+   out); Z5 shows the cancel / auto-message / commit icon rail. The Commit
+   button lands on the same empty-input gate as the submit button — an empty
+   message dims it and refuses pointer input, while the turn/pending/changeset
+   gate is the JS `disabled` ([L22]: no per-keystroke React state, the
+   message-empty half is this CSS). */
 /* Auto-Message in flight ([P06]): the pencil-sparkles button stays lit (a real
    filled accent button, set via `emphasis` in the composer) for the whole
    composition. It must not respond to a second press while the scribe streams —
@@ -186,9 +179,9 @@ body {
 }
 
 /* An empty commit message disables the Commit button. Gated on the composer's
-   `data-commit-empty` bridge (the message with the leading `!changes` chip
-   stripped), NOT `data-empty` — the chip itself makes the doc non-empty. No
-   per-keystroke React state ([L06] / [L22]). */
+   `data-commit-empty` bridge (the message, trimmed), which `data-empty` does
+   not cover — whitespace-only input is non-empty to the doc but empty as a
+   message. No per-keystroke React state ([L06] / [L22]). */
 .tug-prompt-entry[data-commit-empty="true"] .tug-prompt-entry-commit-button {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
   pointer-events: none;

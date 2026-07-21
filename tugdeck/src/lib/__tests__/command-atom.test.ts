@@ -61,7 +61,7 @@ describe("chipDisplayLabel", () => {
   });
 
   test("a bang routing shows its `!` sigil", () => {
-    for (const name of ["shell", "btw", "find", "changes", "history"]) {
+    for (const name of ["shell", "btw", "find", "history"]) {
       expect(chipDisplayLabel("command", name, name)).toBe(`!${name}`);
     }
   });

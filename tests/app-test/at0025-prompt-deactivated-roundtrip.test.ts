@@ -386,12 +386,22 @@ async function reseedFromDiskAndReactivate(
 
   await app.awaitEngineReady("A");
 
-  // Reactivate A — the user's gesture on return (clicks Dev tab).
-  await app.nativeClickAtElement(tabSelectorFor("A"));
-  await app.waitForCondition<boolean>(
-    `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "A")`,
-    { timeoutMs: 2000 },
-  );
+  // Reactivate A — the user's gesture on return (clicks Dev tab). Right
+  // after an appReload the freshly re-hosted window can swallow the first
+  // click while it is still becoming interactable, so a click that didn't
+  // take is retried — exactly what a person does when a click lands during
+  // a repaint.
+  const activated = `(typeof window.__tug !== "undefined") && (window.__tug.getActiveCardId() === "A")`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await app.nativeClickAtElement(tabSelectorFor("A"));
+    try {
+      await app.waitForCondition<boolean>(activated, { timeoutMs: 2000 });
+      return;
+    } catch {
+      // Not active yet — click again.
+    }
+  }
+  await app.waitForCondition<boolean>(activated, { timeoutMs: 2000 });
 }
 
 async function assertLiveState(app: App): Promise<void> {

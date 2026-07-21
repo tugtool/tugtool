@@ -39,7 +39,7 @@ import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
 import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
-import { CommitRouteController } from "@/lib/commit-route-controller";
+import { CommitModeController } from "@/lib/commit-mode-controller";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { SessionChangesView } from "./session-changes/session-changes-view";
@@ -285,6 +285,10 @@ const SESSION_CYCLE_ORDER_CWD = 4;
 // occupant on the ⌕ route besides the identity badge (Table T01), so it never
 // collides with Mode / Cwd in the walk.
 const SESSION_CYCLE_ORDER_FIND = 4;
+// Commit mode's Changes chip shares slot 4 as well — the commit cluster
+// (Project + Changes) replaces the whole Code chip set, so Mode is never
+// co-mounted with it (Table T01).
+const SESSION_CYCLE_ORDER_CHANGES = 4;
 const SESSION_CYCLE_ORDER_SUBMIT = 7;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK / BTW take
@@ -2159,23 +2163,23 @@ export function SessionCardBody({
   }
   const shadeViewController = shadeViewControllerRef.current;
 
-  // The commit route's per-card state + land path ([P03], Spec S03). User-driven
-  // (`/commit`, `!changes`, ⇧⌘C on an empty composer), so it rides its own
-  // controller rather than `CodeSessionStore`'s reducer. Entering the route
-  // turns the prompt entry into the message editor (a leading `!changes` chip);
-  // the changes sheet's visibility is separate card chrome (the
-  // `ShadeViewController`), coupled by the card below.
-  const commitRouteControllerRef = useRef<CommitRouteController | null>(null);
-  if (commitRouteControllerRef.current === null) {
-    commitRouteControllerRef.current = new CommitRouteController({
+  // Commit mode's per-card state + land path ([P03], Spec S03). User-driven
+  // (`/commit`, ⇧⌘C on an empty composer, Session ▸ Commit…), so it rides its
+  // own controller rather than `CodeSessionStore`'s reducer. Entering the mode
+  // turns the prompt entry into the message editor; the changes sheet's
+  // visibility is separate card chrome (the `ShadeViewController`), coupled by
+  // the card below.
+  const commitModeControllerRef = useRef<CommitModeController | null>(null);
+  if (commitModeControllerRef.current === null) {
+    commitModeControllerRef.current = new CommitModeController({
       changesController,
       codeSessionStore,
     });
   }
-  const commitRouteController = commitRouteControllerRef.current;
+  const commitModeController = commitModeControllerRef.current;
   useEffect(
-    () => () => commitRouteController.dispose(),
-    [commitRouteController],
+    () => () => commitModeController.dispose(),
+    [commitModeController],
   );
 
   useSessionCardObserver(cardId, codeSessionStore);
@@ -2200,14 +2204,21 @@ export function SessionCardBody({
     shadeViewController.subscribe,
     shadeViewController.getSnapshot,
   );
-  // The commit route ([P03] revised) is orthogonal to the changes sheet: the
-  // route turns the composer into the message editor (a leading `!changes`
-  // chip), while the bottom-anchored changes sheet is card chrome the route
-  // rides atop. `commitRouteActive` drives the composer + the route↔sheet
-  // coupling below; the transcript-slot view is the shade choice alone.
-  const commitRouteActive = useSyncExternalStore(
-    commitRouteController.subscribe,
-    () => commitRouteController.getSnapshot().active,
+  // Commit mode ([P03] revised) is orthogonal to the changes sheet: the mode
+  // turns the composer into the message editor, while the bottom-anchored
+  // changes sheet is card chrome the mode rides atop. `commitModeActive`
+  // drives the composer + the mode↔sheet coupling below; the transcript-slot
+  // view is the shade choice alone.
+  const commitModeActive = useSyncExternalStore(
+    commitModeController.subscribe,
+    () => commitModeController.getSnapshot().active,
+  );
+  // The commit cluster's Changes chip face — the count of files the commit
+  // would land. Subscribed separately so the cluster re-renders only when the
+  // count moves, not on every controller snapshot.
+  const commitFileCount = useSyncExternalStore(
+    commitModeController.subscribe,
+    () => commitModeController.getSnapshot().fileCount,
   );
   const activeView: "transcript" | "changes" | "history" =
     shadeView === "none" ? "transcript" : shadeView;
@@ -2225,35 +2236,35 @@ export function SessionCardBody({
     if (shadeView === "history") historySheetRef.current?.open();
     else historySheetRef.current?.close();
   }, [shadeView]);
-  // Route ↔ sheet coupling ([P03]): entering the route ensures the changes
-  // sheet is up; exiting it (composer Escape / Cancel / land / a manual chip
-  // delete, all via `commitRouteController.exit()`) drops the sheet, unless the
-  // shade has already swapped to History. Observing the route's active flag is
+  // Mode ↔ sheet coupling ([P03]): entering commit mode ensures the changes
+  // sheet is up; exiting it (composer Escape / Cancel / the Z4A commit chip /
+  // land, all via `commitModeController.exit()`) drops the sheet, unless the
+  // shade has already swapped to History. Observing the mode's active flag is
   // what lets a composer-initiated exit close the sheet.
-  const prevCommitRouteActiveRef = useRef(commitRouteActive);
+  const prevCommitModeActiveRef = useRef(commitModeActive);
   useEffect(() => {
-    const prev = prevCommitRouteActiveRef.current;
-    prevCommitRouteActiveRef.current = commitRouteActive;
-    if (!prev && commitRouteActive) {
+    const prev = prevCommitModeActiveRef.current;
+    prevCommitModeActiveRef.current = commitModeActive;
+    if (!prev && commitModeActive) {
       shadeViewController.show("changes");
-    } else if (prev && !commitRouteActive) {
+    } else if (prev && !commitModeActive) {
       if (shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
       }
     }
-  }, [commitRouteActive, shadeViewController]);
+  }, [commitModeActive, shadeViewController]);
   const handleChangesSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open && shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
-        // A passive-shade self-close while the route is active also exits the
-        // route ([P03]) so the composer drops its `!changes` chip.
-        if (commitRouteController.getSnapshot().active) {
-          commitRouteController.exit();
+        // A passive-shade self-close while commit mode is active also exits
+        // the mode ([P03]) so the composer returns to the prompt.
+        if (commitModeController.getSnapshot().active) {
+          commitModeController.exit();
         }
       }
     },
-    [shadeViewController, commitRouteController],
+    [shadeViewController, commitModeController],
   );
   const handleHistorySheetOpenChange = useCallback(
     (open: boolean) => {
@@ -3283,14 +3294,14 @@ export function SessionCardBody({
     // (confirm → interrupt every turn → `claude_logout` → TugSetup reopens);
     // the same nonce the File-menu "Log out…" bumps, so there's one flow.
     logout: () => requestLogout(),
-    // `/commit` — enters the commit route ([P03]/[P09]): the commit sheet rises
+    // `/commit` — enters commit mode ([P03]/[P09]): the commit sheet rises
     // and the prompt entry becomes the message editor. A `/commit <message>`
     // seeds the composer with the args as an edited draft ([P05]); the `now`
     // keyword loses its meaning (args are just the message). Claude's built-in
     // `/commit` stays shadowed dead by this local match.
     commit: (args) => {
       const message = args.trim();
-      commitRouteController.enter(message.length > 0 ? message : undefined);
+      commitModeController.enter(message.length > 0 ? message : undefined);
     },
     // `/join` — degraded to a caution bulletin for the interim ([P10]): the
     // dash join/resolve/release UI left with the read-only shade, and
@@ -3305,7 +3316,7 @@ export function SessionCardBody({
   };
 
   // Surface for each bang routing (`lib/bang-commands.ts`), keyed by name —
-  // the five per-submission destinations demoted from sticky routes, now
+  // the four per-submission destinations demoted from sticky routes, now
   // their own namespace with the `!` sigil. Dispatched through the same
   // `RUN_SLASH_COMMAND` channel as slash commands; only the registry (and
   // the sigil) differs. The `as const satisfies` registry narrows
@@ -3351,14 +3362,6 @@ export function SessionCardBody({
       findSession.setQuery(query);
       findSession.next();
     },
-    // `!changes` — the routing finally routes ([P04]): it enters the commit
-    // route (the rising commit sheet + composer-as-message-editor), the same
-    // surface `/commit` opens. `!changes <message>` seeds the message, exactly
-    // like `/commit <message>`.
-    changes: (arg) => {
-      const trimmed = arg.trim();
-      commitRouteController.enter(trimmed.length > 0 ? trimmed : undefined);
-    },
     // `!history` ([P04]) — bare shows the History Shade; a question wraps in the
     // `/tugplug:history` skill and sends ON the record so the answer streams in
     // the transcript. The replay guard mirrors the retired `↺` branch: a submit
@@ -3367,9 +3370,9 @@ export function SessionCardBody({
     history: (arg) => {
       const notify = paneBulletinRef.current;
       const question = arg.trim();
-      // History and the commit route are mutually exclusive ([P03]): exit the
-      // route (drops the `!changes` chip) before swapping the shade to History.
-      commitRouteController.exit();
+      // History and commit mode are mutually exclusive ([P03]): exit the
+      // mode before swapping the shade to History.
+      commitModeController.exit();
       shadeViewController.show("history");
       if (question.length === 0) return;
       const snap = codeSessionStore.getSnapshot();
@@ -3476,32 +3479,32 @@ export function SessionCardBody({
       [TUG_ACTIONS.OPEN_COMMAND_PICKER]: (_event: ActionEvent) => {
         entryDelegateRef.current?.openCommandPicker();
       },
-      // Swift Session-menu "Show/Hide Changes" (⌘⇧C) and the ⇧⌘C deck twin
-      // ([P05], Spec S04) — toggle the changes glance, and (only on an empty
-      // composer) the `!changes` route with it ([P03] revised). Visible: hide
-      // the sheet, exiting the route if it's active (drops the chip). Hidden:
-      // show the sheet; if the composer is empty, also enter the route so the
-      // prompt entry becomes the message editor — otherwise leave the
-      // in-progress prompt alone and show the read-only glance.
+      // Swift Session-menu "Show/Hide Changes" (⌘⇧C), the ⇧⌘C deck twin, and
+      // the ⌃⌘C alias ([P05], Spec S04) — toggle the changes glance, and (only
+      // on an empty composer) commit mode with it ([P03] revised). Visible:
+      // hide the sheet, exiting the mode if it's active. Hidden: show the
+      // sheet; if the composer is empty, also enter the mode so the prompt
+      // entry becomes the message editor — otherwise leave the in-progress
+      // prompt alone and show the read-only glance.
       [TUG_ACTIONS.TOGGLE_CHANGES_VIEW]: (_event: ActionEvent) => {
         const sheetVisible = shadeViewController.getSnapshot() === "changes";
         if (sheetVisible) {
-          if (commitRouteController.getSnapshot().active) {
-            commitRouteController.exit();
+          if (commitModeController.getSnapshot().active) {
+            commitModeController.exit();
           } else {
             shadeViewController.hide();
           }
         } else if (entryDelegateRef.current?.isEmpty() ?? true) {
-          commitRouteController.enter();
+          commitModeController.enter();
         } else {
           shadeViewController.show("changes");
         }
       },
       // Swift Session-menu "Show/Hide History" (⌘⇧H) and the ⇧⌘H deck twin.
-      // History and the commit route are mutually exclusive ([P03]): exit the
-      // route before toggling History.
+      // History and commit mode are mutually exclusive ([P03]): exit the
+      // mode before toggling History.
       [TUG_ACTIONS.TOGGLE_HISTORY_VIEW]: (_event: ActionEvent) => {
-        commitRouteController.exit();
+        commitModeController.exit();
         shadeViewController.toggle("history");
       },
       // A typed `/command` the session card will not run, dispatched by the prompt
@@ -3520,7 +3523,7 @@ export function SessionCardBody({
               // memory from before the bang split. Teach the `!` form
               // instead of reporting a generic unknown.
               title: "That Command Moved",
-              message: `/${payload.name} is now the !${payload.name} routing. Type ! to see the five routings, or ⌘/ to open the picker.`,
+              message: `/${payload.name} is now the !${payload.name} routing. Type ! to see the four routings, or ⌘/ to open the picker.`,
             }
           : payload.reason === "unsupported"
             ? {
@@ -3785,8 +3788,8 @@ export function SessionCardBody({
               {/*
                 Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
                 that rises from the top of Z2 over the transcript. ⇧⌘C toggles
-                it; on an empty composer it also enters the `!changes` route so
-                the prompt entry becomes the message editor. `shadePassive` keeps
+                it; on an empty composer it also enters commit mode so the
+                prompt entry becomes the message editor. `shadePassive` keeps
                 focus in the composer below; `shadeAnchor="bottom"` + auto-size
                 gives the rise-from-Z2 geometry. Landing lives in the composer's
                 Z5, so the view carries no Done / X.
@@ -3963,7 +3966,7 @@ export function SessionCardBody({
               shellSessionStore={shellSessionStore}
               pathCommandsStore={pathCommandsStore}
               findSession={findSession}
-              commitRoute={commitRouteController}
+              commitMode={commitModeController}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
               // session fault. Surface it as a calm, dismissible bulletin
@@ -3987,6 +3990,40 @@ export function SessionCardBody({
               onAfterSubmit={handleAfterSubmit}
               onDoubleEscapeWhenEmpty={() => rewindSheet.openRewindSheet()}
               indicatorsContent={
+                commitModeActive ? (
+                  // Commit cluster ([P03], Table T01): the Claude-session
+                  // chips (identity / mode / model / effort) describe sending
+                  // a prompt and unmount for the mode; what remains is what a
+                  // commit is about — WHERE it lands (Project) and WHAT it
+                  // lands (Changes). The Changes chip's click toggles the
+                  // changes sheet without leaving the mode.
+                  <>
+                    {effectivePromptStatusContent}
+                    <TugPushButton
+                      size="sm"
+                      emphasis="tinted"
+                      role="action"
+                      layout="label-top"
+                      label="Changes"
+                      data-slot="changes-chip"
+                      focusGroup={SESSION_CYCLE_GROUP}
+                      focusOrder={SESSION_CYCLE_ORDER_CHANGES}
+                      aria-label="Show or hide the changes sheet"
+                      title="Show or hide the changes sheet"
+                      onClick={() => {
+                        if (shadeViewController.getSnapshot() === "changes") {
+                          shadeViewController.hide();
+                        } else {
+                          shadeViewController.show("changes");
+                        }
+                      }}
+                    >
+                      {commitFileCount === 1
+                        ? "1 file"
+                        : `${commitFileCount} files`}
+                    </TugPushButton>
+                  </>
+                ) : (
                 // Static Code chip set ([P01]/[P10]): identity · session ·
                 // project · mode · model · effort, plus the find cluster
                 // whenever an active `/find` holds a query. All three panes
@@ -4040,6 +4077,7 @@ export function SessionCardBody({
                   )}
                   {effectiveFooterContent}
                 </>
+                )
               }
               lineWrap={editorSettings.lineWrap}
               lineNumbers={editorSettings.lineNumbers}

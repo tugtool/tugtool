@@ -3,11 +3,16 @@
  *
  * A slash command is a *verb*: "do this thing" (`/model`, `/rewind`,
  * `/compact`). A bang command is a *routing*: "send what I'm typing down a
- * different path" — the five per-submission destinations demoted from sticky
- * routes ([P01]): `!shell`, `!btw`, `!find`, `!changes`, `!history`. They do
- * nothing themselves; they redirect the payload. That distinction gets its
- * own namespace and sigil so the slash inventory stays purely verbs, and the
+ * different path" — the four per-submission destinations demoted from sticky
+ * routes ([P01]): `!shell`, `!btw`, `!find`, `!history`. They do nothing
+ * themselves; they redirect the payload. That distinction gets its own
+ * namespace and sigil so the slash inventory stays purely verbs, and the
  * chip / picker / `!` trigger present routings as what they are.
+ *
+ * Committing is deliberately NOT a routing: it is the composer's one
+ * secondary resting mode (commit mode, `lib/commit-mode-controller`), entered
+ * via ⇧⌘C / `/commit` / Session ▸ Commit…. `!changes` is not registered, so it
+ * is just an unknown bang like any other — the shell escape hatch.
  *
  * `!` followed by anything that is NOT a registered bang name is the shell
  * escape hatch: `!git status` runs `git status` in the shell — the terminal's
@@ -56,11 +61,6 @@ export const BANG_COMMANDS = [
     name: "find",
     description: "Find in the transcript",
     shortcut: "⌃⌘G",
-  },
-  {
-    name: "changes",
-    description: "View and commit this session's changes",
-    shortcut: "⌃⌘C",
   },
   {
     name: "history",

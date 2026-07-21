@@ -17,13 +17,12 @@
 import { describe, it, expect } from "bun:test";
 
 import {
-  buildCommitRouteState,
+  buildCommitModeState,
   buildEditingStateFromDraftRestore,
   classifyBlockedSubmit,
   coerceRestorePayload,
   computeCommandChipInsert,
   computeSideQuestionArg,
-  extractCommitMessage,
 } from "@/components/tugways/tug-prompt-entry";
 import type { CommandLineAtom } from "@/lib/slash-commands";
 import type { TugTextEditingState } from "@/lib/tug-text-types";
@@ -31,41 +30,20 @@ import type { AtomSegment } from "@/lib/tug-atom-img";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 
 // ---------------------------------------------------------------------------
-// Commit route ([P03] prefix model): the `!changes` chip round-trips a message
+// Commit mode ([P03]): the editor holds the message alone — no chip
 // ---------------------------------------------------------------------------
 
-describe("buildCommitRouteState / extractCommitMessage round-trip", () => {
-  const A = TUG_ATOM_CHAR;
-
-  it("empty message → a lone `!changes` chip + space, caret after it", () => {
-    const state = buildCommitRouteState("");
-    expect(state.text).toBe(`${A} `);
-    expect(state.atoms).toEqual([
-      { position: 0, type: "command", label: "changes", value: "changes" },
-    ]);
-    expect(state.selection).toEqual({ start: 2, end: 2 });
+describe("buildCommitModeState", () => {
+  it("holds the message verbatim with no atoms", () => {
+    const state = buildCommitModeState("fix the bug");
+    expect(state.text).toBe("fix the bug");
+    expect(state.atoms).toEqual([]);
   });
 
-  // The editor reconstructs the command line from `getAtomsInState`'s
-  // positioned atoms (`{ position, segment }`), which `CommandLineAtom` models
-  // — the chip sits at position 0 with a `changes` command segment.
-  const changesChip: CommandLineAtom[] = [
-    { position: 0, segment: { type: "command", value: "changes" } },
-  ];
-
-  it("seeds the message after the chip and recovers it verbatim", () => {
-    const state = buildCommitRouteState("fix the bug");
-    expect(state.text).toBe(`${A} fix the bug`);
-    expect(extractCommitMessage(state.text, changesChip)).toBe("fix the bug");
-  });
-
-  it("recovers an empty message from a chip-only draft", () => {
-    const state = buildCommitRouteState("");
-    expect(extractCommitMessage(state.text, changesChip).trim()).toBe("");
-  });
-
-  it("a draft that no longer leads with the chip returns its text verbatim", () => {
-    expect(extractCommitMessage("just prose", [])).toBe("just prose");
+  it("an empty message is an empty document", () => {
+    const state = buildCommitModeState("");
+    expect(state.text).toBe("");
+    expect(state.atoms).toEqual([]);
   });
 });
 

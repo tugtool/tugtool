@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 
 import {
-  CommitRouteController,
+  CommitModeController,
   evaluateCommitLandGate,
-} from "@/lib/commit-route-controller";
+} from "@/lib/commit-mode-controller";
 import { _resetChangesetDraftStoreForTest } from "@/lib/changeset-draft-store";
 import { _resetChangesetVerbStoreForTest } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
@@ -91,9 +91,9 @@ function fakeCodeSessionStore(canInterrupt: boolean): CodeSessionStore {
   } as unknown as CodeSessionStore;
 }
 
-describe("CommitRouteController", () => {
+describe("CommitModeController", () => {
   it("enter / exit toggles the active flag and fires listeners", () => {
-    const controller = new CommitRouteController({
+    const controller = new CommitModeController({
       changesController: fakeChangesController(2),
       codeSessionStore: fakeCodeSessionStore(false),
     });
@@ -114,7 +114,7 @@ describe("CommitRouteController", () => {
   });
 
   it("reports canLandIgnoringMessage off the turn + changeset state", () => {
-    const idle = new CommitRouteController({
+    const idle = new CommitModeController({
       changesController: fakeChangesController(2),
       codeSessionStore: fakeCodeSessionStore(false),
     });
@@ -122,14 +122,14 @@ describe("CommitRouteController", () => {
     expect(idle.getSnapshot().fileCount).toBe(2);
     idle.dispose();
 
-    const midTurn = new CommitRouteController({
+    const midTurn = new CommitModeController({
       changesController: fakeChangesController(2),
       codeSessionStore: fakeCodeSessionStore(true),
     });
     expect(midTurn.getSnapshot().canLandIgnoringMessage).toBe(false);
     midTurn.dispose();
 
-    const empty = new CommitRouteController({
+    const empty = new CommitModeController({
       changesController: fakeChangesController(0),
       codeSessionStore: fakeCodeSessionStore(false),
     });

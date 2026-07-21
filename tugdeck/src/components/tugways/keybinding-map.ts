@@ -241,7 +241,7 @@ export const KEYBINDINGS: KeyBinding[] = [
   // focus-walk stage in `responder-chain-provider.tsx` owns them.
   { key: "KeyP", meta: true, shift: true, action: TUG_ACTIONS.CYCLE_PERMISSION_MODE, scope: "key-card", preventDefaultOnMatch: true },
   // Command picker + one-shot command chords ([P06]/[P07]). ⌘/ opens the
-  // completion popup (seeds a leading `/`); ⌃⌘S/B/C/G/H insert the matching
+  // completion popup (seeds a leading `/`); ⌃⌘S/B/G/H insert the matching
   // command chip at the head of the draft, preserving typed args. All are
   // `scope: "key-card"` so they fire card-wide (not only while the editor is
   // focused); the session card's card-content responder forwards each to the
@@ -254,7 +254,10 @@ export const KEYBINDINGS: KeyBinding[] = [
   { key: "Slash", meta: true, alt: true, action: TUG_ACTIONS.SHOW_DEVTOOLS, preventDefaultOnMatch: true },
   { key: "KeyS", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "shell" }, scope: "key-card", preventDefaultOnMatch: true },
   { key: "KeyB", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "btw" }, scope: "key-card", preventDefaultOnMatch: true },
-  { key: "KeyC", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "changes" }, scope: "key-card", preventDefaultOnMatch: true },
+  // ⌃⌘C — muscle-memory alias for the retired `!changes` chord. Committing is
+  // a mode, not a routing, so this routes to the same toggle as ⇧⌘C rather
+  // than seeding a chip.
+  { key: "KeyC", ctrl: true, meta: true, action: TUG_ACTIONS.TOGGLE_CHANGES_VIEW, scope: "key-card", preventDefaultOnMatch: true },
   { key: "KeyG", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "find" }, scope: "key-card", preventDefaultOnMatch: true },
   { key: "KeyH", ctrl: true, meta: true, action: TUG_ACTIONS.INSERT_SLASH_COMMAND, value: { name: "history" }, scope: "key-card", preventDefaultOnMatch: true },
   // Show/Hide Changes (⇧⌘C) and History (⇧⌘H) — the browser-dev twins of the
