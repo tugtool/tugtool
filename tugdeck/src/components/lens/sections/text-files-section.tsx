@@ -1,12 +1,13 @@
 /**
  * text-files-section.tsx — the Lens **Text Files** section: a `TugListView`
- * over the open Text cards plus the recently-open files (the recent-documents
- * MRU). One Tab stop in the Lens; arrows rove, Enter/click front an open card
- * (`focus-session-card`) or open a recent path (`open-file`).
+ * over the open Text cards. One Tab stop in the Lens; arrows rove, Enter/click
+ * fronts the open card (`focus-session-card`). The recently-open files (the
+ * recent-documents MRU) are no longer listed here — they hang off the section
+ * header's recents menu, which mirrors File ▸ Open Recent.
  *
  * Laws: [L02] deck + recents enter React through `useSyncExternalStore` (in the
- * data source); [L06] cursor/selection appearance is CSS on engine attributes;
- * [L22] the FocusManager owns the cursor.
+ * data source, and the header menu); [L06] cursor/selection appearance is CSS
+ * on engine attributes; [L22] the FocusManager owns the cursor.
  *
  * @module components/lens/sections/text-files-section
  */
@@ -20,7 +21,7 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { FileText } from "lucide-react";
+import { Clock3, FileText } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
@@ -40,6 +41,9 @@ import type {
   TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
+import type { TugPopupMenuEntry } from "@/components/tugways/internal/tug-popup-menu";
 import {
   basename,
   buildTextFilesRows,
@@ -47,6 +51,11 @@ import {
   useLensTextFilesDataSource,
   type LensTextFilesDataSource,
 } from "./text-files-data-source";
+
+/** File ▸ Open Recent caps its list at 10; the header menu mirrors that. */
+const RECENTS_MENU_LIMIT = 10;
+/** Sentinel item id for the menu's "Clear Menu" entry. */
+const CLEAR_RECENTS_ITEM_ID = "\0clear-recents";
 
 // The section's remembered selection — the last-touched row id, mapped to a
 // cursor seed on the next Cmd-L / Tab ([P10]). Module-level so it outlives a
@@ -58,44 +67,21 @@ function displayDir(dir: string): string {
   return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
 }
 
-/** Compact absolute datetime for the "Last opened" label — "Jul 18, 3:42 PM". */
-function formatLastOpened(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 /** A two-line row on the shared `TugListRow` chrome: filename (title) over its
- *  dimmed directory (subtitle). A recent (not-open) file reads a touch quieter
- *  via `data-recent`. `meta` is the right-aligned trailing label — "Currently
- *  open" for an open card, "Last opened: …" for a recent file — in one slot and
- *  one style. */
+ *  dimmed directory (subtitle). */
 function FileRow({
   name,
   dir,
-  recent,
-  meta,
 }: {
   name: string;
   dir: string;
-  recent?: boolean;
-  meta?: string;
 }): React.ReactElement {
   return (
     <TugListRow
-      className={recent ? "text-files-row text-files-row-recent" : "text-files-row"}
-      data-recent={recent ? "true" : undefined}
+      className="text-files-row"
       title={name}
       titleSize="sm"
       subtitle={dir.length > 0 ? displayDir(dir) : undefined}
-      trailing={
-        meta !== undefined ? (
-          <span className="text-files-meta">{meta}</span>
-        ) : undefined
-      }
     />
   );
 }
@@ -105,29 +91,9 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
   dataSource,
 }: TugListViewCellProps<LensTextFilesDataSource>) => {
   const row = dataSource.rowAt(index);
-  switch (row.kind) {
-    case "text-open":
-      return (
-        <FileRow
-          name={row.title}
-          dir={row.path !== null ? dirname(row.path) : ""}
-          meta="Currently open"
-        />
-      );
-    case "text-recent":
-      return (
-        <FileRow
-          name={basename(row.path)}
-          dir={dirname(row.path)}
-          recent
-          meta={
-            row.openedAt != null
-              ? `Last opened: ${formatLastOpened(row.openedAt)}`
-              : undefined
-          }
-        />
-      );
-  }
+  return (
+    <FileRow name={row.title} dir={row.path !== null ? dirname(row.path) : ""} />
+  );
 };
 
 const TEXT_FILES_CELL_RENDERERS: Record<
@@ -135,10 +101,9 @@ const TEXT_FILES_CELL_RENDERERS: Record<
   TugListViewCellRenderer<LensTextFilesDataSource>
 > = {
   "text-open": TextFilesCell,
-  "text-recent": TextFilesCell,
 };
 
-/** Live collapsed summary: `N open · M recent`. */
+/** Live collapsed summary: the open-file count. */
 function TextFilesCollapsedSummary(): React.ReactElement {
   const deckStore = getDeckStore();
   const deck = useSyncExternalStore(
@@ -146,20 +111,68 @@ function TextFilesCollapsedSummary(): React.ReactElement {
     deckStore !== null ? deckStore.getSnapshot : () => null,
     () => null,
   );
+  const open = useMemo(() => buildTextFilesRows({ deck }).length, [deck]);
+  if (open === 0) return <>No open files</>;
+  return <>{`${open} open`}</>;
+}
+
+/** The header recents menu — mirrors File ▸ Open Recent. A `clock-3` icon
+ *  button (left of the fold chevron) opens a menu of the reachable recent-
+ *  documents MRU; picking one dispatches `open-file`, "Clear Menu" empties the
+ *  list. Recents enter React via `useSyncExternalStore` ([L02]); a probe on
+ *  mount drops any file deleted while the section was elsewhere. */
+function TextFilesHeaderActions(): React.ReactElement {
   const recents = useSyncExternalStore(
     subscribeRecentDocuments,
     getReachableRecentDocumentsSnapshot,
     getReachableRecentDocumentsSnapshot,
   );
-  const { open, recent } = useMemo(() => {
-    const rows = buildTextFilesRows({ deck, recents });
-    return {
-      open: rows.filter((r) => r.kind === "text-open").length,
-      recent: rows.filter((r) => r.kind === "text-recent").length,
-    };
-  }, [deck, recents]);
-  if (open === 0 && recent === 0) return <>No files</>;
-  return <>{`${open} open · ${recent} recent`}</>;
+
+  useEffect(() => {
+    probeRecentDocuments();
+  }, []);
+
+  const items = useMemo<TugPopupMenuEntry[]>(() => {
+    const paths = recents.slice(0, RECENTS_MENU_LIMIT);
+    if (paths.length === 0) {
+      return [{ id: "__none__", label: "No Recent Documents", disabled: true }];
+    }
+    const entries: TugPopupMenuEntry[] = paths.map((path) => ({
+      id: path,
+      label: basename(path),
+    }));
+    entries.push({ type: "separator" });
+    entries.push({ id: CLEAR_RECENTS_ITEM_ID, label: "Clear Menu" });
+    return entries;
+  }, [recents]);
+
+  const handleSelect = (id: string): void => {
+    if (id === CLEAR_RECENTS_ITEM_ID) {
+      dispatchAction({ action: "clear-recent-documents" });
+      return;
+    }
+    if (id === "__none__") return;
+    dispatchAction({ action: "open-file", path: id });
+  };
+
+  return (
+    <TugPopupMenu
+      align="end"
+      trigger={
+        <TugButton
+          subtype="icon"
+          emphasis="ghost"
+          role="action"
+          size="xs"
+          icon={<Clock3 size={16} />}
+          aria-label="Open recent"
+          title="Open Recent"
+        />
+      }
+      items={items}
+      onSelect={handleSelect}
+    />
+  );
 }
 
 function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
@@ -167,24 +180,13 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
   const count = dataSource.numberOfItems();
   const listRef = useRef<TugListViewHandle>(null);
 
-  // Content = any cursorable row (open cards or recents); the "Recent" header
-  // is an inert divider and doesn't count. Publish it so the Lens skips this
-  // band for the Cmd-L seed / Tab walk when it holds only a header (or nothing).
-  let cursorableCount = 0;
-  for (let i = 0; i < count; i += 1) {
-    if (dataSource.roleForIndex(i) !== "header") cursorableCount += 1;
-  }
-  const hasContent = cursorableCount > 0;
+  // Every row is a cursorable open-file cell. Publish whether the band holds
+  // any so the Lens skips it for the Cmd-L seed / Tab walk when it is empty.
+  const hasContent = count > 0;
   useLayoutEffect(() => {
     setSectionHasContent(host.focusGroup, hasContent);
     return () => setSectionHasContent(host.focusGroup, false);
   }, [host.focusGroup, hasContent]);
-
-  // Re-probe the MRU against disk whenever the section (re)appears — a file
-  // deleted while the section was collapsed drops off on expand.
-  useEffect(() => {
-    probeRecentDocuments();
-  }, []);
 
   const initialSelectedIndex = useMemo(() => {
     if (lastSelectedTextId === null) return undefined;
@@ -195,37 +197,12 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource, count]);
 
-  // Opening a recent removes its row and adds a `text-open` row (asynchronously,
-  // once the card binds the path). The keyboard cursor must follow the file
-  // across that recent→open transition. Remember the path on activate; a
-  // layout effect lands the cursor on the resulting open row when it appears.
-  const pendingOpenPathRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    const path = pendingOpenPathRef.current;
-    if (path === null) return;
-    for (let i = 0; i < dataSource.numberOfItems(); i += 1) {
-      const row = dataSource.rowAt(i);
-      if (row.kind === "text-open" && row.path === path) {
-        pendingOpenPathRef.current = null;
-        lastSelectedTextId = dataSource.idForIndex(i);
-        listRef.current?.moveCursorTo(i);
-        return;
-      }
-    }
-  });
-
   const delegate = useMemo<TugListViewDelegate>(() => {
     const activate = (index: number): void => {
       const row = dataSource.rowAt(index);
       if (row === undefined) return;
       lastSelectedTextId = dataSource.idForIndex(index);
-      if (row.kind === "text-open") {
-        dispatchAction({ action: "focus-session-card", cardId: row.cardId });
-      } else if (row.kind === "text-recent") {
-        // Arm the cursor to follow this file into its (soon-to-mount) open row.
-        pendingOpenPathRef.current = row.path;
-        dispatchAction({ action: "open-file", path: row.path });
-      }
+      dispatchAction({ action: "focus-session-card", cardId: row.cardId });
     };
     return { onSelect: activate, onActivate: activate };
   }, [dataSource]);
@@ -235,7 +212,7 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
       {count === 0 ? (
         // Empty label instead of the list — an empty `flex: 1` list would grow
         // and open a gap under the band (see the Sessions section).
-        <div className="text-files-empty">No open or recent files</div>
+        <div className="text-files-empty">No open files</div>
       ) : (
         <TugListView<LensTextFilesDataSource>
           ref={listRef}
@@ -262,6 +239,7 @@ export function registerTextFilesSection(): void {
     title: "Text Files",
     glyph: <FileText size={14} />,
     collapsedSummary: () => <TextFilesCollapsedSummary />,
+    headerActions: () => <TextFilesHeaderActions />,
     body: (host) => <TextFilesSectionBody host={host} />,
   });
 }

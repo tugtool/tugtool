@@ -18,6 +18,13 @@ export interface TextCardOpenEntry {
   /** The card's canonically-bound path, or null before binding. */
   getPath(): string | null;
   /**
+   * The card's display name — the bound file's basename, or the buffer's
+   * untitled name (`"Untitled"`, `"Untitled-2"`, …) before it binds a path.
+   * Null before the buffer names itself. The Lens Text Files list titles an
+   * unbound (path-less) row from this.
+   */
+  getDisplayName(): string | null;
+  /**
    * True when the card has unsaved in-memory edits (manual mode). The
    * `"reuse"` open target never rebinds a dirty card — rebinding tears
    * down the buffer.

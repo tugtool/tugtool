@@ -1,8 +1,7 @@
-/* The Lens Text Files section — open Text cards + recently-open files, rendered
-   as a TugListView of shared `TugListRow`s. The row chrome (padding, hover,
-   flush divider, selection fill, caret) comes from `TugListRow` + `TugListView`;
-   this file styles only the section shell, the "Recent" divider, and the quiet
-   tint on recent (not-open) rows. Tokens only ([L06]/[L20]). */
+/* The Lens Text Files section — the open Text cards, rendered as a TugListView
+   of shared `TugListRow`s. The row chrome (padding, hover, flush divider,
+   selection fill, caret) comes from `TugListRow` + `TugListView`; this file
+   styles only the section shell. Tokens only ([L06]/[L20]). */
 
 .text-files-section {
   font-family: var(--tug-font-family-sans);
@@ -43,21 +42,4 @@
   padding: 16px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: 0.875rem;
-}
-
-/* Recently-open (not currently open) reads a touch quieter than open cards. */
-.text-files-row[data-recent="true"] .tug-list-row-title,
-.text-files-row[data-recent="true"] .tug-list-row-title .tug-label {
-  font-weight: 500;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* The right-aligned trailing meta label — "Currently open" on an open row,
-   "Last opened: …" on a recent row — in one slot and one quiet style. Single
-   line, never wrapping. */
-.text-files-meta {
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-size: 0.6875rem;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
 }

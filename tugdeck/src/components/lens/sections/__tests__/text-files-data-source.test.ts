@@ -1,8 +1,8 @@
 /**
- * text-files-data-source.test.ts — the Lens Text Files enumeration:
- * open-card rows, the open-path filter over recents, last-opened stamping, and
- * role/id mapping. Pure logic over `buildTextFilesRows` (with injected path and
- * opened-at resolvers — no shared registry, no DOM).
+ * text-files-data-source.test.ts — the Lens Text Files enumeration: one row per
+ * open Text card, in deck order, plus role/id/title mapping. Pure logic over
+ * `buildTextFilesRows` (with an injected path resolver — no shared registry, no
+ * DOM). Recents are no longer listed here; they hang off the header menu.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -51,80 +51,57 @@ describe("buildTextFilesRows", () => {
           ["c1", "text"],
           ["c2", "text"],
         ]),
-        recents: [],
       },
       resolver({}),
     );
     expect(rows.map((r) => r.kind)).toEqual(["text-open", "text-open"]);
+    expect(rows.map((r) => r.cardId)).toEqual(["c1", "c2"]);
   });
 
-  it("lists recents not already open, with their last-opened stamp (no header)", () => {
+  it("titles an open card from its bound path's basename", () => {
     const rows = buildTextFilesRows(
-      {
-        deck: deck([["c1", "text"]]),
-        recents: ["/proj/open.txt", "/proj/closed.txt"],
-      },
+      { deck: deck([["c1", "text"]]) },
       resolver({ c1: "/proj/open.txt" }),
-      (p) => (p === "/proj/closed.txt" ? 1_700_000_000_000 : null),
     );
-    // The open path is filtered out of recents; the still-closed one remains —
-    // directly, with no "Recent" header row (retired).
-    expect(rows.map((r) => r.kind)).toEqual(["text-open", "text-recent"]);
-    const recent = rows[1];
-    expect(recent.kind === "text-recent" && recent.path).toBe("/proj/closed.txt");
-    expect(recent.kind === "text-recent" && recent.openedAt).toBe(1_700_000_000_000);
+    expect(rows[0].title).toBe("open.txt");
+    expect(rows[0].path).toBe("/proj/open.txt");
   });
 
-  it("stamps openedAt null for a recent with no recorded time", () => {
+  it("titles an unbound card from its buffer name (Untitled)", () => {
     const rows = buildTextFilesRows(
-      { deck: deck([]), recents: ["/proj/closed.txt"] },
+      { deck: deck([["c1", "text"]]) },
+      resolver({}),
+      (cardId) => (cardId === "c1" ? "Untitled-2" : null),
+    );
+    expect(rows[0].title).toBe("Untitled-2");
+    expect(rows[0].path).toBeNull();
+  });
+
+  it("falls back to the card title when a path-less card has no buffer name", () => {
+    const rows = buildTextFilesRows(
+      { deck: deck([["c1", "text"]]) },
       resolver({}),
       () => null,
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].kind === "text-recent" && rows[0].openedAt).toBeNull();
-  });
-
-  it("lists only the open card when every recent is already open", () => {
-    const rows = buildTextFilesRows(
-      {
-        deck: deck([["c1", "text"]]),
-        recents: ["/proj/open.txt"],
-      },
-      resolver({ c1: "/proj/open.txt" }),
-    );
-    expect(rows.map((r) => r.kind)).toEqual(["text-open"]);
-  });
-
-  it("titles an open card with no bound path as Untitled", () => {
-    const rows = buildTextFilesRows(
-      { deck: deck([["c1", "text"]]), recents: [] },
-      resolver({}),
-    );
-    expect(rows[0].kind === "text-open" && rows[0].title).toBe("c1");
+    expect(rows[0].title).toBe("c1");
+    expect(rows[0].path).toBeNull();
   });
 });
 
 describe("LensTextFilesDataSource", () => {
   it("maps id/kind/role and bumps version on input change", () => {
-    // No open registry entry for c1 → its path is null (an open card with no
-    // bound path yet); the recent survives the (empty) open-path filter.
     const ds = new LensTextFilesDataSource({
       deck: deck([["lens-tf-uniq", "text"]]),
-      recents: ["/proj/closed.txt"],
       registryVersion: 0,
     });
-    expect(ds.numberOfItems()).toBe(2); // open + recent (no header)
+    expect(ds.numberOfItems()).toBe(1);
     expect(ds.kindForIndex(0)).toBe("text-open");
     expect(ds.idForIndex(0)).toBe("open:lens-tf-uniq");
-    expect(ds.roleForIndex(1)).toBe("cell");
-    expect(ds.kindForIndex(1)).toBe("text-recent");
-    expect(ds.idForIndex(1)).toBe("recent:/proj/closed.txt");
+    expect(ds.roleForIndex(0)).toBe("cell");
 
     const v0 = ds.getVersion();
     ds.setInputsWithoutNotify({
       deck: deck([["lens-tf-uniq", "text"]]),
-      recents: ["/proj/closed.txt"],
       registryVersion: 1,
     });
     expect(ds.getVersion()).not.toBe(v0); // new references → recompute
