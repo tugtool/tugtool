@@ -1454,6 +1454,9 @@ export const TugPromptEntry = React.forwardRef<
   // (`→ idle`) or failure (`→ error`) the field reverts to the persisted
   // pre-draft message. Either way the caret is re-claimed and the wave cleared.
   const prevCommitDraftPhaseRef = useRef(commitSnap?.draftPhase ?? "idle");
+  // The message being replaced, captured at drafting start so the whole
+  // generation collapses to one undo step ([P06]).
+  const preDraftMessageRef = useRef("");
   useLayoutEffect(() => {
     const phase = commitSnap?.draftPhase ?? "idle";
     const prevPhase = prevCommitDraftPhaseRef.current;
@@ -1461,18 +1464,42 @@ export const TugPromptEntry = React.forwardRef<
     if (!commitActive) return;
     const editor = textEditorRef.current;
     if (editor === null) return;
+    const streamState = buildCommitRouteState(commitSnap?.draftText ?? "");
     if (phase === "drafting") {
-      editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
+      // Stream ephemerally — no per-delta undo events; the settle folds the
+      // whole generation into one. On the first delta, remember what we're
+      // replacing and light the wave caret.
       if (prevPhase !== "drafting") {
+        preDraftMessageRef.current = readCommitMessage();
+        editor.restoreState(streamState, { addToHistory: false });
         editor.view()?.dispatch({ effects: setWaveCaretActive.of(true) });
+      } else {
+        editor.restoreState(streamState, { addToHistory: false });
       }
+      // Follow the wave caret at the tail so the newest text stays in view as
+      // it streams (a no-op while the message fits). Reset to the top on settle.
+      const view = editor.view();
+      if (view !== null) view.scrollDOM.scrollTop = view.scrollDOM.scrollHeight;
     } else if (prevPhase === "drafting") {
-      const restored =
-        phase === "ready"
-          ? commitSnap?.draftText ?? ""
-          : commitSnap?.persistedMessage ?? "";
-      editor.restoreState(buildCommitRouteState(restored));
       editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
+      if (phase === "ready") {
+        // One undo for the whole thing: revert to the pre-draft message with no
+        // history event, then apply the final message as the single recorded
+        // edit — so ⌘Z removes the generated message and ⌘⇧Z restores it.
+        editor.restoreState(buildCommitRouteState(preDraftMessageRef.current), {
+          addToHistory: false,
+        });
+        editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
+        // Show the START of the generated message, not its tail.
+        const view = editor.view();
+        if (view !== null) view.scrollDOM.scrollTop = 0;
+      } else {
+        // Cancel / error: revert to the persisted message, leaving no undo
+        // trace (the ephemeral stream never entered history).
+        editor.restoreState(buildCommitRouteState(commitSnap?.persistedMessage ?? ""), {
+          addToHistory: false,
+        });
+      }
       editor.focus();
     }
   }, [
@@ -1480,6 +1507,7 @@ export const TugPromptEntry = React.forwardRef<
     commitSnap?.draftPhase,
     commitSnap?.draftText,
     commitSnap?.persistedMessage,
+    readCommitMessage,
   ]);
 
   // Cancel the commit route (Cancel button + Escape): persist the typed message
@@ -1502,8 +1530,12 @@ export const TugPromptEntry = React.forwardRef<
     if (controller === undefined) return;
     // Already streaming — the button is lit but inert; ignore a re-trigger.
     if (commitDraftingRef.current) return;
+    // A non-empty message is guarded by the Replace confirm; an empty field
+    // regenerates straight away — and always FORCES, so the [P03] edited-gate
+    // (a prior edit pins `edited=true`) never swallows a repeat request. This
+    // is what makes Auto-Message repeatable across edit/clear/redo cycles.
     if (readCommitMessage().trim().length > 0) setCommitConfirmOpen(true);
-    else controller.requestDraft(false);
+    else controller.requestDraft(true);
   }, [readCommitMessage]);
 
   // Cancel an in-flight Auto-Message draft ([P06]) — the Z5 cancel button,

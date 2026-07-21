@@ -5,7 +5,6 @@
 .tug-commit-wave-caret {
   vertical-align: text-bottom;
   margin-inline-start: 2px;
-  /* The accent tint marks it as the scribe's cursor, not editor chrome. The
-     bars inherit it: their fill resolves to `currentColor` by default. */
-  color: var(--tug7-element-tone-text-normal-accent-rest);
+  /* Untinted: the bars inherit the editor's prose text color (their fill
+     resolves to `currentColor`), so the wave reads as a plain caret. */
 }

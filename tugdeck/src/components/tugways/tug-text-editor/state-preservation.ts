@@ -218,9 +218,15 @@ function applyScrollAxes(view: EditorView, state: TugTextEditingState): void {
 export function restoreEditState(
   view: EditorView,
   state: TugTextEditingState,
+  opts?: { addToHistory?: boolean },
 ): void {
   if (!view.contentDOM.isConnected) return;
-  view.dispatch(buildEditStateTransaction(view, state, { scrollIntoView: false }));
+  view.dispatch(
+    buildEditStateTransaction(view, state, {
+      scrollIntoView: false,
+      ...(opts?.addToHistory !== undefined ? { addToHistory: opts.addToHistory } : {}),
+    }),
+  );
   applyScrollAxes(view, state);
 }
 

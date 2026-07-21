@@ -464,8 +464,15 @@ export interface TugTextEditorDelegate {
    *
    * Distinct from history-nav restore (which focuses + scrolls the
    * cursor into view); used by state preservation. [L23]
+   *
+   * `opts.addToHistory: false` marks the swap ephemeral — CM6 applies
+   * the doc change but records no undo event (the Auto-Message stream
+   * uses this so the whole generation collapses to one undo step).
    */
-  restoreState(state: TugTextEditingState): void;
+  restoreState(
+    state: TugTextEditingState,
+    opts?: { addToHistory?: boolean },
+  ): void;
   /**
    * Paint the editor as the deck-level first responder. Claims focus
    * and (when `state` is supplied) asserts selection + scrollTop
@@ -1830,10 +1837,10 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         if (view === null) return { text: "", atoms: [], selection: null };
         return captureEditState(view);
       },
-      restoreState(state: TugTextEditingState) {
+      restoreState(state: TugTextEditingState, opts?: { addToHistory?: boolean }) {
         const view = viewRef.current;
         if (view === null) return;
-        restoreEditState(view, state);
+        restoreEditState(view, state, opts);
       },
       paintMirrorAsActive(state?: TugTextEditingState) {
         const view = viewRef.current;

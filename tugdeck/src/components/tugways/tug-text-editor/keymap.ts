@@ -55,7 +55,7 @@
  *        actions on its owned document, [L19] file structure.
  */
 
-import { EditorSelection, Prec } from "@codemirror/state";
+import { EditorSelection, Prec, Transaction } from "@codemirror/state";
 import type { Extension, TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
@@ -207,7 +207,7 @@ export function captureEditState(view: EditorView): TugTextEditingState {
 export function buildEditStateTransaction(
   view: EditorView,
   state: TugTextEditingState,
-  opts: { scrollIntoView: boolean },
+  opts: { scrollIntoView: boolean; addToHistory?: boolean },
 ): TransactionSpec {
   const positioned: PositionedAtom[] = state.atoms.map((a) => ({
     position: a.position,
@@ -235,7 +235,10 @@ export function buildEditStateTransaction(
     // popup from the restored text's leading trigger char. Without
     // this, recalling a `/command` from history reopens the popup and
     // the active popup swallows the next Enter / Shift+Return.
-    annotations: suppressCompletionDetection.of(true),
+    annotations:
+      opts.addToHistory === false
+        ? [suppressCompletionDetection.of(true), Transaction.addToHistory.of(false)]
+        : suppressCompletionDetection.of(true),
   };
   if (opts.scrollIntoView) {
     spec.scrollIntoView = true;
