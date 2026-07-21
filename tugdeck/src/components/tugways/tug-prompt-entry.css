@@ -176,7 +176,11 @@ body {
   height: var(--tug-control-size-lg, 2.25rem);
   color: var(--tug7-element-tone-text-normal-accent-rest);
 }
-.tug-prompt-entry[data-empty="true"] .tug-prompt-entry-commit-button {
+/* An empty commit message disables the Commit button. Gated on the composer's
+   `data-commit-empty` bridge (the message with the leading `!changes` chip
+   stripped), NOT `data-empty` — the chip itself makes the doc non-empty. No
+   per-keystroke React state ([L06] / [L22]). */
+.tug-prompt-entry[data-commit-empty="true"] .tug-prompt-entry-commit-button {
   opacity: var(--tugx-control-disabled-opacity, 0.45);
   pointer-events: none;
   cursor: not-allowed;

@@ -113,8 +113,7 @@
    clips the shade's slide-in, and is empty while its sheet is closed —
    the sheet mounts and unmounts its own content. */
 .session-view-pane[data-view="changes"],
-.session-view-pane[data-view="history"],
-.session-view-pane[data-view="commit"] {
+.session-view-pane[data-view="history"] {
   flex: none;
   position: absolute;
   inset: 0;

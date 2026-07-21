@@ -4,7 +4,6 @@ import {
   CommitRouteController,
   evaluateCommitLandGate,
 } from "@/lib/commit-route-controller";
-import { ShadeViewController } from "@/lib/shade-view-controller";
 import { _resetChangesetDraftStoreForTest } from "@/lib/changeset-draft-store";
 import { _resetChangesetVerbStoreForTest } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
@@ -94,10 +93,8 @@ function fakeCodeSessionStore(canInterrupt: boolean): CodeSessionStore {
 
 describe("CommitRouteController", () => {
   it("enter / exit toggles the active flag and fires listeners", () => {
-    const shade = new ShadeViewController();
     const controller = new CommitRouteController({
       changesController: fakeChangesController(2),
-      shadeViewController: shade,
       codeSessionStore: fakeCodeSessionStore(false),
     });
     let fires = 0;
@@ -111,34 +108,14 @@ describe("CommitRouteController", () => {
     expect(controller.getSnapshot().seedMessage).toBe("fix the thing");
     controller.exit();
     expect(controller.getSnapshot().active).toBe(false);
+    expect(controller.getSnapshot().seedMessage).toBe(null);
     expect(fires).toBeGreaterThanOrEqual(2);
-    controller.dispose();
-  });
-
-  it("entering hides an open shade, and opening a shade exits the route", () => {
-    const shade = new ShadeViewController();
-    const controller = new CommitRouteController({
-      changesController: fakeChangesController(1),
-      shadeViewController: shade,
-      codeSessionStore: fakeCodeSessionStore(false),
-    });
-
-    shade.show("changes");
-    controller.enter();
-    // enter() hid the shade ([P03]).
-    expect(shade.getSnapshot()).toBe("none");
-    expect(controller.getSnapshot().active).toBe(true);
-
-    // Opening a shade while the route is active exits it (mutual exclusion).
-    shade.show("history");
-    expect(controller.getSnapshot().active).toBe(false);
     controller.dispose();
   });
 
   it("reports canLandIgnoringMessage off the turn + changeset state", () => {
     const idle = new CommitRouteController({
       changesController: fakeChangesController(2),
-      shadeViewController: new ShadeViewController(),
       codeSessionStore: fakeCodeSessionStore(false),
     });
     expect(idle.getSnapshot().canLandIgnoringMessage).toBe(true);
@@ -147,7 +124,6 @@ describe("CommitRouteController", () => {
 
     const midTurn = new CommitRouteController({
       changesController: fakeChangesController(2),
-      shadeViewController: new ShadeViewController(),
       codeSessionStore: fakeCodeSessionStore(true),
     });
     expect(midTurn.getSnapshot().canLandIgnoringMessage).toBe(false);
@@ -155,7 +131,6 @@ describe("CommitRouteController", () => {
 
     const empty = new CommitRouteController({
       changesController: fakeChangesController(0),
-      shadeViewController: new ShadeViewController(),
       codeSessionStore: fakeCodeSessionStore(false),
     });
     expect(empty.getSnapshot().canLandIgnoringMessage).toBe(false);

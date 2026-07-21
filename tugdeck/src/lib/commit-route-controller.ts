@@ -1,30 +1,30 @@
 /**
  * commit-route-controller — per-card state + land path for the commit route
- * ([P03], Spec S03, revised for the composer-as-editor redesign).
+ * ([P03], Spec S03, revised for the prefix-chip redesign).
  *
- * `/commit` (and `!changes`, and Session ▸ Commit…) enters the *commit route*:
- * a bottom-anchored changes sheet rises from the top of Z2 while the card's
- * prompt entry becomes the commit-message editor and Z5 swaps to
- * cancel / auto-message / commit. This controller is the single façade the
- * generic `TugPromptEntry` reads to drive that mode — it owns the `active`
- * flag and folds the four upstream stores (code-session turn state, the
- * changeset snapshot, the draft overlay, the commit verb round-trip) into one
- * referentially-stable snapshot, plus the enter / exit / land / draft
+ * The commit route is "the composer leads with a `!changes` chip": ⇧⌘C /
+ * `/commit` / `!changes` insert that chip, turning the prompt entry into the
+ * commit-message editor while the bottom-anchored changes sheet is up, and Z5
+ * swaps to cancel / auto-message / commit. This controller is the single
+ * façade the generic `TugPromptEntry` reads to drive that mode — it holds the
+ * `active` flag and folds the four upstream stores (code-session turn state,
+ * the changeset snapshot, the draft overlay, the commit verb round-trip) into
+ * one referentially-stable snapshot, plus the enter / exit / land / draft
  * triggers.
  *
- * Only one of commit-route-active / shade-open at a time ([P03]): `enter()`
- * hides the shade, and opening a shade exits the route (via a subscription on
- * the injected `ShadeViewController`). The route is transient / in-memory — it
- * does not survive a card deactivation; the prompt-entry mode force-exits on
+ * The route is orthogonal to the changes sheet's visibility ([P03] revised):
+ * the sheet can be up as a read-only glance with no route active, and the
+ * session card owns the coupling (⇧⌘C toggles the sheet and, only when the
+ * composer is empty, the route). This controller no longer knows about the
+ * shade. The route is transient / in-memory; the composer force-exits on
  * deactivate so the editor's own persistence only ever sees the prompt draft.
- * The commit message itself is durable in the changeset draft store, so
- * re-entering the route resumes it.
+ * The commit message itself is durable in the changeset draft store (the
+ * debounced `persistMessage` write), so re-entering the route resumes it.
  *
  * @module lib/commit-route-controller
  */
 
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
-import type { ShadeViewController } from "@/lib/shade-view-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import {
   getChangesetVerbStore,
@@ -98,7 +98,6 @@ export interface CommitRouteSnapshot {
 
 export interface CommitRouteControllerDeps {
   changesController: ChangesRouteController;
-  shadeViewController: ShadeViewController;
   codeSessionStore: CodeSessionStore;
 }
 
@@ -115,15 +114,6 @@ export class CommitRouteController {
     this.deps = deps;
     this.snapshot = this.derive();
 
-    // Mutual exclusion ([P03]): opening a shade exits the route. `enter` hides
-    // the shade first, so the shade→"none" edge never trips this.
-    this.unsubscribes.push(
-      deps.shadeViewController.subscribe(() => {
-        if (deps.shadeViewController.getSnapshot() !== "none" && this.active) {
-          this.exit();
-        }
-      }),
-    );
     // Recompute the snapshot whenever any upstream store moves.
     this.unsubscribes.push(deps.codeSessionStore.subscribe(() => this.recompute()));
     this.unsubscribes.push(deps.changesController.subscribe(() => this.recompute()));
@@ -212,12 +202,12 @@ export class CommitRouteController {
   // ── Triggers ───────────────────────────────────────────────────────────
 
   /**
-   * Enter the commit route. Hides any open shade ([P03]). A `/commit <message>`
-   * seed is written into the changeset draft as an edited draft so [P05]
-   * semantics apply and the composer seeds from it.
+   * Enter the commit route (mark it active). A `/commit <message>` seed is
+   * written into the changeset draft as an edited draft so [P05] semantics
+   * apply and the composer seeds its `!changes` chip payload from it. The
+   * session card ensures the changes sheet is up.
    */
   enter(seedMessage?: string): void {
-    this.deps.shadeViewController.hide();
     const seed = seedMessage?.trim() ?? "";
     if (seed.length > 0) {
       getChangesetDraftStore()?.setDraft(
@@ -233,7 +223,7 @@ export class CommitRouteController {
     this.fire();
   }
 
-  /** Exit the route (the composer restores the stashed prompt draft). */
+  /** Exit the route (the composer removes the `!changes` chip + payload). */
   exit(): void {
     if (!this.active) return;
     this.active = false;

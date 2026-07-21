@@ -2160,15 +2160,15 @@ export function SessionCardBody({
   const shadeViewController = shadeViewControllerRef.current;
 
   // The commit route's per-card state + land path ([P03], Spec S03). User-driven
-  // (`/commit`, `!changes`, Session ▸ Commit…), so it rides its own controller
-  // rather than `CodeSessionStore`'s reducer. Entering the route rises the
-  // commit sheet and turns the prompt entry into the message editor; mutually
-  // exclusive with the read-only shade.
+  // (`/commit`, `!changes`, ⇧⌘C on an empty composer), so it rides its own
+  // controller rather than `CodeSessionStore`'s reducer. Entering the route
+  // turns the prompt entry into the message editor (a leading `!changes` chip);
+  // the changes sheet's visibility is separate card chrome (the
+  // `ShadeViewController`), coupled by the card below.
   const commitRouteControllerRef = useRef<CommitRouteController | null>(null);
   if (commitRouteControllerRef.current === null) {
     commitRouteControllerRef.current = new CommitRouteController({
       changesController,
-      shadeViewController,
       codeSessionStore,
     });
   }
@@ -2200,42 +2200,60 @@ export function SessionCardBody({
     shadeViewController.subscribe,
     shadeViewController.getSnapshot,
   );
-  // The commit route is a fourth mutually-exclusive view over the transcript
-  // slot ([P03]): when active it owns the slot (the rising commit sheet) and
-  // the prompt entry becomes the message editor. It wins over any shade choice
-  // because `enter()` hides the shade first ([P17]).
+  // The commit route ([P03] revised) is orthogonal to the changes sheet: the
+  // route turns the composer into the message editor (a leading `!changes`
+  // chip), while the bottom-anchored changes sheet is card chrome the route
+  // rides atop. `commitRouteActive` drives the composer + the route↔sheet
+  // coupling below; the transcript-slot view is the shade choice alone.
   const commitRouteActive = useSyncExternalStore(
     commitRouteController.subscribe,
     () => commitRouteController.getSnapshot().active,
   );
-  const activeView: "transcript" | "changes" | "history" | "commit" =
-    commitRouteActive ? "commit" : shadeView === "none" ? "transcript" : shadeView;
-  // The Changes / History shades and the commit sheet are TugSheet `shade`
-  // presentations ([P17]); the controllers' view choice drives their imperative
-  // handles. A self-initiated sheet close (Escape / Cmd-. / the chain's
-  // `cancelDialog`) re-syncs the controller through `onOpenChange` — guarded
-  // on the live snapshot so a swap (changes → history) closing the outgoing
-  // sheet never clobbers the incoming choice.
+  const activeView: "transcript" | "changes" | "history" =
+    shadeView === "none" ? "transcript" : shadeView;
+  // The Changes and History shades are TugSheet `shade` presentations ([P17]);
+  // the controller's view choice drives their imperative handles. A
+  // self-initiated sheet close (Escape / Cmd-. / the chain's `cancelDialog`)
+  // re-syncs the controller through `onOpenChange` — guarded on the live
+  // snapshot so a swap (changes → history) closing the outgoing sheet never
+  // clobbers the incoming choice.
   const changesSheetRef = useRef<TugSheetHandle | null>(null);
   const historySheetRef = useRef<TugSheetHandle | null>(null);
-  const commitSheetRef = useRef<TugSheetHandle | null>(null);
   useEffect(() => {
     if (shadeView === "changes") changesSheetRef.current?.open();
     else changesSheetRef.current?.close();
     if (shadeView === "history") historySheetRef.current?.open();
     else historySheetRef.current?.close();
   }, [shadeView]);
+  // Route ↔ sheet coupling ([P03]): entering the route ensures the changes
+  // sheet is up; exiting it (composer Escape / Cancel / land / a manual chip
+  // delete, all via `commitRouteController.exit()`) drops the sheet, unless the
+  // shade has already swapped to History. Observing the route's active flag is
+  // what lets a composer-initiated exit close the sheet.
+  const prevCommitRouteActiveRef = useRef(commitRouteActive);
   useEffect(() => {
-    if (commitRouteActive) commitSheetRef.current?.open();
-    else commitSheetRef.current?.close();
-  }, [commitRouteActive]);
+    const prev = prevCommitRouteActiveRef.current;
+    prevCommitRouteActiveRef.current = commitRouteActive;
+    if (!prev && commitRouteActive) {
+      shadeViewController.show("changes");
+    } else if (prev && !commitRouteActive) {
+      if (shadeViewController.getSnapshot() === "changes") {
+        shadeViewController.hide();
+      }
+    }
+  }, [commitRouteActive, shadeViewController]);
   const handleChangesSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open && shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
+        // A passive-shade self-close while the route is active also exits the
+        // route ([P03]) so the composer drops its `!changes` chip.
+        if (commitRouteController.getSnapshot().active) {
+          commitRouteController.exit();
+        }
       }
     },
-    [shadeViewController],
+    [shadeViewController, commitRouteController],
   );
   const handleHistorySheetOpenChange = useCallback(
     (open: boolean) => {
@@ -2244,17 +2262,6 @@ export function SessionCardBody({
       }
     },
     [shadeViewController],
-  );
-  // The commit sheet is a passive shade with no internal close path; this is
-  // defensive re-sync only — if it ever self-closes while the route is active,
-  // exit the route so the composer restores its prompt draft.
-  const handleCommitSheetOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open && commitRouteController.getSnapshot().active) {
-        commitRouteController.exit();
-      }
-    },
-    [commitRouteController],
   );
   // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
   // active `/find` holds a non-empty query — no route gate. [L02].
@@ -3360,6 +3367,9 @@ export function SessionCardBody({
     history: (arg) => {
       const notify = paneBulletinRef.current;
       const question = arg.trim();
+      // History and the commit route are mutually exclusive ([P03]): exit the
+      // route (drops the `!changes` chip) before swapping the shade to History.
+      commitRouteController.exit();
       shadeViewController.show("history");
       if (question.length === 0) return;
       const snap = codeSessionStore.getSnapshot();
@@ -3467,12 +3477,31 @@ export function SessionCardBody({
         entryDelegateRef.current?.openCommandPicker();
       },
       // Swift Session-menu "Show/Hide Changes" (⌘⇧C) and the ⇧⌘C deck twin
-      // ([P05], Spec S04) — toggle the Changes Shade.
+      // ([P05], Spec S04) — toggle the changes glance, and (only on an empty
+      // composer) the `!changes` route with it ([P03] revised). Visible: hide
+      // the sheet, exiting the route if it's active (drops the chip). Hidden:
+      // show the sheet; if the composer is empty, also enter the route so the
+      // prompt entry becomes the message editor — otherwise leave the
+      // in-progress prompt alone and show the read-only glance.
       [TUG_ACTIONS.TOGGLE_CHANGES_VIEW]: (_event: ActionEvent) => {
-        shadeViewController.toggle("changes");
+        const sheetVisible = shadeViewController.getSnapshot() === "changes";
+        if (sheetVisible) {
+          if (commitRouteController.getSnapshot().active) {
+            commitRouteController.exit();
+          } else {
+            shadeViewController.hide();
+          }
+        } else if (entryDelegateRef.current?.isEmpty() ?? true) {
+          commitRouteController.enter();
+        } else {
+          shadeViewController.show("changes");
+        }
       },
       // Swift Session-menu "Show/Hide History" (⌘⇧H) and the ⇧⌘H deck twin.
+      // History and the commit route are mutually exclusive ([P03]): exit the
+      // route before toggling History.
       [TUG_ACTIONS.TOGGLE_HISTORY_VIEW]: (_event: ActionEvent) => {
+        commitRouteController.exit();
         shadeViewController.toggle("history");
       },
       // A typed `/command` the session card will not run, dispatched by the prompt
@@ -3753,6 +3782,15 @@ export function SessionCardBody({
                   renderTurnTrailing={effectiveRenderTurnTrailing}
                 />
               </div>
+              {/*
+                Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
+                that rises from the top of Z2 over the transcript. ⇧⌘C toggles
+                it; on an empty composer it also enters the `!changes` route so
+                the prompt entry becomes the message editor. `shadePassive` keeps
+                focus in the composer below; `shadeAnchor="bottom"` + auto-size
+                gives the rise-from-Z2 geometry. Landing lives in the composer's
+                Z5, so the view carries no Done / X.
+              */}
               <div className="session-view-pane" data-view="changes">
                 <TugSheet
                   ref={changesSheetRef}
@@ -3763,6 +3801,8 @@ export function SessionCardBody({
                     presentation="shade"
                     persistKey="session-card"
                     shadeAutoSize
+                    shadeAnchor="bottom"
+                    shadePassive
                     grabberLabel="Resize the Changes view"
                     modalScopeSelector='.session-view-pane[data-view="transcript"]'
                   >
@@ -3770,7 +3810,6 @@ export function SessionCardBody({
                       projectDir={projectDir}
                       changesController={changesController}
                       codeSessionStore={codeSessionStore}
-                      onClose={() => shadeViewController.hide()}
                     />
                   </TugSheetContent>
                 </TugSheet>
@@ -3791,38 +3830,6 @@ export function SessionCardBody({
                       projectDir={projectDir}
                       active={activeView === "history"}
                       onClose={() => shadeViewController.hide()}
-                    />
-                  </TugSheetContent>
-                </TugSheet>
-              </div>
-              {/*
-                Commit route ([P03] revised): a bottom-anchored PASSIVE shade
-                that rises from the top of Z2 over the transcript while the
-                prompt entry becomes the message editor. `shadePassive` keeps
-                focus in the composer below; `shadeAnchor="bottom"` + auto-size
-                gives the rise-from-Z2 geometry. Dismissal is the composer's
-                Cancel / Escape, so the view carries no Done / X.
-              */}
-              <div className="session-view-pane" data-view="commit">
-                <TugSheet
-                  ref={commitSheetRef}
-                  onOpenChange={handleCommitSheetOpenChange}
-                >
-                  <TugSheetContent
-                    title="Commit"
-                    presentation="shade"
-                    persistKey="session-card"
-                    shadeAutoSize
-                    shadeAnchor="bottom"
-                    shadePassive
-                    grabberLabel="Resize the Commit view"
-                    modalScopeSelector='.session-view-pane[data-view="transcript"]'
-                  >
-                    <SessionChangesView
-                      projectDir={projectDir}
-                      changesController={changesController}
-                      codeSessionStore={codeSessionStore}
-                      variant="commit"
                     />
                   </TugSheetContent>
                 </TugSheet>

@@ -11,8 +11,9 @@
  * activates regardless of changeset state ([P09]) — an empty changeset shows the
  * "No changes" sheet with the Commit button disabled-but-present — so no real
  * changes are needed. The full commit round-trip is covered at the Rust layer
- * (the replay workspace's changeset entries live ~2s). The read-only Changes
- * glance (⇧⌘C / Swift menu) is unchanged and untouched by this redesign.
+ * (the replay workspace's changeset entries live ~2s). ⇧⌘C now toggles this
+ * same bottom sheet (and, on an empty composer, the route) — not driven here
+ * because ⇧⌘C collides with the editor's Copy-as-Plain-Text headless ([D117]).
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -33,9 +34,11 @@ const USER_ROWS = `${CARD} [data-testid="session-card-transcript-user-body"]`;
 // The Z5 Commit button is the commit route's tell: present exactly while the
 // route is active (the retired dialog's `data-slot` is gone).
 const COMMIT_BUTTON = `${CARD} [data-testid="tug-prompt-entry-commit-button"]`;
-// The bottom-anchored commit sheet: the TugSheet mounts its shade panel only
-// while open, so this is present exactly while the route's sheet has risen.
-const COMMIT_SHEET = `${CARD} .session-view-pane[data-view="commit"] [data-slot="tug-sheet"]`;
+// The bottom-anchored changes sheet: the TugSheet mounts its shade panel only
+// while open, so this is present exactly while the sheet has risen. The route
+// and the sheet are now decoupled ([D117] revised) — entering the route via
+// `/commit` / `!changes` on an empty composer raises this same sheet.
+const COMMIT_SHEET = `${CARD} .session-view-pane[data-view="changes"] [data-slot="tug-sheet"]`;
 
 let projectDir = "";
 

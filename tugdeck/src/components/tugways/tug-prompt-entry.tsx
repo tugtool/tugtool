@@ -217,6 +217,13 @@ const ESCAPE_DOUBLE_PRESS_MS = 400;
  */
 const ESCAPE_REPEAT_FLOOR_MS = 60;
 
+/**
+ * Debounce, in milliseconds, between a commit-message keystroke and the
+ * durable `persistMessage` write ([P05]). Sized so ordinary typing coalesces
+ * into a settled write, not one CONTROL frame per key.
+ */
+const COMMIT_PERSIST_DEBOUNCE_MS = 500;
+
 // ---------------------------------------------------------------------------
 // Preserved state shape + migration
 // ---------------------------------------------------------------------------
@@ -573,6 +580,34 @@ export function computeCommandChipInsert(
             end: current.selection.end + SHIFT,
           },
   };
+}
+
+/**
+ * Build the editor state for the commit route ([P03] prefix model): a leading
+ * `!changes` command chip followed by the message text. The chip is the route
+ * — `matchBangCommandLine` recognizes it on submit and `extractCommitMessage`
+ * strips it back off. Pure; exported for unit tests.
+ */
+export function buildCommitRouteState(message: string): TugTextEditingState {
+  return computeCommandChipInsert(
+    buildEditingStateFromDraftRestore(message, []),
+    "changes",
+  );
+}
+
+/**
+ * Recover the commit message from a route draft ([P03] prefix model): expand
+ * the leading `!changes` chip + args into a plain line and return the args. A
+ * draft that no longer leads with the chip returns its text verbatim. Pure;
+ * exported for unit tests.
+ */
+export function extractCommitMessage(
+  text: string,
+  atoms: readonly CommandLineAtom[],
+): string {
+  const line = buildSlashCommandLine(text, atoms);
+  const match = matchBangCommandLine(line);
+  return match !== null && match.name === "changes" ? match.args : text;
 }
 
 /**
@@ -933,6 +968,13 @@ export interface TugPromptEntryDelegate {
   blur(): void;
   /** Clear the input's content. */
   clear(): void;
+  /**
+   * Whether the editor holds no user content (zero-length doc). The Session
+   * card reads this to gate the ⇧⌘C commit-route entry ([P03]): ⇧⌘C on an
+   * empty composer enters the route; on a non-empty one it shows the read-only
+   * glance only, leaving the in-progress prompt untouched.
+   */
+  isEmpty(): boolean;
   /**
    * Insert (or replace) the leading `/<name>` command chip ([P07]): the
    * ⌃⌘ chords and the command picker call this. A head command atom is
@@ -1317,13 +1359,13 @@ export const TugPromptEntry = React.forwardRef<
   // this scalar and the Code provider recalls only these ([P11]).
   const route = DEFAULT_ROUTE;
 
-  // ── Commit route ([P03]) ────────────────────────────────────────────────
-  // When active, this entry is the commit-message editor: the editor content
-  // swaps to the changeset draft (stashing the live prompt draft), Z5 shows
-  // cancel / auto-message / commit, and submit lands the commit. The whole mode
-  // rides one subscribable snapshot ([L02]); the editor's live text is read on
-  // demand (submit / cancel / auto-message) rather than mirrored, so no
-  // per-keystroke React state is introduced ([L22]).
+  // ── Commit route ([P03] prefix model) ───────────────────────────────────
+  // The route IS a leading `!changes` chip in the composer: while it's present
+  // this entry is the commit-message editor (the payload after the chip is the
+  // message), Z5 shows cancel / auto-message / commit, and submit lands the
+  // commit. The whole mode rides one subscribable snapshot ([L02]); the live
+  // message is read on demand (submit / cancel / auto-message / debounced save)
+  // rather than mirrored, so no per-keystroke React state is introduced ([L22]).
   const commitSnap = useSyncExternalStore(
     commitRoute?.subscribe ?? NOOP_SUBSCRIBE,
     () => commitRoute?.getSnapshot() ?? null,
@@ -1331,7 +1373,6 @@ export const TugPromptEntry = React.forwardRef<
   const commitActive = commitSnap?.active === true;
   const commitDrafting = commitActive && commitSnap?.draftPhase === "drafting";
   const inCommitRouteRef = useRef(false);
-  const stashedPromptDraftRef = useRef<TugTextEditingState | null>(null);
   const prevCommitActiveRef = useRef(false);
   const commitRouteRef = useRef(commitRoute);
   commitRouteRef.current = commitRoute;
@@ -1339,36 +1380,68 @@ export const TugPromptEntry = React.forwardRef<
   commitSnapRef.current = commitSnap;
   const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
-  // Content swap on the active transition ([L03] so the doc replacement lands
-  // in the same paint as the mode flip). Enter: stash the prompt draft, seed the
-  // editor from the changeset draft (or the `/commit <message>` seed). Exit:
-  // restore the stashed prompt draft. The commit message itself is durable in
-  // the changeset draft store, so a cancel/re-enter resumes it.
+  // Read the live commit message: strip the `!changes` chip back off the draft.
+  const readCommitMessage = useCallback((): string => {
+    const view = textEditorRef.current?.view() ?? null;
+    if (view === null) return "";
+    return extractCommitMessage(view.state.doc.toString(), getAtomsInState(view.state));
+  }, []);
+
+  // Debounced durable save of the in-progress message ([P05]): every genuine
+  // user edit schedules a `persistMessage` write, so uncommitted edits survive
+  // a card deactivation / reload (the write rides the changeset draft engine,
+  // whose `entry.draft.message` is the source of truth). Fired from the editor
+  // update listener, so it lives outside React ([L22]).
+  const commitPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearCommitPersistTimer = useCallback(() => {
+    if (commitPersistTimerRef.current !== null) {
+      clearTimeout(commitPersistTimerRef.current);
+      commitPersistTimerRef.current = null;
+    }
+  }, []);
+  const scheduleCommitPersist = useCallback(() => {
+    clearCommitPersistTimer();
+    commitPersistTimerRef.current = setTimeout(() => {
+      commitPersistTimerRef.current = null;
+      const controller = commitRouteRef.current;
+      if (controller === undefined || !inCommitRouteRef.current) return;
+      controller.persistMessage(readCommitMessage());
+    }, COMMIT_PERSIST_DEBOUNCE_MS);
+  }, [clearCommitPersistTimer, readCommitMessage]);
+  const commitPersistRef = useRef(scheduleCommitPersist);
+  commitPersistRef.current = scheduleCommitPersist;
+  useLayoutEffect(() => clearCommitPersistTimer, [clearCommitPersistTimer]);
+
+  // Chip insert / remove on the active transition ([L03] so the doc change
+  // lands in the same paint as the mode flip). Enter: replace the (empty)
+  // composer with a `!changes` chip + the seed message. Exit: clear the chip +
+  // payload back to empty. The message itself is durable in the changeset draft
+  // store, so a cancel/re-enter resumes it. (Entry is gated on an empty composer
+  // by the session card, so nothing is clobbered here.)
   useLayoutEffect(() => {
     const editor = textEditorRef.current;
     if (editor === null) return;
     const prev = prevCommitActiveRef.current;
     prevCommitActiveRef.current = commitActive;
     if (commitActive && !prev) {
-      stashedPromptDraftRef.current = editor.captureState();
       inCommitRouteRef.current = true;
       const seed =
         commitSnapRef.current?.seedMessage ??
         commitSnapRef.current?.persistedMessage ??
         "";
-      editor.restoreState(buildEditingStateFromDraftRestore(seed, []));
+      editor.restoreState(buildCommitRouteState(seed));
       editor.focus();
     } else if (!commitActive && prev) {
       inCommitRouteRef.current = false;
-      editor.restoreState(stashedPromptDraftRef.current ?? EMPTY_EDIT_STATE);
-      stashedPromptDraftRef.current = null;
+      clearCommitPersistTimer();
+      editor.restoreState(EMPTY_EDIT_STATE);
       editor.focus();
     }
-  }, [commitActive]);
+  }, [commitActive, clearCommitPersistTimer]);
 
   // Auto-Message stream ([P06]): the scribe's draft fills the editor live while
-  // `drafting`, and the caret is re-claimed when it settles (`drafting → ready`)
-  // so the generated message is immediately editable.
+  // `drafting` (keeping the leading `!changes` chip), and the caret is re-claimed
+  // when it settles (`drafting → ready`) so the generated message is editable.
   const prevCommitDraftPhaseRef = useRef(commitSnap?.draftPhase ?? "idle");
   useLayoutEffect(() => {
     const phase = commitSnap?.draftPhase ?? "idle";
@@ -1378,13 +1451,9 @@ export const TugPromptEntry = React.forwardRef<
     const editor = textEditorRef.current;
     if (editor === null) return;
     if (phase === "drafting") {
-      editor.restoreState(
-        buildEditingStateFromDraftRestore(commitSnap?.draftText ?? "", []),
-      );
+      editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
     } else if (prevPhase === "drafting" && phase === "ready") {
-      editor.restoreState(
-        buildEditingStateFromDraftRestore(commitSnap?.draftText ?? "", []),
-      );
+      editor.restoreState(buildCommitRouteState(commitSnap?.draftText ?? ""));
       editor.focus();
     }
   }, [commitActive, commitSnap?.draftPhase, commitSnap?.draftText]);
@@ -1396,10 +1465,10 @@ export const TugPromptEntry = React.forwardRef<
   const cancelCommitRoute = useCallback(() => {
     const controller = commitRouteRef.current;
     if (controller === undefined) return;
-    const text = textEditorRef.current?.captureState().text ?? "";
-    if (text.trim().length > 0) controller.persistMessage(text);
+    const message = readCommitMessage();
+    if (message.trim().length > 0) controller.persistMessage(message);
     controller.exit();
-  }, []);
+  }, [readCommitMessage]);
 
   // Auto-Message ([P06]): a typed message is protected by the Replace confirm;
   // an empty field drafts straight away. Read the editor live rather than the
@@ -1407,10 +1476,9 @@ export const TugPromptEntry = React.forwardRef<
   const handleCommitAutoMessage = useCallback(() => {
     const controller = commitRouteRef.current;
     if (controller === undefined) return;
-    const text = textEditorRef.current?.captureState().text ?? "";
-    if (text.trim().length > 0) setCommitConfirmOpen(true);
+    if (readCommitMessage().trim().length > 0) setCommitConfirmOpen(true);
     else controller.requestDraft(false);
-  }, []);
+  }, [readCommitMessage]);
 
   // In the commit route, a bare Escape cancels the route ([P03]) — captured on
   // the entry root before the editor's own keymap sees it, mirroring the retired
@@ -1720,6 +1788,39 @@ export const TugPromptEntry = React.forwardRef<
         // editor's live atom set. Cheap structural-key gate inside.
         const positioned = getAtomsInState(update.state);
         syncComposeImageAtoms(positioned.map((p) => p.segment));
+        // Commit route ([P03] prefix model): the leading `!changes` chip IS the
+        // route. If the user deleted it, exit. Otherwise mirror the message's
+        // emptiness to the root (`data-commit-empty` CSS-gates the Commit
+        // button, [L22]) and schedule a debounced durable save of real edits —
+        // skipping our own programmatic seeds / scribe stream (guarded on a
+        // user event + non-drafting phase).
+        if (inCommitRouteRef.current) {
+          const head = positioned[0];
+          const leadsWithChangesChip =
+            head !== undefined &&
+            head.position === 0 &&
+            head.segment.type === "command" &&
+            head.segment.value === "changes";
+          if (!leadsWithChangesChip) {
+            commitRouteRef.current?.exit();
+          } else {
+            const message = extractCommitMessage(
+              update.state.doc.toString(),
+              positioned,
+            );
+            if (root !== null) {
+              root.setAttribute(
+                "data-commit-empty",
+                String(message.trim().length === 0),
+              );
+            }
+            const drafting = commitSnapRef.current?.draftPhase === "drafting";
+            const userEdit = update.transactions.some(
+              (tr) => tr.isUserEvent("input") || tr.isUserEvent("delete"),
+            );
+            if (!drafting && userEdit) commitPersistRef.current();
+          }
+        }
         // Renumber inline image chips if a delete / mid-insert left them
         // out of document order. Cheap synchronous check; the correcting
         // dispatch is deferred to a microtask so it doesn't re-enter the
@@ -1954,12 +2055,15 @@ export const TugPromptEntry = React.forwardRef<
     if (editor === null || view === null) return;
 
     // Commit route ([P03]): submit lands the commit instead of sending to
-    // Claude. `land` re-checks the gate (turn / pending / empty), so an empty
-    // message or a running turn no-ops here and the message is left intact;
-    // success clears the draft and exits the route (restoring the prompt draft
-    // via the content-swap effect). Nothing else in this function runs.
+    // Claude. The message is the draft with its leading `!changes` chip stripped
+    // off. `land` re-checks the gate (turn / pending / empty), so an empty
+    // message or a running turn no-ops here and the draft is left intact;
+    // success clears the draft and exits the route (clearing the chip via the
+    // active-transition effect). Nothing else in this function runs.
     if (inCommitRouteRef.current) {
-      commitRouteRef.current?.land(editor.captureState().text);
+      commitRouteRef.current?.land(
+        extractCommitMessage(view.state.doc.toString(), getAtomsInState(view.state)),
+      );
       return;
     }
 
@@ -2713,6 +2817,9 @@ export const TugPromptEntry = React.forwardRef<
       clear() {
         textEditorRef.current?.clear();
       },
+      isEmpty() {
+        return isEffectivelyEmpty(textEditorRef.current?.view() ?? null);
+      },
       insertCommandChip(name: string) {
         seedCommandChip(name);
       },
@@ -2958,6 +3065,7 @@ export const TugPromptEntry = React.forwardRef<
           data-pending-approval={snap.pendingApproval ? "" : undefined}
           data-pending-question={snap.pendingQuestion ? "" : undefined}
           data-empty="true"
+          data-commit-empty="true"
           // Whole-entry stand-down: `inert` blocks mouse, keyboard,
           // and focus for the entire subtree — the route toggle,
           // chips, and submit included — while a restore replays.
