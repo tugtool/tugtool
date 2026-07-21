@@ -11,11 +11,11 @@
  *     drag-handle label and the click bubbles to the cell: a click SELECTS the
  *     row (moves `data-selected`) and NEVER opens it — only Return opens.
  *
- *  2. **One-scroll rail.** With enough snippets to overflow the rail, the
- *     snippets list must GROW to its full content height (no internal scrollbar)
- *     and the single `.lens-sections` stack must be the one that scrolls — the
- *     whole rail scrolls as a unit, pushing Text Files down, rather than the
- *     snippets box scrolling inside a fixed frame.
+ *  2. **Per-section scroller.** With enough snippets to overflow the rail, the
+ *     snippets LIST must scroll internally within its section's flex share and
+ *     the `.lens-sections` stack must NOT scroll — a section scrolls its own
+ *     rows under its own header, and can never push another section's header
+ *     out of view (Text Files stays pinned at the bottom).
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  */
@@ -60,16 +60,17 @@ function priorCardDeck() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + one-scroll", () => {
+describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section scroll", () => {
   test(
-    "clicking a markdown incipit selects the row; overflow scrolls the rail as one",
+    "clicking a markdown incipit selects the row; overflow scrolls the section's list",
     async () => {
       const tugbankPath = mkTempTugbank();
       const snippetsDir = mkdtempSync(join(tmpdir(), "tug-at0245-"));
       const snippetsPath = join(snippetsDir, "snippets.json");
       // Row 3 carries markdown so the incipit renders through the
       // `dangerouslySetInnerHTML` path (the click-swallowing span). Enough rows
-      // to overflow the rail so the one-scroll assertion has real overflow.
+      // to overflow the section so the per-section scroll assertion has real
+      // overflow.
       const snippets = Array.from({ length: 60 }, (_, i) => ({
         id: `s${i}`,
         text:
@@ -138,8 +139,8 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + one-scroll"
             { timeoutMs: 3_000 },
           );
 
-          // One-scroll: the list grew to full content height (no internal
-          // scroll), and `.lens-sections` is the single scroller.
+          // Per-section scroller: the snippets list scrolls internally within
+          // its section's flex share; `.lens-sections` itself never scrolls.
           const scroll = await app.evalJS<{
             listScrolls: boolean;
             sectionsScrolls: boolean;
@@ -151,8 +152,8 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + one-scroll"
               sectionsScrolls: sections.scrollHeight > sections.clientHeight + 1,
             };
           })()`);
-          expect(scroll.listScrolls).toBe(false);
-          expect(scroll.sectionsScrolls).toBe(true);
+          expect(scroll.listScrolls).toBe(true);
+          expect(scroll.sectionsScrolls).toBe(false);
         } finally {
           await app.close();
         }

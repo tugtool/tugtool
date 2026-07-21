@@ -1,11 +1,14 @@
 /*
  * lens-content.css — the Lens card content chrome ([L06]).
  *
- * The Lens is ONE scroll region — the whole rail scrolls as a single list, not
- * three per-section scrollers. Every section sizes to its content and the
- * `.lens-sections` stack is the sole scroll container; the sticky section
- * headers pin to that scrollport (telescoping via `--tugx-pin-stack-top`) as it
- * scrolls, so a band's header stays visible while its rows pass under it.
+ * The Lens stack does NOT scroll — each section's BODY scrolls internally. The
+ * `.lens-sections` stack fills the rail and never overflows; the sections flex
+ * to share the height (content-sized when everything fits, shrinking under
+ * pressure with the biggest section giving first). Because a section header
+ * lives OUTSIDE its scroller, no section can ever push another section's header
+ * out of view — only a section's own rows scroll under its own header. Each
+ * section list owns its own scrollbar gutter (see the section CSS files); the
+ * rail reserves none.
  */
 
 .lens-content {
@@ -30,13 +33,9 @@
   min-block-size: 0;
   gap: var(--tugx-lens-gap);
   padding-inline: var(--tugx-lens-pad-x);
-  /* THE single scroll container for the whole Lens. Sections size to content
-     (they never scroll on their own), so this stack scrolls as a unit.
-     `scrollbar-gutter: stable` reserves the rail's right-edge scrollbar space so
-     the content never hops when the scrollbar appears. */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
+  /* The stack never scrolls — it clips to the rail and the sections divide the
+     height between them; each section scrolls its own body. */
+  overflow: hidden;
 }
 
 /* Section + band styling lives in lens-section-band.css. */

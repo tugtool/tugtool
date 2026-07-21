@@ -373,6 +373,25 @@ function SnippetEditorRow({
     store.createSnippet(snippet.id);
   }, [manager, store, snippet.id]);
 
+  // Keep the caret in view as the snippet is edited. The editor grows uncapped
+  // and the Lens list is the single scroller (see `snippets-section.css`), so a
+  // snippet taller than the Lens makes the LIST scroll — nothing auto-follows
+  // the caret there. On each user edit, reveal the caret element into the list
+  // (`scrollIntoView` walks up to the list scroller); deferred a frame so CM6
+  // has laid the caret at its new position first. This is why the edit can never
+  // scroll off, even when the content dwarfs the Lens.
+  const onChange = useCallback(
+    (text: string): void => {
+      store.updateSnippet(snippet.id, text);
+      requestAnimationFrame(() => {
+        wrapRef.current
+          ?.querySelector<HTMLElement>(".tug-text-editor-caret")
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
+    },
+    [store, snippet.id],
+  );
+
   // Escape closes the editor. The engine's Escape ladder yields to a focused
   // CM6 editor (`data-tug-tab-consume` marks it as owning its keys), so the
   // ascend is this surface's to perform: CM6's completion keymap consumes
@@ -407,8 +426,8 @@ function SnippetEditorRow({
         markdownTextStyling
         lineWrap
         fontSize="var(--tugx-snippet-editor-font-size)"
-        maxRows={14}
-        onChange={(text) => store.updateSnippet(snippet.id, text)}
+        maxRows={120}
+        onChange={onChange}
         onSubmit={onSubmit}
         aria-label="Snippet text"
         data-testid="snippet-editor-field"

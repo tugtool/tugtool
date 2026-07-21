@@ -8,18 +8,44 @@
  * on-screen, the between-section rule), the drag-state cursor, and the
  * section body (the internal scroll region).
  *
- * Sizing model: a section sizes to its content (`flex: 0 0 auto`) and never
- * scrolls on its own — the enclosing `.lens-sections` stack is the single
- * scroll region for the whole Lens. The section must NOT establish `overflow`
- * (a clip context) or the sticky header would pin against the section instead
- * of the rail scrollport; it stays a plain content-sized flex column.
+ * Sizing model: the Lens stack does not scroll — each section's body does. A
+ * section is `flex: 0 1 auto` (content-sized when it fits, shrinking under
+ * pressure); the header is `flex-shrink: 0` so it always stays above its own
+ * scrolling body. No section can scroll another section's header out of view.
+ * A body floor (`--tugx-lens-section-min-body`) keeps a crushed section usable
+ * under a much taller neighbor.
  */
 
 .lens-section {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  /* Content-sized when it fits (grow 0), gives under pressure (shrink 1).
+     `min-block-size` stays `auto` (min-content): a short or empty section is
+     never crushed below its content — it stays fully visible — while a section
+     holding a scrolling list shrinks to its header (the list is a scroll
+     container, so its min-content is ~0). Under pressure the tall list section
+     gives first and the others hold at content, which is exactly the desired
+     "biggest gives, headers stay" behavior — no explicit floor needed. */
+  flex: 0 1 auto;
   border-block-end: 1px solid var(--tug-border-subtle, rgba(128, 128, 128, 0.2));
+}
+
+/* A section holding a scrolling list flattens its own min-content to 0 so it can
+   shrink to its header and hand the overflow to the list's scroller. Gated to
+   `:has(a list)` because a section's automatic min-content otherwise picks up
+   the list's full intrinsic height (a scroll container does NOT shrink an
+   ancestor's min-content) and the section would never give. An empty/short
+   section keeps `auto`, so its label reserves its own height and never spills. */
+.lens-section:has(.tug-list-view) {
+  min-block-size: 0;
+}
+
+/* While a snippet editor is open, the section claims all free Lens space so the
+   editor can grow to its content instead of scrolling under a tight share — the
+   user's edit must have room. Grow only when editing; at rest the section stays
+   content-sized (grow 0). */
+.lens-section:has(.snippet-editor) {
+  flex-grow: 1;
 }
 
 .lens-section > .tool-call-header {
@@ -46,7 +72,16 @@
 .lens-section-body {
   display: flex;
   flex-direction: column;
-  /* Sizes to its content — the section does not scroll on its own (the
-     `.lens-sections` stack is the single scroll region). */
-  flex: 0 0 auto;
+  /* Fills the section below its header. Its `min-block-size` stays `auto` so an
+     empty section's label reserves its own height (never spills past the
+     section) — flattened to 0 only for a list-bearing section (below), where
+     the list itself is the scroller. */
+  flex: 1 1 auto;
+}
+
+/* A section that holds a scrolling list flattens the body's min-content to 0,
+   so the section can shrink and hand the overflow to the list's own scroller.
+   An empty/short section keeps `auto`, so its label is always fully shown. */
+.lens-section:has(.tug-list-view) > .lens-section-body {
+  min-block-size: 0;
 }

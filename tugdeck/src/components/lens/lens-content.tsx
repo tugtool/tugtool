@@ -3,7 +3,9 @@
  * of reorderable, collapsible sections. Every registered section always
  * renders (there is no hidden-sections set and no title-bar `…` menu);
  * each section's BODY scrolls internally when its list outgrows the
- * section's flex share, so every band stays on-screen.
+ * section's flex share, so every band stays on-screen. The stack itself
+ * never scrolls — a section can scroll its own rows out of view, but never
+ * another section's header.
  *
  * Hosted by the normal `CardHost` inside an anchored pane (the Lens
  * rail). This file is the ordinary registered card's content component;

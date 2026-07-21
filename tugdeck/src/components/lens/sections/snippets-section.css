@@ -7,13 +7,18 @@
      Snippets list is the SAME width as the Sessions / Text Files lists (extra
      section padding here used to make it narrower). */
   padding: 0;
-  /* Sizes to content — the section never scrolls on its own (the whole Lens is
-     one scroll region). */
-  flex: 0 0 auto;
+  /* Fills the section body; the list inside is the scroller. */
+  flex: 1 1 auto;
   /* Snippet editor font size — TUNE HERE. Passed to the open editor as
      `--tug-font-size-editor`; smaller than the substrate's 14px default so the
      in-place editor reads at the row's density. */
   --tugx-snippet-editor-font-size: 12px;
+}
+
+/* When the list is present, flatten the section-root's min-content so it can
+   shrink and let the list scroll; empty keeps `auto` to hold its label. */
+.snippets-section:has(.tug-list-view) {
+  min-block-size: 0;
 }
 
 /* Positioning context for the reorder drop caret ([Q02]); the list view owns
@@ -23,15 +28,20 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. The list sizes to content and does NOT
-   scroll internally (the `.lens-sections` stack is the one scroll region), so it
-   runs to its right edge with no per-list scrollbar gutter. */
+   rules regardless of bundle order. The list is this section's scroller: it
+   fills the section's flex share and scrolls its rows internally, reserving its
+   own right-edge scrollbar gutter (so a long snippet editor at the tail stays
+   reachable without moving any other section). */
 .tug-list-view.lens-snippets-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
   height: auto;
+  scrollbar-gutter: stable;
   /* Equal margin on all four sides — identical to the Sessions / Text Files
      lists so all three frame the same way and share one width. */
   margin: 6px;
@@ -82,6 +92,16 @@
      lines up with the display rows above / below it. */
   padding: 2px 10px;
   outline: none;
+}
+
+/* The open editor never scrolls on its own — it grows with its content and the
+   section grows to hold it (see `lens-section-band.css` `:has(.snippet-editor)`).
+   The Lens list is the single scroller; when the snippet outgrows the Lens the
+   LIST scrolls, and SnippetsBody reveals the caret into the list on each edit so
+   it never scrolls off. Lift the base `maxRows` cap so the row keeps growing
+   rather than switching the CM6 scroller to its own internal scroll. */
+.snippet-editor .tug-text-editor > .cm-editor > .cm-scroller {
+  max-height: none;
 }
 
 /* Flatten EVERY layer of the composed editor to the row surface. `borderless`

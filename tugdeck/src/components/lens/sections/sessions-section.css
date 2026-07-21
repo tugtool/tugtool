@@ -8,21 +8,29 @@
 .sessions-section {
   font-family: var(--tug-font-family-sans);
   color: var(--tug7-element-global-text-normal-default-rest);
-  /* Sizes to content — the section never scrolls on its own (the whole Lens is
-     one scroll region). */
+  /* Fills the section body; the list inside is the scroller. */
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+}
+
+/* When the list is present, flatten the section-root's min-content so it can
+   shrink and let the list scroll; empty keeps `auto` to hold its label. */
+.sessions-section:has(.tug-list-view) {
+  min-block-size: 0;
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. The list sizes to its content (`height:
-   auto`) and does NOT scroll internally — the `.lens-sections` stack is the one
-   scroll region, so the list runs to its right edge with no per-list scrollbar
-   gutter. TugListRow owns the inner inline padding; a small equal margin insets
-   the framed container so its keyboard focus ring paints on all four sides. */
+   rules regardless of bundle order. The list is this section's scroller: it
+   fills the section's flex share and scrolls its rows internally, reserving its
+   own right-edge scrollbar gutter. TugListRow owns the inner inline padding; a
+   small equal margin insets the framed container so its keyboard focus ring
+   paints on all four sides. */
 .tug-list-view.lens-sessions-list {
+  flex: 1 1 auto;
+  min-block-size: 0;
   height: auto;
+  scrollbar-gutter: stable;
   /* Equal margin on all four sides so the framed list sits evenly inside its
      section (matches the other two Lens lists). */
   margin: 6px;
