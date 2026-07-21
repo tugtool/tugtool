@@ -33,6 +33,8 @@ export const FeedId = {
   GIT_LOG: 0x25,
   GIT_LOG_QUERY: 0x26,
   GIT_HEAD: 0x27,
+  GIT_COMMIT_FILES: 0x28,
+  GIT_COMMIT_FILES_QUERY: 0x29,
   // Stats
   STATS: 0x30,
   STATS_PROCESS_INFO: 0x31,

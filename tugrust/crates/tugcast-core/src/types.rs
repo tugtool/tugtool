@@ -161,10 +161,26 @@ pub struct GitLogCommit {
     pub sha: String,
     /// The commit subject line (`%s`).
     pub subject: String,
-    /// Author name (`%an`).
+    /// The commit message body (`%b`) — everything after the subject, verbatim,
+    /// with trailing whitespace trimmed. Empty for a subject-only commit. A
+    /// History row reveals it on expand.
+    #[serde(default)]
+    pub body: String,
+    /// Author name (`%an`) — the compact identity shown on the collapsed row.
     pub author: String,
-    /// Author date, `--date=short` (`YYYY-MM-DD`).
+    /// Author date, `--date=short` (`YYYY-MM-DD`) — the compact date on the row.
     pub date: String,
+    /// Committer name (`%cn`) — the full identity a History row reveals on
+    /// expand (usually equal to `author`; differs for a rebase / cherry-pick).
+    #[serde(default)]
+    pub committer: String,
+    /// Committer email (`%ce`) — shown beside the committer name on expand.
+    #[serde(default)]
+    pub committer_email: String,
+    /// Committer date, strict ISO 8601 (`%cI`) — the complete timestamp the
+    /// expanded row formats for display. Independent of the `--date` flag.
+    #[serde(default)]
+    pub committer_date: String,
     /// The `Tug-Dash:` trailer value (`tugdash/<name> onto <base>`) when the
     /// commit landed as a dash join — the History join badge ([P09]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -209,6 +225,44 @@ pub struct GitLogSnapshot {
     pub no_repo: bool,
     /// Most-recent-first commits, at most the request's `limit`.
     pub commits: Vec<GitLogCommit>,
+}
+
+/// One changed file in a [`GitCommitFilesSnapshot`] — a commit's name-status
+/// entry joined with its numstat counts. `status` ∈
+/// `created|modified|deleted|renamed`; `added`/`removed` are `0` for a binary
+/// file. Mirrors the `/commit` receipt's frozen file record so the History
+/// row's expanded list reuses the same client component.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GitCommitFile {
+    /// Path relative to the repo root (the rename destination when renamed).
+    pub path: String,
+    /// Name-status word: `created` | `modified` | `deleted` | `renamed`.
+    pub status: String,
+    /// Added (`+`) line count; `0` for a binary file.
+    pub added: u32,
+    /// Removed (`−`) line count; `0` for a binary file.
+    pub removed: u32,
+}
+
+/// A single-shot changed-files payload for one commit, delivered on the
+/// GIT_COMMIT_FILES feed (0x28) in response to a GIT_COMMIT_FILES_QUERY (0x29).
+///
+/// `request_id` echoes the query's correlation id; `sha` is the commit the
+/// files belong to; `workspace_key` identifies the project dir the commit was
+/// read in. A missing sha (rebase, gc) or a non-git dir yields empty `files`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GitCommitFilesSnapshot {
+    /// Correlation id echoed from the request.
+    pub request_id: String,
+    /// Canonical key of the workspace the commit was read in.
+    pub workspace_key: String,
+    /// The commit sha whose files these are.
+    pub sha: String,
+    /// True when the project dir is **not** inside a git working tree.
+    #[serde(default)]
+    pub no_repo: bool,
+    /// One entry per changed file, in git's output order.
+    pub files: Vec<GitCommitFile>,
 }
 
 /// One file inside a changeset entry on the CHANGESET feed (0x23).
@@ -631,21 +685,56 @@ mod tests {
                 GitLogCommit {
                     sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
                     subject: "add feature".to_string(),
+                    body: "A longer explanation\nover two lines.".to_string(),
                     author: "Ada Lovelace".to_string(),
                     date: "2026-07-15".to_string(),
+                    committer: "Ada Lovelace".to_string(),
+                    committer_email: "ada@example.com".to_string(),
+                    committer_date: "2026-07-15T09:30:00-07:00".to_string(),
                     tug_dash: Some("tugdash/feature onto main".to_string()),
                 },
                 GitLogCommit {
                     sha: "89abcdef0123456789abcdef0123456789abcdef".to_string(),
                     subject: "initial".to_string(),
+                    body: String::new(),
                     author: "Grace Hopper".to_string(),
                     date: "2026-07-14".to_string(),
+                    committer: "Grace Hopper".to_string(),
+                    committer_email: "grace@example.com".to_string(),
+                    committer_date: "2026-07-14T12:00:00-07:00".to_string(),
                     tug_dash: None,
                 },
             ],
         };
         let json = serde_json::to_string(&snapshot).unwrap();
         let decoded: GitLogSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, decoded);
+    }
+
+    #[test]
+    fn test_git_commit_files_snapshot_round_trip() {
+        let snapshot = GitCommitFilesSnapshot {
+            request_id: "gcf-1".to_string(),
+            workspace_key: "/work/repo".to_string(),
+            sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
+            no_repo: false,
+            files: vec![
+                GitCommitFile {
+                    path: "src/lib.rs".to_string(),
+                    status: "modified".to_string(),
+                    added: 16,
+                    removed: 1,
+                },
+                GitCommitFile {
+                    path: "assets/logo.png".to_string(),
+                    status: "created".to_string(),
+                    added: 0,
+                    removed: 0,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let decoded: GitCommitFilesSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(snapshot, decoded);
     }
 

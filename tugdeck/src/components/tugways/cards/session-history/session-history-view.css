@@ -18,30 +18,77 @@
 
 .session-history-commit {
   min-width: 0;
+  /* The header identity (hash : subject) may run up to five lines while
+     collapsed before ellipsizing — the shared `tool-call-header-clamp`
+     mechanism reads this var ([D05]). */
+  --tugx-toolheader-clamp-lines: 5;
 }
 
-.session-history-commit-subject {
+/* The hash leads the identity, so the header's own leading slot (which would
+   otherwise reserve the lifecycle dot's box) is collapsed away. */
+.session-history-commit .tool-call-header-leading {
+  display: none;
+}
+
+/* The header identity: `<hash> : <subject>`. `pre-wrap` (inherited from the
+   detail column) keeps the ` : ` delimiter's spaces. Hanging indent so a
+   subject that wraps aligns its continuation lines under the subject's first
+   character rather than falling back to the row's left edge: the detail column
+   is monospace, so the 8-char sha + the 3-char ` : ` delimiter measure exactly
+   11ch. First line is pulled back to the edge by the negative text-indent;
+   wrapped lines rest at the 11ch padding. */
+.session-history-commit-header {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
+  padding-left: 11ch;
+  text-indent: -11ch;
+}
+
+/* The short sha, rendered as `code`-colored monospace at the detail's own
+   size. The compound selector outranks `.tool-call-header-detail code`'s
+   `color: inherit` so the code tint lands. */
+.tool-call-header-detail code.session-history-commit-sha {
+  color: var(--tug-syntax-code);
+  cursor: default;
+}
+
+.session-history-commit-delim {
+  color: var(--tugx-block-text-color-muted);
 }
 
 .session-history-commit-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 2px 8px 4px;
+  gap: 8px;
+  padding: 2px 8px 6px;
 }
 
-.session-history-commit-sha {
-  margin: 0;
-  font-family: var(--tug-font-family-mono);
-  font-size: 0.6875rem;
+/* Committer identity + complete date, revealed on expand. */
+.session-history-commit-meta {
+  font-size: 0.75rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
-  white-space: pre-wrap;
-  word-break: break-all;
+}
+
+/* The message body via a read-only TugCodeView (markdown text styling for
+   list hanging-indent). Strip the viewer's frame so it reads as plain text
+   inline in the expanded area. */
+.session-history-commit-message-view {
+  border: none;
+  background: transparent;
+}
+.session-history-commit-message-view .cm-editor {
+  background: transparent;
+}
+.session-history-commit-message-view .cm-content {
+  padding: 0;
+}
+.session-history-commit-message-view .cm-scroller {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.session-history-commit-files-empty {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Join badge ([P09]) — a commit that landed as a dash join reads

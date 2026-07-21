@@ -12,8 +12,8 @@ use tokio::process::Command;
 use tracing::warn;
 
 use tugcast_core::types::{
-    FileStatus, GitDiffFile, GitDiffFileStatus, GitDiffSnapshot, GitLogCommit, GitLogSnapshot,
-    GitStatus,
+    FileStatus, GitCommitFile, GitCommitFilesSnapshot, GitDiffFile, GitDiffFileStatus,
+    GitDiffSnapshot, GitLogCommit, GitLogSnapshot, GitStatus,
 };
 
 /// Parse git status --porcelain=v2 --branch output into GitStatus.
@@ -266,14 +266,72 @@ pub async fn build_commit_diff_snapshot(
     }
 }
 
+/// Assemble a single-shot [`GitCommitFilesSnapshot`] — the changed files of one
+/// commit (name-status joined with numstat counts), what a History row expands
+/// into ([P10]). This is the light list, no unified diff text: each file's hunks
+/// are fetched lazily per-row through the existing commit-flavor GIT_DIFF path.
+///
+/// Reuses `tugchanges_core::file_stats` — the same join the `/commit` receipt
+/// builds — over `git show --numstat/--name-status --format= <sha>`. A missing
+/// sha (rebase, gc) yields empty `files`, not an error; a non-git dir returns
+/// `no_repo: true`.
+pub async fn build_commit_files_snapshot(
+    repo_dir: &Path,
+    request_id: String,
+    workspace_key: &str,
+    sha: &str,
+) -> GitCommitFilesSnapshot {
+    if !is_within_git_worktree(repo_dir).await {
+        return GitCommitFilesSnapshot {
+            request_id,
+            workspace_key: workspace_key.to_string(),
+            sha: sha.to_string(),
+            no_repo: true,
+            files: Vec::new(),
+        };
+    }
+    let numstat = run_git_capture(
+        repo_dir,
+        &["-c", "core.quotepath=false", "show", "--numstat", "--format=", sha],
+    )
+    .await
+    .unwrap_or_default();
+    let name_status = run_git_capture(
+        repo_dir,
+        &["-c", "core.quotepath=false", "show", "--name-status", "--format=", sha],
+    )
+    .await
+    .unwrap_or_default();
+    let files = tugchanges_core::file_stats(&numstat, &name_status)
+        .into_iter()
+        .map(|f| GitCommitFile {
+            path: f.path,
+            status: f.status,
+            added: f.added.unwrap_or(0),
+            removed: f.deleted.unwrap_or(0),
+        })
+        .collect();
+    GitCommitFilesSnapshot {
+        request_id,
+        workspace_key: workspace_key.to_string(),
+        sha: sha.to_string(),
+        no_repo: false,
+        files,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Recent-commits (`git log`) sourcing for the Git History Lens section.
 // ---------------------------------------------------------------------------
 
 /// The unit-separator byte git emits for `%x1f` — used to delimit the log
-/// record fields. It cannot appear in an author name or a single-line subject
-/// (`%s` strips newlines), so a naive per-line split is unambiguous.
+/// record fields. It cannot appear in an author name, a single-line subject
+/// (`%s` strips newlines), or a body, so the field split is unambiguous.
 const LOG_FIELD_SEP: char = '\u{1f}';
+
+/// The record-separator byte (`%x1e`) git joins repeated `Tug-Dash:` trailer
+/// values with — chosen so it survives the `-z` NUL record terminator.
+const LOG_TRAILER_SEP: char = '\u{1e}';
 
 /// Assemble a single-shot [`GitLogSnapshot`] of the `limit` most-recent commits
 /// in `repo_dir`.
@@ -311,10 +369,18 @@ pub async fn build_git_log_snapshot(
             "-c",
             "core.quotepath=false",
             "log",
+            // `-z` NUL-terminates each commit record so the final `%b` body
+            // field can span multiple lines without a newline-split
+            // mis-parsing it as a fresh commit.
+            "-z",
             &limit_arg,
-            // The 5th field is the `Tug-Dash:` trailer value (empty when
-            // absent) — what the History join badge reads ([P09]).
-            "--format=%H%x1f%an%x1f%ad%x1f%s%x1f%(trailers:key=Tug-Dash,valueonly,separator=%x00)",
+            // Fields are `%x1f`-delimited: sha, author name, author date
+            // (short), committer name, committer email, committer date (strict
+            // ISO), subject, `Tug-Dash:` trailer (empty when absent — the
+            // History join badge reads it, [P09]), then the multi-line body
+            // (`%b`). The trailer's own multi-value separator is `%x1e` (RS) —
+            // NOT `%x00`, which `-z` now owns as the record terminator.
+            "--format=%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f%(trailers:key=Tug-Dash,valueonly,separator=%x1e)%x1f%b",
             "--date=short",
         ],
     )
@@ -332,33 +398,43 @@ pub async fn build_git_log_snapshot(
     }
 }
 
-/// Parse `%H%x1f%an%x1f%ad%x1f%s%x1f<trailer>` records — one commit per
-/// line — into [`GitLogCommit`]s. The trailing field is the `Tug-Dash:`
-/// trailer value (empty when the commit carries none; a repeated trailer's
-/// values are NUL-joined and only the first is kept). Lines with fewer than
-/// four fields are skipped with a `warn!`.
+/// Parse
+/// `%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f<trailer>%x1f%b` records —
+/// one commit per NUL-terminated chunk (git's `-z`) — into [`GitLogCommit`]s.
+/// The 8th field is the `Tug-Dash:` trailer value (empty when absent; a
+/// repeated trailer's values are `%x1e`-joined and only the first is kept); the
+/// 9th is the multi-line body, trailing whitespace trimmed. Records with fewer
+/// than seven fields (no subject) are skipped with a `warn!`.
 fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
     let mut commits = Vec::new();
-    for line in output.lines() {
-        if line.is_empty() {
+    for record in output.split('\0') {
+        if record.is_empty() {
             continue;
         }
-        let fields: Vec<&str> = line.splitn(5, LOG_FIELD_SEP).collect();
-        if fields.len() < 4 {
-            warn!(line, "skipping malformed git log record");
+        let fields: Vec<&str> = record.splitn(9, LOG_FIELD_SEP).collect();
+        if fields.len() < 7 {
+            warn!(record, "skipping malformed git log record");
             continue;
         }
         let tug_dash = fields
-            .get(4)
-            .and_then(|raw| raw.split('\0').next())
+            .get(7)
+            .and_then(|raw| raw.split(LOG_TRAILER_SEP).next())
             .map(str::trim)
             .filter(|v| !v.is_empty())
             .map(str::to_owned);
+        let body = fields
+            .get(8)
+            .map(|raw| raw.trim_end().to_string())
+            .unwrap_or_default();
         commits.push(GitLogCommit {
             sha: fields[0].to_string(),
             author: fields[1].to_string(),
             date: fields[2].to_string(),
-            subject: fields[3].to_string(),
+            committer: fields[3].to_string(),
+            committer_email: fields[4].to_string(),
+            committer_date: fields[5].to_string(),
+            subject: fields[6].to_string(),
+            body,
             tug_dash,
         });
     }

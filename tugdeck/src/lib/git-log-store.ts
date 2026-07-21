@@ -37,10 +37,20 @@ export interface GitLogCommit {
   sha: string;
   /** The commit subject line (`%s`). */
   subject: string;
-  /** Author name (`%an`). */
+  /** The commit message body (`%b`) — everything after the subject, trailing
+   *  whitespace trimmed. Empty for a subject-only commit. Revealed on expand. */
+  body?: string;
+  /** Author name (`%an`) — the compact identity on the collapsed row. */
   author: string;
-  /** Author date, `--date=short` (`YYYY-MM-DD`). */
+  /** Author date, `--date=short` (`YYYY-MM-DD`) — the compact row date. */
   date: string;
+  /** Committer name (`%cn`) — the full identity revealed on expand. */
+  committer?: string;
+  /** Committer email (`%ce`) — shown beside the committer name on expand. */
+  committer_email?: string;
+  /** Committer date, strict ISO 8601 (`%cI`) — the complete timestamp the
+   *  expanded row formats for display. */
+  committer_date?: string;
   /** The `Tug-Dash:` trailer value when the commit landed as a dash join —
    *  drives the History join badge ([P09]). */
   tug_dash?: string;

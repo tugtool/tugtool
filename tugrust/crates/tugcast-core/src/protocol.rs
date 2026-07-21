@@ -69,6 +69,13 @@ impl FeedId {
     /// Git HEAD-moved signal — a workspace's HEAD changed (commit/checkout/reset
     /// from any source), so a git-log consumer should re-request (tugcast → tugdeck)
     pub const GIT_HEAD: Self = Self(0x27);
+    /// Commit-files response — single-shot per request (tugcast → tugdeck).
+    /// The changed-file list (name-status + ± counts) for one commit sha, what
+    /// a History row expands into ([P10]).
+    pub const GIT_COMMIT_FILES: Self = Self(0x28);
+    /// Commit-files request — the changed files of one commit sha over the
+    /// followed card's project dir (tugdeck → tugcast)
+    pub const GIT_COMMIT_FILES_QUERY: Self = Self(0x29);
 
     // -- Stats --
     /// Aggregate stats snapshot (tugcast → tugdeck)
@@ -170,6 +177,8 @@ impl FeedId {
             Self::GIT_LOG => Some("GitLog"),
             Self::GIT_LOG_QUERY => Some("GitLogQuery"),
             Self::GIT_HEAD => Some("GitHead"),
+            Self::GIT_COMMIT_FILES => Some("GitCommitFiles"),
+            Self::GIT_COMMIT_FILES_QUERY => Some("GitCommitFilesQuery"),
             Self::STATS => Some("Stats"),
             Self::STATS_PROCESS_INFO => Some("StatsProcessInfo"),
             Self::STATS_TOKEN_USAGE => Some("StatsTokenUsage"),
@@ -464,6 +473,13 @@ mod tests {
         assert_eq!(FeedId::GIT_LOG_QUERY.name(), Some("GitLogQuery"));
         assert_eq!(FeedId::GIT_HEAD.as_byte(), 0x27);
         assert_eq!(FeedId::GIT_HEAD.name(), Some("GitHead"));
+        assert_eq!(FeedId::GIT_COMMIT_FILES.as_byte(), 0x28);
+        assert_eq!(FeedId::GIT_COMMIT_FILES.name(), Some("GitCommitFiles"));
+        assert_eq!(FeedId::GIT_COMMIT_FILES_QUERY.as_byte(), 0x29);
+        assert_eq!(
+            FeedId::GIT_COMMIT_FILES_QUERY.name(),
+            Some("GitCommitFilesQuery")
+        );
         assert_eq!(FeedId::STATS.as_byte(), 0x30);
         assert_eq!(FeedId::STATS_PROCESS_INFO.as_byte(), 0x31);
         assert_eq!(FeedId::STATS_TOKEN_USAGE.as_byte(), 0x32);

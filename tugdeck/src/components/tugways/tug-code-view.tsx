@@ -118,6 +118,7 @@ import {
 } from "@codemirror/search";
 import { cn } from "@/lib/utils";
 import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
+import { loadMarkdownTextStyling } from "@/components/tugways/tug-text-editor/markdown-text-styling";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler } from "./responder-chain";
@@ -348,6 +349,16 @@ export interface TugCodeViewProps {
    */
   language?: string;
   /**
+   * Render with the shared markdown **text styling** bundle instead of a
+   * `language` grammar: the markdown grammar + `tugEditingHighlightStyle` +
+   * the list hanging-indent plugin (`loadMarkdownTextStyling`, the same
+   * styling the Text-card editor applies). Raw markdown syntax stays visible;
+   * wrapped list continuations hang-indent under their content. Takes
+   * precedence over `language`. Pair with `wrap` (the default) so the hang is
+   * visible. @default false
+   */
+  markdownTextStyling?: boolean;
+  /**
    * Soft-wrap. Adds `EditorView.lineWrapping` to the compartment when
    * `true`; removes it when `false`.
    * @default true
@@ -407,6 +418,7 @@ export const TugCodeView = React.forwardRef<
   {
     value,
     language,
+    markdownTextStyling = false,
     wrap = true,
     lineNumbers = true,
     startLine = 1,
@@ -751,6 +763,21 @@ export const TugCodeView = React.forwardRef<
   // guard drops a late-resolving grammar after the language prop changed.
   // Same grammar + `tugHighlightStyle` the Text card editor uses.
   useLayoutEffect(() => {
+    let alive = true;
+    // The markdown text-styling bundle takes precedence over a `language`
+    // grammar: it carries its own markdown grammar + editing highlight + list
+    // hanging-indent, lazy-loaded like the language chunks.
+    if (markdownTextStyling) {
+      void loadMarkdownTextStyling().then((bundle) => {
+        if (!alive) return;
+        viewRef.current?.dispatch({
+          effects: languageCompartment.reconfigure(bundle),
+        });
+      });
+      return () => {
+        alive = false;
+      };
+    }
     const lang = language ?? null;
     if (lang === null) {
       viewRef.current?.dispatch({
@@ -758,7 +785,6 @@ export const TugCodeView = React.forwardRef<
       });
       return;
     }
-    let alive = true;
     void languageForLangId(lang).then((resolved) => {
       if (!alive) return;
       const view = viewRef.current;
@@ -772,7 +798,7 @@ export const TugCodeView = React.forwardRef<
     return () => {
       alive = false;
     };
-  }, [language]);
+  }, [language, markdownTextStyling]);
 
   return (
     <ResponderScope>

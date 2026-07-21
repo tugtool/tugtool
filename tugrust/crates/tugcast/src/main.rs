@@ -473,6 +473,13 @@ async fn main() {
     // the git-history client re-requests its log. Cloned into the registry.
     let (gh_response_tx, _) = broadcast::channel::<Frame>(16);
 
+    // Shared GIT_COMMIT_FILES-response broadcast channel. The
+    // GIT_COMMIT_FILES_QUERY adapter (below) publishes one single-shot
+    // `GitCommitFilesSnapshot` here per History-row expand; the router fans it
+    // out and JS filters by `request_id`. User-initiated and infrequent (one
+    // per commit expand), so a small buffer suffices.
+    let (gcf_response_tx, _) = broadcast::channel::<Frame>(16);
+
     // Shared USAGE-response broadcast channel. The USAGE_QUERY adapter (below)
     // publishes one single-shot `UsageSnapshot` here per `/usage` request; the
     // router fans it out and JS filters by `request_id`. Account-global (one
@@ -723,6 +730,73 @@ async fn main() {
                     }
                     Err(e) => {
                         warn!(error = %e, "GIT_LOG: failed to serialize response");
+                    }
+                }
+            });
+        }
+    });
+
+    // Adapter: router sends raw Frames on GIT_COMMIT_FILES_QUERY. Parse `{root,
+    // requestId, sha}`, then run `git show --numstat/--name-status` there and
+    // broadcast the `GitCommitFilesSnapshot` on GIT_COMMIT_FILES. Each request
+    // runs in its own task; the response is a broadcast every client sees, so
+    // correlation is entirely client-side by `request_id`. Root resolution
+    // mirrors GIT_LOG_QUERY: a valid `root` is read directly (no bootstrap
+    // fallback — a followed card's workspace may not be registered yet on
+    // restore), only an absent/invalid `root` uses bootstrap.
+    let (gcf_input_tx, mut gcf_input_rx) = mpsc::channel::<Frame>(16);
+    let gcf_bootstrap = Arc::clone(&bootstrap);
+    let gcf_response_tx_loop = gcf_response_tx.clone();
+    tokio::spawn(async move {
+        #[derive(serde::Deserialize)]
+        struct RawCommitFilesQuery {
+            root: Option<String>,
+            #[serde(rename = "requestId")]
+            request_id: Option<String>,
+            sha: Option<String>,
+        }
+        while let Some(frame) = gcf_input_rx.recv().await {
+            let raw = match serde_json::from_slice::<RawCommitFilesQuery>(&frame.payload) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        payload_len = frame.payload.len(),
+                        "GIT_COMMIT_FILES_QUERY: malformed JSON payload"
+                    );
+                    continue;
+                }
+            };
+            let root_pb = raw.root.map(PathBuf::from);
+            let (project_dir, workspace_key) = match root_pb {
+                Some(root) if root.is_dir() => {
+                    let key = crate::path_resolver::CanonicalPath::from_raw(&root)
+                        .as_str()
+                        .to_string();
+                    (root, key)
+                }
+                _ => (
+                    gcf_bootstrap.project_dir.clone(),
+                    gcf_bootstrap.workspace_key.as_ref().to_string(),
+                ),
+            };
+            let request_id = raw.request_id.unwrap_or_default();
+            let sha = raw.sha.unwrap_or_default();
+            let response_tx = gcf_response_tx_loop.clone();
+            tokio::spawn(async move {
+                let snapshot = crate::feeds::git::build_commit_files_snapshot(
+                    &project_dir,
+                    request_id,
+                    &workspace_key,
+                    &sha,
+                )
+                .await;
+                match serde_json::to_vec(&snapshot) {
+                    Ok(json) => {
+                        let _ = response_tx.send(Frame::new(FeedId::GIT_COMMIT_FILES, json));
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "GIT_COMMIT_FILES: failed to serialize response");
                     }
                 }
             });
@@ -1182,6 +1256,7 @@ async fn main() {
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
     feed_router.register_input(FeedId::GIT_LOG_QUERY, gl_input_tx);
+    feed_router.register_input(FeedId::GIT_COMMIT_FILES_QUERY, gcf_input_tx);
     feed_router.register_input(FeedId::USAGE_QUERY, usage_input_tx);
 
     // Attach the supervisor to the router so `handle_client` can intercept
@@ -1267,6 +1342,7 @@ async fn main() {
         gd_response_tx,
         gl_response_tx,
         gh_response_tx,
+        gcf_response_tx,
         usage_response_tx,
     ]);
 
