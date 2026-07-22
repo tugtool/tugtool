@@ -245,7 +245,7 @@ body {
    * it lands on the same line as the name. (File refs are a `.tool-file-ref`
    * span, never `<code>`, so they're untouched.) */
   position: relative;
-  top: 0.5px;
+  top: 1px;
 }
 
 /* Trailing pipe-sections — the result summary, the timing, and the

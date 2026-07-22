@@ -121,9 +121,13 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
     return <ShellExchangeBlock {...props} />;
   }
   const { sha, message, fileCount, added, removed, files } = parsed;
+  // The header shows only the subject — the message's first line. The body +
+  // trailer live in the copied text, not the glance (the header reads like the
+  // Bash command line: one subject that may wrap, never the whole message).
+  const subject = message.split("\n", 1)[0];
   const identity = (
     <span className="commit-receipt-header">
-      <span className="commit-receipt-summary">{message}</span>
+      <code className="commit-receipt-summary">{subject}</code>
       <span className="commit-receipt-chips">
         <TugBadge emphasis="outlined" role="inherit" size="sm">
           {`${fileCount} ${fileCount === 1 ? "file" : "files"}`}

@@ -13,25 +13,23 @@
   gap: var(--tug-space-sm);
 }
 
-/* The full commit message, clamped to three lines — the durable record shows
-   subject + the first body lines instead of a one-line ellipsis. Line breaks
-   in the message are preserved.
-
-   Rides the header's one-line box (`--tugx-toolheader-line`) and clamps via a
-   plain-block `max-height`, NOT `-webkit-box` — a `-webkit-box` floats its
-   first line off that shared line box, so the message read visibly higher than
-   the "Commit" name; a normal block wraps exactly like the header's own detail
-   column, whose first line is baseline-matched to the name by construction. */
+/* The full commit message. It is a `<code>` inside `.tool-call-header-detail`,
+   so it inherits the header's own command layout wholesale — the shared line
+   box, the wrap behaviour, and the 0.5px optical seat that lands a mono line
+   on the "Commit" name's baseline (the exact treatment the Bash header gives
+   its command). This adds only the identity-row need: grow to fill the row so
+   the chips pin right. */
 .commit-receipt-summary {
   flex: 1 1 auto;
   min-width: 0;
-  font-weight: var(--tug-font-weight-medium);
+}
+
+/* Override the header's `code { color: inherit }` (which would drain the
+   message to the muted command tone) back to the normal block text — the
+   commit subject is primary content, not an incidental command. The
+   two-class selector outranks `.tool-call-header-detail code`. */
+.commit-receipt-header .commit-receipt-summary {
   color: var(--tugx-block-text-color);
-  white-space: pre-wrap;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  line-height: var(--tugx-toolheader-line);
-  max-height: calc(var(--tugx-toolheader-line) * 3);
 }
 
 .commit-receipt-chips {

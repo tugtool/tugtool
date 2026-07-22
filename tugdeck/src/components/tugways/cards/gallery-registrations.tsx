@@ -89,6 +89,7 @@ import { GalleryTugCue } from "./gallery-tug-cue";
 import { GalleryBashToolBlock } from "./gallery-bash-tool-block";
 import { GalleryTranscriptRegisters } from "./gallery-transcript-registers";
 import { GalleryCommitBlock } from "./gallery-commit-block";
+import { GalleryCommitReceipt } from "./gallery-commit-receipt";
 import { GalleryPinnedHeaders } from "./gallery-pinned-headers";
 import { GallerySessionThinking } from "./gallery-session-thinking";
 import { GalleryJsonTreeBlock } from "./gallery-json-tree-block";
@@ -712,6 +713,19 @@ export function registerGalleryCards(): void {
     componentId: "gallery-commit-block",
     contentFactory: (_cardId) => <GalleryCommitBlock />,
     defaultMeta: { title: "CommitBlock (receipt)", icon: "GitCommitVertical", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.blockRenderers,
+  });
+
+  // SessionCommitReceiptBlock — the `/commit` durable receipt ([P08]). The
+  // wrapping-subject fixture is the surface the header baseline + bottom-space
+  // fixes are tuned + measured against (at0264).
+  registerCard({
+    componentId: "gallery-commit-receipt",
+    contentFactory: (_cardId) => <GalleryCommitReceipt />,
+    defaultMeta: { title: "Commit Receipt (/commit)", icon: "GitCommitHorizontal", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
