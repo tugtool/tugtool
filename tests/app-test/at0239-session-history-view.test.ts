@@ -118,7 +118,7 @@ describe.skipIf(!SHOULD_RUN)(
             const topShaText = await app.evalJS<string>(
               `(function(){
                 var row = document.querySelector(${JSON.stringify(ROW)});
-                var sha = row.querySelector('code.session-history-commit-sha');
+                var sha = row.querySelector('code.tug-history-list-commit-sha');
                 return sha ? sha.textContent.trim() : "";
               })()`,
             );
@@ -133,10 +133,10 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(hasFullHashPre).toBe(false);
 
-            // Expand the top commit via the real disclosure chevron.
+            // Expand the top commit via the real fold cue.
             await app.evalJS<void>(
               `document.querySelector(${JSON.stringify(
-                `${ROW} [data-slot="tool-call-header-disclosure"]`,
+                `${ROW} [data-slot="tug-history-list-fold"]`,
               )}).click()`,
             );
 
@@ -144,7 +144,7 @@ describe.skipIf(!SHOULD_RUN)(
             await app.waitForCondition<boolean>(
               `(function(){
                 var meta = document.querySelector(${JSON.stringify(
-                  `${ROW} .session-history-commit-meta`,
+                  `${ROW} .tug-history-list-commit-meta`,
                 )});
                 return meta !== null && meta.textContent.indexOf(${JSON.stringify(committerEmail)}) >= 0;
               })()`,

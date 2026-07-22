@@ -1,0 +1,116 @@
+/* TugHistoryList — the reusable commit-rows-with-detail surface ([P10]).
+   Rows are compact mono `TugListRow`s (the same density as TugChangesList's
+   file rows); this file styles only what the row primitive doesn't own — the
+   sha tint, the header hanging-indent, the trailing attribution, and the
+   expanded detail well. Appearance only ([L06]); interactions are wired in the
+   component. */
+
+.tug-history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tug-history-list-commit-block {
+  min-width: 0;
+}
+
+/* The whole row is the fold's click target (the sha's copy menu and the
+   trailing controls stop their own gestures short of it). */
+.tug-history-list-row-hit {
+  cursor: pointer;
+}
+
+/* The header identity: `<sha> : <subject>`. Hanging indent so a subject that
+   wraps aligns its continuation lines under the subject's first character
+   rather than the row's left edge: the content column is monospace, so the
+   8-char sha + the 3-char ` : ` delimiter measure exactly 11ch. The first line
+   is pulled back to the edge by the negative text-indent; wrapped lines rest at
+   the 11ch padding. */
+.tug-history-list-commit-header {
+  min-width: 0;
+  padding-left: 11ch;
+  text-indent: -11ch;
+}
+
+/* The short sha, rendered as `code`-colored monospace at the row's own size. */
+.tug-history-list-commit-sha {
+  color: var(--tug-syntax-code);
+  cursor: default;
+}
+
+.tug-history-list-commit-delim {
+  color: var(--tugx-block-text-color-muted);
+}
+
+/* Trailing cluster: the author · date attribution, then the fold cue. Mirrors
+   the row primitive's trailing gap so a bare span composes cleanly. */
+.tug-history-list-row-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-list-row-trailing-gap);
+}
+
+/* Author · date on the collapsed row — sans, muted, a step under the mono
+   subject so it reads as quiet provenance rather than competing with it. */
+.tug-history-list-commit-attribution {
+  flex-shrink: 0;
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The expanded detail well under a row. */
+.tug-history-list-commit-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 8px 6px;
+}
+
+/* Committer identity + complete date — the full attribution, right-aligned at
+   the bottom of the expanded area. */
+.tug-history-list-commit-meta {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: right;
+}
+
+/* The message body via a read-only TugCodeView (markdown text styling for list
+   hanging-indent). Strip the viewer's frame so it reads as plain text inline in
+   the expanded area. */
+.tug-history-list-commit-message-view {
+  border: none;
+  background: transparent;
+}
+.tug-history-list-commit-message-view .cm-editor {
+  background: transparent;
+}
+.tug-history-list-commit-message-view .cm-content {
+  padding: 0;
+}
+.tug-history-list-commit-message-view .cm-scroller {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.tug-history-list-commit-files-empty {
+  font-size: 0.75rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* Join badge ([P09]) — a commit that landed as a dash join reads differently
+   from a hand commit. */
+.tug-history-list-join-badge {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-accent-default-rest, var(--tug7-element-global-text-normal-muted-rest));
+  background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.1));
+  white-space: nowrap;
+}
