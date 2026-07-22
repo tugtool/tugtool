@@ -26,33 +26,33 @@
 
 /* ---- Empty state ---- */
 
-/* Centered in the available space so a "No changes" shade reads as a compact,
-   balanced card; `flex: 1` fills the body so the message sits at the optical
-   center, the `min-height` keeps the shade from collapsing to a bare line. */
+/* Centered on a single line so the auto-sizing shade stands exactly as tall as
+   it would over one changed file — the empty state borrows the file-list's own
+   block padding (`4px 0`) and one line's min-height, never taller. The text
+   matches a `TugChangesList` file row: mono, `xs`, no icon. */
 .session-changes-clean {
-  flex: 1 1 auto;
-  min-height: 88px;
+  min-height: var(--tug-line-height-md);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: var(--tug-space-md);
-  font-size: 0.875rem;
+  padding: 4px 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
 
 /* Not-yet-composed state: the aggregate hasn't emitted this workspace, so an
    empty view is unverified — a muted "scanning" line, never the success green.
-   Same centered geometry as the all-clear so the shade doesn't jump when the
+   Same one-line geometry as the all-clear so the shade doesn't jump when the
    first frame lands. */
 .session-changes-scanning {
-  flex: 1 1 auto;
-  min-height: 88px;
+  min-height: var(--tug-line-height-md);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: var(--tug-space-md);
+  padding: 4px 0;
   font-size: 0.875rem;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }

@@ -22,7 +22,7 @@
 import "./session-changes-view.css";
 
 import React, { useCallback, useState, useSyncExternalStore } from "react";
-import { CircleCheck, GitCommitHorizontal, LoaderCircle } from "lucide-react";
+import { GitCommitHorizontal, LoaderCircle } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
@@ -270,7 +270,6 @@ export function SessionChangesView({
     <div className="session-changes-view-body">
       {isCleanAllClear ? (
         <div className="session-changes-clean" role="status">
-          <CircleCheck size={14} />
           No changes
         </div>
       ) : null}
