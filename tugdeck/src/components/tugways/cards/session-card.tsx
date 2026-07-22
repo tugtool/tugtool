@@ -3492,12 +3492,12 @@ export function SessionCardBody({
         entryDelegateRef.current?.openCommandPicker();
       },
       // Swift Session-menu "Show/Hide Changes" (⌘⇧C), the ⇧⌘C deck twin, and
-      // the ⌃⌘C alias ([P05], Spec S04) — toggle the changes glance, and (only
-      // on an empty composer) commit mode with it ([P03] revised). Visible:
-      // hide the sheet, exiting the mode if it's active. Hidden: show the
-      // sheet; if the composer is empty, also enter the mode so the prompt
-      // entry becomes the message editor — otherwise leave the in-progress
-      // prompt alone and show the read-only glance.
+      // the ⌃⌘C alias ([P05], Spec S04) — toggle the Changes shade, always in
+      // commit mode ([P03]). Showing Changes is Changes mode, whether or not
+      // there are changes and whether or not a prompt is typed: the composer's
+      // in-progress draft is stashed on entry and restored on exit (see
+      // `tug-prompt-entry`), so nothing is clobbered. Visible: exit the mode
+      // (drop the sheet). Hidden: enter the mode (raise the sheet).
       [TUG_ACTIONS.TOGGLE_CHANGES_VIEW]: (_event: ActionEvent) => {
         const sheetVisible = shadeViewController.getSnapshot() === "changes";
         if (sheetVisible) {
@@ -3506,10 +3506,8 @@ export function SessionCardBody({
           } else {
             shadeViewController.hide();
           }
-        } else if (entryDelegateRef.current?.isEmpty() ?? true) {
-          commitModeController.enter();
         } else {
-          shadeViewController.show("changes");
+          commitModeController.enter();
         }
       },
       // Swift Session-menu "Show/Hide History" (⌘⇧H) and the ⇧⌘H deck twin.

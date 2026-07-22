@@ -113,6 +113,21 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 6_000 },
             );
 
+            // History is a plain sheet: it carries its own Done button in the
+            // lower right (the shade's seeded default), and the old header X is
+            // gone.
+            const doneLabel = await app.evalJS<string>(
+              `(function(){
+                var b = document.querySelector('[data-testid="session-history-done"]');
+                return b ? b.textContent.trim() : "";
+              })()`,
+            );
+            expect(doneLabel).toBe("Done");
+            const hasCloseX = await app.evalJS<boolean>(
+              `document.querySelector('[data-testid="session-history-header"] [aria-label="Close"]') !== null`,
+            );
+            expect(hasCloseX).toBe(false);
+
             // The top row leads with the 8-char short sha as code-colored text
             // (the lifecycle dot is gone; the leading slot is collapsed away).
             const topShaText = await app.evalJS<string>(

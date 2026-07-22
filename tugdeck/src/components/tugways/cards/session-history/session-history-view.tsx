@@ -22,13 +22,14 @@
 
 import "./session-history-view.css";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useId, useSyncExternalStore } from "react";
 import type React from "react";
-import { History as HistoryIcon, X } from "lucide-react";
+import { History as HistoryIcon } from "lucide-react";
 
 import { TugHistoryList } from "@/components/tugways/tug-history-list";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
-import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   gitLogStore,
   type GitLogStoreSnapshot,
@@ -68,6 +69,13 @@ export function SessionHistoryView({
 }: SessionHistoryViewProps): React.ReactElement {
   const snapshot = useGitLogSnapshot();
 
+  // The Done button is the History shade's live default (filled + double ring,
+  // Return activates it), seeded only while History is the active slot so the
+  // hidden pane never claims the key view ([P17]; mirrors the compaction
+  // sheet's Cancel).
+  const doneFocusGroup = useId();
+  useSeedKeyView(active && onClose !== undefined ? `${doneFocusGroup}:0` : null);
+
   // Request only while this card's History view is the active slot (the store
   // is a singleton keyed by one root). Idempotent via the store's
   // requested-key guard; `GIT_HEAD` auto-refreshes the store after a commit.
@@ -98,17 +106,6 @@ export function SessionHistoryView({
             </span>
           }
           name="History"
-          actions={
-            onClose !== undefined ? (
-              <TugIconButton
-                icon={<X size={12} strokeWidth={2.5} />}
-                aria-label="Close"
-                size="2xs"
-                emphasis="ghost"
-                onClick={onClose}
-              />
-            ) : undefined
-          }
         />
       </div>
       <div
@@ -118,6 +115,26 @@ export function SessionHistoryView({
       >
         {children}
       </div>
+      {/* Plain-sheet footer ([P17]): History takes over neither the composer's
+          Z5 nor a commit mode, so it carries its own dismissal — a Done button
+          in the lower right (the shade's seeded default; Escape / Cmd-. still
+          close it too). */}
+      {onClose !== undefined ? (
+        <div className="session-history-view-footer">
+          <TugPushButton
+            size="sm"
+            emphasis="primary"
+            role="action"
+            onClick={onClose}
+            data-testid="session-history-done"
+            focusGroup={doneFocusGroup}
+            focusOrder={0}
+            persistentDefaultRing
+          >
+            Done
+          </TugPushButton>
+        </div>
+      ) : null}
     </>
   );
 

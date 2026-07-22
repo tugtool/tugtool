@@ -1363,6 +1363,14 @@ export const TugPromptEntry = React.forwardRef<
   commitSnapRef.current = commitSnap;
   const commitDraftingRef = useRef(commitDrafting);
   commitDraftingRef.current = commitDrafting;
+  // Mirror `active` for the CANCEL_DIALOG responder (built fresh each render,
+  // but read a ref so the handler never sees a stale flag): while commit mode
+  // is up, Escape / Cmd-. dismiss the mode, never a running turn.
+  const commitActiveRef = useRef(commitActive);
+  commitActiveRef.current = commitActive;
+  // The in-progress prompt stashed on mode entry, restored verbatim on exit —
+  // opening Changes over a typed draft never clobbers it ([P03]).
+  const preCommitDraftRef = useRef<TugTextEditingState | null>(null);
   const [commitConfirmOpen, setCommitConfirmOpen] = useState(false);
 
   // Read the live commit message — the document verbatim.
@@ -1398,12 +1406,12 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => clearCommitPersistTimer, [clearCommitPersistTimer]);
 
   // Editor swap on the active transition ([L03] so the doc change lands in
-  // the same paint as the mode flip). Enter: replace the (empty) composer
-  // with the seed message — the message alone; the mode's dress is chrome,
-  // not document content. Exit: clear back to empty. The message itself is
-  // durable in the changeset draft store, so a cancel/re-enter resumes it.
-  // (Entry is gated on an empty composer by the session card, so nothing is
-  // clobbered here.)
+  // the same paint as the mode flip). Enter: stash the current prompt draft,
+  // then replace the composer with the seed message — the message alone; the
+  // mode's dress is chrome, not document content. Exit: restore the stashed
+  // draft (the `/commit` slash path clears the composer first, so that stash is
+  // empty; ⇧⌘C over a typed prompt stashes and restores it). The message itself
+  // is durable in the changeset draft store, so a cancel/re-enter resumes it.
   useLayoutEffect(() => {
     const editor = textEditorRef.current;
     if (editor === null) return;
@@ -1411,6 +1419,7 @@ export const TugPromptEntry = React.forwardRef<
     prevCommitActiveRef.current = commitActive;
     if (commitActive && !prev) {
       inCommitModeRef.current = true;
+      preCommitDraftRef.current = editor.captureState();
       const seed =
         commitSnapRef.current?.seedMessage ??
         commitSnapRef.current?.persistedMessage ??
@@ -1427,7 +1436,9 @@ export const TugPromptEntry = React.forwardRef<
     } else if (!commitActive && prev) {
       inCommitModeRef.current = false;
       clearCommitPersistTimer();
-      editor.restoreState(EMPTY_EDIT_STATE);
+      const restored = preCommitDraftRef.current ?? EMPTY_EDIT_STATE;
+      preCommitDraftRef.current = null;
+      editor.restoreState(restored);
       rootRef.current?.setAttribute("data-commit-empty", "true");
       editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
@@ -1535,9 +1546,10 @@ export const TugPromptEntry = React.forwardRef<
     commitModeRef.current?.cancelDraft();
   }, []);
 
-  // In commit mode, a bare Escape exits the mode ([P03]) — captured on
-  // the entry root before the editor's own keymap sees it, mirroring the retired
-  // dialog's Escape ownership. A modified Escape is left alone.
+  // In commit mode, a bare Escape or Cmd-. exits the mode ([P03]) — dismissing
+  // the Changes shade — captured on the entry root before the editor's own
+  // keymap sees it, mirroring the retired dialog's Escape ownership. Other
+  // modified Escapes are left alone.
   //
   // While the Auto-Message scribe streams ([P06]) the same capture-phase listener
   // takes over Escape AND Cmd-. and routes them to a DRAFT cancel — never the
@@ -1567,7 +1579,7 @@ export const TugPromptEntry = React.forwardRef<
         }
         return;
       }
-      if (bareEscape) {
+      if (bareEscape || cmdPeriod) {
         e.preventDefault();
         e.stopPropagation();
         exitCommitMode();
@@ -2574,6 +2586,15 @@ export const TugPromptEntry = React.forwardRef<
               // session. The backend aborts only the scribe child.
               if (commitDraftingRef.current) {
                 cancelCommitDraft();
+                return;
+              }
+              // In commit mode the Changes shade is up: Escape / Cmd-. dismiss
+              // the mode (drop the shade), NEVER the running turn. A turn in
+              // flight routes CANCEL_DIALOG here first (the window keybinding
+              // claims it before the capture-phase listener above), so this is
+              // where the shade-dismiss must outrank the interrupt.
+              if (commitActiveRef.current) {
+                exitCommitMode();
                 return;
               }
               // A visible slash-command / file completion popup owns Escape

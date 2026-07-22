@@ -15,3 +15,18 @@
   font-size: 13px;
   text-align: center;
 }
+
+/* Footer pinned below the scrolling body ([P17]): the Done button, lower
+   right. Flex 0 0 auto so the body absorbs the slack and the footer never
+   scrolls. */
+.session-history-view-footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px;
+  border-top: 1px solid var(--tugx-shade-border);
+}
+
+.session-history-view-footer .tug-button {
+  min-width: 5rem;
+}
