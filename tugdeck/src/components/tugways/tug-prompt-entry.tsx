@@ -110,6 +110,7 @@ import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugButton } from "./internal/tug-button";
 import { TugPopupMenu } from "./internal/tug-popup-menu";
 import { TugPushButton } from "./tug-push-button";
+import { TugTooltip } from "./tug-tooltip";
 import { TugConfirmPopover } from "./tug-confirm-popover";
 import { resolveSubmitButtonView } from "./tug-prompt-entry-submit-button";
 import type { SessionSubmitButtonMode } from "@/lib/code-session-store/lifecycle-state";
@@ -1571,6 +1572,18 @@ export const TugPromptEntry = React.forwardRef<
         !e.ctrlKey &&
         !e.altKey &&
         !e.shiftKey;
+      // ⇧⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
+      // twin of the pencil-sparkles button. Ignored mid-draft (the button is
+      // lit but inert); otherwise routes through the same handler, so a typed
+      // message still trips the Replace confirm.
+      const cmdShiftM =
+        e.code === "KeyM" && e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey;
+      if (cmdShiftM) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!commitDraftingRef.current) handleCommitAutoMessage();
+        return;
+      }
       if (commitDraftingRef.current) {
         if (bareEscape || cmdPeriod) {
           e.preventDefault();
@@ -1587,7 +1600,7 @@ export const TugPromptEntry = React.forwardRef<
     };
     el.addEventListener("keydown", onKeyDown, true);
     return () => el.removeEventListener("keydown", onKeyDown, true);
-  }, [commitActive, exitCommitMode, cancelCommitDraft]);
+  }, [commitActive, exitCommitMode, cancelCommitDraft, handleCommitAutoMessage]);
 
   // Shell share ([P08]). A Share click on an exchange row parks its
   // composed text on the shell store; this effect observes the slot,
@@ -3087,61 +3100,70 @@ export const TugPromptEntry = React.forwardRef<
   // gate, and additionally dimmed by CSS when the message is empty
   // (`data-empty`, so no per-keystroke React state, [L22]).
   const commitPending = commitSnap?.commitPhase === "pending";
+  const commitCanLand =
+    commitSnap !== null && commitSnap.canLandIgnoringMessage;
   const commitToolbarTrailing = (
     <>
-      <TugPushButton
-        className="tug-prompt-entry-commit-cancel"
-        subtype="icon"
-        size="lg"
-        emphasis="outlined"
-        role="danger"
-        // While drafting, the X cancels the Auto-Message (not the whole mode);
-        // otherwise it exits commit mode ([P06]).
-        onClick={commitDrafting ? cancelCommitDraft : exitCommitMode}
-        aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
-        title={commitDrafting ? "Cancel auto-message" : undefined}
-        icon={<X size={16} strokeWidth={2.5} />}
-      />
-      <TugPushButton
-        className="tug-prompt-entry-commit-auto"
-        subtype="icon"
-        size="lg"
-        // Stays lit for the whole composition ([P06]): the button becomes a
-        // real filled accent button while the scribe streams (its own tokens,
-        // not a hand-rolled pose), and `data-drafting` neutralizes pointer
-        // input (CSS) so a click can't re-request.
-        emphasis={commitDrafting ? "filled" : "outlined"}
-        role="accent"
-        data-drafting={commitDrafting ? "" : undefined}
-        aria-pressed={commitDrafting || undefined}
-        onClick={handleCommitAutoMessage}
-        aria-label="Auto-message"
-        title={commitDrafting ? "Composing…" : "Generate a commit message"}
-        data-testid="tug-prompt-entry-commit-auto"
-        icon={<PencilSparkles size={16} strokeWidth={2} />}
-      />
-      <TugPushButton
-        className="tug-prompt-entry-commit-button"
-        subtype="icon"
-        size="lg"
-        emphasis="filled"
-        role="action"
-        disabled={
-          commitDrafting ||
-          commitPending ||
-          commitSnap === null ||
-          !commitSnap.canLandIgnoringMessage
+      <TugTooltip
+        content={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+        shortcut="Esc"
+      >
+        <TugPushButton
+          className="tug-prompt-entry-commit-cancel"
+          subtype="icon"
+          size="lg"
+          emphasis="outlined"
+          role="danger"
+          // While drafting, the X cancels the Auto-Message (not the whole mode);
+          // otherwise it exits commit mode ([P06]).
+          onClick={commitDrafting ? cancelCommitDraft : exitCommitMode}
+          aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+          icon={<X size={16} strokeWidth={2.5} />}
+        />
+      </TugTooltip>
+      <TugTooltip
+        content={commitDrafting ? "Composing…" : "Generate a commit message"}
+        shortcut="⇧⌘M"
+      >
+        <TugPushButton
+          className="tug-prompt-entry-commit-auto"
+          subtype="icon"
+          size="lg"
+          // Stays lit for the whole composition ([P06]): the button becomes a
+          // real filled accent button while the scribe streams (its own tokens,
+          // not a hand-rolled pose), and `data-drafting` neutralizes pointer
+          // input (CSS) so a click can't re-request.
+          emphasis={commitDrafting ? "filled" : "outlined"}
+          role="accent"
+          data-drafting={commitDrafting ? "" : undefined}
+          aria-pressed={commitDrafting || undefined}
+          onClick={handleCommitAutoMessage}
+          aria-label="Auto-message"
+          data-testid="tug-prompt-entry-commit-auto"
+          icon={<PencilSparkles size={16} strokeWidth={2} />}
+        />
+      </TugTooltip>
+      <TugTooltip
+        content={
+          commitCanLand
+            ? "Commit"
+            : "Unavailable while a turn is running or the changeset is empty"
         }
-        onClick={performSubmit}
-        aria-label="Commit"
-        title={
-          commitSnap !== null && !commitSnap.canLandIgnoringMessage
-            ? "Unavailable while a turn is running or the changeset is empty"
-            : undefined
-        }
-        data-testid="tug-prompt-entry-commit-button"
-        icon={<ArrowUp size={16} strokeWidth={2.5} />}
-      />
+        shortcut={commitCanLand ? "⇧⏎" : undefined}
+      >
+        <TugPushButton
+          className="tug-prompt-entry-commit-button"
+          subtype="icon"
+          size="lg"
+          emphasis="filled"
+          role="action"
+          disabled={commitDrafting || commitPending || !commitCanLand}
+          onClick={performSubmit}
+          aria-label="Commit"
+          data-testid="tug-prompt-entry-commit-button"
+          icon={<ArrowUp size={16} strokeWidth={2.5} />}
+        />
+      </TugTooltip>
     </>
   );
 

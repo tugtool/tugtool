@@ -2286,6 +2286,33 @@ export function SessionCardBody({
     },
     [shadeViewController],
   );
+  // Staged commit ([P03]): a Commit press dismisses the Changes shade FIRST,
+  // then fires the commit on the shade's `sheetDidHide` — so the transcript
+  // receipt lands on a clean beat after the panel is gone, never on top of it.
+  // The land-hook (installed on the controller) parks the commit callback and
+  // dismisses the shade by exiting the mode; the `sheetDidHide` delegate below
+  // runs the parked callback once the exit animation completes.
+  const stagedCommitRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    commitModeController.setLandHook((runCommit) => {
+      stagedCommitRef.current = runCommit;
+      if (commitModeController.getSnapshot().active) {
+        commitModeController.exit();
+      } else {
+        shadeViewController.hide();
+      }
+    });
+    return () => commitModeController.setLandHook(null);
+  }, [commitModeController, shadeViewController]);
+  useSheetDelegate(cardId, {
+    sheetDidHide: () => {
+      const staged = stagedCommitRef.current;
+      if (staged !== null) {
+        stagedCommitRef.current = null;
+        staged();
+      }
+    },
+  });
   // [P10] The Z4B find cluster (Case/Word/Grep + count) renders whenever an
   // active `/find` holds a non-empty query — no route gate. [L02].
   const findActive = useSyncExternalStore(

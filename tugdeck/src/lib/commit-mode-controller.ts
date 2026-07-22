@@ -115,6 +115,7 @@ export class CommitModeController {
   private active = false;
   private seedMessage: string | null = null;
   private snapshot: CommitModeSnapshot;
+  private landHook: ((runCommit: () => void) => void) | null = null;
 
   constructor(deps: CommitModeControllerDeps) {
     this.deps = deps;
@@ -143,6 +144,17 @@ export class CommitModeController {
   };
 
   getSnapshot = (): CommitModeSnapshot => this.snapshot;
+
+  /**
+   * Install (or clear with `null`) the host's land orchestrator ([P03]). When
+   * set, {@link land} hands it a `runCommit` callback instead of committing
+   * inline; the host stages the commit behind the Changes shade's dismissal so
+   * the transcript receipt lands on a clean beat after the panel is gone. With
+   * no hook the commit fires immediately (the default the unit tests exercise).
+   */
+  setLandHook(hook: ((runCommit: () => void) => void) | null): void {
+    this.landHook = hook;
+  }
 
   // ── Derivation ─────────────────────────────────────────────────────────
 
@@ -279,9 +291,10 @@ export class CommitModeController {
   }
 
   /**
-   * Land the commit ([P09]): re-check the gates against live state, send the
-   * commit, and on success clear the draft and exit the mode. On error the
-   * mode stays active and the snapshot's `commitError` surfaces inline.
+   * Land the commit ([P09]): re-check the gates against live state, then either
+   * hand the commit to the host's land-hook (staged behind the shade dismissal)
+   * or fire it inline. The up-front gate keeps an empty message / running turn
+   * from ever dismissing the shade.
    */
   land(message: string): void {
     const { changesController, codeSessionStore } = this.deps;
@@ -294,6 +307,31 @@ export class CommitModeController {
       fileCount: changesController.getSnapshot().committedPaths.size,
     });
     if (!gate.ok) return;
+    const runCommit = () => this.performCommit(text);
+    if (this.landHook !== null) this.landHook(runCommit);
+    else runCommit();
+  }
+
+  /**
+   * Send the commit and settle the round-trip ([P09]): on success clear the
+   * draft and exit; on failure surface `commitError` — re-entering the mode
+   * (and its shade) if the staged path already dismissed it. Re-checks the gate
+   * because the staged path fires a beat later, after the shade animates out,
+   * so live state may have drifted (a turn started, the changeset emptied).
+   */
+  private performCommit(text: string): void {
+    const { changesController, codeSessionStore } = this.deps;
+    const verbStore = getChangesetVerbStore();
+    const gate = evaluateCommitLandGate({
+      turnInProgress: codeSessionStore.getSnapshot().canInterrupt === true,
+      commitPhase: verbStore?.commitState(changesController.entryKey).phase ?? "idle",
+      message: text,
+      fileCount: changesController.getSnapshot().committedPaths.size,
+    });
+    if (!gate.ok) {
+      if (!this.active) this.enter();
+      return;
+    }
     changesController.commit(text);
     if (verbStore === null) return;
     const unsubscribe = verbStore.subscribe(() => {
@@ -308,6 +346,10 @@ export class CommitModeController {
           { clear: true },
         );
         this.exit();
+      } else if (!this.active) {
+        // Failed after the staged dismissal already left the mode — bring it
+        // (and the shade) back so the error surfaces where the user acted.
+        this.enter();
       }
     });
   }
