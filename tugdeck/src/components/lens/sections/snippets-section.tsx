@@ -407,6 +407,34 @@ function SnippetEditorRow({
     [manager],
   );
 
+  // The ✕ closes the open card: ascend (restores the list's key view) and the
+  // resulting blur commits — the same path Escape takes.
+  const onClose = useCallback(
+    (e?: React.MouseEvent): void => {
+      e?.stopPropagation();
+      manager?.ascend();
+      store.commitEdit();
+    },
+    [manager, store],
+  );
+
+  // The card header's title is the snippet's LIVE incipit — it re-renders with
+  // every keystroke (the store update round-trips through the list), so the
+  // header always names what the first line currently says. Same inline-
+  // markdown rendering as the display row.
+  const ctx = React.useContext(SnippetsCellContext);
+  const incipit = snippetIncipit(snippet);
+  const empty = incipit.length === 0;
+  const rendered = empty ? null : renderPulseLine(incipit);
+  const incipitHtml =
+    rendered !== null && rendered.html.length > 0
+      ? inlineMarkdownHtml(rendered.html)
+      : null;
+
+  // The open card: the snippet's own row stays as the card HEADER (selection
+  // fill, grip, copy / close), and the editor is the WELL beneath it. The two
+  // compose as one full-width card whose edges are the list's existing lines —
+  // no border of its own, so no nested rectangles are possible.
   return (
     <div
       className="snippet-editor"
@@ -419,19 +447,73 @@ function SnippetEditorRow({
       onBlur={onBlur}
       onKeyDown={onKeyDown}
     >
-      <TugMessageEditor
-        ref={editorRef}
-        value={snippet.text}
-        placeholder="Type a snippet — its opening line becomes its handle"
-        markdownTextStyling
-        lineWrap
-        fontSize="var(--tugx-snippet-editor-font-size)"
-        maxRows={120}
-        onChange={onChange}
-        onSubmit={onSubmit}
-        aria-label="Snippet text"
-        data-testid="snippet-editor-field"
-      />
+      <TugListRow
+        className="snippet-editor-header"
+        data-snippet-id={snippet.id}
+        selected
+        leading={
+          ctx !== null ? (
+            <BlockGrip
+              onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
+            />
+          ) : undefined
+        }
+        trailing={
+          <>
+            <TugIconButton
+              icon={<Copy size={12} />}
+              size="xs"
+              aria-label="Copy snippet"
+              title="Copy snippet"
+              onClick={(e) => {
+                e?.stopPropagation();
+                copySnippetText(snippet.text);
+              }}
+            />
+            <TugIconButton
+              icon={<X size={12} />}
+              size="xs"
+              aria-label="Close editor"
+              title="Close editor"
+              onClick={onClose}
+            />
+          </>
+        }
+      >
+        <span
+          className={
+            empty
+              ? "snippet-row-label snippet-row-label-empty"
+              : "snippet-row-label"
+          }
+        >
+          {empty ? (
+            "New snippet"
+          ) : incipitHtml !== null ? (
+            <span
+              className="snippet-row-incipit"
+              dangerouslySetInnerHTML={{ __html: incipitHtml }}
+            />
+          ) : (
+            incipit
+          )}
+        </span>
+      </TugListRow>
+      <div className="snippet-editor-well">
+        <TugMessageEditor
+          ref={editorRef}
+          value={snippet.text}
+          placeholder="Type a snippet…"
+          markdownTextStyling
+          lineWrap
+          fontSize="var(--tugx-snippet-editor-font-size)"
+          maxRows={120}
+          onChange={onChange}
+          onSubmit={onSubmit}
+          aria-label="Snippet text"
+          data-testid="snippet-editor-field"
+        />
+      </div>
     </div>
   );
 }

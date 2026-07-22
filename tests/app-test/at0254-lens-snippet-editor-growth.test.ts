@@ -1,26 +1,25 @@
 /**
- * at0254-lens-snippet-editor-growth.test.ts — the Lens fill model + the snippet
- * editor well, measured on the live DOM against a real snippets file.
+ * at0254-lens-snippet-editor-growth.test.ts — the ratified Lens design, measured
+ * on the live DOM against a real snippets file.
  *
- * Invariants:
+ * Space rules (states A–D of the approved mockups):
  *
- *  1. **The Lens is always full.** Exactly one section carries `data-lens-flex`
- *     and absorbs the slack, so the stack composes edge-to-edge — no void ever
- *     trails below the last band.
+ *  1. **Top-anchored stack.** At rest the sections are content-sized and the
+ *     leftover space is quiet background below the last band — nothing fills,
+ *     nothing pins to the bottom.
  *
- *  2. **Opening an editor is geometrically calm.** The editor opens inside the
- *     flexible section's standing share, so the section's outer height does not
- *     change when a well opens.
+ *  2. **The well opens at a writing floor.** A one-line snippet's editor opens
+ *     as an open card (header row + well) at a ≈6-line height, extending the
+ *     stack downward into the slack — the bands below move down by the card's
+ *     height and no more.
  *
- *  3. **The well opens at a writing height.** A one-line snippet's editor opens
- *     at the ≈6-line writing floor, not one cramped line — and sits inset with a
- *     real gap below the row above it, so the focus ring can never touch a
- *     neighboring row.
+ *  3. **The carrier rule.** While the caret is the keyboard-focus carrier
+ *     (keyboard inside the well), no ring ink paints on the editor — the leaf
+ *     ring is suppressed on both the descend wrapper and the editor host.
  *
  *  4. **The caret stays in view while editing a snippet taller than the Lens.**
- *     The well grows uncapped and the list is the single scroller; SnippetsBody
- *     reveals the caret into the list on every edit, so typing at the tail of a
- *     very long snippet keeps the caret on-screen.
+ *     The well grows uncapped, the list is the single scroller, and SnippetsBody
+ *     reveals the caret into the list on every edit.
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  */
@@ -61,9 +60,9 @@ function priorCardDeck() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0254 — Lens fill model + snippet editor well", () => {
+describe.skipIf(!SHOULD_RUN)("at0254 — Lens open card + top-anchored stack", () => {
   test(
-    "the Lens fills; a well opens calm at the writing floor; the caret stays in view",
+    "the stack is top-anchored; the well opens at the floor without ring ink; the caret stays in view",
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0254-"));
@@ -109,31 +108,22 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens fill model + snippet editor well",
             { timeoutMs: 5_000 },
           );
 
-          // 1. The fill model at rest: the snippets section (tallest content)
-          //    is the flexible one, and the stack composes edge-to-edge — the
-          //    last band's bottom sits at the stack's bottom, no trailing void.
-          await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-section[data-lens-section="snippets"]')?.dataset.lensFlex === "true"`,
-            { timeoutMs: 3_000 },
+          // 1. Top-anchored at rest: real slack sits BELOW the last band —
+          //    nothing is stretched to fill it or pinned to the Lens bottom.
+          const rest = await app.evalJS<{ slack: number; lastBottom: number }>(
+            `(() => {
+              const stack = document.querySelector('.lens-sections').getBoundingClientRect();
+              const bands = [...document.querySelectorAll('.lens-sections > .lens-section')];
+              const last = bands[bands.length - 1].getBoundingClientRect();
+              return { slack: Math.round(stack.bottom - last.bottom), lastBottom: Math.round(last.bottom) };
+            })()`,
           );
-          expect(
-            await app.evalJS<boolean>(
-              `(() => {
-                const stack = document.querySelector('.lens-sections').getBoundingClientRect();
-                const bands = [...document.querySelectorAll('.lens-sections > .lens-section')];
-                const last = bands[bands.length - 1].getBoundingClientRect();
-                return Math.abs(stack.bottom - last.bottom) <= 2;
-              })()`,
-            ),
-          ).toBe(true);
+          expect(rest.slack).toBeGreaterThan(100);
 
-          const restHeight = await app.evalJS<number>(
-            `Math.round(document.querySelector('.lens-section[data-lens-section="snippets"]').getBoundingClientRect().height)`,
-          );
-
-          // 2 + 3. Open a ONE-LINE snippet: the well opens at the writing
-          //    floor (≈6 lines), inset with a real gap from the row above, and
-          //    the section's outer height does not move.
+          // 2 + 3. Open a ONE-LINE snippet: the open card (header + well)
+          //    appears at the writing floor, the stack extends downward by the
+          //    card's height (slack shrinks but the last band is NOT pinned),
+          //    and no ring ink paints while the caret is the carrier.
           await app.nativeDoubleClickAtElement(
             `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-incipit`,
           );
@@ -141,38 +131,52 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens fill model + snippet editor well",
             `document.querySelector('.snippet-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
-          // Writing floor: at least 6 lines tall for one line of content. The
-          // well animates open (height 0 → target), so wait for the settled
-          // height rather than sampling mid-animation.
+          // The card animates open (the cell grows 0 → target) — wait until the
+          // WRAPPER has settled at the floor and the stack has actually
+          // extended (slack below the last band shrank from its rest value).
           await app.waitForCondition<boolean>(
             `(() => {
-              const well = document.querySelector('.snippet-editor');
-              if (well === null) return false;
-              const lineH = parseFloat(getComputedStyle(well.querySelector('.cm-content')).lineHeight);
-              return well.getBoundingClientRect().height >= lineH * 6;
+              const wrap = document.querySelector('.snippet-editor');
+              if (wrap === null) return false;
+              const lineH = parseFloat(getComputedStyle(wrap.querySelector('.cm-content')).lineHeight);
+              if (wrap.getBoundingClientRect().height < lineH * 6) return false;
+              const stack = document.querySelector('.lens-sections').getBoundingClientRect();
+              const bands = [...document.querySelectorAll('.lens-sections > .lens-section')];
+              const last = bands[bands.length - 1].getBoundingClientRect();
+              return Math.round(stack.bottom - last.bottom) < ${rest.slack};
             })()`,
             { timeoutMs: 3_000 },
           );
-          const short = await app.evalJS<{
-            gapAbove: number;
-            sectionH: number;
+          const editing = await app.evalJS<{
+            headerH: number;
+            slack: number;
+            wrapperOutline: string;
+            hostOutline: string;
           }>(
             `(() => {
-              const well = document.querySelector('.snippet-editor');
-              const w = well.getBoundingClientRect();
-              const cell = well.closest('.tug-list-view-cell');
-              const above = cell.previousElementSibling;
-              const gapAbove = above === null ? 99 : w.top - above.getBoundingClientRect().bottom;
-              const sectionH = Math.round(document.querySelector('.lens-section[data-lens-section="snippets"]').getBoundingClientRect().height);
-              return { gapAbove, sectionH };
+              const header = document.querySelector('.snippet-editor-header').getBoundingClientRect();
+              const stack = document.querySelector('.lens-sections').getBoundingClientRect();
+              const bands = [...document.querySelectorAll('.lens-sections > .lens-section')];
+              const last = bands[bands.length - 1].getBoundingClientRect();
+              return {
+                headerH: Math.round(header.height),
+                slack: Math.round(stack.bottom - last.bottom),
+                wrapperOutline: getComputedStyle(document.querySelector('.snippet-editor')).outlineStyle,
+                hostOutline: getComputedStyle(document.querySelector('.snippet-editor-well .tug-text-editor')).outlineStyle,
+              };
             })()`,
           );
-          // The well's frame sits clear of the row above — the ring's home.
-          expect(short.gapAbove).toBeGreaterThanOrEqual(3);
-          // Calm geometry: opening the well did not reshape the section.
-          expect(Math.abs(short.sectionH - restHeight)).toBeLessThanOrEqual(2);
+          // The card header row exists at row height.
+          expect(editing.headerH).toBeGreaterThanOrEqual(28);
+          // The stack extended into the slack but did NOT fill it — the last
+          // band is still not pinned to the Lens bottom.
+          expect(editing.slack).toBeGreaterThan(50);
+          expect(editing.slack).toBeLessThan(rest.slack);
+          // Carrier rule: no leaf-ring ink on the wrapper or the editor host.
+          expect(editing.wrapperOutline).toBe("none");
+          expect(editing.hostOutline).toBe("none");
 
-          // Close the well (Escape ascends; the blur commits).
+          // Close the card (Escape ascends; the blur commits).
           await app.nativeKey("Escape", []);
           await app.waitForCondition<boolean>(
             `document.querySelector('.snippet-editor') === null`,

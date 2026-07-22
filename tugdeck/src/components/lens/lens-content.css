@@ -2,15 +2,16 @@
  * lens-content.css — the Lens card content chrome ([L06]).
  *
  * The Lens stack does NOT scroll — each section's BODY scrolls internally. The
- * `.lens-sections` stack fills the rail and never overflows; the sections flex
- * to share the height (content-sized when everything fits, shrinking under
- * pressure with the biggest section giving first), and exactly one section —
- * the `data-lens-flex` flexible section, assigned by `LensContent` — absorbs
- * the slack so the stack composes edge-to-edge with no trailing void. Because
- * a section header lives OUTSIDE its scroller, no section can ever push
- * another section's header out of view — only a section's own rows scroll
- * under its own header. Each section list owns its own scrollbar gutter (see
- * the section CSS files); the rail reserves none.
+ * stack is TOP-ANCHORED and content-sized: sections take the height their
+ * content needs, growing downward into the free space as content grows (an
+ * opening editor extends the stack by exactly its own height), and leftover
+ * space is quiet background below the last band — nothing stretches to fill
+ * it, nothing pins to it. Only under real pressure (content exceeding the
+ * Lens) do the sections share the height, the tallest giving first and
+ * scrolling its own rows. Because a section header lives OUTSIDE its
+ * scroller, no section can ever push another section's header out of view.
+ * Each section list owns its own scrollbar gutter (see the section CSS
+ * files); the rail reserves none.
  */
 
 .lens-content {

@@ -83,69 +83,79 @@
   z-index: 2;
 }
 
-/* The open editor is a WELL — an inset framed card within the list, not a bare
-   wrapper glued between rows. The gap margin means the focus ring can never
-   touch a neighboring row (geometry, not outline offsets); the frame carries
-   the ring on keyboard focus (recolor + remainder outline, the framed-list
-   pattern); the compact padding keeps the ring hugging the text. The frame
-   lives on THIS wrapper — a single box, so none of the substrate's layered
-   rounded-field "curl" artifact (the substrate itself stays flattened below). */
+/* The OPEN CARD — the editing snippet's row stays as the card HEADER (the
+   selection fill, rendered by `TugListRow` inside the editor cell) and the
+   editor is the WELL beneath it. The card spans the full list width and draws
+   NO frame of its own: its side edges are the list frame, its top and bottom
+   edges are the list's existing dividers — nested rectangles are impossible by
+   construction.
+
+   The keyboard-focus CARRIER rule (ratified): while the Lens is keyboard-active
+   exactly ONE carrier shows — the list's ring language (perimeter ring + cursor
+   bar) while navigating, the caret (with the substrate's field wash) while
+   editing. Never both, never neither. */
 .snippet-editor {
-  margin: 4px 6px 6px;
-  padding: 2px 6px;
-  border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
-  border-radius: var(--tug-radius-sm, 6px);
+  padding: 0;
   outline: none;
 }
-.snippet-editor[data-key-view-kbd] {
-  outline: calc(var(--tugx-list-key-ring-width) - 1px) solid var(--tugx-focus-ring);
-  outline-offset: 0;
-  border-color: var(--tugx-focus-ring);
+/* The wrapper is the descend leaf, and the engine's responder reflection can
+   also mark the `.tug-text-editor` host itself as key view — but the editor is
+   its own focus affordance (the caret), so the global leaf ring never paints on
+   either (the same suppression prompt entry's shell carries,
+   `tug-entry-shell.css`). */
+.snippet-editor[data-key-view-kbd],
+.snippet-editor-well
+  .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
+  outline: none;
 }
 
-/* The writing floor: a well opens at a comfortable ≈6-line height (the composer
-   formula, `N * 1lh` + the `.cm-content` block padding) — a place to write, with
-   room for a paste to land — instead of one cramped line. Content past the floor
-   grows the well line-by-line. Overrides `TugMessageEditor`'s 3-row composer
-   floor at the same element it is set on. */
-.snippet-editor .tug-message-editor {
-  --tug-text-editor-min-height: calc(6 * 1lh + 16px);
+/* While the caret is the carrier (keyboard genuinely inside the well), the ring
+   language goes fully quiet: the engine already moved the key view off the list
+   (no perimeter ring); additionally silence the quiet within-mark and the
+   movement-cursor bar so no accent ink competes with the caret. Keyed on real
+   focus, not mere presence — an open-but-unfocused editor leaves the ring
+   language alone (the "navigating with an open card" state). */
+.lens-content:has(.snippet-editor:focus-within) [data-key-within] {
+  outline: none;
+}
+.lens-snippets-list:has(.snippet-editor:focus-within)
+  .tug-list-view-cell[data-key-cursor]::before {
+  background: transparent;
 }
 
-/* The well never scrolls on its own — it grows with its content, inside the
-   section's standing flex share (the snippets section is the Lens's flexible
-   section while an editor is open, see `lens-section-band.css`). The list is the
-   single scroller: when the snippet outgrows the Lens the LIST scrolls, and
-   SnippetsBody reveals the caret into the list on each edit so it never scrolls
-   off. Lift the base `maxRows` cap so the well keeps growing rather than
-   switching the CM6 scroller to its own internal scroll. */
-.snippet-editor .tug-text-editor > .cm-editor > .cm-scroller {
-  max-height: none;
-}
-
-/* Flatten EVERY layer of the composed editor to the row surface. `borderless`
-   only transparentizes the host border; the substrate still paints a field
-   BACKGROUND on two layers — the host wrapper (`--tug7-surface-field-*`) AND the
-   CM6 `.cm-editor` (its theme's `&` / `&.cm-focused` fill, a tinted field
-   surface) — which, with the host's `border-radius`, drew the rounded-corner
-   "curl" over the row. Zero the background + radius on both layers, in every
-   state, so the open editor is visually indistinguishable from a display row.
-   `!important` is required: it beats both the host's focused-background rule and
-   CM6's head-injected theme (source order / generated scope would otherwise win).
-   Appearance only ([L06]). */
-.snippet-editor .tug-text-editor,
-.snippet-editor .cm-editor,
-.snippet-editor .cm-editor.cm-focused,
-.snippet-editor .cm-scroller,
-.snippet-editor .cm-content {
-  background-color: transparent !important;
-}
-.snippet-editor .tug-text-editor {
+/* The WELL: the substrate's own field treatment, exactly as prompt entry — the
+   field surface washes while focused and drains on blur, and the caret carries
+   keyboard focus. (The old flatten-every-background overrides are gone: the
+   rounded-corner "curl" they fixed came from the host's border-radius composing
+   with the field background over the row; with the radii zeroed here the field
+   background is safe to keep.) Only the host border stays transparent — the
+   card's edges are the list's lines, never the field's own frame. */
+.snippet-editor-well .tug-text-editor {
   border-color: transparent !important;
   border-radius: 0 !important;
 }
-.snippet-editor .tug-text-editor > .cm-editor {
+.snippet-editor-well .tug-text-editor > .cm-editor {
   border-radius: 0 !important;
+}
+
+/* The writing floor: a well opens at a comfortable ≈6-line height (the
+   substrate's row formula, `N * 1lh` + the `.cm-content` block padding) — a
+   place to write, with room for a paste to land — instead of one cramped line.
+   Content past the floor grows the well line-by-line, extending the stack
+   downward into the Lens's free space. Overrides `TugMessageEditor`'s 3-row
+   composer floor at the same element it is set on. */
+.snippet-editor-well .tug-message-editor {
+  --tug-text-editor-min-height: calc(6 * 1lh + 16px);
+}
+
+/* The well never scrolls on its own — it grows with its content, and the
+   section (content-sized, top-anchored) grows with it into the Lens's slack.
+   Under real pressure the LIST is the single scroller, and SnippetsBody reveals
+   the caret into the list on each edit so it never scrolls off. Lift the base
+   `maxRows` cap so the well keeps growing rather than switching the CM6
+   scroller to its own internal scroll. */
+.snippet-editor-well .tug-text-editor > .cm-editor > .cm-scroller {
+  max-height: none;
 }
 
 /* The per-row delete ✕ and header + are `TugIconButton`s — their hover /
