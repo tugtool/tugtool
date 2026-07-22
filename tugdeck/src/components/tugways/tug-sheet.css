@@ -429,17 +429,18 @@ body[data-tug-motion="off"] .tug-sheet-content[data-tug-sheet-presentation] {
 /* ---- Shade presentation ([P17]) — ported from the retired TugShade ----
  *
  * The shade shares the pane's content surface so its body reads as card
- * ground, not a floating dialog; the bottom-edge shadow is what says
- * "over". `--tugx-shade-alpha` is the tunable translucency of the WHOLE
- * shade — surface, header, and every row fade together so the transcript
- * reads faintly through even when the shade is packed with content.
- * 1 = fully opaque; lower reveals more of the transcript. */
+ * ground, not a floating dialog; the scrim behind it (and its 1px edge
+ * border) is what says "over" — the shade casts no shadow of its own, so
+ * there is no double depth cue as the scrim fades. `--tugx-shade-alpha` is
+ * the tunable translucency of the WHOLE shade — surface, header, and every
+ * row fade together so the transcript reads faintly through even when the
+ * shade is packed with content. 1 = fully opaque; lower reveals more of the
+ * transcript. */
 
 body {
   --tugx-shade-alpha: 0.96;
   --tugx-shade-bg: var(--tug7-surface-global-primary-normal-content-rest);
   --tugx-shade-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-shade-shadow: 0 6px 16px var(--tug7-element-global-shadow-normal-md-rest);
   --tugx-shade-handle: var(--tug7-element-global-border-normal-default-rest);
   /* The grabber highlights to the SELECTED-control fill (the same token a
      selected TugOptionGroup item uses) — "this control is engaged". */
@@ -456,6 +457,20 @@ body {
   inset: 0;
   background-color: var(--tugx-pane-scrim-bg);
   pointer-events: auto;
+  /* Transparent before the JS enter fade runs (mirrors the shade's own resting
+     transform below), so the dimming rises with the roll rather than popping in
+     ahead of it. Reduced motion / motion-off show it immediately. */
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tug-sheet-shade-scrim {
+    opacity: 1;
+  }
+}
+
+body[data-tug-motion="off"] .tug-sheet-shade-scrim {
+  opacity: 1;
 }
 
 /* The shade panel. Positioned by its wrapper (absolute, anchored to the
@@ -477,11 +492,14 @@ body {
   flex-direction: column;
   background-color: var(--tugx-shade-bg);
   border-bottom: 1px solid var(--tugx-shade-border);
-  box-shadow: var(--tugx-shade-shadow);
   /* Element-level translucency: the whole shade (surface + content) fades
      uniformly so the transcript reads through even when packed [L06]. */
   opacity: var(--tugx-shade-alpha);
   pointer-events: auto;
+  /* Keep the shade on its own compositing layer so the roll+fade composites
+     smoothly, and the layer survives the end-of-animation style commit — no
+     teardown pop. */
+  will-change: transform, opacity;
 }
 
 /* Auto-size shade ([P17]): the content owns the height. `fit-content` still
@@ -494,15 +512,14 @@ body {
 
 /* Bottom-anchored shade ([P17]) — the mirror of the default top anchor: pinned
    to the slot's bottom edge (the top of the Z2 status bar) and rising upward
-   over the transcript. The border and shadow flip to the top edge so the
-   "over" cue reads from the direction it grows. Geometry only [L06]; the
-   rise/drop motion is the mirrored resting transform below. */
+   over the transcript. The edge border flips to the top so the "over" cue reads
+   from the direction it grows. Geometry only [L06]; the rise/drop motion is the
+   mirrored resting transform below. */
 .tug-sheet-shade[data-shade-anchor="bottom"] {
   top: auto;
   bottom: 0;
   border-bottom: none;
   border-top: 1px solid var(--tugx-shade-border);
-  box-shadow: 0 -6px 16px var(--tug7-element-global-shadow-normal-md-rest);
 }
 
 /* Body region — fills the shade above the grabber. The consumer composes
@@ -549,26 +566,30 @@ body {
   background-color: var(--tugx-shade-handle-active);
 }
 
-/* Shade resting state — off-screen above its wrapper before the JS enter
-   animation runs (the window-shade drop), mirroring the `top` rule the
-   `.tug-sheet-content` presentations declare. Reduced motion resets to
-   the presented geometry, exactly as above. */
+/* Shade resting state — transparent and nudged a short distance off its resting
+   spot before the JS enter animation runs (a light roll + fade, not the old
+   full-height sweep). The offset here must match `SHADE_ROLL_PX` in
+   tug-sheet.tsx; the JS enter fades opacity up to `--tugx-shade-alpha`. Reduced
+   motion / motion-off reset to the presented geometry and alpha. */
 .tug-sheet-shade[data-tug-sheet-presentation="shade"] {
-  transform: translateY(-100%);
+  transform: translateY(-28px);
+  opacity: 0;
 }
 
-/* Bottom-anchored resting state — off-screen BELOW its wrapper before the JS
-   enter animation runs (the mirror rise). */
+/* Bottom-anchored resting state — the mirror roll, nudged down from below its
+   resting spot. */
 .tug-sheet-shade[data-tug-sheet-presentation="shade"][data-shade-anchor="bottom"] {
-  transform: translateY(100%);
+  transform: translateY(28px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tug-sheet-shade[data-tug-sheet-presentation="shade"] {
     transform: none;
+    opacity: var(--tugx-shade-alpha);
   }
 }
 
 body[data-tug-motion="off"] .tug-sheet-shade[data-tug-sheet-presentation="shade"] {
   transform: none;
+  opacity: var(--tugx-shade-alpha);
 }

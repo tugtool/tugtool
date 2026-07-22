@@ -205,6 +205,13 @@ interface SheetPresentationMotion {
  * substitutes a short opacity fade; the CSS resting states are reset to
  * the presented geometry in that mode (see `tug-sheet.css`).
  */
+/**
+ * The shade's roll distance — a short fixed nudge (px, so a tall shade rolls the
+ * same light distance as a short one) that replaces the old full-height
+ * `translateY(±100%)` sweep.
+ */
+const SHADE_ROLL_PX = 28;
+
 const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationMotion> = {
   top: {
     enter: [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }],
@@ -224,24 +231,72 @@ const SHEET_PRESENTATION_MOTION: Record<TugSheetPresentation, SheetPresentationM
       { transform: "scale(0.96)", opacity: 0 },
     ],
   },
-  // The shade descends like the `top` window-shade; its wrapper (the
-  // consumer's positioned pane) clips the slide.
+  // The shade rolls a short, fixed distance rather than sweeping the full sheet
+  // height — a light nudge, not a heavy drop. Transform only: the shade carries
+  // its own `--tugx-shade-alpha` translucency, which an opacity keyframe would
+  // clobber. `SHADE_BOTTOM_MOTION` mirrors this for the bottom anchor; the
+  // paired scrim fade (below) carries the dimming.
   shade: {
-    enter: [{ transform: "translateY(-100%)" }, { transform: "translateY(0)" }],
-    exit: [{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }],
+    enter: [
+      { transform: `translateY(-${SHADE_ROLL_PX}px)` },
+      { transform: "translateY(0)" },
+    ],
+    exit: [
+      { transform: "translateY(0)" },
+      { transform: `translateY(-${SHADE_ROLL_PX}px)` },
+    ],
   },
 };
 
 /**
  * Motion for a bottom-anchored shade (`shadeAnchor="bottom"`) — the mirror of
- * the `shade` entry above: the panel rises from below its wrapper into place
- * and drops back on dismiss. Kept beside {@link SHEET_PRESENTATION_MOTION} so
- * the enter/exit resolver picks it when the shade is bottom-anchored.
+ * the `shade` entry above: the panel rolls up from just below its resting spot
+ * and settles back down on dismiss. Kept beside {@link SHEET_PRESENTATION_MOTION}
+ * so the enter/exit resolver picks it when the shade is bottom-anchored.
  */
 const SHADE_BOTTOM_MOTION: SheetPresentationMotion = {
-  enter: [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
-  exit: [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
+  enter: [
+    { transform: `translateY(${SHADE_ROLL_PX}px)` },
+    { transform: "translateY(0)" },
+  ],
+  exit: [
+    { transform: "translateY(0)" },
+    { transform: `translateY(${SHADE_ROLL_PX}px)` },
+  ],
 };
+
+/**
+ * Scrim dimming timing. The scrim fades in with the shade's roll, and on
+ * dismiss fades a beat *sooner* than the roll finishes — so from the user's eye
+ * the dimming is already gone the instant the panel lands, never a hard cut at
+ * the end. `ease-out` drops it fast, and the shorter exit clears it early.
+ */
+const SHADE_SCRIM_EXIT_MS = 150;
+
+/**
+ * The shade's resting translucency (`--tugx-shade-alpha`), read live so the fade
+ * targets that alpha rather than full opacity — preserving the transcript
+ * read-through the shade is designed for. Falls back to 1 if the token is
+ * absent.
+ */
+function readShadeAlpha(el: Element): number {
+  const raw = getComputedStyle(el).getPropertyValue("--tugx-shade-alpha").trim();
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : 1;
+}
+
+/**
+ * Merge an opacity fade into the shade's roll keyframes so the panel fades
+ * between transparent and its resting alpha AS it rolls — the roll on its own is
+ * a short nudge that reads as a pop; the fade is what makes it dismiss smoothly
+ * in step with the scrim.
+ */
+function withShadeOpacity(frames: Keyframe[], from: number, to: number): Keyframe[] {
+  return [
+    { ...frames[0], opacity: from },
+    { ...frames[1], opacity: to },
+  ];
+}
 
 /* ---------------------------------------------------------------------------
  * Internal context
@@ -807,6 +862,9 @@ export function TugSheetContent({
   const [mounted, setMounted] = useState(false);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
   const clipRef = useRef<HTMLDivElement | null>(null);
+  // The shade's own scrim element ([P17]); the enter/exit effects fade it in
+  // step with the roll (out a beat sooner, so it reads as gone on landing).
+  const shadeScrimRef = useRef<HTMLDivElement | null>(null);
 
   // ---- Clamp the panel to the canvas ([D15]) ----
   //
@@ -1096,14 +1154,28 @@ export function TugSheetContent({
     if (!contentEl) return;
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
+    const isShade = presentation === "shade";
     const motion =
-      presentation === "shade" && shadeAnchor === "bottom"
+      isShade && shadeAnchor === "bottom"
         ? SHADE_BOTTOM_MOTION
         : SHEET_PRESENTATION_MOTION[presentation];
-    g.animate(contentEl, motion.enter, {
+    // The shade fades from transparent to its resting alpha as it rolls; other
+    // presentations use their keyframes as-is.
+    const enterFrames = isShade
+      ? withShadeOpacity(motion.enter, 0, readShadeAlpha(contentEl))
+      : motion.enter;
+    g.animate(contentEl, enterFrames, {
       key: "sheet-content",
       easing: "ease-out",
     });
+    // The shade's own scrim dims in step with the roll (the pane scrim, used by
+    // the other presentations, fades via its own CSS transition).
+    if (isShade && shadeScrimRef.current) {
+      g.animate(shadeScrimRef.current, [{ opacity: 0 }, { opacity: 1 }], {
+        key: "shade-scrim",
+        easing: "ease-out",
+      });
+    }
     // Fire `sheetDidShow` after the enter animation completes — the
     // sheet is fully presented and any subscriber that wants to
     // capture pre-modal state ("what was focused before this sheet
@@ -1130,14 +1202,31 @@ export function TugSheetContent({
     }
 
     const g = group({ duration: "--tug-motion-duration-moderate" });
+    const isShade = presentation === "shade";
     const motion =
-      presentation === "shade" && shadeAnchor === "bottom"
+      isShade && shadeAnchor === "bottom"
         ? SHADE_BOTTOM_MOTION
         : SHEET_PRESENTATION_MOTION[presentation];
-    g.animate(contentEl, motion.exit, {
+    // The shade fades from its resting alpha to transparent as it rolls out, so
+    // it dismisses as a fade rather than popping when the DOM unmounts.
+    const exitFrames = isShade
+      ? withShadeOpacity(motion.exit, readShadeAlpha(contentEl), 0)
+      : motion.exit;
+    g.animate(contentEl, exitFrames, {
       key: "sheet-content",
       easing: "ease-in",
     });
+    // The scrim fades a beat before the roll finishes (`SHADE_SCRIM_EXIT_MS` <
+    // moderate) and eases out fast — so the dimming reads as already gone the
+    // instant the panel lands, not cut off at the end. The group still waits on
+    // the (longer) roll before unmounting.
+    if (isShade && shadeScrimRef.current) {
+      g.animate(shadeScrimRef.current, [{ opacity: 1 }, { opacity: 0 }], {
+        key: "shade-scrim",
+        duration: SHADE_SCRIM_EXIT_MS,
+        easing: "ease-out",
+      });
+    }
     g.finished.then(() => {
       setMounted(false);
     }).catch(() => {
@@ -1341,7 +1430,11 @@ export function TugSheetContent({
   if (presentation === "shade") {
     return (
       <TugSheetStackingContext.Provider value={true}>
-        <div className="tug-sheet-shade-scrim" data-slot="tug-sheet-shade-scrim" />
+        <div
+          ref={shadeScrimRef}
+          className="tug-sheet-shade-scrim"
+          data-slot="tug-sheet-shade-scrim"
+        />
         <FocusScopeRadix.FocusScope
           trapped={false}
           loop
