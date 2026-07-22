@@ -2220,6 +2220,13 @@ export function SessionCardBody({
     commitModeController.subscribe,
     () => commitModeController.getSnapshot().fileCount,
   );
+  // Claimable dirt (unattributed + orphaned) this session could pull in. With
+  // zero attributed files, the Changes chip points here — "claim N" — instead
+  // of a dead-end "0 files" ([P03]).
+  const commitClaimableCount = useSyncExternalStore(
+    commitModeController.subscribe,
+    () => commitModeController.getSnapshot().claimableCount,
+  );
   const activeView: "transcript" | "changes" | "history" =
     shadeView === "none" ? "transcript" : shadeView;
   // The Changes and History shades are TugSheet `shade` presentations ([P17]);
@@ -4013,8 +4020,18 @@ export function SessionCardBody({
                       data-slot="changes-chip"
                       focusGroup={SESSION_CYCLE_GROUP}
                       focusOrder={SESSION_CYCLE_ORDER_CHANGES}
-                      aria-label="Show or hide the changes sheet"
-                      title="Show or hide the changes sheet"
+                      aria-label={
+                        commitFileCount === 0 && commitClaimableCount > 0
+                          ? `Claim ${commitClaimableCount} unclaimed ${
+                              commitClaimableCount === 1 ? "file" : "files"
+                            } to commit — open the changes sheet`
+                          : "Show or hide the changes sheet"
+                      }
+                      title={
+                        commitFileCount === 0 && commitClaimableCount > 0
+                          ? "Nothing attributed to this session yet — open Changes to claim these files into the commit"
+                          : "Show or hide the changes sheet"
+                      }
                       onClick={() => {
                         if (shadeViewController.getSnapshot() === "changes") {
                           shadeViewController.hide();
@@ -4023,9 +4040,11 @@ export function SessionCardBody({
                         }
                       }}
                     >
-                      {commitFileCount === 1
-                        ? "1 file"
-                        : `${commitFileCount} files`}
+                      {commitFileCount === 0 && commitClaimableCount > 0
+                        ? `claim ${commitClaimableCount}`
+                        : commitFileCount === 1
+                          ? "1 file"
+                          : `${commitFileCount} files`}
                     </TugPushButton>
                   </>
                 ) : (

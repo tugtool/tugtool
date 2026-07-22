@@ -66,7 +66,12 @@ describe("evaluateCommitLandGate", () => {
 // (the controller's derivation tolerates null).
 // ---------------------------------------------------------------------------
 
-function fakeChangesController(fileCount: number): ChangesRouteController {
+function fakeChangesController(
+  fileCount: number,
+  claimable?: { unattributed?: number; orphaned?: number },
+): ChangesRouteController {
+  const mk = (n: number, tag: string) =>
+    Array.from({ length: n }, (_, i) => ({ path: `${tag}${i}` }));
   return {
     entryKey: "session:s1",
     projectDir: "/p",
@@ -75,7 +80,8 @@ function fakeChangesController(fileCount: number): ChangesRouteController {
     getSnapshot: () => ({
       entry: null,
       dashes: [],
-      unattributed: [],
+      unattributed: mk(claimable?.unattributed ?? 0, "u"),
+      orphaned: mk(claimable?.orphaned ?? 0, "o"),
       project: { project_dir: "/p" },
       committedPaths: new Set(Array.from({ length: fileCount }, (_, i) => `f${i}`)),
     }),
@@ -135,6 +141,18 @@ describe("CommitModeController", () => {
     });
     expect(empty.getSnapshot().canLandIgnoringMessage).toBe(false);
     expect(empty.getSnapshot().fileCount).toBe(0);
+    expect(empty.getSnapshot().claimableCount).toBe(0);
     empty.dispose();
+  });
+
+  it("sums unattributed + orphaned into claimableCount — the chip's pointer", () => {
+    const controller = new CommitModeController({
+      changesController: fakeChangesController(0, { unattributed: 2, orphaned: 3 }),
+      codeSessionStore: fakeCodeSessionStore(false),
+    });
+    // Nothing attributed, but five claimable files — commit mode points at them.
+    expect(controller.getSnapshot().fileCount).toBe(0);
+    expect(controller.getSnapshot().claimableCount).toBe(5);
+    controller.dispose();
   });
 });

@@ -63,6 +63,14 @@ export interface ChangesRouteSnapshot {
   orphaned: OrphanedFile[];
   /** The project header (real feed project, or a placeholder before first emit). */
   project: ProjectChangeset;
+  /**
+   * True once the aggregate has actually emitted this workspace — i.e. `project`
+   * is a real composed frame, not the pre-emit `placeholderProject` fallback.
+   * A clean-and-composed project shows the "No changes" all-clear; a
+   * not-yet-composed one says "waiting for project scan" instead, so an empty
+   * placeholder never masquerades as a verified all-clear ([P02]).
+   */
+  composed: boolean;
   /** Repo-relative paths this session's commit lands — its full attributed set. */
   committedPaths: ReadonlySet<string>;
 }
@@ -113,9 +121,11 @@ export function deriveChangesRouteSnapshot(
   data: WorkspacesChangesetSnapshot,
   binding: ChangesRouteBinding,
 ): ChangesRouteSnapshot {
-  const project =
-    data.projects.find((p) => p.workspace_key === binding.workspaceKey) ??
-    placeholderProject(binding);
+  const composedProject = data.projects.find(
+    (p) => p.workspace_key === binding.workspaceKey,
+  );
+  const composed = composedProject !== undefined;
+  const project = composedProject ?? placeholderProject(binding);
 
   let entry: SessionChangesetEntry | null = null;
   const dashes: DashChangesetEntry[] = [];
@@ -137,6 +147,7 @@ export function deriveChangesRouteSnapshot(
     unattributed: project.unattributed,
     orphaned: project.orphaned ?? [],
     project,
+    composed,
     committedPaths,
   };
 }

@@ -22,7 +22,7 @@
 import "./session-changes-view.css";
 
 import React, { useCallback, useState, useSyncExternalStore } from "react";
-import { CircleCheck, GitCommitHorizontal } from "lucide-react";
+import { CircleCheck, GitCommitHorizontal, LoaderCircle } from "lucide-react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
@@ -207,6 +207,12 @@ export function SessionChangesView({
   const hasSessionFiles = sessionFiles.length > 0;
   const isEmpty =
     !hasSessionFiles && unattributedItem === null && orphanedItem === null;
+  // An empty view is only a verified all-clear once the aggregate has actually
+  // composed this workspace ([P02]). Before the first emit `project` is the
+  // pre-scan placeholder, so an empty-and-uncomposed view says "scanning"
+  // rather than a false "No changes" green.
+  const isCleanAllClear = isEmpty && snap.composed;
+  const isAwaitingScan = isEmpty && !snap.composed;
 
   // The head entries (session + unattributed) the banner controls act on.
   // Every diffable file across them yields one expand key; the whole-view Diff
@@ -262,10 +268,20 @@ export function SessionChangesView({
 
   return shell(
     <div className="session-changes-view-body">
-      {isEmpty ? (
+      {isCleanAllClear ? (
         <div className="session-changes-clean" role="status">
           <CircleCheck size={14} />
           No changes
+        </div>
+      ) : null}
+      {isAwaitingScan ? (
+        <div
+          className="session-changes-scanning"
+          role="status"
+          data-testid="session-changes-scanning"
+        >
+          <LoaderCircle size={14} className="session-changes-scanning-spin" />
+          Waiting for project scan…
         </div>
       ) : null}
       {headEntries.length > 0 ? (
@@ -276,8 +292,10 @@ export function SessionChangesView({
           onToggleFile={onToggleFile}
           unattributedLabel="unattributed — no session claims these"
           onClaimUnattributed={(path) => changesController.claim([path])}
+          onClaimAllUnattributed={(paths) => changesController.claim(paths)}
           orphanedLabel="orphaned — claim to bring into this session"
           onClaimOrphaned={(path) => changesController.claim([path])}
+          onClaimAllOrphaned={(paths) => changesController.claim(paths)}
         />
       ) : null}
     </div>,

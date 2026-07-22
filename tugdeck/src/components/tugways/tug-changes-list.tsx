@@ -611,11 +611,17 @@ export interface TugChangesListProps {
   /** When set, unattributed rows show a Claim affordance that promotes the
    *  path into this session's changeset ([D1xx]). */
   onClaimUnattributed?: (path: string) => void;
+  /** When set (and the section has 2+ files), a "Claim all" button on the
+   *  unattributed header claims every path in one batch. */
+  onClaimAllUnattributed?: (paths: string[]) => void;
   /** Optional label rendered above the orphaned entry ([D120]). */
   orphanedLabel?: string;
   /** When set, orphaned rows show a Claim affordance that reclaims the path
    *  into this session, severing the dead originator ([D120]). */
   onClaimOrphaned?: (path: string) => void;
+  /** When set (and the section has 2+ files), a "Claim all" button on the
+   *  orphaned header reclaims every path in one batch ([D120]). */
+  onClaimAllOrphaned?: (paths: string[]) => void;
   className?: string;
 }
 
@@ -626,8 +632,10 @@ export function TugChangesList({
   onToggleFile,
   unattributedLabel,
   onClaimUnattributed,
+  onClaimAllUnattributed,
   orphanedLabel,
   onClaimOrphaned,
+  onClaimAllOrphaned,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -648,6 +656,15 @@ export function TugChangesList({
             : entry.kind === "orphaned"
               ? onClaimOrphaned
               : undefined;
+        const onClaimAll =
+          entry.kind === "unattributed"
+            ? onClaimAllUnattributed
+            : entry.kind === "orphaned"
+              ? onClaimAllOrphaned
+              : undefined;
+        // The bulk affordance earns its place only when a claim would batch —
+        // 2+ paths. A single file already has its per-row Claim.
+        const claimAllPaths = onClaimAll !== undefined ? diffablePathsOf(entry) : [];
         return (
           <React.Fragment key={entry.id}>
             {label !== undefined ? (
@@ -655,7 +672,24 @@ export function TugChangesList({
                 className="tug-changes-list-section-label"
                 data-slot={`tug-changes-list-${entry.kind}-label`}
               >
-                {label}
+                <span className="tug-changes-list-section-label-text">{label}</span>
+                {onClaimAll !== undefined && claimAllPaths.length >= 2 ? (
+                  <TugPushButton
+                    className="tug-changes-list-claim-all"
+                    size="2xs"
+                    emphasis="outlined"
+                    role="accent"
+                    title={`Claim all ${claimAllPaths.length} files for this session`}
+                    aria-label={`Claim all ${claimAllPaths.length} ${entry.kind} files for this session`}
+                    data-testid={`tug-changes-list-claim-all-${entry.kind}`}
+                    onClick={(event) => {
+                      event?.stopPropagation();
+                      onClaimAll(claimAllPaths);
+                    }}
+                  >
+                    Claim all
+                  </TugPushButton>
+                ) : null}
               </div>
             ) : null}
             <EntryFiles

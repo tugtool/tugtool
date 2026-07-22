@@ -80,6 +80,12 @@ export interface CommitModeSnapshot {
   canLandIgnoringMessage: boolean;
   /** Number of files the commit would land (0 ⇒ the "No changes" state). */
   fileCount: number;
+  /**
+   * Dirty files this session could claim into the commit — the unattributed +
+   * orphaned buckets. When `fileCount` is 0 but this is positive, commit mode
+   * points at the claimable work ("claim N") instead of a dead-end "0 files".
+   */
+  claimableCount: number;
   /** The auto-message draft overlay phase (drives the pencil pose + pulse). */
   draftPhase: DraftOverlayPhase;
   /** Live draft text — streaming while drafting, the settled message otherwise. */
@@ -144,6 +150,7 @@ export class CommitModeController {
     const { changesController, codeSessionStore } = this.deps;
     const changes = changesController.getSnapshot();
     const fileCount = changes.committedPaths.size;
+    const claimableCount = changes.unattributed.length + changes.orphaned.length;
     const turnInProgress = codeSessionStore.getSnapshot().canInterrupt === true;
 
     const verbStore = getChangesetVerbStore();
@@ -186,6 +193,7 @@ export class CommitModeController {
       seedMessage: this.seedMessage,
       canLandIgnoringMessage: gate.ok,
       fileCount,
+      claimableCount,
       draftPhase,
       draftText,
       persistedMessage,
@@ -317,6 +325,7 @@ function snapshotsEqual(a: CommitModeSnapshot, b: CommitModeSnapshot): boolean {
     a.seedMessage === b.seedMessage &&
     a.canLandIgnoringMessage === b.canLandIgnoringMessage &&
     a.fileCount === b.fileCount &&
+    a.claimableCount === b.claimableCount &&
     a.draftPhase === b.draftPhase &&
     a.draftText === b.draftText &&
     a.persistedMessage === b.persistedMessage &&

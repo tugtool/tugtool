@@ -41,6 +41,30 @@
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
 
+/* Not-yet-composed state: the aggregate hasn't emitted this workspace, so an
+   empty view is unverified — a muted "scanning" line, never the success green.
+   Same centered geometry as the all-clear so the shade doesn't jump when the
+   first frame lands. */
+.session-changes-scanning {
+  flex: 1 1 auto;
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--tug-space-md);
+  font-size: 0.875rem;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+.session-changes-scanning-spin {
+  animation: session-changes-scanning-spin 1s linear infinite;
+}
+@keyframes session-changes-scanning-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---- Non-repo project: "Initialize git" affordance ---- */
 
 .session-changes-non-repo {

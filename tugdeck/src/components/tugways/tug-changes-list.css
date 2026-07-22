@@ -122,6 +122,10 @@
 /* ---- Unattributed section label ---- */
 
 .tug-changes-list-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-sm);
   font-size: 0.625rem;
   font-family: var(--tug-font-family-sans);
   font-weight: 600;
@@ -131,6 +135,14 @@
   padding: var(--tug-space-xs) var(--tug-space-sm) 0;
   border-top: 1px solid var(--tug7-element-tone-border-normal-neutral-rest);
   margin-top: var(--tug-space-xs);
+}
+
+/* The "Claim all" bulk affordance sits at the section header's trailing edge;
+   its own casing overrides the header's uppercase transform. */
+.tug-changes-list-claim-all {
+  flex: 0 0 auto;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 /* Bracket-hint provenance on unattributed rows ([P13]) — the one-glance

@@ -34,6 +34,16 @@ describe("deriveChangesRouteSnapshot", () => {
     expect(snap.project.branch).toBe("main");
   });
 
+  it("marks a matched project composed; the placeholder is not", () => {
+    // A workspace the aggregate emitted is a verified, composed frame.
+    expect(deriveChangesRouteSnapshot(DATA, BINDING).composed).toBe(true);
+    // Before the first emit the fallback placeholder is NOT composed, so an
+    // empty view must not read as a verified all-clear ([P02]).
+    expect(deriveChangesRouteSnapshot({ projects: [] }, BINDING).composed).toBe(
+      false,
+    );
+  });
+
   it("matches the session entry by owner_id and collects dashes separately", () => {
     const snap = deriveChangesRouteSnapshot(DATA, BINDING);
     expect(snap.entry?.kind).toBe("session");
