@@ -35,13 +35,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import {
-  FileMinus,
-  FilePenLine,
-  FilePlus,
-  FileSymlink,
-  SquareArrowOutUpRight,
-} from "lucide-react";
+import { SquareArrowOutUpRight } from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -78,39 +72,40 @@ export type TugChangesListEntry =
   | { kind: "unattributed"; id: string; project: ProjectChangeset; files: UnattributedFile[] };
 
 // ---------------------------------------------------------------------------
-// Status glyph + tone
+// Status mark — a colored single letter (more legible than a glyph at this
+// size): green N (new), yellow M (modified or moved), red D (deleted).
 // ---------------------------------------------------------------------------
 
-function statusToneClass(gitStatus: string): string {
-  if (gitStatus.startsWith("??")) return "tug-changes-list-status-untracked";
-  const letter = gitStatus.replace(/[.\s]/g, "").charAt(0);
-  switch (letter) {
+/** The status letter + tone for a file. New folds untracked + added; modified
+ *  folds renamed/moved and every other change; deleted stands alone. */
+function statusMark(gitStatus: string): { letter: "N" | "M" | "D"; toneClass: string } {
+  if (gitStatus.startsWith("??")) {
+    return { letter: "N", toneClass: "tug-changes-list-status-new" };
+  }
+  const code = gitStatus.replace(/[.\s]/g, "").charAt(0);
+  switch (code) {
     case "A":
-      return "tug-changes-list-status-added";
+      return { letter: "N", toneClass: "tug-changes-list-status-new" };
     case "D":
-      return "tug-changes-list-status-deleted";
-    case "R":
-      return "tug-changes-list-status-renamed";
+      return { letter: "D", toneClass: "tug-changes-list-status-deleted" };
     default:
-      return "tug-changes-list-status-modified";
+      // Modified, renamed/moved, copied, type-changed — all read as "changed".
+      return { letter: "M", toneClass: "tug-changes-list-status-modified" };
   }
 }
 
-/** The lucide status icon for a file, keyed by op — semantic, not the raw
- *  porcelain code. Colored by {@link statusToneClass} on the wrapping span. */
-function StatusIcon({ gitStatus }: { gitStatus: string }): React.ReactElement {
-  if (gitStatus.startsWith("??")) return <FilePlus size={13} aria-hidden />;
-  const letter = gitStatus.replace(/[.\s]/g, "").charAt(0);
-  switch (letter) {
-    case "A":
-      return <FilePlus size={13} aria-hidden />;
-    case "D":
-      return <FileMinus size={13} aria-hidden />;
-    case "R":
-      return <FileSymlink size={13} aria-hidden />;
-    default:
-      return <FilePenLine size={13} aria-hidden />;
-  }
+/** The status letter, colored by tone. Decorative — the git status also rides
+ *  the row's provenance text and title. */
+function StatusMark({ gitStatus }: { gitStatus: string }): React.ReactElement {
+  const { letter, toneClass } = statusMark(gitStatus);
+  return (
+    <span
+      className={`tug-changes-list-file-status ${toneClass}`}
+      aria-hidden="true"
+    >
+      {letter}
+    </span>
+  );
 }
 
 function isDeleted(op: string, gitStatus: string): boolean {
@@ -413,6 +408,7 @@ export function ChangesFileRow({
   onToggle,
   popOut,
   body,
+  onClaim,
 }: {
   file: FileBlockData;
   projectRoot: string;
@@ -424,6 +420,9 @@ export function ChangesFileRow({
   popOut: DiffDescriptor | null;
   /** The expanded body. Rendered only while `expanded`. */
   body: React.ReactNode;
+  /** When set, a Claim affordance leads the trailing cluster — the row's
+   *  file is unattributed-but-likely and this session can claim it ([D1xx]). */
+  onClaim?: () => void;
 }): React.ReactElement {
   return (
     <div
@@ -440,18 +439,29 @@ export function ChangesFileRow({
           variant="flush"
           density="compact"
           mono
-          leading={
-            <span
-              className={`tug-changes-list-file-status ${statusToneClass(file.git_status)}`}
-            >
-              <StatusIcon gitStatus={file.git_status} />
-            </span>
-          }
+          leading={<StatusMark gitStatus={file.git_status} />}
           trailing={
             <span
               className="tug-changes-list-row-trailing"
               onClick={(event) => event.stopPropagation()}
             >
+              {onClaim !== undefined ? (
+                <TugPushButton
+                  className="tug-changes-list-claim"
+                  size="2xs"
+                  emphasis="outlined"
+                  role="accent"
+                  title="Claim this file for this session"
+                  aria-label={`Claim ${file.path} for this session`}
+                  data-testid="tug-changes-list-claim"
+                  onClick={(event) => {
+                    event?.stopPropagation();
+                    onClaim();
+                  }}
+                >
+                  Claim
+                </TugPushButton>
+              ) : null}
               {counts !== null ? (
                 <DiffSummaryBadges added={counts.added} removed={counts.removed} />
               ) : null}
@@ -515,12 +525,15 @@ function EntryFiles({
   expandedKeys,
   onToggleFile,
   ownSessionId,
+  onClaim,
 }: {
   entry: TugChangesListEntry;
   expandedKeys: ReadonlySet<string>;
   onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
   /** The card session's id — distinguishes own vs foreign bracket hints ([P13]). */
   ownSessionId?: string;
+  /** Per-path claim, wired only for the unattributed entry. */
+  onClaim?: (path: string) => void;
 }) {
   const projectRoot = entry.project.project_dir;
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
@@ -556,6 +569,7 @@ function EntryFiles({
             onToggle={(next) => onToggleFile(entry.id, file.path, !next)}
             popOut={filePopOutDescriptor(entry.project, file.path)}
             body={expanded ? fileBlockBody(diffSnapshot, file.path) : null}
+            onClaim={onClaim !== undefined ? () => onClaim(file.path) : undefined}
           />
         );
       })}
@@ -574,6 +588,9 @@ export interface TugChangesListProps {
   onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
   /** Optional label rendered above the unattributed entry. */
   unattributedLabel?: string;
+  /** When set, unattributed rows show a Claim affordance that promotes the
+   *  path into this session's changeset ([D1xx]). */
+  onClaimUnattributed?: (path: string) => void;
   className?: string;
 }
 
@@ -583,6 +600,7 @@ export function TugChangesList({
   expandedKeys,
   onToggleFile,
   unattributedLabel,
+  onClaimUnattributed,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -605,6 +623,7 @@ export function TugChangesList({
             expandedKeys={expandedKeys}
             onToggleFile={onToggleFile}
             ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
+            onClaim={entry.kind === "unattributed" ? onClaimUnattributed : undefined}
           />
         </React.Fragment>
       ))}

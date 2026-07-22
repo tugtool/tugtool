@@ -84,7 +84,7 @@ fn parse_params(params: &[String]) -> Result<Vec<(String, Value)>, String> {
 /// 4. cwd-derived dev instance (registry's path-prefix match)
 /// 5. sole-running instance (registry has exactly one entry)
 /// 6. error with the list of running instances
-fn resolve_port(
+pub(crate) fn resolve_port(
     explicit_port: Option<u16>,
     explicit_instance: Option<String>,
 ) -> Result<u16, String> {

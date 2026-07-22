@@ -95,6 +95,44 @@ async fn tell_handler(
         }
     };
 
+    // Bridge: `changeset_*` CONTROL actions (e.g. `changeset_claim`) live in
+    // the supervisor's `handle_control` — the single source of truth shared
+    // with the WebSocket ingress — so the CLI (`tugutil claim`) and the deck
+    // hit the same handler. Gated to the `changeset_` prefix: those verbs act
+    // on a project + ledger, never on per-client state, so a tell (which has
+    // no client connection) can drive them with a synthetic client id;
+    // client-scoped verbs (`spawn_session`, …) stay off the HTTP surface.
+    // Everything else falls through to the host-action `dispatch_action` below.
+    if action.starts_with("changeset_")
+        && let Some(sup) = router.supervisor.as_ref()
+    {
+        use crate::feeds::agent_supervisor::ControlOutcome;
+        match sup.handle_control(action, &body, TELL_SYNTHETIC_CLIENT_ID).await {
+            ControlOutcome::Handled => {
+                return (
+                    StatusCode::OK,
+                    axum::Json(TellResponse {
+                        status: "ok".to_string(),
+                        message: None,
+                    }),
+                )
+                    .into_response();
+            }
+            ControlOutcome::Error(err) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(TellResponse {
+                        status: "error".to_string(),
+                        message: Some(format!("{err:?}")),
+                    }),
+                )
+                    .into_response();
+            }
+            // Not a supervisor-owned action after all — fall through.
+            ControlOutcome::PassThrough => {}
+        }
+    }
+
     // Dispatch action
     crate::actions::dispatch_action(
         action,
@@ -115,6 +153,12 @@ async fn tell_handler(
     )
         .into_response()
 }
+
+/// Synthetic client id for HTTP-`tell`-originated CONTROL actions: a tell has
+/// no WebSocket connection, so `changeset_*` verbs (which never touch
+/// per-client state) run under this sentinel. Well above any real client id
+/// (those count up from 0), so it can never collide with a live client.
+const TELL_SYNTHETIC_CLIENT_ID: u64 = u64::MAX;
 
 /// Handle POST /api/eval requests for evaluating JavaScript in the browser.
 ///

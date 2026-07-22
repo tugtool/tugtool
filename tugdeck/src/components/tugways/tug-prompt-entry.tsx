@@ -3205,7 +3205,13 @@ export const TugPromptEntry = React.forwardRef<
               disabled={deactivated || commitDrafting}
               placeholder={
                 commitActive
-                  ? "Write a commit message, or use Auto-Message."
+                  ? // While Auto-Message drafts, the wave caret owns the field —
+                    // drop the placeholder the instant drafting starts so the
+                    // two never overlap. It returns on exit only if the field
+                    // is still empty (an empty doc re-shows it for free).
+                    commitDrafting
+                    ? ""
+                    : "Write a commit message, or use Auto-Message."
                   : placeholder ?? ""
               }
               completionProviders={commitActive ? undefined : completionProviders}

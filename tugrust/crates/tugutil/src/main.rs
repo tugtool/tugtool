@@ -60,6 +60,11 @@ fn main() -> ExitCode {
             tree,
             json,
         )),
+        Some(Commands::Claim {
+            paths,
+            session,
+            project,
+        }) => changes::finish(changes::run_claim(paths, session, project, json)),
         Some(Commands::Log { limit, range }) => {
             changes::finish(changes::run_log(limit, range, json))
         }

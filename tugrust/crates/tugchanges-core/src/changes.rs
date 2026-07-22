@@ -950,6 +950,30 @@ mod tests {
     }
 
     #[test]
+    fn a_claim_promotes_a_bracket_hint_into_the_session() {
+        // The intentional counterpart to the hand-save case above: a file this
+        // session only bracket-grabbed (a `perl`/`sed` edit) stays unattributed
+        // UNTIL the session claims it. A `claim` row is proof — it moves the
+        // file out of the "likely" bucket into the session's attributed set.
+        let repo = init_repo(&["sed.rs"]);
+        let root = repo.path();
+        let rootstr = root.to_string_lossy().into_owned();
+        let db = seed_sessions_origin(&[
+            ("me", "sed.rs", "bash", &rootstr),
+            ("me", "sed.rs", "claim", &rootstr),
+        ]);
+        let buckets = compute_changes(&open(&db), root, "me", false).unwrap();
+
+        assert!(buckets.unattributed.is_empty(), "the claim clears the hint");
+        assert!(buckets.foreign.is_empty());
+        assert_eq!(buckets.attributed.len(), 1);
+        let claimed = &buckets.attributed[0];
+        assert_eq!(claimed.path, "sed.rs");
+        assert_eq!(claimed.origin, "claim", "the latest proof is the claim");
+        assert!(!claimed.shared, "a self-claim never marks contention");
+    }
+
+    #[test]
     fn a_replay_row_attributes_like_an_exact_row() {
         // Replay is exact-tool backfill — proof, not correlation. A session
         // resumed from JSONL keeps ownership of its files.

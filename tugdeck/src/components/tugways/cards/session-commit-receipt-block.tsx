@@ -103,7 +103,10 @@ export function parseCommitReceipt(output: string): ParsedCommitReceipt | null {
   }
   return {
     sha: head[1],
-    message: lines.slice(messageStart).join("\n"),
+    // Drop a trailing newline/blank line the record may carry — under
+    // `white-space: pre-wrap` it would paint as an empty row beneath the
+    // message, reading as an oversized header ("no extra blank row").
+    message: lines.slice(messageStart).join("\n").replace(/\s+$/, ""),
     fileCount: Number.parseInt(head[2], 10),
     added: Number.parseInt(head[3], 10),
     removed: Number.parseInt(head[4], 10),

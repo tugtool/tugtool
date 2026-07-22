@@ -14,8 +14,14 @@
 }
 
 /* The full commit message, clamped to three lines — the durable record shows
-   subject + the first body lines instead of a one-line ellipsis. Line breaks in
-   the message are preserved. */
+   subject + the first body lines instead of a one-line ellipsis. Line breaks
+   in the message are preserved.
+
+   Rides the header's one-line box (`--tugx-toolheader-line`) and clamps via a
+   plain-block `max-height`, NOT `-webkit-box` — a `-webkit-box` floats its
+   first line off that shared line box, so the message read visibly higher than
+   the "Commit" name; a normal block wraps exactly like the header's own detail
+   column, whose first line is baseline-matched to the name by construction. */
 .commit-receipt-summary {
   flex: 1 1 auto;
   min-width: 0;
@@ -23,10 +29,9 @@
   color: var(--tugx-block-text-color);
   white-space: pre-wrap;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
+  line-height: var(--tugx-toolheader-line);
+  max-height: calc(var(--tugx-toolheader-line) * 3);
 }
 
 .commit-receipt-chips {

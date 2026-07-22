@@ -100,6 +100,65 @@ pub fn run_changes(
     Ok(())
 }
 
+/// Claim files for a session: promote the listed repo-relative paths from
+/// "likely" hints into the session's changeset by asking the running tugcast
+/// to write a proof-grade `claim` file event per path (via `/api/tell` →
+/// `handle_control`). The intentional counterpart to editing — a file touched
+/// through `perl`/`sed` (bracket-only correlation) or by hand can be claimed
+/// without re-editing it. Requires a running instance (the ledger writer +
+/// aggregate bump live in tugcast).
+pub fn run_claim(
+    paths: Vec<String>,
+    session: Option<String>,
+    project: Option<PathBuf>,
+    json: bool,
+) -> Result<(), AppError> {
+    if paths.is_empty() {
+        return Err(AppError::Exit1("no paths to claim".to_string()));
+    }
+    let session_id = session
+        .or_else(|| std::env::var("TUG_SESSION_ID").ok())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            AppError::Exit1("no session — pass --session or set TUG_SESSION_ID".to_string())
+        })?;
+    let project_dir = match project {
+        Some(p) => p,
+        None => std::env::current_dir()
+            .map_err(|e| AppError::Exit1(format!("cannot resolve cwd: {e}")))?,
+    };
+    // Canonicalize so the project_dir matches a WorkspaceRegistry entry (the
+    // backend guards on it) regardless of symlinked checkout spellings.
+    let project_dir = std::fs::canonicalize(&project_dir)
+        .unwrap_or(project_dir)
+        .to_string_lossy()
+        .into_owned();
+
+    let port = crate::commands::tell::resolve_port(None, None)?;
+    let body = serde_json::json!({
+        "action": "changeset_claim",
+        "project_dir": project_dir,
+        "session_id": session_id,
+        "files": paths,
+    });
+    let url = format!("http://127.0.0.1:{port}/api/tell");
+    match ureq::post(&url).send_json(&body) {
+        Ok(resp) if resp.status().as_u16() == 200 => {
+            if json {
+                print_ok("claim", &serde_json::json!({ "claimed": paths.len() }));
+            } else {
+                println!("claimed {} file(s) for session {session_id}", paths.len());
+            }
+            Ok(())
+        }
+        Ok(resp) => Err(AppError::Exit1(format!(
+            "tugcast returned status {}",
+            resp.status().as_u16()
+        ))),
+        Err(e) => Err(AppError::Exit1(format!("claim request failed: {e}"))),
+    }
+}
+
 pub fn run_preflight(
     session: Option<String>,
     project: Option<PathBuf>,

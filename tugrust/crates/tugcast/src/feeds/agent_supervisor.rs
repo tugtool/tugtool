@@ -1462,6 +1462,49 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
     })
 }
 
+/// A `changeset_claim` CONTROL request: a session claims the listed files
+/// outright — the intentional promotion of files it touched but never
+/// proof-edited (a `perl`/`sed` edit, a hand save) from "likely" hints into
+/// its changeset. `session_id` is required (a claim is by a specific session);
+/// `files` are repo-relative, exactly as the changeset surfaces them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ChangesetClaimPayload {
+    project_dir: String,
+    session_id: String,
+    files: Vec<String>,
+}
+
+fn parse_changeset_claim_payload(payload: &[u8]) -> Result<ChangesetClaimPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let session_id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    let files = value
+        .get("files")
+        .and_then(|v| v.as_array())
+        .ok_or(ControlError::Malformed)?
+        .iter()
+        .map(|v| v.as_str().map(str::to_string).ok_or(ControlError::Malformed))
+        .collect::<Result<Vec<String>, ControlError>>()?;
+    Ok(ChangesetClaimPayload {
+        project_dir,
+        session_id,
+        files,
+    })
+}
+
 /// The commit message enriched with a `Tug-Session:` trailer when the deck
 /// supplied the session name + id (Spec S01/S02). Absent either field, the
 /// message is returned byte-for-byte. Idempotent via `append_trailers`.
@@ -2427,6 +2470,23 @@ impl AgentSupervisor {
                 }
                 Err(e) => return ControlOutcome::Error(e),
             },
+            "changeset_claim" => match parse_changeset_claim_payload(payload) {
+                Ok(parsed) => {
+                    self.do_changeset_claim(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            // Side-effect-free recompute nudge: fire the aggregate bump so an
+            // open project re-scans its working tree. Emission is diff-
+            // suppressed, so this is observable only when the tree actually
+            // drifted from the cached snapshot (an orphan created while no FS
+            // event landed) — the Changes shade fires it on open so looking is
+            // always fresh. No payload, no reply.
+            "changeset_refresh" => {
+                self.registry.changeset_all_bump().notify_one();
+                Ok(())
+            }
             "changeset_draft_request" => match parse_changeset_draft_request_payload(payload) {
                 Ok(parsed) => {
                     self.do_changeset_draft_request(&parsed);
@@ -3890,6 +3950,85 @@ impl AgentSupervisor {
         let _ = control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("changeset_commit_err serializes"),
+        ));
+    }
+
+    /// Handle a `changeset_claim` CONTROL request: a session claims the listed
+    /// files outright, promoting them from "likely" hints (a `perl`/`sed` edit
+    /// or a hand save that only left a bracket correlation) into its changeset.
+    /// Writes one proof-grade `claim` file event per path, then fires the
+    /// process-global aggregate bump so the rows move into the session's entry
+    /// on the next recompute. `changeset_claim_ok {claimed}` goes out on
+    /// success; `changeset_claim_err {detail}` on a failed guard.
+    ///
+    /// Guards mirror the other changeset verbs: `project_dir` must be a current
+    /// `WorkspaceRegistry` entry. Idempotent — re-claiming writes another proof
+    /// row, which composes identically.
+    async fn do_changeset_claim(&self, request: &ChangesetClaimPayload) {
+        let project_dir = request.project_dir.as_str();
+        let dir = std::path::Path::new(project_dir);
+
+        if self.registry.find_entry_by_path(dir).is_none() {
+            Self::send_changeset_claim_err(&self.control_tx, project_dir, "not an open project");
+            return;
+        }
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            Self::send_changeset_claim_err(&self.control_tx, project_dir, "no ledger");
+            return;
+        };
+
+        let canonical = crate::path_resolver::CanonicalPath::from_raw(dir);
+        let at = crate::session_ledger::now_millis();
+        // One synthetic tool_use_id groups the batch, mirroring how a Bash
+        // call's N rows share an id.
+        let tool_use_id = format!("claim:{at}");
+        let mut claimed = 0usize;
+        for path in &request.files {
+            let row = crate::session_ledger::FileEventRow {
+                tug_session_id: request.session_id.clone(),
+                tool_use_id: tool_use_id.clone(),
+                file_path: path.clone(),
+                tool_name: "Claim".to_string(),
+                op: "claimed".to_string(),
+                origin: "claim".to_string(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: canonical.as_str().to_string(),
+                at,
+            };
+            match ledger.record_file_event(&row) {
+                Ok(()) => claimed += 1,
+                Err(err) => {
+                    warn!(error = %err, project_dir, path, "changeset_claim record failed");
+                }
+            }
+        }
+
+        self.registry.changeset_all_bump().notify_one();
+        let body = serde_json::json!({
+            "action": "changeset_claim_ok",
+            "project_dir": project_dir,
+            "claimed": claimed,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_claim_ok serializes"),
+        ));
+    }
+
+    fn send_changeset_claim_err(
+        control_tx: &broadcast::Sender<Frame>,
+        project_dir: &str,
+        detail: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "changeset_claim_err",
+            "project_dir": project_dir,
+            "detail": detail,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("changeset_claim_err serializes"),
         ));
     }
 
@@ -6199,6 +6338,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_changeset_claim_payload_requires_session_and_files() {
+        let payload = br#"{"project_dir":"/p","session_id":"sess-1","files":["a.txt","b.rs"]}"#;
+        let parsed = parse_changeset_claim_payload(payload).expect("parse");
+        assert_eq!(parsed.project_dir, "/p");
+        assert_eq!(parsed.session_id, "sess-1");
+        assert_eq!(parsed.files, vec!["a.txt".to_string(), "b.rs".to_string()]);
+        // A claim without a session id is malformed — a claim is by a session.
+        let no_session = br#"{"project_dir":"/p","files":["a.txt"]}"#;
+        assert!(matches!(
+            parse_changeset_claim_payload(no_session),
+            Err(ControlError::Malformed)
+        ));
+        // Missing project_dir is the shared invalid-project error.
+        let no_project = br#"{"session_id":"sess-1","files":["a.txt"]}"#;
+        assert!(parse_changeset_claim_payload(no_project).is_err());
+    }
+
+    #[test]
     fn parse_spawn_payload_extracts_tag() {
         let payload = br#"{"card_id":"c1","tug_session_id":"s1","project_dir":"/p","session_mode":"new","tag":"azure-heron"}"#;
         let parsed = parse_control_payload_owned(payload).expect("parse");
@@ -6560,6 +6717,23 @@ mod tests {
         assert_eq!(unknown["detail"], "not an open project");
 
         cancel.cancel();
+    }
+
+    #[tokio::test]
+    async fn changeset_refresh_fires_the_aggregate_bump() {
+        let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
+        let bump = sup.registry.changeset_all_bump();
+
+        let payload = serde_json::to_vec(&serde_json::json!({ "action": "changeset_refresh" }))
+            .unwrap();
+        sup.handle_control("changeset_refresh", &payload, 1).await;
+
+        // `notify_one` stores a permit even with no waiter registered yet, so a
+        // `notified()` awaited after the handler completes resolves at once —
+        // the recompute signal fired.
+        tokio::time::timeout(std::time::Duration::from_secs(2), bump.notified())
+            .await
+            .expect("changeset_refresh fires the aggregate recompute bump");
     }
 
     #[tokio::test]

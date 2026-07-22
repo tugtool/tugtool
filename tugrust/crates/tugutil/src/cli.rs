@@ -101,6 +101,20 @@ pub enum Commands {
         #[arg(long)]
         tree: bool,
     },
+    /// Claim files for a session — promote "likely" hints into the changeset
+    /// without re-editing them (proof-grade attribution). Paths are
+    /// repo-relative, as the changeset lists them. Needs a running instance.
+    Claim {
+        /// Repo-relative paths to claim.
+        #[arg(required = true, num_args = 1..)]
+        paths: Vec<String>,
+        /// Session id (default: $TUG_SESSION_ID).
+        #[arg(long)]
+        session: Option<String>,
+        /// Project dir (default: cwd).
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
     /// Recent commits, or a range's commits.
     Log {
         /// Number of commits (default 10).

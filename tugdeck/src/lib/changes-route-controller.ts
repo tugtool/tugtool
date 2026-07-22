@@ -228,6 +228,32 @@ export class ChangesRouteController {
     );
   }
 
+  /**
+   * Claim unattributed files for this session: promote the given repo-relative
+   * paths from "likely" hints into this session's changeset. Keyed by the
+   * aggregate's canonical project spelling (`project.project_dir`) so the
+   * claim rows land under the same project the unattributed rows compose
+   * against. No-op when the store is absent or `paths` is empty.
+   */
+  claim(paths: string[]): void {
+    if (paths.length === 0) return;
+    getChangesetVerbStore()?.claim(
+      this._snapshot.project.project_dir,
+      this.tugSessionId,
+      paths,
+    );
+  }
+
+  /**
+   * Nudge the server to re-scan the working tree and recompose the aggregate.
+   * Fired when the Changes shade opens so a just-created orphan surfaces the
+   * moment you look, rather than waiting on the next FS-watch bump. No-op when
+   * no verb store is attached; the recompose is diff-suppressed server-side.
+   */
+  refresh(): void {
+    getChangesetVerbStore()?.refresh();
+  }
+
   /** Request an on-demand AI draft for this entry ([P06]). `force` is the
    *  confirmed Regenerate — the only path that overwrites an edited draft
    *  ([P03]). */

@@ -2231,11 +2231,16 @@ export function SessionCardBody({
   const changesSheetRef = useRef<TugSheetHandle | null>(null);
   const historySheetRef = useRef<TugSheetHandle | null>(null);
   useEffect(() => {
-    if (shadeView === "changes") changesSheetRef.current?.open();
-    else changesSheetRef.current?.close();
+    if (shadeView === "changes") {
+      changesSheetRef.current?.open();
+      // Force a fresh working-tree scan on open so a just-created orphan
+      // surfaces the moment you look, rather than waiting on the next
+      // FS-watch bump (the recompose is diff-suppressed server-side).
+      changesController.refresh();
+    } else changesSheetRef.current?.close();
     if (shadeView === "history") historySheetRef.current?.open();
     else historySheetRef.current?.close();
-  }, [shadeView]);
+  }, [shadeView, changesController]);
   // Mode ↔ sheet coupling ([P03]): entering commit mode ensures the changes
   // sheet is up; exiting it (composer Escape / Cancel / the Z4A commit chip /
   // land, all via `commitModeController.exit()`) drops the sheet, unless the

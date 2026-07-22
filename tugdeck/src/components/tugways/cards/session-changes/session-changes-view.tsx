@@ -6,7 +6,7 @@
  * affordance. It answers "what's changed?" — glanceable, dismiss-and-forget.
  *
  * The sheet is passive ([P17]): the composer below keeps focus (⇧⌘C is the
- * toggle; landing a commit lives in the composer's `!changes` route + Z5), so
+ * toggle; landing a commit lives in the composer's commit mode + Z5), so
  * the view carries no Done button, no header X, and seeds no key view. The
  * file rows are `TugChangesList` ([P01]); the header keeps only its fold-all
  * cue + whole-diff pop-out, and the git-init affordance sits in the body.
@@ -264,6 +264,7 @@ export function SessionChangesView({
           expandedKeys={expandedKeys}
           onToggleFile={onToggleFile}
           unattributedLabel="unattributed — no session claims these"
+          onClaimUnattributed={(path) => changesController.claim([path])}
         />
       ) : null}
     </div>,

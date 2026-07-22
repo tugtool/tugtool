@@ -45,17 +45,17 @@ export interface HelpShortcut {
 /**
  * The shortcuts worth surfacing, each verified against `keybinding-map.ts` — a
  * tight, true set, not the full binding table. (`/` and `!` are the two typed
- * command namespaces; `⌘/` opens the Z4A routing picker; the ⌃⌘ chords seed a
- * routing chip; `⇧⌘C` / `⇧⌘H` toggle the Shades; `⇧⇥` cycles the permission
- * mode; `⌃\`` cycles the active card; `Esc` is the shared CANCEL_DIALOG
- * dismiss / interrupt.)
+ * command namespaces; `⌘/` opens the Z4A routing picker; `⌃⌘S`/`B`/`G`/`H` seed
+ * a routing chip; `⇧⌘C` / `⇧⌘H` toggle the Shades — `⇧⌘C` on an empty composer
+ * enters commit mode; `⇧⇥` cycles the permission mode; `⌃\`` cycles the active
+ * card; `Esc` is the shared CANCEL_DIALOG dismiss / interrupt.)
  */
 export const HELP_SHORTCUTS: readonly HelpShortcut[] = [
   { keys: "/", label: "Slash commands" },
-  { keys: "!", label: "Route input — !shell, !btw, !find, !changes, !history" },
+  { keys: "!", label: "Route input — !shell, !btw, !find, !history" },
   { keys: "⌘/", label: "Open the routing picker" },
-  { keys: "⌃⌘S", label: "Seed a !shell routing (⌃⌘B/G/C/H for the others)" },
-  { keys: "⇧⌘C", label: "Show or hide the Changes Shade" },
+  { keys: "⌃⌘S", label: "Seed a !shell routing (⌃⌘B/G/H for the others)" },
+  { keys: "⇧⌘C", label: "Show or hide Changes; empty composer enters commit mode" },
   { keys: "⇧⌘H", label: "Show or hide the History Shade" },
   { keys: "⇧⇥", label: "Cycle the permission mode" },
   { keys: "⌃`", label: "Cycle the active card" },

@@ -150,11 +150,13 @@ pub(crate) fn foreign_proof_sessions_for_path(
 }
 
 /// Whether a row's `origin` is **proof** of authorship — the tool input named
-/// the file (`exact` live, `replay` backfill of the same). `bash`/`turn`
-/// bracket rows are correlation (a whole-tree fingerprint delta), never proof.
-/// Mirrors `tugcast::feeds::attribution::origin_is_proof` (the writer side).
+/// the file (`exact` live, `replay` backfill of the same), or a session
+/// **`claim`**ed it outright (the explicit promotion of a hinted-but-unproven
+/// file). `bash`/`turn` bracket rows are correlation (a whole-tree fingerprint
+/// delta), never proof. Mirrors `tugcast::feeds::attribution::origin_is_proof`
+/// (the writer side).
 pub(crate) fn origin_is_proof(origin: &str) -> bool {
-    matches!(origin, "exact" | "replay")
+    matches!(origin, "exact" | "replay" | "claim")
 }
 
 /// Whether a `sessions` row exists for `session` — the "known vs unknown" test

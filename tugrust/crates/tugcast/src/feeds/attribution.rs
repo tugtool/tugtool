@@ -388,10 +388,13 @@ fn op_from_status(status: &str) -> &'static str {
 }
 
 /// Whether a row's `origin` is **proof** of authorship — the tool input named
-/// the file (`exact` live, `replay` backfill of the same). `bash`/`turn`
-/// bracket rows are correlation (a whole-tree fingerprint delta), never proof.
+/// the file (`exact` live, `replay` backfill of the same), or a session
+/// **`claim`**ed it outright (the explicit, intentional promotion of a file
+/// the session touched but never proof-edited — e.g. a `perl`/`sed` edit that
+/// only left a bracket hint). `bash`/`turn` bracket rows are correlation (a
+/// whole-tree fingerprint delta), never proof.
 pub fn origin_is_proof(origin: &str) -> bool {
-    matches!(origin, "exact" | "replay")
+    matches!(origin, "exact" | "replay" | "claim")
 }
 
 /// The canonical repo root **of the file itself** — resolved by walking up
@@ -526,6 +529,17 @@ mod tests {
             Some("/proj/nb.ipynb")
         );
         assert_eq!(exact_op_for_tool("NotebookEdit"), Some("notebook"));
+    }
+
+    #[test]
+    fn claim_is_proof_bash_and_turn_are_not() {
+        // An explicit session claim is proof of authorship, alongside the
+        // exact-tool origins; bracket correlations never are.
+        assert!(origin_is_proof("exact"));
+        assert!(origin_is_proof("replay"));
+        assert!(origin_is_proof("claim"));
+        assert!(!origin_is_proof("bash"));
+        assert!(!origin_is_proof("turn"));
     }
 
     #[test]

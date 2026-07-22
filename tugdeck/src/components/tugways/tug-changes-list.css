@@ -57,16 +57,24 @@
   opacity: 0.7;
 }
 
-/* Center the status glyph on the row's cross axis so the inline SVG sits on
-   the row's optical center rather than the text baseline. */
+/* The status letter — a mono N/M/D, tabular-aligned in a fixed cell so the
+   path column starts at the same offset on every row regardless of which
+   letter shows. Rides the row's mono family from the primitive, sized a step
+   under the path (`xs`, semibold) so it reads as a quiet marker rather than
+   competing with the filename it tags. */
 .tug-changes-list-file-status {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   width: 2ch;
+  font-size: var(--tug-font-size-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.tug-changes-list-status-added {
+/* New (green), modified/moved (yellow), deleted (red). */
+.tug-changes-list-status-new {
   color: var(--tug7-element-tone-text-normal-success-rest);
 }
 .tug-changes-list-status-deleted {
@@ -74,12 +82,6 @@
 }
 .tug-changes-list-status-modified {
   color: var(--tug7-element-tone-text-normal-caution-rest);
-}
-.tug-changes-list-status-renamed {
-  color: var(--tug7-element-tone-text-normal-accent-rest);
-}
-.tug-changes-list-status-untracked {
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 .tug-changes-list-file-path {
