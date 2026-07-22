@@ -101,6 +101,12 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             { timeoutMs: 5_000 },
           );
 
+          // The Sessions band's natural height at rest — captured so we can later
+          // prove a long snippet edit never squeezes it (note C below).
+          const sessionsRestH = await app.evalJS<number>(
+            `Math.round(document.querySelector('.lens-sections > .lens-section').getBoundingClientRect().height)`,
+          );
+
           // ---- 3. A click lands the KEYBOARD key view + ring, so Delete fires.
           // First click activates the Lens card; the second (same-card) click is
           // the one under test — it must light the ring and land the cursor.
@@ -132,6 +138,30 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           expect(click.listOutline).not.toBe("none");
           expect(click.cursorSnippetId).toBe("s2");
           expect(click.selectedCount).toBe(1);
+
+          // Re-click a DIFFERENT row while the list already holds the keyboard:
+          // the ring stays lit (the keyboard promotion rides pointerdown, in the
+          // same event as the capture-phase pointer placement, so kbd never
+          // blinks off-then-on) and the cursor follows to the new row.
+          await app.nativeClickAtElement(
+            `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-label`,
+          );
+          const reclick = await app.evalJS<{ kbd: boolean; cursor: string | null }>(
+            `(() => {
+              const list = document.querySelector('.lens-snippets-list');
+              const cursor = document.querySelector('.lens-snippets-list [data-key-cursor]');
+              return {
+                kbd: list?.hasAttribute('data-key-view-kbd') ?? false,
+                cursor: cursor?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null,
+              };
+            })()`,
+          );
+          expect(reclick.kbd).toBe(true);
+          expect(reclick.cursor).toBe("s0");
+          // Re-select s2 so the Delete probe below acts on a known row.
+          await app.nativeClickAtElement(
+            `.lens-snippets-list .snippet-row-content[data-snippet-id="s2"] .snippet-row-label`,
+          );
 
           // Delete now fires the section verb: the destructive confirm popover
           // opens (rather than a system beep). Dismiss it without deleting.
@@ -194,6 +224,26 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             `document.querySelector('.snippet-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
+
+          // A click INSIDE the open editor must not close it — the click stays
+          // with the editor (it does not promote the container out of the row's
+          // descend scope). The editor is still mounted after clicking its body.
+          // Wait until the editor has actually claimed focus (its descend scope
+          // is established) before clicking inside it — otherwise the click can
+          // land before the descend settles and the guard has nothing to see.
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true`,
+            { timeoutMs: 3_000 },
+          );
+          // Target the first line (near the top, on-screen); the tall
+          // `.cm-content`'s center would be below the visible frame.
+          await app.nativeClickAtElement(`.snippet-editor .cm-content .cm-line`);
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector('.snippet-editor .cm-content') !== null`,
+            ),
+          ).toBe(true);
+
           await app.nativeKey("ArrowDown", ["cmd"]);
           await app.nativeType(" EDITED");
           // The list genuinely scrolled to follow the caret to the tail.
@@ -226,6 +276,16 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // Stuck to the top of the scroller even though the body scrolled far.
           expect(pin.scrollTop).toBeGreaterThan(200);
           expect(pin.pinnedToTop).toBe(true);
+
+          // ---- C. The editing section scrolls; it never eats its neighbors.
+          // With a snippet far taller than the Lens open, the Sessions band still
+          // shows its full content — the editing section absorbed the overflow by
+          // scrolling, rather than the flex shrink squeezing Sessions to nothing
+          // (which would nudge the pinned header up into it).
+          const sessionsEditH = await app.evalJS<number>(
+            `Math.round(document.querySelector('.lens-sections > .lens-section').getBoundingClientRect().height)`,
+          );
+          expect(sessionsEditH).toBeGreaterThanOrEqual(sessionsRestH - 2);
         } finally {
           await app.close();
         }

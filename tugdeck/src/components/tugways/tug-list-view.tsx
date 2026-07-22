@@ -3544,7 +3544,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
 
     interface CellCallbacks {
       readonly ref: (el: HTMLDivElement | null) => void;
-      readonly click: () => void;
+      readonly pointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+      readonly click: (e: React.MouseEvent<HTMLDivElement>) => void;
       readonly doubleClick: () => void;
       readonly keyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
     }
@@ -3568,53 +3569,65 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
         }
       };
-      const clickCb = (): void => {
-        // Role-aware gate. Header / footer rows are inert section
-        // dividers — clicking them must NOT promote them to first-
-        // responder-style selection. The cell renderer may still
-        // attach its own `onClick` for action-bearing
-        // headers/footers (e.g. a "Trash all" footer); that
-        // listener fires before this wrapper-level handler runs.
+      // A cell is inertly clickable (role/enablement) — the gate shared by the
+      // pointerdown promotion and the click selection.
+      const cellIsPickable = (): boolean => {
         const role =
           dataSourceRef.current.roleForIndex?.(index) ?? DEFAULT_CELL_ROLE;
-        if (role !== "cell") return;
-        // Disabled cells are visible-but-unpickable: a click must not
-        // promote them to selection nor park the cursor on them. Re-read
-        // from the live data source so an enabled→disabled tick between
-        // mount and click is honored (mirrors the role gate above).
-        if (dataSourceRef.current.enabledForIndex?.(index) === false) return;
+        if (role !== "cell") return false;
+        // Disabled cells are visible-but-unpickable: a click must not promote
+        // them to selection nor park the cursor on them. Re-read from the live
+        // data source so an enabled→disabled tick between mount and click is
+        // honored.
+        return dataSourceRef.current.enabledForIndex?.(index) !== false;
+      };
+      // A pointer gesture that lands inside a row's own editing surface (a
+      // contenteditable — CM's `.cm-content` — or an `input` / `textarea`)
+      // belongs to that surface, not to row selection: promoting the container
+      // would ascend the row's descend scope, blur the editor, and close it.
+      // Read from the event TARGET (not the async descend state) so the guard is
+      // reliable the instant the editor mounts, before its scope has settled.
+      const targetIsInnerEditor = (e: { target: EventTarget | null }): boolean =>
+        e.target instanceof Element &&
+        e.target.closest('[contenteditable="true"], input, textarea') !== null;
+      const pointerDownCb = (e: React.PointerEvent<HTMLDivElement>): void => {
+        if (!focusEngineActiveRef.current) return;
+        if (!cellIsPickable()) return;
+        // A pointerdown INSIDE the open editor stays with the editor: the
+        // editor's own focusable (found by the capture-phase pointer placement)
+        // keeps the caret, so the click lands in the text as expected.
+        if (targetIsInnerEditor(e)) return;
+        // Promote the keyboard-navigable listbox to the KEYBOARD key view on
+        // POINTERDOWN — the same event dispatch as the capture-phase pointer
+        // placement (`responder-chain-provider`), which parks the container as
+        // a *pointer* key view (ring off) and clears the cursor visual. Doing
+        // the keyboard re-place here coalesces the two synchronous key-view
+        // writes into one paint, so the ring never blinks off-then-on when a
+        // click re-lands in an already-focused list. Cursor FIRST, then place:
+        // the key-view-GAIN projection paints `data-key-cursor` from
+        // `cursorIndexRef`, so seeding the index first lands the bar on the
+        // clicked row rather than re-projecting the pre-click position.
+        moveCursorTo(index, false);
+        if (manager !== null && cardId !== null) {
+          manager.place(
+            cardId,
+            { kind: "focusable", id: focusableId },
+            { modality: "keyboard" },
+          );
+        }
+      };
+      const clickCb = (e: React.MouseEvent<HTMLDivElement>): void => {
+        if (!cellIsPickable()) return;
+        // A click inside the open editor is the editor's, not a re-selection of
+        // the container's row (mirrors the pointerdown guard).
+        if (targetIsInnerEditor(e)) return;
         delegateRef.current?.onSelect?.(index);
-        // `selectionRequired` mode — the list view owns the selected
-        // index; a cell activation moves it. `delegate.onSelect` above
-        // still fires, so consumers that want both keep both. A
-        // `focusGroup` listbox commits selection on pointer activation
-        // too, and parks the movement cursor on the clicked row.
+        // `selectionRequired` mode — the list view owns the selected index; a
+        // cell activation moves it. `delegate.onSelect` above still fires, so
+        // consumers that want both keep both. (The keyboard key-view promotion
+        // + movement cursor ride the pointerdown handler above.)
         if (selectionRequiredRef.current || focusEngineActiveRef.current) {
           setSelectedIndex(index);
-        }
-        if (focusEngineActiveRef.current) {
-          // Clicking a row in a keyboard-navigable listbox promotes the
-          // container to the KEYBOARD key view — the ring lights and the
-          // section's keyboard verbs (Delete on the cursor row, ⌘Z, …) go
-          // live immediately, so a click-then-Delete deletes instead of
-          // beeping. The capture-phase pointer place (see
-          // `responder-chain-provider`) already parked the container as a
-          // *pointer* key view (no ring) and cleared the cursor visual; the
-          // keyboard place below is the last writer and lights the ring.
-          //
-          // Park the cursor on the clicked row FIRST, then place keyboard:
-          // the keyboard place fires the key-view-GAIN projection, which
-          // paints `data-key-cursor` from `cursorIndexRef`. Seeding the
-          // index before the place is what lands the cursor bar on the
-          // clicked row rather than re-projecting the pre-click position.
-          moveCursorTo(index, false);
-          if (manager !== null && cardId !== null) {
-            manager.place(
-              cardId,
-              { kind: "focusable", id: focusableId },
-              { modality: "keyboard" },
-            );
-          }
         }
       };
       // Keyboard activation per [Q06] — cell wrappers are
@@ -3668,6 +3681,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
       const callbacks: CellCallbacks = {
         ref: refCb,
+        pointerDown: pointerDownCb,
         click: clickCb,
         doubleClick: dblClickCb,
         keyDown: keyDownCb,
@@ -3830,6 +3844,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                   role="listitem"
                   tabIndex={wrapperTabIndex}
                   ref={getCellCallbacks(index).ref}
+                  onPointerDown={getCellCallbacks(index).pointerDown}
                   onClick={getCellCallbacks(index).click}
                   onDoubleClick={getCellCallbacks(index).doubleClick}
                   onKeyDown={getCellCallbacks(index).keyDown}
@@ -3849,6 +3864,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
                 role={itemRole}
                 tabIndex={wrapperTabIndex}
                 ref={getCellCallbacks(index).ref}
+                onPointerDown={getCellCallbacks(index).pointerDown}
                 onClick={getCellCallbacks(index).click}
                 onDoubleClick={getCellCallbacks(index).doubleClick}
                 onKeyDown={getCellCallbacks(index).keyDown}
