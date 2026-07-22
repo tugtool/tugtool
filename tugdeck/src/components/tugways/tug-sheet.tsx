@@ -682,6 +682,13 @@ export interface TugSheetContentProps {
    * only. @default false
    */
   shadePassive?: boolean;
+  /**
+   * Whether the shade shows its bottom resize grabber. Default `true`. A plain,
+   * non-resizable shade (e.g. History) passes `false` — the shade keeps its
+   * fixed-fraction height with no drag handle. Ignored under `shadeAutoSize`
+   * (which never shows a grabber). Shade presentation only.
+   */
+  shadeGrabber?: boolean;
   /** Accessible label for the shade's resize grabber. @default "Resize" */
   grabberLabel?: string;
   /**
@@ -729,6 +736,7 @@ export function TugSheetContent({
   persistKey,
   shadeMinHeight = 160,
   shadeAutoSize = false,
+  shadeGrabber = true,
   shadeAnchor = "top",
   shadePassive = false,
   grabberLabel = "Resize",
@@ -1469,9 +1477,10 @@ export function TugSheetContent({
                 <FocusModeScope>{children}</FocusModeScope>
               </div>
             </ResponderScope>
-            {/* The drag grabber is dropped in auto-size mode — the content
-                owns the height, so there is nothing to drag. */}
-            {!shadeAutoSize ? (
+            {/* The drag grabber is dropped in auto-size mode (the content owns
+                the height) and when a consumer opts out via `shadeGrabber`
+                (a plain, non-resizable shade). */}
+            {!shadeAutoSize && shadeGrabber ? (
               <div
                 className="tug-sheet-shade-grabber"
                 role="separator"

@@ -3836,7 +3836,7 @@ export function SessionCardBody({
                     title="History"
                     presentation="shade"
                     persistKey="session-card"
-                    grabberLabel="Resize the History view"
+                    shadeGrabber={false}
                     modalScopeSelector='.session-view-pane[data-view="transcript"]'
                   >
                     <SessionHistoryView

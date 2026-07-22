@@ -17,16 +17,20 @@
 }
 
 /* Footer pinned below the scrolling body ([P17]): the Done button, lower
-   right. Flex 0 0 auto so the body absorbs the slack and the footer never
-   scrolls. */
+   right. The element is also `.tug-sheet-actions` (sheet-gallery spec) which
+   owns the right-align, gap, and top spacing; this rule just pins it (flex 0 0
+   auto so the body absorbs the slack, never scrolls) and insets it from the
+   shade edges with the sheet's own padding token. No rule between list and
+   button. */
 .session-history-view-footer {
   flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 10px;
-  border-top: 1px solid var(--tugx-shade-border);
+  padding: 0 var(--tugx-sheet-space-b) var(--tugx-sheet-space-b);
 }
 
-.session-history-view-footer .tug-button {
-  min-width: 5rem;
+/* The list holds the shade's key view (a non-button, so the Done button wears
+   the persistent default ring). It is focusable but not an input — suppress the
+   raw focus outline; the visible "Return's home" cue is Done's ring. */
+.session-history-view:focus,
+.session-history-view:focus-visible {
+  outline: none;
 }

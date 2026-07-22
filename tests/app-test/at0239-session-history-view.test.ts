@@ -128,6 +128,30 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(hasCloseX).toBe(false);
 
+            // Done wears the persistent default ring: the engine stamps
+            // `data-default-ring` on it because the key view rests on the
+            // (non-button) commit list, and the button paints the outer outline.
+            const ring = await app.evalJS<{ marked: boolean; outline: boolean }>(
+              `(function(){
+                var b = document.querySelector('[data-testid="session-history-done"]');
+                if (!b) return { marked: false, outline: false };
+                var cs = getComputedStyle(b);
+                var w = parseFloat(cs.outlineWidth) || 0;
+                return {
+                  marked: b.hasAttribute("data-default-ring"),
+                  outline: cs.outlineStyle !== "none" && w > 0,
+                };
+              })()`,
+            );
+            expect(ring.marked).toBe(true);
+            expect(ring.outline).toBe(true);
+
+            // The plain-sheet History has no resize grabber.
+            const hasGrabber = await app.evalJS<boolean>(
+              `document.querySelector('[data-card-id="D"] .tug-sheet-shade-grabber') !== null`,
+            );
+            expect(hasGrabber).toBe(false);
+
             // The top row leads with the 8-char short sha as code-colored text
             // (the lifecycle dot is gone; the leading slot is collapsed away).
             const topShaText = await app.evalJS<string>(

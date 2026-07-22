@@ -29,7 +29,7 @@ import { History as HistoryIcon } from "lucide-react";
 import { TugHistoryList } from "@/components/tugways/tug-history-list";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { useSeedKeyView } from "@/components/tugways/use-focusable";
+import { useFocusable, useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   gitLogStore,
   type GitLogStoreSnapshot,
@@ -69,12 +69,24 @@ export function SessionHistoryView({
 }: SessionHistoryViewProps): React.ReactElement {
   const snapshot = useGitLogSnapshot();
 
-  // The Done button is the History shade's live default (filled + double ring,
-  // Return activates it), seeded only while History is the active slot so the
-  // hidden pane never claims the key view ([P17]; mirrors the compaction
-  // sheet's Cancel).
-  const doneFocusGroup = useId();
-  useSeedKeyView(active && onClose !== undefined ? `${doneFocusGroup}:0` : null);
+  // Focus language ([P14]): the scrolling commit list holds the shade's key
+  // view (order 0) — a NON-button — so the Done button (order 1) wears the
+  // filled double-ring as the persistent default and Return commits it, exactly
+  // like a dialog's Save beside its field. The list is the key view because the
+  // default ring only projects onto Done while the key view is not itself a
+  // button. Seeded / registered only while History is the active slot so the
+  // hidden pane never claims the key view.
+  const focusGroup = useId();
+  const LIST_ORDER = 0;
+  const DONE_ORDER = 1;
+  const focusGated = active && onClose !== undefined;
+  useSeedKeyView(focusGated ? `${focusGroup}:${LIST_ORDER}` : null);
+  const { focusableRef: listFocusableRef } = useFocusable({
+    id: `${focusGroup}-list`,
+    group: focusGroup,
+    order: LIST_ORDER,
+    register: focusGated,
+  });
 
   // Request only while this card's History view is the active slot (the store
   // is a singleton keyed by one root). Idempotent via the store's
@@ -109,26 +121,28 @@ export function SessionHistoryView({
         />
       </div>
       <div
+        ref={listFocusableRef}
         className="session-history-view"
         data-slot="session-history-view"
-        data-tug-focus="refuse"
+        tabIndex={0}
       >
         {children}
       </div>
       {/* Plain-sheet footer ([P17]): History takes over neither the composer's
           Z5 nor a commit mode, so it carries its own dismissal — a Done button
-          in the lower right (the shade's seeded default; Escape / Cmd-. still
-          close it too). */}
+          in the lower right (the shade's persistent default; Escape / Cmd-.
+          still close it too). The actions row follows the sheet-gallery spec
+          (`.tug-sheet-actions`: right-aligned, sheet spacing). */}
       {onClose !== undefined ? (
-        <div className="session-history-view-footer">
+        <div className="session-history-view-footer tug-sheet-actions">
           <TugPushButton
             size="sm"
             emphasis="primary"
             role="action"
             onClick={onClose}
             data-testid="session-history-done"
-            focusGroup={doneFocusGroup}
-            focusOrder={0}
+            focusGroup={focusGroup}
+            focusOrder={DONE_ORDER}
             persistentDefaultRing
           >
             Done
