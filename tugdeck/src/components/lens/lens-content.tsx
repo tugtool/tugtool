@@ -119,6 +119,81 @@ export function LensContent({ cardId }: LensContentProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey, focusManager, cardId]);
 
+  // Slack ownership — the Lens is always full. Exactly one expanded section is
+  // "flexible" (`data-lens-flex`) and absorbs the stack's free height, so no
+  // void ever trails below the last band. The winner: the section holding an
+  // open snippet editor (space follows the edit — and because the editor lives
+  // in the tallest section's standing share, opening it doesn't reshape the
+  // panel), else the expanded section with the tallest intrinsic list content
+  // (the one that can actually show more rows), else Snippets (the writing
+  // surface, so `+` always has room to open into). Measurement → DOM attribute
+  // only, the pin-stack pattern ([L06]); CSS turns the attribute into
+  // `flex-grow: 1`.
+  useLayoutEffect(() => {
+    const rootEl = sectionsRef.current;
+    if (rootEl === null) return;
+    let raf = 0;
+    const assign = (): void => {
+      const bands = [
+        ...rootEl.querySelectorAll<HTMLElement>(":scope > .lens-section"),
+      ];
+      const expanded = bands.filter((s) => s.dataset.collapsed !== "true");
+      let winner =
+        expanded.find((s) => s.querySelector(".snippet-editor") !== null) ??
+        null;
+      if (winner === null) {
+        let max = 0;
+        for (const s of expanded) {
+          const h =
+            s.querySelector<HTMLElement>(".tug-list-view")?.scrollHeight ?? 0;
+          if (h > max) {
+            max = h;
+            winner = s;
+          }
+        }
+      }
+      winner ??=
+        expanded.find((s) => s.dataset.lensSection === "snippets") ??
+        expanded[0] ??
+        null;
+      for (const s of bands) {
+        if (s === winner) s.dataset.lensFlex = "true";
+        else delete s.dataset.lensFlex;
+      }
+    };
+    const schedule = (): void => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(assign);
+    };
+    // Re-measure when the Lens resizes, when any section body or list content
+    // changes size (a list's WINDOW resizes with content even while the list
+    // scroller's own box holds still), and when rows / editors mount or unmount
+    // (the mutation observer also re-hooks the resize observer onto the new
+    // elements).
+    const ro = new ResizeObserver(schedule);
+    const observeAll = (): void => {
+      ro.disconnect();
+      ro.observe(rootEl);
+      for (const el of rootEl.querySelectorAll<HTMLElement>(
+        ".lens-section-body, .tug-list-view-window, .snippet-editor",
+      )) {
+        ro.observe(el);
+      }
+    };
+    const mo = new MutationObserver(() => {
+      observeAll();
+      schedule();
+    });
+    mo.observe(rootEl, { childList: true, subtree: true });
+    observeAll();
+    assign();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, []);
+
   // Drag-reorder from a section grip: FLIP visuals (ghost + close-up + drop
   // caret + settle), DOM/CSS only, committing the store on drop ([P08]).
   const { onGripPointerDown } = useBlockReorder({

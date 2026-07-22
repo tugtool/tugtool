@@ -1,20 +1,26 @@
 /**
- * at0254-lens-snippet-editor-growth.test.ts — the Lens snippet editor must use
- * the Lens's free space, and must never scroll the user's caret out of view.
+ * at0254-lens-snippet-editor-growth.test.ts — the Lens fill model + the snippet
+ * editor well, measured on the live DOM against a real snippets file.
  *
- * Two invariants, both measured on the live DOM against a real snippets file:
+ * Invariants:
  *
- *  1. **The editing section grows into free space.** Opening a snippet's editor
- *     grows the Snippets section to claim the Lens's available height (the
- *     `:has(.snippet-editor)` flex-grow), instead of leaving the editor pinched
- *     in a content-sized share with the tail scrolled off — the failure the
- *     one-scroll rail produced.
+ *  1. **The Lens is always full.** Exactly one section carries `data-lens-flex`
+ *     and absorbs the slack, so the stack composes edge-to-edge — no void ever
+ *     trails below the last band.
  *
- *  2. **The caret stays in view while editing a snippet taller than the Lens.**
- *     The editor grows uncapped and the Lens list is the single scroller; a
- *     snippet taller than the Lens makes the LIST scroll, and SnippetsBody
- *     reveals the caret into the list on every edit. So typing at the tail of a
- *     very long snippet keeps the caret on-screen — it can never scroll off.
+ *  2. **Opening an editor is geometrically calm.** The editor opens inside the
+ *     flexible section's standing share, so the section's outer height does not
+ *     change when a well opens.
+ *
+ *  3. **The well opens at a writing height.** A one-line snippet's editor opens
+ *     at the ≈6-line writing floor, not one cramped line — and sits inset with a
+ *     real gap below the row above it, so the focus ring can never touch a
+ *     neighboring row.
+ *
+ *  4. **The caret stays in view while editing a snippet taller than the Lens.**
+ *     The well grows uncapped and the list is the single scroller; SnippetsBody
+ *     reveals the caret into the list on every edit, so typing at the tail of a
+ *     very long snippet keeps the caret on-screen.
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
  */
@@ -24,7 +30,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp } from "./_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
@@ -55,9 +61,9 @@ function priorCardDeck() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0254 — Lens snippet editor growth + caret", () => {
+describe.skipIf(!SHOULD_RUN)("at0254 — Lens fill model + snippet editor well", () => {
   test(
-    "opening a long snippet grows the section; editing its tail keeps the caret in view",
+    "the Lens fills; a well opens calm at the writing floor; the caret stays in view",
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0254-"));
@@ -103,13 +109,79 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens snippet editor growth + caret", ()
             { timeoutMs: 5_000 },
           );
 
-          // The Snippets section's height at rest — content-sized, well short of
-          // the Lens (the other bands + free space are below it).
+          // 1. The fill model at rest: the snippets section (tallest content)
+          //    is the flexible one, and the stack composes edge-to-edge — the
+          //    last band's bottom sits at the stack's bottom, no trailing void.
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.lens-section[data-lens-section="snippets"]')?.dataset.lensFlex === "true"`,
+            { timeoutMs: 3_000 },
+          );
+          expect(
+            await app.evalJS<boolean>(
+              `(() => {
+                const stack = document.querySelector('.lens-sections').getBoundingClientRect();
+                const bands = [...document.querySelectorAll('.lens-sections > .lens-section')];
+                const last = bands[bands.length - 1].getBoundingClientRect();
+                return Math.abs(stack.bottom - last.bottom) <= 2;
+              })()`,
+            ),
+          ).toBe(true);
+
           const restHeight = await app.evalJS<number>(
             `Math.round(document.querySelector('.lens-section[data-lens-section="snippets"]').getBoundingClientRect().height)`,
           );
 
-          // Open the long snippet's editor.
+          // 2 + 3. Open a ONE-LINE snippet: the well opens at the writing
+          //    floor (≈6 lines), inset with a real gap from the row above, and
+          //    the section's outer height does not move.
+          await app.nativeDoubleClickAtElement(
+            `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-incipit`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.snippet-editor .cm-content') !== null`,
+            { timeoutMs: 4_000 },
+          );
+          // Writing floor: at least 6 lines tall for one line of content. The
+          // well animates open (height 0 → target), so wait for the settled
+          // height rather than sampling mid-animation.
+          await app.waitForCondition<boolean>(
+            `(() => {
+              const well = document.querySelector('.snippet-editor');
+              if (well === null) return false;
+              const lineH = parseFloat(getComputedStyle(well.querySelector('.cm-content')).lineHeight);
+              return well.getBoundingClientRect().height >= lineH * 6;
+            })()`,
+            { timeoutMs: 3_000 },
+          );
+          const short = await app.evalJS<{
+            gapAbove: number;
+            sectionH: number;
+          }>(
+            `(() => {
+              const well = document.querySelector('.snippet-editor');
+              const w = well.getBoundingClientRect();
+              const cell = well.closest('.tug-list-view-cell');
+              const above = cell.previousElementSibling;
+              const gapAbove = above === null ? 99 : w.top - above.getBoundingClientRect().bottom;
+              const sectionH = Math.round(document.querySelector('.lens-section[data-lens-section="snippets"]').getBoundingClientRect().height);
+              return { gapAbove, sectionH };
+            })()`,
+          );
+          // The well's frame sits clear of the row above — the ring's home.
+          expect(short.gapAbove).toBeGreaterThanOrEqual(3);
+          // Calm geometry: opening the well did not reshape the section.
+          expect(Math.abs(short.sectionH - restHeight)).toBeLessThanOrEqual(2);
+
+          // Close the well (Escape ascends; the blur commits).
+          await app.nativeKey("Escape", []);
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.snippet-editor') === null`,
+            { timeoutMs: 3_000 },
+          );
+
+          // 4. Open the LONG snippet, move the caret to the document end, and
+          //    type — editing at the tail of a snippet taller than the Lens.
+          //    The caret must stay in view, and the list is what scrolled.
           await app.nativeDoubleClickAtElement(
             `.lens-snippets-list .snippet-row-content[data-snippet-id="long"] .snippet-row-incipit`,
           );
@@ -117,23 +189,6 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens snippet editor growth + caret", ()
             `document.querySelector('.snippet-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
-
-          // 1. The section grew to claim the free Lens space (well past its rest
-          //    height) — the editor is no longer pinched into a content share.
-          await app.waitForCondition<boolean>(
-            `Math.round(document.querySelector('.lens-section[data-lens-section="snippets"]').getBoundingClientRect().height) > ${restHeight + 300}`,
-            { timeoutMs: 3_000 },
-          );
-
-          // The list — not the editor — is the scroller (editor grows uncapped).
-          expect(
-            await app.evalJS<string>(
-              `getComputedStyle(document.querySelector('.snippet-editor .cm-scroller')).overflowY`,
-            ),
-          ).toBe("hidden");
-
-          // 2. Move the caret to the document end and type — editing at the tail
-          //    of a snippet taller than the Lens. The caret must stay in view.
           await app.nativeKey("ArrowDown", ["cmd"]);
           await app.nativeType(" EDITED");
           await app.waitForCondition<boolean>(
@@ -147,7 +202,6 @@ describe.skipIf(!SHOULD_RUN)("at0254 — Lens snippet editor growth + caret", ()
             })()`,
             { timeoutMs: 3_000 },
           );
-
           // The list genuinely scrolled to follow the caret (the tail is far
           // below the top), proving the reveal — not a coincidental fit.
           expect(

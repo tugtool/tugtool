@@ -12,8 +12,14 @@
  * section is `flex: 0 1 auto` (content-sized when it fits, shrinking under
  * pressure); the header is `flex-shrink: 0` so it always stays above its own
  * scrolling body. No section can scroll another section's header out of view.
- * A body floor (`--tugx-lens-section-min-body`) keeps a crushed section usable
- * under a much taller neighbor.
+ *
+ * Slack ownership: the Lens is always full — exactly ONE section carries
+ * `data-lens-flex` (assigned by `LensContent` from measurement) and absorbs
+ * the stack's free height, its framed list extending so the panel composes
+ * edge-to-edge and the bands below it sit anchored at the Lens's bottom edge.
+ * No void ever trails below the last band, and opening an editor inside the
+ * flexible section changes nothing about the outer geometry — the well
+ * appears in space the section already owns.
  */
 
 .lens-section {
@@ -40,11 +46,12 @@
   min-block-size: 0;
 }
 
-/* While a snippet editor is open, the section claims all free Lens space so the
-   editor can grow to its content instead of scrolling under a tight share — the
-   user's edit must have room. Grow only when editing; at rest the section stays
-   content-sized (grow 0). */
-.lens-section:has(.snippet-editor) {
+/* The flexible section — the one owner of the Lens's slack. `LensContent`
+   assigns the attribute from measurement (an open snippet editor wins; else the
+   tallest list content; else Snippets), so the stack always fills the Lens and
+   the void never exists. Its list already fills the body, so the framed list
+   extends with the section — quiet room for more items, the Finder look. */
+.lens-section[data-lens-flex] {
   flex-grow: 1;
 }
 
