@@ -378,7 +378,7 @@ function FileIdentity({
   const provenance =
     file.origin === ""
       ? null
-      : file.origin === "dash"
+      : file.origin === "dash" || file.origin === "claim"
         ? file.op
         : `${file.op} · ${file.origin}`;
   return (
