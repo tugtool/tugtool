@@ -137,12 +137,18 @@
   margin-top: var(--tug-space-xs);
 }
 
-/* The "Claim all" bulk affordance sits at the section header's trailing edge;
-   its own casing overrides the header's uppercase transform. */
+/* The "Claim all" bulk affordance sits at the section header's trailing edge:
+   an accent icon+text button whose casing matches the header's uppercase. */
 .tug-changes-list-claim-all {
   flex: 0 0 auto;
-  text-transform: none;
-  letter-spacing: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* The per-row Claim icon pins to the row's extreme right; claiming removes it
+   and the ± / pop-out / fold shift right to fill. */
+.tug-changes-list-claim {
+  flex: 0 0 auto;
 }
 
 /* Bracket-hint provenance on unattributed rows ([P13]) — the one-glance

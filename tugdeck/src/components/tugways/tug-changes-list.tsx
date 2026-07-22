@@ -35,7 +35,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { SquareArrowOutUpRight } from "lucide-react";
+import { CornerUpLeft, SquareArrowOutUpRight } from "lucide-react";
 
 import { dispatchAction } from "@/action-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -353,9 +353,9 @@ function unattributedFileData(
 }
 
 /**
- * Orphaned row data ([D120]): a file stranded on a dead session, shown with an
- * `orphaned from <prior owner>` hint so the reclaim reads as adoption. Keeps
- * the dead owner's op/origin provenance.
+ * Orphaned row data ([D120]): a file stranded on a dead session, shown with a
+ * `from <prior owner>` hint so the reclaim reads as adoption. Keeps the dead
+ * owner's op/origin provenance.
  */
 function orphanedFileData(file: OrphanedFile): FileBlockData {
   return {
@@ -364,7 +364,7 @@ function orphanedFileData(file: OrphanedFile): FileBlockData {
     op: file.op,
     origin: file.origin,
     shared: false,
-    hint: `orphaned from ${file.prior_owner_name}`,
+    hint: `from ${file.prior_owner_name}`,
   };
 }
 
@@ -463,23 +463,6 @@ export function ChangesFileRow({
               className="tug-changes-list-row-trailing"
               onClick={(event) => event.stopPropagation()}
             >
-              {onClaim !== undefined ? (
-                <TugPushButton
-                  className="tug-changes-list-claim"
-                  size="2xs"
-                  emphasis="outlined"
-                  role="accent"
-                  title="Claim this file for this session"
-                  aria-label={`Claim ${file.path} for this session`}
-                  data-testid="tug-changes-list-claim"
-                  onClick={(event) => {
-                    event?.stopPropagation();
-                    onClaim();
-                  }}
-                >
-                  Claim
-                </TugPushButton>
-              ) : null}
               {counts !== null ? (
                 <DiffSummaryBadges added={counts.added} removed={counts.removed} />
               ) : null}
@@ -500,6 +483,23 @@ export function ChangesFileRow({
                 stabilizeScroll={false}
                 data-slot="tug-changes-list-fold"
               />
+              {onClaim !== undefined ? (
+                <TugPushButton
+                  className="tug-changes-list-claim"
+                  subtype="icon"
+                  icon={<CornerUpLeft size={12} />}
+                  size="2xs"
+                  emphasis="ghost"
+                  role="accent"
+                  title="Claim this file for this session"
+                  aria-label={`Claim ${file.path} for this session`}
+                  data-testid="tug-changes-list-claim"
+                  onClick={(event) => {
+                    event?.stopPropagation();
+                    onClaim();
+                  }}
+                />
+              ) : null}
             </span>
           }
         >
@@ -676,6 +676,8 @@ export function TugChangesList({
                 {onClaimAll !== undefined && claimAllPaths.length >= 2 ? (
                   <TugPushButton
                     className="tug-changes-list-claim-all"
+                    subtype="icon-text"
+                    icon={<CornerUpLeft size={12} />}
                     size="2xs"
                     emphasis="outlined"
                     role="accent"
