@@ -20,6 +20,9 @@ pub fn dispatch(cmd: HostCommands, json: bool, quiet: bool) -> ExitCode {
         HostCommands::Instance(cmd) => commands::run_instance(cmd),
         HostCommands::Gate(cmd) => Ok(commands::run_gate(cmd, json, quiet)),
         HostCommands::StateDir => commands::run_state_dir(json, quiet),
+        HostCommands::Changesets { port, instance } => {
+            commands::run_changesets(port, instance, json)
+        }
     };
 
     match result {

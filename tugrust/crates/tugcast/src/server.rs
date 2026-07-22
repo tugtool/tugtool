@@ -160,6 +160,36 @@ async fn tell_handler(
 /// (those count up from 0), so it can never collide with a live client.
 const TELL_SYNTHETIC_CLIENT_ID: u64 = u64::MAX;
 
+/// Handle GET /api/changesets — an observability dump of the live changeset
+/// aggregate. Composes fresh over the current registry + ledger (the same call
+/// the CHANGESET_ALL feed makes on a bump) and returns it as JSON. Loopback
+/// only; read-only. This is ground truth for "what does compose produce right
+/// now" — the CLI (`tugutil host changesets`) reads it to diagnose a stale or
+/// empty Changes view against the actual working-tree scan.
+async fn changesets_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({ "status": "error", "message": "forbidden" })),
+        )
+            .into_response();
+    }
+    match router.supervisor.as_ref() {
+        Some(sup) => {
+            let snapshot = sup.compose_changeset_aggregate().await;
+            (StatusCode::OK, axum::Json(snapshot)).into_response()
+        }
+        None => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({ "status": "error", "message": "no supervisor" })),
+        )
+            .into_response(),
+    }
+}
+
 /// Handle POST /api/eval requests for evaluating JavaScript in the browser.
 ///
 /// Sends an eval request to the browser via CONTROL frame and waits for the
@@ -299,6 +329,7 @@ pub(crate) fn build_app(
         .route("/api/tell", post(tell_handler))
         .route("/api/eval", post(eval_handler))
         .route("/api/host", get(crate::host::get_host))
+        .route("/api/changesets", get(changesets_handler))
         .route("/api/permissions", get(crate::permissions::get_permissions))
         .route("/api/permissions/rule", post(crate::permissions::post_rule))
         .route("/api/fs/complete", get(crate::fs_complete::get_fs_complete))

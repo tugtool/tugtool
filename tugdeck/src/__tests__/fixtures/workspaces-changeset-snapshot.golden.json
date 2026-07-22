@@ -82,6 +82,17 @@
           "hinted_by": ["sess-0197a2b4-c8d1-7e02-9f3a-b5c6d7e8f901"]
         }
       ],
+      "orphaned": [
+        {
+          "path": "notes/orphan.md",
+          "git_status": "??",
+          "op": "write",
+          "origin": "exact",
+          "prior_owner_name": "ghost work",
+          "prior_owner_id": "sess-dead-0197",
+          "last_touched": 1752264000000
+        }
+      ],
       "unattributed_draft": {
         "fingerprint": "7c0f",
         "message": "Add scratch notes",

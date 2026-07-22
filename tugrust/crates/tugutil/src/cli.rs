@@ -336,6 +336,23 @@ pub enum HostCommands {
         long_about = "Print the per-project runtime-state directory.\n\nResolves <data_dir>/Tug/projects/<slug>/ for the current repository — the\nout-of-repo home for per-user runtime state (the dash-log, the code-sign\nsentinel, future side-command output). Creates the directory if absent, so\nshell consumers (the Justfile, the host) can write into it without re-deriving\nthe path."
     )]
     StateDir,
+
+    /// Dump the live changeset aggregate (observability).
+    ///
+    /// GETs http://127.0.0.1:<port>/api/changesets — the same compose the
+    /// Changes view reads, freshly recomputed over every open project. Plain
+    /// output is one line per project with dirty/unattributed/changeset counts;
+    /// --json emits the full snapshot. Ground truth for diagnosing a stale or
+    /// empty Changes view against the actual working-tree scan.
+    Changesets {
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+
+        /// Target a specific instance by ID.
+        #[arg(long, value_name = "ID")]
+        instance: Option<String>,
+    },
 }
 
 /// Get the command args for use in the application

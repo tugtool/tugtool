@@ -195,8 +195,18 @@ export function SessionChangesView({
           files: snap.unattributed,
         }
       : null;
+  const orphanedItem: TugChangesListEntry | null =
+    snap.orphaned.length > 0
+      ? {
+          kind: "orphaned",
+          id: `orphaned:${project.project_dir}`,
+          project,
+          files: snap.orphaned,
+        }
+      : null;
   const hasSessionFiles = sessionFiles.length > 0;
-  const isEmpty = !hasSessionFiles && unattributedItem === null;
+  const isEmpty =
+    !hasSessionFiles && unattributedItem === null && orphanedItem === null;
 
   // The head entries (session + unattributed) the banner controls act on.
   // Every diffable file across them yields one expand key; the whole-view Diff
@@ -204,6 +214,7 @@ export function SessionChangesView({
   const headEntries: TugChangesListEntry[] = [
     ...(sessionItem !== null && hasSessionFiles ? [sessionItem] : []),
     ...(unattributedItem !== null ? [unattributedItem] : []),
+    ...(orphanedItem !== null ? [orphanedItem] : []),
   ];
   const combinedKeys: string[] = headEntries.flatMap((entry) =>
     diffablePathsOf(entry).map((path) => fileExpandKey(entry.id, path)),
@@ -265,6 +276,8 @@ export function SessionChangesView({
           onToggleFile={onToggleFile}
           unattributedLabel="unattributed — no session claims these"
           onClaimUnattributed={(path) => changesController.claim([path])}
+          orphanedLabel="orphaned — claim to bring into this session"
+          onClaimOrphaned={(path) => changesController.claim([path])}
         />
       ) : null}
     </div>,

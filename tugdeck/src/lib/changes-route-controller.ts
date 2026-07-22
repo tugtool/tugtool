@@ -31,6 +31,7 @@ import { getChangesetDraftStore } from "./changeset-draft-store";
 import { getChangesetVerbStore } from "./changeset-verb-store";
 import type {
   DashChangesetEntry,
+  OrphanedFile,
   ProjectChangeset,
   SessionChangesetEntry,
   UnattributedFile,
@@ -58,6 +59,8 @@ export interface ChangesRouteSnapshot {
   dashes: DashChangesetEntry[];
   /** Dirty files no owner claims. */
   unattributed: UnattributedFile[];
+  /** Dirty files owned only by non-live sessions — claimable orphans ([D120]). */
+  orphaned: OrphanedFile[];
   /** The project header (real feed project, or a placeholder before first emit). */
   project: ProjectChangeset;
   /** Repo-relative paths this session's commit lands — its full attributed set. */
@@ -95,6 +98,7 @@ function placeholderProject(binding: ChangesRouteBinding): ProjectChangeset {
     head_message: "",
     changesets: [],
     unattributed: [],
+    orphaned: [],
   };
 }
 
@@ -131,6 +135,7 @@ export function deriveChangesRouteSnapshot(
     entry,
     dashes,
     unattributed: project.unattributed,
+    orphaned: project.orphaned ?? [],
     project,
     committedPaths,
   };

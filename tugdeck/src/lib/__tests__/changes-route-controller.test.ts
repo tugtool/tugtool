@@ -50,6 +50,14 @@ describe("deriveChangesRouteSnapshot", () => {
     expect(snap.unattributed.map((f) => f.path)).toEqual(["notes/scratch.md"]);
   });
 
+  it("passes the orphaned bucket through, never into the commit set", () => {
+    const snap = deriveChangesRouteSnapshot(DATA, BINDING);
+    expect(snap.orphaned.map((f) => f.path)).toEqual(["notes/orphan.md"]);
+    expect(snap.orphaned[0]?.prior_owner_name).toBe("ghost work");
+    // An orphan is claimable, never silently committed by this session.
+    expect(snap.committedPaths.has("notes/orphan.md")).toBe(false);
+  });
+
   it("commits the session's full attributed set, including shared files", () => {
     const snap = deriveChangesRouteSnapshot(DATA, BINDING);
     // Both attributed files land — an AI session emits one unified changeset.

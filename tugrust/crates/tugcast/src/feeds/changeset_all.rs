@@ -210,6 +210,18 @@ pub(crate) async fn compose_aggregate(
                 .map(super::changeset::draft_from_row)
         };
 
+        // Per-project compose trace: what this cycle produced for each open
+        // project. The load-bearing diagnostic for a stale/empty Changes view —
+        // `unattributed=N` here is ground truth against the deck's "No changes".
+        debug!(
+            project = %dir_str,
+            no_repo,
+            changesets = snapshot.changesets.len(),
+            unattributed = snapshot.unattributed.len(),
+            orphaned = snapshot.orphaned.len(),
+            "changeset compose"
+        );
+
         projects.push(ProjectChangeset {
             project_dir: dir_str,
             display_name,
@@ -234,6 +246,7 @@ fn empty_snapshot(workspace_key: String) -> ChangesetSnapshot {
         head_message: String::new(),
         changesets: Vec::new(),
         unattributed: Vec::new(),
+        orphaned: Vec::new(),
     }
 }
 

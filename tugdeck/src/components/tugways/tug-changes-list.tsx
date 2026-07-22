@@ -56,6 +56,7 @@ import {
 } from "@/lib/git-diff-store";
 import type {
   ChangesetFile,
+  OrphanedFile,
   ProjectChangeset,
   SessionChangesetEntry,
   UnattributedFile,
@@ -69,7 +70,8 @@ import type {
 
 export type TugChangesListEntry =
   | { kind: "session"; id: string; project: ProjectChangeset; entry: SessionChangesetEntry }
-  | { kind: "unattributed"; id: string; project: ProjectChangeset; files: UnattributedFile[] };
+  | { kind: "unattributed"; id: string; project: ProjectChangeset; files: UnattributedFile[] }
+  | { kind: "orphaned"; id: string; project: ProjectChangeset; files: OrphanedFile[] };
 
 // ---------------------------------------------------------------------------
 // Status mark — a colored single letter (more legible than a glyph at this
@@ -221,7 +223,7 @@ const DIFF_NOOP_SUBSCRIBE = (): (() => void) => () => {};
  *  entry. */
 export function entryDiffDescriptor(entry: TugChangesListEntry): DiffDescriptor | null {
   if (entry.project.no_repo) return null;
-  const files = entry.kind === "unattributed" ? entry.files : entry.entry.files;
+  const files = entry.kind === "session" ? entry.entry.files : entry.files;
   const paths = files.map((file) => file.path);
   if (paths.length === 0) return null;
   return { kind: "head", root: entry.project.project_dir, paths };
@@ -347,6 +349,22 @@ function unattributedFileData(
     origin: "",
     shared: false,
     hint,
+  };
+}
+
+/**
+ * Orphaned row data ([D120]): a file stranded on a dead session, shown with an
+ * `orphaned from <prior owner>` hint so the reclaim reads as adoption. Keeps
+ * the dead owner's op/origin provenance.
+ */
+function orphanedFileData(file: OrphanedFile): FileBlockData {
+  return {
+    path: file.path,
+    git_status: file.git_status,
+    op: file.op,
+    origin: file.origin,
+    shared: false,
+    hint: `orphaned from ${file.prior_owner_name}`,
   };
 }
 
@@ -505,7 +523,7 @@ export function ChangesFileRow({
  *  diffable — untracked files arrive as synthesized new-file diffs. */
 export function diffablePathsOf(entry: TugChangesListEntry): string[] {
   const files: readonly { path: string }[] =
-    entry.kind === "unattributed" ? entry.files : entry.entry.files;
+    entry.kind === "session" ? entry.entry.files : entry.files;
   return files.map((f) => f.path);
 }
 
@@ -546,9 +564,11 @@ function EntryFiles({
   useEffect(() => () => releaseEntryDiffStore(entry.id), [entry.id]);
 
   const files =
-    entry.kind === "unattributed"
-      ? entry.files.map((file) => unattributedFileData(file, ownSessionId))
-      : entry.entry.files.map(changesetFileData);
+    entry.kind === "session"
+      ? entry.entry.files.map(changesetFileData)
+      : entry.kind === "orphaned"
+        ? entry.files.map(orphanedFileData)
+        : entry.files.map((file) => unattributedFileData(file, ownSessionId));
 
   return (
     <div className="tug-changes-list-file-list">
@@ -591,6 +611,11 @@ export interface TugChangesListProps {
   /** When set, unattributed rows show a Claim affordance that promotes the
    *  path into this session's changeset ([D1xx]). */
   onClaimUnattributed?: (path: string) => void;
+  /** Optional label rendered above the orphaned entry ([D120]). */
+  orphanedLabel?: string;
+  /** When set, orphaned rows show a Claim affordance that reclaims the path
+   *  into this session, severing the dead originator ([D120]). */
+  onClaimOrphaned?: (path: string) => void;
   className?: string;
 }
 
@@ -601,6 +626,8 @@ export function TugChangesList({
   onToggleFile,
   unattributedLabel,
   onClaimUnattributed,
+  orphanedLabel,
+  onClaimOrphaned,
   className,
 }: TugChangesListProps): React.ReactElement {
   return (
@@ -608,25 +635,39 @@ export function TugChangesList({
       className={className !== undefined ? `tug-changes-list ${className}` : "tug-changes-list"}
       data-slot="tug-changes-list"
     >
-      {entries.map((entry) => (
-        <React.Fragment key={entry.id}>
-          {entry.kind === "unattributed" && unattributedLabel !== undefined ? (
-            <div
-              className="tug-changes-list-section-label"
-              data-slot="tug-changes-list-unattributed-label"
-            >
-              {unattributedLabel}
-            </div>
-          ) : null}
-          <EntryFiles
-            entry={entry}
-            expandedKeys={expandedKeys}
-            onToggleFile={onToggleFile}
-            ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
-            onClaim={entry.kind === "unattributed" ? onClaimUnattributed : undefined}
-          />
-        </React.Fragment>
-      ))}
+      {entries.map((entry) => {
+        const label =
+          entry.kind === "unattributed"
+            ? unattributedLabel
+            : entry.kind === "orphaned"
+              ? orphanedLabel
+              : undefined;
+        const onClaim =
+          entry.kind === "unattributed"
+            ? onClaimUnattributed
+            : entry.kind === "orphaned"
+              ? onClaimOrphaned
+              : undefined;
+        return (
+          <React.Fragment key={entry.id}>
+            {label !== undefined ? (
+              <div
+                className="tug-changes-list-section-label"
+                data-slot={`tug-changes-list-${entry.kind}-label`}
+              >
+                {label}
+              </div>
+            ) : null}
+            <EntryFiles
+              entry={entry}
+              expandedKeys={expandedKeys}
+              onToggleFile={onToggleFile}
+              ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
+              onClaim={onClaim}
+            />
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

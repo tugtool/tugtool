@@ -14,7 +14,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tugcast_core::types::{
-    ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, UnattributedFile,
+    ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, OrphanedFile,
+    UnattributedFile,
 };
 
 use super::attribution::{parse_worktree_states, repo_root_for};
@@ -290,16 +291,73 @@ pub(crate) async fn compose_snapshot(
             }
         }
     }
+    // Orphan lift ([D120]): a file owned only by non-live ("dead") sessions is
+    // invisible — a closed session keeps its proof rows, but no live card
+    // surfaces another session's entry. Lift such files into the `orphaned`
+    // bucket so a live session can reclaim them. A file any live session
+    // proof-owns stays in that live entry (it is not orphaned), so a file
+    // qualifies only when EVERY owner holding it is dead.
+    let live_paths: HashSet<String> = owners
+        .values()
+        .filter(|agg| agg.live)
+        .flat_map(|agg| agg.files.keys().cloned())
+        .collect();
+    // Keyed by path so two dead co-owners of one file yield a single orphan
+    // (the most-recently-touched owner wins the provenance).
+    let mut orphaned_by_path: BTreeMap<String, OrphanedFile> = BTreeMap::new();
+    for (owner_id, agg) in owners.iter_mut() {
+        if agg.live {
+            continue;
+        }
+        let orphan_paths: Vec<String> = agg
+            .files
+            .keys()
+            .filter(|path| !live_paths.contains(*path))
+            .cloned()
+            .collect();
+        for path in orphan_paths {
+            let Some(file) = agg.files.remove(&path) else {
+                continue;
+            };
+            let candidate = OrphanedFile {
+                path: file.path,
+                git_status: file.git_status,
+                op: file.op,
+                origin: file.origin,
+                prior_owner_name: agg.display_name.clone(),
+                prior_owner_id: owner_id.clone(),
+                last_touched: file.last_touched,
+            };
+            orphaned_by_path
+                .entry(path)
+                .and_modify(|existing| {
+                    if candidate.last_touched > existing.last_touched {
+                        *existing = candidate.clone();
+                    }
+                })
+                .or_insert(candidate);
+        }
+    }
+    let orphaned: Vec<OrphanedFile> = orphaned_by_path.into_values().collect();
+
     // An owner left with no files (its only claims were stripped bracket
-    // grabs) drops out here; fileless live sessions are re-injected by
-    // `apply_session_rows`, so the card still lists every open session.
+    // grabs, or all its files were lifted to `orphaned`) drops out here;
+    // fileless live sessions are re-injected by `apply_session_rows`, so the
+    // card still lists every open session.
     owners.retain(|_, agg| !agg.files.is_empty());
 
-    // Unattributed: dirty files no owner claims, each carrying the bracket
-    // holders that saw it change ([P13]).
+    // Orphaned paths are owned (by a dead session), just lifted out of their
+    // owner's entry above — so they must NOT also fall into `unattributed`.
+    let orphaned_paths: HashSet<&str> = orphaned.iter().map(|f| f.path.as_str()).collect();
+
+    // Unattributed: dirty files no owner claims (and not an orphan), each
+    // carrying the bracket holders that saw it change ([P13]).
     let unattributed: Vec<UnattributedFile> = dirty
         .iter()
-        .filter(|(path, _)| !owners.values().any(|agg| agg.files.contains_key(*path)))
+        .filter(|(path, _)| {
+            !owners.values().any(|agg| agg.files.contains_key(*path))
+                && !orphaned_paths.contains(path.as_str())
+        })
         .map(|(path, git_status)| {
             let mut hinted_by = bracket_hints.get(path).cloned().unwrap_or_default();
             hinted_by.sort();
@@ -394,6 +452,7 @@ pub(crate) async fn compose_snapshot(
         head_message,
         changesets,
         unattributed,
+        orphaned,
     })
 }
 
@@ -1011,6 +1070,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn compose_lifts_dead_only_owned_files_into_orphaned() {
+        // A file proof-owned solely by a closed session is an orphan ([D120]):
+        // the closed session keeps its rows, but no live card surfaces another
+        // session's entry, so it must lift into the `orphaned` bucket. A file a
+        // live session co-owns is NOT orphaned — it stays in the live entry.
+        let (_dir, root) = init_repo();
+        std::fs::write(root.join("orphan.txt"), "x").unwrap();
+        std::fs::write(root.join("shared.txt"), "x").unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for s in ["sess-dead", "sess-live"] {
+            ledger
+                .record_spawn(s, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+        }
+        ledger.rename("sess-dead", Some("ghost work")).unwrap();
+        // sess-dead proof-owns both files; sess-live proof-owns only shared.txt.
+        ledger
+            .record_file_event(&event("sess-dead", "tu-1", &root.join("orphan.txt"), &root))
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess-dead", "tu-2", &root.join("shared.txt"), &root))
+            .unwrap();
+        ledger
+            .record_file_event(&event("sess-live", "tu-3", &root.join("shared.txt"), &root))
+            .unwrap();
+        // Close sess-dead → non-live. sess-live stays live.
+        ledger.mark_closed("sess-dead").unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+
+        // orphan.txt lifts out (dead's only exclusive file); shared.txt stays
+        // owned (a live session holds it), so it is NOT orphaned.
+        let orphaned: Vec<&str> = snapshot.orphaned.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(orphaned, ["orphan.txt"], "dead-only file is an orphan");
+        assert_eq!(snapshot.orphaned[0].prior_owner_id, "sess-dead");
+        assert_eq!(snapshot.orphaned[0].prior_owner_name, "ghost work");
+        assert_eq!(snapshot.orphaned[0].origin, "exact");
+
+        // sess-dead has no surviving entry (its only exclusive file was lifted;
+        // shared.txt stays but under the live owner too — dead keeps its shared
+        // copy). The live session keeps shared.txt.
+        let live_entry = snapshot.changesets.iter().find_map(|e| match e {
+            ChangesetEntry::Session {
+                owner_id, files, ..
+            } if owner_id == "sess-live" => Some(files),
+            _ => None,
+        });
+        let live_files: Vec<&str> = live_entry
+            .expect("live session entry")
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
+        assert!(live_files.contains(&"shared.txt"));
+        // orphan.txt is not in the unattributed bucket — it is owned, just dead.
+        assert!(
+            !snapshot
+                .unattributed
+                .iter()
+                .any(|f| f.path == "orphan.txt"),
+            "an orphan is owned (by a dead session), never unattributed"
+        );
+    }
+
+    #[tokio::test]
     async fn compose_promotes_sole_holder_structural_op() {
         // The screenshot case: the session's shell deleted a tracked file
         // (`git rm` / `rm`), so only a bracket saw it — no Edit/Write proof
@@ -1271,6 +1395,7 @@ mod tests {
                 },
             ],
             unattributed: Vec::new(),
+            orphaned: Vec::new(),
         };
 
         let long_prompt = "word ".repeat(20); // 100 chars flat → truncates

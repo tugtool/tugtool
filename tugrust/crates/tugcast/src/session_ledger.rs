@@ -2420,6 +2420,40 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Sever every other session's ownership of the given repo-relative paths
+    /// under `project_dir`: delete `file_events` rows for those paths whose
+    /// `tug_session_id` is not `keep_session_id`. The counterpart to a claim
+    /// ([D120]) — when a live session claims an orphan, the dead originator's
+    /// rows are removed so re-opening it can't silently re-own the file. The
+    /// claimant's own rows (the fresh `claim` proof row) are preserved. Returns
+    /// the number of rows deleted. A no-op for an empty `paths`.
+    pub fn sever_file_ownership_except(
+        &self,
+        project_dir: &str,
+        paths: &[String],
+        keep_session_id: &str,
+    ) -> Result<usize, LedgerError> {
+        if paths.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.db.lock().expect("ledger mutex");
+        let placeholders = std::iter::repeat_n("?", paths.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "DELETE FROM changes.file_events
+             WHERE project_dir = ?1
+               AND tug_session_id != ?2
+               AND file_path IN ({placeholders})"
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&project_dir, &keep_session_id];
+        for p in paths {
+            params.push(p);
+        }
+        let deleted = conn.execute(&sql, params.as_slice())?;
+        Ok(deleted)
+    }
+
     /// Rewrite a batch of legacy `file_events` rows to their canonical
     /// `project_dir` + repo-relative `file_path`, collision-safe against
     /// transitional duplicate rows, in one transaction. Returns the number of
@@ -5217,6 +5251,38 @@ mod tests {
         l.record_file_event(&elsewhere).unwrap();
         assert_eq!(l.file_events_for_project("/proj").unwrap().len(), 1);
         assert_eq!(l.file_events_for_project("/other").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sever_file_ownership_except_removes_other_sessions_rows_only() {
+        // A claim severs prior owners ([D120]): the dead originator's rows for
+        // the claimed paths go, the claimant's stay, and an unrelated path is
+        // untouched.
+        let l = fresh();
+        // Dead owner `dead` holds a.rs + b.rs; claimant `live` re-recorded a.rs.
+        l.record_file_event(&sample_file_event("dead", "tu-1", "a.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("dead", "tu-2", "b.rs"))
+            .unwrap();
+        l.record_file_event(&sample_file_event("live", "claim:1", "a.rs"))
+            .unwrap();
+
+        let deleted = l
+            .sever_file_ownership_except("/proj", &["a.rs".to_owned()], "live")
+            .unwrap();
+        assert_eq!(deleted, 1, "only dead's a.rs row is removed");
+
+        let remaining = l.file_events_for_project("/proj").unwrap();
+        let owns: Vec<(&str, &str)> = remaining
+            .iter()
+            .map(|r| (r.event.tug_session_id.as_str(), r.event.file_path.as_str()))
+            .collect();
+        assert!(owns.contains(&("live", "a.rs")), "claimant keeps its row");
+        assert!(owns.contains(&("dead", "b.rs")), "unclaimed path untouched");
+        assert!(
+            !owns.contains(&("dead", "a.rs")),
+            "dead originator no longer owns the claimed path"
+        );
     }
 
     #[test]

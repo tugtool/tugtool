@@ -306,6 +306,32 @@ pub struct UnattributedFile {
     pub hinted_by: Vec<String>,
 }
 
+/// A file owned only by non-live ("dead") sessions — a closed session keeps
+/// its proof rows ([D120]), so its dirty files stay attributed, but no live
+/// card surfaces another session's entry, leaving these files invisible. The
+/// orphaned bucket lifts them out so a live session can reclaim them; a proof
+/// row a live session still holds keeps the file in that session's entry
+/// instead, so a file lands here only when EVERY owner of it is dead.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrphanedFile {
+    /// Path relative to the repository root.
+    pub path: String,
+    /// Porcelain-v2 XY status pair.
+    pub git_status: String,
+    /// Attribution operation carried over from the dead owner's proof row.
+    pub op: String,
+    /// Attribution origin carried over from the dead owner's proof row.
+    pub origin: String,
+    /// The dead session that last proof-owned this file (its display name),
+    /// shown so the reclaim reads as "orphaned from <name>".
+    pub prior_owner_name: String,
+    /// The dead session's tug id — the row a claim severs so the originator
+    /// can't silently re-own the file on re-open.
+    pub prior_owner_id: String,
+    /// Epoch milliseconds of the most recent attribution event for this file.
+    pub last_touched: i64,
+}
+
 /// The maintained commit-message draft for a changeset entry (Spec S10), the
 /// artifact the draft engine keeps current so Commit is one click. Rides the
 /// aggregate snapshot when present; absent while an entry has no draft yet.
@@ -419,6 +445,11 @@ pub struct ChangesetSnapshot {
     pub changesets: Vec<ChangesetEntry>,
     /// Dirty files no owner claims.
     pub unattributed: Vec<UnattributedFile>,
+    /// Dirty files owned only by non-live sessions — claimable orphans
+    /// ([D120]). Empty in the common case; populated when a closed session's
+    /// proof-owned files are still dirty and no live session shares them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub orphaned: Vec<OrphanedFile>,
 }
 
 /// One project's slice of the account-global aggregate changeset snapshot.
@@ -1029,6 +1060,9 @@ mod tests {
         assert_eq!(repo.snapshot.workspace_key, "a1b2c3d4e5f60718");
         assert_eq!(repo.snapshot.changesets.len(), 2);
         assert_eq!(repo.snapshot.unattributed.len(), 1);
+        assert_eq!(repo.snapshot.orphaned.len(), 1);
+        assert_eq!(repo.snapshot.orphaned[0].path, "notes/orphan.md");
+        assert_eq!(repo.snapshot.orphaned[0].prior_owner_name, "ghost work");
 
         let non_repo = &snapshot.projects[1];
         assert_eq!(non_repo.display_name, "scratchpad");
@@ -1065,6 +1099,7 @@ mod tests {
                 head_message: "msg".to_string(),
                 changesets: vec![],
                 unattributed: vec![],
+                orphaned: vec![],
             },
             unattributed_draft: None,
         };

@@ -191,6 +191,16 @@ When component A composes component B, A's CSS references only A-scoped tokens (
 
 ---
 
+## Paths
+
+### L29. Every persisted or compared path routes through the canonicalization gateway — never a raw path, never bare `canonicalize`. {#l29}
+
+A filesystem path has many spellings for one directory: symlinks (`/u` → `/System/Volumes/Data/Users/…`), macOS `synthetic.conf` firmlinks, the APFS data-volume firmlink (`/System/Volumes/Data/Users/…` ↔ `/Users/…`), and Linux bind mounts. Any path used as a **persisted key** (a ledger `project_dir`, a store key, a defaults domain), a **cross-path comparison** (does this event belong to this project? is this the same checkout?), or a **lookup argument** MUST first pass through the codebase's canonicalization gateway — `CanonicalPath::from_raw` (persisted keys / comparisons) or `resolve_to_claude_form` (the standalone string form Claude's on-disk layout agrees on), both in `tugcast/src/path_resolver.rs`. A path that has not is a *raw* path and may be used only for the immediate OS call that produced it, never stored or matched.
+
+Two spellings of the same directory that skip the gateway silently fail to match, and the failure is invisible until data written under one spelling is read under the other: attribution rows keyed on `/Users/…/tugtool` go dark when the card composes under `/u/src/tugtool`; picker sessions vanish; a trash move no-ops. **Never** reach for bare `std::fs::canonicalize` on a project path — on macOS `realpath(3)` expands the data-volume firmlink to a `/System/Volumes/Data/…` form Claude never writes, which is the same bug wearing a different hat. This law is absolute because the failure mode is silent, recurring, and infuriating: if you touch a path that will outlive its syscall, the gateway is not optional. [D120]
+
+---
+
 ## Licensing
 
 ### L21. Third-party code and patterns require license compliance before use. {#l21}

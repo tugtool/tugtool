@@ -39,6 +39,23 @@ export interface UnattributedFile {
   hinted_by?: string[];
 }
 
+/** A file owned only by non-live ("dead") sessions — a claimable orphan
+ *  ([D120]). A closed session keeps its proof rows, but no live card surfaces
+ *  another session's entry, so these are lifted into their own bucket. */
+export interface OrphanedFile {
+  path: string;
+  git_status: string;
+  /** Attribution op/origin carried over from the dead owner's proof row. */
+  op: string;
+  origin: string;
+  /** The dead session that last proof-owned this file, for the "orphaned
+   *  from <name>" label. */
+  prior_owner_name: string;
+  /** The dead session's tug id. */
+  prior_owner_id: string;
+  last_touched: number;
+}
+
 /** The maintained commit-message draft for a changeset entry (Spec S10). */
 export interface ChangesetDraft {
   /** Hash of the entry's scoped content the draft was generated for. */
@@ -118,6 +135,9 @@ export interface ChangesetSnapshot {
   changesets: ChangesetEntry[];
   /** Dirty files no owner claims. */
   unattributed: UnattributedFile[];
+  /** Dirty files owned only by non-live sessions — claimable orphans
+   *  ([D120]). Optional: absent/empty in the common case. */
+  orphaned?: OrphanedFile[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -144,6 +164,19 @@ export function isUnattributedFile(value: unknown): value is UnattributedFile {
     (value.hinted_by === undefined ||
       (Array.isArray(value.hinted_by) &&
         value.hinted_by.every((s) => typeof s === "string")))
+  );
+}
+
+export function isOrphanedFile(value: unknown): value is OrphanedFile {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    typeof value.git_status === "string" &&
+    typeof value.op === "string" &&
+    typeof value.origin === "string" &&
+    typeof value.prior_owner_name === "string" &&
+    typeof value.prior_owner_id === "string" &&
+    typeof value.last_touched === "number"
   );
 }
 
@@ -209,7 +242,9 @@ export function isChangesetSnapshot(value: unknown): value is ChangesetSnapshot 
     Array.isArray(value.changesets) &&
     value.changesets.every(isChangesetEntry) &&
     Array.isArray(value.unattributed) &&
-    value.unattributed.every(isUnattributedFile)
+    value.unattributed.every(isUnattributedFile) &&
+    (value.orphaned === undefined ||
+      (Array.isArray(value.orphaned) && value.orphaned.every(isOrphanedFile)))
   );
 }
 

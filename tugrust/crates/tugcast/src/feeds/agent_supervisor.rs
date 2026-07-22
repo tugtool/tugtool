@@ -2380,6 +2380,18 @@ impl AgentSupervisor {
     /// `dispatch_action` pipeline. The match arms here are the single
     /// source of truth for "which CONTROL actions the supervisor owns";
     /// the router does not maintain a separate allowlist.
+    /// Compose the changeset aggregate fresh, on demand, over the current
+    /// registry + ledger — the same call the `CHANGESET_ALL` feed makes on a
+    /// bump. Read-only; used by the `/api/changesets` observability endpoint so
+    /// a CLI can see exactly what compose produces right now (ground truth
+    /// against the deck's "No changes"), independent of emission/diff-suppression.
+    pub async fn compose_changeset_aggregate(
+        &self,
+    ) -> tugcast_core::types::WorkspacesChangesetSnapshot {
+        super::changeset_all::compose_aggregate(&self.registry, self.session_ledger.as_deref())
+            .await
+    }
+
     pub async fn handle_control(
         &self,
         action: &str,
@@ -4002,6 +4014,18 @@ impl AgentSupervisor {
                     warn!(error = %err, project_dir, path, "changeset_claim record failed");
                 }
             }
+        }
+
+        // Sever any prior owner ([D120]): a claim asserts sole ownership, so
+        // remove other sessions' rows for these paths — a dead originator can't
+        // silently re-own the file on re-open, and it leaves the orphaned
+        // bucket. The claimant's own fresh rows (just recorded) are preserved.
+        if let Err(err) = ledger.sever_file_ownership_except(
+            canonical.as_str(),
+            &request.files,
+            &request.session_id,
+        ) {
+            warn!(error = %err, project_dir, "changeset_claim sever failed");
         }
 
         self.registry.changeset_all_bump().notify_one();
@@ -7093,6 +7117,7 @@ mod tests {
                     head_message: String::new(),
                     changesets: vec![entry],
                     unattributed: vec![],
+                    orphaned: vec![],
                 },
                 unattributed_draft: None,
             }],
