@@ -283,14 +283,19 @@ function SnippetEditorRow({
   const manager = useFocusManager();
   const editorRef = useRef<TugMessageEditorHandle | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const wellRef = useRef<HTMLDivElement | null>(null);
   const focusableId = useId();
 
-  // Slide the editor OPEN — grow from zero height to its natural height so the
-  // row visibly opens rather than snapping ([L06] via WAAPI, not React state;
-  // reduced-motion honored by the animator). `overflow: hidden` clips the field
-  // during the grow; restored when the animation settles.
+  // Slide the editor OPEN — the WELL grows from zero to its natural height so
+  // the card visibly opens rather than snapping ([L06] via WAAPI, not React
+  // state; reduced-motion honored by the animator). The clip + grow ride the
+  // WELL, never the `.snippet-editor` wrapper: the wrapper must stay
+  // `overflow: visible` so the sticky header can pin against the LIST scroller
+  // (an `overflow: hidden` ancestor would capture the sticky as its own scroll
+  // context and the header would scroll away with the body). The header shows
+  // at full height from the first frame; the well opens beneath it.
   useLayoutEffect(() => {
-    const el = wrapRef.current;
+    const el = wellRef.current;
     if (el === null) return;
     const target = el.getBoundingClientRect().height;
     if (target <= 0) return;
@@ -298,6 +303,12 @@ function SnippetEditorRow({
     el.style.overflow = "hidden";
     const restore = (): void => {
       el.style.overflow = prevOverflow;
+      // The animator commits the final keyframe as inline styles (`height`,
+      // `opacity`). Release them so the well returns to auto height and keeps
+      // growing line-by-line as the snippet is typed — a committed `height`
+      // would clamp the well at its open size.
+      el.style.height = "";
+      el.style.opacity = "";
     };
     animate(
       el,
@@ -499,7 +510,7 @@ function SnippetEditorRow({
           )}
         </span>
       </TugListRow>
-      <div className="snippet-editor-well">
+      <div className="snippet-editor-well" ref={wellRef}>
         <TugMessageEditor
           ref={editorRef}
           value={snippet.text}

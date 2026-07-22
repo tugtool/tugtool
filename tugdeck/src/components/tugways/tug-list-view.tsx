@@ -3120,6 +3120,12 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // inner focusable is a pure no-op — nothing to descend into.
     descendIntoRowRef.current = (index: number): void => {
       if (rowFirstFocusableId(index) === null) return;
+      // Descending into a row to edit it MAKES it the selection: in
+      // `selectionRequired` mode the owned selected row moves to the edited
+      // row, so a create-and-open path (the header +, Space, ⌘Return chain)
+      // can't leave the previous selection painting its fill while a
+      // different row is open — exactly one row ever wears the picker green.
+      if (selectionRequiredRef.current) setSelectedIndex(index);
       moveCursorTo(index, true);
       descendCursorRow();
     };
@@ -3586,7 +3592,30 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         if (selectionRequiredRef.current || focusEngineActiveRef.current) {
           setSelectedIndex(index);
         }
-        if (focusEngineActiveRef.current) moveCursorTo(index, false);
+        if (focusEngineActiveRef.current) {
+          // Clicking a row in a keyboard-navigable listbox promotes the
+          // container to the KEYBOARD key view — the ring lights and the
+          // section's keyboard verbs (Delete on the cursor row, ⌘Z, …) go
+          // live immediately, so a click-then-Delete deletes instead of
+          // beeping. The capture-phase pointer place (see
+          // `responder-chain-provider`) already parked the container as a
+          // *pointer* key view (no ring) and cleared the cursor visual; the
+          // keyboard place below is the last writer and lights the ring.
+          //
+          // Park the cursor on the clicked row FIRST, then place keyboard:
+          // the keyboard place fires the key-view-GAIN projection, which
+          // paints `data-key-cursor` from `cursorIndexRef`. Seeding the
+          // index before the place is what lands the cursor bar on the
+          // clicked row rather than re-projecting the pre-click position.
+          moveCursorTo(index, false);
+          if (manager !== null && cardId !== null) {
+            manager.place(
+              cardId,
+              { kind: "focusable", id: focusableId },
+              { modality: "keyboard" },
+            );
+          }
+        }
       };
       // Keyboard activation per [Q06] — cell wrappers are
       // `tabIndex={0}` and `role="listitem"` (see render below), so

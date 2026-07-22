@@ -123,6 +123,40 @@
   background: transparent;
 }
 
+/* The card HEADER pins while a long snippet scrolls under it: it stays at the
+   top of the list scroller as the well's body scrolls, so the snippet's name
+   (the live incipit + copy / close) is always in reach. Sticky sticks within
+   the list's scrollport while the editing cell is in view — and the editing
+   cell IS the whole tall snippet, so the header holds the top throughout the
+   scroll.
+
+   The selection wash TugListRow paints for `data-selected` is a QUIET
+   (translucent) surface; scrolled body text would bleed through a bare pin. So
+   the pinned header carries an opaque base — the pane's own content surface,
+   exactly what sits behind the row at rest — with the wash composited over it
+   as a background-image layer, so pinned and un-pinned read identically. The
+   `.snippet-editor` descendant selector outspecifies `.tug-list-row[data-selected]`
+   regardless of bundle order. */
+.snippet-editor .snippet-editor-header[data-selected="true"] {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--tug7-surface-global-primary-normal-content-rest);
+  background-image: linear-gradient(
+    var(--tugx-list-row-selected-bg),
+    var(--tugx-list-row-selected-bg)
+  );
+}
+
+/* Reveal clears the stuck header: while an editor is open the list reserves the
+   header's height at the top so `scrollIntoView({block:"nearest"})` (the caret
+   reveal in `SnippetsBody`) never parks the caret UNDER the pinned header when
+   editing near the snippet's top. Only while a card is open — plain navigation
+   keeps the full scrollport. */
+.lens-snippets-list:has(.snippet-editor) {
+  scroll-padding-block-start: calc(2 * var(--tugx-list-row-padding-block, 5px) + 1.5lh);
+}
+
 /* The WELL: the substrate's own field treatment, exactly as prompt entry — the
    field surface washes while focused and drains on blur, and the caret carries
    keyboard focus. (The old flatten-every-background overrides are gone: the
