@@ -267,12 +267,14 @@ describe("buildSlashCommandLine", () => {
 });
 
 describe("bang routings (matchBangCommandLine)", () => {
-  test("the five routings are bang commands, not slash commands", () => {
-    for (const name of ["shell", "btw", "find", "changes", "history"]) {
+  test("the four routings are bang commands, not slash commands", () => {
+    for (const name of ["shell", "btw", "find", "history"]) {
       expect(isBangCommand(name)).toBe(true);
       expect(matchLocalSlashCommand(`/${name}`)).toBeNull();
     }
     expect(isBangCommand("model")).toBe(false);
+    // `changes` is retired — committing is a mode, not a routing.
+    expect(isBangCommand("changes")).toBe(false);
   });
 
   test("!shell matches with its argument", () => {
@@ -282,25 +284,23 @@ describe("bang routings (matchBangCommandLine)", () => {
     });
   });
 
-  test("bare !changes and !history match with empty args", () => {
-    expect(matchBangCommandLine("!changes")).toEqual({
-      name: "changes",
-      args: "",
-    });
+  test("bare !history matches with empty args", () => {
     expect(matchBangCommandLine("!history")).toEqual({
       name: "history",
       args: "",
     });
   });
 
-  test("!changes carries its directive + message as args (verb split is the surface's job)", () => {
-    expect(matchBangCommandLine("!changes describe")).toEqual({
-      name: "changes",
-      args: "describe",
+  test("unregistered !changes is the shell escape hatch, like any unknown bang", () => {
+    // `changes` is not a routing (committing is a mode), so `!changes`
+    // routes to the shell exactly like `!foobar` would.
+    expect(matchBangCommandLine("!changes")).toEqual({
+      name: "shell",
+      args: "changes",
     });
-    expect(matchBangCommandLine("!changes commit fix: thing")).toEqual({
-      name: "changes",
-      args: "commit fix: thing",
+    expect(matchBangCommandLine("!changes fix: thing")).toEqual({
+      name: "shell",
+      args: "changes fix: thing",
     });
   });
 
@@ -332,17 +332,16 @@ describe("bang routings (matchBangCommandLine)", () => {
     expect(matchBangCommandLine("/model")).toBeNull();
   });
 
-  test("a command atom + 'commit <msg>' reconstructs !changes commit <msg>", () => {
+  test("a stale changes atom reconstructs with the slash sigil (not a bang)", () => {
+    // `changes` is no longer a bang, so a leftover `changes` command atom
+    // reconstructs as `/changes` — an unknown slash command, not a routing.
     const { text, atoms } = mkDraft([
       { type: "command", value: "changes" },
       " commit fix: the parser",
     ]);
     const line = buildSlashCommandLine(text, atoms);
-    expect(line).toBe("!changes commit fix: the parser");
-    expect(matchBangCommandLine(line)).toEqual({
-      name: "changes",
-      args: "commit fix: the parser",
-    });
+    expect(line).toBe("/changes commit fix: the parser");
+    expect(matchBangCommandLine(line)).toBeNull();
   });
 
   test("a non-bang command atom still reconstructs with the slash sigil", () => {
