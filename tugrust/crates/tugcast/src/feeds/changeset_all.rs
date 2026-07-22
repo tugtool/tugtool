@@ -133,7 +133,6 @@ fn drafts_version(ledger: Option<&SessionLedger>) -> Option<i64> {
     ledger.and_then(|l| l.changeset_drafts_version().ok().flatten())
 }
 
-
 /// Compose one aggregate snapshot over the registry's current entries.
 ///
 /// Projects are emitted in the registry's enumeration order (sorted by

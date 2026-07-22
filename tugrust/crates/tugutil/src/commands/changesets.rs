@@ -70,7 +70,10 @@ pub fn run_changesets(
                 // owned by a dead (non-live) session is visible here, the gap
                 // that reads as "No changes" in a live card's Changes view.
                 for changeset in &changesets {
-                    let kind = changeset.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+                    let kind = changeset
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
                     let name = changeset
                         .get("display_name")
                         .and_then(|v| v.as_str())
@@ -87,13 +90,17 @@ pub fn run_changesets(
                         .and_then(|v| v.as_array())
                         .cloned()
                         .unwrap_or_default();
-                    println!("           [{kind} {name} {live_tag}] {} file(s)", files.len());
+                    println!(
+                        "           [{kind} {name} {live_tag}] {} file(s)",
+                        files.len()
+                    );
                     for file in &files {
                         if let Some(path) = file.get("path").and_then(|v| v.as_str()) {
-                            let status =
-                                file.get("git_status").and_then(|v| v.as_str()).unwrap_or("");
-                            let origin =
-                                file.get("origin").and_then(|v| v.as_str()).unwrap_or("");
+                            let status = file
+                                .get("git_status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let origin = file.get("origin").and_then(|v| v.as_str()).unwrap_or("");
                             println!("             {status:<2} {path} ({origin})");
                         }
                     }
@@ -101,16 +108,20 @@ pub fn run_changesets(
                 // Unattributed paths — nothing owns them at all.
                 for file in &unattributed {
                     if let Some(path) = file.get("path").and_then(|v| v.as_str()) {
-                        let status =
-                            file.get("git_status").and_then(|v| v.as_str()).unwrap_or("");
+                        let status = file
+                            .get("git_status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         println!("           unattributed {status:<2} {path}");
                     }
                 }
                 // Orphaned paths — owned by a dead session, claimable.
                 for file in &orphaned {
                     if let Some(path) = file.get("path").and_then(|v| v.as_str()) {
-                        let status =
-                            file.get("git_status").and_then(|v| v.as_str()).unwrap_or("");
+                        let status = file
+                            .get("git_status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         let prior = file
                             .get("prior_owner_name")
                             .and_then(|v| v.as_str())

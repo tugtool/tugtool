@@ -161,9 +161,14 @@ pub fn spawn_on_demand_draft(
     let key = entry.key;
     let target = entry.target;
     if !force {
-        let edited = read_draft(&deps.ledger, &key.owner_kind, &key.owner_id, &key.project_dir)
-            .map(|row| row.edited)
-            .unwrap_or(false);
+        let edited = read_draft(
+            &deps.ledger,
+            &key.owner_kind,
+            &key.owner_id,
+            &key.project_dir,
+        )
+        .map(|row| row.edited)
+        .unwrap_or(false);
         if edited {
             send_state(&deps, &key, "ready", None);
             return true;
@@ -388,8 +393,13 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
         Ok(message) => {
             // Selection dispositions are the user's, not the scribe's — a
             // regeneration replaces the message but carries them forward.
-            let selection = read_draft(&deps.ledger, &key.owner_kind, &key.owner_id, &key.project_dir)
-                .and_then(|existing| existing.selection);
+            let selection = read_draft(
+                &deps.ledger,
+                &key.owner_kind,
+                &key.owner_id,
+                &key.project_dir,
+            )
+            .and_then(|existing| existing.selection);
             // Spec S05 write contract: the stored project spelling is
             // canonical, whatever spelling the snapshot carried.
             let canonical_project =
@@ -964,7 +974,10 @@ mod tests {
             "s1",
             &project,
         );
-        assert!(matched, "the entry matched — the gate is not a no-entry miss");
+        assert!(
+            matched,
+            "the entry matched — the gate is not a no-entry miss"
+        );
         tokio::time::sleep(Duration::from_millis(60)).await;
         assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "no scribe call");
         let row = ledger

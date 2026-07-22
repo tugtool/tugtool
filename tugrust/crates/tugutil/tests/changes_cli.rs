@@ -676,7 +676,10 @@ fn draft_set_show_round_trip_with_selection() {
     assert_eq!(v["command"], "draft show");
     let data = &v["data"];
     assert!(
-        data["message"].as_str().unwrap().starts_with("Land the feature"),
+        data["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Land the feature"),
         "{data}"
     );
     // A CLI-authored draft is an authored draft — always edited.

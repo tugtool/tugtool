@@ -162,13 +162,14 @@ pub fn run_set(
             .and_then(|e| e.selection.as_ref())
             .map(|v| v.to_string())
     } else {
-        Some(
-            serde_json::json!({"include": include, "exclude": exclude}).to_string(),
-        )
+        Some(serde_json::json!({"include": include, "exclude": exclude}).to_string())
     };
     let message = match message {
         Some(m) => m,
-        None => existing.as_ref().map(|e| e.message.clone()).unwrap_or_default(),
+        None => existing
+            .as_ref()
+            .map(|e| e.message.clone())
+            .unwrap_or_default(),
     };
     if message.trim().is_empty() {
         return Err(AppError::Exit1(
@@ -205,8 +206,7 @@ pub fn run_set(
         );
     }
 
-    let row = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw)
-        .expect("row just written");
+    let row = read_row(&conn, &owner_kind, &owner_id, &canonical, &raw).expect("row just written");
     if json {
         print_ok("draft set", &row);
     } else {

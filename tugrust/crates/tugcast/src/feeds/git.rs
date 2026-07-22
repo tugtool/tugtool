@@ -292,13 +292,27 @@ pub async fn build_commit_files_snapshot(
     }
     let numstat = run_git_capture(
         repo_dir,
-        &["-c", "core.quotepath=false", "show", "--numstat", "--format=", sha],
+        &[
+            "-c",
+            "core.quotepath=false",
+            "show",
+            "--numstat",
+            "--format=",
+            sha,
+        ],
     )
     .await
     .unwrap_or_default();
     let name_status = run_git_capture(
         repo_dir,
-        &["-c", "core.quotepath=false", "show", "--name-status", "--format=", sha],
+        &[
+            "-c",
+            "core.quotepath=false",
+            "show",
+            "--name-status",
+            "--format=",
+            sha,
+        ],
     )
     .await
     .unwrap_or_default();
@@ -1165,7 +1179,11 @@ Binary files a/img.png and b/img.png differ
 
         let snapshot = build_git_diff_snapshot(&repo, "req-ut".to_string(), "ws", &[]).await;
         assert_eq!(snapshot.file_count, 2, "tracked change + untracked file");
-        let fresh = snapshot.files.iter().find(|f| f.path == "fresh.txt").unwrap();
+        let fresh = snapshot
+            .files
+            .iter()
+            .find(|f| f.path == "fresh.txt")
+            .unwrap();
         assert_eq!(fresh.status, GitDiffFileStatus::Added);
         assert_eq!(fresh.added, 2);
         assert_eq!(fresh.removed, 0);

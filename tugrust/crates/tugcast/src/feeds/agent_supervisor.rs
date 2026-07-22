@@ -1496,7 +1496,11 @@ fn parse_changeset_claim_payload(payload: &[u8]) -> Result<ChangesetClaimPayload
         .and_then(|v| v.as_array())
         .ok_or(ControlError::Malformed)?
         .iter()
-        .map(|v| v.as_str().map(str::to_string).ok_or(ControlError::Malformed))
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or(ControlError::Malformed)
+        })
         .collect::<Result<Vec<String>, ControlError>>()?;
     Ok(ChangesetClaimPayload {
         project_dir,
@@ -3778,10 +3782,9 @@ impl AgentSupervisor {
         let Some(ledger) = self.session_ledger.clone() else {
             return;
         };
-        let canonical =
-            crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(
-                &request.project_dir,
-            ));
+        let canonical = crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(
+            &request.project_dir,
+        ));
         if request.clear {
             let _ = ledger.delete_changeset_draft(
                 &request.owner_kind,
@@ -3916,18 +3919,16 @@ impl AgentSupervisor {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis() as i64)
                         .unwrap_or(0);
-                    if let Err(e) =
-                        ledger.record_exchange(&crate::shell_ledger::NewShellExchange {
-                            tug_session_id: session_id.to_string(),
-                            command: "/commit".to_string(),
-                            output: summary.clone(),
-                            exit_code: Some(0),
-                            cwd: project_dir.to_string(),
-                            cwd_after: None,
-                            started_at_ms: now,
-                            settled_at_ms: now,
-                        })
-                    {
+                    if let Err(e) = ledger.record_exchange(&crate::shell_ledger::NewShellExchange {
+                        tug_session_id: session_id.to_string(),
+                        command: "/commit".to_string(),
+                        output: summary.clone(),
+                        exit_code: Some(0),
+                        cwd: project_dir.to_string(),
+                        cwd_after: None,
+                        started_at_ms: now,
+                        settled_at_ms: now,
+                    }) {
                         warn!(error = %e, "failed to persist /commit to the shell ledger");
                     }
                 }
@@ -6748,8 +6749,8 @@ mod tests {
         let (sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
         let bump = sup.registry.changeset_all_bump();
 
-        let payload = serde_json::to_vec(&serde_json::json!({ "action": "changeset_refresh" }))
-            .unwrap();
+        let payload =
+            serde_json::to_vec(&serde_json::json!({ "action": "changeset_refresh" })).unwrap();
         sup.handle_control("changeset_refresh", &payload, 1).await;
 
         // `notify_one` stores a permit even with no waiter registered yet, so a
@@ -10708,15 +10709,25 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let claude_root = tmp.path().join("projects");
         let ledger = Arc::new(
-            SessionLedger::open_with_claude_root(tmp.path().join("sessions.db"), claude_root.clone())
-                .unwrap(),
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
         );
         let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
 
         // Both rows have `turn_count == 0`; only "withfile" has a transcript
         // on disk.
         ledger
-            .record_spawn("withfile", "ws-1", "/proj/withfile", "card-With", 1_000, None)
+            .record_spawn(
+                "withfile",
+                "ws-1",
+                "/proj/withfile",
+                "card-With",
+                1_000,
+                None,
+            )
             .unwrap();
         ledger
             .record_spawn("nofile", "ws-1", "/proj/nofile", "card-No", 2_000, None)

@@ -145,7 +145,7 @@ pub fn run_claim(
     match ureq::post(&url).send_json(&body) {
         Ok(resp) if resp.status().as_u16() == 200 => {
             if json {
-                print_ok("claim", &serde_json::json!({ "claimed": paths.len() }));
+                print_ok("claim", serde_json::json!({ "claimed": paths.len() }));
             } else {
                 println!("claimed {} file(s) for session {session_id}", paths.len());
             }

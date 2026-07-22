@@ -276,7 +276,10 @@ pub(crate) async fn compose_snapshot(
             if !proof_ids.is_some_and(|ids| ids.contains(id)) {
                 if let Some(agg) = owners.get_mut(id) {
                     if agg.files.remove(path).is_some() {
-                        bracket_hints.entry(path.clone()).or_default().push(id.clone());
+                        bracket_hints
+                            .entry(path.clone())
+                            .or_default()
+                            .push(id.clone());
                     }
                 }
             }
@@ -875,7 +878,9 @@ pub(crate) fn format_commit_summary(
         })
         .collect();
     let files_json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string());
-    format!("committed {short} · {count} file(s) · +{added} −{removed}\nfiles: {files_json}\n{message}")
+    format!(
+        "committed {short} · {count} file(s) · +{added} −{removed}\nfiles: {files_json}\n{message}"
+    )
 }
 
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
@@ -1060,7 +1065,10 @@ mod tests {
         // recorded as `hinted_by` on the bracket-swept path; a plain hand
         // edit no bracket saw carries none.
         let hand_edit = &snapshot.unattributed[0];
-        assert!(hand_edit.hinted_by.is_empty(), "no bracket saw hand-edit.txt");
+        assert!(
+            hand_edit.hinted_by.is_empty(),
+            "no bracket saw hand-edit.txt"
+        );
         let tainted = &snapshot.unattributed[1];
         assert_eq!(
             tainted.hinted_by,
@@ -1126,10 +1134,7 @@ mod tests {
         assert!(live_files.contains(&"shared.txt"));
         // orphan.txt is not in the unattributed bucket — it is owned, just dead.
         assert!(
-            !snapshot
-                .unattributed
-                .iter()
-                .any(|f| f.path == "orphan.txt"),
+            !snapshot.unattributed.iter().any(|f| f.path == "orphan.txt"),
             "an orphan is owned (by a dead session), never unattributed"
         );
     }
@@ -1184,7 +1189,8 @@ mod tests {
             .expect("sess-alpha entry");
         let alpha_paths: Vec<&str> = alpha.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
-            alpha_paths, ["committed.txt"],
+            alpha_paths,
+            ["committed.txt"],
             "a sole-holder delete is promoted to attribution"
         );
         assert!(alpha[0].git_status.contains('D'));
@@ -1196,7 +1202,8 @@ mod tests {
             .map(|f| f.path.as_str())
             .collect();
         assert_eq!(
-            unattributed, ["contested.txt"],
+            unattributed,
+            ["contested.txt"],
             "a structural op with two holders stays unattributed"
         );
     }
@@ -1560,7 +1567,12 @@ mod tests {
         );
     }
 
-    fn file_stat(path: &str, status: &str, added: Option<u32>, deleted: Option<u32>) -> tugchanges_core::FileStat {
+    fn file_stat(
+        path: &str,
+        status: &str,
+        added: Option<u32>,
+        deleted: Option<u32>,
+    ) -> tugchanges_core::FileStat {
         tugchanges_core::FileStat {
             path: path.to_string(),
             status: status.to_string(),

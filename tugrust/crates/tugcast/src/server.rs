@@ -107,7 +107,10 @@ async fn tell_handler(
         && let Some(sup) = router.supervisor.as_ref()
     {
         use crate::feeds::agent_supervisor::ControlOutcome;
-        match sup.handle_control(action, &body, TELL_SYNTHETIC_CLIENT_ID).await {
+        match sup
+            .handle_control(action, &body, TELL_SYNTHETIC_CLIENT_ID)
+            .await
+        {
             ControlOutcome::Handled => {
                 return (
                     StatusCode::OK,

@@ -15,13 +15,13 @@ pub mod trailer;
 
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
 pub use commit::{Aggregate, CommitError, CommitOptions, CommitReceipt, LeftBehind, commit};
-pub use preflight::{
-    DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
-    diff, log, preflight,
-};
 pub use git::{
     DiffFile, DiffFileStatus, FileStat, NumstatEntry, StatusEntry, StatusReport, file_stats,
     git_output, git_stdout, normalize_xy, parse_name_status, parse_numstat,
     parse_status_porcelain_v2, parse_unified_diff, repo_root_for,
+};
+pub use preflight::{
+    DiffOptions, DiffReport, LogEntry, LogOptions, LogReport, PreflightOptions, PreflightReport,
+    diff, log, preflight,
 };
 pub use trailer::append_trailers;
