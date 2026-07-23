@@ -183,6 +183,7 @@ import { useMenuStatePublication } from "./use-menu-state-publication";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { useHostFacts } from "@/lib/host-facts-store";
+import { probeDirExistence } from "@/lib/dir-existence";
 import { requestLogout } from "@/lib/logout-store";
 import { putSessionRecentProjects, putFindOptions, readFindOptions } from "@/settings-api";
 import {
@@ -1155,6 +1156,9 @@ function parseString(entry: TaggedValue | undefined): string {
 /** Stable `[]` reference — useTugbankValue's `fallback` must be reference-stable. */
 const EMPTY_STRING_ARRAY: ReadonlyArray<string> = [];
 
+/** Stable empty set — the initial / no-missing-recents value. */
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set<string>();
+
 /** `formatValue` for the picker's scan-progress bar — "465 of 1,022". */
 function formatScanProgressValue(value: number, max: number): string {
   return `${value.toLocaleString()} of ${max.toLocaleString()}`;
@@ -1292,6 +1296,37 @@ function SessionProjectPickerForm({
     parseRecents,
     EMPTY_STRING_ARRAY as string[],
   );
+
+  // Recent paths whose directory the last `/api/fs/stat` probe reported as
+  // gone (deleted / moved since it was recorded). Opening one dead-ends at the
+  // "Can't open project" screen, so we drop them from the dropdown seed up
+  // front. Best-effort and additive: only paths explicitly reported missing
+  // are hidden; a probe failure leaves the set empty and every recent shows.
+  const [missingRecents, setMissingRecents] = useState<ReadonlySet<string>>(
+    EMPTY_STRING_SET,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    if (recents.length === 0) {
+      setMissingRecents((prev) => (prev.size === 0 ? prev : EMPTY_STRING_SET));
+      return;
+    }
+    void probeDirExistence(recents).then((existsMap) => {
+      if (cancelled) return;
+      const gone = new Set<string>();
+      for (const recentPath of recents) {
+        if (existsMap[recentPath] === false) gone.add(recentPath);
+      }
+      setMissingRecents((prev) =>
+        prev.size === gone.size && [...gone].every((p) => prev.has(p))
+          ? prev
+          : gone,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recents]);
 
   // Suggested project path the Swift host refreshes at every launch
   // (the repo source tree for debug builds, `$HOME` for release).
@@ -1656,6 +1691,9 @@ function SessionProjectPickerForm({
       const q = query.trim();
       const items: TugComboBoxItem[] = [];
       for (const recentPath of recents) {
+        // Don't offer a directory we already know is gone — opening it would
+        // just dead-end at "Can't open project".
+        if (missingRecents.has(recentPath)) continue;
         const match = caseInsensitiveSubstring(q, recentPath);
         if (q !== "" && match === null) continue;
         const matches = match?.matches ?? [];
@@ -1693,7 +1731,7 @@ function SessionProjectPickerForm({
       }
       return items;
     },
-    [recents, pendingTrashRecentPath, requestTrashRecent],
+    [recents, missingRecents, pendingTrashRecentPath, requestTrashRecent],
   );
 
   // Sessions list delegate — onSelect updates the session selection
