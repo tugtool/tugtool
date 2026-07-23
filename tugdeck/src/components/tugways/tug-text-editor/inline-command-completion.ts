@@ -107,7 +107,24 @@ export function currentInlineGhost(view: EditorView): InlineGhost | null {
   const sel = view.state.selection.main;
   if (sel.from !== sel.to) return null;
   const matcher = view.state.facet(inlineCommandMatcherFacet)();
-  return computeInlineGhost(view.state.doc.toString(), sel.head, matcher);
+  // Bounded window, not `doc.toString()` — this runs on every keystroke
+  // and a `/command` token never spans a line break, so the caret's line
+  // is the whole relevant text. The window starts ONE character before
+  // the line (when one exists) so the pure matcher's "a token at offset
+  // 0 leads the document" rule keeps its meaning: a line-leading slash
+  // mid-document sees the preceding newline at offset 0 and still
+  // ghosts; a true document-leading slash sees offset 0 and defers to
+  // the position-0 command popup, exactly as before.
+  const line = view.state.doc.lineAt(sel.head);
+  const windowStart = Math.max(0, line.from - 1);
+  const text = view.state.doc.sliceString(windowStart, line.to);
+  const ghost = computeInlineGhost(text, sel.head - windowStart, matcher);
+  if (ghost === null) return null;
+  return {
+    ...ghost,
+    slashOffset: ghost.slashOffset + windowStart,
+    caret: ghost.caret + windowStart,
+  };
 }
 
 /** Build the ghost decoration for the current state, or `Decoration.none`. */

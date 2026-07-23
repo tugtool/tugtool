@@ -301,6 +301,40 @@ export const KEYBINDINGS: KeyBinding[] = [
 
 // ---- matchKeybinding ----
 
+/** Chord key for the precompiled lookup: exact `code` + the exact state
+ *  of all four modifier flags — the same identity
+ *  {@link keyBindingMatchesEvent} tests pairwise. */
+function chordKey(
+  code: string,
+  ctrl: boolean,
+  meta: boolean,
+  shift: boolean,
+  alt: boolean,
+): string {
+  return `${code}|${ctrl ? 1 : 0}${meta ? 1 : 0}${shift ? 1 : 0}${alt ? 1 : 0}`;
+}
+
+/**
+ * Precompiled chord → binding index. `matchKeybinding` runs on EVERY
+ * capture-phase keydown in the app — a plain letter included — so the
+ * lookup must be O(1), not a linear scan of the table. First writer
+ * wins on a duplicate chord, matching the old first-match scan order.
+ */
+const KEYBINDING_INDEX: ReadonlyMap<string, KeyBinding> = (() => {
+  const index = new Map<string, KeyBinding>();
+  for (const binding of KEYBINDINGS) {
+    const key = chordKey(
+      binding.key,
+      binding.ctrl ?? false,
+      binding.meta ?? false,
+      binding.shift ?? false,
+      binding.alt ?? false,
+    );
+    if (!index.has(key)) index.set(key, binding);
+  }
+  return index;
+})();
+
 /**
  * Match a KeyboardEvent against the keybinding map.
  *
@@ -310,12 +344,17 @@ export const KEYBINDINGS: KeyBinding[] = [
  * [D06] Returns the full binding so callers can inspect preventDefaultOnMatch.
  */
 export function matchKeybinding(event: KeyboardEvent): KeyBinding | null {
-  for (const binding of KEYBINDINGS) {
-    if (keyBindingMatchesEvent(event, binding)) {
-      return binding;
-    }
-  }
-  return null;
+  return (
+    KEYBINDING_INDEX.get(
+      chordKey(
+        event.code,
+        !!event.ctrlKey,
+        !!event.metaKey,
+        !!event.shiftKey,
+        !!event.altKey,
+      ),
+    ) ?? null
+  );
 }
 
 /**

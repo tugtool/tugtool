@@ -1967,9 +1967,16 @@ export const TugPromptEntry = React.forwardRef<
             !flags.inserted &&
             !flags.declined &&
             positioned.length === 0 &&
+            // Cheap structural pre-gates before materializing any text:
+            // the classifier only ever matches `<token><space>` on a
+            // single line, so a multi-line or long draft (a paste) must
+            // not pay a full doc copy per keystroke just to fail the
+            // `\n` check inside.
+            doc.lines === 1 &&
+            doc.length <= 256 &&
             update.transactions.some((tr) => tr.isUserEvent("input.type")) &&
             autoShellOpener(
-              doc.toString(),
+              doc.sliceString(0),
               update.state.selection.main.head,
               pathCommandsStoreRef.current?.getSnapshot() ?? null,
             ) !== null

@@ -492,7 +492,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (
         binding.action === TUG_ACTIONS.CANCEL_DIALOG &&
         event.key === "Escape" &&
-        focusManager.currentFocusMode() !== BASE_FOCUS_MODE
+        mode !== BASE_FOCUS_MODE
       ) {
         return;
       }

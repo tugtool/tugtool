@@ -39,6 +39,57 @@ import { useCallback, useEffect, useRef } from "react";
 // [L23]
 const AUTO_SAVE_DEBOUNCE_MS = 250;
 
+/**
+ * ONE document-level `selectionchange` listener shared by every card.
+ * `selectionchange` fires on every caret move anywhere in the app —
+ * with a listener per card, a fast typist paid O(open cards) handler
+ * invocations per keystroke. The shared listener resolves the single
+ * selection anchor once and walks UP from it — `closest` over the
+ * `data-tug-dirty-scope` mark each registered content element carries —
+ * instead of asking every card whether it contains the anchor.
+ */
+const selectionSubscribers = new Map<HTMLElement, () => void>();
+let selectionListenerInstalled = false;
+
+function handleDocumentSelectionChange(): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const anchor = sel.anchorNode;
+  if (anchor === null) return;
+  const anchorEl =
+    anchor instanceof Element ? anchor : anchor.parentElement;
+  if (anchorEl === null) return;
+  const scope = anchorEl.closest<HTMLElement>("[data-tug-dirty-scope]");
+  if (scope === null) return;
+  selectionSubscribers.get(scope)?.();
+}
+
+function subscribeSelectionChange(
+  contentEl: HTMLElement,
+  markDirty: () => void,
+): () => void {
+  selectionSubscribers.set(contentEl, markDirty);
+  contentEl.setAttribute("data-tug-dirty-scope", "");
+  if (!selectionListenerInstalled) {
+    selectionListenerInstalled = true;
+    document.addEventListener(
+      "selectionchange",
+      handleDocumentSelectionChange,
+    );
+  }
+  return () => {
+    selectionSubscribers.delete(contentEl);
+    contentEl.removeAttribute("data-tug-dirty-scope");
+    if (selectionSubscribers.size === 0 && selectionListenerInstalled) {
+      selectionListenerInstalled = false;
+      document.removeEventListener(
+        "selectionchange",
+        handleDocumentSelectionChange,
+      );
+    }
+  };
+}
+
 export interface UseCardDirtyStateArgs {
   hostContentEl: HTMLDivElement | null;
   saveRef: React.RefObject<() => void>;
@@ -66,19 +117,14 @@ export function useCardDirtyState(args: UseCardDirtyStateArgs): () => void {
     const handleScroll = () => markDirty();
     contentEl.addEventListener("scroll", handleScroll, { passive: true });
 
-    const handleSelectionChange = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const anchor = sel.anchorNode;
-      if (anchor && contentEl.contains(anchor)) {
-        markDirty();
-      }
-    };
-    document.addEventListener("selectionchange", handleSelectionChange);
+    const unsubscribeSelection = subscribeSelectionChange(
+      contentEl,
+      markDirty,
+    );
 
     return () => {
       contentEl.removeEventListener("scroll", handleScroll);
-      document.removeEventListener("selectionchange", handleSelectionChange);
+      unsubscribeSelection();
       if (autoSaveTimerRef.current !== null) {
         window.clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
