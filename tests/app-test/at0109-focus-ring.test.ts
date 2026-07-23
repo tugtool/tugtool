@@ -2,22 +2,27 @@
  * at0109-focus-ring.test.ts — the single app-owned focus ring (focus-ring.css +
  * the --tugx-focus-ring-* theme tokens).
  *
- * One ring, on the keyboard-active control: it appears on **keyboard** focus
- * (`:focus-visible`) and never on a mouse click. There is no always-on marker —
- * the focus engine still tracks `data-key-view` for the Tab walk, but that is
- * internal plumbing with no visual of its own.
+ * One ring, on the keyboard-active control: it appears on **keyboard** focus and
+ * never on a mouse click. The key view is engine state projected to the DOM as
+ * `data-key-view` — internal plumbing with no visual of its own. The ring paints
+ * only when that key view is *keyboard-reached* (`data-key-view-kbd`), the mark
+ * the engine sets when the Tab walk (not a pointer) lands the key view.
  *
- * Two halves:
- *   - a **mouse click** on the `Dynamic Keybinding` panel target
- *     (`keybinding-demo-target`, a `tabIndex=0` responder) promotes it to the
- *     key view (`data-key-view`) but is not `:focus-visible`, so no ring paints
- *     (outline width 0);
- *   - a **keyboard** Tab drives the engine walk onto a registered focusable
- *     (the `Focus Walk` panel), and that key-view element is `:focus-visible`,
- *     so the ring paints.
+ * Under the keyboard-as-engine-state model, DOM focus rests on the app's
+ * `tug-key-sink`, not on the clicked control — the engine routes keys off the
+ * sink and derives the key view from its own register, so a control's ring is a
+ * function of engine state, not of `document.activeElement`. The two halves:
+ *
+ *   - a **mouse click** parks a key view (pointer modality) on the card's
+ *     focusable — `data-key-view` is set, but it is NOT `data-key-view-kbd`, so
+ *     no ring paints (outline width 0). DOM focus lands on the sink, not the
+ *     control;
+ *   - a **keyboard** Tab drives the engine walk onto a registered focusable and
+ *     marks that key view keyboard-reached (`data-key-view-kbd`), so the ring
+ *     paints.
  *
  * Outline width is read from `getComputedStyle` in the real WKWebView, where the
- * `:focus-visible` heuristic actually lives.
+ * ring's `data-key-view-kbd` styling actually resolves.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -49,37 +54,28 @@ function deckShape() {
   };
 }
 
-// Snapshot a selector's key-view + focus-visible state and its computed outline.
-const PROBE = (selector: string) => `(function(){
-  var el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) return null;
-  var cs = getComputedStyle(el);
+// Snapshot the element currently carrying the key view (whatever it is) and the
+// keyboard-reached ring element (if any). A single read keeps the pointer- and
+// keyboard-modality assertions consistent across one paint.
+const RING_PROBE = `(function(){
+  var kv = document.querySelector("[data-key-view]");
+  var kbd = document.querySelector("[data-key-view-kbd]");
+  var ae = document.activeElement;
   return {
-    keyView: el.getAttribute("data-key-view"),
-    focusVisible: el.matches(":focus-visible"),
-    keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    width: cs.outlineWidth,
-  };
-})()`;
-
-// Snapshot the element currently carrying the key view (whatever it is).
-const KEY_VIEW_PROBE = `(function(){
-  var el = document.querySelector("[data-key-view]");
-  if (!el) return null;
-  var cs = getComputedStyle(el);
-  return {
-    keyView: el.getAttribute("data-key-view"),
-    focusVisible: el.matches(":focus-visible"),
-    keyboardReached: el.hasAttribute("data-key-view-kbd"),
-    width: cs.outlineWidth,
+    keyView: kv ? kv.getAttribute("data-key-view") : null,
+    keyViewOutline: kv ? getComputedStyle(kv).outlineWidth : null,
+    keyViewIsKbd: kv ? kv.hasAttribute("data-key-view-kbd") : null,
+    kbdOutline: kbd ? getComputedStyle(kbd).outlineWidth : null,
+    activeIsSink: ae !== null && ae.classList.contains("tug-key-sink"),
   };
 })()`;
 
 interface RingProbe {
   keyView: string | null;
-  focusVisible: boolean;
-  keyboardReached: boolean;
-  width: string;
+  keyViewOutline: string | null;
+  keyViewIsKbd: boolean | null;
+  kbdOutline: string | null;
+  activeIsSink: boolean;
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0109: single focus ring on the keyboard-active control", () => {
@@ -98,30 +94,32 @@ describe.skipIf(!SHOULD_RUN)("AT0109: single focus ring on the keyboard-active c
           { timeoutMs: 8000 },
         );
 
-        // Mouse click — promotes the target to the key view, but pointer focus
-        // is not :focus-visible, so no ring paints.
+        // Mouse click — parks a key view (pointer modality) on the card's
+        // focusable. The key view lands, but it is not keyboard-reached, so no
+        // ring paints; DOM focus rests on the sink, never on the control.
         await app.nativeClickAtElement(DEMO_TARGET);
         await app.waitForCondition<boolean>(
-          `(function(){ var t = document.querySelector(${JSON.stringify(DEMO_TARGET)}); return t !== null && t.contains(document.activeElement); })()`,
+          `document.querySelector("[data-key-view]") !== null`,
           { timeoutMs: 6000 },
         );
-        const clicked = await app.evalJS<RingProbe>(PROBE(DEMO_TARGET));
-        expect(clicked?.keyView).toBe("keybinding-demo");
-        expect(clicked?.focusVisible).toBe(false);
-        expect(parseFloat(clicked?.width ?? "0")).toBe(0);
+        const clicked = await app.evalJS<RingProbe>(RING_PROBE);
+        expect(clicked?.keyView).not.toBeNull();
+        expect(clicked?.keyViewIsKbd).toBe(false);
+        expect(parseFloat(clicked?.keyViewOutline ?? "0")).toBe(0);
+        expect(clicked?.activeIsSink).toBe(true);
 
-        // Keyboard Tab — drives the engine walk onto a registered focusable.
-        // The engine marks the key view as keyboard-reached (`data-key-view-kbd`),
-        // so the ring paints even though WebKit withholds :focus-visible from the
+        // Keyboard Tab — drives the engine walk onto a registered focusable and
+        // marks the key view keyboard-reached (`data-key-view-kbd`), so the ring
+        // paints even though WebKit withholds :focus-visible from the sink's
         // programmatic focus.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `document.querySelector("[data-key-view-kbd]") !== null`,
           { timeoutMs: 6000 },
         );
-        const keyboard = await app.evalJS<RingProbe>(KEY_VIEW_PROBE);
-        expect(keyboard?.keyboardReached).toBe(true);
-        expect(parseFloat(keyboard?.width ?? "0")).toBeGreaterThan(0);
+        const keyboard = await app.evalJS<RingProbe>(RING_PROBE);
+        expect(keyboard?.keyViewIsKbd).toBe(true);
+        expect(parseFloat(keyboard?.kbdOutline ?? "0")).toBeGreaterThan(0);
       } finally {
         await app.close();
       }
