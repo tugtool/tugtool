@@ -409,6 +409,23 @@ describe("routeTopLevelEvent", () => {
     expect(marker.pre_tokens).toBe(48000);
   });
 
+  test("top-level tool_progress is swallowed (no unknown_event banner)", () => {
+    // Real bash_progress shape from the engine — progress telemetry, no output.
+    const event = {
+      type: "tool_progress",
+      tool_use_id: "toolu_abc",
+      tool_name: "Bash",
+      parent_tool_use_id: null,
+      elapsed_time_seconds: 12,
+      task_id: "task-1",
+      session_id: "sess-123",
+      uuid: "u-1",
+    };
+    const result = routeTopLevelEvent(event, baseCtx);
+    expect(result.messages).toHaveLength(0);
+    expect(result.gotResult).toBe(false);
+  });
+
   test("unrecognized top-level type emits an unknown_event frame", () => {
     const event = { type: "future_telemetry", payload: { foo: 1 } };
     const result = routeTopLevelEvent(event, baseCtx);

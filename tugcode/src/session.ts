@@ -1938,6 +1938,20 @@ export function routeTopLevelEvent(
       break;
     }
 
+    case "tool_progress": {
+      // Top-level progress/heartbeat telemetry the engine yields while a
+      // long-running tool executes: `bash_progress` / `powershell_progress`
+      // (elapsed_time_seconds + task_id), `repl_call`, `heartbeat:true`, and
+      // subagent-retry frames. None carries tool output — they exist only to
+      // report liveness — so there is nothing to render in the Session card.
+      // Streaming tool input already flows through `tool_input_progress`, and
+      // subagent progress through the `system/task_progress` path; claude's own
+      // SDK adapter ignores the heartbeat/subagent-retry variants. Swallow it
+      // so it does not fall into the `unknown_event` default and raise a
+      // spurious "Unsupported event" banner downstream.
+      break;
+    }
+
     case "control_cancel_request": {
       const cancelId = event.request_id as string | undefined;
       if (cancelId) {
