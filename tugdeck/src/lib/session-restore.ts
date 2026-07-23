@@ -713,8 +713,9 @@ export function cancelSessionRestore(cardId: string): void {
  *
  * Clears the `sessionRestoreRegistry` entry so `SessionCardContent` falls
  * through from the `SessionRestoring` placeholder to the project picker,
- * which surfaces the rejection through `sessionSpawnErrorStore`'s banner.
- * No picker notice is set — the spawn-error banner is the notice.
+ * which surfaces the rejection (read live from `sessionSpawnErrorStore`) as
+ * its own inline alert inside the sheet — one surface, not a banner layered
+ * behind the picker.
  *
  * A no-op when the card has no registry entry: a rejection that races
  * a card the user never had on a restore hold simply does nothing.

@@ -24,16 +24,21 @@
  * - `signed_out` — the per-session auth gate found the CLI logged out
  *   (or missing) at spawn: the card unbinds so the app-modal TugSetup
  *   owns re-login and the picker owns per-card resume.
+ * - `spawn_failed` — tugcast rejected the `spawn_session` outright (e.g.
+ *   the project directory no longer exists). The picker is itself the
+ *   recovery surface — the user re-picks a directory — so this category
+ *   carries no retry context; it renders an inline alert inside the
+ *   re-presented picker rather than a separate banner.
  *
- * All categories are retryable (the picker renders a Retry button when
- * `staleTugSessionId` + `staleProjectDir` are populated), but each
- * surfaces different copy to the user.
+ * The retryable categories render a Retry button when `staleTugSessionId`
+ * + `staleProjectDir` are populated; each surfaces different copy.
  */
 export type PickerNoticeCategory =
   | "resume_failed"
   | "restore_canceled"
   | "restore_timed_out"
-  | "signed_out";
+  | "signed_out"
+  | "spawn_failed";
 
 export interface PickerNotice {
   category: PickerNoticeCategory;

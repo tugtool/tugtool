@@ -944,8 +944,8 @@ export function initActionDispatch(
       return;
     }
     // `dir_exists` gates the picker's Open button. Absent (older
-    // tugcast) defaults to `true` so the dialog fails open — part 2's
-    // spawn-error banner is the backstop.
+    // tugcast) defaults to `true` so the dialog fails open — the
+    // spawn-error inline alert is the backstop.
     const dirExists =
       typeof payload.dir_exists === "boolean" ? payload.dir_exists : true;
     // Absent (older tugcast) → `false`: a single-shot response is already
@@ -974,8 +974,8 @@ export function initActionDispatch(
   // spawn_session_error: the supervisor rejected a `spawn_session`
   // (e.g. the project directory no longer exists). The router echoes
   // the originating `card_id` so the failure routes to that card's
-  // spawn-error banner — the unbound card has no CodeSessionStore to
-  // carry it.
+  // picker, which surfaces it as an inline alert — the unbound card has
+  // no CodeSessionStore to carry it.
   registerAction("spawn_session_error", (payload) => {
     const cardId = payload.card_id;
     if (typeof cardId !== "string") {
@@ -989,8 +989,8 @@ export function initActionDispatch(
     // A rejection during the startup restore pass leaves a
     // `sessionRestoreRegistry` hold in place — the zero-turn fresh-spawn
     // path arms one so the card doesn't flash the picker mid-bind.
-    // Drop it so the card falls through to the picker, where the
-    // banner set above is shown.
+    // Drop it so the card falls through to the picker, which reads the
+    // error set above and shows its inline alert.
     notifySpawnRejected(cardId);
   });
   registerAction("list_sessions_err", (payload) => {

@@ -856,14 +856,6 @@
   align-items: center;
 }
 
-/* Retry button on a picker notice (S3/S5). Sits below the notice
-   message so the click target is obvious. */
-.session-card-picker-notice-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--tug-space-xs, 4px);
-}
-
 /* Form content inside the picker sheet. The `xl` gap separates the
    top-level label+item sections (path field, Recents, Sessions, sheet
    actions) so each reads as its own beat — a wider gap than the
@@ -881,19 +873,6 @@
 .session-card-picker-dir-warning {
   margin-right: auto;
   align-self: center;
-}
-
-/* One-shot notice surfaced above the form when the picker is
-   re-presented after a session failure (e.g. resume failed).
-   @tug-renders-on: surface.global.attention.muted */
-.session-card-picker-notice {
-  padding: var(--tug-space-sm, 8px) var(--tug-space-md, 12px);
-  border-radius: var(--tug-radius-sm, 6px);
-  background: var(--tug7-element-global-surface-attention-muted-rest, rgba(255, 196, 0, 0.12));
-  color: var(--tug7-element-global-text-normal-strong-rest);
-  font-size: var(--tug-font-size-sm, 0.875rem);
-  font-family: var(--tug-font-family-sans);
-  line-height: var(--tug-line-height-tight, 1.35);
 }
 
 .session-card-picker-field {

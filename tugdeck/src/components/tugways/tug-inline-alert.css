@@ -1,0 +1,119 @@
+/* @tug-pairings {
+  --tugx-inline-alert-fg     | --tugx-inline-alert-bg | content
+  --tugx-inline-alert-border | --tugx-inline-alert-bg | informational
+} */
+
+/**
+ * @tug-pairings
+ * | Element                     | Surface                   | Role          | Context                          |
+ * |-----------------------------|---------------------------|---------------|----------------------------------|
+ * | --tugx-inline-alert-fg      | --tugx-inline-alert-bg    | content       | .tug-inline-alert (color)        |
+ * | --tugx-inline-alert-border  | --tugx-inline-alert-bg    | informational | .tug-inline-alert (border-color) |
+ * | --tugx-inline-alert-icon-fg | --tugx-inline-alert-bg    | decorative    | .tug-inline-alert-icon (color)   |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ---- */
+
+body {
+  /* A quiet raised panel: the sheet/card surface one step up, a hairline
+     border, neutral text. Distinct enough from the form behind it to read as
+     a contained notice, calm enough not to shout. */
+  --tugx-inline-alert-bg:      var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-inline-alert-fg:      var(--tug7-element-global-text-normal-default-rest);
+  --tugx-inline-alert-border:  var(--tug7-element-global-border-normal-muted-rest);
+  --tugx-inline-alert-icon-fg: var(--tug7-element-global-icon-normal-muted-rest);
+}
+
+/* ---- Container ---- */
+
+.tug-inline-alert {
+  /* @tug-renders-on: --tugx-inline-alert-bg */
+  background-color: var(--tugx-inline-alert-bg);
+  color: var(--tugx-inline-alert-fg);
+  border: 1px solid var(--tugx-inline-alert-border);
+  border-radius: 0.5rem;
+  padding: var(--tug-space-md, 12px) var(--tug-space-lg, 16px);
+  box-sizing: border-box;
+  font-family: var(--tug-font-family-sans);
+}
+
+/* ---- Body — icon left, text right (classic Mac HIG layout, mirrors TugAlert) ---- */
+
+.tug-inline-alert-body {
+  display: flex;
+  gap: var(--tugx-header-gap-one);
+  align-items: center;
+}
+
+/* With a message the block is two lines: the two-line-scale icon top-aligns to
+   the title (the shared modal-header "two-line" case). A title-only notice
+   keeps the one-line icon centered on the lone line. */
+.tug-inline-alert-body[data-has-message] {
+  gap: var(--tugx-header-gap-two);
+  align-items: flex-start;
+}
+
+/* ---- Icon container ---- */
+
+.tug-inline-alert-icon {
+  /* @tug-renders-on: --tugx-inline-alert-bg
+     Always muted — tone rides the border + buttons, not the icon. */
+  color: var(--tugx-inline-alert-icon-fg);
+  flex-shrink: 0;
+  width: var(--tugx-header-icon-one);
+  height: var(--tugx-header-icon-one);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tug-inline-alert-body[data-has-message] .tug-inline-alert-icon {
+  width: var(--tugx-header-icon-two);
+  height: var(--tugx-header-icon-two);
+}
+
+.tug-inline-alert-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* A tone warms the container border so caution / danger notices carry a
+   trace of their domain without a loud fill. */
+.tug-inline-alert[data-tone="caution"] { --tugx-inline-alert-border: var(--tug7-element-tone-border-normal-caution-rest); }
+.tug-inline-alert[data-tone="danger"]  { --tugx-inline-alert-border: var(--tug7-element-tone-border-normal-danger-rest); }
+.tug-inline-alert[data-tone="accent"]  { --tugx-inline-alert-border: var(--tug7-element-tone-border-normal-accent-rest); }
+
+/* ---- Text column (title + message) ---- */
+
+.tug-inline-alert-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tug-inline-alert-title {
+  font-weight: var(--tugx-header-title-weight);
+  font-size: var(--tugx-header-title-size);
+  line-height: var(--tugx-header-title-lh);
+  margin: 0;
+}
+
+.tug-inline-alert-message {
+  font-size: var(--tugx-header-desc-size);
+  line-height: var(--tugx-header-desc-lh);
+  margin: var(--tugx-header-desc-gap) 0 0;
+  /* Slightly muted, mirroring the alert message. */
+  opacity: 0.8;
+}
+
+/* ---- Actions row ---- */
+
+.tug-inline-alert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tug-space-sm, 8px);
+  margin-top: var(--tug-space-md, 12px);
+}
+
+.tug-inline-alert-actions .tug-button {
+  min-width: 5rem;
+}
