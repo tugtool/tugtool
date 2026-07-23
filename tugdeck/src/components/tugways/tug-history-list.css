@@ -8,6 +8,21 @@
 .tug-history-list {
   display: flex;
   flex-direction: column;
+  /* The one-line box shared by the subject's first line and the trailing
+     cluster. Sized to the 2xs fold-cue button so the cue never exceeds the box
+     (a taller cue would drag the shared centre down and drift off the subject).
+     Both the header's line-height and the trailing slot's min-height read this,
+     so the attribution + fold cue center on the subject's first line whether it
+     wraps or not — the tool-call block-header idiom. */
+  --tug-history-line: 1.25rem;
+}
+
+/* Top-anchor the row (the primitive is `align-items: center`) so a wrapped
+   subject keeps its first line — and the trailing cluster pinned beside it — on
+   row 1, the extra lines flowing below. Scoped to the history list so
+   single-line list rows elsewhere keep their centered layout. */
+.tug-history-list .tug-list-row {
+  align-items: flex-start;
 }
 
 .tug-history-list-commit-block {
@@ -30,6 +45,10 @@
   min-width: 0;
   padding-left: 11ch;
   text-indent: -11ch;
+  /* First line rides the shared one-line box (top-anchored by the row), so its
+     centre matches the trailing cluster's; wrapped lines flow below at the
+     hanging indent. */
+  line-height: var(--tug-history-line);
 }
 
 /* The short sha, rendered as `code`-colored monospace at the row's own size. */
@@ -50,14 +69,14 @@
   gap: var(--tugx-list-row-trailing-gap);
 }
 
-/* The row primitive is `align-items: center`, so when a subject wraps past the
-   first line the trailing slot (the flex child that HOLDS the attribution +
-   fold cue) floats to the wrapped block's vertical middle. Pin the slot itself
-   to the top so the attribution and fold cue stay on the subject's first line —
-   the same top-pin the row's check column uses. Scoped to the history list so
-   single-line list rows elsewhere keep their centered trailing. */
+/* The trailing slot (the flex child that HOLDS the attribution + fold cue)
+   rides the same one-line box as the subject's first line and centers its
+   contents in it. With the row top-anchored above, its centre lands on row 1's
+   centre — matching the subject's first line whether the subject wraps or not.
+   `min-height` (not `height`) lets a taller portaled control grow rather than
+   clip, exactly as the block-header trailing does. */
 .tug-history-list .tug-list-row-trailing {
-  align-self: flex-start;
+  min-height: var(--tug-history-line);
 }
 
 /* Author · date on the collapsed row — sans, muted, a step under the mono
