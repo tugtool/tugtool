@@ -83,3 +83,18 @@ export function formatSessionRowSubtitle(row: SessionRow): string {
   const id = `id ${row.session_id.slice(0, 8)}`;
   return [ts, turns, size, id].filter((p) => p !== null).join(" · ");
 }
+
+/**
+ * Subtitle for a `state: "failed"` row. The old copy hard-coded
+ * "Couldn't resume — JSONL missing" for every failed row, which was routinely a
+ * lie: the 2026-07-22 commit-xp row showed it while a 40 MB transcript sat on
+ * disk. Only assert the transcript is gone when the on-disk scan actually found
+ * it empty/absent (`file_size === 0`); an intact transcript — or a row not yet
+ * scanned (`file_size` null/absent) — is resumable, so invite a retry instead
+ * of fabricating a cause.
+ */
+export function formatFailedRowSubtitle(row: SessionRow): string {
+  return row.file_size === 0
+    ? "Couldn’t resume — transcript missing"
+    : "Resume failed — select to retry";
+}

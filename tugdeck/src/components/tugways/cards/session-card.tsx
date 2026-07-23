@@ -1161,16 +1161,25 @@ function formatScanProgressValue(value: number, max: number): string {
 }
 
 /**
- * Map a picker notice to user-facing copy. `resume_failed` uses a
- * generic sentence; `restore_canceled` and `restore_timed_out`
- * include the project path from `staleProjectDir` so the user sees
- * which card's restore was affected. Falls back to the raw
- * `notice.message` on unexpected shapes.
+ * Map a picker notice to user-facing copy. `resume_failed` surfaces the
+ * *real* reason carried on `notice.message` (from tugcode's `resume_failed`
+ * IPC) rather than guessing a cause — the old copy asserted "deleted or in use
+ * elsewhere", which was routinely false (the 2026-07-22 commit-xp session had a
+ * 40 MB transcript sitting on disk). `restore_canceled` and `restore_timed_out`
+ * include the project path from `staleProjectDir` so the user sees which card's
+ * restore was affected. Falls back to the raw `notice.message` on unexpected
+ * shapes.
  */
 function noticeText(notice: PickerNotice): string {
   switch (notice.category) {
-    case "resume_failed":
-      return "Couldn’t resume the previous session — it may have been deleted or is in use elsewhere. Pick a different option below.";
+    case "resume_failed": {
+      const reason = notice.message.trim();
+      const detail =
+        reason.length > 0 && reason.toLowerCase() !== "resume failed"
+          ? ` (${reason})`
+          : "";
+      return `Couldn’t resume the previous session${detail}. Retry, or pick another option below.`;
+    }
     case "restore_canceled":
       return notice.staleProjectDir !== undefined
         ? `Canceled restoring the previous session for ${notice.staleProjectDir}.`

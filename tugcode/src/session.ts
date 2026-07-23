@@ -2445,6 +2445,48 @@ const FOREGROUND_RESULT_UNITS_CAP = 600;
  */
 const ACTIVITY_FLUSH_MS = 250;
 
+/**
+ * Cancel-escalation grace. `handleInterrupt` first sends the in-band
+ * `interrupt` control-request (the graceful path — a healthy claude ends the
+ * turn and emits its own `result`). If the turn hasn't ended within this
+ * window claude is wedged and can't service its own stdin, so tugcode
+ * escalates to an OS-level force-terminate + resume-respawn. The user's cancel
+ * must always win; 2s is comfortably longer than a healthy interrupt
+ * round-trip.
+ */
+const INTERRUPT_ACK_GRACE_MS = 2000;
+
+/**
+ * Result-liveness watchdog. Claude closes each assistant message with a
+ * `message_delta` carrying a terminal `stop_reason`, then emits its turn-final
+ * `result` almost immediately. If a terminal stop is seen but no `result`
+ * lands within this window the turn is wedged post-content (the 2026-07-22
+ * commit-xp hang: final text delivered, `result` never arrived, cancel
+ * powerless). Force-terminate and resume-respawn rather than spin forever.
+ * Generous enough that a slow final flush never trips it.
+ */
+const RESULT_WATCHDOG_MS = 12000;
+
+/**
+ * Force-terminate signal grace. {@link killAndCleanup} in `escalate` mode
+ * sends SIGINT, waits this long for claude to exit, then SIGKILLs. Unlike the
+ * graceful teardown (stdin EOF + 5s), a wedged claude isn't reading stdin, so
+ * the ladder is signal-based and short.
+ */
+const FORCE_TERMINATE_SIGINT_GRACE_MS = 1500;
+
+/**
+ * The `message_delta.delta.stop_reason` values that close an assistant message
+ * for good — the turn's `result` must follow. `tool_use` is deliberately
+ * excluded: it opens another tool-loop iteration, not the turn's end, so it
+ * must never arm the result watchdog.
+ */
+const TERMINAL_STOP_REASONS: ReadonlySet<string> = new Set([
+  "end_turn",
+  "stop_sequence",
+  "max_tokens",
+]);
+
 export class ActiveTurn {
   /**
    * Per-lane stream state, keyed `parent_tool_use_id ?? null` (see
@@ -3254,6 +3296,37 @@ export class SessionManager {
    */
   private initializeRequestId: string | null = null;
   /**
+   * Set true once claude's turn-free `initialize` control-response has been
+   * correlated (the handshake ack). Proof that claude launched, loaded, and —
+   * for a resume — successfully opened its JSONL. {@link installEarlyExitWatcher}
+   * reads it so a *later* clean exit is classified as a runtime crash
+   * (recoverable, retried by the bridge's crash budget) rather than a phantom
+   * `resume_failed`: a genuinely stale `--resume` id exits within ~1s and never
+   * acks the handshake. Reset in {@link killAndCleanup} so each spawn re-proves
+   * itself.
+   */
+  private initializeHandshakeAcked: boolean = false;
+  /**
+   * Pending cancel-escalation timer. Armed by {@link handleInterrupt} after the
+   * in-band interrupt control-request; fires {@link forceTerminateAndRespawn}
+   * if a wedged claude doesn't end the turn within {@link INTERRUPT_ACK_GRACE_MS}.
+   * Cleared the moment the turn completes by any path. `null` when unarmed.
+   */
+  private interruptEscalationTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Pending result-liveness watchdog timer. Armed when a terminal `stop_reason`
+   * is seen with no `result` yet; fires {@link forceTerminateAndRespawn} after
+   * {@link RESULT_WATCHDOG_MS}. Cleared on `result` or a fresh `message_start`
+   * (a new iteration means claude kept working). `null` when unarmed.
+   */
+  private resultWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Re-entrancy guard for {@link forceTerminateAndRespawn}: the interrupt
+   * ladder and the result watchdog can both fire for the same wedge, and the
+   * teardown/respawn must run exactly once.
+   */
+  private forceTerminateInProgress: boolean = false;
+  /**
    * The Claude Code CLI version (`claude --version`), resolved once per spawn
    * and folded into the turn-free `session_capabilities` handshake so the
    * frontend's Claude Code badge reads a real version from the drop instead of
@@ -3550,14 +3623,33 @@ export class SessionManager {
   }
 
   /**
-   * Kill and clean up the current claude process gracefully.
-   * Closes stdin (EOF) to signal the process to finish, waits up to 5s,
-   * then force-kills if still running.
+   * Kill and clean up the current claude process.
+   *
+   * Default (graceful): closes stdin (EOF) to signal claude to finish, waits
+   * up to 5s, then force-kills if still running — used by respawn / fork /
+   * truncate where claude is healthy and reading stdin.
+   *
+   * `escalate` mode: a *wedged* claude isn't servicing its stdin, so an EOF
+   * won't land. Skip the graceful wait and go straight to the signal ladder —
+   * SIGINT, a short {@link FORCE_TERMINATE_SIGINT_GRACE_MS} grace, then
+   * SIGKILL. This is the OS-level lever the in-band interrupt can't reach
+   * (the 2026-07-22 commit-xp hang).
+   *
+   * Either way, the old stdout drain is awaited before returning so its EOF
+   * `finally` ({@link signalEofToActiveTurn} — emits the turn's terminal frame
+   * and resolves its completion) runs before a respawn resets
+   * `claudeStdoutEofObserved`; without the await the two race and a fresh
+   * spawn can inherit a stale "EOF observed" flag.
    */
-  private async killAndCleanup(): Promise<void> {
+  private async killAndCleanup(opts?: { escalate?: boolean }): Promise<void> {
+    const escalate = opts?.escalate === true;
     // Mark shutdown so the early-exit watcher ignores the exit code
     // from our kill rather than surfacing a phantom resume_failed.
     this.isShuttingDown = true;
+    // A deliberate teardown cancels any armed cancel-escalation / result
+    // watchdog — the process we were guarding is going away.
+    this.clearInterruptEscalation();
+    this.clearResultWatchdog();
     // The session is changing (respawn / fork / truncate) — drop the cached
     // `/rewind` preview JSONL so the next preview re-reads ([#step-7-3]).
     this.rewindPreviewJsonl = null;
@@ -3570,29 +3662,61 @@ export class SessionManager {
     // Claude exit forces each live background-agent tailer's final
     // flush: drain what its file holds and compose the final answer.
     await this.stopAllSubagentTailers();
+    const drainTask = this.stdoutDrainTask;
     if (this.claudeProcess) {
-      try {
-        // Close stdin to signal EOF (graceful shutdown).
-        this.claudeProcess.stdin.end();
-        // Wait for process to exit or timeout after 5s.
-        await Promise.race([
-          this.claudeProcess.exited,
-          new Promise<void>((res) => setTimeout(res, 5000)),
-        ]);
-      } catch {
-        // Process may already be gone.
-      }
-      try {
-        this.claudeProcess.kill();
-      } catch {
-        // Ignore if already terminated.
+      const child = this.claudeProcess;
+      if (escalate) {
+        // Signal ladder for a wedged claude: SIGINT, brief grace, SIGKILL.
+        try {
+          child.kill("SIGINT");
+          await Promise.race([
+            child.exited,
+            new Promise<void>((res) =>
+              setTimeout(res, FORCE_TERMINATE_SIGINT_GRACE_MS),
+            ),
+          ]);
+        } catch {
+          // Process may already be gone.
+        }
+        try {
+          child.kill("SIGKILL");
+          await child.exited;
+        } catch {
+          // Already terminated.
+        }
+      } else {
+        try {
+          // Close stdin to signal EOF (graceful shutdown).
+          child.stdin.end();
+          // Wait for process to exit or timeout after 5s.
+          await Promise.race([
+            child.exited,
+            new Promise<void>((res) => setTimeout(res, 5000)),
+          ]);
+        } catch {
+          // Process may already be gone.
+        }
+        try {
+          child.kill();
+        } catch {
+          // Ignore if already terminated.
+        }
       }
       this.claudeProcess = null;
       // The drain task observes EOF on the closed stdout stream and
-      // exits its loop; we don't need to cancel it explicitly. Reset
-      // the handle so a subsequent respawn can start a fresh drain
-      // without cross-contamination.
+      // exits its loop; reset the handle so a subsequent respawn can
+      // start a fresh drain without cross-contamination.
       this.stdoutDrainTask = null;
+    }
+    // Let the old drain finish its EOF `finally` before we return (and before
+    // any respawn resets `claudeStdoutEofObserved`). Cheap: the reader is
+    // already at EOF on a killed process.
+    if (drainTask) {
+      try {
+        await drainTask;
+      } catch {
+        // Drain surfaced its own error already; nothing to do here.
+      }
     }
     // Reset the re-init tracker so the respawn's first `system/init`
     // is classified as a first init (not a wake bracket signal). See
@@ -3604,6 +3728,131 @@ export class SessionManager {
     // Clear the pending `initialize` correlation so a respawn issues a
     // fresh handshake rather than matching the dead process's id.
     this.initializeRequestId = null;
+    // The next spawn must re-prove itself before its exit is read as a crash.
+    this.initializeHandshakeAcked = false;
+  }
+
+  /** Clear the armed cancel-escalation timer, if any. */
+  private clearInterruptEscalation(): void {
+    if (this.interruptEscalationTimer !== null) {
+      clearTimeout(this.interruptEscalationTimer);
+      this.interruptEscalationTimer = null;
+    }
+  }
+
+  /** Clear the armed result-liveness watchdog timer, if any. */
+  private clearResultWatchdog(): void {
+    if (this.resultWatchdogTimer !== null) {
+      clearTimeout(this.resultWatchdogTimer);
+      this.resultWatchdogTimer = null;
+    }
+  }
+
+  /**
+   * Force-terminate a wedged claude and respawn `--resume`, keeping the card
+   * bound. The recovery primitive shared by the cancel-escalation ladder
+   * ({@link handleInterrupt}) and the result-liveness watchdog
+   * ({@link armResultWatchdog}).
+   *
+   * The turn (if any) is flagged `interrupted` first so the drain's EOF path
+   * closes it as `turn_cancelled` (a clean cancel receipt), not `error`. The
+   * kill is the escalate signal ladder; the respawn is a plain resume against
+   * the current claude id, so everything claude persisted to its JSONL is
+   * retained — this is a recovery, never a retraction/truncation. Resume mode
+   * is forced even for a `new`-mode session: its on-disk JSONL already exists
+   * under its id, so `--resume` is correct and avoids a `--session-id`
+   * collision.
+   *
+   * Idempotent via {@link forceTerminateInProgress}: the interrupt ladder and
+   * the watchdog may both fire for one wedge.
+   */
+  private async forceTerminateAndRespawn(reason: string): Promise<void> {
+    if (this.forceTerminateInProgress) return;
+    this.forceTerminateInProgress = true;
+    try {
+      logSessionLifecycle("tugcode.force_terminate", {
+        session_id: this.sessionId,
+        reason,
+      });
+      // Close the in-flight turn as a cancel, not an error, when the drain
+      // observes the kill's EOF.
+      if (this.activeTurn !== null) {
+        this.activeTurn.interrupted = true;
+      }
+
+      await this.killAndCleanup({ escalate: true });
+
+      // killAndCleanup latched `isShuttingDown` for the teardown; clear it so
+      // the fresh spawn's watcher is armed normally.
+      this.isShuttingDown = false;
+
+      // Respawn resume — keep the card bound, reload the intact JSONL.
+      this.sessionMode = "resume";
+      const claudeId = this.resolveClaudeId();
+      this.claudeProcess = this.spawnClaude(claudeId, "resume");
+      this.startStdoutDrain(this.claudeProcess);
+      this.startStderrReader();
+      this.installEarlyExitWatcher();
+      this.sendInitializeHandshake();
+      this.writeSyntheticSessionInit(claudeId);
+
+      logSessionLifecycle("tugcode.force_terminate_respawned", {
+        session_id: this.sessionId,
+        claude_session_id: claudeId,
+        reason,
+      });
+    } finally {
+      this.forceTerminateInProgress = false;
+    }
+  }
+
+  /**
+   * Arm the cancel-escalation timer for an interrupted turn. If the in-band
+   * interrupt control-request doesn't end the turn within
+   * {@link INTERRUPT_ACK_GRACE_MS}, claude is wedged and can't service its own
+   * stdin — force-terminate and resume-respawn so the user's cancel wins.
+   * The timer is cancelled the instant the turn completes by any path.
+   */
+  private armInterruptEscalation(turn: ActiveTurn): void {
+    this.clearInterruptEscalation();
+    const timer = setTimeout(() => {
+      this.interruptEscalationTimer = null;
+      // The turn ended on its own (clean interrupt ack, or the drain already
+      // closed it) — nothing to escalate.
+      if (this.activeTurn !== turn || turn.gotResult) return;
+      logSessionLifecycle("tugcode.interrupt_escalation", {
+        session_id: this.sessionId,
+      });
+      void this.forceTerminateAndRespawn("interrupt_unacked");
+    }, INTERRUPT_ACK_GRACE_MS);
+    // A pending escalation must never keep tugcode alive at shutdown.
+    timer.unref?.();
+    this.interruptEscalationTimer = timer;
+    // Cancel the escalation the moment the turn completes by ANY path
+    // (clean result, or the force-kill's own EOF).
+    void turn.completion.then(() => this.clearInterruptEscalation());
+  }
+
+  /**
+   * Arm the result-liveness watchdog for a turn that just closed its final
+   * assistant message (terminal `stop_reason`) but hasn't emitted `result`.
+   * If `result` doesn't land within {@link RESULT_WATCHDOG_MS} the turn is
+   * wedged post-content — force-terminate and resume-respawn. Re-arming (a
+   * later terminal stop in the same turn) resets the clock.
+   */
+  private armResultWatchdog(turn: ActiveTurn): void {
+    this.clearResultWatchdog();
+    const timer = setTimeout(() => {
+      this.resultWatchdogTimer = null;
+      if (this.activeTurn !== turn || turn.gotResult) return;
+      logSessionLifecycle("tugcode.result_watchdog_fired", {
+        session_id: this.sessionId,
+      });
+      void this.forceTerminateAndRespawn("result_timeout");
+    }, RESULT_WATCHDOG_MS);
+    // A pending watchdog must never keep tugcode alive at shutdown.
+    timer.unref?.();
+    this.resultWatchdogTimer = timer;
   }
 
   /**
@@ -3982,6 +4231,10 @@ export class SessionManager {
    * Watch claude's exit indefinitely. The watcher only emits IPC if
    * claude exits AND none of these guards apply:
    *
+   *   - the exited process is no longer `this.claudeProcess`: a
+   *     deliberate teardown ({@link killAndCleanup} /
+   *     {@link forceTerminateAndRespawn}) nulls or replaces the handle
+   *     before this callback runs, so its exit was ours — never a failure.
    *   - `isShuttingDown`: we initiated the kill (signal, stdin EOF,
    *     close); a phantom resume_failed for a user-driven close would
    *     reach the bridge after the card is already gone.
@@ -3990,10 +4243,21 @@ export class SessionManager {
    *     is a runtime crash, not an init failure — the existing
    *     handleUserMessage stream-end path classifies it.
    *
-   * When emitting, the failure mode is taken from
-   * `claudeStderrClassification` (definitive, harvested from stderr
-   * by `startStderrReader`) and falls back to the session mode only
-   * when stderr carried nothing recognizable.
+   * A `resume_failed` is only correct BEFORE claude proves it launched.
+   * Once the turn-free `initialize` handshake is acked
+   * ({@link initializeHandshakeAcked}), claude has fully loaded and — for a
+   * resume — opened its JSONL, so any later exit is a runtime crash. Emitting
+   * `resume_failed` there is the 2026-07-22 commit-xp regression: a healthy
+   * resumed session that a force-kill or a genuine crash later tore down was
+   * mislabeled a stale-id failure, which unbinds the card and marks the ledger
+   * row failed instead of letting the bridge's crash budget retry the resume.
+   * So a post-handshake exit with no *definitive* stderr signature is routed
+   * to the bridge's crash path (recoverable), which respawns and re-resumes.
+   *
+   * When a genuine init failure IS emitted, the failure mode is taken from
+   * `claudeStderrClassification` (definitive, harvested from stderr by
+   * `startStderrReader`) and falls back to the session mode only when stderr
+   * carried nothing recognizable.
    */
   private installEarlyExitWatcher(): void {
     if (!this.claudeProcess) return;
@@ -4002,6 +4266,8 @@ export class SessionManager {
     const sessionMode = this.sessionMode;
 
     void child.exited.then(async (code) => {
+      // The live handle moved on (teardown / respawn) — this exit was ours.
+      if (this.claudeProcess !== child) return;
       if (this.isShuttingDown) return;
       if (this.claudeReceivedInput) return;
       if (this.replayActive) {
@@ -4022,9 +4288,35 @@ export class SessionManager {
       // the bridge read the exit as a generic crash and burn its retry budget
       // on three identical collisions before locking the card as `errored`.
       const classification = this.claudeStderrClassification;
+      const definitiveInitFailure =
+        classification === "resume_failed" || classification === "collision";
+
+      // Post-handshake exit with no definitive stderr → a runtime crash, not an
+      // init/resume failure. Exit WITHOUT `resume_failed` so the bridge reads
+      // stdout-close as `Crashed` and its crash budget respawns + re-resumes
+      // the intact JSONL. Emitting the error frame keeps the card honest about
+      // the blip; the retry re-populates it.
+      if (this.initializeHandshakeAcked && !definitiveInitFailure) {
+        const reason = `claude exited with code ${code} after handshake (runtime crash)`;
+        logSessionLifecycle("tugcode.claude_crash_post_handshake", {
+          session_id: sessionId,
+          reason,
+          exit_code: code,
+        });
+        await writeLineAndExit(
+          {
+            type: "error",
+            message: reason,
+            recoverable: true,
+            ipc_version: 2,
+          },
+          0,
+        );
+        return;
+      }
+
       const isResumeFailure =
-        classification === "resume_failed" ||
-        classification === "collision" ||
+        definitiveInitFailure ||
         (classification === null && sessionMode === "resume");
 
       if (isResumeFailure) {
@@ -4916,6 +5208,9 @@ export class SessionManager {
       );
       if (parsed !== null && parsed.requestId === this.initializeRequestId) {
         this.initializeRequestId = null;
+        // The handshake ack proves claude launched and (for a resume) opened
+        // its JSONL. A later exit is now a runtime crash, not a resume failure.
+        this.initializeHandshakeAcked = true;
         // claude's turn-free handshake omits `--plugin-dir` plugin commands
         // (they load lazily, surfacing only with the first turn's system
         // init). Merge the bundled plugin's commands from disk so a fresh
@@ -5614,6 +5909,30 @@ export class SessionManager {
       if (streamResult.messageId !== undefined) {
         lane.msgId = streamResult.messageId;
         ctx.msgId = lane.msgId;
+        // A fresh main-lane `message_start` means claude opened another
+        // tool-loop iteration — it's alive and working, so disarm any
+        // result watchdog a prior terminal `stop_reason` set. (Subagent
+        // lanes never gate the main turn's liveness.)
+        if (laneKey === null) this.clearResultWatchdog();
+      }
+      // Result-liveness watchdog ([defect 5]): claude closes its final
+      // assistant message with a terminal `stop_reason`, then emits the
+      // turn's `result` almost immediately. Arm the watchdog on that terminal
+      // stop; if `result` never lands the turn is wedged post-content (the
+      // commit-xp hang). Main lane + live only — never during a replay bracket
+      // (historical deltas) or on a subagent's message.
+      if (
+        laneKey === null &&
+        !turn.suppressEmit &&
+        routeResult.streamEvent.type === "message_delta"
+      ) {
+        const delta = routeResult.streamEvent.delta as
+          | Record<string, unknown>
+          | undefined;
+        const stopReason = delta?.stop_reason;
+        if (typeof stopReason === "string" && TERMINAL_STOP_REASONS.has(stopReason)) {
+          this.armResultWatchdog(turn);
+        }
       }
       for (const ipcMsg of streamResult.messages) {
         if (routeResult.parentToolUseId) {
@@ -5767,6 +6086,10 @@ export class SessionManager {
 
     if (routeResult.gotResult) {
       turn.gotResult = true;
+      // The turn's `result` landed — the wedge the watchdog guards against
+      // did not happen. Disarm it (and any cancel-escalation timer, which the
+      // completion hook also clears).
+      this.clearResultWatchdog();
       // Emit final complete terminal frames for each text/thinking
       // block of the current message. The per-delta path has already
       // delivered the text incrementally; these terminal frames serve
@@ -6167,6 +6490,9 @@ export class SessionManager {
     // Latch the flag before any branch — handleUserMessage's
     // fast-path read after this point must see "EOF observed."
     this.claudeStdoutEofObserved = true;
+    // The turn (if any) is ending on this EOF — disarm the liveness watchdog
+    // so a stale timer can't fire against a closed turn.
+    this.clearResultWatchdog();
     // claude's stdout is gone: no follow-on turn will ever be
     // bracketed, so drop any still-queued inputs rather than let a
     // respawn's drain claim them for an unrelated turn.
@@ -6439,6 +6765,13 @@ export class SessionManager {
     }
     const stdin = this.claudeProcess.stdin;
     sendControlRequest(stdin, generateRequestId(), { subtype: "interrupt" });
+    // The in-band interrupt is the graceful path — a healthy claude ends the
+    // turn and emits `result`. Arm the escalation ladder so a wedged claude
+    // that never services the request still gets force-terminated: the user's
+    // cancel must always win.
+    if (this.activeTurn !== null) {
+      this.armInterruptEscalation(this.activeTurn);
+    }
   }
 
   /**

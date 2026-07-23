@@ -124,6 +124,9 @@ describe("handleInterrupt retract flag", () => {
     manager.handleInterrupt(true);
     expect(turn.interrupted).toBe(true);
     expect(turn.retractRequested).toBe(true);
+    // This synthetic turn's completion never resolves; dispose the
+    // escalation timer handleInterrupt armed so it can't fire later.
+    (manager as any).clearInterruptEscalation();
   });
 
   test("a plain handleInterrupt() does NOT latch retractRequested", () => {
@@ -133,6 +136,8 @@ describe("handleInterrupt retract flag", () => {
     manager.handleInterrupt();
     expect(turn.interrupted).toBe(true);
     expect(turn.retractRequested).toBe(false);
+    // Dispose the armed escalation timer (synthetic turn never completes).
+    (manager as any).clearInterruptEscalation();
   });
 });
 

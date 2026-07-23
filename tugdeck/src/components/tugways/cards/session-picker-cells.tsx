@@ -75,6 +75,7 @@ import type {
   SessionsDataSource,
 } from "@/lib/session-picker-data-source";
 import {
+  formatFailedRowSubtitle,
   formatSessionRowSubtitle,
   truncateForDisplay,
 } from "./session-picker-format";
@@ -212,7 +213,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
           ? "In use in a terminal — idle"
           : "In use in a terminal"
       : isFailed
-        ? "Couldn't resume — JSONL missing"
+        ? formatFailedRowSubtitle(row)
         : metaSubtitle;
 
   const idShort = row.session_id.slice(0, 8);

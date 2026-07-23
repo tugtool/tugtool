@@ -2899,6 +2899,26 @@ impl AgentSupervisor {
         // client-side would misrepresent live state.
         let effective_session_mode = {
             let mut entry = entry_arc.lock().await;
+            // Retry-clears-error: a spawn request for an `Errored` entry IS the
+            // user asking to (re)spawn it — the picker's Retry. Clear the error
+            // back to `Idle` so the eager-spawn + replay below fire, instead of
+            // the dispatcher dropping every frame and `request_replay` skipping
+            // in a terminal state (the 2026-07-22 commit-xp regression: Retry
+            // re-spawned but the entry stayed `Errored`, so the card came back
+            // empty even though the JSONL was intact). Crucially this preserves
+            // `claude_session_id` + `session_mode` — unlike `reset_session`,
+            // which wipes them to start fresh — so the respawn resumes the
+            // intact transcript. `Closed` is genuinely terminal and left alone.
+            if !inserted && entry.spawn_state == SpawnState::Errored {
+                tracing::info!(
+                    target: "dev::session-lifecycle",
+                    event = "spawn.clear_errored_for_retry",
+                    card_id = card_id,
+                    tug_session_id = %tug_session_id,
+                    had_claude_id = entry.claude_session_id.is_some(),
+                );
+                entry.spawn_state = SpawnState::Idle;
+            }
             if !inserted
                 && entry.spawn_state == SpawnState::Idle
                 && entry.session_mode != session_mode
@@ -7690,6 +7710,47 @@ mod tests {
         assert!(
             meta_rx.try_recv().is_err(),
             "no replay for a session with no persisted row and no in-memory slot",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_session_clears_errored_state_on_retry() {
+        // Regression for the 2026-07-22 commit-xp incident: after a
+        // (mis)classified resume_failed left the entry `Errored`, the picker's
+        // Retry re-spawned but the entry stayed terminal, so the dispatcher
+        // dropped every frame and replay was skipped — the card came back
+        // empty even though the JSONL was intact. A spawn request for an
+        // `Errored` entry must clear it back so the eager spawn proceeds,
+        // WITHOUT wiping the resume identity.
+        let (sup, _meta_rx, _ledger) = make_supervisor_with_real_ledger();
+
+        let entry = insert_ledger_entry(&sup, &TugSessionId::new("sess-1")).await;
+        {
+            let mut e = entry.lock().await;
+            e.spawn_state = SpawnState::Errored;
+            e.claude_session_id = Some("sess-1".to_string());
+            e.session_mode = SessionMode::Resume;
+        }
+
+        sup.handle_control("spawn_session", &spawn_payload("card-1", "sess-1"), 10)
+            .await
+            .expect_handled();
+
+        let e = entry.lock().await;
+        assert_ne!(
+            e.spawn_state,
+            SpawnState::Errored,
+            "Retry must clear the errored state so the respawn can proceed",
+        );
+        assert_eq!(
+            e.claude_session_id.as_deref(),
+            Some("sess-1"),
+            "the resume identity is preserved — recovery resumes the intact JSONL",
+        );
+        assert_eq!(
+            e.session_mode,
+            SessionMode::Resume,
+            "the session mode is preserved (unlike a New-session discard)",
         );
     }
 

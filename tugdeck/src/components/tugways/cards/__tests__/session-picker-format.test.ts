@@ -6,7 +6,10 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { formatSessionRowSubtitle } from "../session-picker-format";
+import {
+  formatFailedRowSubtitle,
+  formatSessionRowSubtitle,
+} from "../session-picker-format";
 import type { SessionRow } from "@/protocol";
 
 function row(over: Partial<SessionRow>): SessionRow {
@@ -53,5 +56,24 @@ describe("formatSessionRowSubtitle — turns beside size", () => {
   test("both turns and size absent → just timestamp + id", () => {
     const s = formatSessionRowSubtitle(row({ turn_count: 0 }));
     expect(s).toBe("just now · id abcdef12");
+  });
+});
+
+describe("formatFailedRowSubtitle — no fabricated cause", () => {
+  test("an intact on-disk transcript invites a retry, never claims missing", () => {
+    // The commit-xp regression: a 40 MB transcript on disk while the row
+    // announced "JSONL missing".
+    const s = formatFailedRowSubtitle(row({ state: "failed", file_size: 40_000_000 }));
+    expect(s).toBe("Resume failed — select to retry");
+  });
+
+  test("an unscanned row (file_size absent) does not assert missing", () => {
+    const s = formatFailedRowSubtitle(row({ state: "failed" }));
+    expect(s).toBe("Resume failed — select to retry");
+  });
+
+  test("only a scanned-empty transcript (file_size 0) claims missing", () => {
+    const s = formatFailedRowSubtitle(row({ state: "failed", file_size: 0 }));
+    expect(s).toBe("Couldn’t resume — transcript missing");
   });
 });
