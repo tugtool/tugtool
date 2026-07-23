@@ -8,7 +8,7 @@
  * `/commit` enters the mode — the rising commit sheet panel appears AND the
  * Z5 Commit button appears — and Escape exits it (both vanish). The mode
  * activates regardless of changeset state ([P09]) — an empty changeset shows
- * the "No changes" sheet with the Commit button disabled-but-present — so no
+ * the "None" sheet with the Commit button disabled-but-present — so no
  * real changes are needed. The full commit round-trip is covered at the Rust
  * layer (the replay workspace's changeset entries live ~2s). ⇧⌘C toggles this
  * same bottom sheet (and, on an empty composer, the mode) — not driven here

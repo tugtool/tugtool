@@ -39,7 +39,9 @@
   padding: 4px 0;
   font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-tone-text-normal-success-rest);
+  /* Muted "None" — matches the Lens sections' empty label (and the shade's
+     other None labels), not the old success green. */
+  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 /* Not-yet-composed state: the aggregate hasn't emitted this workspace, so an

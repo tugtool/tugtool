@@ -270,7 +270,7 @@ export function SessionChangesView({
     <div className="session-changes-view-body">
       {isCleanAllClear ? (
         <div className="session-changes-clean" role="status">
-          No changes
+          None
         </div>
       ) : null}
       {isAwaitingScan ? (
