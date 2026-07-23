@@ -3581,22 +3581,29 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // honored.
         return dataSourceRef.current.enabledForIndex?.(index) !== false;
       };
-      // A pointer gesture that lands inside a row's own editing surface (a
-      // contenteditable — CM's `.cm-content` — or an `input` / `textarea`)
-      // belongs to that surface, not to row selection: promoting the container
-      // would ascend the row's descend scope, blur the editor, and close it.
-      // Read from the event TARGET (not the async descend state) so the guard is
-      // reliable the instant the editor mounts, before its scope has settled.
-      const targetIsInnerEditor = (e: { target: EventTarget | null }): boolean =>
-        e.target instanceof Element &&
-        e.target.closest('[contenteditable="true"], input, textarea') !== null;
+      // The clicked cell holds an OPEN in-row editor — a contenteditable (CM's
+      // `.cm-content`), `input`, or `textarea` anywhere in its subtree. A
+      // pointer gesture anywhere in such a cell (the text, the well padding, the
+      // scroller below the last line, the card header) belongs to the editor,
+      // not to row selection: promoting the container would ascend the row's
+      // descend scope, blur the editor, and close it. Read from the cell
+      // (`currentTarget`) rather than the exact target so a click on the well
+      // chrome — not just on the text — keeps the editor open, and rather than
+      // the async descend state so the guard is reliable the instant the editor
+      // mounts, before its scope has settled.
+      const cellHasOpenEditor = (
+        e: { currentTarget: EventTarget | null },
+      ): boolean =>
+        e.currentTarget instanceof Element &&
+        e.currentTarget.querySelector('[contenteditable="true"], input, textarea') !==
+          null;
       const pointerDownCb = (e: React.PointerEvent<HTMLDivElement>): void => {
         if (!focusEngineActiveRef.current) return;
         if (!cellIsPickable()) return;
-        // A pointerdown INSIDE the open editor stays with the editor: the
-        // editor's own focusable (found by the capture-phase pointer placement)
-        // keeps the caret, so the click lands in the text as expected.
-        if (targetIsInnerEditor(e)) return;
+        // A pointerdown anywhere in the open editor's cell stays with the
+        // editor: the editor's own focusable (found by the capture-phase pointer
+        // placement) keeps the caret, so the click lands as expected.
+        if (cellHasOpenEditor(e)) return;
         // Promote the keyboard-navigable listbox to the KEYBOARD key view on
         // POINTERDOWN — the same event dispatch as the capture-phase pointer
         // placement (`responder-chain-provider`), which parks the container as
@@ -3618,9 +3625,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
       const clickCb = (e: React.MouseEvent<HTMLDivElement>): void => {
         if (!cellIsPickable()) return;
-        // A click inside the open editor is the editor's, not a re-selection of
-        // the container's row (mirrors the pointerdown guard).
-        if (targetIsInnerEditor(e)) return;
+        // A click in the open editor's cell is the editor's, not a re-selection
+        // of the container's row (mirrors the pointerdown guard).
+        if (cellHasOpenEditor(e)) return;
         delegateRef.current?.onSelect?.(index);
         // `selectionRequired` mode — the list view owns the selected index; a
         // cell activation moves it. `delegate.onSelect` above still fires, so

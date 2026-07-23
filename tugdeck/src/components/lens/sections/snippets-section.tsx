@@ -354,6 +354,67 @@ function SnippetEditorRow({
     queueMicrotask(() => editorRef.current?.focus());
   }, []);
 
+  // A pointerdown on the card's own CHROME (the sticky header, the well padding
+  // around the text — anything that is NOT the editor's contenteditable) is not
+  // a departure from the editor. Left alone, the engine's pointer placement
+  // (`responder-chain-provider`) resolves such a click to the row's plain
+  // wrapper focusable, which is engine-routed: it parks focus at the key sink,
+  // blurring the caret and committing (closing) the snippet. Arm the engine's
+  // one-shot placement suppression for the gesture — on WINDOW capture, so it is
+  // set BEFORE the engine's document-capture promotion consumes it — so the
+  // caret simply stays put. A pointerdown in the text (which the engine resolves
+  // to the editor's own dom-granted responder), in another row, or outside the
+  // Lens is untouched, so those still place / commit as before.
+  // Timestamp of the last card-chrome pointerdown, read by `onBlur` as a
+  // last-resort net. A recency window (not a one-shot boolean) is robust to the
+  // blur firing either synchronously in the gesture OR a tick later — both land
+  // inside the window. A non-chrome pointerdown or any keydown resets it to 0,
+  // so clicking a different row / Escape / Tab still commits.
+  const chromeClickTsRef = useRef(0);
+  useLayoutEffect(() => {
+    const inChrome = (t: EventTarget | null): boolean => {
+      const el = wrapRef.current;
+      return (
+        el !== null &&
+        t instanceof Node &&
+        el.contains(t) &&
+        (!(t instanceof Element) || t.closest(".cm-editor") === null)
+      );
+    };
+    // On a chrome pointerdown: stamp the recency window and arm the engine's
+    // one-shot placement suppression so the engine does not re-route the caret
+    // to the key sink. Any other pointerdown clears the window.
+    const onDown = (e: PointerEvent): void => {
+      if (inChrome(e.target)) {
+        chromeClickTsRef.current = Date.now();
+        manager?.suppressPointerPlacementOnce();
+      } else {
+        chromeClickTsRef.current = 0;
+      }
+    };
+    // Stop the browser's OWN mousedown focus default too: the chrome is not
+    // focusable, so the native default would pull DOM focus off the caret
+    // (toward the nearest focusable ancestor, or clear it to the body), blurring
+    // and committing the editor. `preventDefault` keeps the caret put; the click
+    // still fires, so the header's buttons (copy / ✕) keep working.
+    const onMouseDown = (e: MouseEvent): void => {
+      if (inChrome(e.target)) e.preventDefault();
+    };
+    // A keyboard departure (Escape / Tab) is never a chrome click: close the
+    // window so its blur commits.
+    const onKey = (): void => {
+      chromeClickTsRef.current = 0;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [manager]);
+
   const onFocus = useCallback((e: React.FocusEvent<HTMLDivElement>): void => {
     // A later engine focus lands on the wrapper itself; forward into the CM6
     // caret. Focus arriving already inside the editor passes through.
@@ -369,6 +430,16 @@ function SnippetEditorRow({
         e.relatedTarget instanceof Node &&
         e.currentTarget.contains(e.relatedTarget)
       ) {
+        return;
+      }
+      // Last-resort net for a blur that a chrome click still produced (the
+      // engine placement was suppressed, so the caret can be restored without a
+      // watchdog re-park fighting it). A blur within the recency window of a
+      // chrome pointerdown is that click's — keep the editor and restore the
+      // caret. The window is closed by a non-chrome pointerdown / keydown, so a
+      // genuine departure still commits.
+      if (Date.now() - chromeClickTsRef.current < 500) {
+        queueMicrotask(() => editorRef.current?.focus());
         return;
       }
       if (store.getSnapshot().editingId === snippet.id) store.commitEdit();

@@ -226,17 +226,29 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           );
 
           // A click INSIDE the open editor must not close it — the click stays
-          // with the editor (it does not promote the container out of the row's
-          // descend scope). The editor is still mounted after clicking its body.
-          // Wait until the editor has actually claimed focus (its descend scope
-          // is established) before clicking inside it — otherwise the click can
-          // land before the descend settles and the guard has nothing to see.
-          await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true`,
-            { timeoutMs: 3_000 },
+          // with the editor (it does not depart the row's descend scope). Wait
+          // until the editor has fully claimed focus and the descend has settled
+          // (the editor holds the active element AND the list is no longer the
+          // keyboard key view) before each in-card click.
+          const editorSettled = `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true
+             && document.querySelector('.lens-snippets-list')?.hasAttribute('data-key-view-kbd') === false`;
+
+          // (a) A click on the card's CHROME — the sticky header, which is NOT
+          // the contenteditable — keeps the editor open.
+          await app.waitForCondition<boolean>(editorSettled, { timeoutMs: 3_000 });
+          await app.nativeClickAtElement(
+            `.snippet-editor-header .snippet-row-label`,
           );
-          // Target the first line (near the top, on-screen); the tall
-          // `.cm-content`'s center would be below the visible frame.
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector('.snippet-editor .cm-content') !== null`,
+            ),
+          ).toBe(true);
+
+          // (b) A click on the editor's TEXT keeps it open too (the first line
+          // is near the top, on-screen; the tall `.cm-content`'s center would be
+          // below the visible frame).
+          await app.waitForCondition<boolean>(editorSettled, { timeoutMs: 3_000 });
           await app.nativeClickAtElement(`.snippet-editor .cm-content .cm-line`);
           expect(
             await app.evalJS<boolean>(
