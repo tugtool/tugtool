@@ -383,6 +383,37 @@ describe("[L26] idForIndex stability: `${turnKey}-{user,assistant}` survives inf
 // Row descriptors expose committed turn / active turn / queued send
 // ---------------------------------------------------------------------------
 
+describe("layout memo: committed walk keyed on transcript identity", () => {
+  test("a fresh snapshot with the SAME transcript ref still sees new in-flight/ghost rows", () => {
+    // The streaming-delta shape: every delta replaces the snapshot
+    // object while `transcript` keeps its identity (turns commit only
+    // at turn_complete). The committed walk memoizes on the transcript
+    // ref, so the tail (in-flight + ghosts) must still recompute per
+    // snapshot — a stale memo here would freeze the active turn's rows.
+    const transcript = [normalTurn("T", "hello", "world")];
+    const holder = { snap: snapshotWith({ transcript }) };
+    const ds = new SessionTranscriptDataSource({
+      getSnapshot: () => holder.snap,
+      subscribe: () => () => {},
+      streamingDocument: { get: () => undefined, observe: () => () => {} },
+    } as unknown as CodeSessionStore);
+    expect(ds.numberOfItems()).toBe(2);
+
+    const active = activeTurn({ turnKey: "L", isWake: false, withText: "hi" });
+    holder.snap = snapshotWith({ transcript, activeTurn: active });
+    expect(ds.numberOfItems()).toBe(4);
+    expect(ds.rowAt(2).activeTurn).toBe(active);
+    // Committed rows are untouched by the tail recompute.
+    expect(ds.rowAt(0).turn?.turnKey).toBe("T");
+
+    // A new transcript ref (turn_complete) rebuilds the committed walk.
+    const grown = [...transcript, normalTurn("U", "again", "sure")];
+    holder.snap = snapshotWith({ transcript: grown });
+    expect(ds.numberOfItems()).toBe(4);
+    expect(ds.rowAt(2).turn?.turnKey).toBe("U");
+  });
+});
+
 describe("rowAt produces a descriptor consumers can narrow on", () => {
   test("normal committed: row 0 is `user` with turn payload; row 1 is `assistant`", () => {
     const snap = snapshotWith({

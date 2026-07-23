@@ -400,12 +400,23 @@ function pushTurnSlots(
 }
 
 /**
- * Build the {@link RowLayout} for `snap`. Pure function — exported
- * for unit-test reuse. Walks each turn's `messages` once into row
- * groups (Spec S01), then accounts for the in-flight turn and ghosts.
+ * The committed-turns portion of a {@link RowLayout} — everything
+ * derivable from `snap.transcript` alone. Split out so the expensive
+ * whole-transcript walk memoizes on the transcript array's identity
+ * (which changes only at turn boundaries), while streaming deltas —
+ * which replace the snapshot per notify — recompute only the cheap
+ * in-flight/ghost tail in {@link composeRowLayout}.
  */
-export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
-  const transcript = snap.transcript;
+interface CommittedLayout {
+  slots: ReadonlyArray<RowSlot>;
+  turnStartRow: ReadonlyArray<number>;
+  turnRowCount: ReadonlyArray<number>;
+}
+
+/** Walk the committed turns into row slots, shell ordinals included. */
+function buildCommittedLayout(
+  transcript: ReadonlyArray<TurnEntry>,
+): CommittedLayout {
   const slots: RowSlot[] = [];
   const turnStartRow: number[] = new Array(transcript.length);
   const turnRowCount: number[] = new Array(transcript.length);
@@ -414,6 +425,32 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
     pushTurnSlots(slots, walkTurnGroups(transcript[t].messages, false, transcript[t].origin), t, false);
     turnRowCount[t] = slots.length - turnStartRow[t];
   }
+  // Number the shell rows in one pass: a session-wide 1-based counter in
+  // flat-row (timestamp-interleave) order. The whole session's shell
+  // exchanges are always loaded ([P07]), so this count is complete —
+  // `#s1`, `#s2`, … a sequence of its own, independent of the Claude turns
+  // interleaved among them. Only committed turns can be shell rows, so
+  // the numbering lives entirely in this walk.
+  let shellCount = 0;
+  for (const slot of slots) {
+    if (slot.cellKind === "shell") {
+      shellCount += 1;
+      slot.shellRowOrdinal = shellCount;
+    }
+  }
+  return { slots, turnStartRow, turnRowCount };
+}
+
+/**
+ * Complete a {@link RowLayout} from a (possibly memoized) committed
+ * walk plus the snapshot's in-flight turn and ghost rows — the cheap
+ * per-snapshot tail, O(active-turn messages + queued sends).
+ */
+function composeRowLayout(
+  committed: CommittedLayout,
+  snap: CodeSessionSnapshot,
+): RowLayout {
+  const tail: RowSlot[] = [];
   // A suppressed in-flight turn (the `/compact` seed) contributes zero
   // rows — it streams to claude but never shows in the transcript.
   const active =
@@ -422,12 +459,12 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
       : snap.activeTurn;
   let activeStartRow = -1;
   if (active !== null) {
-    activeStartRow = slots.length;
-    pushTurnSlots(slots, walkTurnGroups(active.messages, true), -1, true);
+    activeStartRow = committed.slots.length;
+    pushTurnSlots(tail, walkTurnGroups(active.messages, true), -1, true);
   }
-  const ghostStartRow = slots.length;
+  const ghostStartRow = committed.slots.length + tail.length;
   for (let q = 0; q < snap.queuedSends.length; q++) {
-    slots.push({
+    tail.push({
       cellKind: "ghost",
       turnIndex: -1,
       active: false,
@@ -438,26 +475,25 @@ export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
       shellRowOrdinal: 0,
     });
   }
-  // Number the shell rows in one pass: a session-wide 1-based counter in
-  // flat-row (timestamp-interleave) order. The whole session's shell
-  // exchanges are always loaded ([P07]), so this count is complete —
-  // `#s1`, `#s2`, … a sequence of its own, independent of the Claude turns
-  // interleaved among them.
-  let shellCount = 0;
-  for (const slot of slots) {
-    if (slot.cellKind === "shell") {
-      shellCount += 1;
-      slot.shellRowOrdinal = shellCount;
-    }
-  }
+  const slots =
+    tail.length === 0 ? committed.slots : committed.slots.concat(tail);
   return {
     totalRows: slots.length,
     slots,
-    turnStartRow,
-    turnRowCount,
+    turnStartRow: committed.turnStartRow,
+    turnRowCount: committed.turnRowCount,
     activeStartRow,
     ghostStartRow,
   };
+}
+
+/**
+ * Build the {@link RowLayout} for `snap`. Pure function — exported
+ * for unit-test reuse. Walks each turn's `messages` once into row
+ * groups (Spec S01), then accounts for the in-flight turn and ghosts.
+ */
+export function buildRowLayout(snap: CodeSessionSnapshot): RowLayout {
+  return composeRowLayout(buildCommittedLayout(snap.transcript), snap);
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +600,21 @@ export class SessionTranscriptDataSource implements TugListViewDataSource {
   } | null = null;
 
   /**
+   * Memo of the committed-turns walk, keyed on the transcript array's
+   * identity — which changes only at turn boundaries, NOT per streaming
+   * delta. During a stream each new snapshot re-runs only the cheap
+   * in-flight/ghost tail against this cached walk, so a token burst
+   * costs O(active-turn messages) instead of O(whole transcript). The
+   * cached slot objects are reused verbatim across compositions, which
+   * also keeps committed cells' props reference-identical for their
+   * `React.memo` guards.
+   */
+  private _committedMemo: {
+    transcript: ReadonlyArray<TurnEntry>;
+    committed: CommittedLayout;
+  } | null = null;
+
+  /**
    * The per-turn context-window walk for `snap`, computed once per
    * snapshot and reused. See {@link _windowsMemo}.
    */
@@ -590,7 +641,17 @@ export class SessionTranscriptDataSource implements TugListViewDataSource {
     if (this._layoutMemo !== null && this._layoutMemo.snapshot === snap) {
       return this._layoutMemo.layout;
     }
-    const layout = buildRowLayout(snap);
+    let committed: CommittedLayout;
+    if (
+      this._committedMemo !== null &&
+      this._committedMemo.transcript === snap.transcript
+    ) {
+      committed = this._committedMemo.committed;
+    } else {
+      committed = buildCommittedLayout(snap.transcript);
+      this._committedMemo = { transcript: snap.transcript, committed };
+    }
+    const layout = composeRowLayout(committed, snap);
     this._layoutMemo = { snapshot: snap, layout };
     return layout;
   }

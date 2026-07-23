@@ -37,9 +37,28 @@
 import type { TugConnection } from "../connection";
 import type { FeedIdValue } from "../protocol";
 
-/** Default decoder: UTF-8 bytes → JSON.parse */
+/**
+ * Shared decode cache. `TugConnection.dispatch` hands the SAME payload
+ * object to every registered callback, and shared feeds (CODE_OUTPUT /
+ * SESSION_STATE / CONTROL) have one FeedStore per open card — without
+ * the cache, every frame from any session is JSON-parsed once per card
+ * and then dropped by all but the owning card's filter. WeakMap keying
+ * means nothing is pinned: the entry dies with the payload buffer.
+ *
+ * The decoded value is shared by all consumers, so wire frames stay
+ * what they already were by contract: immutable.
+ */
+const decodeCache = new WeakMap<Uint8Array, unknown>();
+
+const utf8 = new TextDecoder();
+
+/** Default decoder: UTF-8 bytes → JSON.parse, one parse per frame. */
 export function defaultDecode(payload: Uint8Array): unknown {
-  return JSON.parse(new TextDecoder().decode(payload));
+  const hit = decodeCache.get(payload);
+  if (hit !== undefined) return hit;
+  const decoded = JSON.parse(utf8.decode(payload));
+  decodeCache.set(payload, decoded);
+  return decoded;
 }
 
 /**

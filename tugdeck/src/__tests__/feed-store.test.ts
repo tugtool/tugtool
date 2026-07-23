@@ -12,7 +12,7 @@
 
 import { describe, test, expect } from "bun:test";
 
-import { FeedStore, type FeedStoreFilter } from "../lib/feed-store";
+import { FeedStore, defaultDecode, type FeedStoreFilter } from "../lib/feed-store";
 import { FeedId, type FeedIdValue } from "../protocol";
 import type { TugConnection } from "../connection";
 
@@ -75,6 +75,21 @@ function encodeJson(obj: unknown): Uint8Array {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("defaultDecode shared cache", () => {
+  test("the same payload object decodes once — all consumers share the value", () => {
+    // TugConnection.dispatch hands one payload object to every card's
+    // FeedStore; the WeakMap cache makes the 2nd..Nth decodes free.
+    const payload = encodeJson({ type: "assistant_text", text: "hi" });
+    const first = defaultDecode(payload);
+    const second = defaultDecode(payload);
+    expect(second).toBe(first);
+    // A distinct payload (even byte-identical) decodes independently.
+    const other = defaultDecode(encodeJson({ type: "assistant_text", text: "hi" }));
+    expect(other).not.toBe(first);
+    expect(other).toEqual(first as Record<string, unknown>);
+  });
+});
 
 describe("FeedStore filter", () => {
   test("rejects a live frame — snapshot unchanged, listeners not notified", () => {
