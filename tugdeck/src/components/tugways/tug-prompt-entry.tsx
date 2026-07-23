@@ -3314,7 +3314,7 @@ export const TugPromptEntry = React.forwardRef<
             side="top"
             arrow
             message="Replace message?"
-            confirmLabel="OK"
+            confirmLabel="Replace"
             confirmRole="danger"
             onConfirm={() => {
               setCommitConfirmOpen(false);
