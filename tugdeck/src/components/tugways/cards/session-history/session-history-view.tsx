@@ -22,7 +22,7 @@
 
 import "./session-history-view.css";
 
-import { useEffect, useId, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import type React from "react";
 import { History as HistoryIcon } from "lucide-react";
 
@@ -102,6 +102,28 @@ export function SessionHistoryView({
     gitLogStore()?.requestLog(projectDir);
   }, [active, projectDir, snapshot.requestedRoot, snapshot.phase]);
 
+  // A cached `no_repo` snapshot is unstable: the dir may have been `git init`'d
+  // out of band (a terminal, or before the git-init control frame learned to
+  // nudge this store). An unborn HEAD moves no HEAD, so no GIT_HEAD signal
+  // shakes it loose and `requestLog` no-ops on the same root. Re-verify once
+  // per activation — the ref gates it so a genuinely non-repo dir never spins.
+  const reverifiedNoRepo = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      reverifiedNoRepo.current = false;
+      return;
+    }
+    if (reverifiedNoRepo.current || projectDir === null) return;
+    if (
+      snapshot.requestedRoot === projectDir &&
+      snapshot.phase === "ready" &&
+      snapshot.payload?.no_repo === true
+    ) {
+      reverifiedNoRepo.current = true;
+      gitLogStore()?.refresh();
+    }
+  }, [active, projectDir, snapshot]);
+
   // The view fills the sheet's shade body ([P17]): the header strip pinned
   // above, the scrolling view below. The shade panel (geometry, scrim,
   // grabber, modality, Escape close) is `TugSheetContent
@@ -178,7 +200,7 @@ export function SessionHistoryView({
     return shell(<div className="session-history-empty">Loading history…</div>);
   }
   if (payload.commits.length === 0) {
-    return shell(<div className="session-history-empty">No commits yet.</div>);
+    return shell(<div className="session-history-empty">No commits</div>);
   }
 
   return shell(

@@ -231,6 +231,18 @@ export class GitLogStore {
     this._send(root, limit);
   }
 
+  /**
+   * A repo was just initialized under `root` (a `git init` with no commit yet).
+   * An unborn HEAD moves no HEAD, so no GIT_HEAD signal arrives — the cached
+   * `no_repo` snapshot would stick. If this store is currently showing that
+   * root, re-request so History flips from "Not a git repository" to the
+   * now-correct empty-repo "No commits yet".
+   */
+  onRepoInitialized(root: string): void {
+    if (this._snapshot.requestedRoot !== root) return;
+    this.refresh();
+  }
+
   private _send(projectDir: string, limit: number): void {
     const conn = getConnection();
     if (!conn) {
