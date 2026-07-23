@@ -88,6 +88,10 @@ import { TugFileChooser } from "../tug-file-chooser";
 import type { TugComboBoxItem } from "../tug-combo-box";
 import { TugIconButton } from "../tug-icon-button";
 import { TugPushButton } from "../tug-push-button";
+import {
+  TugInlineAlert,
+  type TugInlineAlertTone,
+} from "../tug-inline-alert";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
 import { SessionPulseStrip } from "./session-pulse-strip";
@@ -170,7 +174,6 @@ import {
   useSpawnError,
   spawnErrorMessage,
   sessionSpawnErrorStore,
-  type SpawnError,
 } from "@/lib/session-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { cardTitleStore } from "@/lib/card-title-store";
@@ -843,6 +846,35 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
     noticeRef.current = pickerNoticeStore.consume(cardId);
   }
 
+  // Spawn rejection (tugcast refused `spawn_session` — e.g. the project
+  // directory was deleted). Formerly a separate red `TugPaneBanner` that
+  // collided with the picker sheet layered on top of it; now folded into the
+  // picker's own inline-alert channel so there is one surface, not two. Live
+  // (subscribable) rather than one-shot: the rejection can arrive after the
+  // sheet was dismissed on Open, and the effect below re-presents the picker
+  // to show it.
+  const spawnError = useSpawnError(cardId);
+  const spawnNotice: PickerNotice | null =
+    spawnError !== null
+      ? {
+          category: "spawn_failed",
+          message: spawnErrorMessage(spawnError.reason),
+        }
+      : null;
+
+  // The notice the picker actually shows: the one-shot restore notice when
+  // present, else the live spawn rejection. Mirrored into a ref so the
+  // sheet's render-prop content (captured at `showSheet` time) reads the
+  // current value without re-plumbing.
+  const activeNotice = noticeRef.current ?? spawnNotice;
+  const activeNoticeRef = useRef<PickerNotice | null>(activeNotice);
+  activeNoticeRef.current = activeNotice;
+
+  // Whether the picker sheet is currently on screen. Gates the spawn-error
+  // re-present so a rejection that arrives while the sheet is already open
+  // (the startup-restore path) doesn't double-present.
+  const sheetOpenRef = useRef(false);
+
   // Present the sheet only when this card becomes first responder.
   // An unbound session card that lives in an inactive tab must wait —
   // otherwise its sheet drops on top of the sibling card the user is
@@ -857,13 +889,14 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
   const presentSheet = useCallback(() => {
     if (shownRef.current) return;
     shownRef.current = true;
+    sheetOpenRef.current = true;
     // The notice carries retry context (`stale{TugSessionId,ProjectDir}`)
     // only for the three retryable categories. When present, the
     // picker renders a Retry button that re-fires the restore and
     // closes the sheet; "retry" is treated like "open" in `onClosed`
     // below (no CLOSE dispatch — the card stays mounted so
     // `SessionCardContent` can flip to `SessionRestoring`).
-    const noticeForRetry = noticeRef.current;
+    const noticeForRetry = activeNoticeRef.current;
     const retryTugSessionId = noticeForRetry?.staleTugSessionId;
     const retryProjectDir = noticeForRetry?.staleProjectDir;
     const canRetry =
@@ -897,7 +930,7 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
       cascadeTargetId: cardId,
       content: (close) => (
         <SessionProjectPickerForm
-          notice={noticeRef.current}
+          notice={activeNoticeRef.current}
           onOpen={(projectDir, sessionMode, sessionId, display) => {
             const connection = getConnection();
             if (!connection) {
@@ -1013,6 +1046,9 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
   // card.
   useSheetDelegate(cardId, {
     sheetDidReturnResult: (_id, result) => {
+      // The sheet left the screen — clear the open latch so a later spawn
+      // rejection (below) can re-present it.
+      sheetOpenRef.current = false;
       if (result === "open" || result === "retry") return;
       manager?.sendToTarget(cardId, {
         action: TUG_ACTIONS.CLOSE_TAB,
@@ -1023,31 +1059,33 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
     },
   });
 
-  // Spawn-rejection banner. When tugcast rejects this card's
-  // `spawn_session` (e.g. the project directory no longer exists),
-  // `action-dispatch` records it in `sessionSpawnErrorStore` keyed by
-  // `cardId`. The picker is already mounted and waiting, so the
-  // `useSyncExternalStore` subscription re-renders it here — the card
-  // has no `CodeSessionStore` yet (the session never came up), so this
-  // is the surface for the failure.
-  const spawnError = useSpawnError(cardId);
-  // Hold the last error so the banner's content stays stable through
-  // its exit animation after `spawnError` clears.
-  const lastSpawnErrorRef = useRef<SpawnError | null>(null);
-  if (spawnError !== null) lastSpawnErrorRef.current = spawnError;
-  const shownSpawnError = lastSpawnErrorRef.current;
-
   // Drop the card's spawn-error when the picker unmounts (the card
   // bound or closed) so a later card reusing this id starts clean.
   useEffect(() => () => sessionSpawnErrorStore.clear(cardId), [cardId]);
 
-  // Banner recovery: clear the error and re-present the picker sheet
-  // so the user can choose a directory that exists.
-  const handleSpawnErrorRetry = useCallback(() => {
-    sessionSpawnErrorStore.clear(cardId);
+  // Spawn-rejection recovery. When tugcast rejects this card's
+  // `spawn_session` (e.g. the project directory no longer exists),
+  // `action-dispatch` records it in `sessionSpawnErrorStore` and drops any
+  // restore hold, so the card falls through to this picker. Rather than a
+  // separate banner behind the sheet, we surface the failure as the picker's
+  // own inline alert (`spawnNotice`, wired through `activeNoticeRef`).
+  //
+  // This effect only handles RE-presentation — the rejection that arrives
+  // after the sheet was already dismissed on Open (a manual pick whose spawn
+  // then failed). The FIRST presentation always stays with
+  // `observeCardDidActivate` below, which gates on the card being the active
+  // first responder (an inactive tab must not drop a sheet over the sibling
+  // the user is looking at). So: only re-present when the sheet has been shown
+  // before (`shownRef`) and is currently closed (`!sheetOpenRef`). The
+  // startup-restore path leaves both refs such that this no-ops and the
+  // activate observer presents the sheet — already carrying the inline alert.
+  useEffect(() => {
+    if (spawnError === null || sheetOpenRef.current || !shownRef.current) {
+      return;
+    }
     shownRef.current = false;
     presentSheet();
-  }, [cardId, presentSheet]);
+  }, [spawnError, presentSheet]);
 
   return (
     <div
@@ -1057,35 +1095,6 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
       aria-hidden="true"
     >
       {renderSheet()}
-      <TugPaneBanner
-        visible={spawnError !== null}
-        variant="error"
-        tone="danger"
-        minMountedMs={0}
-        label="Can't open project"
-        message={
-          shownSpawnError !== null
-            ? spawnErrorMessage(shownSpawnError.reason)
-            : ""
-        }
-        detailIcon="folder-x"
-        detailTitle="Can't open project"
-        footer={
-          <TugPushButton
-            emphasis="primary"
-            role="action"
-            onClick={handleSpawnErrorRetry}
-            data-testid="session-card-spawn-error-retry"
-          >
-            Choose Directory
-          </TugPushButton>
-        }
-      >
-        <p>
-          Dev couldn&apos;t start a session here. Choose a directory that
-          exists and try again.
-        </p>
-      </TugPaneBanner>
     </div>
   );
 }
@@ -1164,40 +1173,84 @@ function formatScanProgressValue(value: number, max: number): string {
   return `${value.toLocaleString()} of ${max.toLocaleString()}`;
 }
 
+/** Title + message + icon a picker notice renders as, for {@link TugInlineAlert}. */
+interface NoticeContent {
+  title: string;
+  message?: string;
+  tone: TugInlineAlertTone;
+  /** Lucide icon name. */
+  icon: string;
+}
+
 /**
- * Map a picker notice to user-facing copy. `resume_failed` surfaces the
- * *real* reason carried on `notice.message` (from tugcode's `resume_failed`
- * IPC) rather than guessing a cause — the old copy asserted "deleted or in use
- * elsewhere", which was routinely false (the 2026-07-22 commit-xp session had a
- * 40 MB transcript sitting on disk). `restore_canceled` and `restore_timed_out`
- * include the project path from `staleProjectDir` so the user sees which card's
- * restore was affected. Falls back to the raw `notice.message` on unexpected
- * shapes.
+ * Map a picker notice to a human-centric title / message split for the inline
+ * alert. `resume_failed` surfaces the *real* reason carried on `notice.message`
+ * (from tugcode's `resume_failed` IPC) as the secondary line rather than
+ * guessing a cause — the old copy asserted "deleted or in use elsewhere", which
+ * was routinely false (the 2026-07-22 commit-xp session had a 40 MB transcript
+ * sitting on disk). `restore_canceled` and `restore_timed_out` name the project
+ * path from `staleProjectDir` so the user sees which card was affected. Falls
+ * back to the raw `notice.message` as the title on unexpected shapes.
  */
-function noticeText(notice: PickerNotice): string {
+function noticeContent(notice: PickerNotice): NoticeContent {
   switch (notice.category) {
     case "resume_failed": {
       const reason = notice.message.trim();
-      const detail =
-        reason.length > 0 && reason.toLowerCase() !== "resume failed"
-          ? ` (${reason})`
-          : "";
-      return `Couldn’t resume the previous session${detail}. Retry, or pick another option below.`;
+      const hasReason =
+        reason.length > 0 && reason.toLowerCase() !== "resume failed";
+      return {
+        title: "Couldn’t resume the previous session",
+        message: hasReason
+          ? `${reason}. Retry, or start a new session below.`
+          : "Retry, or start a new session below.",
+        tone: "caution",
+        icon: "TriangleAlert",
+      };
     }
     case "restore_canceled":
-      return notice.staleProjectDir !== undefined
-        ? `Canceled restoring the previous session for ${notice.staleProjectDir}.`
-        : notice.message;
+      return {
+        title: "Resume canceled",
+        message:
+          notice.staleProjectDir !== undefined
+            ? `You stopped restoring the session for ${notice.staleProjectDir}.`
+            : notice.message,
+        tone: "muted",
+        icon: "Info",
+      };
     case "restore_timed_out":
-      return notice.staleProjectDir !== undefined
-        ? `Restoring the previous session for ${notice.staleProjectDir} took too long. The server may be unreachable — you can Retry or start a new session below.`
-        : notice.message;
+      return {
+        title: "Couldn’t resume the previous session",
+        message:
+          "Restoring it took too long. The server may be unreachable — Retry, or start a new session below.",
+        tone: "caution",
+        icon: "TriangleAlert",
+      };
     case "signed_out":
       return notice.message === "claude_missing"
-        ? "Claude Code isn’t available. Finish setup, then pick a session below."
-        : "You were signed out of Claude. Log back in, then resume or start a session below.";
+        ? {
+            title: "Claude Code isn’t available",
+            message: "Finish setup, then pick a session below.",
+            tone: "caution",
+            icon: "TriangleAlert",
+          }
+        : {
+            title: "You were signed out of Claude",
+            message: "Log back in, then resume or start a session below.",
+            tone: "caution",
+            icon: "LogOut",
+          };
+    case "spawn_failed":
+      // `message` already carries the human reason (from `spawnErrorMessage`).
+      // The picker itself is the recovery — pick a directory that exists and
+      // Open — so there's no separate action here.
+      return {
+        title: "Can’t open this project",
+        message: `${notice.message} Choose a directory that exists below, then Open.`,
+        tone: "danger",
+        icon: "FolderX",
+      };
     default:
-      return notice.message;
+      return { title: notice.message, tone: "muted", icon: "Info" };
   }
 }
 
@@ -1834,27 +1887,36 @@ function SessionProjectPickerForm({
   return (
     <PickerFormResponderScope>
       <div ref={setFormRootRef} className="session-card-picker-form">
-      {notice !== null && (
-        <div
-          className="session-card-picker-notice"
-          role="status"
-          data-testid="session-card-picker-notice"
-          data-notice-category={notice.category}
-        >
-          {noticeText(notice)}
-          {onRetryRestore !== null && (
-            <div className="session-card-picker-notice-actions">
-              <TugPushButton
-                emphasis="outlined"
-                onClick={onRetryRestore}
-                data-testid="session-card-picker-notice-retry"
-              >
-                Retry
-              </TugPushButton>
+      {notice !== null &&
+        (() => {
+          const content = noticeContent(notice);
+          return (
+            <div
+              data-testid="session-card-picker-notice"
+              data-notice-category={notice.category}
+            >
+              <TugInlineAlert
+                title={content.title}
+                message={content.message}
+                tone={content.tone}
+                icon={content.icon}
+                live="alert"
+                actions={
+                  onRetryRestore !== null ? (
+                    <TugPushButton
+                      emphasis="outlined"
+                      role={content.tone === "danger" ? "danger" : "action"}
+                      onClick={onRetryRestore}
+                      data-testid="session-card-picker-notice-retry"
+                    >
+                      Retry
+                    </TugPushButton>
+                  ) : undefined
+                }
+              />
             </div>
-          )}
-        </div>
-      )}
+          );
+        })()}
       <label className="session-card-picker-field">
         <span className="session-card-picker-label">Project path</span>
         {/*
@@ -2358,7 +2420,7 @@ export function SessionCardBody({
       const staged = stagedCommitRef.current;
       if (staged !== null) {
         stagedCommitRef.current = null;
-        staged();
+        window.setTimeout(staged, 150);
       }
     },
   });
