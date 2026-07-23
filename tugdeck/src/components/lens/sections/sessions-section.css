@@ -38,6 +38,10 @@
      the first/last rows hug the frame evenly (no excess top/bottom padding). */
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
+  /* Tighter left/right inset than the default 14px + gutter — the grip already
+     leads the row, so the content hugs closer to the frame (matches Snippets). */
+  --tugx-list-row-padding-inline: 10px;
+  --tugx-list-row-indicator-gutter: 0px;
   /* Frame the list like the session picker's boxes — a hairline border rounded
      at `--tug-radius-sm`. The list clips its rows to the rounded corners; the
      frame width joins the key-view ring (see `tug-list-view.css`), so a focused
@@ -90,10 +94,13 @@
   z-index: 2;
 }
 
+/* Terse, centered empty label — matches the Snippets / Text Files empty states
+   so all three Lens sections read the same when empty. */
 .sessions-card-empty {
-  padding: 16px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: 0.875rem;
+  padding: 8px 10px;
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-size: 12px;
 }
 
 /* The pulse line rides the row's subtitle slot. Size + color MATCH the on-card

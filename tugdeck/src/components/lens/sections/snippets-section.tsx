@@ -845,9 +845,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
         {snippets.length === 0 ? (
           // Empty label instead of the list — an empty `flex: 1` list would grow
           // and open a gap under the band (see the Sessions section).
-          <div className="snippets-empty">
-            No snippets yet. Press + to add one.
-          </div>
+          <div className="snippets-empty">None</div>
         ) : (
           <div className="snippets-list-wrap" ref={listWrapRef}>
             <BlockDropCaret ref={caretRef} />

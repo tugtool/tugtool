@@ -212,7 +212,7 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
       {count === 0 ? (
         // Empty label instead of the list — an empty `flex: 1` list would grow
         // and open a gap under the band (see the Sessions section).
-        <div className="text-files-empty">No open files</div>
+        <div className="text-files-empty">None</div>
       ) : (
         <TugListView<LensTextFilesDataSource>
           ref={listRef}

@@ -45,8 +45,11 @@
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
+/* Terse, centered empty label — matches the Snippets section's empty state
+   (size, tone) so all three Lens sections read the same when empty. */
 .text-files-empty {
-  padding: 16px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: 0.875rem;
+  padding: 8px 10px;
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-size: 12px;
 }

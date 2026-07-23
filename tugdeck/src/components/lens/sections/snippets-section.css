@@ -50,6 +50,10 @@
   /* Tighter rows than the default 8px — the snippet list is a dense index of
      one-line handles, so it spends less vertical space per row. TUNE HERE. */
   --tugx-list-row-padding-block: 5px;
+  /* Tighter left/right inset than the default 14px + gutter — the grip already
+     leads the row, so the content hugs closer to the frame. TUNE HERE. */
+  --tugx-list-row-padding-inline: 10px;
+  --tugx-list-row-indicator-gutter: 0px;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -70,8 +74,11 @@
   background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
 
+/* Terse, centered empty label — matches the Sessions / Text Files empty states
+   so all three Lens sections read the same when empty. */
 .snippets-empty {
   padding: 8px 10px;
+  text-align: center;
   font-size: 12px;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }

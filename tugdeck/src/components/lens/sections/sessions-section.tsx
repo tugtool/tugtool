@@ -330,7 +330,7 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
         // Render the empty label INSTEAD of the list: an empty `flex: 1 1 auto`
         // list would grow to fill the section and push the label down, opening a
         // gap under the band (and paint an empty framed box).
-        <div className="sessions-card-empty">No open sessions</div>
+        <div className="sessions-card-empty">None</div>
       ) : (
         <div className="sessions-list-wrap" ref={listWrapRef}>
           <BlockDropCaret ref={caretRef} />
