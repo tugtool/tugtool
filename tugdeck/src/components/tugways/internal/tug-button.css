@@ -1775,6 +1775,16 @@ body {
   outline-offset: var(--tugx-focus-ring-offset);
 }
 
+/* The persistent ring goes quiet while the OS window is not foreground, matching
+   the key-view / cursor / within rings (focus-ring.css) and native default
+   buttons — a background window's Return home shows no ring. Carries the
+   persistent-ring specificity plus the `[data-app-active="false"]` ancestor so
+   it wins over the rule above regardless of source order. */
+[data-app-active="false"]
+  .tug-button[data-default-ring]:not(:disabled):not([aria-disabled="true"]) {
+  outline: none;
+}
+
 /* 2 — outlined / primary → filled promotion (the fill quartet is explicit per
    role). `primary` rides the same promotion as `outlined`: its quiet tinted
    rest gives way to the solid role fill the moment it holds the key view, or

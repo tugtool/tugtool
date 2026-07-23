@@ -1850,12 +1850,20 @@ export class FocusContext {
 
   /**
    * Project the persistent default ring: clear `data-default-ring` from every
-   * registered node, then stamp it on the TOP node iff the current key view is
-   * not itself a button ([P14]). Gated on active.
+   * element that carries it, then stamp it on the TOP node of THIS context's
+   * stack iff the current key view is not itself a button ([P14]). Gated on
+   * active. The clear is global (not just this context's own stack) so that when
+   * a different pane becomes the key card, its projection wipes the stale ring
+   * the just-deactivated context left behind — the same "clear all globally,
+   * then stamp" safety net the key-view / key-within syncs run. A per-stack
+   * clear reconciles only the active context and strands a background context's
+   * ring lit (a Done button keeping its ring after another pane took focus).
    */
   private syncDefaultRingDomAttribute(): void {
     if (typeof document === "undefined" || !this.isActive()) return;
-    for (const node of this.defaultRingStack) node.removeAttribute("data-default-ring");
+    document
+      .querySelectorAll<HTMLElement>("[data-default-ring]")
+      .forEach((el) => el.removeAttribute("data-default-ring"));
     const top = this.defaultRingStack[this.defaultRingStack.length - 1];
     if (top === undefined) return;
     if (!this.keyViewIsButton()) top.setAttribute("data-default-ring", "");

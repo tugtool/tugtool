@@ -50,6 +50,16 @@
   gap: var(--tugx-list-row-trailing-gap);
 }
 
+/* The row primitive is `align-items: center`, so when a subject wraps past the
+   first line the trailing slot (the flex child that HOLDS the attribution +
+   fold cue) floats to the wrapped block's vertical middle. Pin the slot itself
+   to the top so the attribution and fold cue stay on the subject's first line —
+   the same top-pin the row's check column uses. Scoped to the history list so
+   single-line list rows elsewhere keep their centered trailing. */
+.tug-history-list .tug-list-row-trailing {
+  align-self: flex-start;
+}
+
 /* Author · date on the collapsed row — sans, muted, a step under the mono
    subject so it reads as quiet provenance rather than competing with it. */
 .tug-history-list-commit-attribution {
