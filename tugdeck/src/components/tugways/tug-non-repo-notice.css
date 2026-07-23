@@ -15,7 +15,7 @@
   gap: 12px;
   align-items: center;
   min-height: 60px;
-  padding: 0 var(--tug-space-md);
+  padding: 0 var(--tug-space-xl);
   background: var(--tugx-block-surface);
   border-radius: var(--tugx-block-chrome-radius);
 }
@@ -45,7 +45,7 @@
 }
 
 .tug-non-repo-notice-error {
-  padding: 0 var(--tug-space-md);
+  padding: 0 var(--tug-space-xl);
   font-size: 0.75rem;
   color: var(--tug7-element-tone-text-normal-danger-rest);
 }
