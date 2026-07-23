@@ -24,7 +24,7 @@ import "./session-changes-view.css";
 import React, { useCallback, useState, useSyncExternalStore } from "react";
 import { GitCommitHorizontal, LoaderCircle } from "lucide-react";
 
-import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugNonRepoNotice } from "@/components/tugways/tug-non-repo-notice";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import {
@@ -35,50 +35,8 @@ import {
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
-import { useChangesetGitInit } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
-
-/**
- * Hint on the git-init button while a Claude turn runs. Viewing changes
- * mid-turn is free; Initialize git is a durable verb and waits for the turn to
- * end — the gate that stays with the viewer after the commit/join verbs left.
- */
-const TURN_GATE_HINT = "Unavailable while a turn is running";
-
-// ---------------------------------------------------------------------------
-// Non-repo project: "Initialize git" affordance
-// ---------------------------------------------------------------------------
-
-function NonRepoBody({
-  projectDir,
-  turnInProgress,
-}: {
-  projectDir: string;
-  turnInProgress: boolean;
-}) {
-  const { phase, error, init } = useChangesetGitInit(projectDir);
-  return (
-    <div className="session-changes-non-repo" role="group" data-testid="session-changes-non-repo">
-      <div className="session-changes-non-repo-message">
-        This directory is not a git repository.
-      </div>
-      <TugPushButton
-        emphasis="outlined"
-        role="accent"
-        onClick={init}
-        disabled={phase === "pending" || turnInProgress}
-        title={turnInProgress ? TURN_GATE_HINT : undefined}
-        data-testid="session-changes-git-init"
-      >
-        Initialize git
-      </TugPushButton>
-      {phase === "error" && error !== null ? (
-        <div className="session-changes-non-repo-error">{error}</div>
-      ) : null}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // The view
@@ -175,7 +133,7 @@ export function SessionChangesView({
 
   if (project.no_repo) {
     return shell(
-      <NonRepoBody
+      <TugNonRepoNotice
         projectDir={projectDir ?? project.project_dir}
         turnInProgress={turnInProgress}
       />,

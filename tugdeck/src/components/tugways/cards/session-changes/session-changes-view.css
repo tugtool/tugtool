@@ -67,24 +67,6 @@
   }
 }
 
-/* ---- Non-repo project: "Initialize git" affordance ---- */
-
-.session-changes-non-repo {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-}
-.session-changes-non-repo-message {
-  font-size: 0.8125rem;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-.session-changes-non-repo-error {
-  font-size: 0.75rem;
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-
 /* ---- Done action row ([P02]) — the lower-right dismiss button. ---- */
 
 .session-changes-actions {

@@ -27,6 +27,7 @@ import type React from "react";
 import { History as HistoryIcon } from "lucide-react";
 
 import { TugHistoryList } from "@/components/tugways/tug-history-list";
+import { TugNonRepoNotice } from "@/components/tugways/tug-non-repo-notice";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useFocusable, useSeedKeyView } from "@/components/tugways/use-focusable";
@@ -164,9 +165,7 @@ export function SessionHistoryView({
     snapshot.requestedRoot === projectDir ? snapshot.payload : null;
 
   if (payload?.no_repo) {
-    return shell(
-      <div className="session-history-empty">Not a git repository.</div>,
-    );
+    return shell(<TugNonRepoNotice projectDir={projectDir} />);
   }
   if (snapshot.requestedRoot === projectDir && snapshot.phase === "error") {
     return shell(
