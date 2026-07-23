@@ -541,6 +541,19 @@ export interface TugTextEditorProps
    */
   borderless?: boolean;
   /**
+   * Do NOT register this editor's `paintMirrorAsActive` engine hooks with the
+   * enclosing card. Set for a TRANSIENT, in-list editor (e.g. the Lens snippet
+   * editor) that is not the card's primary text surface: registering /
+   * unregistering card engine hooks as such an editor mounts and unmounts
+   * churns the card's engine-hooks set, which re-fires the card's
+   * `applyBagFocus` restore and yanks the keyboard key view back to the card's
+   * default focus target — stealing focus from the list the editor lives in.
+   * The card's primary editor (a session card, a text-file card) leaves this
+   * `false` so its activation focus mirror still works.
+   * @default false
+   */
+  suppressCardEngineHooks?: boolean;
+  /**
    * Action triggered by the main-row Enter key.
    *   `"submit"`  — fire `onSubmit`. Shift-Enter then inserts a newline.
    *   `"newline"` — insert a newline. Shift-Enter then fires `onSubmit`.
@@ -1182,6 +1195,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       className,
       focusStyle = DEFAULT_FOCUS_STYLE,
       borderless = false,
+      suppressCardEngineHooks = false,
       returnAction = DEFAULT_RETURN_ACTION,
       numpadEnterAction = DEFAULT_NUMPAD_ENTER_ACTION,
       onSubmit,
@@ -1320,7 +1334,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // exists today but is dead at Step 2 (no consumer); Step 3 wires
     // the dispatcher to invoke through this channel.
     useLayoutEffect(() => {
-      if (cardId === null) return;
+      if (cardId === null || suppressCardEngineHooks) return;
       const store = getDeckStore();
       if (store === null) return;
       const unregister = store.registerEngineHooks(cardId, {
@@ -1347,7 +1361,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         },
       });
       return unregister;
-    }, [cardId]);
+    }, [cardId, suppressCardEngineHooks]);
 
     // Preserve caret / selection across an app deactivate → reactivate
     // (cmd-tab away and back). When the OS returns key focus to the

@@ -586,6 +586,12 @@ function SnippetEditorRow({
           ref={editorRef}
           value={snippet.text}
           placeholder="Type a snippet…"
+          // A transient, in-list editor — NOT the card's primary text surface.
+          // Registering the card's engine hooks as it mounts / unmounts churns
+          // the card's hooks set, which re-fires the card's `applyBagFocus`
+          // restore and yanks the keyboard key view off the Snippets list to the
+          // Lens's default section on close. Opt out.
+          suppressCardEngineHooks
           markdownTextStyling
           lineWrap
           fontSize="var(--tugx-snippet-editor-font-size)"

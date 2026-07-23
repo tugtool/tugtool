@@ -114,6 +114,13 @@ export interface TugMessageEditorProps {
    * keyboard-reachable from the message field. @default false
    */
   tabMovesFocus?: boolean;
+  /**
+   * Forwarded to the substrate: a transient, in-list editor (the Lens snippet
+   * editor) that is not its card's primary text surface should NOT register
+   * card engine hooks, whose mount/unmount churn re-fires the card's focus
+   * restore and steals the keyboard key view. @default false
+   */
+  suppressCardEngineHooks?: boolean;
   /** Forwarded to the host wrapper. */
   className?: string;
   /** Test hook, forwarded to the host wrapper. */
@@ -132,6 +139,7 @@ export const TugMessageEditor = React.forwardRef<
     onSubmit,
     placeholder,
     maxRows = DEFAULT_MAX_ROWS,
+    suppressCardEngineHooks = false,
     lineWrap,
     markdownTextStyling,
     fontSize,
@@ -222,6 +230,7 @@ export const TugMessageEditor = React.forwardRef<
       data-testid={dataTestid}
       aria-label={ariaLabel}
       borderless
+      suppressCardEngineHooks={suppressCardEngineHooks}
       preserveState={false}
       returnAction="newline"
       maxRows={maxRows}
