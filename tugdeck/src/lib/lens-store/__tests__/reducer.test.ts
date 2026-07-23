@@ -94,6 +94,7 @@ describe("LensStore reducer — hydrate", () => {
     const seeded: LensState = {
       widthPx: 500,
       sectionOrder: ["log"],
+      sessionOrder: [],
       collapsedSections: ["log"],
       anchorSide: "right",
     };
@@ -114,6 +115,7 @@ describe("LensStore reducer — hydrate", () => {
     const seeded: LensState = {
       widthPx: 420,
       sectionOrder: ["log", "telemetry"],
+      sessionOrder: [],
       collapsedSections: [],
       anchorSide: "left",
     };
@@ -133,6 +135,7 @@ describe("LensStore reducer — toSnapshot", () => {
     const s: LensState = {
       widthPx: 500,
       sectionOrder: ["log", "telemetry"],
+      sessionOrder: [],
       collapsedSections: ["log"],
       anchorSide: "left",
     };

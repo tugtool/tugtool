@@ -1421,11 +1421,22 @@ export const TugPromptEntry = React.forwardRef<
     if (commitActive && !prev) {
       inCommitModeRef.current = true;
       preCommitDraftRef.current = editor.captureState();
+      // Borrow the composer's current rendered height: a switch to commit mode
+      // over a tall, in-progress prompt swaps the doc to the (usually empty)
+      // commit message, which would collapse the editor to its floor and jump
+      // the layout. Measured BEFORE the swap and pinned as the scroller's
+      // min-height for the mode's duration (cleared on exit), so a quick glance
+      // at Changes leaves the entry height put ([L06] — DOM, not React state).
+      const scroller = editor.view()?.scrollDOM ?? null;
+      const borrowedHeight = scroller?.getBoundingClientRect().height ?? 0;
       const seed =
         commitSnapRef.current?.seedMessage ??
         commitSnapRef.current?.persistedMessage ??
         "";
       editor.restoreState(buildCommitModeState(seed));
+      if (scroller !== null && borrowedHeight > 0) {
+        scroller.style.minHeight = `${Math.round(borrowedHeight)}px`;
+      }
       // Seed the `data-commit-empty` gate explicitly: an empty seed over an
       // empty doc fires no update, so the listener alone can't be trusted to
       // refresh it on entry.
@@ -1440,6 +1451,11 @@ export const TugPromptEntry = React.forwardRef<
       const restored = preCommitDraftRef.current ?? EMPTY_EDIT_STATE;
       preCommitDraftRef.current = null;
       editor.restoreState(restored);
+      // Drop the borrowed-height floor: the restored draft sizes the editor by
+      // its own content again (that content is what set the borrowed height, so
+      // this reverts seamlessly).
+      const exitScroller = editor.view()?.scrollDOM ?? null;
+      if (exitScroller !== null) exitScroller.style.minHeight = "";
       rootRef.current?.setAttribute("data-commit-empty", "true");
       editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
