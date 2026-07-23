@@ -14,6 +14,19 @@
  * is no per-frame redraw loop: between samples the compositor does the motion.
  * Each epoch the scroll seamlessly time-rebases so coordinates stay bounded.
  *
+ * DORMANCY. A scrolling flat baseline is pixel-identical to a static flat
+ * baseline, so once the whole visible window has been flat for its full span
+ * the timer and the scroll stop — zero timers, zero animations, zero style
+ * invalidation while the session idles. The tape also goes dormant whenever
+ * the element is not on screen (`IntersectionObserver`; a `display:none` card
+ * does not intersect). Dormancy NEVER delays real activity: the caller's
+ * `subscribeActivity` channel fires synchronously when data records, and the
+ * wake handler rebuilds the tape from the caller's own binned history and
+ * restarts the scroll in that same tick — activity lands on screen the
+ * instant its frame arrives, ahead of where the old always-on 4 Hz poll
+ * would have caught it. (Rule 1's "values are never revised" applies to the
+ * on-screen tape; a dormant rebuild reconstructs state nobody was shown.)
+ *
  * The sampled value is a rolling ~1s output rate, so it rises smoothly with
  * activity and falls to zero (baseline) when output stops.
  *
@@ -47,6 +60,12 @@ const SAMPLE_MS = 250;
 const PRUNE_MARGIN_S = 4;
 /** Seconds the scroll runs before a seamless time-rebase + restart. */
 const EPOCH_S = 120;
+/**
+ * Flat-window span (ms) after the last non-zero sample before the tape goes
+ * dormant — exactly how long a datum takes to scroll fully off, so dormancy
+ * begins only once the screen is provably a flat line edge to edge.
+ */
+const DORMANT_AFTER_MS = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
 /** Window over which the plotted rate is summed (a rolling per-second rate). */
 const RATE_WINDOW_MS = 1_000;
 
@@ -112,6 +131,7 @@ interface TickPoint {
 export function TugSparkline({
   getSeries,
   getColorChannel,
+  subscribeActivity,
   binMs,
   fullScale,
   curve = sparklineCurves.linear,
@@ -122,6 +142,15 @@ export function TugSparkline({
 }: {
   /** Current window oldest→newest; the last element is the still-open bin. */
   getSeries: (nowMs: number) => number[];
+  /**
+   * Zero-lag dormancy wake channel. When provided, the tape stops its timer
+   * and scroll after {@link DORMANT_AFTER_MS} of flat baseline; this callback
+   * must then fire (synchronously with the data write) the moment new
+   * activity records so the tape wakes in the same tick. Without it the tape
+   * never idles out — only visibility can pause it, and re-entering view
+   * always resumes live.
+   */
+  subscribeActivity?: (wake: () => void) => () => void;
   /**
    * Optional dominant-channel selector, sampled on the same loop as
    * `getSeries` ([P05]). Its return (a channel name, or null when idle) is
@@ -169,9 +198,13 @@ export function TugSparkline({
     const baselineY = height - FLOOR - 0.5;
     const amplitude = height - FLOOR - 1;
     const rateBins = Math.max(1, Math.round(RATE_WINDOW_MS / binMs));
-    const tape: TickPoint[] = []; // append-only; points never mutated
+    const tape: TickPoint[] = []; // append-only while live; points never mutated
     let t0 = Date.now();
     let anim: Animation | null = null;
+    let timer: number | null = null;
+    let dormant = false;
+    let inView = true;
+    let lastNonZeroAt = 0;
 
     const yOf = (v: number): number => baselineY - v * amplitude;
 
@@ -228,18 +261,29 @@ export function TugSparkline({
     const sample = (): void => {
       const now = Date.now();
       if (!motion) t0 = now;
-      tape.push({ t: now, v: sampleRate(now) });
+      const v = sampleRate(now);
+      if (v > 0) lastNonZeroAt = now;
+      tape.push({ t: now, v });
       redraw();
       // Stamp the dominant channel for CSS tinting ([P05]) — only on change,
       // so a steady color doesn't rewrite the attribute every tick. Appearance
       // rides the DOM attribute, never React state ([L06]).
       if (getColorChannel !== undefined && container !== null) {
         const channel = getColorChannel(now);
+        if (channel !== null) lastNonZeroAt = now;
         if (channel !== stampedChannel) {
           stampedChannel = channel;
           if (channel === null) container.removeAttribute("data-activity-channel");
           else container.setAttribute("data-activity-channel", channel);
         }
+      }
+      // The window has been flat edge to edge and a wake channel exists —
+      // stop the tape. A static flat line is the same pixels.
+      if (
+        subscribeActivity !== undefined &&
+        now - lastNonZeroAt >= DORMANT_AFTER_MS
+      ) {
+        enterDormant(now);
       }
     };
 
@@ -259,21 +303,118 @@ export function TugSparkline({
       anim.onfinish = () => startEpoch();
     };
 
-    // Seed a CONTINUOUS baseline across the whole window so the chart starts
-    // FULL — a flat blank line — instead of growing in from the right. One
-    // seed per sample interval, so as each prunes off the left the next keeps
-    // the left edge covered until real data has scrolled all the way across.
-    const seedNow = Date.now();
-    const seedSpan = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000;
-    for (let dt = seedSpan; dt > 0; dt -= SAMPLE_MS) {
-      tape.push({ t: seedNow - dt, v: 0 });
+    // Rebuild the tape from the caller's real binned history: zero seeds
+    // cover the span the bins don't reach (so the chart is FULL edge to edge,
+    // never growing in from the right), then each bin becomes the point the
+    // live sampler would have written at that moment — same rolling-rate,
+    // same curve. Used at mount and at every wake, so what's on screen is
+    // always derived from data + timestamps, never from scroll continuity.
+    const rebuildTape = (now: number): void => {
+      tape.length = 0;
+      const vals = getSeries(now);
+      const binSpan = vals.length * binMs;
+      for (let dt = DORMANT_AFTER_MS; dt > binSpan; dt -= SAMPLE_MS) {
+        tape.push({ t: now - dt, v: 0 });
+      }
+      for (let i = 0; i < vals.length; i++) {
+        let sum = 0;
+        for (let j = Math.max(0, i - rateBins + 1); j <= i; j++) sum += vals[j];
+        const v = Math.min(1, Math.max(0, curve(sum / fullScale)));
+        const t = now - (vals.length - 1 - i) * binMs;
+        if (vals[i] > 0) lastNonZeroAt = Math.max(lastNonZeroAt, t);
+        tape.push({ t, v });
+      }
+    };
+
+    const stopTimer = (): void => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    // Freeze in place: no timer, no animation, one static redraw of the
+    // current (flat, or hidden) picture. Idempotent.
+    const enterDormant = (now: number): void => {
+      if (dormant) return;
+      dormant = true;
+      stopTimer();
+      if (anim !== null) {
+        anim.onfinish = null;
+        anim.cancel();
+        anim = null;
+      }
+      t0 = now;
+      redraw();
+    };
+
+    // Resume live: reconstruct from data, restart the scroll and the sampler.
+    // Runs synchronously inside the caller's data-write (or the visibility
+    // callback), so waking never trails the activity that caused it.
+    const wakeLive = (now: number): void => {
+      dormant = false;
+      rebuildTape(now);
+      sample();
+      startEpoch();
+      stopTimer();
+      timer = window.setInterval(sample, SAMPLE_MS);
+    };
+
+    const flatPastWindow = (now: number): boolean =>
+      subscribeActivity !== undefined && now - lastNonZeroAt >= DORMANT_AFTER_MS;
+
+    rebuildTape(Date.now());
+    if (flatPastWindow(Date.now())) {
+      // Born idle: paint the static flat line once and wait for the wake
+      // channel — an idle session costs nothing from the first frame.
+      dormant = true;
+      t0 = Date.now();
+      redraw();
+    } else {
+      wakeLive(Date.now());
     }
 
-    sample();
-    startEpoch();
-    const timer = window.setInterval(sample, SAMPLE_MS);
+    // New activity recorded for this series — wake in the same tick. When
+    // off-screen, stay dormant (the observer wakes us on re-entry); just
+    // remember the activity so re-entry resumes live.
+    const unsubscribe =
+      subscribeActivity !== undefined
+        ? subscribeActivity(() => {
+            lastNonZeroAt = Date.now();
+            if (dormant && inView) wakeLive(Date.now());
+          })
+        : null;
+
+    // Visibility gate: an off-screen tape (hidden card, scrolled-away row)
+    // pauses outright; re-entry rebuilds from history, resuming live only
+    // when there is recent activity to show.
+    const observer =
+      container !== null && typeof IntersectionObserver !== "undefined"
+        ? new IntersectionObserver((entries) => {
+            const entry = entries[entries.length - 1];
+            if (entry === undefined) return;
+            if (entry.isIntersecting) {
+              inView = true;
+              if (!dormant) return;
+              if (flatPastWindow(Date.now())) {
+                rebuildTape(Date.now());
+                t0 = Date.now();
+                redraw();
+              } else {
+                wakeLive(Date.now());
+              }
+            } else {
+              inView = false;
+              enterDormant(Date.now());
+            }
+          })
+        : null;
+    if (observer !== null && container !== null) observer.observe(container);
+
     return () => {
-      window.clearInterval(timer);
+      stopTimer();
+      observer?.disconnect();
+      unsubscribe?.();
       if (anim !== null) {
         anim.onfinish = null;
         anim.cancel();
@@ -282,6 +423,7 @@ export function TugSparkline({
   }, [
     getSeries,
     getColorChannel,
+    subscribeActivity,
     binMs,
     fullScale,
     curve,

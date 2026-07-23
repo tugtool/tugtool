@@ -694,6 +694,13 @@ export const SessionTelemetryStatusRow = React.forwardRef<
     codeSessionStore.subscribe,
     codeSessionStore.getSnapshot,
   );
+  // Live intra-turn usage rides the streaming document's per-path
+  // observers ([L02]) — a `streaming_usage` frame ticks only this row,
+  // never the whole-store snapshot (and so never the transcript list).
+  const liveTurnUsage = useSyncExternalStore(
+    codeSessionStore.observeLiveTurnUsage,
+    codeSessionStore.getLiveTurnUsage,
+  );
   const meta = useSyncExternalStore(
     useCallback(
       (listener) =>
@@ -753,7 +760,8 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   const lastTurnHasTiming = lastTurn !== null && turnHasTiming(lastTurn);
   // TOKENS / CONTEXT cells — both feed-derived. While a turn is in
   // flight the cells read the latest `streaming_usage` frame
-  // (`liveTurnUsage`) so they climb mid-turn the way TIME does; once
+  // (the streaming document's live-usage path) so they climb mid-turn
+  // the way TIME does; once
   // the turn commits — and between turns — they read the transcript
   // window-walk.
   //
@@ -774,7 +782,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   const lastCommittedWindow =
     windows.length > 0 ? windows[windows.length - 1].window : null;
   const isInflight = snap.activeTurn !== null;
-  const live = snap.liveTurnUsage;
+  const live = liveTurnUsage;
   // Resident window: the live in-flight frame, else the last committed
   // turn's window, else `null` (no turns yet — fresh session).
   const windowTokens =

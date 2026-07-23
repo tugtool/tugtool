@@ -12,7 +12,7 @@
 
 import type { InboundMessage } from "@/protocol";
 import type { CodeSessionEvent } from "./events";
-import type { TurnEntry } from "./types";
+import type { LiveMessageUsage, TurnEntry } from "./types";
 
 /** Logical channel a streaming write targets ([D07]). Combined with
  *  the turn's React-key seed (`turnKey`) and the Message's stable
@@ -221,7 +221,22 @@ export interface AppendCompactNoteEffect {
   compactionPostTotal?: number;
 }
 
+/**
+ * Publish the latest live intra-turn token usage to the store's streaming
+ * document (`telemetry.liveTurnUsage`) instead of reducer state. Usage
+ * frames are pure display telemetry at high frequency; keeping them out of
+ * the snapshot means a `streaming_usage` frame re-renders ONLY the status
+ * cells observing the path — never the transcript list. The store wrapper
+ * clears the path at `activeTurn` boundaries, preserving the old
+ * "reset at send / superseded at commit" lifecycle.
+ */
+export interface WriteLiveUsageEffect {
+  kind: "write-live-usage";
+  usage: LiveMessageUsage;
+}
+
 export type Effect =
+  | WriteLiveUsageEffect
   | WriteInflightEffect
   | ClearInflightEffect
   | SendFrameEffect

@@ -180,6 +180,11 @@ export class SessionActivityStore {
     Map<ActivityChannel, ActivityMeterLike>
   >();
   private snapshot: ActivitySnapshot = EMPTY_SNAPSHOT;
+  /** Per-session wake listeners: fired synchronously from {@link record}
+   *  when a RATE channel logs units > 0 — the sparkline dormancy wake
+   *  channel. Gauge channels (cpu/memory/disk tick continuously, active or
+   *  not) never fire these, so an idle session's tape stays asleep. */
+  private readonly rateActivityListeners = new Map<string, Set<() => void>>();
   /** The sticky dominant channel per session ([P05] hysteresis incumbent). */
   private readonly dominantHeld = new Map<string, ActivityChannel>();
   /** A challenger currently out-leading the incumbent, and since when. */
@@ -219,11 +224,36 @@ export class SessionActivityStore {
     this.disposers.length = 0;
     this.listeners.clear();
     this.meters.clear();
+    this.rateActivityListeners.clear();
   }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  };
+
+  /**
+   * Zero-lag wake channel for `session`: `listener` runs synchronously
+   * inside the `record()` that logs rate units, so a dormant consumer wakes
+   * in the same tick its activity frame arrives ([P03] — this is imperative
+   * plumbing for the meters' timers, not React state).
+   */
+  subscribeRateActivity = (
+    session: string,
+    listener: () => void,
+  ): (() => void) => {
+    let set = this.rateActivityListeners.get(session);
+    if (set === undefined) {
+      set = new Set();
+      this.rateActivityListeners.set(session, set);
+    }
+    set.add(listener);
+    return () => {
+      const listeners = this.rateActivityListeners.get(session);
+      if (listeners === undefined) return;
+      listeners.delete(listener);
+      if (listeners.size === 0) this.rateActivityListeners.delete(session);
+    };
   };
 
   getSnapshot = (): ActivitySnapshot => this.snapshot;
@@ -253,6 +283,12 @@ export class SessionActivityStore {
     meter.record(units, atMs);
     // Only a new session / new channel ticks React ([P03]); samples don't.
     if (membershipChanged) this.recomputeMembership();
+    if (units > 0 && RATE_CHANNEL_SET.has(channel)) {
+      const wakers = this.rateActivityListeners.get(session);
+      if (wakers !== undefined) {
+        for (const wake of [...wakers]) wake();
+      }
+    }
   }
 
   /** Per-bin window for one channel; empty when the channel is absent. */
@@ -375,6 +411,9 @@ export class SessionActivityStore {
     this.meters.delete(session);
     this.dominantHeld.delete(session);
     this.dominantPending.delete(session);
+    // rateActivityListeners survive: registrations belong to the subscribing
+    // component's lifecycle, and a cleared session id that records again must
+    // still wake its (still-mounted) consumers.
     this.recomputeMembership();
   }
 

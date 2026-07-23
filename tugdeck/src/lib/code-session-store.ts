@@ -80,6 +80,7 @@ import { publishLocalSessionStateChange } from "./session-state-changes-local-ev
 import type {
   CardSessionMode,
   CodeSessionSnapshot,
+  LiveMessageUsage,
   TurnEntry,
   SystemNote,
 } from "./code-session-store/types";
@@ -132,6 +133,22 @@ const DEFAULT_TIMER_SOURCE: TimerSource = {
 };
 
 const STREAM_SOURCE_TAG = "code-session-store";
+
+/**
+ * Streaming-document path carrying the latest `streaming_usage` frame —
+ * high-frequency display telemetry kept OFF the snapshot so a usage frame
+ * re-renders only the status cells observing this path, never the
+ * transcript list. Cleared at `activeTurn` boundaries by `dispatch`.
+ */
+const LIVE_USAGE_PATH = "telemetry.liveTurnUsage";
+
+/**
+ * Trailing-flush delay for live wire-origin snapshot notifications —
+ * one display frame. Same-phase streaming bursts coalesce to this
+ * cadence; the ≤16 ms added notify latency is under one frame and
+ * invisible (streamed text paints imperatively, off this path).
+ */
+const LIVE_NOTIFY_MIN_MS = 16;
 
 /**
  * Replay-fold flush threshold. While the reducer's `replaying` phase
@@ -249,8 +266,9 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // type this build doesn't translate. The reducer folds it into
   // `unknownEvent`, driving a soft warn banner; no phase change.
   "unknown_event",
-  // Live intra-turn token usage — high-frequency telemetry frame the
-  // reducer folds into `liveTurnUsage`; no phase change, no persist.
+  // Live intra-turn token usage — high-frequency telemetry frame published
+  // to the streaming document's live-usage path (never the snapshot); no
+  // phase change, no persist.
   "streaming_usage",
   "context_breakdown",
   "error",
@@ -441,6 +459,20 @@ export class CodeSessionStore {
    */
   private _foldPending = 0;
 
+  /**
+   * Live-notify coalescing: same-phase wire dispatches ride ONE
+   * trailing flush per {@link LIVE_NOTIFY_MIN_MS} window, so a
+   * streaming burst costs React one render per ~frame instead of one
+   * per token. Local dispatches (user actions) and phase transitions
+   * always publish immediately, flushing anything pending. Time-based
+   * rather than rAF-based on purpose: rAF stalls in occluded /
+   * background WebViews, which would freeze background-card
+   * transcripts; a timer coalesces identically (~60 Hz) everywhere —
+   * and rides the injectable {@link TimerSource} for deterministic
+   * tests.
+   */
+  private _trailingNotify: unknown | null = null;
+
   constructor(options: CodeSessionStoreOptions) {
     this.conn = options.conn;
     this.lifecycle = options.lifecycle;
@@ -537,6 +569,25 @@ export class CodeSessionStore {
       if (idx >= 0) this._listeners.splice(idx, 1);
     };
   };
+
+  /**
+   * Fine-grained [L02] pair for the live intra-turn usage telemetry —
+   * rides the streaming document's per-path observers, NOT the snapshot,
+   * so a `streaming_usage` frame ticks only the status cells:
+   *
+   * ```ts
+   * useSyncExternalStore(store.observeLiveTurnUsage, store.getLiveTurnUsage)
+   * ```
+   */
+  observeLiveTurnUsage = (listener: () => void): (() => void) =>
+    this.streamingDocument.observe(LIVE_USAGE_PATH, listener);
+
+  /** Latest `streaming_usage` frame, or null between turns. */
+  getLiveTurnUsage = (): LiveMessageUsage | null =>
+    (this.streamingDocument.get(LIVE_USAGE_PATH) as
+      | LiveMessageUsage
+      | null
+      | undefined) ?? null;
 
   /**
    * Dev-only read-only accessor over the internal reducer state.
@@ -698,12 +749,6 @@ export class CodeSessionStore {
       // preserves the reference when nothing new lands, so this is
       // `Object.is`-stable across quiescent rebuilds ([L02]).
       permissionDenials: this.state.permissionDenials,
-      // Live intra-turn token usage — the latest `streaming_usage`
-      // frame. The reducer assigns a fresh `liveTurnUsage` only on a
-      // frame (and clears it to `null` at turn boundaries); passing
-      // the reference through unchanged preserves `Object.is`
-      // stability across quiescent snapshot rebuilds ([L02]).
-      liveTurnUsage: this.state.liveTurnUsage,
       // `window(0)` — captured once from the session's first telemetry
       // iteration, never reassigned thereafter, so the reference is
       // trivially stable.
@@ -1465,6 +1510,13 @@ export class CodeSessionStore {
     // Teardown flush of an open replay fold — nothing is ever
     // stranded: listeners still attached observe the final reduced
     // state in one last snapshot tick before they're cleared.
+    // A pending coalesced live notify flushes with the fold below (or
+    // is dropped by the `_disposed` guard if the timer outlives us).
+    if (this._trailingNotify !== null) {
+      this.timerSource.clearTimeout(this._trailingNotify);
+      this._trailingNotify = null;
+      this._publishAndNotify();
+    }
     this._flushReplayFold();
     this._disposed = true;
     if (this._feedStoreUnsub) {
@@ -1822,7 +1874,25 @@ export class CodeSessionStore {
     this.state = state;
     this.processEffects(effects);
     this.maybePersistStateChange(prev, state);
-    if (prev !== state || effects.length > 0) {
+    // Turn boundary (send or commit): the live usage path clears so the
+    // status cells never read a stale frame across turns — the old
+    // in-state lifecycle (`reset at send / superseded at commit`),
+    // preserved at the wrapper now that usage rides the streaming
+    // document instead of the snapshot.
+    if (
+      prev.pendingTurn !== state.pendingTurn &&
+      (prev.pendingTurn === null || state.pendingTurn === null) &&
+      this.streamingDocument.get(LIVE_USAGE_PATH) != null
+    ) {
+      this.streamingDocument.set(LIVE_USAGE_PATH, null, STREAM_SOURCE_TAG);
+    }
+    // `write-live-usage` is fine-grained by design — its observers ride
+    // the streaming document, so the effect alone must not tick the
+    // whole-store snapshot.
+    const notifyWorthy =
+      prev !== state ||
+      effects.some((e) => e.kind !== "write-live-usage");
+    if (notifyWorthy) {
       // Replay fold ([P03]): while the reducer's `replaying` phase is
       // open, WIRE events defer their notification — the snapshot
       // stays pinned (`_cachedSnapshot` untouched) so React observes
@@ -1843,6 +1913,20 @@ export class CodeSessionStore {
         if (this._foldPending >= REPLAY_FOLD_FLUSH_THRESHOLD) {
           this._flushReplayFold();
         }
+      } else if (
+        origin === "wire" &&
+        prev.phase === state.phase &&
+        (event.type === "assistant_text" || event.type === "thinking_text")
+      ) {
+        // Live streaming firehose: same-phase text/thinking deltas
+        // coalesce to one notify per LIVE_NOTIFY_MIN_MS window
+        // (trailing flush), so a token burst costs React one render
+        // per ~frame instead of one per token. Everything else — phase
+        // transitions, tool results, errors, control frames — is
+        // low-frequency and publishes synchronously below, so
+        // side-effectful observers (binding clears, notices) stay
+        // prompt.
+        this._publishCoalesced();
       } else {
         this._publishAndNotify();
       }
@@ -1861,6 +1945,12 @@ export class CodeSessionStore {
    * publication.
    */
   private _publishAndNotify(): void {
+    // A pending trailing flush is superseded — this publish carries
+    // everything reduced so far.
+    if (this._trailingNotify !== null) {
+      this.timerSource.clearTimeout(this._trailingNotify);
+      this._trailingNotify = null;
+    }
     const hadFold = this._foldPending > 0;
     this._foldPending = 0;
     this._cachedSnapshot = null;
@@ -1869,6 +1959,31 @@ export class CodeSessionStore {
     if (hadFold && this._perfReplay !== null) {
       this._perfReplay.folds += 1;
     }
+  }
+
+  /**
+   * Arm ONE trailing flush a frame from now (if none is pending):
+   * every same-phase wire event inside the window rides that single
+   * notify. State/effects are already applied by the time this runs —
+   * only the React notification defers, exactly like the replay fold's
+   * pinned snapshot, just on a ~frame cadence instead of a count
+   * threshold. The ≤16 ms notify latency is under one display frame,
+   * and the streamed text itself paints imperatively (the [L22]
+   * PropertyStore path) with no deferral at all.
+   */
+  private _publishCoalesced(): void {
+    // Reads stay truthful immediately — a synchronous `getSnapshot`
+    // after this dispatch sees the reduced state (unlike the replay
+    // fold, which pins the snapshot on purpose). Only the listener
+    // notification defers, so React renders once per window instead of
+    // once per token.
+    this._cachedSnapshot = null;
+    if (this._trailingNotify !== null) return;
+    this._trailingNotify = this.timerSource.setTimeout(() => {
+      this._trailingNotify = null;
+      if (this._disposed) return;
+      this._publishAndNotify();
+    }, LIVE_NOTIFY_MIN_MS);
   }
 
   /** Threshold / teardown flush of the replay fold. */
@@ -2037,6 +2152,16 @@ export class CodeSessionStore {
   private processEffects(effects: Effect[]): void {
     for (const effect of effects) {
       switch (effect.kind) {
+        case "write-live-usage":
+          // High-frequency display telemetry — a per-path write only its
+          // observers (the Tokens / Context cells) see; the transcript
+          // list never re-renders for it.
+          this.streamingDocument.set(
+            LIVE_USAGE_PATH,
+            effect.usage,
+            STREAM_SOURCE_TAG,
+          );
+          break;
         case "write-inflight": {
           // Per-Message path `turn.${turnKey}.message.${messageKey}.${channel}`
           // ([D07]). Each Message's path is stable from mint through

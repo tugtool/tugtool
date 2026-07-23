@@ -114,6 +114,44 @@ describe("SessionActivityStore", () => {
     expect(store.getSnapshot().sessions.has(S)).toBe(false);
   });
 
+  it("subscribeRateActivity wakes synchronously on rate units, never on gauges or zeros", () => {
+    const store = newStore();
+    let wakes = 0;
+    const unsubscribe = store.subscribeRateActivity(S, () => {
+      wakes += 1;
+    });
+    // Gauge samples tick whether or not the session is doing anything —
+    // they must not wake a dormant consumer.
+    store.record(S, "cpu", 55, 1_000);
+    store.record(S, "memory", 1024, 1_000);
+    expect(wakes).toBe(0);
+    // A zero-unit rate sample is silence, not activity.
+    store.record(S, "text", 0, 1_250);
+    expect(wakes).toBe(0);
+    // Real rate work wakes, synchronously within record().
+    store.record(S, "text", 120, 1_500);
+    expect(wakes).toBe(1);
+    // Another session's activity never crosses over.
+    store.record("other", "text", 120, 1_500);
+    expect(wakes).toBe(1);
+    unsubscribe();
+    store.record(S, "text", 120, 1_750);
+    expect(wakes).toBe(1);
+  });
+
+  it("rate-activity listeners survive clearSession (a revived id still wakes)", () => {
+    const store = newStore();
+    let wakes = 0;
+    store.subscribeRateActivity(S, () => {
+      wakes += 1;
+    });
+    store.record(S, "text", 10, 1_000);
+    expect(wakes).toBe(1);
+    store.clearSession(S);
+    store.record(S, "text", 10, 2_000);
+    expect(wakes).toBe(2);
+  });
+
   it("raw() returns a held gauge value with its unit, null for rate/absent", () => {
     const store = newStore();
     const now = Date.now();

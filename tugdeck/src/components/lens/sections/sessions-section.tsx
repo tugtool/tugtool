@@ -190,9 +190,19 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
         : [],
     [activityStore, tugSessionId],
   );
+  // Dormancy wake channel — an idle session's row costs nothing until its
+  // next activity frame, which wakes the tape in the same tick.
+  const subscribeActivity = useCallback(
+    (wake: () => void): (() => void) =>
+      activityStore !== null && tugSessionId.length > 0
+        ? activityStore.subscribeRateActivity(tugSessionId, wake)
+        : () => {},
+    [activityStore, tugSessionId],
+  );
   return (
     <TugSparkline
       getSeries={getSeries}
+      subscribeActivity={subscribeActivity}
       binMs={ACTIVITY_BIN_MS}
       fullScale={SPARKLINE_FULL_SCALE_CHARS}
       curve={SPARKLINE_CURVE}

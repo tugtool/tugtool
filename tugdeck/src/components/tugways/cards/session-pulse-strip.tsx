@@ -260,6 +260,15 @@ export function SessionPulseStrip({
         : [],
     [activityStore, tugSessionId],
   );
+  // Dormancy wake channel: lets the sparkline stop entirely while this
+  // session idles, waking synchronously with its next activity frame.
+  const subscribeActivity = useCallback(
+    (wake: () => void): (() => void) =>
+      activityStore !== null && tugSessionId.length > 0
+        ? activityStore.subscribeRateActivity(tugSessionId, wake)
+        : () => {},
+    [activityStore, tugSessionId],
+  );
   // The compact line stays a single muted hue — no dominant-channel tint.
   // Color-by-channel is legible only where the label sits beside the line
   // (the expanded Pulse card); on this word-sized strip a shifting color has
@@ -339,6 +348,7 @@ export function SessionPulseStrip({
           >
             <TugSparkline
               getSeries={getSeries}
+              subscribeActivity={subscribeActivity}
               binMs={ACTIVITY_BIN_MS}
               fullScale={SPARKLINE_FULL_SCALE_CHARS}
               curve={SPARKLINE_CURVE}

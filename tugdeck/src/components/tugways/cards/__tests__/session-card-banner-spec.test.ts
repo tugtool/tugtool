@@ -86,7 +86,6 @@ function baseSnap(
     unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
-    liveTurnUsage: null,
     sessionInitTokens: null,
     lastContextBreakdown: null,
     lastError: null,

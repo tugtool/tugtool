@@ -198,6 +198,66 @@ describe("replay fold — one snapshot tick per flush", () => {
     expect(store.getSnapshot().transcript).toHaveLength(2);
   });
 
+  it("same-phase streaming bursts coalesce to one trailing notify per window", () => {
+    // Manual timer source so the trailing flush is deterministic.
+    const pending: Array<() => void> = [];
+    const conn = new TestFrameChannel();
+    const store = new CodeSessionStore({
+      conn: conn as unknown as TugConnection,
+      lifecycle: new ConnectionLifecycle(),
+      tugSessionId: TUG,
+      sessionMode: "new",
+      timerSource: {
+        setTimeout: (cb: () => void) => {
+          pending.push(cb);
+          return pending.length;
+        },
+        clearTimeout: () => {},
+      },
+    });
+    let count = 0;
+    store.subscribe(() => {
+      count += 1;
+    });
+
+    store.send("hello", []);
+    const afterSend = count;
+    const delta = (seq: number): void =>
+      emit(conn, {
+        type: "assistant_text",
+        msg_id: FIXTURE_IDS.MSG_ID_N(1),
+        text: "x",
+        is_partial: true,
+        rev: 0,
+        seq,
+      });
+    // The first two deltas cross phase boundaries (submitting →
+    // awaiting_first_token → streaming) — semantic boundaries, each
+    // published immediately.
+    delta(0);
+    delta(1);
+    expect(count).toBe(afterSend + 2);
+    // Same-phase burst: every event still reduces immediately (reads
+    // stay truthful) but the listener notification coalesces into ONE
+    // trailing flush at the window edge.
+    delta(2);
+    delta(3);
+    delta(4);
+    expect(count).toBe(afterSend + 2);
+    expect(pending).toHaveLength(1);
+    pending.shift()!();
+    expect(count).toBe(afterSend + 3);
+    // A phase transition mid-window (turn_complete) publishes
+    // immediately — end-of-turn paint never waits on the window.
+    delta(5);
+    emit(conn, {
+      type: "turn_complete",
+      msg_id: FIXTURE_IDS.MSG_ID_N(1),
+      result: "success",
+    });
+    expect(count).toBe(afterSend + 4);
+  });
+
   it("golden: folded ingest produces a final state deep-equal to a second identical run", () => {
     const a = makeStore();
     const b = makeStore();

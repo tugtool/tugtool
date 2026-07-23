@@ -576,8 +576,9 @@ export interface UnknownEventState {
  * minus the dollar cost — dollars are cumulative-per-session and only
  * land with the terminal `cost_update`, so the live shape omits them.
  *
- * Used both as the live in-flight `liveTurnUsage` value and as the
- * minimal structural input to the window helpers in `end-state.ts`
+ * Used both as the live in-flight usage value (the streaming
+ * document's `telemetry.liveTurnUsage` path) and as the minimal
+ * structural input to the window helpers in `end-state.ts`
  * ({@link TurnCost} is structurally assignable to it).
  */
 export interface LiveMessageUsage {
@@ -950,24 +951,6 @@ export interface CodeSessionSnapshot {
    * runtime-only (not persisted), so a fresh / resumed session starts empty.
    */
   permissionDenials: readonly PermissionDenial[];
-  /**
-   * Live intra-turn token usage for the in-flight turn — the LATEST
-   * `streaming_usage` wire frame, so the `Tokens` / `Context` status
-   * cells can climb mid-turn. `null` between turns.
-   *
-   * Not an accumulation: `observedInput` (`input + cache_read +
-   * cache_creation`) grows monotonically across a turn's API calls, so
-   * the most recent frame is always the current window. The reducer
-   * replaces this field on each frame (no per-message map). The cells
-   * read it while `activeTurn !== null` and fall back to the last
-   * committed turn's window otherwise; the committed `cost_update`
-   * carries the same last-iteration usage and supersedes it at
-   * turn-complete with no discontinuity. The reference is preserved
-   * across snapshot rebuilds while the reducer's underlying field
-   * doesn't change, so [L02] consumers get `Object.is` stability during
-   * quiescent renders.
-   */
-  liveTurnUsage: LiveMessageUsage | null;
   /**
    * `window(0)` — the resident context before any turn (system prompt
    * + tools + agents + memory + skills). Captured by the reducer as

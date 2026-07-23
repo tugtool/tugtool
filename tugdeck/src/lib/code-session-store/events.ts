@@ -552,10 +552,12 @@ export interface CostUpdateEvent {
  * carries; `msg_id` is claude's `message.id` for the assistant
  * message the usage belongs to.
  *
- * The reducer accumulates these per-message into `liveTurnUsage` with
- * no phase transition and no persistence — a display-only telemetry
- * frame, like `cost_update`. The terminal `cost_update` is
- * authoritative and supersedes the live accumulation at turn-complete.
+ * The reducer publishes each frame via a `write-live-usage` effect
+ * (the streaming document's fine-grained live-usage path — never the
+ * snapshot) with no phase transition and no persistence — a
+ * display-only telemetry frame, like `cost_update`. The terminal
+ * `cost_update` is authoritative and supersedes the live frame at
+ * turn-complete.
  */
 export interface StreamingUsageEvent {
   type: "streaming_usage";

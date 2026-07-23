@@ -553,24 +553,6 @@ export interface CodeSessionState {
    */
   permissionDenials: readonly PermissionDenial[];
   /**
-   * Live intra-turn token usage — the LATEST `streaming_usage` wire
-   * frame so the `Tokens` / `Context` status cells can climb mid-turn.
-   * `null` between turns.
-   *
-   * Not an accumulation: `observedInput` grows monotonically across a
-   * turn's API calls, so the most recent frame is always the current
-   * window. `handleStreamingUsage` replaces this field on each frame.
-   *
-   * Lifecycle: reset to `null` at `handleSend` (turn start), replaced
-   * by `handleStreamingUsage` across the turn, and reset to `null`
-   * again at `handleTurnComplete` (via `resetPerTurnTelemetry`) — the
-   * committed `cost_update` carries the same last-iteration usage and
-   * supersedes the live frame. The reducer assigns a fresh object only
-   * when a frame lands; quiescent reductions preserve the reference
-   * for [L02] `Object.is` stability.
-   */
-  liveTurnUsage: LiveMessageUsage | null;
-  /**
    * `window(0)` — the resident context before any turn. Captured once,
    * from the `observedInput` (`input + cache_read + cache_creation`)
    * of the session's first telemetry iteration: the first
@@ -913,7 +895,6 @@ export function createInitialState(
     unknownEvent: null,
     compactionSeed: null,
     permissionDenials: [],
-    liveTurnUsage: null,
     sessionInitTokens: null,
     lastContextBreakdown: null,
     committedMsgIds: new Set(),
@@ -1021,10 +1002,6 @@ function handleSend(
         submitAt,
         event.turnKey,
       ),
-      // Clear last turn's live token accumulation — the new turn's
-      // `streaming_usage` frames build a fresh `liveTurnUsage` from
-      // scratch.
-      liveTurnUsage: null,
       // Reset per-turn accumulators. `transportNonOnlineSince` is
       // owned by the transport handlers — leave it alone so a
       // disconnect that started before this submit still folds into
@@ -2580,7 +2557,6 @@ function resetPerTurnTelemetry(): Pick<
   | "costAtSubmit"
   | "interruptInFlight"
   | "pendingInterruptReason"
-  | "liveTurnUsage"
   | "apiRetry"
   | "refusalFallback"
   | "outputTruncated"
@@ -2600,10 +2576,6 @@ function resetPerTurnTelemetry(): Pick<
     // (buildTurnEntry read the reason off the pre-reset state), so the
     // bridge closes for the next turn.
     pendingInterruptReason: null,
-    // The committed `cost_update` is authoritative; the live
-    // accumulation is dropped so the cells fall back to the just-
-    // committed turn's figures with no double-count.
-    liveTurnUsage: null,
     // A retry banner is per-turn-transient: the turn it was retrying has
     // ended, so the announcement is stale. Cleared on every turn_complete
     // path (each spreads this) and at wake start.
@@ -3930,16 +3902,23 @@ function handleCompactSummary(
  * `observedInput` (`input + cache_read + cache_creation`) grows
  * monotonically across a turn's API calls — each call re-reads the
  * prior context plus its own output and tool result — so the LATEST
- * frame is always the current context window. The handler stores the
- * frame's `usage` as `liveTurnUsage`, replacing the prior frame; there
- * is no accumulation and no per-message map.
+ * frame is always the current context window. The handler publishes the
+ * frame's `usage` via a `write-live-usage` effect (the streaming
+ * document's `telemetry.liveTurnUsage` path), replacing the prior
+ * frame; there is no accumulation and no per-message map. Usage lives
+ * OFF the snapshot on purpose: these frames arrive at streaming
+ * frequency, and a snapshot change would re-render the whole transcript
+ * list for a value only the status cells read.
  *
  * Also captures `sessionInitTokens` once: the `observedInput` of the
  * session's first token-bearing telemetry iteration is `window(0)` —
- * the bootstrap the transcript walk measures turn 1 against.
+ * the bootstrap the transcript walk measures turn 1 against. That
+ * capture is the ONLY snapshot change this handler can make, and it
+ * happens once per session; every later frame returns the state
+ * reference untouched.
  *
  * Drops a frame with no `msg_id` — a malformed frame (tugcode gates
- * the wire emit on a non-empty id). No phase transition, no effect: a
+ * the wire emit on a non-empty id). No phase transition: a
  * display-only telemetry frame.
  */
 function handleStreamingUsage(
@@ -3951,14 +3930,12 @@ function handleStreamingUsage(
     return { state, effects: [] };
   }
   const usage = readUsage(event.usage);
-  return {
-    state: {
-      ...state,
-      liveTurnUsage: usage,
-      sessionInitTokens: captureSessionInit(state.sessionInitTokens, usage),
-    },
-    effects: [],
-  };
+  const effects: Effect[] = [{ kind: "write-live-usage", usage }];
+  const sessionInitTokens = captureSessionInit(state.sessionInitTokens, usage);
+  if (sessionInitTokens === state.sessionInitTokens) {
+    return { state, effects };
+  }
+  return { state: { ...state, sessionInitTokens }, effects };
 }
 
 /**
