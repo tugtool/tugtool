@@ -1204,12 +1204,14 @@ function noticeText(notice: PickerNotice): string {
  */
 const PICKER_CYCLE_GROUP = "session-picker-cycle";
 const PICKER_ORDER_PATH = 0;
-// The native "Browse…" folder button sits just after the path field in reading
-// order. It takes a fractional order so it slots between PATH (0) and the next
-// stop in the Tab walk WITHOUT renumbering the stops below it — their authored
-// focus-keys (`session-picker-cycle:2…5`) are a stable contract the app-tests
-// and a baked corpus snapshot address by string, so they must not shift.
-const PICKER_ORDER_BROWSE = 0.5;
+// The native "Browse…" folder button leads the path field in reading order, so
+// it takes a negative order to slot BEFORE PATH (0) in the Tab walk — Tab from
+// the browse button lands on the path field, then the Sessions list, keeping the
+// button out from between the field and the list. Its fractional order also
+// avoids renumbering the stops below — their authored focus-keys
+// (`session-picker-cycle:2…5`) are a stable contract the app-tests and a baked
+// corpus snapshot address by string, so they must not shift.
+const PICKER_ORDER_BROWSE = -0.5;
 const PICKER_ORDER_SESSIONS = 2;
 const PICKER_ORDER_TRASH_ALL = 3;
 const PICKER_ORDER_CANCEL = 4;

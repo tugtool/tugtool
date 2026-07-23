@@ -2,7 +2,7 @@
    from the composed TugInput / TugPushButton, and the completion overlay borrows
    tug-completion-menu.css. [L20] */
 
-/* Field row: the path input, with an optional trailing square Browse… button. */
+/* Field row: an optional leading square Browse… button, then the path input. */
 .tug-file-chooser {
   display: flex;
   align-items: center;
@@ -23,14 +23,14 @@ input.tug-file-chooser-input {
 }
 
 /* Square picker button matching the sm input's height (an explicit box —
-   aspect-ratio collapses under flexbox). A touch of left margin sets it off
+   aspect-ratio collapses under flexbox). A touch of right margin sets it off
    from the input. The descendant selector beats the button's own size class. */
 .tug-file-chooser [data-slot="tug-file-chooser-browse"] {
   flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
   padding: 0;
-  margin-left: var(--tug-space-2xs);
+  margin-right: var(--tug-space-2xs);
 }
 
 /* The completion overlay shows directory paths verbatim, in monospace, undoing

@@ -110,6 +110,8 @@ export interface TugComboBoxProps {
   menuMode?: boolean;
   /** Trailing "escape" control beside the field (e.g. a Browse button). */
   accessory?: React.ReactNode;
+  /** Leading control beside the field, rendered before the input (e.g. a Browse button). */
+  leadingAccessory?: React.ReactNode;
   /**
    * Normalize the resting value when the list closes (e.g. strip a directory's
    * trailing slash). Applied only on the open→closed transition.
@@ -156,6 +158,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       asyncItems,
       menuMode = false,
       accessory,
+      leadingAccessory,
       normalizeOnClose,
       onSubmit,
       onOpenChange,
@@ -499,6 +502,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
 
     return (
       <div className={`tug-combo-box${className !== undefined ? ` ${className}` : ""}`}>
+        {leadingAccessory}
         <TugInput
           ref={setInputRef}
           size={size}

@@ -4,7 +4,7 @@
  * The path-specific preset of {@link TugComboBox}: it wires the generic combo
  * box's async source to tugcast's `/api/fs/complete` (so typing completes
  * filesystem paths), slots a square "Browse…" button that opens the macOS
- * `NSOpenPanel` as the trailing escape accessory, descends into directories,
+ * `NSOpenPanel` as the leading escape accessory, descends into directories,
  * and strips a directory's transient trailing slash on close. Behavior mirrors
  * the prompt-entry `@`-mention menu:
  *   - typing fetches completions (debounced) from `/api/fs/complete`;
@@ -174,7 +174,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       });
     }, [value, base, kind, onChange]);
 
-    const accessory = showPicker ? (
+    const browseButton = showPicker ? (
       <TugPushButton
         size={size}
         emphasis="ghost"
@@ -200,7 +200,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
         seed={seed}
         asyncItems={asyncItems}
         menuMode={menuMode}
-        accessory={accessory}
+        leadingAccessory={browseButton}
         normalizeOnClose={normalizeOnClose}
         onSubmit={onSubmit}
         onOpenChange={onOpenChange}
