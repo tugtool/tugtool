@@ -53,6 +53,10 @@ import { registerDiffCard } from "./components/tugways/cards/diff-card";
 import { registerGalleryCards } from "./components/tugways/cards/gallery-registrations";
 import { installSessionPlacementGlobal } from "./components/tugways/cards/session-card-placement-experiment";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
+import {
+  getPerfMonitorSnapshot,
+  startPerfMonitor,
+} from "./lib/perf-monitor";
 import { initMotionObserver } from "./components/tugways/scale-timing";
 import { initThemeTokens } from "./theme-tokens";
 import { FONT_STACKS } from "./lib/editor-settings-store";
@@ -299,6 +303,16 @@ if (!container) {
   if (import.meta.env.DEV || window.__tugTestMode === true) {
     (window as unknown as { tugDevLog?: typeof tugDevLogStore }).tugDevLog =
       tugDevLogStore;
+    // Main-thread health sentinel (long tasks + heartbeat drift →
+    // counters + dev log). Dev/test builds only — production must not
+    // carry the monitor's 1 Hz wakeup; see lib/perf-monitor.ts for the
+    // budgets it guards.
+    startPerfMonitor();
+    (
+      window as unknown as {
+        tugPerfMonitor?: typeof getPerfMonitorSnapshot;
+      }
+    ).tugPerfMonitor = getPerfMonitorSnapshot;
   }
   if (import.meta.env.DEV) {
     installSessionPlacementGlobal();
