@@ -112,7 +112,8 @@ export function useBlockReorder({
       const sections = els as HTMLElement[];
 
       const n = visible.length;
-      const containerTop = container.getBoundingClientRect().top;
+      const containerRect = container.getBoundingClientRect();
+      const containerTop = containerRect.top;
       const rects = sections.map((el) => el.getBoundingClientRect());
       const tops = rects.map((r) => r.top);
       const bottoms = rects.map((r) => r.bottom);
@@ -170,8 +171,21 @@ export function useBlockReorder({
         return n - 1;
       };
 
+      // Keep the dragged element within the container's bounds — its top may
+      // not rise above the container top, nor its bottom fall below the
+      // container bottom. Without this the row/section follows the pointer out
+      // of the list entirely. The target index still comes from the raw
+      // pointer (bounded to `[0, n-1]` by `computeTarget`), so a drag past the
+      // edge still drops at the nearest end.
+      const draggedRect = rects[dragIndex];
+      const minDy = containerRect.top - draggedRect.top;
+      const maxDy = containerRect.bottom - draggedRect.bottom;
+      const clampDy = (dy: number): number =>
+        Math.max(minDy, Math.min(maxDy, dy));
+
       const onMove = (ev: PointerEvent): void => {
-        dragged.style.transform = `translateY(${ev.clientY - startY}px) scale(0.99)`;
+        const dy = clampDy(ev.clientY - startY);
+        dragged.style.transform = `translateY(${dy}px) scale(0.99)`;
         const t = computeTarget(ev.clientY);
         if (t !== targetIndex) {
           targetIndex = t;
@@ -236,6 +250,24 @@ export function useBlockReorder({
         });
       };
 
+      // A grip gesture is a DRAG, never a row activation — but the pointerup
+      // still spawns a trailing `click` on the cell under the pointer, which the
+      // list would read as a select/activate (e.g. front the session card).
+      // Swallow that one click at capture phase so the grip never activates a
+      // row, whether the pointer moved or not. One-shot: it removes itself the
+      // moment it fires, and a post-up fallback clears it if no click follows.
+      const swallowNextClick = (ev: MouseEvent): void => {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        window.removeEventListener("click", swallowNextClick, true);
+      };
+      const clearSwallow = (): void => {
+        window.setTimeout(
+          () => window.removeEventListener("click", swallowNextClick, true),
+          0,
+        );
+      };
+
       const detach = (): void => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
@@ -244,6 +276,7 @@ export function useBlockReorder({
 
       const onUp = (): void => {
         detach();
+        clearSwallow();
         if (targetIndex !== dragIndex) settleCommit();
         else settleBack();
       };
@@ -255,9 +288,11 @@ export function useBlockReorder({
         ev.preventDefault();
         ev.stopImmediatePropagation();
         detach();
+        clearSwallow();
         settleBack();
       };
 
+      window.addEventListener("click", swallowNextClick, true);
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("keydown", onKey, true);

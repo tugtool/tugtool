@@ -65,6 +65,31 @@
   height: var(--tug-line-height-sm, 1.25rem);
 }
 
+/* The leading holds the reorder grip beside the phase dot; both center on the
+   title line. The grip carries its own layout/cursor from block-grip.css. */
+.session-row-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+/* The wrap is the reorder container: the `BlockDropCaret` positions absolutely
+   within it, and it is the list's flex scroller (mirrors `.snippets-list-wrap`). */
+.sessions-list-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+}
+
+/* The reorder-drag lift on the row content while it is being dragged. */
+.session-row-content[data-dragging="true"] {
+  opacity: 0.6;
+  z-index: 2;
+}
+
 .sessions-card-empty {
   padding: 16px;
   color: var(--tug7-element-global-text-normal-muted-rest);

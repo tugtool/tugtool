@@ -30,6 +30,7 @@ import React, {
   useCallback,
   useLayoutEffect,
   useMemo,
+  useRef,
   useSyncExternalStore,
 } from "react";
 import { GitBranch } from "lucide-react";
@@ -37,6 +38,10 @@ import { GitBranch } from "lucide-react";
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
+import { BlockDropCaret } from "@/components/lens/block-drop-caret";
+import { useBlockReorder } from "@/components/lens/block-reorder";
+import { lensStore } from "@/lib/lens-store/lens-store";
 import { dispatchAction } from "@/action-dispatch";
 import { TugListView } from "@/components/tugways/tug-list-view";
 import type {
@@ -76,6 +81,12 @@ import {
   type MonitorRow,
 } from "./sessions-data-source";
 
+// The reorder-drag matches each row by its stable `data-session-id` on the row
+// content element; the FLIP translates that element, the store commit persists
+// the new order.
+const ROW_SELECTOR = ".session-row-content[data-session-id]";
+const ROW_KIND_ATTR = "data-session-id";
+
 // Sparkline shape — the same constants the on-card `session-pulse-strip` uses,
 // so a session reads identically in the Lens and on its card.
 const SPARKLINE_FULL_SCALE_CHARS = 1200;
@@ -97,6 +108,13 @@ function useOpenBindings() {
     cardSessionBindingStore.getSnapshot,
   );
 }
+
+/** Row verbs the section body hands the module-level cell — the reorder grip. */
+interface SessionsCellContextValue {
+  onGripPointerDown: (id: string, event: React.PointerEvent) => void;
+}
+const SessionsCellContext =
+  React.createContext<SessionsCellContextValue | null>(null);
 
 /**
  * The session's label, formatted EXACTLY like the Session card's title bar:
@@ -192,6 +210,7 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
  *  latest pulse line the subtitle, and the activity sparkline the trailing
  *  accessory. The `TugListView` cell wrapper owns cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
+  const ctx = React.useContext(SessionsCellContext);
   const changesets = useChangesetAll();
   const branch = branchForProject(changesets, row.projectDir);
   const displayName = useSessionLabel(row.projectDir, row.tugSessionId, branch);
@@ -200,7 +219,18 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const pulseText = pulse.enabled && latest !== null ? latest.text : null;
   return (
     <TugListRow
-      leading={<RowPhaseDot cardId={row.cardId} />}
+      className="session-row-content"
+      data-session-id={row.tugSessionId}
+      leading={
+        <span className="session-row-lead">
+          {ctx !== null ? (
+            <BlockGrip
+              onPointerDown={(e) => ctx.onGripPointerDown(row.tugSessionId, e)}
+            />
+          ) : null}
+          <RowPhaseDot cardId={row.cardId} />
+        </span>
+      }
       title={displayName}
       titleSize="sm"
       subtitle={
@@ -239,9 +269,32 @@ function SessionsCollapsedSummary(): React.ReactElement {
 
 function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const bindings = useOpenBindings();
-  const dataSource = useLensSessionsDataSource(bindings);
+  const sessionOrder = useSyncExternalStore(
+    lensStore.subscribe,
+    useCallback(() => lensStore.getSnapshot().sessionOrder, []),
+  );
+  const dataSource = useLensSessionsDataSource(bindings, sessionOrder);
   const count = dataSource.numberOfItems();
   const hasContent = count > 0;
+
+  // Reorder by grip: commit on drop ([Q02]). Rows match by their stable
+  // `data-session-id`; the FLIP animates the row content, the store commit
+  // persists the new user order. New sessions (absent from `sessionOrder`)
+  // stay at the bottom until the user moves them.
+  const listWrapRef = useRef<HTMLDivElement | null>(null);
+  const caretRef = useRef<HTMLDivElement | null>(null);
+  const { onGripPointerDown } = useBlockReorder({
+    containerRef: listWrapRef,
+    caretRef,
+    getVisibleOrder: () => dataSource.visibleOrder(),
+    commit: (order) => lensStore.setSessionOrder([...order]),
+    selector: ROW_SELECTOR,
+    kindAttr: ROW_KIND_ATTR,
+  });
+  const cellContext = useMemo<SessionsCellContextValue>(
+    () => ({ onGripPointerDown }),
+    [onGripPointerDown],
+  );
 
   // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
   // when it is empty (an empty list is not a focus stop).
@@ -279,18 +332,23 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
         // gap under the band (and paint an empty framed box).
         <div className="sessions-card-empty">No open sessions</div>
       ) : (
-        <TugListView<LensSessionsDataSource>
-          dataSource={dataSource}
-          delegate={delegate}
-          cellRenderers={SESSIONS_CELL_RENDERERS}
-          scrollKey="lens-sessions"
-          inline
-          rowLayout="flush"
-          focusGroup={hasContent ? host.focusGroup : undefined}
-          commitOnEnter="act"
-          initialSelectedIndex={initialSelectedIndex}
-          className="lens-sessions-list"
-        />
+        <div className="sessions-list-wrap" ref={listWrapRef}>
+          <BlockDropCaret ref={caretRef} />
+          <SessionsCellContext value={cellContext}>
+            <TugListView<LensSessionsDataSource>
+              dataSource={dataSource}
+              delegate={delegate}
+              cellRenderers={SESSIONS_CELL_RENDERERS}
+              scrollKey="lens-sessions"
+              inline
+              rowLayout="flush"
+              focusGroup={hasContent ? host.focusGroup : undefined}
+              commitOnEnter="act"
+              initialSelectedIndex={initialSelectedIndex}
+              className="lens-sessions-list"
+            />
+          </SessionsCellContext>
+        </div>
       )}
     </div>
   );

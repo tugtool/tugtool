@@ -73,6 +73,11 @@ class LensStore {
     const sectionOrder = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.SECTION_ORDER)),
     );
+    // Session ids are opaque — no `KIND_MIGRATIONS` remap (that maps renamed
+    // section kinds, not session ids).
+    const sessionOrder = readStringArray(
+      client.get(LENS_DOMAIN, LENS_KEYS.SESSION_ORDER),
+    );
     const collapsedSections = migrateKinds(
       readStringArray(client.get(LENS_DOMAIN, LENS_KEYS.COLLAPSED_SECTIONS)),
     );
@@ -84,6 +89,7 @@ class LensStore {
         type: "hydrate",
         ...(widthPx !== undefined ? { widthPx } : {}),
         ...(sectionOrder !== undefined ? { sectionOrder } : {}),
+        ...(sessionOrder !== undefined ? { sessionOrder } : {}),
         ...(collapsedSections !== undefined ? { collapsedSections } : {}),
         ...(anchorSide !== undefined ? { anchorSide } : {}),
       },
@@ -117,6 +123,9 @@ class LensStore {
     }
     if (prev.sectionOrder !== next.sectionOrder) {
       putJson(LENS_KEYS.SECTION_ORDER, next.sectionOrder);
+    }
+    if (prev.sessionOrder !== next.sessionOrder) {
+      putJson(LENS_KEYS.SESSION_ORDER, next.sessionOrder);
     }
     if (prev.collapsedSections !== next.collapsedSections) {
       putJson(LENS_KEYS.COLLAPSED_SECTIONS, next.collapsedSections);
@@ -155,6 +164,12 @@ class LensStore {
   setSectionOrder = (order: readonly string[]): void => {
     this._ensureInitialized();
     this._dispatch({ type: "set_section_order", order });
+  };
+
+  /** Replace the persisted Sessions-section row order (by `tugSessionId`). Persists. */
+  setSessionOrder = (order: readonly string[]): void => {
+    this._ensureInitialized();
+    this._dispatch({ type: "set_session_order", order });
   };
 
   /** Expand/collapse a section by kind. Persists. */

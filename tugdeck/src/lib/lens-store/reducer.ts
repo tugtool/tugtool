@@ -27,6 +27,7 @@ import {
 export interface LensState {
   widthPx: number;
   sectionOrder: readonly string[];
+  sessionOrder: readonly string[];
   collapsedSections: readonly string[];
   anchorSide: LensAnchorSide;
 }
@@ -34,6 +35,7 @@ export interface LensState {
 export type LensEvent =
   | { type: "set_width"; widthPx: number }
   | { type: "set_section_order"; order: readonly string[] }
+  | { type: "set_session_order"; order: readonly string[] }
   | { type: "set_collapsed"; kind: string; collapsed: boolean }
   | { type: "set_anchor_side"; side: LensAnchorSide }
   | {
@@ -46,6 +48,7 @@ export type LensEvent =
       type: "hydrate";
       widthPx?: number;
       sectionOrder?: readonly string[];
+      sessionOrder?: readonly string[];
       collapsedSections?: readonly string[];
       anchorSide?: LensAnchorSide;
     };
@@ -54,6 +57,7 @@ export function createInitialState(): LensState {
   return {
     widthPx: DEFAULT_LENS_WIDTH_PX,
     sectionOrder: [],
+    sessionOrder: [],
     collapsedSections: [],
     anchorSide: DEFAULT_LENS_ANCHOR_SIDE,
   };
@@ -111,6 +115,11 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       return { ...state, sectionOrder: [...event.order] };
     }
 
+    case "set_session_order": {
+      if (listsEqual(state.sessionOrder, event.order)) return state;
+      return { ...state, sessionOrder: [...event.order] };
+    }
+
     case "set_collapsed": {
       const next = withMembership(
         state.collapsedSections,
@@ -144,6 +153,13 @@ export function reduce(state: LensState, event: LensEvent): LensState {
       ) {
         bump();
         next.sectionOrder = [...event.sectionOrder];
+      }
+      if (
+        event.sessionOrder !== undefined &&
+        !listsEqual(state.sessionOrder, event.sessionOrder)
+      ) {
+        bump();
+        next.sessionOrder = [...event.sessionOrder];
       }
       if (
         event.collapsedSections !== undefined &&

@@ -31,11 +31,18 @@ export interface MonitorRow {
 }
 
 /**
- * One row per open session binding, deduped by `tugSessionId` in binding
- * order — the first card bound to a session wins the row.
+ * One row per open session binding, deduped by `tugSessionId` — the first card
+ * bound to a session wins the row.
+ *
+ * Row order: the user's persisted `order` (by `tugSessionId`) first, in that
+ * order; sessions absent from `order` (newly bound) keep their binding order
+ * and follow AFTER the ordered set — a new session lands at the bottom without
+ * disturbing the arrangement. Stale ids in `order` (closed sessions) are simply
+ * never matched. An empty/absent `order` yields plain binding order.
  */
 export function buildSessionRows(
   bindings: ReadonlyMap<string, CardSessionBinding>,
+  order?: readonly string[],
 ): MonitorRow[] {
   const rows: MonitorRow[] = [];
   const seen = new Set<string>();
@@ -48,17 +55,34 @@ export function buildSessionRows(
       projectDir: binding.projectDir,
     });
   }
-  return rows;
+  if (order === undefined || order.length === 0) return rows;
+  const rank = new Map<string, number>();
+  order.forEach((id, i) => rank.set(id, i));
+  // Stable sort: ranked ids by rank; unranked (new) sessions keep their binding
+  // order (their pre-sort index) and sort last (rank = +Infinity).
+  return rows
+    .map((row, i) => ({ row, i }))
+    .sort((a, b) => {
+      const ra = rank.get(a.row.tugSessionId) ?? Number.POSITIVE_INFINITY;
+      const rb = rank.get(b.row.tugSessionId) ?? Number.POSITIVE_INFINITY;
+      return ra !== rb ? ra - rb : a.i - b.i;
+    })
+    .map((x) => x.row);
 }
 
 export class LensSessionsDataSource implements TugListViewDataSource {
   private bindings: ReadonlyMap<string, CardSessionBinding>;
+  private order: readonly string[];
   private rows: MonitorRow[] = [];
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
-  constructor(bindings: ReadonlyMap<string, CardSessionBinding>) {
+  constructor(
+    bindings: ReadonlyMap<string, CardSessionBinding>,
+    order: readonly string[],
+  ) {
     this.bindings = bindings;
+    this.order = order;
     this.recompute();
   }
 
@@ -97,9 +121,11 @@ export class LensSessionsDataSource implements TugListViewDataSource {
 
   setInputsWithoutNotify(
     next: ReadonlyMap<string, CardSessionBinding>,
+    order: readonly string[],
   ): boolean {
-    if (this.bindings === next) return false;
+    if (this.bindings === next && this.order === order) return false;
     this.bindings = next;
+    this.order = order;
     this.recompute();
     return true;
   }
@@ -108,25 +134,32 @@ export class LensSessionsDataSource implements TugListViewDataSource {
     for (const listener of this.listeners) listener();
   }
 
+  /** The current display order of session ids — the reorder hook's `getVisibleOrder`. */
+  visibleOrder(): string[] {
+    return this.rows.map((r) => r.tugSessionId);
+  }
+
   private recompute(): void {
-    this.rows = buildSessionRows(this.bindings);
+    this.rows = buildSessionRows(this.bindings, this.order);
     this.version += 1;
   }
 }
 
 /**
  * Hook — mint a stable `LensSessionsDataSource` and feed it the latest
- * bindings snapshot each render, notifying subscribers from a layout effect.
+ * bindings snapshot and persisted row `order` each render, notifying
+ * subscribers from a layout effect when either changes.
  */
 export function useLensSessionsDataSource(
   bindings: ReadonlyMap<string, CardSessionBinding>,
+  order: readonly string[],
 ): LensSessionsDataSource {
   const ref = useRef<LensSessionsDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new LensSessionsDataSource(bindings);
+    ref.current = new LensSessionsDataSource(bindings, order);
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify(bindings);
+  const didChange = ds.setInputsWithoutNotify(bindings, order);
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();
