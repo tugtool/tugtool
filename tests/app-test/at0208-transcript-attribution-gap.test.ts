@@ -189,18 +189,40 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
           // At rest the `::after` strip must not exist (it would paint
           // header background over the body's first 4px — the clipped
           // tool-block-header regression); once the scroller top sits
-          // inside an entry, that entry's header pins and the strip
+          // inside an entry, that entry's pinned block (`__pin`, the ONE
+          // sticky wrapper carrying icon + header) pins and the strip
           // must paint (`data-stuck` written by the IntersectionObserver
           // in tug-transcript-entry.tsx).
-          const HEADER = '[data-card-id="A"] .tug-transcript-entry .tug-transcript-entry__header';
-          const restContent = await app.evalJS<string>(
+          const HEADER = '[data-card-id="A"] .tug-transcript-entry .tug-transcript-entry__pin';
+          await app.evalJS<null>(
             `(function(){
               var h = document.querySelector(${JSON.stringify(HEADER)});
-              h.closest('.tug-transcript-entry').scrollIntoView({ block: 'center' });
-              return getComputedStyle(h, '::after').content;
+              // Disengage follow-bottom the way a user would — an upward
+              // wheel tick — so the card's initial-settle pin machinery
+              // (restore-at-bottom + post-settle pin requests) can never
+              // yank the probe scrolls back to the live edge mid-test.
+              var scroller = h.closest('.tug-list-view');
+              scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }));
+              // Scroll the LIST CELL (always laid out under
+              // content-visibility) — a skipped entry's own rect is
+              // garbage, so scrollIntoView on it lands nowhere.
+              var target = h.closest('.tug-list-view-cell') ||
+                h.closest('.tug-transcript-entry');
+              target.scrollIntoView({ block: 'center' });
+              return null;
             })()`,
           );
-          expect(restContent, "strip must not paint at rest").toBe("none");
+          // The un-stick is IntersectionObserver-written (async) — wait
+          // for the settled rest state rather than racing the delivery.
+          const atRest = await app.waitForCondition<boolean>(
+            `(function(){
+              var h = document.querySelector(${JSON.stringify(HEADER)});
+              return h.getAttribute('data-stuck') !== 'true' &&
+                getComputedStyle(h, '::after').content === 'none';
+            })()`,
+            { timeoutMs: 4000 },
+          );
+          expect(atRest, "strip must not paint at rest").toBe(true);
 
           // Scroll so the scroller's top edge lands 40px into the first
           // entry — its sticky header pins.
@@ -208,13 +230,18 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
             `(function(){
               var h = document.querySelector(${JSON.stringify(HEADER)});
               var entry = h.closest('.tug-transcript-entry');
+              // Geometry comes from the LIST CELL, not the entry: under
+              // content-visibility a skipped cell keeps its box (exact
+              // intrinsic size) while its DESCENDANTS have no layout —
+              // an entry rect read while skipped is garbage.
+              var cell = entry.closest('.tug-list-view-cell') || entry;
               var scroller = entry.parentElement;
               while (scroller && scroller !== document.body) {
                 var o = getComputedStyle(scroller).overflowY;
                 if (o === 'auto' || o === 'scroll') break;
                 scroller = scroller.parentElement;
               }
-              var top = entry.getBoundingClientRect().top -
+              var top = cell.getBoundingClientRect().top -
                 scroller.getBoundingClientRect().top + scroller.scrollTop;
               scroller.scrollTop = top + 40;
               return null;

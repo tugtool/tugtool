@@ -2405,6 +2405,13 @@ export const SessionTranscriptHost = forwardRef<
               // so the scrollbar never shifts and a thumb-drag never
               // lands on an unmounted or unpainted row.
               inline
+              // Rendering relief for long transcripts: far-offscreen
+              // rows skip style/layout/paint (and WebKit's compositing-
+              // overlap walk) via content-visibility, each at its EXACT
+              // last-measured height — the no-estimates contract holds,
+              // scroll geometry is unchanged, and find/reveal/selection
+              // still see the full DOM. See TugListView.offscreenSkip.
+              offscreenSkip
               pageByEntry
               // The transcript is a read-only stream surface: its rows are
               // prose and tool blocks, not pickable list items. Without this,

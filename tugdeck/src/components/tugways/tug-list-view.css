@@ -223,6 +223,21 @@ body {
   position: relative;
 }
 
+/* ---- Offscreen-skip (inline mode, opt-in) ----
+   A cell earns `data-cv-ready` only after its EXACT height has been
+   measured and stamped as an inline `contain-intrinsic-size` (see the
+   cell ResizeObserver in the .tsx pair) — so a skipped cell occupies
+   precisely its true rendered pixels and the scrollbar never shifts.
+   `content-visibility: auto` then lets the engine skip style, layout,
+   paint, AND the compositing-overlap walk for cells far outside the
+   viewport, bounding per-frame rendering cost by the viewport instead
+   of the transcript length. Find-in-page, reveal scrolls, selection,
+   and the accessibility tree still see the full subtree — the
+   `content-visibility: auto` contract renders on demand. */
+.tug-list-view[data-offscreen-skip] .tug-list-view-cell[data-cv-ready] {
+  content-visibility: auto;
+}
+
 /* ---- Movement cursor — a leading-edge bar, NO fill, NO per-row ring ----
    The keyboard cursor is a MARK, not a fill: a crisp bar on the row's leading
    inline edge, so the keyboard position reads instantly and never competes with

@@ -767,6 +767,35 @@ export interface TugListViewProps<
   inline?: boolean;
 
   /**
+   * Inline-mode rendering relief: let the engine skip STYLE/LAYOUT/PAINT
+   * for cells far outside the viewport via `content-visibility: auto`,
+   * while every cell stays mounted at its REAL measured height.
+   *
+   * The no-estimates contract holds: a cell becomes skippable only
+   * AFTER its true height lands in the `HeightIndex` (the same
+   * `ResizeObserver` delivery that has always measured cells), and that
+   * exact measurement is written as the cell's
+   * `contain-intrinsic-size: auto <measured>px` — so a skipped cell
+   * occupies precisely the pixels it last rendered at, `scrollHeight`
+   * is still the true sum of row heights, and the scrollbar never
+   * shifts. A container WIDTH change invalidates the stamps (heights
+   * reflow with width): every cell drops back to full rendering,
+   * re-measures, and re-arms.
+   *
+   * Why this exists: `inline` mounts thousands of transcript rows, and
+   * each row's sticky chrome participates in WebKit's per-update
+   * compositing-overlap recompute whether or not the row is anywhere
+   * near the viewport. Skipped subtrees drop out of style, layout, AND
+   * that compositing walk — bounding the per-frame cost by the
+   * viewport, not the transcript length — while find-in-page,
+   * `scrollIntoView`, selection, and accessibility still see the full
+   * DOM (the `content-visibility: auto` contract).
+   *
+   * @default false
+   */
+  offscreenSkip?: boolean;
+
+  /**
    * Whether cells are interactive. `true` (default) is the picker shape —
    * `cell`-role rows are focusable (`tabIndex={0}`) and show the row hover
    * affordance. Set `false` for a **read-only listing** (e.g. `/skills`,
@@ -1248,6 +1277,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       batchLoading = false,
       onFirstSettle,
       inline,
+      offscreenSkip = false,
       interactive = true,
       rowLayout,
       rowDensity,
@@ -1307,6 +1337,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     }
 
     const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+    // Live gate for the ResizeObserver's offscreen-skip stamping — a ref
+    // so the long-lived observer callback reads the current prop value
+    // without re-installing the observer.
+    const offscreenSkipRef = React.useRef(false);
+    offscreenSkipRef.current = inline === true && offscreenSkip;
     const topSpacerRef = React.useRef<HTMLDivElement | null>(null);
     const bottomSpacerRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -1892,6 +1927,24 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
           heightIndex.set(index, newHeight);
           anyChanged = true;
+          // Offscreen-skip stamping ([P3c] of the perf plan): the exact
+          // measured height just recorded becomes the cell's
+          // `contain-intrinsic-size`, and the `data-cv-ready` mark lets
+          // the CSS apply `content-visibility: auto`. Stamped only from
+          // a REAL measurement — never an estimate — so a skipped cell
+          // occupies precisely its last rendered pixels. Style writes
+          // here don't change the cell's current layout size (the
+          // intrinsic size only applies while skipped), so this cannot
+          // re-trigger the observer.
+          if (offscreenSkipRef.current) {
+            target.style.setProperty(
+              "contain-intrinsic-size",
+              `auto ${newHeight}px`,
+            );
+            if (!target.hasAttribute("data-cv-ready")) {
+              target.setAttribute("data-cv-ready", "");
+            }
+          }
         }
         if (anyChanged) {
           // **Synchronous bottom-pin.** The `ResizeObserver` callback
@@ -1985,6 +2038,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // installs a fresh observer that sees the new bound. This is
       // rare (dataSource is usually stable for a card's lifetime).
     }, [dataSource]);
+
+    // Offscreen-skip width invalidation ([P3c]): a remembered
+    // `contain-intrinsic-size` is exact only for the width it was
+    // measured at — text reflows when the container narrows or widens.
+    // On a real width change every cell drops its stamp (falling back
+    // to full rendering, one heavyweight relayout on a rare user
+    // gesture), re-measures through the cell ResizeObserver above, and
+    // re-arms with fresh exact heights. Height-only changes (content
+    // growth, other cards resizing the deck vertically) don't touch
+    // the stamps.
+    React.useLayoutEffect(() => {
+      if (!(inline === true && offscreenSkip)) return;
+      const scroller = scrollContainerRef.current;
+      if (scroller === null) return;
+      let lastWidth = scroller.clientWidth;
+      const widthObserver = new ResizeObserver(() => {
+        const width = scroller.clientWidth;
+        if (Math.abs(width - lastWidth) < 0.5) return;
+        lastWidth = width;
+        for (const el of cellElementMapRef.current.values()) {
+          el.removeAttribute("data-cv-ready");
+          el.style.removeProperty("contain-intrinsic-size");
+        }
+      });
+      widthObserver.observe(scroller);
+      return () => widthObserver.disconnect();
+    }, [inline, offscreenSkip]);
 
     // Instantiate `SmartScroll` against the scroll container ([D07]).
     // SmartScroll owns every programmatic scroll-position write the
@@ -3739,6 +3819,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-row-layout={rowLayout}
         data-row-separator={rowSeparatorMode}
         data-interactive={interactive ? undefined : "false"}
+        data-offscreen-skip={
+          inline === true && offscreenSkip ? "" : undefined
+        }
         className={
           className === undefined ? "tug-list-view" : `tug-list-view ${className}`
         }
@@ -3823,11 +3906,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
             // is off, keeping the default-cell DOM shape unchanged.
             const cellSelected = effectiveSelectedIndex === index;
             const wrapperSelectedAttr = cellSelected ? "true" : undefined;
-            // No per-cell height styling. `inline` mode mounts every cell
-            // at its real, measured height — no `content-visibility`
-            // off-screen deferral, no `contain-intrinsic-size` estimate,
-            // no saved-height min-height. The scroll height is the true sum
-            // of row heights, so the scrollbar never shifts.
+            // No per-cell height styling FROM RENDER. `inline` mode mounts
+            // every cell at its real, measured height — no estimates, no
+            // saved-height min-height. The scroll height is the true sum
+            // of row heights, so the scrollbar never shifts. With
+            // `offscreenSkip`, the cell ResizeObserver later stamps each
+            // cell's EXACT measured height as `contain-intrinsic-size`
+            // (a DOM write, [L06]) so far-offscreen cells can skip
+            // style/layout/paint at precisely their true size.
             const Renderer = cellRenderers[kind];
             if (Renderer === undefined) {
               // Unknown kind — no renderer registered. Render an

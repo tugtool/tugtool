@@ -22,17 +22,22 @@
  *
  * ## Pin-stack contract — `--tugx-pin-stack-top`
  *
- * The `__header` is `position: sticky; top: 0; z-index: 2` (see the .css
- * pair) so the speaker identifier + timestamp remain visible while a
- * long entry body scrolls past — multi-hunk DiffBlocks, tall
- * TerminalBlocks, deep FileBlocks. Block-level pinned chrome inside
- * the entry body (FileBlock / DiffBlock / TerminalBlock / fenced-code
- * headers + their actions rows; BlockChrome's header) consumes
- * the variable `--tugx-pin-stack-top` to telescope BELOW the entry
- * header rather than overlap it.
+ * The `__pin` wrapper — ONE sticky element per entry, carrying both the
+ * gutter icon and the attribution header — is `position: sticky; top: 0;
+ * z-index: 2` (see the .css pair) so the speaker icon + identifier +
+ * timestamp remain visible while a long entry body scrolls past —
+ * multi-hunk DiffBlocks, tall TerminalBlocks, deep FileBlocks. One
+ * sticky per entry instead of the earlier two (icon and header pinned
+ * independently) matters at transcript scale: every sticky element is a
+ * compositing-overlap candidate WebKit re-tests each rendering update,
+ * and a long session mounts thousands of entries. Block-level pinned
+ * chrome inside the entry body (FileBlock / DiffBlock / TerminalBlock /
+ * fenced-code headers + their actions rows; BlockChrome's header)
+ * consumes the variable `--tugx-pin-stack-top` to telescope BELOW the
+ * entry header rather than overlap it.
  *
  * To make that work, this primitive's `useLayoutEffect` registers a
- * `ResizeObserver` on the rendered `__header` element and writes the
+ * `ResizeObserver` on the rendered `__pin` element and writes the
  * live measured height to `--tugx-pin-stack-top` on the entry root
  * via `style.setProperty`. The variable cascades to descendants so any
  * sticky header in the body can stack underneath without each consumer
@@ -246,19 +251,19 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   const labelledById = React.useId();
 
   // Refs for the pin-stack-top measurement. Root holds the CSS variable
-  // (so descendants inherit it via cascade); header is the observed
-  // element whose height is the value.
+  // (so descendants inherit it via cascade); the sticky `__pin` wrapper
+  // is the observed element whose height is the value.
   const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const headerRef = React.useRef<HTMLDivElement | null>(null);
+  const pinRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Write `--tugx-pin-stack-top` = live header height onto the entry
-  // root. See the module docstring for the full pin-stack contract.
-  // [L03] useLayoutEffect runs before paint so the first sticky pass
-  // in the children sees the right offset. [L06] DOM write, not React
-  // state — appearance flows through CSS variables.
+  // Write `--tugx-pin-stack-top` = live pinned-block height onto the
+  // entry root. See the module docstring for the full pin-stack
+  // contract. [L03] useLayoutEffect runs before paint so the first
+  // sticky pass in the children sees the right offset. [L06] DOM write,
+  // not React state — appearance flows through CSS variables.
   React.useLayoutEffect(() => {
     const root = rootRef.current;
-    const header = headerRef.current;
+    const header = pinRef.current;
     if (root === null || header === null) return;
     // Tier-gap: descendant sticky chrome (wrapper-chrome header,
     // body-kind identity / actions / find rows) pins at
@@ -312,13 +317,14 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
     });
     observer.observe(header);
 
-    // Stuck detection — the header's `::after` obscuring strip (which
-    // paints the pin-stack tier gap in header background) must render
-    // ONLY while the header is actually pinned. At rest the strip would
-    // paint 4px of header background over the top of the body's first
-    // block (visible as a clipped tool-block header now that the body
-    // sits at the tight 1px margin). CSS cannot observe stuck state, so
-    // the observer writes `data-stuck` and the strip's CSS keys on it.
+    // Stuck detection — the pin wrapper's `::after` obscuring strip
+    // (which paints the pin-stack tier gap in header background) must
+    // render ONLY while the wrapper is actually pinned. At rest the
+    // strip would paint 4px of header background over the top of the
+    // body's first block (visible as a clipped tool-block header now
+    // that the body sits at the tight 1px margin). CSS cannot observe
+    // stuck state, so the observer writes `data-stuck` and the strip's
+    // CSS keys on it.
     //
     // The classic sticky-sentinel trick: with the scroll ancestor as
     // root and a -1px top rootMargin, a fully-visible header reports
@@ -354,10 +360,40 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
       stuckObserver.observe(header);
     }
 
+    // Offscreen-skip interplay: when the entry rides inside a
+    // `content-visibility: auto` list cell, a skip strands the stuck
+    // observer — WebKit stops delivering intersection updates for
+    // descendants of a skipped subtree and does not reliably resume
+    // them on re-render, freezing `data-stuck` at its pre-skip value
+    // (a stale obscuring strip). The cell announces skip transitions
+    // via `contentvisibilityautostatechange`: while skipped the pin
+    // cannot be visually stuck (nothing renders), and on re-render an
+    // unobserve/observe cycle forces a fresh initial IO delivery that
+    // recomputes the honest state.
+    const cvHost = root.closest(".tug-list-view-cell");
+    const onCvStateChange = (event: Event): void => {
+      const skipped =
+        (event as Event & { skipped?: boolean }).skipped === true;
+      if (skipped) {
+        header.dataset.stuck = "false";
+      } else if (stuckObserver !== null) {
+        stuckObserver.unobserve(header);
+        stuckObserver.observe(header);
+      }
+    };
+    cvHost?.addEventListener(
+      "contentvisibilityautostatechange",
+      onCvStateChange,
+    );
+
     return () => {
       cancelAnimationFrame(rafId);
       observer.disconnect();
       stuckObserver?.disconnect();
+      cvHost?.removeEventListener(
+        "contentvisibilityautostatechange",
+        onCvStateChange,
+      );
     };
   }, []);
 
@@ -370,11 +406,14 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
       aria-labelledby={labelledById}
       className={cn("tug-transcript-entry", className)}
     >
-      <div className="tug-transcript-entry__icon" aria-hidden="true">
-        {PARTICIPANT_ICONS[participant]}
-      </div>
-      <div className="tug-transcript-entry__body-column">
-        <div ref={headerRef} className="tug-transcript-entry__header">
+      {/* ONE sticky element per entry: icon + attribution header pin as
+          a single block. The child class names (and their geometry) are
+          unchanged — only the sticky role moved up to this wrapper. */}
+      <div ref={pinRef} className="tug-transcript-entry__pin">
+        <div className="tug-transcript-entry__icon" aria-hidden="true">
+          {PARTICIPANT_ICONS[participant]}
+        </div>
+        <div className="tug-transcript-entry__header">
           <strong
             id={labelledById}
             className="tug-transcript-entry__identifier"
@@ -394,15 +433,20 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
             </span>
           )}
         </div>
-        <div className="tug-transcript-entry__body">{body}</div>
-        {inflightFooter !== undefined && inflightFooter !== null && (
-          <div className="tug-transcript-entry__inflight-footer">
-            {inflightFooter}
-          </div>
-        )}
-        {controls !== undefined && (
-          <div className="tug-transcript-entry__controls">{controls}</div>
-        )}
+      </div>
+      <div className="tug-transcript-entry__content">
+        <div className="tug-transcript-entry__gutter" aria-hidden="true" />
+        <div className="tug-transcript-entry__body-column">
+          <div className="tug-transcript-entry__body">{body}</div>
+          {inflightFooter !== undefined && inflightFooter !== null && (
+            <div className="tug-transcript-entry__inflight-footer">
+              {inflightFooter}
+            </div>
+          )}
+          {controls !== undefined && (
+            <div className="tug-transcript-entry__controls">{controls}</div>
+          )}
+        </div>
       </div>
     </div>
   );
