@@ -41,20 +41,20 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const snapshot = store.getSnapshot();
 
-    // Payload counts for the shipped v2.1.204 capture. The tugplug skills
-    // are the prefixed set (audit/commit/dash/devise/implement/vet); the
-    // agent list is the built-in Claude Code set:
-    //   slash_commands: 42  (21 upgrade to "skill", 21 stay "local")
+    // Payload counts for the shipped v2.1.217 capture. The tugplug skills
+    // are the prefixed set (audit/dash/devise/draft/history/implement/vet);
+    // the agent list is the built-in Claude Code set:
+    //   slash_commands: 51  (23 upgrade to "skill", 28 stay "local")
     //   agents: 5
-    //   total after dedup: 47
-    expect(snapshot.slashCommands.length).toBe(47);
+    //   total after dedup: 56
+    expect(snapshot.slashCommands.length).toBe(56);
 
     const byCategory = new Map<string, number>();
     for (const cmd of snapshot.slashCommands) {
       byCategory.set(cmd.category, (byCategory.get(cmd.category) ?? 0) + 1);
     }
-    expect(byCategory.get("local")).toBe(21);
-    expect(byCategory.get("skill")).toBe(21);
+    expect(byCategory.get("local")).toBe(28);
+    expect(byCategory.get("skill")).toBe(23);
     expect(byCategory.get("agent")).toBe(5);
   });
 
@@ -62,26 +62,25 @@ describe("createFixtureSessionMetadataStore", () => {
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
     const hits = provider("tug");
-    // Six commands start with `tug` (the `tugplug:` family) — those are the
+    // Seven commands start with `tug` (the `tugplug:` family) — those are the
     // strong prefix matches and must lead. Fuzzy/subsequence hits (e.g.
     // `extra-usage`, where t…u…g appears in order) are still offered — that's
     // the @-file popup's behavior — but rank strictly below the prefix matches.
     const prefixed = hits.filter((h) => h.label.startsWith("tugplug:"));
-    expect(prefixed.length).toBe(6);
-    expect(hits.slice(0, 6).every((h) => h.label.startsWith("tugplug:"))).toBe(true);
+    expect(prefixed.length).toBe(7);
+    expect(hits.slice(0, 7).every((h) => h.label.startsWith("tugplug:"))).toBe(true);
     for (const h of hits) {
       expect(h.atom.type).toBe("command");
     }
   });
 
-  it("narrows `com` to compact + tugplug:commit", () => {
+  it("narrows `com` to compact", () => {
+    // `tugplug:commit` left the capture at v2.1.217 — landing is the
+    // user's gesture (`/commit` in the composer), not a plugin skill.
     const store = createFixtureSessionMetadataStore(rawJsonl);
     const provider = store.getCommandCompletionProvider();
     const names = provider("com").map((h) => h.label).sort();
-    expect(names).toEqual([
-      "compact",
-      "tugplug:commit",
-    ]);
+    expect(names).toEqual(["compact"]);
   });
 
   it("rejects empty JSONL", () => {
