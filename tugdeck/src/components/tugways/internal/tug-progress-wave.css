@@ -60,13 +60,14 @@
 
    `will-change: transform` promotes each running bar to its own
    compositing layer so WebKit runs the scaleY loop on the compositor
-   thread — the wave stays smooth no matter what the main thread is
-   doing (streaming sessions, layout bursts, GC). Without the explicit
-   promotion the loop is main-thread-painted and janks under load; it
-   only ever LOOKED smooth while unrelated layer explosion happened to
-   promote this region incidentally. Scoped to `running` so a static
-   wave costs zero layers; three word-sized layers per running wave is
-   the deliberate price of guaranteed smoothness. */
+   thread rather than painting it from the main thread. Scoped to
+   `running` so a static wave costs zero layers.
+
+   Promotion only covers the case where the subtree is being rendered.
+   An ancestor the engine skips — `content-visibility: auto` on a
+   TugListView cell — runs no animations inside it at all, and no
+   amount of promotion here changes that; see the tail-cell opt-out in
+   `tug-list-view.css`. */
 .tug-progress-wave[data-state="running"] .tug-progress-wave-bar {
   animation-duration: calc(960ms * var(--tug-timing, 1));
   animation-timing-function: linear;

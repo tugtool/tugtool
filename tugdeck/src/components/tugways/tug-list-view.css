@@ -238,6 +238,18 @@ body {
   content-visibility: auto;
 }
 
+/* The tail cell opts out. It is the auto-follow target — always on
+   screen, so skipping it saves nothing — and it is the cell whose
+   height churns during streaming, restamping `contain-intrinsic-size`
+   on every delta. `content-visibility` outranks compositing: a subtree
+   the engine declines to render does not run its animations at all,
+   whatever `will-change` asked for. Leaving the tail cell skippable
+   stalls the in-flight indicator's transform loop under main-thread
+   load. `:last-child` keeps the opt-out to one cheap selector. */
+.tug-list-view[data-offscreen-skip] .tug-list-view-cell[data-cv-ready]:last-child {
+  content-visibility: visible;
+}
+
 /* ---- Movement cursor — a leading-edge bar, NO fill, NO per-row ring ----
    The keyboard cursor is a MARK, not a fill: a crisp bar on the row's leading
    inline edge, so the keyboard position reads instantly and never competes with
