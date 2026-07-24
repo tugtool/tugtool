@@ -246,15 +246,81 @@ fn compute_left_behind(opts: &CommitOptions) -> LeftBehind {
 /// Stage exactly `files` and commit exactly them: `git add -- <files>` then
 /// `git commit -m <message> -- <files>`. The `-- <files>` pathspec on both keeps
 /// anything else already in the index out of the commit.
+///
+/// Two shapes need the pathspecs adjusted before either step runs, or the
+/// commit aborts or lands wrong:
+///
+/// * A path whose deletion is **already staged** is gone from both the worktree
+///   and the index, so `git add -- <it>` matches nothing and exits 128
+///   (`pathspec … did not match any files`), failing the whole commit. Such
+///   paths are dropped from the `add` pathspec — the index already holds their
+///   removal, and the `commit` pathspec still carries them, so the deletion
+///   lands.
+/// * A **staged rename**'s source path is not in `files` (the ledger names the
+///   destination), so committing the destination alone records an addition and
+///   strands the source's deletion in the index. Rename sources whose
+///   destination is in `files` join the `commit` pathspec, and the commit
+///   records the rename.
 fn stage_and_commit(repo_root: &Path, files: &[String], message: &str) -> Result<(), String> {
-    let mut add_args: Vec<&str> = vec!["add", "--"];
-    add_args.extend(files.iter().map(String::as_str));
-    run_git_step(repo_root, &add_args, "git add failed")?;
+    let stageable = stageable_paths(repo_root, files);
+    if !stageable.is_empty() {
+        let mut add_args: Vec<&str> = vec!["add", "--"];
+        add_args.extend(stageable.iter().map(String::as_str));
+        run_git_step(repo_root, &add_args, "git add failed")?;
+    }
 
+    let commit_paths = with_rename_sources(repo_root, files);
     let mut commit_args: Vec<&str> = vec!["commit", "-m", message, "--"];
-    commit_args.extend(files.iter().map(String::as_str));
+    commit_args.extend(commit_paths.iter().map(String::as_str));
     run_git_step(repo_root, &commit_args, "git commit failed")?;
     Ok(())
+}
+
+/// The subset of `files` `git add` can match: present in the worktree, or still
+/// tracked in the index (a worktree-only deletion, whose removal `add` stages).
+/// A path in neither is an already-staged deletion — see [`stage_and_commit`].
+fn stageable_paths(repo_root: &Path, files: &[String]) -> Vec<String> {
+    let mut ls_args: Vec<&str> = vec!["ls-files", "--"];
+    ls_args.extend(files.iter().map(String::as_str));
+    let tracked: Vec<String> = match git::git_stdout(repo_root, &ls_args) {
+        Ok(out) => out.lines().map(str::to_string).collect(),
+        // Can't tell — stage everything, as before.
+        Err(_) => return files.to_vec(),
+    };
+
+    files
+        .iter()
+        .filter(|path| repo_root.join(path).exists() || tracked.iter().any(|t| t == *path))
+        .cloned()
+        .collect()
+}
+
+/// `files` plus the source path of every staged rename whose destination is in
+/// `files` — see [`stage_and_commit`]. Best-effort: a failing `git diff` leaves
+/// the set untouched.
+fn with_rename_sources(repo_root: &Path, files: &[String]) -> Vec<String> {
+    let Ok(name_status) = git::git_stdout(
+        repo_root,
+        &["diff", "--cached", "--name-status", "--find-renames"],
+    ) else {
+        return files.to_vec();
+    };
+
+    let mut paths = files.to_vec();
+    for line in name_status.lines() {
+        let mut fields = line.split('\t');
+        let Some(status) = fields.next() else { continue };
+        if !status.starts_with('R') {
+            continue;
+        }
+        let (Some(source), Some(destination)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if files.iter().any(|f| f == destination) && !paths.iter().any(|p| p == source) {
+            paths.push(source.to_string());
+        }
+    }
+    paths
 }
 
 /// Run one git step, mapping a non-zero exit to its stderr detail (or `fallback`
@@ -428,6 +494,58 @@ mod tests {
         assert_eq!(by_path("gone.txt").status, "deleted");
         assert_eq!(by_path("gone.txt").added, Some(0));
         assert_eq!(by_path("gone.txt").deleted, Some(1));
+    }
+
+    #[test]
+    fn already_staged_deletion_commits_instead_of_aborting_the_add() {
+        let repo = init_repo();
+        let root = repo.path();
+        std::fs::write(root.join("gone.txt"), "temp\n").unwrap();
+        git(root, &["add", "gone.txt"]);
+        git(root, &["commit", "-q", "-m", "add gone"]);
+        // `git rm` stages the removal: the path is in neither the worktree nor
+        // the index, so `git add -- gone.txt` alone would exit 128.
+        git(root, &["rm", "-q", "gone.txt"]);
+        std::fs::write(root.join("base.txt"), "base\nmore\n").unwrap();
+
+        let receipt = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "modify base, drop gone".to_string(),
+            paths: Some(vec!["base.txt".to_string(), "gone.txt".to_string()]),
+            ..Default::default()
+        })
+        .expect("commit");
+
+        let by_path = |p: &str| receipt.files.iter().find(|f| f.path == p).unwrap();
+        assert_eq!(by_path("base.txt").status, "modified");
+        assert_eq!(by_path("gone.txt").status, "deleted");
+        let status = git::git_stdout(root, &["status", "--porcelain"]).unwrap();
+        assert!(status.trim().is_empty(), "tree clean after commit: {status}");
+    }
+
+    #[test]
+    fn staged_rename_commits_its_source_deletion_too() {
+        let repo = init_repo();
+        let root = repo.path();
+        std::fs::write(root.join("old.txt"), "one\ntwo\nthree\n").unwrap();
+        git(root, &["add", "old.txt"]);
+        git(root, &["commit", "-q", "-m", "add old"]);
+        git(root, &["mv", "old.txt", "new.txt"]);
+        std::fs::write(root.join("new.txt"), "one\ntwo\nthree\nfour\n").unwrap();
+
+        // The ledger names only the destination — the source rides along.
+        let receipt = commit(CommitOptions {
+            project: Some(root.to_path_buf()),
+            message: "rename old to new".to_string(),
+            paths: Some(vec!["new.txt".to_string()]),
+            ..Default::default()
+        })
+        .expect("commit");
+
+        assert_eq!(receipt.files.len(), 1);
+        assert_eq!(receipt.files[0].path, "new.txt");
+        let status = git::git_stdout(root, &["status", "--porcelain"]).unwrap();
+        assert!(status.trim().is_empty(), "tree clean after commit: {status}");
     }
 
     #[test]

@@ -134,6 +134,7 @@ import type { PathCommandsStore } from "@/lib/path-commands-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
 import { deriveSessionCardBannerSpec, humanizeErrorSummary } from "./session-card-banner-spec";
 import { TransientNoticeController } from "./transient-notice-controller";
+import { CommitErrorNoticeController } from "./commit-error-notice-controller";
 import { deriveColdRestoreActive } from "./session-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -3899,6 +3900,7 @@ export function SessionCardBody({
               className="session-card-notice-host"
             >
             <TransientNoticeController store={codeSessionStore} />
+            <CommitErrorNoticeController controller={commitModeController} />
             <TugPaneBulletinProvider
               placement="bottom"
               className="session-card-bulletin-host"
