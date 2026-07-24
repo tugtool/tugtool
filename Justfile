@@ -946,7 +946,15 @@ build-app:
     echo
     echo "==> Built. Now run 'just app-test' to run tests."
 
-# The everyday app-test command: build-if-needed, then run.
+# Run app-tests by name: build-if-needed, then run the given files.
+#
+# NOT the everyday command — that's `just app-test-changed`, which
+# derives its selection from your diff via each test's `@covers` header.
+# Reach for `app-test` when you already know which files you want, and
+# for the no-argument CORE tier (~20 tests, one per load-bearing
+# surface) when you want a fast broad read on the app's health. The
+# core tier is deliberately NOT everything: `just app-test-all` runs
+# every file.
 #
 # Builds the dedicated app-test bundle (`dev.tugtool.app.apptest` →
 # Tug-apptest.app) ONLY when it's missing, then launches each test file
@@ -971,14 +979,16 @@ build-app:
 # Prereq (one-time per machine): `just setup-dev-signing`.
 #
 # Usage:
-#   just app-test                                  # full sweep
+#   just app-test-changed                          # <- the everyday command
+#   just app-test                                  # the ~20-test core tier
 #   just app-test at0001-tab-switch-fc.test.ts     # one file (bare name or repo path)
 #   just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
+#   just app-test-all                              # every test file
 #
 # Changed Swift / Rust / harness source? `app-test` only builds when the
 # bundle is ABSENT — use `just app-test-build` to force a fresh build.
 #
-# Build the app-test bundle if missing, then run the given files (full sweep if none).
+# Build the app-test bundle if missing, then run the given files (core tier if none).
 app-test *FILES:
     #!/usr/bin/env bash
     # Deliberately NOT `set -e` — we want to keep iterating past per-
@@ -1165,8 +1175,33 @@ app-test *FILES:
 
     FILES_INPUT="{{FILES}}"
     if [ -z "$FILES_INPUT" ]; then
-        FILES=(harness-smoke/smoke.test.ts harness-smoke/smoke-native.test.ts harness-smoke/smoke-em.test.ts harness-smoke/smoke-cold-boot.test.ts harness-smoke/smoke-app-reload.test.ts harness-smoke/smoke-capture-phase-save.test.ts at0001-tab-switch-fc.test.ts at0001-rapid-cadence.test.ts at0002-tab-switch-em.test.ts at0003-pane-activation.test.ts at0003-rapid-cadence.test.ts at0016-tab-close-handoff.test.ts at0016-rapid-cadence.test.ts at0006-cross-pane-drag.test.ts at0006-em-cross-pane.test.ts at0007-card-detach.test.ts at0007-em-card-detach.test.ts at0009-em-inactive-mount.test.ts at0021-drag-aborted.test.ts at0004-app-resign-return.test.ts at0005-app-hide-unhide.test.ts at0010-markdown-selection.test.ts at0010-cold-boot-selection.test.ts at0014-scroll-persistence.test.ts at0014-cold-boot-scroll.test.ts at0017-savestate-rpc-parity.test.ts at0018-async-content-race.test.ts at0019-pane-teardown-flush.test.ts at0020-overlay-focus-return.test.ts at0022-caret-visibility.test.ts at0023-cross-card-selection.test.ts at0024-prompt-state-roundtrip.test.ts at0025-prompt-deactivated-roundtrip.test.ts at0026-overlay-persistence.test.ts at0027-layout-state-persistence.test.ts at0030-virtual-focus.test.ts at0032-em-cold-boot-selection.test.ts at0033-em-fresh-card-activation.test.ts at0034-em-focus-after-move.test.ts at0035-em-app-switch-selection.test.ts at0035-dev-app-switch-selection.test.ts at0037-deck-wide-restore-consistency.test.ts at0038-deactivation-inactive-paint.test.ts at0078-dev-engine-focus-survives.test.ts at0080-dev-focus-card-switch.test.ts at0081-dev-focus-reload.test.ts)
-        SWEEP_LABEL="full"
+        # The CORE tier: one test per load-bearing surface, not a sweep.
+        # Everyday work should run `just app-test-changed` (coverage-derived
+        # from your diff) — this list is the broad smoke you reach for when
+        # you want a fast read on whether the app still works at all.
+        FILES=(
+            harness-smoke/smoke.test.ts                        # bridge floor: boot, handshake, close
+            harness-smoke/smoke-native.test.ts                 # native CGEvent gesture pipeline
+            harness-smoke/smoke-cold-boot.test.ts              # two-process tugbank round-trip
+            at0001-tab-switch-fc.test.ts                       # intra-pane tab switch + caret restore
+            at0003-pane-activation.test.ts                     # cross-pane activation
+            at0016-tab-close-handoff.test.ts                   # close-the-active-tab focus handoff
+            at0014-scroll-persistence.test.ts                  # region scroll across activation paths
+            at0024-prompt-state-roundtrip.test.ts              # prompt state across reload + relaunch
+            at0084-session-lifecycle-coordination.test.ts      # session lifecycle state-to-zone matrix
+            at0109-focus-ring.test.ts                          # the one app-owned focus ring
+            at0126-keyboard-ring-cold-boot.test.ts             # focus axis survives relaunch
+            at0145-permission-dialog-keyboard.test.ts          # card-modal dialog keyboard model
+            at0165-activation-first-responder.test.ts          # responder-chain accelerators
+            at0168-menu-structure.test.ts                      # menu bar structure contract
+            at0191-turns-end-to-end.test.ts                    # canonical turns through the transcript
+            at0201-session-card-activation-click-focus.test.ts # session card activation focus
+            at0209-text-card-live-autosave.test.ts             # Text card core loop on real files
+            at0216-shell-exchange.test.ts                      # $ shell route end-to-end
+            at0231-lens-toggle-focus.test.ts                   # Lens rail toggle + focus + reload
+            at0253-commit-dialog.test.ts                       # commit mode open/dismiss
+        )
+        SWEEP_LABEL="core"
     else
         read -r -a FILES <<< "$FILES_INPUT"
         SWEEP_LABEL="explicit-files"
@@ -1297,16 +1332,65 @@ app-test *FILES:
         exit 1
     fi
 
+# Run the app-tests that cover your working diff.
+#
+# Every `*.test.ts` declares the source it exercises with `@covers`
+# lines in its header docblock. This recipe reads the changed files out
+# of `git status`, resolves them through those declarations, prints the
+# selection with the changed file that pulled each test in, and runs
+# exactly that set. This — not `just app-test` — is the everyday
+# command: it names what it is testing and why.
+#
+#   just app-test-changed                        # from the working diff
+#   just app-test-changed tugdeck/src/lib/lens-store/index.ts   # from explicit paths
+#
+# Changes to the harness or the app shell sit underneath every test, so
+# no `@covers` line can scope them; the selector prints a SWEEP ADVISED
+# advisory in that case and `just app-test-all` is the honest answer.
+#
+# Run the app-tests whose @covers match your working diff.
+app-test-changed *PATHS:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    FILES="$(cd tests/app-test && bun scripts/select-tests.ts {{PATHS}})"
+    if [ -z "$FILES" ]; then
+        echo "==> no app-test covers the changed files — nothing to run."
+        exit 0
+    fi
+    just app-test $FILES
+
+# Print the app-test selection for the working diff without running it.
+app-test-select *PATHS:
+    @cd tests/app-test && bun scripts/select-tests.ts --print {{PATHS}}
+
+# Reach for this when a harness or app-shell change invalidates
+# coverage-based selection, or before landing substantial work.
+#
+# Every app-test file, in run order. Slow — one Tug.app launch per file.
+app-test-all:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    FILES="$(cd tests/app-test && ls harness-smoke/*.test.ts | sort; cd tests/app-test && ls *.test.ts | sort)"
+    just app-test $FILES
+
+# An unannotated test can never be selected by `app-test-changed`, so it
+# silently stops guarding its surface — this is the guard against that
+# drift, along with a check that every @covers path still resolves.
+#
+# Lint the @covers declarations across every app-test file.
+app-test-covers-check:
+    @cd tests/app-test && bun scripts/select-tests.ts --check
+
 # Force a fresh app-test build, then run. Use after changing Swift /
 # Rust / harness source — `just app-test` only builds when the bundle is
 # ABSENT, so it would otherwise run against a stale bundle. The build
 # goes to the app-test variant's own DerivedData and never touches a
 # live `app-debug` bundle.
 #
-#   just app-test-build                       # rebuild + full sweep
+#   just app-test-build                       # rebuild + the core tier
 #   just app-test-build at0000-smoke.test.ts  # rebuild + one file
 #
-# Force a fresh app-test build, then run the given files (full sweep if none).
+# Force a fresh app-test build, then run the given files (core tier if none).
 app-test-build *FILES:
     #!/usr/bin/env bash
     set -euo pipefail
