@@ -147,6 +147,7 @@ import { autoShellOpener, classifyShellLine } from "@/lib/shell-line-classifier"
 import { BANG_COMMANDS, matchBangCommandLine } from "@/lib/bang-commands";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
+import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -1226,10 +1227,16 @@ export const TugPromptEntry = React.forwardRef<
   // caret at the resolved position — the coordinate clamps to the nearest
   // document position, so a drop over the toolbar lands at the bottom
   // row. All DOM writes, no React state ([L06]).
+  //
+  // Two payloads land here: a file drag (images become atoms, other files
+  // their basename) and a Lens snippet drag ([P05]) — the same accept ring
+  // and drop caret for both, so a snippet reads exactly like an image over
+  // the entry.
   const handleEntryDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
       if (event.defaultPrevented) return;
-      if (!event.dataTransfer.types.includes("Files")) return;
+      const dt = event.dataTransfer;
+      if (!dt.types.includes("Files") && !hasSnippetDrag(dt)) return;
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
@@ -1260,11 +1267,24 @@ export const TugPromptEntry = React.forwardRef<
   const handleEntryDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
       if (event.defaultPrevented) return;
+      const snippetText = readSnippetDrag(event.dataTransfer);
       const files = Array.from(event.dataTransfer.files);
-      if (files.length === 0) return;
+      if (snippetText === null && files.length === 0) return;
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
+      if (snippetText !== null) {
+        // Park the text on the store's slot; the `pendingSnippetInsert`
+        // effect below owns the insertion (drop offset, else the
+        // `applyShellShare` append) for both this drag and the
+        // double-click-a-snippet path.
+        clearEntryDropState();
+        codeSessionStore.insertSnippet(snippetText, {
+          x: event.clientX,
+          y: event.clientY,
+        });
+        return;
+      }
       // Resolve the drop against the editor's measured layout, same as a
       // drop on the editor itself. The chrome sits outside the document,
       // so the coordinate clamps to the nearest position — the bottom row
@@ -1281,7 +1301,12 @@ export const TugPromptEntry = React.forwardRef<
         publishAttachmentError,
       );
     },
-    [attachmentBytesStore, publishAttachmentError, clearEntryDropState],
+    [
+      attachmentBytesStore,
+      publishAttachmentError,
+      clearEntryDropState,
+      codeSessionStore,
+    ],
   );
 
   // Z5 submit-button state machine. The button's whole view — label,
@@ -3202,7 +3227,6 @@ export const TugPromptEntry = React.forwardRef<
           // per [L22]) and the responder-chain registration.
           ref={composedRootRef}
           data-slot="tug-prompt-entry"
-          data-snippet-drop-target=""
           data-phase={snap.phase}
           data-can-interrupt={String(snap.canInterrupt)}
           data-can-submit={String(snap.canSubmit)}

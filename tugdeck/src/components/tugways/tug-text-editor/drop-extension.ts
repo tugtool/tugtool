@@ -83,6 +83,7 @@ import {
   type DownsampleResult,
 } from "@/lib/image-downsample";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
+import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,6 +117,17 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
   "svg",
   "webp",
 ]);
+
+/**
+ * Drags the editor claims: a file drag (images → atoms, everything else →
+ * filename text) and a Lens snippet drag ([P05]), which lands its text at the
+ * drop point. Both paint the same ring + drop caret. Keyboard-driven or
+ * application-specific drags pass through untouched.
+ */
+function acceptsDrag(dataTransfer: DataTransfer | null): boolean {
+  if (dataTransfer === null) return false;
+  return dataTransfer.types.includes("Files") || hasSnippetDrag(dataTransfer);
+}
 
 /** CSS class applied to the drop caret indicator element. */
 const DROP_CARET_CLASS = "cm-tug-drop-caret";
@@ -335,7 +347,7 @@ function tugDropCancelWatchdog(host: HTMLElement | null): Extension {
       }
     };
     const onDragOver = (event: DragEvent): void => {
-      if (!event.dataTransfer?.types.includes("Files")) return;
+      if (!acceptsDrag(event.dataTransfer)) return;
       disarm();
       timer = window.setTimeout(() => {
         timer = null;
@@ -915,9 +927,7 @@ export function tugDropExtension(
     tugDropCancelWatchdog(host),
     ViewPlugin.define((view) => {
       const onDragEnter = (event: DragEvent): void => {
-        // Only claim file drags. Keyboard-driven or application-
-        // specific drags pass through.
-        if (!event.dataTransfer?.types.includes("Files")) return;
+        if (!acceptsDrag(event.dataTransfer)) return;
         // Claim the event so CM6's internal drag handler doesn't
         // also try to accept it with `dropEffect = "copy"` (which
         // would be redundant but defensive in case CM6's behavior
@@ -926,7 +936,8 @@ export function tugDropExtension(
         setDropActive(host, "accept");
       };
       const onDragOver = (event: DragEvent): void => {
-        if (!event.dataTransfer?.types.includes("Files")) return;
+        const transfer = event.dataTransfer;
+        if (!acceptsDrag(transfer) || transfer === null) return;
         event.preventDefault();
         setDropActive(host, "accept");
         try {
@@ -934,7 +945,7 @@ export function tugDropExtension(
           // every file drag — images become atoms, everything else
           // inserts as filename text — so there is no reject branch
           // here.
-          event.dataTransfer.dropEffect = "copy";
+          transfer.dropEffect = "copy";
         } catch {
           // `dropEffect` is read-only in some environments.
         }
@@ -956,6 +967,26 @@ export function tugDropExtension(
       const onDragEnd = (_event: DragEvent): void => {
         setDropActive(host, null);
         clearDropCaret(view);
+      };
+      /**
+       * Snippet drops ([P05]) are claimed in the CAPTURE phase, before
+       * CM6's own text-drop handler on `contentDOM` can take them. CM6
+       * would insert at its unbiased `posAtCoords`, which is the position
+       * hidden under the drag image — a line off from where the drop caret
+       * promised the text would land. Claiming first (and stopping the
+       * event) makes the painted caret and the insertion the same position.
+       */
+      const onDropCapture = (event: DragEvent): void => {
+        const text = readSnippetDrag(event.dataTransfer);
+        if (text === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDropActive(host, null);
+        const at = dropOffsetAtCoords(view, event.clientX, event.clientY);
+        insertMixedAt(view, at ?? view.state.doc.length, [
+          { kind: "text", text },
+        ]);
+        view.focus();
       };
       const onDrop = (event: DragEvent): void => {
         const files = event.dataTransfer?.files;
@@ -1030,9 +1061,11 @@ export function tugDropExtension(
       surface.addEventListener("dragover", onDragOver);
       surface.addEventListener("dragleave", onDragLeave);
       surface.addEventListener("dragend", onDragEnd);
+      surface.addEventListener("drop", onDropCapture, true);
       surface.addEventListener("drop", onDrop);
       return {
         destroy(): void {
+          surface.removeEventListener("drop", onDropCapture, true);
           surface.removeEventListener("dragenter", onDragEnter);
           surface.removeEventListener("dragover", onDragOver);
           surface.removeEventListener("dragleave", onDragLeave);

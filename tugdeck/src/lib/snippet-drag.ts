@@ -1,107 +1,47 @@
 /**
- * Pointer-based drag from a Lens snippet row into the Session card's prompt
- * entry ([P04]/[P05]). No HTML5 DnD — a ghost chip follows the pointer, the
- * drop target is hit-tested by `[data-snippet-drop-target]`, and on release
- * over it the snippet text is parked on the code-session store's
- * `pendingSnippetInsert` slot (the prompt entry inserts it at the drop point).
+ * Native HTML5 drag of a Lens snippet into the Session card's prompt entry
+ * ([P04]/[P05]).
  *
- * Hover feedback is a `data-snippet-drop-active` attribute on the target
- * (CSS accept ring); the precise insertion caret is resolved from the drop
- * coordinates by the entry's consumer (`dropOffsetAtCoords`).
+ * The drag is the platform's own: the row's incipit is `draggable`, the payload
+ * rides on the `DataTransfer` under a private MIME type (plus `text/plain` so a
+ * snippet also drops into any other text surface), and the drag image is the
+ * OS-rendered snapshot of the dragged element. Escape mid-drag is therefore
+ * handled by AppKit — it cancels the session and animates the drag image back
+ * to the row it came from — and the drop target paints the same accept ring and
+ * drop caret an image drag paints, because the prompt entry accepts both drags
+ * through one set of `dragover` / `drop` handlers.
  */
 
-const DRAG_THRESHOLD_PX = 6;
-const DROP_TARGET_SELECTOR = "[data-snippet-drop-target]";
-const DROP_ACTIVE_ATTR = "data-snippet-drop-active";
+/** Private MIME type marking a drag whose payload is snippet text. */
+export const SNIPPET_MIME = "application/x-tug-snippet";
 
-export interface SnippetDragOptions {
-  /** The snippet text to insert. */
-  text: string;
-  /** A short label for the drag ghost. */
-  label: string;
-  /**
-   * Called on release over a prompt-entry drop target. `at` is the drop point
-   * in client coordinates; `cardId` identifies the card that owns the target
-   * (from its `[data-card-id]` host), so the caller routes the insert to that
-   * card's prompt entry — no "focused card" ambiguity.
-   */
-  onDrop: (text: string, at: { x: number; y: number }, cardId: string | null) => void;
+/**
+ * Start a snippet drag from a row. Call from the incipit's `onDragStart` (the
+ * element must carry `draggable`). `copy` is the only allowed effect — a
+ * snippet is never moved out of the Lens.
+ */
+export function snippetDragStart(
+  event: React.DragEvent,
+  text: string,
+): void {
+  const dt = event.dataTransfer;
+  dt.effectAllowed = "copy";
+  dt.setData(SNIPPET_MIME, text);
+  dt.setData("text/plain", text);
 }
 
-function dropTargetAt(x: number, y: number): Element | null {
-  const el = document.elementFromPoint(x, y);
-  return el?.closest(DROP_TARGET_SELECTOR) ?? null;
-}
-
-function cardIdOf(target: Element): string | null {
-  return target.closest("[data-card-id]")?.getAttribute("data-card-id") ?? null;
+/** True when `dataTransfer` carries a snippet payload. */
+export function hasSnippetDrag(dt: DataTransfer | null): boolean {
+  return dt !== null && dt.types.includes(SNIPPET_MIME);
 }
 
 /**
- * Begin a drag from a snippet row. Call from the row's `onPointerDown`. The
- * ghost only appears once the pointer moves past a small threshold, so a plain
- * click (select) or double-click (open) is unaffected.
+ * Read the snippet text off a drop's `dataTransfer`, or `null` when the drag
+ * isn't a snippet drag. Empty payloads read as `null` too — an empty insert is
+ * indistinguishable from no drop.
  */
-export function startSnippetDrag(event: React.PointerEvent, opts: SnippetDragOptions): void {
-  // Left button only; ignore the grip (it owns reorder).
-  if (event.button !== 0) return;
-  const startX = event.clientX;
-  const startY = event.clientY;
-
-  let dragging = false;
-  let ghost: HTMLElement | null = null;
-  let activeTarget: Element | null = null;
-
-  const setActive = (target: Element | null): void => {
-    if (activeTarget === target) return;
-    activeTarget?.removeAttribute(DROP_ACTIVE_ATTR);
-    activeTarget = target;
-    activeTarget?.setAttribute(DROP_ACTIVE_ATTR, "true");
-  };
-
-  const positionGhost = (x: number, y: number): void => {
-    if (ghost === null) return;
-    ghost.style.transform = `translate(${x + 10}px, ${y + 10}px)`;
-  };
-
-  const onMove = (e: PointerEvent): void => {
-    if (!dragging) {
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX) return;
-      dragging = true;
-      ghost = document.createElement("div");
-      ghost.className = "snippet-drag-ghost";
-      ghost.textContent = opts.label.length > 0 ? opts.label : "Snippet";
-      document.body.appendChild(ghost);
-    }
-    positionGhost(e.clientX, e.clientY);
-    setActive(dropTargetAt(e.clientX, e.clientY));
-  };
-
-  const cleanup = (): void => {
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    window.removeEventListener("keydown", onKey, true);
-    setActive(null);
-    ghost?.remove();
-    ghost = null;
-  };
-
-  const onUp = (e: PointerEvent): void => {
-    const target = dragging ? dropTargetAt(e.clientX, e.clientY) : null;
-    cleanup();
-    if (target !== null) {
-      opts.onDrop(opts.text, { x: e.clientX, y: e.clientY }, cardIdOf(target));
-    }
-  };
-
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    cleanup();
-  };
-
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp);
-  window.addEventListener("keydown", onKey, true);
+export function readSnippetDrag(dt: DataTransfer | null): string | null {
+  if (!hasSnippetDrag(dt)) return null;
+  const text = dt!.getData(SNIPPET_MIME);
+  return text.length > 0 ? text : null;
 }

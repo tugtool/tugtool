@@ -20,8 +20,8 @@
  *    neighbor, **⌘Z / ⇧⌘Z** undo/redo (via a chain responder, active only
  *    in list mode so the editor's CM6 undo wins while typing). Each display
  *    row also carries a hover-reveal delete button for the pointer.
- *  - A row's incipit is draggable into a session prompt (`startSnippetDrag`);
- *    the grip reorders (commit on drop, [Q02]).
+ *  - A row's incipit is draggable into a session prompt (native HTML5 drag,
+ *    `snippetDragStart`); the grip reorders (commit on drop, [Q02]).
  *
  * One cell kind (`"snippet"`) branches display/editor on `editingId` — never
  * two kinds for one row ([L26]). Laws: [L02] store via `useSyncExternalStore`;
@@ -45,8 +45,7 @@ import { Copy, Plus, TextQuote, X } from "lucide-react";
 
 import { getSnippetsStore } from "@/lib/snippets-store";
 import { snippetIncipit, type Snippet } from "@/lib/snippets-doc";
-import { startSnippetDrag } from "@/lib/snippet-drag";
-import { cardServicesStore } from "@/lib/card-services-store";
+import { snippetDragStart } from "@/lib/snippet-drag";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   hasNativeClipboardBridge,
@@ -119,16 +118,6 @@ function copySnippetText(text: string): void {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     void navigator.clipboard.writeText(text).catch(() => {});
   }
-}
-
-/** Route a snippet drop to the card that owns the drop target's prompt entry. */
-function insertIntoCard(
-  text: string,
-  at: { x: number; y: number },
-  cardId: string | null,
-): void {
-  if (cardId === null) return;
-  cardServicesStore.getServices(cardId)?.codeSessionStore.insertSnippet(text, at);
 }
 
 /** Row verbs provided by the section body to the module-level cell. */
@@ -243,13 +232,9 @@ function SnippetDisplayRow({
         className={
           empty ? "snippet-row-label snippet-row-label-empty" : "snippet-row-label"
         }
-        onPointerDown={(e) =>
-          startSnippetDrag(e, {
-            text: snippet.text,
-            label: empty ? "Snippet" : incipit,
-            onDrop: insertIntoCard,
-          })
-        }
+        // An empty snippet has nothing to carry, so it isn't a drag source.
+        draggable={!empty}
+        onDragStart={(e) => snippetDragStart(e, snippet.text)}
       >
         {empty ? (
           "New snippet"
