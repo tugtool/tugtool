@@ -4,7 +4,8 @@
  *
  * @covers tugdeck/src/lib/landing-receipt.ts
  * @covers tugdeck/src/components/tugways/body-kinds/commit-block.tsx
- * @covers tugdeck/src/components/tugways/cards/gallery-commit-receipt.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-commit-surfaces.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-commit-receipt-block.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -39,7 +40,7 @@ describe.skipIf(!SHOULD_RUN)("AT0264 commit-receipt header geometry", () => {
   test("measure baselines + bottom space", async () => {
     const app = await launchTugApp({ testName: "at0264-commit-receipt-geometry" });
     try {
-      await app.seedDeckState(deckSeed("gallery-commit-receipt"));
+      await app.seedDeckState(deckSeed("gallery-commit-surfaces"));
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-card-id="A"] [data-testid="commit-receipt-wrapping"] .commit-receipt-summary') !== null`,
         { timeoutMs: 8000 },
@@ -56,7 +57,7 @@ describe.skipIf(!SHOULD_RUN)("AT0264 commit-receipt header geometry", () => {
         `(function(){
           var root = document.querySelector('[data-card-id="A"] [data-testid="commit-receipt-wrapping"]');
           var header = root.querySelector('.tool-call-header');
-          var name = root.querySelector('.tool-call-header-name');
+          var name = root.querySelector('.commit-sha-text');
           var summary = root.querySelector('.commit-receipt-summary');
           function lines(el){ var rg=document.createRange(); rg.selectNodeContents(el); return Array.prototype.map.call(rg.getClientRects(), function(r){return {top:r.top,bottom:r.bottom};}); }
           var nl = lines(name), sl = lines(summary);
@@ -70,7 +71,8 @@ describe.skipIf(!SHOULD_RUN)("AT0264 commit-receipt header geometry", () => {
           var topGap = firstLine.top - (hbox.top + padT);
           var botGap = (hbox.bottom - padB) - lastLine.bottom;
           return {
-            // first message line's top vs the "Commit" name's top (px; + = message lower)
+            // first message line's top vs the sha's top (px; + = message lower).
+            // The sha leads the identity slot where a tool block's verb sits.
             firstLineOffset: +(sl[0].top - nl[0].top).toFixed(2),
             wrapped: sl.length >= 2,
             topGap: +topGap.toFixed(2),

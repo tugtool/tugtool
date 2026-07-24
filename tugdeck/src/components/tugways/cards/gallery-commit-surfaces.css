@@ -1,0 +1,57 @@
+/* @tug-pairings: none — gallery scaffolding; the commit scale itself lives in
+ * commit-presentation.css [L20] */
+
+/* gallery-commit-surfaces — the commit type-system spike's own scaffolding:
+   section spacing, the framed panels each candidate list sits in, and the token
+   table. Nothing here is production styling. */
+
+.gallery-commit-surfaces {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-md);
+  min-width: 0;
+}
+
+.gallery-commit-surfaces-caption {
+  font-size: var(--tug-font-size-xs);
+  line-height: 1.5;
+  color: var(--tug7-element-field-text-normal-label-rest);
+}
+
+/* The frame a candidate list sits in — the shade's own well tone, so density
+   is judged against the surface the rows actually land on. */
+.gallery-commit-surfaces-panel {
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border: 1px solid var(--tugx-block-hairline);
+  border-radius: var(--tugx-block-radius);
+  background: var(--tugx-block-chrome-bg);
+  overflow: hidden;
+}
+
+/* The metadata toggles sit under the list on the leading edge — the reader's
+   control over the row, below the rows it governs. */
+.gallery-commit-surfaces-options {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* A run of receipt blocks, spaced like a transcript's block run. */
+.gallery-commit-surfaces-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-block-run-gap);
+}
+
+.gallery-commit-surfaces-copy {
+  margin: 0;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border-radius: var(--tugx-block-radius);
+  background: var(--tugx-block-well-bg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--tugx-block-text-color-muted);
+}
+

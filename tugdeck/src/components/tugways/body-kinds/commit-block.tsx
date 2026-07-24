@@ -20,9 +20,9 @@
  * `git show --stat`-shaped source) and degrades to the aggregate bar
  * when absent.
  *
- * This module is currently exercised through `gallery-commit-block.tsx`
- * (which mounts it inside a real `BlockChrome`) while the design is
- * tuned; the routing branch lands once the look is settled.
+ * This module's gallery fixtures live in `gallery-commit-surfaces.tsx`,
+ * which mounts it inside a real `BlockChrome` alongside the other commit
+ * surfaces.
  *
  * Laws:
  *  - [L06] disclosures are `BlockDisclosure` (native `<details>`) —

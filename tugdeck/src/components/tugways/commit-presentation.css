@@ -1,0 +1,163 @@
+/* @tug-pairings: none — text + layout scale only; every color is an existing
+ * `--tug7-*` text token read through a `--tugx-commit-*` alias [L17][L20] */
+
+/* Commit presentation — the shared type scale + layout skeleton for every
+   surface that shows a commit: the History shade's rows, the `/commit` durable
+   receipt in the transcript, and the Changes shade's commit affordances.
+   Appearance only ([L06]); the components in `commit-presentation.tsx` own the
+   markup and the gestures.
+
+   The scope class `.tugx-commit` carries the tokens, so a surface opts into the
+   scale by wearing the class — nothing leaks to unrelated rows. */
+
+.tugx-commit {
+  /* The one-line box shared by an entry's first line, its stamp, and its
+     trailing controls. Sized to the 2xs affordance buttons so a cue never
+     exceeds the box and drags the shared centre off the subject. */
+  --tugx-commit-line: 1.25rem;
+
+  /* Leading INSIDE one entry. The defect this fixes: a wrapped subject set at
+     the full line box reads as two commits rather than one wrapped one.
+     Continuation lines sit a step tighter than the line box — enough to bind
+     the lines into one paragraph, not so much that the text crowds. */
+  --tugx-commit-wrap-leading: 1.45;
+
+  /* Separation BETWEEN entries — the compact mono list row's own block padding
+     (1px top + 1px bottom), so the list keeps the density it has today. */
+  --tugx-commit-entry-gap: 2px;
+
+  /* The hanging indent for a wrapped subject: the content column is mono, so
+     the 8-char sha + the 3-char ` : ` delimiter measure exactly 11ch. */
+  --tugx-commit-hang: 11ch;
+
+  /* The subject reads at the compact mono list row's own scale — the size the
+     History shade's rows already use, unchanged. */
+  --tugx-commit-subject-font: var(--tug-font-family-mono);
+  --tugx-commit-subject-size: var(--tug-font-size-xs);
+  --tugx-commit-subject-color: var(--tugx-block-text-color);
+  --tugx-commit-delim-color: var(--tugx-block-text-color-muted);
+
+  /* The timestamp. Mono + tabular figures so stamps stack into a true column
+     across rows; one step down and muted so it reads as provenance. */
+  --tugx-commit-stamp-font: var(--tug-font-family-mono);
+  --tugx-commit-stamp-size: var(--tug-font-size-2xs);
+  --tugx-commit-stamp-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  /* The expanded message body. */
+  --tugx-commit-message-size: var(--tug-font-size-xs);
+  --tugx-commit-message-leading: 1.45;
+
+  /* The gutter between the subject column and the stamp column. */
+  --tugx-commit-column-gap: var(--tug-space-md);
+}
+
+/* ---- The list ---- */
+
+.tugx-commit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-commit-entry-gap);
+  min-width: 0;
+}
+
+/* ---- One entry ---- */
+
+.tugx-commit-entry {
+  min-width: 0;
+}
+
+/* The collapsed line: subject grows, the metadata cell and the controls hold
+   their intrinsic width on the trailing edge. A grid (not flex) so the metadata
+   column measures identically on every row and the stamps stack into a true
+   column. The inline padding matches the compact list row's. */
+.tugx-commit-line-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  column-gap: var(--tugx-commit-column-gap);
+  padding-inline: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* The identity: `<sha> : <subject>`. The first line rides the shared one-line
+   box; wrapped lines fall to the tighter continuation leading at the hanging
+   indent, so the entry reads as one paragraph. */
+.tugx-commit-identity {
+  min-width: 0;
+  padding-left: var(--tugx-commit-hang);
+  text-indent: calc(-1 * var(--tugx-commit-hang));
+  font-family: var(--tugx-commit-subject-font);
+  font-size: var(--tugx-commit-subject-size);
+  color: var(--tugx-commit-subject-color);
+  line-height: var(--tugx-commit-wrap-leading);
+  /* Row 1 stands exactly one line box tall so the stamp and the controls beside
+     it center on the subject's first line whether or not the subject wraps. */
+  padding-top: calc((var(--tugx-commit-line) - 1em * var(--tugx-commit-wrap-leading)) / 2);
+}
+
+.tugx-commit-delim {
+  color: var(--tugx-commit-delim-color);
+}
+
+/* The metadata cell — whichever of author / date / time the reader has asked
+   for, on the trailing edge beside the controls. The author is sans (quiet
+   provenance); the stamp inside is mono + tabular so dates and times stack. */
+.tugx-commit-meta {
+  min-height: var(--tugx-commit-line);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tugx-commit-stamp-size);
+  color: var(--tugx-commit-stamp-color);
+  white-space: nowrap;
+}
+
+/* The timestamp cell — right-aligned, tabular, never wrapping. */
+.tugx-commit-stamp {
+  min-height: var(--tugx-commit-line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--tugx-commit-stamp-font);
+  font-size: var(--tugx-commit-stamp-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--tugx-commit-stamp-color);
+  white-space: nowrap;
+}
+
+/* The trailing control cluster: Copy, then the fold cue. Right-aligned by the
+   grid; the pair reserves its width so a row never reflows on hover. */
+.tugx-commit-actions {
+  min-height: var(--tugx-commit-line);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}
+
+/* ---- The expanded detail ---- */
+
+.tugx-commit-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+  padding: 4px 0 2px var(--tugx-commit-hang);
+}
+
+.tugx-commit-message {
+  margin: 0;
+  font-family: var(--tugx-commit-subject-font);
+  font-size: var(--tugx-commit-message-size);
+  line-height: var(--tugx-commit-message-leading);
+  color: var(--tugx-block-text-color);
+  white-space: pre-wrap;
+}
+
+/* Committer identity + complete timestamp, closing the expanded area. */
+.tugx-commit-attribution {
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tugx-commit-stamp-size);
+  color: var(--tugx-commit-stamp-color);
+}
