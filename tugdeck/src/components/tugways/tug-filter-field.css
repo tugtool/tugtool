@@ -1,0 +1,82 @@
+/* tug-filter-field — the list filter affordance's layout + match paint.
+ *
+ * The wrapper is a positioning context for one overlay: a clear ✕ laid over
+ * the input's trailing padding, revealed only when the field holds text
+ * (`data-empty="false"`, flipped in the input handler — [L06]). The input
+ * itself keeps every one of `TugInput`'s own tokens ([L20]); this file adds
+ * geometry and nothing else.
+ *
+ * `.tug-filter-mark` lives here too — the paint for a matched span inside a
+ * filtered row (`renderFilterHighlight`). It sits in the same find-paint family
+ * as transcript find and the code view's search ([L17]: one accent base, one
+ * hop) but at its own strength, because it does a different job: a find wash
+ * tints a few words inside large prose the eye is already reading, while a
+ * filter mark has to pick two or three characters out of a small row title in a
+ * dense list — and stay legible when that row is selected and its text has
+ * flipped to the on-selection color. Hence a stronger fill plus a weight bump,
+ * and a distinct treatment on a selected row.
+ */
+
+.tug-filter-field {
+  --tugx-filter-field-clear-inset: var(--tug-space-2xs);
+  --tugx-filter-field-clear-width: 1.25rem;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Reserve the ✕'s lane at all times so text never reflows when it appears. */
+.tug-filter-field .tug-filter-field-input {
+  padding-inline-end: calc(
+    var(--tugx-filter-field-clear-width) + var(--tugx-filter-field-clear-inset)
+  );
+}
+
+.tug-filter-field-clear {
+  position: absolute;
+  inset-inline-end: var(--tugx-filter-field-clear-inset);
+  display: inline-flex;
+  align-items: center;
+}
+
+.tug-filter-field[data-empty="true"] .tug-filter-field-clear {
+  display: none;
+}
+
+body {
+  /* The filter mark's own strength, one hop from the shared accent base the
+     find family resolves through. */
+  --tugx-filter-mark-bg: color-mix(
+    in oklab,
+    var(--tug7-element-global-border-normal-accent-rest) 55%,
+    transparent
+  );
+  /* On a selected row the fill is already the accent, so an accent mark would
+     vanish into it. The mark inverts instead: the row's own on-selection text
+     color becomes the mark's background, and the fill shows through as its
+     foreground. Inverting an existing pair preserves its contrast ratio, and
+     `--tugx-list-row-selected-text` on `--tugx-list-row-selected-bg` is already
+     a checked `content` pairing — so this needs no new pairing of its own. */
+  --tugx-filter-mark-selected-bg: var(--tugx-list-row-selected-text);
+  --tugx-filter-mark-selected-text: var(--tugx-list-row-selected-bg);
+}
+
+/* @tug-renders-on: --tugx-filter-mark-bg */
+.tug-filter-mark {
+  background-color: var(--tugx-filter-mark-bg);
+  color: inherit;
+  font-weight: var(--tug-font-weight-semibold);
+  border-radius: 2px;
+  /* Widen the fill a hair past the glyphs so short marks read as a highlight
+     rather than a smudge, without the extra width shifting the text. */
+  padding-inline: 1px;
+  margin-inline: -1px;
+}
+
+/* @tug-renders-on: --tugx-filter-mark-selected-bg */
+.tug-list-row[data-selected="true"] .tug-filter-mark {
+  background-color: var(--tugx-filter-mark-selected-bg);
+  color: var(--tugx-filter-mark-selected-text);
+}

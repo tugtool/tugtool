@@ -2611,7 +2611,6 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   // the radio/checkbox glyphs only pair once filled (selected) over their own fill.
   { element: "--tugx-list-row-text", surface: "--tugx-list-row-pill-rest-bg", role: "content" },
   { element: "--tugx-list-row-pill-rest-border", surface: "--tugx-list-row-pill-rest-bg", role: "control" },
-  { element: "--tugx-list-row-subtitle-color", surface: "--tugx-list-row-pill-rest-bg", role: "content" },
   { element: "--tugx-list-row-text", surface: "--tugx-list-row-pill-hover-bg", role: "content" },
   { element: "--tugx-list-row-pill-hover-border", surface: "--tugx-list-row-pill-hover-bg", role: "control" },
   { element: "--tugx-list-row-selected-text", surface: "--tugx-list-row-selected-bg", role: "content" },

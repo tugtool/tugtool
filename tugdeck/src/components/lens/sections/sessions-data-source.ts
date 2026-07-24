@@ -22,6 +22,10 @@ import { useLayoutEffect, useRef } from "react";
 
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 import type { CardSessionBinding } from "@/lib/card-session-binding-store";
+import { sessionCardTitleOverride } from "@/lib/session-card-title";
+import { sessionNameStore } from "@/lib/session-name-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
+import { filterAndRank } from "@/lib/text-match";
 
 /** One monitor row: a session and the card it is bound to. */
 export interface MonitorRow {
@@ -70,19 +74,43 @@ export function buildSessionRows(
     .map((x) => x.row);
 }
 
+/**
+ * The label a row displays — the same string the cell renders, so a filter term
+ * matches what the user can actually read (project leaf + the session's name or
+ * tag). The branch is omitted: it is per-cell git state the data source has no
+ * business fetching, and it is not part of the row's identity.
+ */
+export function sessionRowLabel(row: MonitorRow): string {
+  return sessionCardTitleOverride(
+    row.projectDir,
+    sessionNameStore.getName(row.tugSessionId),
+    sessionTagStore.getTag(row.tugSessionId),
+    null,
+  );
+}
+
+export interface LensSessionsInputs {
+  readonly bindings: ReadonlyMap<string, CardSessionBinding>;
+  readonly order: readonly string[];
+  /** The band's filter query. Empty / whitespace → every row. */
+  readonly filterQuery: string;
+  /**
+   * Version tokens for the name / tag stores the labels are built from. Labels
+   * are read at recompute time, so a name or tag arriving late must re-run the
+   * projection — these are how the section says "they changed".
+   */
+  readonly nameVersion: unknown;
+  readonly tagVersion: unknown;
+}
+
 export class LensSessionsDataSource implements TugListViewDataSource {
-  private bindings: ReadonlyMap<string, CardSessionBinding>;
-  private order: readonly string[];
+  private inputs: LensSessionsInputs;
   private rows: MonitorRow[] = [];
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
-  constructor(
-    bindings: ReadonlyMap<string, CardSessionBinding>,
-    order: readonly string[],
-  ) {
-    this.bindings = bindings;
-    this.order = order;
+  constructor(inputs: LensSessionsInputs) {
+    this.inputs = inputs;
     this.recompute();
   }
 
@@ -119,15 +147,29 @@ export class LensSessionsDataSource implements TugListViewDataSource {
     return this.rows.findIndex((r) => r.tugSessionId === tugSessionId);
   }
 
-  setInputsWithoutNotify(
-    next: ReadonlyMap<string, CardSessionBinding>,
-    order: readonly string[],
-  ): boolean {
-    if (this.bindings === next && this.order === order) return false;
-    this.bindings = next;
-    this.order = order;
+  setInputsWithoutNotify(next: LensSessionsInputs): boolean {
+    if (
+      this.inputs.bindings === next.bindings &&
+      this.inputs.order === next.order &&
+      this.inputs.filterQuery === next.filterQuery &&
+      this.inputs.nameVersion === next.nameVersion &&
+      this.inputs.tagVersion === next.tagVersion
+    ) {
+      return false;
+    }
+    this.inputs = next;
     this.recompute();
     return true;
+  }
+
+  /** Whether a filter is narrowing the list right now. */
+  isFiltering(): boolean {
+    return this.inputs.filterQuery.trim().length > 0;
+  }
+
+  /** How many session rows exist, filter or no filter. */
+  unfilteredCount(): number {
+    return buildSessionRows(this.inputs.bindings, this.inputs.order).length;
   }
 
   notifyAll(): void {
@@ -140,26 +182,33 @@ export class LensSessionsDataSource implements TugListViewDataSource {
   }
 
   private recompute(): void {
-    this.rows = buildSessionRows(this.bindings, this.order);
+    const rows = buildSessionRows(this.inputs.bindings, this.inputs.order);
+    // Ranked best-first while filtering; the user's persisted arrangement
+    // returns the moment the query clears (and reorder is disabled meanwhile,
+    // so the two orders never fight).
+    this.rows = [
+      ...filterAndRank(rows, this.inputs.filterQuery, (row) => [
+        sessionRowLabel(row),
+      ]),
+    ];
     this.version += 1;
   }
 }
 
 /**
  * Hook — mint a stable `LensSessionsDataSource` and feed it the latest
- * bindings snapshot and persisted row `order` each render, notifying
- * subscribers from a layout effect when either changes.
+ * bindings snapshot, persisted row `order`, and filter query each render,
+ * notifying subscribers from a layout effect when any of them changes.
  */
 export function useLensSessionsDataSource(
-  bindings: ReadonlyMap<string, CardSessionBinding>,
-  order: readonly string[],
+  inputs: LensSessionsInputs,
 ): LensSessionsDataSource {
   const ref = useRef<LensSessionsDataSource | null>(null);
   if (ref.current === null) {
-    ref.current = new LensSessionsDataSource(bindings, order);
+    ref.current = new LensSessionsDataSource(inputs);
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify(bindings, order);
+  const didChange = ds.setInputsWithoutNotify(inputs);
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();

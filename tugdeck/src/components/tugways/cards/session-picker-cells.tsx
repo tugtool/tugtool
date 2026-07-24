@@ -61,6 +61,7 @@
 import React, { createContext, useContext } from "react";
 import { Trash2 } from "lucide-react";
 
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type {
@@ -122,11 +123,18 @@ interface PickerCellContextValue {
    * is up — Mac-menu-open style. `null` when no trash is pending.
    */
   readonly pendingTrashSessionId: string | null;
+  /**
+   * The live filter query, so a row can paint the spans that kept it. Empty
+   * string when the surface has no filter field, or when its field is empty —
+   * either way the rows render exactly as they did before filtering existed.
+   */
+  readonly filterQuery: string;
 }
 
 const NULL_CONTEXT: PickerCellContextValue = {
   selection: null,
   pendingTrashSessionId: null,
+  filterQuery: "",
 };
 
 const PickerCellContext = createContext<PickerCellContextValue>(NULL_CONTEXT);
@@ -159,7 +167,8 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   index,
   dataSource,
 }: TugListViewCellProps<SessionsDataSource>) => {
-  const { selection, pendingTrashSessionId } = usePickerCellContext();
+  const { selection, pendingTrashSessionId, filterQuery } =
+    usePickerCellContext();
   const data = dataSource.rowAt(index) as Extract<
     SessionsRow,
     { kind: "session-resume" }
@@ -271,10 +280,21 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // layout effect can locate this row's trash button (a descendant
   // `[data-slot="tug-icon-button"]`) when the user dispatches
   // `request-trash-session` — see `session-card.tsx` `pendingTrashAnchorEl`.
+  // Highlights are computed against the strings this row actually RENDERS —
+  // `snippet` is already truncated and whitespace-collapsed, `subtitleText`
+  // already composed — so the paint lands on the right characters. A row that
+  // matched on a field it does not display (its id, a long prompt tail) shows
+  // no mark, which is correct.
+  const titleNode = renderFilterHighlight(
+    snippet ?? "No prompts yet",
+    filterQuery,
+  );
+  const subtitleNode = renderFilterHighlight(subtitleText, filterQuery);
+
   return (
     <TugListRow
-      title={snippet ?? "No prompts yet"}
-      subtitle={subtitleText}
+      title={titleNode}
+      subtitle={subtitleNode}
       selected={isSelected}
       disabled={isLive || isTerminalLive}
       trailing={trailing}

@@ -1,11 +1,12 @@
 /**
- * session-tag.test.ts — pure-logic coverage for mnemonic-tag minting and the
- * `/resume` filter predicate.
+ * session-tag.test.ts — pure-logic coverage for mnemonic-tag minting.
+ *
+ * Row filtering lives with the list that does it — see
+ * `session-picker-data-source.test.ts`.
  */
 
 import { describe, expect, test } from "bun:test";
-import type { SessionRow } from "@/protocol";
-import { mintTag, matchesTagQuery } from "../session-tag";
+import { mintTag } from "../session-tag";
 import { TAG_ADJECTIVES, TAG_NOUNS } from "../session-tag-lexicon";
 
 /** Deterministic rng returning each value in `values` in turn (then repeating). */
@@ -16,26 +17,6 @@ function seqRng(values: number[]): () => number {
 
 /** rng fraction that floors to lexicon index `i` in a pool of length `len`. */
 const frac = (i: number, len: number): number => (i + 0.5) / len;
-
-function row(over: Partial<SessionRow>): SessionRow {
-  return {
-    session_id: "s1",
-    workspace_key: "ws",
-    project_dir: "/p",
-    created_at: 0,
-    last_used_at: 0,
-    turn_count: 0,
-    last_user_prompt: null,
-    state: "closed",
-    card_id: null,
-    name: null,
-    name_user_set: false,
-    tag: null,
-    origin: "tug",
-    terminal_live: null,
-    ...over,
-  };
-}
 
 describe("mintTag", () => {
   test("mints a grammar-valid adjective-noun tag", () => {
@@ -65,25 +46,3 @@ describe("mintTag", () => {
   });
 });
 
-describe("matchesTagQuery", () => {
-  test("empty / whitespace query matches every row", () => {
-    expect(matchesTagQuery(row({}), "")).toBe(true);
-    expect(matchesTagQuery(row({}), "   ")).toBe(true);
-  });
-
-  test("matches tag, name, and prompt substrings case-insensitively", () => {
-    const r = row({
-      tag: "azure-heron",
-      name: "My Refactor",
-      last_user_prompt: "fix the parser bug",
-    });
-    expect(matchesTagQuery(r, "HERON")).toBe(true);
-    expect(matchesTagQuery(r, "refactor")).toBe(true);
-    expect(matchesTagQuery(r, "parser")).toBe(true);
-  });
-
-  test("rejects a non-match and tolerates null fields", () => {
-    const r = row({ tag: "azure-heron", name: null, last_user_prompt: null });
-    expect(matchesTagQuery(r, "coral")).toBe(false);
-  });
-});

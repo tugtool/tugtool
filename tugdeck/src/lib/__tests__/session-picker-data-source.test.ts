@@ -1,12 +1,13 @@
 /**
  * Pure-logic tests for the Sessions picker data source: row
- * computation over a `(query, ledger snapshot)` pair. No DOM — the
- * rendered treatment (badges, disabled rows) is covered by app-tests.
+ * computation over a `(projectDir, ledger snapshot, filter query)` triple. No
+ * DOM — the rendered treatment (badges, disabled rows) is covered by app-tests.
  */
 
 import { describe, expect, test } from "bun:test";
 
 import { SessionsDataSource } from "@/lib/session-picker-data-source";
+import { deriveStableTag } from "@/lib/session-tag";
 import type { WorkspaceSnapshot } from "@/lib/session-ledger-store";
 import type { SessionRow } from "@/protocol";
 
@@ -43,7 +44,7 @@ function rowsOf(ds: SessionsDataSource): string[] {
   return out;
 }
 
-describe("SessionsDataSource tag/name/prompt filter (/resume)", () => {
+describe("SessionsDataSource fuzzy filter", () => {
   const ledger = () =>
     readySnapshot([
       makeRow({ session_id: "a", tag: "azure-heron", turn_count: 1 }),
@@ -56,49 +57,142 @@ describe("SessionsDataSource tag/name/prompt filter (/resume)", () => {
       }),
     ]);
 
+  const filtered = (
+    filterQuery: string,
+    dropNewRowWhenFiltering = false,
+  ): SessionsDataSource =>
+    new SessionsDataSource({
+      projectDir: "/proj",
+      ledger: ledger(),
+      filterQuery,
+      dropNewRowWhenFiltering,
+    });
+
   test("empty filter keeps session-new + every visible row", () => {
-    const ds = new SessionsDataSource({ query: "/proj", ledger: ledger(), tagFilter: "" });
-    expect(rowsOf(ds)).toEqual(["session-new", "a", "b", "c"]);
+    expect(rowsOf(filtered(""))).toEqual(["session-new", "a", "b", "c"]);
+    expect(rowsOf(filtered("   "))).toEqual(["session-new", "a", "b", "c"]);
   });
 
-  test("a tag substring narrows to the matching row and drops session-new", () => {
+  test("a tag fragment narrows to the matching row", () => {
+    expect(rowsOf(filtered("heron"))).toEqual(["session-new", "a"]);
+  });
+
+  test("matching is fuzzy, not substring-only", () => {
+    // Subsequence tier: `prsfx` threads through "Parser fix".
+    expect(rowsOf(filtered("prsfx"))).toEqual(["session-new", "b"]);
+  });
+
+  test("the filter matches name, prompt, and session id", () => {
+    expect(rowsOf(filtered("parser fix"))).toEqual(["session-new", "b"]);
+    expect(rowsOf(filtered("refactor"))).toEqual(["session-new", "c"]);
+    expect(rowsOf(filtered("misty"))).toEqual(["session-new", "c"]);
+  });
+
+  test("every term must match, across any of a row's fields", () => {
+    // "otter" is b's tag, "parser" its name — both on the same row.
+    expect(rowsOf(filtered("otter parser"))).toEqual(["session-new", "b"]);
+    // "heron" is a's tag, "parser" is not on a.
+    expect(rowsOf(filtered("heron parser"))).toEqual(["session-new"]);
+  });
+
+  test("an untagged row is matchable by its derived stable tag", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
-      ledger: ledger(),
-      tagFilter: "heron",
+      projectDir: "/proj",
+      ledger: readySnapshot([makeRow({ session_id: "untagged", turn_count: 1 })]),
+      filterQuery: deriveStableTag("untagged"),
     });
-    expect(rowsOf(ds)).toEqual(["a"]);
+    expect(rowsOf(ds)).toEqual(["session-new", "untagged"]);
   });
 
-  test("the filter matches name and prompt too", () => {
-    const byName = new SessionsDataSource({
-      query: "/proj",
-      ledger: ledger(),
-      tagFilter: "parser fix",
-    });
-    expect(rowsOf(byName)).toEqual(["b"]);
-    const byPrompt = new SessionsDataSource({
-      query: "/proj",
-      ledger: ledger(),
-      tagFilter: "refactor",
-    });
-    expect(rowsOf(byPrompt)).toEqual(["c"]);
+  test("dropNewRowWhenFiltering yields a truly empty list on a non-match", () => {
+    expect(rowsOf(filtered("nonexistent", true))).toEqual([]);
+    expect(rowsOf(filtered("heron", true))).toEqual(["a"]);
+    // …and keeps the row when there is no filter at all.
+    expect(rowsOf(filtered("", true))).toEqual(["session-new", "a", "b", "c"]);
   });
 
-  test("a non-matching filter yields an empty list (no session-new to spawn)", () => {
+  test("the picker keeps session-new under any query", () => {
+    expect(rowsOf(filtered("nonexistent"))).toEqual(["session-new"]);
+  });
+
+  test("hasVisibleSession answers in filtered coordinates", () => {
+    const ds = filtered("heron");
+    expect(ds.hasVisibleSession("a")).toBe(true);
+    expect(ds.hasVisibleSession("b")).toBe(false);
+    expect(filtered("").hasVisibleSession("b")).toBe(true);
+  });
+
+  test("firstResumeIndex skips session-new and reports no match as undefined", () => {
+    expect(filtered("").firstResumeIndex()).toBe(1);
+    expect(filtered("refactor").firstResumeIndex()).toBe(1);
+    expect(filtered("nonexistent").firstResumeIndex()).toBeUndefined();
+    expect(filtered("heron", true).firstResumeIndex()).toBe(0);
+  });
+
+  test("nonLiveCount ignores the filter — the trash sweep is per-path", () => {
+    expect(filtered("heron").nonLiveCount()).toBe(3);
+    expect(filtered("nonexistent").nonLiveCount()).toBe(3);
+  });
+
+  test("a long prompt does not swallow every query", () => {
+    // The picker's rows carry whole prompts. Counting a scattered in-order
+    // character run through one as a match made the filter a no-op: every row
+    // survived every short query.
+    const wordy = readySnapshot([
+      makeRow({
+        session_id: "wordy",
+        turn_count: 1,
+        last_user_prompt:
+          "Please refactor the transcript entry component so the commit receipt block lines up with the rest of the card chrome",
+      }),
+    ]);
+    const query = (q: string): string[] =>
+      rowsOf(
+        new SessionsDataSource({
+          projectDir: "/proj",
+          ledger: wordy,
+          filterQuery: q,
+        }),
+      );
+    expect(query("scarp")).toEqual(["session-new"]);
+    // A word the prompt really contains still finds it.
+    expect(query("receipt")).toEqual(["session-new", "wordy"]);
+  });
+
+  test("the strongest match leads, and session-new stays pinned at the top", () => {
+    const ledgerRows = readySnapshot([
+      makeRow({ session_id: "loose", name: "the ledger of record", turn_count: 1 }),
+      makeRow({ session_id: "exact", name: "ledger", turn_count: 1 }),
+      makeRow({ session_id: "prefix", name: "ledger-store", turn_count: 1 }),
+    ]);
     const ds = new SessionsDataSource({
-      query: "/proj",
-      ledger: ledger(),
-      tagFilter: "nonexistent",
+      projectDir: "/proj",
+      ledger: ledgerRows,
+      filterQuery: "ledger",
     });
-    expect(rowsOf(ds)).toEqual([]);
+    expect(rowsOf(ds)).toEqual(["session-new", "exact", "prefix", "loose"]);
+    // The cursor seed skips the pinned affordance and lands on the best match.
+    expect(ds.firstResumeIndex()).toBe(1);
+  });
+
+  test("clearing the query restores the ledger's newest-first order", () => {
+    const ledgerRows = readySnapshot([
+      makeRow({ session_id: "newest", name: "the ledger of record", turn_count: 1 }),
+      makeRow({ session_id: "older", name: "ledger", turn_count: 1 }),
+    ]);
+    const ds = new SessionsDataSource({
+      projectDir: "/proj",
+      ledger: ledgerRows,
+      filterQuery: "",
+    });
+    expect(rowsOf(ds)).toEqual(["session-new", "newest", "older"]);
   });
 });
 
 describe("SessionsDataSource with external rows", () => {
   test("external rows list exactly like ledger rows, in snapshot order", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({ session_id: "ext-1", origin: "external", last_used_at: 9 }),
         makeRow({ session_id: "tug-1", origin: "tug", last_used_at: 5 }),
@@ -109,7 +203,7 @@ describe("SessionsDataSource with external rows", () => {
 
   test("zero-turn external rows are hidden like zero-turn ledger rows", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({ session_id: "ext-empty", origin: "external", turn_count: 0 }),
         makeRow({ session_id: "ext-real", origin: "external", turn_count: 2 }),
@@ -123,7 +217,7 @@ describe("SessionsDataSource with external rows", () => {
     // scanned external row with on-disk bytes but a (correctly) zero count
     // must NOT vanish from the picker.
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({
           session_id: "ext-bytes",
@@ -140,7 +234,7 @@ describe("SessionsDataSource with external rows", () => {
 
   test("a live zero-count row is visible (file_size is null for tug/live rows)", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({ session_id: "tug-live", state: "live", turn_count: 0 }),
         // Non-live tug row with no turns and no bytes → hidden.
@@ -152,7 +246,7 @@ describe("SessionsDataSource with external rows", () => {
 
   test("nonLiveCount tracks content by bytes OR canonical turns", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({ session_id: "a", state: "closed", turn_count: 3 }),
         makeRow({
@@ -170,7 +264,7 @@ describe("SessionsDataSource with external rows", () => {
 
   test("terminal-live rows are still listed (blocking is via enabledForIndex)", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({
           session_id: "held",
@@ -189,7 +283,7 @@ describe("SessionsDataSource with external rows", () => {
 describe("SessionsDataSource.enabledForIndex", () => {
   test("live and terminal-live rows are disabled; the rest are enabled", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: readySnapshot([
         makeRow({ session_id: "pickable", state: "closed", turn_count: 3 }),
         makeRow({ session_id: "live", state: "live", turn_count: 1 }),
@@ -210,7 +304,7 @@ describe("SessionsDataSource.enabledForIndex", () => {
 
   test("the pending loading row is enabled (sole row, never cursored past)", () => {
     const ds = new SessionsDataSource({
-      query: "/proj",
+      projectDir: "/proj",
       ledger: { status: "pending", rows: [], dirExists: true } as WorkspaceSnapshot,
     });
     expect(rowsOf(ds)).toEqual(["loading"]);

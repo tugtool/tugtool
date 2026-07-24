@@ -18,6 +18,7 @@
 class SessionNameStore {
   private names = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
+  private version = 0;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -25,6 +26,14 @@ class SessionNameStore {
       this.listeners.delete(listener);
     };
   };
+
+  /**
+   * A monotonic token that bumps on every change — the whole-store
+   * `useSyncExternalStore` snapshot, for a consumer that derives something from
+   * MANY names at once (the Lens Sessions list filters on its rows' labels) and
+   * so cannot subscribe by a single id.
+   */
+  getVersion = (): number => this.version;
 
   /** The name for `tugSessionId`, or `null` when unnamed. */
   getName = (tugSessionId: string): string | null =>
@@ -44,6 +53,7 @@ class SessionNameStore {
       if (current === trimmed) return;
       this.names.set(tugSessionId, trimmed);
     }
+    this.version += 1;
     for (const listener of this.listeners) listener();
   }
 

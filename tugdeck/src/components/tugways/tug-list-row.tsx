@@ -30,9 +30,13 @@
  * Content:
  *  - `title` plus optional `subtitle` render the common two-line
  *    column — the `UITableViewCellStyle.subtitle` shape. Both render
- *    through `TugLabel` (title at `titleSize`, default `md`; a string
+ *    through `TugLabel` (title at `titleSize`, default `md`; the
  *    subtitle muted via `emphasis="calm"`, wrapping to
  *    `subtitleMaxLines`) so row text matches the rest of the app.
+ *    Either slot accepts a `ReactNode` — a highlighted title or
+ *    subtitle (`renderFilterHighlight`) composes into the same
+ *    `TugLabel` as a plain string, so a filtered list keeps the row's
+ *    typography and truncation instead of reaching for `children`.
  *  - `children`, when provided, owns the content column outright and
  *    `title` / `subtitle` are ignored — the escape hatch for rows
  *    whose content is not a plain title / subtitle stack.
@@ -138,8 +142,11 @@ export interface TugListRowProps
    * {@link titleMaxLines} lines (one by default). Rendered through
    * `TugLabel` so row text matches the rest of the app. Ignored when
    * `children` is provided.
+   *
+   * A `ReactNode` is accepted so a title can carry inline fragments —
+   * filter-match `<mark>` spans — while keeping the row's typography.
    */
-  title?: string;
+  title?: React.ReactNode;
 
   /**
    * Title size override. Defaults to `"md"` — the legible row title
@@ -158,15 +165,14 @@ export interface TugListRowProps
   titleMaxLines?: number;
 
   /**
-   * Optional secondary text rendered muted below the title. A string
-   * subtitle renders through `TugLabel` (muted, truncating); a
-   * non-string node renders as-is. Ignored when `children` is
-   * provided.
+   * Optional secondary text rendered muted below the title, through
+   * the same `TugLabel` whether it is a string or a node. Ignored when
+   * `children` is provided.
    */
   subtitle?: React.ReactNode;
 
   /**
-   * Maximum lines for a string `subtitle` before truncation. `1`
+   * Maximum lines for the `subtitle` before truncation. `1`
    * (default) keeps today's single-line ellipsis; a larger value lets
    * the subtitle wrap to a multi-line description. Forwarded to the
    * subtitle `TugLabel`'s `maxLines`.
@@ -331,19 +337,27 @@ function isRenderable(node: React.ReactNode): boolean {
 }
 
 /**
+ * True when a `title` / `subtitle` slot carries text worth a `TugLabel`.
+ * The empty string is renderable-but-blank: it must NOT promote a row out
+ * of `"empty"` mode, or a caller passing `title=""` would gain a stray
+ * label line.
+ */
+function hasRowText(node: React.ReactNode): boolean {
+  return isRenderable(node) && node !== "";
+}
+
+/**
  * Resolve the content-rendering mode. `children` takes precedence
  * over `title` / `subtitle` per the escape-hatch contract. Pure;
  * exported for tests.
  */
 export function resolveListRowContentMode(
   children: React.ReactNode,
-  title: string | undefined,
+  title: React.ReactNode,
   subtitle: React.ReactNode,
 ): TugListRowContentMode {
   if (isRenderable(children)) return "children";
-  if ((title !== undefined && title !== "") || isRenderable(subtitle)) {
-    return "structured";
-  }
+  if (hasRowText(title) || hasRowText(subtitle)) return "structured";
   return "empty";
 }
 
@@ -438,7 +452,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
             children
           ) : contentMode === "structured" ? (
             <>
-              {title !== undefined && title !== "" ? (
+              {hasRowText(title) ? (
                 <TugLabel
                   className="tug-list-row-title"
                   size={titleSize ?? "md"}
@@ -447,18 +461,15 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
                   {title}
                 </TugLabel>
               ) : null}
-              {isRenderable(subtitle) ? (
-                typeof subtitle === "string" ? (
-                  <TugLabel
-                    size="sm"
-                    emphasis="calm"
-                    maxLines={subtitleMaxLines ?? 1}
-                  >
-                    {subtitle}
-                  </TugLabel>
-                ) : (
-                  <span className="tug-list-row-subtitle">{subtitle}</span>
-                )
+              {hasRowText(subtitle) ? (
+                <TugLabel
+                  className="tug-list-row-subtitle"
+                  size="sm"
+                  emphasis="calm"
+                  maxLines={subtitleMaxLines ?? 1}
+                >
+                  {subtitle}
+                </TugLabel>
               ) : null}
             </>
           ) : null}

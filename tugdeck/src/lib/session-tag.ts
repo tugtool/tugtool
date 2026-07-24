@@ -74,21 +74,3 @@ export function mintTag(
   }
   return candidate;
 }
-
-/**
- * The `/resume` overlay filter predicate: a case-insensitive substring match of
- * `query` against the row's `tag`, `name`, and `last_user_prompt`. An empty /
- * whitespace query matches every row (the unfiltered list). This is all v1's
- * addressing needs.
- */
-export function matchesTagQuery(row: SessionRow, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return true;
-  // Include the derived stable tag so a session displayed under its derived
-  // adj-noun name (an untagged external session) is searchable by that name too.
-  const derivedTag = (row.tag?.trim() ?? "").length > 0 ? null : deriveStableTag(row.session_id);
-  const haystacks = [row.tag, derivedTag, row.name, row.last_user_prompt];
-  return haystacks.some(
-    (field) => field !== null && field.toLowerCase().includes(needle),
-  );
-}

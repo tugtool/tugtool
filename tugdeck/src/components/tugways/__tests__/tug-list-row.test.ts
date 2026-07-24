@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { createElement } from "react";
 
 import {
   DEFAULT_LIST_ROW_VARIANT,
@@ -83,6 +84,20 @@ describe("resolveListRowContentMode", () => {
       "empty",
     );
     expect(resolveListRowContentMode(null, undefined, null)).toBe("empty");
+  });
+
+  test("an empty subtitle string counts as absent", () => {
+    expect(resolveListRowContentMode(undefined, undefined, "")).toBe("empty");
+  });
+
+  test("a node title yields structured mode (a highlighted title)", () => {
+    const marked = createElement("mark", null, "tug");
+    expect(resolveListRowContentMode(undefined, marked, undefined)).toBe(
+      "structured",
+    );
+    expect(resolveListRowContentMode(undefined, undefined, marked)).toBe(
+      "structured",
+    );
   });
 
   test("a non-renderable children value does not claim the content column", () => {

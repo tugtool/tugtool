@@ -152,6 +152,9 @@ const SkillsCell: TugListViewCellRenderer<SkillsDataSource> = function SkillsCel
       variant="flush"
       title={skill.name}
       subtitle={skill.description.length > 0 ? skill.description : undefined}
+      // The description is the full SKILL.md summary — let it wrap to as
+      // many lines as it needs instead of ellipsizing at one.
+      subtitleMaxLines={0}
       leading={
         <span className="skills-sheet-lock" aria-label={lockLabel ?? undefined}>
           {lockLabel !== null ? <Lock size={13} aria-hidden /> : null}

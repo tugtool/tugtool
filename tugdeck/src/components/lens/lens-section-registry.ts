@@ -51,6 +51,13 @@ export interface LensSectionDefinition {
    * (chevron only).
    */
   headerActions?: (host: LensSectionHost) => React.ReactNode;
+  /**
+   * Whether the band carries a `TugFilterField` that trims this section's list.
+   * The band owns the field and writes `lens-filter-store`; the body reads the
+   * query back and passes it into its data source. A section whose list can
+   * grow without bound opts in; a fixed-size section leaves it off.
+   */
+  filterable?: boolean;
 
   // Reserved capability hooks — declared, not implemented ([P07]).
   findSegments?: unknown;

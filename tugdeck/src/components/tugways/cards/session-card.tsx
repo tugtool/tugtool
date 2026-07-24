@@ -210,6 +210,7 @@ import {
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./session-picker-cells";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import { caseInsensitiveSubstring } from "@/lib/text-match";
 import "./session-card.css";
 
@@ -1265,9 +1266,10 @@ function noticeContent(notice: PickerNotice): NoticeContent {
  * connected card's toggleable ⌥⇥ cycle). A not-ready Sessions list and a
  * disabled stop (Move-all-to-Trash with nothing to trash, Open with no valid
  * path) simply drop out of the walk via the engine's rendered/interactive
- * filters; the order leaves a gap the walk skips. Order `1` (the former Recents
- * list, now folded into the path combo box's own dropdown) is intentionally
- * vacant — the stops below keep their authored focus-keys.
+ * filters; the order leaves a gap the walk skips. Order `1` — vacated when the
+ * Recents list folded into the path combo box's own dropdown — is now the
+ * Sessions filter field, which sits between the path field and the list in
+ * reading order; the stops below keep their authored focus-keys.
  */
 const PICKER_CYCLE_GROUP = "session-picker-cycle";
 const PICKER_ORDER_PATH = 0;
@@ -1279,6 +1281,7 @@ const PICKER_ORDER_PATH = 0;
 // (`session-picker-cycle:2…5`) are a stable contract the app-tests and a baked
 // corpus snapshot address by string, so they must not shift.
 const PICKER_ORDER_BROWSE = -0.5;
+const PICKER_ORDER_FILTER = 1;
 const PICKER_ORDER_SESSIONS = 2;
 const PICKER_ORDER_TRASH_ALL = 3;
 const PICKER_ORDER_CANCEL = 4;
@@ -1418,12 +1421,27 @@ function SessionProjectPickerForm({
   // One-shot input seed (effect below).
   const didSeedPathRef = useRef(false);
 
+  // The filter field's query — transient local UI state, never persisted, and
+  // meaningless across project paths (the field remounts per path, below).
+  const [filterQuery, setFilterQuery] = useState("");
+
   // The Sessions list for the currently-typed project path (always visible —
-  // placeholder when no path / ledger pending). Recents are no longer a
-  // separate list: they seed the path combo box's own dropdown (below).
+  // placeholder when no path / ledger pending), narrowed by the filter field.
+  // "New session" stays in the list under any query: Open falls to a new
+  // session with or without the row, so hiding it would misrepresent what Open
+  // does — and keeping it means the filtered list is never empty.
+  // Recents are no longer a separate list: they seed the path combo box's own
+  // dropdown (below).
   const sessionsDataSource = useSessionsDataSource(
     trimmedPath,
     sessionLedger,
+    filterQuery,
+  );
+  // The projection's version, so the selection-invalidation effect below re-runs
+  // on every filter recompute and not just on a ledger tick ([L02]).
+  const sessionsVersion = useSyncExternalStore(
+    useCallback((cb: () => void) => sessionsDataSource.subscribe(cb), [sessionsDataSource]),
+    useCallback(() => sessionsDataSource.getVersion(), [sessionsDataSource]),
   );
 
   // One-shot seed so first open isn't a dead-end: if the input is empty,
@@ -1467,12 +1485,16 @@ function SessionProjectPickerForm({
       return;
     }
     if (selection.kind === "session-resume") {
-      const stillVisible = ledgerRows.some(
-        (r) => r.session_id === selection.sessionId,
-      );
-      if (!stillVisible) setSelection({ kind: "session-new" });
+      // Visibility is asked of the PROJECTION, not the raw ledger: a row the
+      // filter hid is not selectable, and leaving it selected would let Open
+      // resume a session the user can no longer see.
+      if (!sessionsDataSource.hasVisibleSession(selection.sessionId)) {
+        setSelection({ kind: "session-new" });
+      }
     }
-  }, [sessionsReady, ledgerRows, selection]);
+    // `sessionsVersion` is the projection's change token — the effect must
+    // re-run per filter recompute, not only per ledger tick.
+  }, [sessionsReady, sessionsVersion, sessionsDataSource, selection]);
 
   // Trash actions — the picker form owns the confirmation flow per
   // [tugplan-session-picker-redesign §D14] (no per-cell popovers).
@@ -1833,8 +1855,28 @@ function SessionProjectPickerForm({
     () => ({
       selection,
       pendingTrashSessionId,
+      filterQuery,
     }),
-    [selection, pendingTrashSessionId],
+    [selection, pendingTrashSessionId, filterQuery],
+  );
+
+  // The filter field's contract: report each keystroke, and hand the key view
+  // down to the Sessions list on ArrowDown. Escape is the field's own (it
+  // clears in place while non-empty); an empty field's Escape falls through to
+  // the sheet's dismiss, so no `filterFieldDidRequestDismiss` here. Enter stays
+  // with the picker's default action (Open), so no submit either.
+  const filterDelegate = useMemo(
+    () => ({
+      filterFieldDidChangeQuery: setFilterQuery,
+      filterFieldDidRequestAdvance: () => {
+        focusManager?.place(
+          null,
+          { kind: "focus-key", focusKey: pickerFocusKey(PICKER_ORDER_SESSIONS) },
+          { modality: "keyboard" },
+        );
+      },
+    }),
+    [focusManager],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -1992,6 +2034,18 @@ function SessionProjectPickerForm({
                 )}
               </span>
             ) : null}
+            {/* The filter trims a path's session list — hundreds of rows on a
+                busy project. Keyed on the path so switching projects clears a
+                filter that meant something only for the previous one. */}
+            <TugFilterField
+              key={trimmedPath}
+              className="session-card-picker-filter"
+              delegate={filterDelegate}
+              placeholder="Filter sessions"
+              data-testid="session-card-picker-filter"
+              focusGroup={PICKER_CYCLE_GROUP}
+              focusOrder={PICKER_ORDER_FILTER}
+            />
           </span>
           <div className="session-card-picker-sessions-host">
             {sessionsReady ? (
@@ -2005,6 +2059,15 @@ function SessionProjectPickerForm({
                 focusGroup={PICKER_CYCLE_GROUP}
                 focusOrder={PICKER_ORDER_SESSIONS}
                 singleSelect
+                // Arrowing out of a non-empty filter field should land on the
+                // first MATCH. A single-select list commits as its cursor
+                // lands, so without this seed the first Down would select
+                // "New session" and silently discard the user's prior pick.
+                initialSelectedIndex={
+                  filterQuery === ""
+                    ? undefined
+                    : sessionsDataSource.firstResumeIndex()
+                }
               />
             ) : sessionsPending ? (
               <div

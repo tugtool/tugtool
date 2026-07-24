@@ -6,10 +6,9 @@
  *
  * The picker (the "Choose Session" sheet) authors its controls into the sheet's
  * already-trapped engine focus mode as one group — Browse folder button (-0.5) →
- * path combo box (0) → Sessions (2) → Move-all-to-Trash (3) → Cancel (4) →
- * Open (5) — so the engine's Tab walk owns navigation (order 1, the former
- * Recents list, is now folded into the path combo box's own dropdown, so that
- * slot is vacant). `armKeyboardRestore` seeds the ring on the Sessions list (its
+ * path combo box (0) → Sessions filter field (1) → Sessions (2) →
+ * Move-all-to-Trash (3) → Cancel (4) → Open (5) — so the engine's Tab walk owns
+ * navigation. `armKeyboardRestore` seeds the ring on the Sessions list (its
  * cursor rests on the "New session" row, so one Return falls through to the
  * persistent-default Open). Each assertion below fails loudly if a seam breaks:
  *
@@ -21,10 +20,11 @@
  *     path field's real `<input>` (order 0). Fails if the engine walk didn't take
  *     over Tab in the sheet, the field isn't a stop, or the wrap is wrong.
  *   - **Path field releases Tab when its dropdown is closed (C):** Tab leaves the
- *     field for Sessions directly — the Browse button now LEADS the field, so it
- *     is no longer between the field and the list (NOT a Recents stop — there is
- *     none). Fails if the `data-tug-tab-consume` marker is stuck on (Tab would be
- *     eaten and stay on the field), or a stale Recents stop reappeared.
+ *     field — for the Sessions filter field (order 1), then the list. The Browse
+ *     button now LEADS the path field, so it is no longer between the field and
+ *     the list (and there is NO Recents stop). Fails if the
+ *     `data-tug-tab-consume` marker is stuck on (Tab would be eaten and stay on
+ *     the field), or a stale Recents stop reappeared.
  *   - **Combo box dropdown is keyboard-driven (D):** on the path field, ArrowDown
  *     opens the dropdown seeded with the recent projects; ArrowDown moves the
  *     highlight; Enter commits the highlighted recent into the field and closes
@@ -69,6 +69,7 @@ const PATH = '[data-tug-focus-key="session-picker-cycle:0"]';
 // fractional order so it slots before PATH while the stops below keep their
 // stable keys.
 const BROWSE = '[data-tug-focus-key="session-picker-cycle:-0.5"]';
+const FILTER = '[data-tug-focus-key="session-picker-cycle:1"]';
 const SESSIONS = '[data-tug-focus-key="session-picker-cycle:2"]';
 const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
 const PICKER_FORM = ".session-card-picker-form";
@@ -233,10 +234,12 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         expect(await app.evalJS<boolean>(PATH_INPUT_FOCUSED)).toBe(true);
 
         // (C) The dropdown is closed, so the path field does NOT own Tab: Tab
-        // leaves it for Sessions directly — the Browse button LEADS the field now,
-        // so nothing sits between the field and the list (and there is NO Recents
-        // stop). If the tab-consume marker were stuck on, the key view would stay
-        // on the field.
+        // leaves it — first for the Sessions filter field (order 1), then the
+        // list. The Browse button LEADS the field now, so nothing else sits
+        // between them (and there is NO Recents stop). If the tab-consume marker
+        // were stuck on, the key view would stay on the field.
+        await pressKey(app, "Tab");
+        await app.waitForCondition<boolean>(hasKeyView(FILTER), { timeoutMs: 6000 });
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(SESSIONS), { timeoutMs: 6000 });
         expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(false);

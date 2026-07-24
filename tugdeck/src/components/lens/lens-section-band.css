@@ -79,6 +79,18 @@
   cursor: grabbing;
 }
 
+/* The band's filter field. Sized explicitly rather than left to improvise:
+   wide enough for the longest placeholder ("Filter Text Files") at the Lens's
+   real width, and allowed to give first when the band is narrow so the grip,
+   glyph, title, and chevron keep their room. The `sm` field is taller than the
+   band's own line box, so a filterable band is a few px taller than a plain
+   one — constant, and only while expanded. */
+.lens-section .lens-section-filter {
+  flex: 1 1 auto;
+  min-inline-size: 7rem;
+  max-inline-size: 12rem;
+}
+
 .lens-section-body {
   display: flex;
   flex-direction: column;

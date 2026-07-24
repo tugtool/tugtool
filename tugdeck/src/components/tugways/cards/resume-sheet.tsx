@@ -37,9 +37,15 @@ import "./resume-sheet.css";
 
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
-import { TugInput } from "@/components/tugways/tug-input";
+import {
+  TugFilterField,
+  type TugFilterFieldDelegate,
+} from "@/components/tugways/tug-filter-field";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { useSeedKeyView } from "@/components/tugways/use-focusable";
+import {
+  useFocusManager,
+  useSeedKeyView,
+} from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   TugListView,
@@ -112,71 +118,104 @@ function ResumeSheetBody({
   projectDir,
   onClose,
 }: ResumeSheetBodyProps): React.ReactElement {
-  // The filter narrows the list by tag / name / prompt substring ([P05]). Held
-  // as transient local UI state — never persisted.
+  // The filter narrows the list fuzzily by name / tag / prompt / id. Held as
+  // transient local UI state — never persisted.
   const [filterQuery, setFilterQuery] = useState("");
   // The sessions data source for the bound project, fed by the tugcast-side
-  // ledger ([L02]) and narrowed by the filter query.
+  // ledger ([L02]) and narrowed by the filter query. `dropNewRowWhenFiltering`
+  // is the overlay's safety property: a query that matches nothing yields a
+  // truly empty list, so there is no "New session" row to spawn by accident.
   const sessionLedger = useSessionLedger(projectDir);
-  const dataSource = useSessionsDataSource(projectDir, sessionLedger, filterQuery);
+  const dataSource = useSessionsDataSource(
+    projectDir,
+    sessionLedger,
+    filterQuery,
+    true,
+  );
   // Seed the sheet's trapped focus onto the filter field so the caret lands
   // there on open (text-first, mirroring the `/rename` sheet).
   const focusGroup = React.useId();
   useSeedKeyView(`${focusGroup}:0`);
-  // Pick-to-resume: a row click rebinds + resumes (or spawns a new session),
-  // then dismisses. Live-elsewhere and loading rows are inert.
-  const delegate = useMemo<TugListViewDelegate>(
+  const focusManager = useFocusManager();
+  // The filter field's contract: report each keystroke into local state, hand
+  // the key view to the list on ArrowDown, and close the sheet on an Escape
+  // the field itself declined (an already-empty query).
+  const filterDelegate = useMemo<TugFilterFieldDelegate>(
     () => ({
-      onSelect: (index) => {
-        const row = dataSource.rowAt(index);
-        const connection = getConnection();
-        if (!connection) {
-          console.warn("ResumeSheet: connection unavailable");
-          return;
-        }
-        if (row.kind === "session-resume") {
-          if (row.row.state === "live") return; // can't resume live-elsewhere
-          const sessionId = row.row.session_id;
-          onClose("resume");
-          window.setTimeout(() => {
-            fireRestore(cardId, sessionId, projectDir, connection);
-          }, SHEET_EXIT_ANIMATION_MS);
-        } else if (row.kind === "session-new") {
-          const sessionId = crypto.randomUUID();
-          const tag = provisionSpawnTag(sessionId);
-          onClose("new");
-          window.setTimeout(() => {
-            sendSpawnSession(connection, cardId, sessionId, projectDir, "new", tag);
-          }, SHEET_EXIT_ANIMATION_MS);
-        }
-        // "loading" — inert.
+      filterFieldDidChangeQuery: setFilterQuery,
+      filterFieldDidRequestAdvance: () => {
+        focusManager?.place(
+          cardId,
+          { kind: "focus-key", focusKey: `${focusGroup}:1` },
+          { modality: "keyboard" },
+        );
+      },
+      filterFieldDidRequestDismiss: () => {
+        onClose();
       },
     }),
+    [cardId, focusGroup, focusManager, onClose],
+  );
+
+  // Pick-to-resume: a row rebinds + resumes (or spawns a new session), then
+  // dismisses. Live-elsewhere and loading rows are inert.
+  const resumeAt = useCallback(
+    (index: number): void => {
+      const row = dataSource.rowAt(index);
+      const connection = getConnection();
+      if (!connection) {
+        console.warn("ResumeSheet: connection unavailable");
+        return;
+      }
+      if (row.kind === "session-resume") {
+        if (row.row.state === "live") return; // can't resume live-elsewhere
+        const sessionId = row.row.session_id;
+        onClose("resume");
+        window.setTimeout(() => {
+          fireRestore(cardId, sessionId, projectDir, connection);
+        }, SHEET_EXIT_ANIMATION_MS);
+      } else if (row.kind === "session-new") {
+        const sessionId = crypto.randomUUID();
+        const tag = provisionSpawnTag(sessionId);
+        onClose("new");
+        window.setTimeout(() => {
+          sendSpawnSession(connection, cardId, sessionId, projectDir, "new", tag);
+        }, SHEET_EXIT_ANIMATION_MS);
+      }
+      // "loading" — inert.
+    },
     [dataSource, cardId, projectDir, onClose],
+  );
+
+  // A click picks, and so does Enter on the keyboard cursor — the overlay's
+  // one gesture, reachable both ways now that the list is a focus stop.
+  const delegate = useMemo<TugListViewDelegate>(
+    () => ({ onSelect: resumeAt, onActivate: resumeAt }),
+    [resumeAt],
   );
 
   return (
     <div className="resume-sheet">
-      {/* Composes `TugInput` (the same field the `/rename` sheet uses) so the
-          editing surface inherits the substrate CUT/COPY/PASTE/SELECT_ALL/
-          UNDO/REDO responders ([L03]) — a hand-rolled input would go dead on
-          Cmd-A/C/X/V/Z. */}
-      <TugInput
-        value={filterQuery}
-        placeholder="Filter by tag, name, or prompt"
-        aria-label="Filter sessions"
-        onChange={(e) => setFilterQuery(e.target.value)}
+      {/* The house filter affordance — one component, one delegate, the same
+          fuzzy matcher every filtered list uses. It composes `TugInput`, so the
+          editing surface keeps the substrate CUT/COPY/PASTE/SELECT_ALL/UNDO/
+          REDO responders that a hand-rolled input would lose. */}
+      <TugFilterField
+        delegate={filterDelegate}
+        placeholder="Filter sessions"
         data-testid="resume-filter-input"
         focusGroup={focusGroup}
         focusOrder={0}
       />
       {/* The reused session cells read selection / pending-trash from this
           context; a focused pick-to-resume overlay tracks none, so the values
-          are inert (no row pre-highlighted, no trash popover pending). */}
+          are inert (no row pre-highlighted, no trash popover pending). The
+          query rides along so a surviving row can paint what matched. */}
       <PickerCellProvider
         value={{
           selection: null,
           pendingTrashSessionId: null,
+          filterQuery,
         }}
       >
         <div className="resume-sheet-list">
@@ -186,6 +225,9 @@ function ResumeSheetBody({
             cellRenderers={SESSIONS_CELL_RENDERERS}
             scrollKey="resume-sheet-sessions"
             rowLayout="flush"
+            focusGroup={focusGroup}
+            focusOrder={1}
+            commitOnEnter="act"
             className="session-card-picker-sessions-list session-card-picker-list-view"
           />
         </div>

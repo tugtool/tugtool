@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { useTugBoxDisabled } from "./internal/tug-box-context";
 import { useTextInputResponder } from "./use-text-input-responder";
 import { useFocusable } from "./use-focusable";
-import type { FocusPolicy } from "./focus-manager";
+import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
 
 // ---- Types ----
 
@@ -118,6 +118,15 @@ export interface TugInputProps
   focusOrder?: number;
   /** Focus policy for the registered stop ([P02]); forwarded to `useFocusable`. */
   focusPolicy?: FocusPolicy;
+  /**
+   * The field's key-view behavior, read live at dispatch time and forwarded to
+   * `useFocusable`. A plain field declares none — it is a leaf and the engine's
+   * act tier leaves its keys alone. A field that transiently owns a key the
+   * engine would otherwise arbitrate declares a `captures` predicate: the filter
+   * field claims `Escape` while its query is non-empty, so Escape clears the
+   * filter instead of dismissing the surrounding sheet.
+   */
+  focusBehavior?: () => KeyViewBehavior | null;
 }
 
 // ---- Shared rendering ----
@@ -172,6 +181,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      focusBehavior,
       ...rest
     },
     ref,
@@ -201,7 +211,8 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
 
     // Standard focus-stop opt-in ([P02]): the focusable IS the `<input>`, so the
     // engine lands the key view on the real caret. A text field never consumes
-    // Tab, so `consumesTab` stays false (default). The focusable ref composes
+    // Tab, so `consumesTab` stays false (default); a field that owns a key
+    // transiently says so through `focusBehavior`. The focusable ref composes
     // with the responder's `composedRef` (internal + forwarded + responder-id)
     // so one element carries both `data-responder-id` and `data-tug-focusable`.
     const focusableId = useId();
@@ -211,6 +222,7 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
       order: focusOrder,
       policy: focusPolicy,
       register: focusGroup !== undefined,
+      behavior: focusBehavior,
     });
     const setRefs = useCallback(
       (el: HTMLInputElement | null) => {

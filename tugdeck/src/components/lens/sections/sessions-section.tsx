@@ -37,7 +37,13 @@ import { GitBranch } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import {
+  getFilterQuery,
+  getFilterVersion,
+  subscribeFilterQuery,
+} from "@/components/lens/lens-filter-store";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
@@ -107,6 +113,15 @@ function useOpenBindings() {
     cardSessionBindingStore.subscribe,
     cardSessionBindingStore.getSnapshot,
   );
+}
+
+/** This section's kind — the key its filter query lives under. */
+const SECTION_KIND = "sessions";
+
+/** The band's live filter query, read straight from the store ([L02]). */
+function useSessionsFilterQuery(): string {
+  useSyncExternalStore(subscribeFilterQuery, getFilterVersion);
+  return getFilterQuery(SECTION_KIND);
 }
 
 /** Row verbs the section body hands the module-level cell — the reorder grip. */
@@ -221,6 +236,7 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
  *  accessory. The `TugListView` cell wrapper owns cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const ctx = React.useContext(SessionsCellContext);
+  const filterQuery = useSessionsFilterQuery();
   const changesets = useChangesetAll();
   const branch = branchForProject(changesets, row.projectDir);
   const displayName = useSessionLabel(row.projectDir, row.tugSessionId, branch);
@@ -241,7 +257,7 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
           <RowPhaseDot cardId={row.cardId} />
         </span>
       }
-      title={displayName}
+      title={renderFilterHighlight(displayName, filterQuery)}
       titleSize="sm"
       subtitle={
         pulseText !== null ? (
@@ -283,8 +299,29 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
     lensStore.subscribe,
     useCallback(() => lensStore.getSnapshot().sessionOrder, []),
   );
-  const dataSource = useLensSessionsDataSource(bindings, sessionOrder);
+  const filterQuery = useSessionsFilterQuery();
+  // Labels are built from the name / tag stores at recompute time, so their
+  // versions are inputs: a name or tag arriving late must re-run the filter.
+  const nameVersion = useSyncExternalStore(
+    sessionNameStore.subscribe,
+    sessionNameStore.getVersion,
+  );
+  const tagVersion = useSyncExternalStore(
+    sessionTagStore.subscribe,
+    sessionTagStore.getVersion,
+  );
+  const dataSource = useLensSessionsDataSource({
+    bindings,
+    order: sessionOrder,
+    filterQuery,
+    nameVersion,
+    tagVersion,
+  });
   const count = dataSource.numberOfItems();
+  const filtering = dataSource.isFiltering();
+  // Content is what the list SHOWS: a section filtered to zero is not a focus
+  // stop, exactly like an empty one. The band's field registers separately, so
+  // it stays reachable and clearable.
   const hasContent = count > 0;
 
   // Reorder by grip: commit on drop ([Q02]). Rows match by their stable
@@ -293,7 +330,7 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
   // stay at the bottom until the user moves them.
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
-  const { onGripPointerDown } = useBlockReorder({
+  const { onGripPointerDown: beginGripReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
     getVisibleOrder: () => dataSource.visibleOrder(),
@@ -301,6 +338,17 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
     selector: ROW_SELECTOR,
     kindAttr: ROW_KIND_ATTR,
   });
+  // Reorder is unavailable while a filter is active: the drop order describes
+  // only the VISIBLE rows and `setSessionOrder` persists the whole arrangement,
+  // so committing a partial order would scramble the hidden rows. The grips
+  // hide via `data-filter-active` + CSS ([L06]) and the handler no-ops.
+  const onGripPointerDown = useCallback(
+    (id: string, event: React.PointerEvent): void => {
+      if (filtering) return;
+      beginGripReorder(id, event);
+    },
+    [filtering, beginGripReorder],
+  );
   const cellContext = useMemo<SessionsCellContextValue>(
     () => ({ onGripPointerDown }),
     [onGripPointerDown],
@@ -339,10 +387,17 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
       {count === 0 ? (
         // Render the empty label INSTEAD of the list: an empty `flex: 1 1 auto`
         // list would grow to fill the section and push the label down, opening a
-        // gap under the band (and paint an empty framed box).
-        <div className="sessions-card-empty">None</div>
+        // gap under the band (and paint an empty framed box). "No matches" is
+        // the distinct filtered-to-zero face.
+        <div className="sessions-card-empty" data-testid="lens-sessions-empty">
+          {dataSource.unfilteredCount() > 0 ? "No matches" : "None"}
+        </div>
       ) : (
-        <div className="sessions-list-wrap" ref={listWrapRef}>
+        <div
+          className="sessions-list-wrap"
+          ref={listWrapRef}
+          data-filter-active={filtering ? "true" : undefined}
+        >
           <BlockDropCaret ref={caretRef} />
           <SessionsCellContext value={cellContext}>
             <TugListView<LensSessionsDataSource>
@@ -371,8 +426,9 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
  */
 export function registerSessionsSection(): void {
   registerLensSection({
-    kind: "sessions",
+    kind: SECTION_KIND,
     title: "Sessions",
+    filterable: true,
     glyph: <GitBranch size={14} />,
     collapsedSummary: () => <SessionsCollapsedSummary />,
     body: (host) => <SessionsSectionBody host={host} />,

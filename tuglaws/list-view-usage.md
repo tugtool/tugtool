@@ -25,14 +25,26 @@ a *data source* and a *cell renderer*; the cell renderer's job is to compose
    a duplicate system that silently drifts from the primitive and won't inherit
    its improvements. Consumer CSS styles only consumer-specific affordances
    (a trailing trash reveal, a status badge), never the ramp.
+   Both row text lines are ONE rendering path: `title` and `subtitle` each go
+   through a single `TugLabel` whether the caller passes a string or a node, so
+   `subtitleMaxLines` and the selected-row recolor behave identically for both.
+   `.tug-list-row-title` / `.tug-list-row-subtitle` are naming hooks for a
+   consumer that must bend one list's text; they declare no typography of their
+   own.
 
-3. **Use `title` / `subtitle`, not `children`.** The structured path renders
-   through `TugLabel`, so row text matches the rest of the app. The `children`
-   escape hatch bypasses `TugLabel` entirely — reach for it *only* when the
-   primary content is not a plain string (e.g. `<mark>`-highlighted search
-   results, an RTL middle-ellipsis path), and then add a one-line comment
-   justifying it and apply the shared title typography so it still reads
-   consistently ([L20] keeps the row's tokens; the cell just opts into them).
+3. **Use `title` / `subtitle`, not `children` — highlighted text included.**
+   The structured path renders through `TugLabel`, so row text matches the rest
+   of the app, and both slots accept a `ReactNode`: filter/search matches
+   compose as `renderFilterHighlight(displayString, query)` straight into
+   `title` / `subtitle`, keeping the row's typography, truncation, and selected
+   recolor. Pass the string the row actually renders (already truncated,
+   already abbreviated) — highlight ranges index THAT string, and ranges taken
+   from a raw source field paint at the wrong offsets. The `children` escape
+   hatch bypasses `TugLabel` entirely — reach for it *only* when the primary
+   content is genuinely not text (an RTL middle-ellipsis path, a two-column
+   matcher row), and then add a one-line comment justifying it and apply the
+   shared title typography so it still reads consistently ([L20] keeps the
+   row's tokens; the cell just opts into them).
 
 4. **Single-select with a checkmark uses `selectedGlyph="check"`.** Never
    hand-roll a fixed-width check holder in `leading` — `selectedGlyph` reserves
@@ -72,8 +84,13 @@ adding a consumer.
 | `model-picker-sheet` | `TugListRow` title/subtitle + `selectedGlyph` | consumer | |
 | `effort-picker-sheet` | `TugListRow` title/subtitle + `selectedGlyph` | consumer | |
 | `permission-rules-editor` | `TugListRow` (matcher rides `children`, justified) | consumer | |
-| dev session picker (`session-picker-cells`) | `TugListRow` title/subtitle + trailing trash | `selectionRequired` | |
+| dev session picker (`session-picker-cells`) | `TugListRow` title/subtitle (both filter-highlighted) + trailing trash | `selectionRequired` | filtered by `TugFilterField` |
 | dev recents (`session-picker-cells`) | `TugListRow` `children` (RTL path + `<mark>`, justified) | `selectionRequired` | |
+| `/resume` overlay (`resume-sheet`) | the session-picker cells | none | filtered by `TugFilterField` |
+| lens Sessions (`sessions-section`) | `TugListRow` title/subtitle + leading dot + trailing sparkline | none, cursor only | filtered by `TugFilterField` |
+| lens Snippets (`snippets-section`) | `TugListRow` `children` (incipit, drag source + inline markdown) | `selectionRequired` | filtered by `TugFilterField` |
+| lens Text Files (`text-files-section`) | `TugListRow` title/subtitle (both filter-highlighted) | none, cursor only | filtered by `TugFilterField` |
+| `gallery-list-view-filter` | custom path cells | none | the `useFilteredDataSource` wrapper's living contract |
 | `rewind-sheet` | `TugListRow` title/subtitle | consumer | |
 | transcript body-kinds (`path-list`, `todo-list`, `search-result`) | see [Sanctioned exceptions](#sanctioned-exceptions) | none, `inline` | |
 | `session-card-transcript` | custom streaming turn cells | none, `inline` | sanctioned exception |
@@ -102,6 +119,37 @@ A cell may bypass `TugListRow` only if it appears here with a rationale.
   selection (so they do **not** duplicate the selection/disabled ramp), and
   their only state affordance is a `:hover` background drawn from the shared
   `--tugx-block-row-hover-bg` token. They remain custom cells by design.
+
+## Filtering a list
+
+A long list gets a `TugFilterField` (see its module docstring for the delegate
+contract). Two mechanisms are sanctioned, and the choice is about the cells:
+
+- **In-source** (every product surface). The data source takes a `filterQuery`
+  input and applies `filterQueryMatch` inside its own `recompute()`. Rows,
+  `rowAt`, `indexForId`, selection, and the cursor then live in ONE filtered
+  coordinate space, which is what typed cell renderers (`dataSource.rowAt(i)`
+  on a concrete class) need. **A list index names a row in the projection,
+  never a position in the underlying document** — any consumer that turns an
+  index back into a model object must go through the data source.
+- **Wrapper** (`useFilteredDataSource`). The generic composition path, for
+  consumers whose cells do not depend on a concrete data-source type; cells
+  translate indices with `baseIndexFor`. `gallery-list-view-filter` is its
+  living contract and the composition point for future sorting/grouping
+  wrappers.
+
+Matching is fuzzy, multi-term AND across a row's fields, and **ranked**: while a
+query is active the rows sort best-match-first, and the moment it clears they
+return to their native order untouched — so a drag-arranged or persisted order
+is never rewritten, only temporarily set aside (reorder gestures are disabled
+while a filter is on, so the two orders never fight).
+
+One rule earns its keep on long lists: a match must be **compact**. `scoreMatch`
+accepts any in-order character run, which is right for a ≤50-item popup and
+useless over rows carrying whole sentences — five scattered letters "match" any
+prompt, so a 900-row list filters to 900 rows. `filterMatchScore` rejects a
+match whose span far exceeds the characters it matched, keeping the acronym-ish
+hits (`sesldg` → `session-ledger-store`) and dropping the noise.
 
 ## Cross-references
 

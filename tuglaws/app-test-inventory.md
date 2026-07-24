@@ -1004,6 +1004,16 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Tests:** `at0224-card-active-keyboard.test.ts`.
 - **Summary:** Keyboard accelerators land on the active card no matter how it became active: a pane title-bar click preserves first responder (`data-tug-fr-preserve` — the title bar is an activation/drag surface, never a responder target), so ⇧⌘S still flips the route with the caret resting in the entry; reactivating a deactivated card by its title bar restores that card's first responder to its key view ([P21]'s finer-restore), so the route chord lands on the reactivated card and not its neighbor; ⌘F after a title-bar click opens the Text card's find bar with the caret in the query field; ⌘G / ⇧⌘G advance / retreat the match while the find FIELD is focused (the bar is the responder for find navigation); and a text card created-and-activated in one gesture (`openFileInCard` — Open Quickly's commit path) owns ⌘F immediately — CardHost completes the activation focus claim at mount / engine-hook registration, and the text editor registers engine hooks so the claim resolves. Cycling (Ctrl-`) to a never-focused text card gives it ⌘F immediately and a subsequent title-bar click cannot wedge the keyboard — the [P21] reconciler (key-card changes + chain registration changes, default-focus target for never-focused cards) maintains the invariant for every card type uniformly.
 
+#### [AT0265] Session picker filter field
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0265-picker-filter.test.ts`.
+- **Summary:** The `TugFilterField` on the picker's SESSIONS line trims the list live: typing a fragment drawn from a rendered row title narrows the list, every surviving `session-resume` row's title matches the fragment, and at least one `<mark class="tug-filter-mark">` paints; a fragment matching nothing leaves only "New session" ([P05] keeps that row under any query, so the list is never empty); ArrowDown out of the field lands the cursor on a real session rather than "New session"; the ✕ restores the original row count; and the Move-all-to-Trash label/tooltip/enable-gate are unchanged by an active filter (the sweep is per-path, never narrowed by a transient text box). Row counts are read from the live snapshot rather than asserted absolutely — the picker's rows come from the host's ledger + JSONL scan of real state.
+
+#### [AT0266] Lens section filtering
+- **Status:** ✅ open (new feature gate).
+- **Tests:** `at0266-lens-filter.test.ts`.
+- **Summary:** The band-mounted `TugFilterField` on the Lens's filterable sections: seeded snippets narrow as the query is typed with `<mark>` on the survivors, a query matching nothing shows the section's distinct "No matches" body while its field stays clickable and clearable (the field registers independently of the section's has-content gate, so filtering to zero can never strand it), Escape in a non-empty field clears the filter without collapsing the section or exiting the Lens, and the ✕ restores the rows with the cursor keys still walking the list.
+
 ## Maintenance
 
 This file is append-only for the tag list. Status fields update as fixes land or regress. Removing a tag requires a documented decision and a successor tag noted inline (`[M{NN}] superseded by [M{MM}] — see ...`).

@@ -75,7 +75,13 @@ import {
 } from "@/components/tugways/use-focusable";
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import {
+  getFilterQuery,
+  getFilterVersion,
+  subscribeFilterQuery,
+} from "@/components/lens/lens-filter-store";
 import { registerLensSection } from "../lens-section-registry";
 import type { LensSectionHost } from "../lens-section-registry";
 import {
@@ -135,6 +141,15 @@ function useSnippets() {
   return { store, snapshot };
 }
 
+/** This section's kind — the key its filter query lives under. */
+const SECTION_KIND = "snippets";
+
+/** The band's live filter query, read straight from the store ([L02]). */
+function useSnippetsFilterQuery(): string {
+  useSyncExternalStore(subscribeFilterQuery, getFilterVersion);
+  return getFilterQuery(SECTION_KIND);
+}
+
 /** Live one-line summary: the snippet count. */
 function SnippetsCollapsedSummary(): React.ReactElement {
   const { snapshot } = useSnippets();
@@ -170,12 +185,16 @@ function SnippetDisplayRow({
   selected: boolean;
 }): React.ReactElement {
   const ctx = React.useContext(SnippetsCellContext);
+  const filterQuery = useSnippetsFilterQuery();
   const incipit = snippetIncipit(snippet);
   const empty = incipit.length === 0;
   // The incipit renders INLINE markdown (`*hello*` → italic) via the same
   // sanitized one-line renderer the pulse strip uses, unwrapped to inline. An
   // empty `html` is its plain-text signal (no markup, or a parse fallback).
-  const rendered = empty ? null : renderPulseLine(incipit);
+  // While a filter is active the row shows PLAIN text instead, so the match can
+  // be marked: highlight ranges are offsets into the incipit string, which
+  // rendered markup would not agree with.
+  const rendered = empty || filterQuery !== "" ? null : renderPulseLine(incipit);
   const incipitHtml =
     rendered !== null && rendered.html.length > 0
       ? inlineMarkdownHtml(rendered.html)
@@ -244,7 +263,7 @@ function SnippetDisplayRow({
             dangerouslySetInnerHTML={{ __html: incipitHtml }}
           />
         ) : (
-          incipit
+          renderFilterHighlight(incipit, filterQuery)
         )}
       </span>
     </TugListRow>
@@ -621,8 +640,13 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   const { store, snapshot } = useSnippets();
   const snippets = snapshot.doc.snippets;
   const editingId = snapshot.editingId;
-  const dataSource = useLensSnippetsDataSource(snippets);
-  const hasContent = snippets.length > 0;
+  const filterQuery = useSnippetsFilterQuery();
+  const dataSource = useLensSnippetsDataSource(snippets, filterQuery, editingId);
+  const filtering = filterQuery.trim().length > 0;
+  // Content is what the list actually SHOWS: a section filtered to zero is not
+  // a focus stop and drops out of the ⌘L seed, exactly like an empty one. The
+  // band's filter field registers independently, so it stays reachable.
+  const hasContent = dataSource.numberOfItems() > 0;
 
   // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
   // when it is empty (an empty list is not a focus stop).
@@ -704,10 +728,13 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       const index = dataSource.indexForId(id);
       if (index < 0) return;
       const survivorCount = dataSource.numberOfItems() - 1;
+      // The survivor is read from the PROJECTION before the delete — under a
+      // filter the doc's neighbor is not the list's neighbor, and indexing the
+      // doc by a list index would remember the wrong snippet.
+      const survivor = dataSource.rowAt(index + 1) ?? dataSource.rowAt(index - 1);
       store.deleteSnippet(id);
       if (survivorCount <= 0) return;
       const landing = Math.min(index, survivorCount - 1);
-      const survivor = store.getSnapshot().doc.snippets[landing];
       if (survivor !== undefined) lastSelectedSnippetId = survivor.id;
       listRef.current?.moveCursorTo(landing);
     },
@@ -717,7 +744,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // Reorder by grip: commit on drop ([Q02]). Rows are matched by their stable
   // `data-snippet-id`; the FLIP animates the row content, the store commit
   // reorders the document.
-  const { onGripPointerDown } = useBlockReorder({
+  const { onGripPointerDown: beginGripReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
     getVisibleOrder: () => snapshot.doc.snippets.map((s) => s.id),
@@ -725,6 +752,17 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     selector: ROW_SELECTOR,
     kindAttr: ROW_KIND_ATTR,
   });
+  // Reorder is unavailable while a filter is active: the drop order the drag
+  // computes describes the VISIBLE rows, and `store.setOrder` expects the whole
+  // document — there is no coherent way to splice a partial order back in. The
+  // grips hide via `data-filter-active` + CSS ([L06]) and the handler no-ops.
+  const onGripPointerDown = useCallback(
+    (id: string, event: React.PointerEvent): void => {
+      if (filtering) return;
+      beginGripReorder(id, event);
+    },
+    [filtering, beginGripReorder],
+  );
   const cellContext = useMemo<SnippetsCellContextValue>(
     () => ({
       onGripPointerDown,
@@ -755,8 +793,9 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     const idxAttr = cursorCell()?.getAttribute("data-tug-list-cell-index");
     if (idxAttr === null || idxAttr === undefined) return null;
     const idx = Number.parseInt(idxAttr, 10);
-    return snapshot.doc.snippets[idx]?.id ?? null;
-  }, [cursorCell, snapshot.doc.snippets]);
+    // A list index names a row in the PROJECTION, never a position in the doc.
+    return dataSource.rowAt(idx)?.id ?? null;
+  }, [cursorCell, dataSource]);
 
   // Section verbs — Space / ⌘N create a new snippet below the cursor (the
   // Things-style gesture), Delete removes the cursor row. Delivered through
@@ -831,8 +870,17 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
           // Empty label instead of the list — an empty `flex: 1` list would grow
           // and open a gap under the band (see the Sessions section).
           <div className="snippets-empty">None</div>
+        ) : dataSource.numberOfItems() === 0 ? (
+          // Distinct from "None": there ARE snippets, the filter is hiding them.
+          <div className="snippets-empty" data-testid="lens-snippets-no-matches">
+            No matches
+          </div>
         ) : (
-          <div className="snippets-list-wrap" ref={listWrapRef}>
+          <div
+            className="snippets-list-wrap"
+            ref={listWrapRef}
+            data-filter-active={filtering ? "true" : undefined}
+          >
             <BlockDropCaret ref={caretRef} />
             <SnippetsCellContext value={cellContext}>
               <TugListView<LensSnippetsDataSource>
@@ -882,8 +930,9 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
 /** Register the Snippets section. Called once at boot from `main.tsx`. */
 export function registerSnippetsSection(): void {
   registerLensSection({
-    kind: "snippets",
+    kind: SECTION_KIND,
     title: "Snippets",
+    filterable: true,
     glyph: <TextQuote size={14} />,
     collapsedSummary: () => <SnippetsCollapsedSummary />,
     headerActions: () => <SnippetsHeaderActions />,

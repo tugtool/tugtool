@@ -44,10 +44,17 @@ import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
 import type { TugPopupMenuEntry } from "@/components/tugways/internal/tug-popup-menu";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import {
+  getFilterQuery,
+  getFilterVersion,
+  subscribeFilterQuery,
+} from "@/components/lens/lens-filter-store";
 import {
   basename,
   buildTextFilesRows,
   dirname,
+  displayDir,
   useLensTextFilesDataSource,
   type LensTextFilesDataSource,
 } from "./text-files-data-source";
@@ -62,13 +69,19 @@ const CLEAR_RECENTS_ITEM_ID = "\0clear-recents";
 // collapse toggle; valid while the Lens is a singleton card.
 let lastSelectedTextId: string | null = null;
 
-/** Abbreviate a macOS home prefix (`/Users/<name>`) to `~` for display. */
-function displayDir(dir: string): string {
-  return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+/** This section's kind — the key its filter query lives under. */
+const SECTION_KIND = "text-files";
+
+/** The band's live filter query, read straight from the store ([L02]). */
+function useTextFilesFilterQuery(): string {
+  useSyncExternalStore(subscribeFilterQuery, getFilterVersion);
+  return getFilterQuery(SECTION_KIND);
 }
 
 /** A two-line row on the shared `TugListRow` chrome: filename (title) over its
- *  dimmed directory (subtitle). */
+ *  dimmed directory (subtitle). Both lines paint their filter matches — against
+ *  the exact strings rendered here, which is why the abbreviated directory (not
+ *  the raw path) is what both the matcher and the highlighter see. */
 function FileRow({
   name,
   dir,
@@ -76,12 +89,18 @@ function FileRow({
   name: string;
   dir: string;
 }): React.ReactElement {
+  const filterQuery = useTextFilesFilterQuery();
+  const shownDir = dir.length > 0 ? displayDir(dir) : "";
   return (
     <TugListRow
       className="text-files-row"
-      title={name}
+      title={renderFilterHighlight(name, filterQuery)}
       titleSize="sm"
-      subtitle={dir.length > 0 ? displayDir(dir) : undefined}
+      subtitle={
+        shownDir.length > 0
+          ? renderFilterHighlight(shownDir, filterQuery)
+          : undefined
+      }
     />
   );
 }
@@ -176,7 +195,8 @@ function TextFilesHeaderActions(): React.ReactElement {
 }
 
 function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactElement {
-  const dataSource = useLensTextFilesDataSource();
+  const filterQuery = useTextFilesFilterQuery();
+  const dataSource = useLensTextFilesDataSource(filterQuery);
   const count = dataSource.numberOfItems();
   const listRef = useRef<TugListViewHandle>(null);
 
@@ -211,8 +231,12 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
     <div className="text-files-section">
       {count === 0 ? (
         // Empty label instead of the list — an empty `flex: 1` list would grow
-        // and open a gap under the band (see the Sessions section).
-        <div className="text-files-empty">None</div>
+        // and open a gap under the band (see the Sessions section). "No
+        // matches" is the distinct filtered-to-zero face: there ARE open files,
+        // the filter is hiding them.
+        <div className="text-files-empty" data-testid="lens-text-files-empty">
+          {dataSource.unfilteredCount() > 0 ? "No matches" : "None"}
+        </div>
       ) : (
         <TugListView<LensTextFilesDataSource>
           ref={listRef}
@@ -235,8 +259,9 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
 /** Register the Text Files section. Called once at boot from `main.tsx`. */
 export function registerTextFilesSection(): void {
   registerLensSection({
-    kind: "text-files",
+    kind: SECTION_KIND,
     title: "Text Files",
+    filterable: true,
     glyph: <FileText size={14} />,
     collapsedSummary: () => <TextFilesCollapsedSummary />,
     headerActions: () => <TextFilesHeaderActions />,

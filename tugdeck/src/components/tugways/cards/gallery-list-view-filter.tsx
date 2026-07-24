@@ -1,37 +1,48 @@
 /**
  * GalleryListViewFilter — visual showcase + smoke test for
- * `useFilteredDataSource`.
+ * `useFilteredDataSource`, and the living contract for `TugFilterField`'s
+ * wrapper-style wiring.
  *
- * Mounts a `TugInput` above a `TugListView`; the input's value drives
- * a case-insensitive substring predicate that the list view consumes
- * via `useFilteredDataSource`. The card demonstrates the
+ * Mounts a `TugFilterField` above a `TugListView`; the field's delegate
+ * writes the host's `query` state, which drives a predicate the list view
+ * consumes via `useFilteredDataSource`. The card demonstrates the
  * UISearchController-style split landed in Phase 1 [D01]: the host
  * owns the search field; the primitive consumes a derived data
- * source. The `TugInput` is OUTSIDE the list view's DOM tree.
+ * source. The `TugFilterField` is OUTSIDE the list view's DOM tree.
  *
- * Matching uses the shared `caseInsensitiveSubstring` from
- * `@/lib/text-match` — the same utility the picker (Phase 2) uses,
- * so both surfaces feel identical. Match ranges flow through to
- * `renderHighlighted`, which paints `<mark>` spans over the matched
- * substring portions. Case-insensitive is the default per the user
- * point that filesystem case-sensitivity does not dictate typeahead
- * case-sensitivity (typing `tugtool` should find `Tugtool`).
+ * **Two sanctioned filter mechanisms, and why this one is here.** The
+ * product surfaces (session picker, `/resume`, the Lens sections) filter
+ * *inside* their own data source's `recompute()`, because their cell
+ * renderers are typed against a concrete data source and would otherwise
+ * have to translate every index through `baseIndexFor` — an index-confusion
+ * hazard. This card keeps the generic **wrapper** path, which is the right
+ * choice when cells do not depend on a concrete data-source type (and the
+ * composition point for a future `useSortedDataSource` / grouping wrapper).
+ * Wrapper for untyped composition, in-source for typed cells; this card is
+ * the wrapper path's living contract.
+ *
+ * Matching uses the shared `filterQueryMatch` / `renderFilterHighlight`
+ * pair — the same fuzzy, multi-term, membership-only semantics every
+ * filtered list in the app uses, painting the same `<mark>` spans in the
+ * one find-paint color.
  *
  * The synthetic data is 50 fictional project paths with diverse
- * owners, roots, and project names so substring filtering produces
+ * owners, roots, and project names so filtering produces
  * visually distinct narrowings — typing `tugtool` collapses to a
  * handful of matches; typing `/Users/Alex/` collapses to ten. Path-
  * shaped data also previews the eventual picker UX (Phase 2): the
  * picker's `path-recent` rows match this rough shape.
  *
  * Manual smoke (this card's reason for existing):
- *   - Type characters into the input — the list narrows to items
- *     whose path contains the typed substring case-insensitively per
- *     [Spec S01]; the matched span is highlighted in each row.
+ *   - Type characters into the field — the list narrows to items whose
+ *     path fuzzily matches; the matched spans are highlighted in each row.
  *   - Type `TUGTOOL` (uppercase) — the same rows match as `tugtool`,
  *     and the highlight covers the original-case span in each path.
+ *   - Type two terms (`alex tug`) — both must match, in either order.
  *   - Backspace — the list widens. Scroll position should be stable
  *     across filter changes (no jumps to top, no flicker).
+ *   - Click into a non-empty field — its contents come up fully selected;
+ *     the ✕ clears it; Escape clears it without dismissing anything.
  *   - The "X of Y" diagnostic above the list reflects the live
  *     filtered count vs. the base count.
  *   - The cell renderer shows each row's filtered index AND its base
@@ -68,7 +79,11 @@ import "./gallery.css";
 
 import React from "react";
 
-import { TugInput } from "@/components/tugways/tug-input";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import {
+  TugFilterField,
+  type TugFilterFieldDelegate,
+} from "@/components/tugways/tug-filter-field";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -79,10 +94,7 @@ import {
   useFilteredDataSource,
   type FilteredTugListViewDataSource,
 } from "@/components/tugways/use-filtered-data-source";
-import {
-  caseInsensitiveSubstring,
-  type MatchResult,
-} from "@/lib/text-match";
+import { filterQueryMatch } from "@/lib/text-match";
 
 // ---------------------------------------------------------------------------
 // Synthetic data source
@@ -199,49 +211,6 @@ const INDEX_LABEL_STYLE: React.CSSProperties = {
   minWidth: "8em",
 };
 
-/**
- * Highlight style for matched substring spans. `<mark>` is the
- * semantic element for "marked or highlighted text" per HTML
- * Standard; we override the user agent's yellow background with a
- * theme-token equivalent so the highlight reads as part of the
- * surface, not a browser default.
- */
-const MATCH_HIGHLIGHT_STYLE: React.CSSProperties = {
-  background: "var(--tug7-surface-global-data-tinted-default-rest)",
-  color: "var(--tug7-element-global-text-normal-default-rest)",
-  borderRadius: "var(--tug-radius-2xs)",
-  padding: "0 1px",
-};
-
-/**
- * Render a string with `<mark>` highlights at the supplied match
- * ranges. `matches` is a list of half-open `[start, end)` ranges in
- * UTF-16 code unit offsets — the same coordinate `String.slice()`
- * uses, so splitting the source by these boundaries is exact.
- *
- * Empty `matches` → return the text as a single string node, no
- * highlights.
- */
-function renderHighlighted(
-  text: string,
-  matches: ReadonlyArray<readonly [number, number]>,
-): React.ReactNode {
-  if (matches.length === 0) return text;
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  for (const [start, end] of matches) {
-    if (start > cursor) parts.push(text.slice(cursor, start));
-    parts.push(
-      <mark key={`m-${start}`} style={MATCH_HIGHLIGHT_STYLE}>
-        {text.slice(start, end)}
-      </mark>,
-    );
-    cursor = end;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts;
-}
-
 // ---------------------------------------------------------------------------
 // Gallery card
 // ---------------------------------------------------------------------------
@@ -287,21 +256,27 @@ export function GalleryListViewFilter(): React.ReactElement {
   // canonical [Spec S06] pattern.
   const [query, setQuery] = React.useState("");
 
+  // The React-state delegate adapter: the field reports each keystroke, the
+  // host stores it, and the stored value drives both the predicate and the
+  // filter token.
+  const delegate = React.useMemo<TugFilterFieldDelegate>(
+    () => ({
+      filterFieldDidChangeQuery: setQuery,
+    }),
+    [],
+  );
+
   // Predicate built fresh per render; the latest closure captures the
   // current `query`. The hook's `setLatestPredicate` write picks it
   // up; recompute fires when `filterToken` (also `query`) changes
   // identity per `Object.is`.
   //
-  // Case-INSENSITIVE substring match per [Spec S01] — uses the
-  // shared `caseInsensitiveSubstring` matcher in `@/lib/text-match`
-  // so the picker, the gallery card, and any future small-list
-  // consumer all behave identically. Unicode case folding handles
-  // accented Latin (É → é); see the matcher's module docstring for
-  // the rare expansion-bearing edge case.
+  // The shared list-filter matcher: fuzzy, multi-term AND, membership only —
+  // identical semantics to every filtered list in the app.
   const predicate = React.useCallback(
     (i: number, ds: TugListViewDataSource): boolean => {
       const item = (ds as GalleryListViewFilterDataSource).itemAt(i);
-      return caseInsensitiveSubstring(query, item.path) !== null;
+      return filterQueryMatch(query, [item.path]);
     },
     [query],
   );
@@ -336,18 +311,12 @@ export function GalleryListViewFilter(): React.ReactElement {
       const wrapper = dataSource as FilteredTugListViewDataSource;
       const baseIndex = wrapper.baseIndexFor(index);
       const item = base.itemAt(baseIndex);
-      // Recompute the match against the live query; the matcher is
-      // cheap (single `indexOf` over a lowercased copy) and the
-      // renderer only runs for cells in the rendered window.
-      const match: MatchResult | null = caseInsensitiveSubstring(
-        queryRef.current,
-        item.path,
-      );
-      const ranges = match?.matches ?? [];
+      // Recompute the highlight against the live query; the matcher is
+      // cheap and the renderer only runs for cells in the rendered window.
       return (
         <div style={PATH_CELL_STYLE} data-testid="gallery-list-view-filter-path">
           <span style={INDEX_LABEL_STYLE}>{`#${index} (base ${baseIndex})`}</span>
-          <span>{renderHighlighted(item.path, ranges)}</span>
+          <span>{renderFilterHighlight(item.path, queryRef.current)}</span>
         </div>
       );
     };
@@ -366,13 +335,10 @@ export function GalleryListViewFilter(): React.ReactElement {
     >
       <div style={HEADER_BAR_STYLE}>
         <div style={INPUT_HOST_STYLE}>
-          <TugInput
-            type="search"
-            placeholder="Filter paths (case-insensitive substring)"
-            value={query}
-            onChange={(e) =>
-              setQuery((e.target as HTMLInputElement).value)
-            }
+          <TugFilterField
+            delegate={delegate}
+            placeholder="Filter paths"
+            data-testid="gallery-list-view-filter-field"
           />
         </div>
         <span style={DIAGNOSTIC_STYLE}>{diagnostic}</span>

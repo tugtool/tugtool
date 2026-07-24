@@ -25,6 +25,7 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import type { DeckState } from "@/layout-tree";
 import { getDeckStore } from "@/lib/deck-store-registry";
+import { filterAndRank } from "@/lib/text-match";
 import {
   getOpenTextCard,
   getOpenTextCardsVersion,
@@ -50,11 +51,23 @@ export function dirname(path: string): string {
   return i > 0 ? path.slice(0, i) : "";
 }
 
+/**
+ * Abbreviate a macOS home prefix (`/Users/<name>`) to `~` for display. It lives
+ * beside `basename` rather than in the section so the data source can match on
+ * exactly the string the row shows — typing `~/src` finds the row, and the
+ * highlight offsets land on the rendered characters.
+ */
+export function displayDir(dir: string): string {
+  return dir.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");
+}
+
 interface TextFilesInputs {
   readonly deck: DeckState | null;
   /** Bumps when a Text card registers / unregisters / binds its path, so the
    *  rows recompute against the newly-resolved open-card paths. */
   readonly registryVersion: number;
+  /** The band's filter query. Empty / whitespace → every row. */
+  readonly filterQuery: string;
 }
 
 /** Resolve an open Text card's bound path. Default reads the open registry. */
@@ -144,7 +157,8 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
   setInputsWithoutNotify(next: TextFilesInputs): boolean {
     if (
       this.inputs.deck === next.deck &&
-      this.inputs.registryVersion === next.registryVersion
+      this.inputs.registryVersion === next.registryVersion &&
+      this.inputs.filterQuery === next.filterQuery
     ) {
       return false;
     }
@@ -157,8 +171,23 @@ export class LensTextFilesDataSource implements TugListViewDataSource {
     for (const listener of this.listeners) listener();
   }
 
+  /** How many open Text cards there are, filter or no filter. */
+  unfilteredCount(): number {
+    return buildTextFilesRows(this.inputs).length;
+  }
+
   private recompute(): void {
-    this.rows = buildTextFilesRows(this.inputs);
+    const rows = buildTextFilesRows(this.inputs);
+    // A row matches on its filename and on the directory AS DISPLAYED (`~/src`,
+    // not `/Users/name/src`) — the same strings the row shows. Ranked
+    // best-first while filtering; deck-card order returns when the query
+    // clears.
+    this.rows = [
+      ...filterAndRank(rows, this.inputs.filterQuery, (row) => [
+        row.title,
+        row.path !== null ? displayDir(dirname(row.path)) : null,
+      ]),
+    ];
     this.version += 1;
   }
 }
@@ -169,7 +198,9 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  * Hook — read the deck snapshot (an [L02] store) and feed a stable
  * `LensTextFilesDataSource`, notifying from a layout effect.
  */
-export function useLensTextFilesDataSource(): LensTextFilesDataSource {
+export function useLensTextFilesDataSource(
+  filterQuery: string,
+): LensTextFilesDataSource {
   const deckStore = getDeckStore();
   const deck = useSyncExternalStore(
     deckStore?.subscribe ?? NOOP_SUBSCRIBE,
@@ -185,11 +216,12 @@ export function useLensTextFilesDataSource(): LensTextFilesDataSource {
   );
 
   const ref = useRef<LensTextFilesDataSource | null>(null);
+  const inputs = { deck, registryVersion, filterQuery };
   if (ref.current === null) {
-    ref.current = new LensTextFilesDataSource({ deck, registryVersion });
+    ref.current = new LensTextFilesDataSource(inputs);
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify({ deck, registryVersion });
+  const didChange = ds.setInputsWithoutNotify(inputs);
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();

@@ -67,8 +67,15 @@ export type TugLabelEmphasis = "calm" | "normal" | "proposal" | "shout" | "stron
 
 /** TugLabel props. */
 export interface TugLabelProps extends Omit<React.ComponentPropsWithoutRef<"label">, "children"> {
-  /** Text content of the label (string only — required for truncation). */
-  children: string;
+  /**
+   * Label content. A plain string is the common case and the only one
+   * the measured `start` / `middle` ellipsis modes can truncate.
+   *
+   * A node is accepted for inline-decorated text — a title carrying
+   * filter-match `<mark>` spans — which clamps through CSS
+   * (`ellipsis="end"`, the default) and copies as its flattened text.
+   */
+  children: React.ReactNode;
   /**
    * Size variant.
    * @selector .tug-label-size-xs | .tug-label-size-sm | .tug-label-size-md | .tug-label-size-lg
@@ -154,6 +161,23 @@ function truncateMiddle(text: string, maxLen: number): string {
   return text.slice(0, half) + "…" + text.slice(text.length - endLen);
 }
 
+/**
+ * Flatten a label's content to plain text — what a copy gesture yields and
+ * what the measured truncator counts. Walks strings, numbers, arrays, and
+ * element children; anything else (a component, a portal) contributes
+ * nothing.
+ */
+function labelText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(labelText).join("");
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: React.ReactNode };
+    return labelText(props.children);
+  }
+  return "";
+}
+
 // ---- TugLabel ----
 
 export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
@@ -180,11 +204,15 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const textRef = useRef<HTMLSpanElement>(null);
     const labelRef = useRef<HTMLLabelElement | null>(null);
 
+    // The measured ellipsis modes rewrite `textContent`, so they only apply
+    // to string content; a node clamps through CSS instead.
+    const text = typeof children === "string" ? children : null;
+
     // Labels are copyable — right-click → Copy copies the label's text
     // content. This is intrinsic to the component, not opt-in.
     const copyable = useCopyableText({
       ref: labelRef as React.MutableRefObject<HTMLElement | null>,
-      getText: () => children,
+      getText: () => text ?? labelText(children),
       disabled: false,
       forwardedRef: ref as React.Ref<HTMLElement>,
     });
@@ -195,14 +223,15 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
     const needsJSTruncation =
       maxLines !== undefined &&
       maxLines > 0 &&
+      text !== null &&
       (ellipsis === "start" || ellipsis === "middle");
 
     const computeTruncation = useCallback(() => {
       const el = textRef.current;
-      if (!el || !needsJSTruncation || !maxLines) return;
+      if (!el || !needsJSTruncation || !maxLines || text === null) return;
 
       // Reset to full text to measure
-      el.textContent = children;
+      el.textContent = text;
 
       // Check if text actually overflows
       const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 16;
@@ -217,12 +246,12 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
       // Binary search for the right truncation length
       const truncator = ellipsis === "start" ? truncateStart : truncateMiddle;
       let lo = 1;
-      let hi = children.length;
+      let hi = text.length;
       let bestLen = 1;
 
       while (lo <= hi) {
         const mid = Math.floor((lo + hi) / 2);
-        el.textContent = truncator(children, mid);
+        el.textContent = truncator(text, mid);
 
         if (el.scrollHeight <= maxHeight + 1) {
           bestLen = mid;
@@ -232,10 +261,10 @@ export const TugLabel = React.forwardRef<HTMLLabelElement, TugLabelProps>(
         }
       }
 
-      const result = truncator(children, bestLen);
+      const result = truncator(text, bestLen);
       el.textContent = result;
       setTruncatedText(result);
-    }, [children, maxLines, ellipsis, needsJSTruncation]);
+    }, [text, maxLines, ellipsis, needsJSTruncation]);
 
     useLayoutEffect(() => {
       computeTruncation();

@@ -67,6 +67,17 @@
  * picker's recents and the gallery card are ASCII paths. A future
  * enhancement (a per-char fold-aware walker) lands when a consumer
  * has Unicode-expansion-bearing data.
+ *
+ * ## List filtering
+ *
+ * {@link filterMatchScore} and {@link filterHighlightRanges} are the
+ * entry points for the `TugFilterField` list-filter surfaces (the
+ * session picker, the `/resume` overlay, the Lens sections). They sit
+ * on top of `scoreMatch`, adding two things a long list needs that a
+ * ≤50-item popup does not: a compactness rule that rejects a match too
+ * scattered to mean anything, and a per-row score the list orders by
+ * so the strongest matches lead. With no query every row scores the
+ * same, so the list keeps its native order.
  */
 
 // ---------------------------------------------------------------------------
@@ -381,4 +392,191 @@ export function scoreMatch(query: string, target: string): MatchResult | null {
   }
 
   return subsequenceMatch(q, t, target, boundaries);
+}
+
+// ---------------------------------------------------------------------------
+// List filtering — membership + highlight ranges
+// ---------------------------------------------------------------------------
+
+/** Split a filter query into its terms; an all-whitespace query has none. */
+function filterTerms(query: string): string[] {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+  return trimmed.split(/\s+/);
+}
+
+/**
+ * Sort ranges by start and coalesce every overlapping or adjacent pair, so a
+ * caller can walk the result once and never paint two abutting `<mark>`s.
+ */
+function mergeRanges(
+  ranges: ReadonlyArray<readonly [number, number]>,
+): ReadonlyArray<readonly [number, number]> {
+  if (ranges.length <= 1) return ranges;
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const out: Array<readonly [number, number]> = [];
+  let [start, end] = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const [s, e] = sorted[i]!;
+    if (s <= end) {
+      if (e > end) end = e;
+      continue;
+    }
+    out.push([start, end]);
+    start = s;
+    end = e;
+  }
+  out.push([start, end]);
+  return out;
+}
+
+/**
+ * How far a subsequence match may spread before it stops meaning anything.
+ *
+ * `scoreMatch`'s bottom tier accepts any in-order character run, which is the
+ * right answer for a ≤50-item command popup but noise over a list of long
+ * strings: `scarp` "matches" a hundred-character prompt through five scattered
+ * letters, so a query that should trim 900 session rows to a handful trims
+ * nothing. A qualifying match must be COMPACT — the span from its first matched
+ * character to its last is at most this multiple of the characters actually
+ * matched.
+ *
+ * At 3 the useful acronym-ish matches survive (`sesldg` spans 12 over 6 matched
+ * characters of `session-ledger-store`; `pm` spans 4 over 2 of `permissions`)
+ * while the scattered ones do not (`scarp` spans 25 over 5). Contiguous matches
+ * — exact, prefix, word-prefix, substring — have span equal to their length, so
+ * they always qualify and this rule never touches them.
+ */
+const MAX_SUBSEQUENCE_SPREAD = 3;
+
+/**
+ * Whether a match is compact enough to mean something (see
+ * {@link MAX_SUBSEQUENCE_SPREAD}).
+ */
+function isCompactMatch(result: MatchResult): boolean {
+  const ranges = result.matches;
+  if (ranges.length <= 1) return true;
+  const span = ranges[ranges.length - 1]![1] - ranges[0]![0];
+  let matched = 0;
+  for (const [start, end] of ranges) matched += end - start;
+  return span <= matched * MAX_SUBSEQUENCE_SPREAD;
+}
+
+/**
+ * Score `term` against `text` for list filtering, or `null` when it does not
+ * qualify. Thin wrapper over {@link scoreMatch} that additionally rejects a
+ * match too scattered to be meaningful.
+ */
+function filterTermScore(term: string, text: string): number | null {
+  const result = scoreMatch(term, text);
+  if (result === null || !isCompactMatch(result)) return null;
+  return result.score ?? 0;
+}
+
+/**
+ * A row's match quality for `query`, or `null` when the row does not pass.
+ *
+ * EVERY whitespace-separated term must qualify against at least ONE of
+ * `fields` — multi-term AND across the union of fields is the trimming
+ * semantic the filter fields want, so `tug ledger` keeps the rows that name
+ * both, wherever each term happens to live. The row's score is the sum of its
+ * terms' best field scores, which a list sorts by so the strongest matches
+ * lead. Null/undefined/empty fields are skipped.
+ *
+ * An empty or all-whitespace query returns `0` — every row passes, all tied, so
+ * the list keeps its native order.
+ *
+ * @example
+ * ```ts
+ * filterMatchScore("", ["anything"])                     // → 0 (no filter)
+ * filterMatchScore("sesldg", ["session-ledger-store"])   // → a subsequence score
+ * filterMatchScore("tug ledger", ["tugtool", "ledger"])  // → the summed score
+ * filterMatchScore("tug ledger", ["tugtool"])            // → null
+ * ```
+ */
+export function filterMatchScore(
+  query: string,
+  fields: readonly (string | null | undefined)[],
+): number | null {
+  const terms = filterTerms(query);
+  if (terms.length === 0) return 0;
+  let total = 0;
+  for (const term of terms) {
+    let best: number | null = null;
+    for (const field of fields) {
+      if (field === null || field === undefined || field.length === 0) continue;
+      const score = filterTermScore(term, field);
+      if (score !== null && (best === null || score > best)) best = score;
+    }
+    if (best === null) return null;
+    total += best;
+  }
+  return total;
+}
+
+/**
+ * Whether a row passes a list filter — {@link filterMatchScore} without the
+ * score, for a consumer that only needs membership.
+ */
+export function filterQueryMatch(
+  query: string,
+  fields: readonly (string | null | undefined)[],
+): boolean {
+  return filterMatchScore(query, fields) !== null;
+}
+
+/**
+ * Narrow `items` to the ones matching `query`, best match first — the one
+ * projection every filtered list runs, so they all trim and rank alike.
+ *
+ * `fieldsOf` supplies the strings a row is matched on; pass the strings the row
+ * DISPLAYS wherever they differ from the source, so what the user reads is what
+ * the filter judged. An empty query returns the input untouched (same array
+ * reference), so an unfiltered list keeps its native order exactly — the
+ * drag-arranged and persisted orders are undisturbed until the user types.
+ *
+ * The sort is stable: rows of equal quality stay in their native order, so
+ * ranking only ever lifts a better match above a worse one.
+ */
+export function filterAndRank<T>(
+  items: readonly T[],
+  query: string,
+  fieldsOf: (item: T) => readonly (string | null | undefined)[],
+): readonly T[] {
+  if (filterTerms(query).length === 0) return items;
+  const scored: Array<{ item: T; score: number; index: number }> = [];
+  items.forEach((item, index) => {
+    const score = filterMatchScore(query, fieldsOf(item));
+    if (score !== null) scored.push({ item, score, index });
+  });
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  return scored.map((entry) => entry.item);
+}
+
+/**
+ * The merged highlight ranges `query` paints over `text` — the union of every
+ * QUALIFYING term's ranges (same rule {@link filterMatchScore} keeps rows by,
+ * so a row never paints marks from a match too scattered to have kept it),
+ * sorted ascending with overlapping and adjacent ranges coalesced.
+ *
+ * Empty when the query is empty or no term matches this particular string. A
+ * row that passed on some *other* field legitimately highlights nothing here.
+ *
+ * Ranges are UTF-16 offsets into `text`, so callers MUST pass the exact string
+ * they render — a truncated or whitespace-collapsed display string, never the
+ * raw source field.
+ */
+export function filterHighlightRanges(
+  query: string,
+  text: string,
+): ReadonlyArray<readonly [number, number]> {
+  const terms = filterTerms(query);
+  if (terms.length === 0 || text.length === 0) return [];
+  const collected: Array<readonly [number, number]> = [];
+  for (const term of terms) {
+    const result = scoreMatch(term, text);
+    if (result === null || !isCompactMatch(result)) continue;
+    for (const range of result.matches) collected.push(range);
+  }
+  return mergeRanges(collected);
 }

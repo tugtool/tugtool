@@ -29,7 +29,6 @@
  * |--------------------------------------|--------------------------------------|---------|--------------------------------------------------|
  * | --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg         | content | .tug-list-row[data-variant="pill"] (color)       |
  * | --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg         | control | .tug-list-row[data-variant="pill"] (border)      |
- * | --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg         | content | .tug-list-row-subtitle (color)                   |
  * | --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg        | content | .tug-list-row[data-variant="pill"]:hover (color) |
  * | --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg        | control | .tug-list-row[data-variant="pill"]:hover (border)|
  * | --tugx-list-row-selected-text        | --tugx-list-row-selected-bg          | content | .tug-list-row[data-selected="true"] (color)      |
@@ -50,7 +49,6 @@
 /* @tug-pairings {
   --tugx-list-row-text                 | --tugx-list-row-pill-rest-bg      | content
   --tugx-list-row-pill-rest-border     | --tugx-list-row-pill-rest-bg      | control
-  --tugx-list-row-subtitle-color       | --tugx-list-row-pill-rest-bg      | content
   --tugx-list-row-text                 | --tugx-list-row-pill-hover-bg     | content
   --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg     | control
   --tugx-list-row-selected-text        | --tugx-list-row-selected-bg       | content
@@ -98,14 +96,11 @@ body {
   --tugx-list-row-trailing-gap:      var(--tug-space-xs);
   --tugx-list-row-pill-radius:       var(--tug-radius-md);
 
-  /* Typography — title + string subtitle sizes are set via the
-     `TugLabel` `size` prop; only the non-string subtitle fallback
-     reads this token. */
-  --tugx-list-row-subtitle-size:     var(--tug-font-size-xs);
+  /* Typography — title and subtitle sizes are set via the `TugLabel`
+     `size` prop, and the subtitle's muted color via its `emphasis`. */
 
   /* Text */
   --tugx-list-row-text:              var(--tug7-element-global-text-normal-default-rest);
-  --tugx-list-row-subtitle-color:    var(--tug7-element-global-text-normal-muted-rest);
 
   /* flush variant — transparent rest; NEUTRAL hover graze. Hover is a mouse
      affordance, so it is a neutral wash (the menu-hover idiom), deliberately NOT
@@ -358,17 +353,11 @@ body {
   color: inherit;
 }
 
-/* Fallback styling for a non-string `subtitle` node (the string path
-   renders through `TugLabel emphasis="calm"`, which carries the muted
-   color and size itself). */
-/* @tug-renders-on: --tugx-list-row-pill-rest-bg */
-.tug-list-row-subtitle {
-  font-size: var(--tugx-list-row-subtitle-size);
-  color: var(--tugx-list-row-subtitle-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* The subtitle is a `TugLabel size="sm" emphasis="calm"` whatever the
+   caller passed — string or node — so its size, muted color, and
+   `maxLines` clamp all come from the label. The class is a naming hook
+   for consumers that need to bend one list's subtitle (see the skills
+   sheet); it declares no typography of its own. */
 
 /* A selected row recolors its ENTIRE content column — title, subtitle,
    and any meta — to the selected-text color, so every line stays legible
@@ -378,8 +367,7 @@ body {
    two-class + attribute selector outranks `TugLabel`'s own
    `.tug-label-emphasis-calm` color rule. */
 .tug-list-row[data-selected="true"] .tug-list-row-content,
-.tug-list-row[data-selected="true"] .tug-list-row-content .tug-label,
-.tug-list-row[data-selected="true"] .tug-list-row-subtitle {
+.tug-list-row[data-selected="true"] .tug-list-row-content .tug-label {
   color: var(--tugx-list-row-selected-text);
 }
 

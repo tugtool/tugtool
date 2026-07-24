@@ -93,6 +93,7 @@ describe("LensTextFilesDataSource", () => {
     const ds = new LensTextFilesDataSource({
       deck: deck([["lens-tf-uniq", "text"]]),
       registryVersion: 0,
+      filterQuery: "",
     });
     expect(ds.numberOfItems()).toBe(1);
     expect(ds.kindForIndex(0)).toBe("text-open");
@@ -103,7 +104,35 @@ describe("LensTextFilesDataSource", () => {
     ds.setInputsWithoutNotify({
       deck: deck([["lens-tf-uniq", "text"]]),
       registryVersion: 1,
+      filterQuery: "",
     });
     expect(ds.getVersion()).not.toBe(v0); // new references → recompute
+  });
+
+  it("narrows to the rows whose displayed name matches", () => {
+    const base = {
+      deck: deck([
+        ["lens-tf-uniq", "text"],
+        ["lens-tf-other", "text"],
+      ]),
+      registryVersion: 0,
+    };
+    const all = new LensTextFilesDataSource({ ...base, filterQuery: "" });
+    expect(all.numberOfItems()).toBe(2);
+
+    // Titles fall back to the card title (`"c1"` / `"c2"` from the fixture) for
+    // an unbound Text card, so filter on one of those.
+    const first = all.rowAt(0).title;
+    const filtered = new LensTextFilesDataSource({
+      ...base,
+      filterQuery: first,
+    });
+    expect(filtered.numberOfItems()).toBe(1);
+    expect(filtered.rowAt(0).title).toBe(first);
+    expect(filtered.unfilteredCount()).toBe(2);
+
+    const none = new LensTextFilesDataSource({ ...base, filterQuery: "qqzzxx" });
+    expect(none.numberOfItems()).toBe(0);
+    expect(none.unfilteredCount()).toBe(2);
   });
 });

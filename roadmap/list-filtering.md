@@ -29,7 +29,7 @@ The codebase already contains three partial implementations of this idea, none o
 
 - Build the pure matching layer first (`text-match.ts` extensions), then the component (`TugFilterField` + delegate), then adopt surface by surface: gallery → sessions data source (`/resume`) → picker → Lens.
 - Filtering is a **data-source input**, applied inside each data source's `recompute()` — the same shape as today's `tagFilter` — not a wrapper layered on top ([P02]). Cell renderers, `rowAt`, `indexForId`, selection, and cursor code all keep working in one (filtered) coordinate space.
-- Matching is membership-only: `scoreMatch`'s score decides in/out and is discarded; every list keeps its native order ([P03]).
+- Matching is fuzzy and **ranked**: `scoreMatch`'s score decides in/out AND the order while a query is active; native order returns when it clears ([P03], revised after the first build — see [P13]).
 - Highlights ride the row **title** through a widened `TugListRow.title` prop and a shared highlight helper, reusing the one find-paint token family ([P04]).
 - The two known risks — selection behavior when the selected row is filtered away, and a Lens section filtered to zero rows becoming keyboard-unreachable — are settled by inspection in [Deep Dives](#deep-dives) and closed by specific tasks ([R01], [R02]).
 - Query state is transient everywhere: React state in the picker and `/resume`, a module store for the Lens (band and body are sibling components). Never persisted to tugbank.
@@ -303,6 +303,20 @@ returning the plain string when the query is empty or nothing matches (zero-cost
 
 **Implications:** `firstResumeIndex` returns `undefined` when the filtered projection has no resume rows (a query matching nothing), which restores the fall-to-first-cursorable behavior — landing on "New session", correctly.
 
+#### [P13] Ranked order + a compactness gate (DECIDED — supersedes [P03]'s membership-only half) {#p13-ranked-order}
+
+**Decision:** Reverses the native-order half of [P03] after the first build showed it wrong on real data. Two changes, one root cause:
+
+1. **A match must be compact.** `scoreMatch`'s subsequence tier accepts any in-order character run. Over the picker's rows — each carrying a whole `last_user_prompt` — five scattered letters "match" almost any sentence, so a query that should cut ~900 rows to a handful cut nothing (the Lens lists narrowed visibly only because their fields are short). `filterMatchScore` now rejects a match whose span exceeds `MAX_SUBSEQUENCE_SPREAD ×` the characters it matched. Contiguous matches (exact/prefix/word-prefix/substring) have span == length, so the rule never touches them; the acronym cases that motivated fuzzy matching in the first place (`sesldg` → `session-ledger-store`, `pm` → `permissions`) survive.
+2. **Filtered rows rank by score.** `filterAndRank` is the one projection every list runs: it drops non-matches and stable-sorts the rest best-first. An empty query returns the input array *by reference*, so an unfiltered list keeps its native order exactly.
+
+**Rationale:** the original decision (user, 2026-07-24) was to keep native order so drag-arranged Snippets and persisted-order Lens Sessions would not scramble while typing. That concern is answered without giving up ranking: reorder gestures are already disabled while a filter is active ([P07]), and the stored order is never rewritten — clearing the query restores it untouched. Meanwhile the cost of discarding the score was a filter that could not do its job on the largest list it was built for.
+
+**Implications:**
+- The picker pins `session-new` at index 0 unranked — it is a fixed affordance, not a result. `firstResumeIndex` therefore lands the cursor on the best match ([P12] still holds).
+- An edited snippet row is exempt from the filter and unranked, so it leads the list rather than being reshuffled by each keystroke.
+- `filterHighlightRanges` applies the same compactness gate, so a row never paints marks from a match too scattered to have kept it.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -453,15 +467,15 @@ The lens sessions data source reads `sessionNameStore.getName(id)` / `sessionTag
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pure matchers in text-match | pending | — |
-| #step-2 | TugFilterField + delegate + highlight renderer + TugListRow title/subtitle repairs | pending | — |
-| #step-3 | Gallery card converts to TugFilterField | pending | — |
-| #step-4 | SessionsDataSource: fuzzy filterQuery + /resume adoption | pending | — |
-| #step-5 | Picker adoption + app-test | pending | — |
-| #step-6 | Lens plumbing: registry flag, band field, filter store | pending | — |
-| #step-7 | Lens data sources filter + snippets safety fixes | pending | — |
-| #step-8 | Lens app-test | pending | — |
-| #step-9 | Integration checkpoint + docs | pending | — |
+| #step-1 | Pure matchers in text-match | done | 327c27d18 |
+| #step-2 | TugFilterField + delegate + highlight renderer + TugListRow title/subtitle repairs | done | 16fe6fcce |
+| #step-3 | Gallery card converts to TugFilterField | done | 3c296f577 |
+| #step-4 | SessionsDataSource: fuzzy filterQuery + /resume adoption | done | 6c1a02822 |
+| #step-5 | Picker adoption + app-test | done | da571a1b2 |
+| #step-6 | Lens plumbing: registry flag, band field, filter store | done | 5e8024dec |
+| #step-7 | Lens data sources filter + snippets safety fixes | done | 56e3d4e9c |
+| #step-8 | Lens app-test | done | 34201aca3 |
+| #step-9 | Integration checkpoint + docs | done | 3447ee3b4 |
 
 #### Step 1: Pure matchers in text-match {#step-1}
 

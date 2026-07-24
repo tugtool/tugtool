@@ -23,6 +23,7 @@
 class SessionTagStore {
   private tags = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
+  private version = 0;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -30,6 +31,14 @@ class SessionTagStore {
       this.listeners.delete(listener);
     };
   };
+
+  /**
+   * A monotonic token that bumps on every change — the whole-store
+   * `useSyncExternalStore` snapshot, for a consumer that derives something from
+   * MANY tags at once (the Lens Sessions list filters on its rows' labels) and
+   * so cannot subscribe by a single id.
+   */
+  getVersion = (): number => this.version;
 
   /** The tag for `tugSessionId`, or `null` when untagged. */
   getTag = (tugSessionId: string): string | null =>
@@ -52,6 +61,7 @@ class SessionTagStore {
       if (current === trimmed) return;
       this.tags.set(tugSessionId, trimmed);
     }
+    this.version += 1;
     for (const listener of this.listeners) listener();
   }
 

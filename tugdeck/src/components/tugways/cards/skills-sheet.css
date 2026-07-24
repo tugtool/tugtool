@@ -62,17 +62,12 @@
   height: auto;
 }
 
-/* A skill row's description is the full SKILL.md summary — let the subtitle
-   wrap to as many lines as it needs rather than truncating. Top-align the
-   row's leading glyph / title / trailing meta so they sit on the first line
-   when the description spans several. */
+/* A skill row's description is the full SKILL.md summary, wrapping to as
+   many lines as it needs (`subtitleMaxLines={0}`). Top-align the row's
+   leading glyph / title / trailing meta so they sit on the first line when
+   the description spans several. */
 .skills-sheet-list .tug-list-row {
   align-items: flex-start;
-}
-.skills-sheet-list .tug-list-row-subtitle {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
 }
 
 /* Leading lock glyph — fixed-width holder so titles align whether or not a

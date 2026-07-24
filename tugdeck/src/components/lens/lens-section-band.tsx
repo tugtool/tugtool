@@ -14,8 +14,12 @@
  * section's share of the height (the sizing lives in `lens-section-band.css`
  * / `lens-content.css`). No sticky pinning, no measured pin offsets.
  *
- * Clicking the band (anywhere except its buttons / the grip) focuses the
- * section's list: it expands a collapsed section and lands the keyboard key
+ * A `filterable` section carries a `TugFilterField` in its band's actions
+ * cluster while expanded (`lens-filter-store` is the seam to the body's list —
+ * see that module's docstring for why a store and not a delegate).
+ *
+ * Clicking the band (anywhere except its buttons / the grip / the filter field)
+ * focuses the section's list: it expands a collapsed section and lands the key
  * view on the section's focus group via a keyboard `place()`, so the band is
  * a one-click route to keyboard navigation of its items.
  *
@@ -37,7 +41,9 @@ import { lensStore } from "@/lib/lens-store/lens-store";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockGrip } from "@/components/tugways/body-kinds/affordances/block-grip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import { useFocusManager } from "@/components/tugways/use-focusable";
+import { getFilterQuery, setFilterQuery } from "./lens-filter-store";
 import { sectionFocusGroup } from "./lens-section-registry";
 import type {
   LensSectionDefinition,
@@ -84,7 +90,14 @@ export function LensSection({
   const onBandClick = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>): void => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("button, .block-grip") !== null) return;
+      // The filter field is part of the band's chrome, not its inert surface —
+      // a click into it must land the caret there, not yank focus to the list.
+      if (
+        target?.closest('button, .block-grip, [data-slot="tug-filter-field"]') !==
+        null
+      ) {
+        return;
+      }
       if (collapsed) lensStore.setCollapsed(def.kind, false);
       focusManager?.place(
         host.lensCardId,
@@ -93,6 +106,26 @@ export function LensSection({
       );
     },
     [collapsed, def.kind, focusManager, host.lensCardId],
+  );
+
+  // The filter field's contract: publish each keystroke to the store the body
+  // reads, and hand the key view down to the list on ArrowDown — the same
+  // placement a band click makes. Escape is the field's own while it holds a
+  // query; an empty field's Escape falls through to the Lens's own ladder.
+  const filterDelegate = React.useMemo(
+    () => ({
+      filterFieldDidChangeQuery: (query: string) => {
+        setFilterQuery(def.kind, query);
+      },
+      filterFieldDidRequestAdvance: () => {
+        focusManager?.place(
+          host.lensCardId,
+          { kind: "focus-key", focusKey: `${sectionFocusGroup(def.kind)}:0` },
+          { modality: "keyboard" },
+        );
+      },
+    }),
+    [def.kind, focusManager, host.lensCardId],
   );
 
   return (
@@ -135,6 +168,26 @@ export function LensSection({
         }
         actions={
           <>
+            {/* The filter field leads the actions cluster while the section is
+                expanded. It registers at `focusOrder: -1` with a `skip` policy:
+                click-reachable always, out of the ordinary Tab walk, and never
+                the ⌘L seed target (which addresses `<group>:0`, the list).
+                Registration is deliberately NOT gated on the section having
+                content — filtering to zero must never strand the field that is
+                the only way back ([R02]). The field remounts per expand seeded
+                from the store, so the query survives a collapse. */}
+            {collapsed || def.filterable !== true ? null : (
+              <TugFilterField
+                className="lens-section-filter"
+                delegate={filterDelegate}
+                placeholder={`Filter ${def.title}`}
+                defaultValue={getFilterQuery(def.kind)}
+                data-testid="lens-section-filter"
+                focusGroup={host.focusGroup}
+                focusOrder={-1}
+                focusPolicy="skip"
+              />
+            )}
             {/* Section-contributed controls sit LEFT of the chevron and,
                 like the tool header's body-kind portal, show only while the
                 section is expanded — the controls act on the visible body.

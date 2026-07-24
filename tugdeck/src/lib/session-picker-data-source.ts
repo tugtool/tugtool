@@ -12,6 +12,13 @@
  * field's own combo-box dropdown (see `session-card.tsx`), so this module owns
  * just the one data source now.
  *
+ * Filtering is an INPUT, applied inside `recompute()`, so `rowAt` /
+ * `enabledForIndex` / selection / cursor all live in one filtered coordinate
+ * space — no index translation for the typed cell renderers. The `TugFilterField`
+ * above the list reports the query; both filtered surfaces (the full picker and
+ * the `/resume` overlay) share this one data source and differ only in whether
+ * an active filter also hides the "New session" row.
+ *
  * The data source exposes the standard `TugListViewDataSource` surface plus a
  * typed `rowAt(i)` accessor for cells, driven by a hook that mints a stable
  * instance per hook lifetime, absorbs identity-stable inputs as no-ops,
@@ -33,8 +40,9 @@
 import { useLayoutEffect, useRef } from "react";
 
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
+import { filterAndRank } from "./text-match";
 import type { SessionRow } from "../protocol";
-import { matchesTagQuery } from "./session-tag";
+import { deriveStableTag } from "./session-tag";
 import type { WorkspaceSnapshot } from "./session-ledger-store";
 
 // ---------------------------------------------------------------------------
@@ -55,17 +63,39 @@ export type SessionsRow =
 // ---------------------------------------------------------------------------
 
 interface SessionsInputs {
-  readonly query: string;
+  /** The typed project path. Empty → zero rows; also gates ready/pending. */
+  readonly projectDir: string;
   readonly ledger: WorkspaceSnapshot;
   /**
-   * Optional tag/name/prompt filter (the `/resume` overlay's search field).
-   * Empty string → no filtering (the full-card project picker's behavior). When
-   * non-empty, only `session-resume` rows matching {@link matchesTagQuery} are
-   * shown and `session-new` is dropped, so a non-matching query yields an empty
-   * list that fires no spawn. Optional — absent / empty is the full-card
-   * project picker's unfiltered behavior.
+   * The filter field's query. Empty / whitespace → no filtering. When
+   * non-empty, a `session-resume` row survives only when every term matches
+   * one of its name, tag (minted or derived), last prompt, or id.
    */
-  readonly tagFilter?: string;
+  readonly filterQuery?: string;
+  /**
+   * Whether an active filter also drops the `session-new` row. The `/resume`
+   * overlay passes `true`: a non-matching query yields a truly empty list that
+   * fires no spawn. The full picker passes `false` — its Open falls to a new
+   * session with or without the row, so keeping it is the honest rendering of
+   * what Open will do, and it guarantees the filtered list is never empty.
+   */
+  readonly dropNewRowWhenFiltering?: boolean;
+}
+
+/**
+ * The fields a filter term may match on a session row: its name, its tag
+ * (minted, or the stable tag derived from the id for an untagged session — the
+ * name such a row is displayed under), its last prompt, and its id.
+ */
+function filterFieldsForRow(row: SessionRow): (string | null | undefined)[] {
+  const tagged = (row.tag ?? "").trim().length > 0;
+  return [
+    row.name,
+    row.tag,
+    tagged ? null : deriveStableTag(row.session_id),
+    row.last_user_prompt,
+    row.session_id,
+  ];
 }
 
 /**
@@ -165,18 +195,44 @@ export class SessionsDataSource implements TugListViewDataSource {
     return n;
   }
 
-  /** Whether `query.length > 0` AND `ledger.status === "ready"`. */
+  /** Whether `projectDir.length > 0` AND `ledger.status === "ready"`. */
   isReady(): boolean {
     return (
-      this.inputs.query.length > 0 && this.inputs.ledger.status === "ready"
+      this.inputs.projectDir.length > 0 && this.inputs.ledger.status === "ready"
     );
   }
 
-  /** Whether `query.length > 0` AND `ledger.status === "pending"`. */
+  /** Whether `projectDir.length > 0` AND `ledger.status === "pending"`. */
   isPending(): boolean {
     return (
-      this.inputs.query.length > 0 && this.inputs.ledger.status === "pending"
+      this.inputs.projectDir.length > 0 &&
+      this.inputs.ledger.status === "pending"
     );
+  }
+
+  /**
+   * Whether `sessionId` is one of the rows currently PROJECTED — i.e. it
+   * survives the active filter. The picker's selection-invalidation effect
+   * asks this rather than scanning the unfiltered ledger, so a selection that
+   * the filter hid snaps back to a visible row instead of staying selected
+   * off-screen.
+   */
+  hasVisibleSession(sessionId: string): boolean {
+    return this.rows.some(
+      (row) => row.kind === "session-resume" && row.row.session_id === sessionId,
+    );
+  }
+
+  /**
+   * Index of the first `session-resume` row in the projection, or `undefined`
+   * when there is none. The picker seeds its cursor here while filtering, so
+   * arrowing out of the filter field lands on the first match rather than on
+   * "New session" (which a live-committing single-select list would select
+   * outright, discarding the user's prior pick).
+   */
+  firstResumeIndex(): number | undefined {
+    const index = this.rows.findIndex((row) => row.kind === "session-resume");
+    return index < 0 ? undefined : index;
   }
 
   /**
@@ -191,9 +247,10 @@ export class SessionsDataSource implements TugListViewDataSource {
 
   setInputsWithoutNotify(next: SessionsInputs): boolean {
     if (
-      this.inputs.query === next.query &&
+      this.inputs.projectDir === next.projectDir &&
       this.inputs.ledger === next.ledger &&
-      this.inputs.tagFilter === next.tagFilter
+      this.inputs.filterQuery === next.filterQuery &&
+      this.inputs.dropNewRowWhenFiltering === next.dropNewRowWhenFiltering
     ) {
       return false;
     }
@@ -207,35 +264,35 @@ export class SessionsDataSource implements TugListViewDataSource {
   }
 
   private recompute(): void {
-    const { query, ledger } = this.inputs;
-    const tagFilter = this.inputs.tagFilter ?? "";
-    const filtering = tagFilter.trim().length > 0;
+    const { projectDir, ledger } = this.inputs;
+    const filterQuery = this.inputs.filterQuery ?? "";
+    const filtering = filterQuery.trim().length > 0;
+    // The "New session" row is a spawn affordance, not a searchable session.
+    // Whether an active filter hides it is the consumer's policy.
+    const dropNewRow = filtering && this.inputs.dropNewRowWhenFiltering === true;
     const next: SessionsRow[] = [];
-    if (query.length > 0) {
+    if (projectDir.length > 0) {
       if (ledger.status === "ready") {
-        // The "New session" row is a spawn affordance, not a searchable
-        // session; hide it while a filter is active so a non-match is truly
-        // empty and fires nothing.
-        if (!filtering) next.push({ kind: "session-new" });
-        for (const row of ledger.rows) {
-          if (filtering && !matchesTagQuery(row, tagFilter)) continue;
-          // Visibility is decoupled from the (canonically strict) turn
-          // count so a real session never vanishes because its count is
-          // low ([P09]/[R06]). A row is shown when it has resumable
-          // content by ANY signal: on-disk JSONL bytes (`file_size > 0`,
-          // the count-independent content signal for scanned external
-          // rows — `null` for tug/live rows and `session_updated`
-          // pushes), a canonical turn (`turn_count > 0`, the live truth
-          // for tug rows), or a currently-live process. Only a truly
-          // empty row — no bytes, no turn, not live (an opened-and-closed
-          // card with nothing in it) — is hidden.
-          if (
-            (row.file_size ?? 0) <= 0 &&
-            row.turn_count === 0 &&
-            row.state !== "live"
-          ) {
-            continue;
-          }
+        if (!dropNewRow) next.push({ kind: "session-new" });
+        // Visibility is decoupled from the (canonically strict) turn
+        // count so a real session never vanishes because its count is
+        // low ([P09]/[R06]). A row is shown when it has resumable
+        // content by ANY signal: on-disk JSONL bytes (`file_size > 0`,
+        // the count-independent content signal for scanned external
+        // rows — `null` for tug/live rows and `session_updated`
+        // pushes), a canonical turn (`turn_count > 0`, the live truth
+        // for tug rows), or a currently-live process. Only a truly
+        // empty row — no bytes, no turn, not live (an opened-and-closed
+        // card with nothing in it) — is hidden.
+        const withContent = ledger.rows.filter(
+          (row) =>
+            (row.file_size ?? 0) > 0 || row.turn_count > 0 || row.state === "live",
+        );
+        // The filter ranks as it trims, so the best matches lead; with no
+        // query the ledger's newest-first order is returned untouched. The
+        // "New session" row is never ranked — it stays at the top as the
+        // list's fixed affordance.
+        for (const row of filterAndRank(withContent, filterQuery, filterFieldsForRow)) {
           next.push({ kind: "session-resume", row });
         }
       } else if (ledger.status === "pending") {
@@ -251,19 +308,27 @@ export class SessionsDataSource implements TugListViewDataSource {
 
 /**
  * Hook — mint a stable `SessionsDataSource` per hook lifetime
- * and feed it the latest `(query, ledger)` snapshot each render.
+ * and feed it the latest `(projectDir, ledger, filterQuery)` snapshot each
+ * render.
  */
 export function useSessionsDataSource(
-  query: string,
+  projectDir: string,
   ledger: WorkspaceSnapshot,
-  tagFilter = "",
+  filterQuery = "",
+  dropNewRowWhenFiltering = false,
 ): SessionsDataSource {
   const ref = useRef<SessionsDataSource | null>(null);
+  const inputs = {
+    projectDir,
+    ledger,
+    filterQuery,
+    dropNewRowWhenFiltering,
+  };
   if (ref.current === null) {
-    ref.current = new SessionsDataSource({ query, ledger, tagFilter });
+    ref.current = new SessionsDataSource(inputs);
   }
   const ds = ref.current;
-  const didChange = ds.setInputsWithoutNotify({ query, ledger, tagFilter });
+  const didChange = ds.setInputsWithoutNotify(inputs);
 
   useLayoutEffect(() => {
     if (didChange) ds.notifyAll();
