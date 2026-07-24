@@ -27,6 +27,14 @@
   padding: 0 var(--tugx-sheet-space-b) var(--tugx-sheet-space-b);
 }
 
+/* The metadata toggles hold the footer's leading edge while Done keeps the
+   trailing one: the actions row is `flex-end`, so the group claims the slack
+   itself rather than the row changing its justification for one child. */
+.session-history-view-footer [data-testid="session-history-meta-options"] {
+  margin-inline-end: auto;
+  align-self: center;
+}
+
 /* The list holds the shade's key view (a non-button, so the Done button wears
    the persistent default ring). It is focusable but not an input — suppress the
    raw focus outline; the visible "Return's home" cue is Done's ring. */

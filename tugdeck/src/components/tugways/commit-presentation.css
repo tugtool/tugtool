@@ -22,9 +22,9 @@
      the lines into one paragraph, not so much that the text crowds. */
   --tugx-commit-wrap-leading: 1.45;
 
-  /* Separation BETWEEN entries — the compact mono list row's own block padding
-     (1px top + 1px bottom), so the list keeps the density it has today. */
-  --tugx-commit-entry-gap: 2px;
+  /* Separation BETWEEN entries is the compact mono list row's own block padding
+     (1px top + 1px bottom) — the list keeps the density it has today, which is
+     what makes the tighter continuation leading above read as one entry. */
 
   /* The hanging indent for a wrapped subject: the content column is mono, so
      the 8-char sha + the 3-char ` : ` delimiter measure exactly 11ch. */
@@ -46,39 +46,11 @@
   /* The expanded message body. */
   --tugx-commit-message-size: var(--tug-font-size-xs);
   --tugx-commit-message-leading: 1.45;
-
-  /* The gutter between the subject column and the stamp column. */
-  --tugx-commit-column-gap: var(--tug-space-md);
 }
 
 /* ---- The list ---- */
 
-.tugx-commit-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tugx-commit-entry-gap);
-  min-width: 0;
-}
-
 /* ---- One entry ---- */
-
-.tugx-commit-entry {
-  min-width: 0;
-}
-
-/* The collapsed line: subject grows, the metadata cell and the controls hold
-   their intrinsic width on the trailing edge. A grid (not flex) so the metadata
-   column measures identically on every row and the stamps stack into a true
-   column. The inline padding matches the compact list row's. */
-.tugx-commit-line-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: start;
-  column-gap: var(--tugx-commit-column-gap);
-  padding-inline: 8px;
-  min-width: 0;
-  cursor: pointer;
-}
 
 /* The identity: `<sha> : <subject>`. The first line rides the shared one-line
    box; wrapped lines fall to the tighter continuation leading at the hanging
@@ -127,15 +99,6 @@
   white-space: nowrap;
 }
 
-/* The trailing control cluster: Copy, then the fold cue. Right-aligned by the
-   grid; the pair reserves its width so a row never reflows on hover. */
-.tugx-commit-actions {
-  min-height: var(--tugx-commit-line);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--tug-space-2xs);
-}
-
 /* ---- The expanded detail ---- */
 
 .tugx-commit-detail {
@@ -143,7 +106,6 @@
   flex-direction: column;
   gap: var(--tug-space-sm);
   min-width: 0;
-  padding: 4px 0 2px var(--tugx-commit-hang);
 }
 
 .tugx-commit-message {

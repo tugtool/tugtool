@@ -44,7 +44,18 @@ export function CommitShaText({
         className={
           className !== undefined ? `commit-sha-text ${className}` : "commit-sha-text"
         }
-        onContextMenu={handleContextMenu}
+        onContextMenu={(event) => {
+          event.stopPropagation();
+          handleContextMenu(event);
+        }}
+        // The sha is a copy target, not a toggle. Every pointer gesture on it
+        // ends here rather than reaching a host that treats a click on the row
+        // as activation — otherwise right-clicking a hash in the History shade
+        // folds the row out from under its own menu.
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onMouseUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         {sha.slice(0, SHA_DISPLAY_LEN)}
       </code>

@@ -30,6 +30,9 @@ import { TugHistoryList } from "@/components/tugways/tug-history-list";
 import { TugNonRepoNotice } from "@/components/tugways/tug-non-repo-notice";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugOptionGroup } from "@/components/tugways/tug-option-group";
+import { useResponderForm } from "@/components/tugways/use-responder-form";
+import { useCommitMetaFields } from "@/lib/commit-meta-fields";
 import { useFocusable, useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   gitLogStore,
@@ -69,6 +72,16 @@ export function SessionHistoryView({
   onClose,
 }: SessionHistoryViewProps): React.ReactElement {
   const snapshot = useGitLogSnapshot();
+
+  // Which metadata the rows carry — the reader's standing choice, persisted
+  // deck-wide through tugbank ([D07]). `TugOptionGroup` emits `setValue` with
+  // the new set through the responder chain ([L11]); nothing about it is
+  // per-card, so the shade reads and writes the one deck default.
+  const { fields: metaFields, setFields } = useCommitMetaFields();
+  const metaSenderId = useId();
+  const { ResponderScope, responderRef } = useResponderForm({
+    setValueStringArray: { [metaSenderId]: setFields },
+  });
 
   // Focus language ([P14]): the scrolling commit list holds the shade's key
   // view (order 0) — a NON-button — so the Done button (order 1) wears the
@@ -129,7 +142,7 @@ export function SessionHistoryView({
   // grabber, modality, Escape close) is `TugSheetContent
   // presentation="shade"` — mounted by the Session card around this view.
   const shell = (children: React.ReactNode): React.ReactElement => (
-    <>
+    <ResponderScope>
       <div className="tug-sheet-shade-header">
         <BlockStrip
           altitude="section"
@@ -157,7 +170,26 @@ export function SessionHistoryView({
           still close it too). The actions row follows the sheet-gallery spec
           (`.tug-sheet-actions`: right-aligned, sheet spacing). */}
       {onClose !== undefined ? (
-        <div className="session-history-view-footer tug-sheet-actions">
+        <div
+          className="session-history-view-footer tug-sheet-actions"
+          ref={responderRef as (el: HTMLDivElement | null) => void}
+        >
+          {/* The metadata toggles hold the footer's leading edge, opposite
+              Done: what each row states about its commit is a reading choice,
+              so it sits with the list it governs rather than in Settings. */}
+          <TugOptionGroup
+            value={metaFields as string[]}
+            senderId={metaSenderId}
+            size="xs"
+            emphasis="ghost"
+            aria-label="Commit row metadata"
+            data-testid="session-history-meta-options"
+            items={[
+              { value: "author", label: "Author" },
+              { value: "date", label: "Date" },
+              { value: "time", label: "Time" },
+            ]}
+          />
           <TugPushButton
             size="sm"
             emphasis="primary"
@@ -172,7 +204,7 @@ export function SessionHistoryView({
           </TugPushButton>
         </div>
       ) : null}
-    </>
+    </ResponderScope>
   );
 
   if (projectDir === null) {
@@ -205,7 +237,11 @@ export function SessionHistoryView({
 
   return shell(
     <div className="session-history-view-body">
-      <TugHistoryList commits={payload.commits} projectDir={projectDir} />
+      <TugHistoryList
+      commits={payload.commits}
+      projectDir={projectDir}
+      metaFields={metaFields}
+    />
     </div>,
   );
 }

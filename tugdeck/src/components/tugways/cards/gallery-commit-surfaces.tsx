@@ -28,7 +28,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
+import { TugHistoryList } from "@/components/tugways/tug-history-list";
 import {
   CommitBlock,
   CommitHeaderTarget,
@@ -41,11 +41,7 @@ import type { CommandBlockProps } from "./session-command-block-registry";
 import type { ShellExchangeMessage } from "@/lib/code-session-store/types";
 import type { GitLogCommit } from "@/lib/git-log-store";
 import {
-  CommitCopyControl,
-  CommitIdentityLine,
-  CommitMetaCell,
   commitCopyText,
-  formatCommitStamp,
   type CommitMetaField,
 } from "@/components/tugways/commit-presentation";
 
@@ -141,67 +137,6 @@ function copyTextFor(commit: GitLogCommit): string {
     email: commit.committer_email,
     dateIso: commit.committer_date,
   });
-}
-
-// ---------------------------------------------------------------------------
-// The History row candidate
-// ---------------------------------------------------------------------------
-
-/**
- * One commit row: the identity line, the reader's chosen metadata, the Copy
- * control, and the fold cue, over the expanded detail.
- */
-function CommitRow({
-  commit,
-  fields,
-}: {
-  commit: GitLogCommit;
-  fields: readonly CommitMetaField[];
-}): React.ReactElement {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="tugx-commit-entry" data-sha={commit.sha}>
-      {/* Primary button only — a right-click belongs to the sha's copy menu,
-          and must never fold the row under it. */}
-      <div
-        className="tugx-commit-line-row"
-        onClick={(event) => {
-          if (event.button !== 0) return;
-          setExpanded((e) => !e);
-        }}
-      >
-        <CommitIdentityLine sha={commit.sha} subject={commit.subject} />
-        <CommitMetaCell
-          author={commit.committer ?? commit.author}
-          iso={commit.committer_date ?? ""}
-          fields={fields}
-        />
-        <span className="tugx-commit-actions" onClick={(e) => e.stopPropagation()}>
-          <CommitCopyControl getText={() => copyTextFor(commit)} subject={commit.subject} />
-          <BlockFoldCue
-            collapsed={!expanded}
-            onToggle={(next) => setExpanded(!next)}
-            collapsedLabel="Expand commit"
-            ariaLabelExpand={`Show detail for ${commit.subject}`}
-            ariaLabelCollapse={`Hide detail for ${commit.subject}`}
-            size="2xs"
-            subtype="icon"
-            stabilizeScroll={false}
-          />
-        </span>
-      </div>
-      {expanded ? (
-        <div className="tugx-commit-detail">
-          {(commit.body ?? "").length > 0 ? (
-            <pre className="tugx-commit-message">{commit.body}</pre>
-          ) : null}
-          <div className="tugx-commit-attribution">
-            {`${commit.committer ?? commit.author} <${commit.committer_email ?? ""}> · ${formatCommitStamp(commit.committer_date ?? "", "full")}`}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -353,10 +288,12 @@ export function GalleryCommitSurfaces(): React.ReactElement {
           toggle author / date / time below. Copy writes the whole commit record; right-clicking
           the sha copies <code>Commit a14a3efc</code>.
         </Caption>
-        <div className="tugx-commit tugx-commit-list gallery-commit-surfaces-panel">
-          {COMMITS.map((c) => (
-            <CommitRow key={c.sha} commit={c} fields={fields} />
-          ))}
+        <div className="gallery-commit-surfaces-panel">
+          <TugHistoryList
+            commits={COMMITS}
+            projectDir={FIXTURE_ROOT}
+            metaFields={fields}
+          />
         </div>
         <div className="gallery-commit-surfaces-options">
           <TugOptionGroup
