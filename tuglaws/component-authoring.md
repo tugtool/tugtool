@@ -758,7 +758,7 @@ When the Dev transcript scrolls, a tower of sticky chrome can pin simultaneously
 
 The composition rule is a single CSS variable propagated through the cascade.
 
-**`--tugx-pin-stack-top`** — written by `TugTranscriptEntry` onto the entry root via a `useLayoutEffect` + `ResizeObserver` on its `__header` element. The value is the live measured height of that header. Descendant sticky chrome consumes it as the top offset:
+**`--tugx-pin-stack-top`** — written by `TugTranscriptEntry` onto the entry root via a `useLayoutEffect` + `ResizeObserver` on its `__pin` element (the single sticky wrapper carrying the icon and attribution header — one sticky per entry, so each row contributes one compositing-overlap candidate, not two). The value is the live measured height of that pinned block. Descendant sticky chrome consumes it as the top offset:
 
 ```css
 .tugx-file-header,

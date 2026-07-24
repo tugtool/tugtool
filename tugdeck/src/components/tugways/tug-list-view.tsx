@@ -1916,27 +1916,29 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
           const newHeight = entry.contentRect.height;
           const currentHeight = heightIndex.get(index);
+          const heightChanged =
+            currentHeight === undefined ||
+            Math.abs(currentHeight - newHeight) >= 0.5;
 
-          // Skip no-op updates — sub-pixel ResizeObserver noise
-          // shouldn't force a re-window.
-          if (
-            currentHeight !== undefined &&
-            Math.abs(currentHeight - newHeight) < 0.5
-          ) {
-            continue;
-          }
-          heightIndex.set(index, newHeight);
-          anyChanged = true;
-          // Offscreen-skip stamping ([P3c] of the perf plan): the exact
-          // measured height just recorded becomes the cell's
-          // `contain-intrinsic-size`, and the `data-cv-ready` mark lets
-          // the CSS apply `content-visibility: auto`. Stamped only from
-          // a REAL measurement — never an estimate — so a skipped cell
+          // Offscreen-skip stamping: the exact measured height just
+          // delivered becomes the cell's `contain-intrinsic-size`, and
+          // the `data-cv-ready` mark lets the CSS apply
+          // `content-visibility: auto`. Stamped only from a REAL
+          // measurement — never an estimate — so a skipped cell
           // occupies precisely its last rendered pixels. Style writes
           // here don't change the cell's current layout size (the
           // intrinsic size only applies while skipped), so this cannot
           // re-trigger the observer.
-          if (offscreenSkipRef.current) {
+          //
+          // Stamping runs BEFORE the no-op height gate below: after a
+          // width invalidation strips every stamp, cells whose height
+          // is unchanged at the new width (short one-line rows) still
+          // fire this observer and must re-earn their stamp, or they'd
+          // silently drop out of offscreen-skip forever.
+          if (
+            offscreenSkipRef.current &&
+            (heightChanged || !target.hasAttribute("data-cv-ready"))
+          ) {
             target.style.setProperty(
               "contain-intrinsic-size",
               `auto ${newHeight}px`,
@@ -1945,6 +1947,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
               target.setAttribute("data-cv-ready", "");
             }
           }
+
+          // Skip no-op updates — sub-pixel ResizeObserver noise
+          // shouldn't force a re-window.
+          if (!heightChanged) {
+            continue;
+          }
+          heightIndex.set(index, newHeight);
+          anyChanged = true;
         }
         if (anyChanged) {
           // **Synchronous bottom-pin.** The `ResizeObserver` callback
@@ -2039,7 +2049,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       // rare (dataSource is usually stable for a card's lifetime).
     }, [dataSource]);
 
-    // Offscreen-skip width invalidation ([P3c]): a remembered
+    // Offscreen-skip width invalidation: a remembered
     // `contain-intrinsic-size` is exact only for the width it was
     // measured at — text reflows when the container narrows or widens.
     // On a real width change every cell drops its stamp (falling back

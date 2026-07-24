@@ -390,8 +390,9 @@ function pushTurnSlots(
       userRowOrdinal: isUser ? userOrdinal : -1,
       isLastAssistantOfTurn: isAssistant && i === lastAssistantGroupIndex,
       // Session-wide 1-based shell counter, assigned in a single pass
-      // in `buildRowLayout` (a per-turn walk can't see the cross-turn
-      // running count); `0` until then and for non-shell rows.
+      // in `buildCommittedLayout` (a per-turn walk can't see the
+      // cross-turn running count, and only committed turns can be
+      // shell rows); `0` until then and for non-shell rows.
       shellRowOrdinal: 0,
     });
     if (isAssistant) assistantOrdinal += 1;

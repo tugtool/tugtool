@@ -270,8 +270,14 @@ export function TugSparkline({
       // rides the DOM attribute, never React state ([L06]).
       if (getColorChannel !== undefined && container !== null) {
         const channel = getColorChannel(now);
-        if (channel !== null) lastNonZeroAt = now;
         if (channel !== stampedChannel) {
+          // A dominant-channel CHANGE is activity — the tint is about
+          // to move, so hold the tape awake. A steady return is not: a
+          // fixed-hue consumer (the Pulse card rows) is always
+          // non-null, and treating that as activity would lock those
+          // tapes out of flat-dormancy forever. Real drawn activity
+          // already bumps via v > 0 above.
+          lastNonZeroAt = now;
           stampedChannel = channel;
           if (channel === null) container.removeAttribute("data-activity-channel");
           else container.setAttribute("data-activity-channel", channel);
@@ -288,6 +294,14 @@ export function TugSparkline({
     };
 
     const startEpoch = (): void => {
+      // A live animation must never be orphaned: its onfinish would
+      // keep respawning epochs nothing can stop. Cancel before
+      // replacing (a no-op when called from its own onfinish).
+      if (anim !== null) {
+        anim.onfinish = null;
+        anim.cancel();
+        anim = null;
+      }
       t0 = Date.now();
       redraw();
       if (!motion) return;
@@ -354,15 +368,32 @@ export function TugSparkline({
     const wakeLive = (now: number): void => {
       dormant = false;
       rebuildTape(now);
-      sample();
       startEpoch();
       stopTimer();
       timer = window.setInterval(sample, SAMPLE_MS);
+      // Sample LAST: sample() may re-enter dormancy (a wake landing at
+      // the exact flat-window boundary re-reads the clock and can cross
+      // the threshold). With the animation and timer already running,
+      // that enterDormant tears both down and leaves a consistent
+      // dormant state; sampled first, it would mark dormant and then
+      // this function would start an animation and timer nothing stops.
+      sample();
     };
 
     const flatPastWindow = (now: number): boolean =>
       subscribeActivity !== undefined && now - lastNonZeroAt >= DORMANT_AFTER_MS;
 
+    // Stamp the tint once at mount, dormancy-independent: a born-idle
+    // tape never runs sample(), and a fixed-hue row (Pulse card) must
+    // not sit untinted until its first wake. Not an activity signal —
+    // stampedChannel is pre-set so the first sample() sees no change.
+    if (getColorChannel !== undefined && container !== null) {
+      const mountChannel = getColorChannel(Date.now());
+      stampedChannel = mountChannel;
+      if (mountChannel !== null) {
+        container.setAttribute("data-activity-channel", mountChannel);
+      }
+    }
     rebuildTape(Date.now());
     if (flatPastWindow(Date.now())) {
       // Born idle: paint the static flat line once and wait for the wake

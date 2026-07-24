@@ -6,10 +6,12 @@
  * [data-participant] cascade onto `--tugx-transcript-icon-color`; adding a
  * participant is a per-participant flavor slot below + a matching rule.
  *
- * The `__header` is sticky against the nearest scroll ancestor so the
- * speaker identifier + timestamp stay visible while a long entry body
- * (multi-hunk diff, tall terminal, deep file viewer) scrolls past.
- * `tug-transcript-entry.tsx` measures the rendered header height and
+ * The `__pin` wrapper (icon + attribution header, spanning both grid
+ * columns) is the entry's ONE sticky element against the nearest scroll
+ * ancestor, so the speaker identifier + timestamp stay visible while a
+ * long entry body (multi-hunk diff, tall terminal, deep file viewer)
+ * scrolls past — one compositing-overlap candidate per row, not two.
+ * `tug-transcript-entry.tsx` measures the rendered pin height and
  * writes it onto the entry root as `--tugx-pin-stack-top`; descendant
  * block-level pinned chrome (FileBlock / DiffBlock / TerminalBlock /
  * BlockChrome headers) consume that variable to telescope under

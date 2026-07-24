@@ -28,7 +28,7 @@
 
 import "./pulse-card.css";
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { TugSparkline } from "@/components/tugways/tug-sparkline";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
@@ -167,6 +167,23 @@ function PulseRow({
   // Fix the line's hue to this channel's descriptor color (the endpoint tie).
   const getColorChannel = useCallback((): string => channel, [channel]);
 
+  // Dormancy wake channel — RATE rows only: `subscribeRateActivity`
+  // publishes exactly the activity a rate row draws, so with the card
+  // open and the session idle these rows stop cold instead of holding
+  // a 4Hz timer + WAAPI scroll each. Gauge rows (cpu/memory/disk tick
+  // whether or not the session works) MUST stay `undefined`: the store
+  // never wakes on gauge samples, so a gauge row given this channel
+  // would flat-dorm and freeze while its live reading moved.
+  const subscribeActivity = useMemo(() => {
+    if (descriptor.kind !== "rate") return undefined;
+    return (wake: () => void): (() => void) => {
+      const store = getSessionActivityStore();
+      return store !== null
+        ? store.subscribeRateActivity(session, wake)
+        : () => {};
+    };
+  }, [session, descriptor.kind]);
+
   // Live value, eased toward its target and written imperatively ([L06]) so it
   // glides instead of snapping tick-to-tick. Opens at the true value (no
   // ramp-in), then EMA-smooths changes; decays gracefully to a dimmed ZERO in
@@ -214,6 +231,7 @@ function PulseRow({
       <TugSparkline
         getSeries={getSeries}
         getColorChannel={getColorChannel}
+        subscribeActivity={subscribeActivity}
         binMs={ACTIVITY_BIN_MS}
         fullScale={descriptor.fullScale}
         curve={descriptor.curve}

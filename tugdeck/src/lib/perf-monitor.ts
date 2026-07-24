@@ -6,9 +6,12 @@
  * frame would queue behind) and MISSED IDLE (work happening when the
  * app should be doing nothing). Findings land in two places:
  *
- *  - counters, readable via {@link getPerfMonitorSnapshot} (stable
- *    reference between changes, [L02]-shaped for a future DevPanel
- *    Telemetry tile and for app-tests via `window.tugPerfMonitor`);
+ *  - counters, readable via {@link getPerfMonitorSnapshot} — a FRESH
+ *    object per call (uptimeMs advances every read), for pull-cadence
+ *    probes: app-tests via `window.tugPerfMonitor`, or a future
+ *    DevPanel Telemetry tile polling on its own timer. NOT an [L02]
+ *    `useSyncExternalStore` snapshot — wiring it into uSES as-is would
+ *    loop; a React consumer needs a cached/versioned snapshot first;
  *  - the dev log (`tugDevLogStore`, source `"perf"`) — one entry per
  *    stall at `warn` for ≥{@link STALL_WARN_MS}, `debug` below it — so
  *    the Log section timeline correlates stalls with whatever else was

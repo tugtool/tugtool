@@ -52,11 +52,33 @@ const decodeCache = new WeakMap<Uint8Array, unknown>();
 
 const utf8 = new TextDecoder();
 
+/**
+ * Dev/test builds enforce the immutability contract: decoded frames are
+ * deep-frozen, so any consumer that mutates its "own" frame in place —
+ * which would silently poison every sibling card and future replay
+ * sharing the cached object — throws at the mutation site instead.
+ * Production skips the freeze walk (contract enforcement, not a
+ * per-frame cost the product pays).
+ */
+const FREEZE_SHARED_DECODES: boolean =
+  import.meta.env?.DEV === true || import.meta.env?.NODE_ENV === "test";
+
+function deepFreeze(value: unknown): void {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return;
+  }
+  Object.freeze(value);
+  for (const key of Object.keys(value)) {
+    deepFreeze((value as Record<string, unknown>)[key]);
+  }
+}
+
 /** Default decoder: UTF-8 bytes → JSON.parse, one parse per frame. */
 export function defaultDecode(payload: Uint8Array): unknown {
   const hit = decodeCache.get(payload);
   if (hit !== undefined) return hit;
   const decoded = JSON.parse(utf8.decode(payload));
+  if (FREEZE_SHARED_DECODES) deepFreeze(decoded);
   decodeCache.set(payload, decoded);
   return decoded;
 }

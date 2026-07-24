@@ -199,8 +199,15 @@ describe("replay fold — one snapshot tick per flush", () => {
   });
 
   it("same-phase streaming bursts coalesce to one trailing notify per window", () => {
-    // Manual timer source so the trailing flush is deterministic.
-    const pending: Array<() => void> = [];
+    // Manual timer source so the trailing flush is deterministic. It is
+    // HONEST about cancellation: the coalescing contract's second half —
+    // an immediate publish supersedes the armed trailing flush, so no
+    // double notify — rests entirely on `clearTimeout` (the trailing
+    // callback itself publishes unconditionally), so the fake must track
+    // cleared handles for that half to be testable.
+    const pending = new Map<number, () => void>();
+    let armed = 0;
+    let clearedCount = 0;
     const conn = new TestFrameChannel();
     const store = new CodeSessionStore({
       conn: conn as unknown as TugConnection,
@@ -209,12 +216,21 @@ describe("replay fold — one snapshot tick per flush", () => {
       sessionMode: "new",
       timerSource: {
         setTimeout: (cb: () => void) => {
-          pending.push(cb);
-          return pending.length;
+          armed += 1;
+          pending.set(armed, cb);
+          return armed;
         },
-        clearTimeout: () => {},
+        clearTimeout: (handle: unknown) => {
+          if (pending.delete(handle as number)) clearedCount += 1;
+        },
       },
     });
+    const firePending = (): void => {
+      for (const [id, cb] of [...pending]) {
+        pending.delete(id);
+        cb();
+      }
+    };
     let count = 0;
     store.subscribe(() => {
       count += 1;
@@ -244,17 +260,26 @@ describe("replay fold — one snapshot tick per flush", () => {
     delta(3);
     delta(4);
     expect(count).toBe(afterSend + 2);
-    expect(pending).toHaveLength(1);
-    pending.shift()!();
+    expect(pending.size).toBe(1);
+    firePending();
     expect(count).toBe(afterSend + 3);
     // A phase transition mid-window (turn_complete) publishes
     // immediately — end-of-turn paint never waits on the window.
     delta(5);
+    expect(pending.size).toBe(1);
+    const clearedBefore = clearedCount;
     emit(conn, {
       type: "turn_complete",
       msg_id: FIXTURE_IDS.MSG_ID_N(1),
       result: "success",
     });
+    expect(count).toBe(afterSend + 4);
+    // The immediate publish CANCELED the armed trailing flush — the
+    // window edge arrives with nothing pending, so the burst that
+    // preceded turn_complete can never notify a second time.
+    expect(clearedCount).toBe(clearedBefore + 1);
+    expect(pending.size).toBe(0);
+    firePending();
     expect(count).toBe(afterSend + 4);
   });
 

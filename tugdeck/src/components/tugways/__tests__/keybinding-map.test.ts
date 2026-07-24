@@ -13,7 +13,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { matchKeybinding } from "../keybinding-map";
+import {
+  KEYBINDINGS,
+  keyBindingMatchesEvent,
+  matchKeybinding,
+} from "../keybinding-map";
 import { TUG_ACTIONS } from "../action-vocabulary";
 
 function keyEvent(
@@ -51,5 +55,59 @@ describe("keybinding-map: Tab is owned by the focus-walk stage, not this map", (
   test("Tab and Shift-Tab are absent from the static map", () => {
     expect(matchKeybinding(keyEvent("Tab"))).toBeNull();
     expect(matchKeybinding(keyEvent("Tab", { shift: true }))).toBeNull();
+  });
+});
+
+describe("keybinding-map: precompiled index invariants", () => {
+  // The chord identity: exact `code` + exact state of all four modifier
+  // flags — the same tuple `keyBindingMatchesEvent` compares.
+  const chordOf = (b: (typeof KEYBINDINGS)[number]): string =>
+    `${b.key}|${b.ctrl ?? false}|${b.meta ?? false}|${b.shift ?? false}|${b.alt ?? false}`;
+
+  test("no two bindings share a chord", () => {
+    // The precompiled map is first-writer-wins on a duplicate chord —
+    // correct only while duplicates don't exist. A duplicate added
+    // mid-table would silently shadow the later binding; fail loudly
+    // here instead.
+    const seen = new Map<string, string>();
+    for (const binding of KEYBINDINGS) {
+      const chord = chordOf(binding);
+      const holder = seen.get(chord);
+      expect(
+        holder,
+        `chord ${chord} bound to both "${holder}" and "${binding.action}"`,
+      ).toBeUndefined();
+      seen.set(chord, binding.action);
+    }
+  });
+
+  test("map lookup agrees with a linear keyBindingMatchesEvent scan for every binding", () => {
+    // Full parity: for each binding's own chord, the O(1) map must
+    // return exactly what the old first-match scan returned.
+    for (const binding of KEYBINDINGS) {
+      const event = keyEvent(binding.key, {
+        ctrl: binding.ctrl,
+        meta: binding.meta,
+        shift: binding.shift,
+        alt: binding.alt,
+      });
+      const scanned = KEYBINDINGS.find((b) => keyBindingMatchesEvent(event, b)) ?? null;
+      expect(matchKeybinding(event)).toBe(scanned);
+    }
+  });
+
+  test("a chord with one extra modifier never matches", () => {
+    // Exact-modifier discipline survives the map conversion: adding a
+    // modifier a binding didn't declare must miss.
+    for (const binding of KEYBINDINGS) {
+      const extra = keyEvent(binding.key, {
+        ctrl: binding.ctrl,
+        meta: binding.meta,
+        shift: binding.shift,
+        alt: !(binding.alt ?? false),
+      });
+      const scanned = KEYBINDINGS.find((b) => keyBindingMatchesEvent(extra, b)) ?? null;
+      expect(matchKeybinding(extra)).toBe(scanned);
+    }
   });
 });

@@ -33,6 +33,7 @@ import {
   sparklineCurves,
   type SparklineCurve,
 } from "@/components/tugways/tug-sparkline";
+import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 
 /** The per-session activity channels (Spec S01). Rate channels are
  *  stream-derived by tugcode; gauge channels are cast-sampled OS signals. */
@@ -286,7 +287,21 @@ export class SessionActivityStore {
     if (units > 0 && RATE_CHANNEL_SET.has(channel)) {
       const wakers = this.rateActivityListeners.get(session);
       if (wakers !== undefined) {
-        for (const wake of [...wakers]) wake();
+        // Wakers do DOM work downstream (tape rebuild, WAAPI restart).
+        // One throwing listener must not abort the remaining wakers or
+        // propagate into the frame handler and drop this ACTIVITY
+        // frame's remaining channels.
+        for (const wake of [...wakers]) {
+          try {
+            wake();
+          } catch (err) {
+            tugDevLogStore.error("session-activity-store", "waker threw", {
+              session,
+              channel,
+              error: String(err),
+            });
+          }
+        }
       }
     }
   }

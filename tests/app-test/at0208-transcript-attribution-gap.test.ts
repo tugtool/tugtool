@@ -26,9 +26,11 @@
  *     the DOM is a phantom sibling that re-opens the run gap (the
  *     `StreamedTextGate` contract in session-card-transcript.tsx).
  *
- * Measurement scrolls each entry to viewport center first (an unstuck
- * header), then reads rect deltas: header bottom → the top of the body's
- * first painted element.
+ * Measurement scrolls each marker's LIST CELL to viewport center first
+ * (an unstuck header — and the cell, not the entry, because a skipped
+ * entry's descendant rects are garbage under content-visibility), waits
+ * for the entry to regain real layout, then reads rect deltas: header
+ * bottom → the top of the body's first painted element.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -102,27 +104,75 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
           await openFixtureSession(app, seeded);
           await waitForTranscriptSettled(app);
 
-          const markers = CASES.map((c) => c.marker);
-          const probes = await app.evalJS<GapProbe[]>(
+          // Disengage follow-bottom ONCE, up front, the way a user
+          // would — an upward wheel tick — so the card's initial-settle
+          // pin machinery (restore-at-bottom + post-settle pin
+          // requests) can never yank any probe scroll (gap probes
+          // included) back to the live edge mid-test.
+          await app.evalJS<null>(
             `(function(){
-              var markers = ${JSON.stringify(markers)};
-              var entries = Array.prototype.slice.call(
-                document.querySelectorAll('[data-card-id="A"] .tug-transcript-entry'));
-              return markers.map(function(marker){
-                var entry = null;
+              var scroller = document.querySelector('[data-card-id="A"] .tug-list-view');
+              scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }));
+              return null;
+            })()`,
+          );
+
+          // The marker finder scans textContent (intact even while a
+          // cell is skipped under content-visibility — only rendering
+          // is skipped, never the DOM).
+          const FIND_ENTRY_JS = `
+              function findEntry(marker) {
+                var entries = Array.prototype.slice.call(
+                  document.querySelectorAll('[data-card-id="A"] .tug-transcript-entry'));
                 for (var i = 0; i < entries.length; i++) {
-                  var body = entries[i].querySelector('.tug-transcript-entry__body');
-                  if (body && (body.textContent || '').indexOf(marker) !== -1) {
-                    entry = entries[i];
-                    break;
-                  }
+                  var b = entries[i].querySelector('.tug-transcript-entry__body');
+                  if (b && (b.textContent || '').indexOf(marker) !== -1) return entries[i];
                 }
-                if (entry === null) {
-                  return { marker: marker, found: false, participant: null, gap: -1, firstChild: '' };
-                }
-                // Center the entry so its sticky header is unstuck and
-                // rect deltas read the natural layout.
-                entry.scrollIntoView({ block: 'center' });
+                return null;
+              }`;
+
+          const probes: GapProbe[] = [];
+          for (const c of CASES) {
+            // Scroll the marker's LIST CELL to center: the cell is
+            // always laid out (exact stamped intrinsic size) while a
+            // skipped entry's own rects are garbage — and centering
+            // also unsticks the entry's pinned header.
+            const found = await app.evalJS<boolean>(
+              `(function(){
+                ${FIND_ENTRY_JS}
+                var entry = findEntry(${JSON.stringify(c.marker)});
+                if (entry === null) return false;
+                var cell = entry.closest('.tug-list-view-cell') || entry;
+                cell.scrollIntoView({ block: 'center' });
+                return true;
+              })()`,
+            );
+            if (!found) {
+              probes.push({ marker: c.marker, found: false, participant: null, gap: -1, firstChild: "" });
+              continue;
+            }
+            // Unskip is async (content-visibility relevancy updates at
+            // the rendering steps) — wait for the entry to have real
+            // layout before reading any descendant rect.
+            await app.waitForCondition<boolean>(
+              `(function(){
+                ${FIND_ENTRY_JS}
+                var entry = findEntry(${JSON.stringify(c.marker)});
+                if (entry === null) return false;
+                var h = entry.querySelector('.tug-transcript-entry__header');
+                return h !== null && h.getBoundingClientRect().height > 0;
+              })()`,
+              { timeoutMs: 4000 },
+            );
+            const probe = await app.evalJS<GapProbe>(
+              `(function(){
+              ${FIND_ENTRY_JS}
+              var marker = ${JSON.stringify(c.marker)};
+              var entry = findEntry(marker);
+              if (entry === null) {
+                return { marker: marker, found: false, participant: null, gap: -1, firstChild: '' };
+              }
+              return (function(){
                 var header = entry.querySelector('.tug-transcript-entry__header');
                 var body = entry.querySelector('.tug-transcript-entry__body');
                 var hRect = header.getBoundingClientRect();
@@ -163,10 +213,12 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
                   gap: Math.round((firstTop - hRect.bottom) * 100) / 100,
                   firstChild: firstDesc
                 };
-              });
+              })();
             })()`,
-            { timeoutMs: 15_000 },
-          );
+              { timeoutMs: 15_000 },
+            );
+            probes.push(probe);
+          }
 
           for (const p of probes) {
             console.log(
@@ -197,12 +249,8 @@ describe.skipIf(!SHOULD_RUN)("at0208: under-attribution gap is constant per body
           await app.evalJS<null>(
             `(function(){
               var h = document.querySelector(${JSON.stringify(HEADER)});
-              // Disengage follow-bottom the way a user would — an upward
-              // wheel tick — so the card's initial-settle pin machinery
-              // (restore-at-bottom + post-settle pin requests) can never
-              // yank the probe scrolls back to the live edge mid-test.
-              var scroller = h.closest('.tug-list-view');
-              scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }));
+              // Follow-bottom was already disengaged by the wheel tick
+              // before the gap probes.
               // Scroll the LIST CELL (always laid out under
               // content-visibility) — a skipped entry's own rect is
               // garbage, so scrollIntoView on it lands nowhere.
