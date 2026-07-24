@@ -54,6 +54,12 @@
  * [AT0010] cold-boot variant. The existing `at0010-markdown-selection.test.ts`
  * gates tab-switch + cmd-tab round-trips inside one Tug.app
  * process; this file adds the cross-process variant.
+ *
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/lib/tugbank-client.ts
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
+ * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx
+ * @covers tugapp/Sources/TugbankClient.swift
  */
 
 import { describe, expect, test } from "bun:test";

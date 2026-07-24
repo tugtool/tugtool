@@ -25,6 +25,11 @@
  *    command items and NOT the selection-scoped standard `copy`.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/copy-as-plain-text.ts
+ * @covers tugdeck/src/lib/command-atom.ts
+ * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
+ * @covers tugdeck/src/lib/transcript-export.ts
  */
 
 import { describe, expect, test } from "bun:test";

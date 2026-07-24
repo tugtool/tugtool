@@ -33,6 +33,10 @@
  *   - Escape denies and the dialog dismisses.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/lib/permission-mode.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -12,6 +12,10 @@
  *   2. Focus the Lens (its sections give it real focusable content),
  *      then Escape; assert the previously-focused card is restored (the
  *      deck-canvas CANCEL_DIALOG focus-out, [P05]).
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

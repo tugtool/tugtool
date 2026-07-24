@@ -20,6 +20,10 @@
  *       - typing continues to land in the editor.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

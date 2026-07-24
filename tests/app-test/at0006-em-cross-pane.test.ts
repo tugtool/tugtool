@@ -17,6 +17,12 @@
  * was retired.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/card-drag-coordinator.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

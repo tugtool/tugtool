@@ -18,6 +18,10 @@
  * exercises the real `NSMenuItemValidation` path, not a stored flag.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/lib/host-menu-state.ts
+ * @covers tugdeck/src/action-dispatch.ts
  */
 
 import { describe, expect, test } from "bun:test";

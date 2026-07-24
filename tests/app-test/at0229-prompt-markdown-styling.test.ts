@@ -21,6 +21,10 @@
  *
  * Surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), so
  * no live Claude session is needed. Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/lib/markdown/
  */
 
 import { describe, expect, test } from "bun:test";

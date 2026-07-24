@@ -21,6 +21,11 @@
  *   3. Cmd-L (focus-lens) out → the prior card is active again; Cmd-L back in →
  *      the Text Files list (the last key view) re-lights (watch-item #3).
  *   4. Escape → the prior card is restored (the CANCEL_DIALOG focus-out).
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -25,6 +25,11 @@
  * The mid-turn + reload-clean behaviors are covered against real claude in
  * the Step 6/7 tiers; here the answer is injected so the surface + the
  * transcript-invisibility invariant are proven without a live model.
+ *
+ * @covers tugdeck/src/lib/side-question-store.ts
+ * @covers tugdeck/src/components/tugways/cards/side-question-overlay.tsx
+ * @covers tugdeck/src/lib/bang-commands.ts
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

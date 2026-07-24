@@ -23,6 +23,11 @@
  *
  * Has teeth: before the fix this opened p2's picker Open (p2's picker closed,
  * p1 got no rewind sheet).
+ *
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

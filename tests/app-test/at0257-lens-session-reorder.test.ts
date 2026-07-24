@@ -15,6 +15,10 @@
  *      leaving the reordered set intact.
  *   3. Drag a grip far BELOW the list; assert the dragged row stays clamped
  *      within the list container instead of following the pointer out of it.
+ *
+ * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
+ * @covers tugdeck/src/components/lens/block-reorder.ts
+ * @covers tugdeck/src/lib/lens-store/
  */
 
 import { describe, expect, test } from "bun:test";

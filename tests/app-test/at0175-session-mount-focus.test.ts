@@ -60,6 +60,11 @@
  *     zero through the bind window — pinning the no-banner contract
  *     and ensuring that focus is never gated on a banner exit for
  *     new-mode sessions.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/default-focus.ts
  */
 
 import { describe, expect, test } from "bun:test";

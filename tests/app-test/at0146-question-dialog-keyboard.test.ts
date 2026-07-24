@@ -17,6 +17,10 @@
  * dismisses.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/question-summary-list.tsx
  */
 
 import { describe, expect, test } from "bun:test";

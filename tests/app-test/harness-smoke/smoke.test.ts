@@ -15,6 +15,10 @@
  * To run locally:
  *   xcodebuild -scheme Tug -configuration Debug build
  *   TUGAPP_APP_TEST=1 bun test tests/app-test/smoke.test.ts
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
+ * @covers tugdeck/src/test-surface.ts
  */
 
 import { describe, expect, test } from "bun:test";

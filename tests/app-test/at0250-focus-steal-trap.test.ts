@@ -16,6 +16,10 @@
  *      absorbed;
  *   4. leave the keyboard alive: a native ArrowDown still moves the Lens
  *      cursor.
+ *
+ * @covers tugdeck/src/focus-theft-gate.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/internal/
  */
 
 import { describe, expect, test } from "bun:test";

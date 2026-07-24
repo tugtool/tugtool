@@ -35,6 +35,10 @@
  * - The test name is sanitized by the harness before being turned
  *   into a filename. Keep it filesystem-safe so you can `ls
  *   tests/app-test/logs/` and see what ran.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
+ * @covers tugapp/Sources/ProcessManager.swift
  */
 
 import { existsSync, readFileSync } from "node:fs";

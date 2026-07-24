@@ -19,6 +19,11 @@
  * since the blue arc is disjoint from the warm arcs in both brio and harmony. A
  * `gallery-list-view` card is mounted so `tug-list-row.css` (which defines the
  * `--tugx-list-row-selected-*` aliases) is loaded and its alias resolves.
+ *
+ * @covers tugdeck/styles/themes/
+ * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/theme-tokens.ts
+ * @covers tugdeck/src/components/tugways/active-color-target.ts
  */
 
 import { describe, expect, test } from "bun:test";

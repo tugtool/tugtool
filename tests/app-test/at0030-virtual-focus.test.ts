@@ -61,6 +61,13 @@
  * component-specific live-state probe.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
+ * @covers tugdeck/src/components/tugways/tug-switch.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-choice-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-option-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-slider.tsx
  */
 
 import { describe, expect, test } from "bun:test";

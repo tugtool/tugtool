@@ -21,6 +21,10 @@
  * The user-visible behavior is identical. This test is a [L23]
  * strict-superset guard: every dismissal the old signal triggered
  * is still triggered by the new signal.
+ *
+ * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * @covers tugdeck/src/lib/canvas-overlay-registry.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -42,6 +42,11 @@
  * flag. Assertions by identifier only.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/text-editing-menu.ts
+ * @covers tugdeck/src/lib/host-menu-state.ts
  */
 
 import { describe, expect, test } from "bun:test";

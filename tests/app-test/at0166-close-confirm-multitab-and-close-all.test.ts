@@ -19,6 +19,11 @@
  *     menu command is a deliberate gesture, the X a stray-click target).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/card-close-guard.ts
+ * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
+ * @covers tugdeck/src/action-dispatch.ts
+ * @covers tugapp/Sources/AppDelegate.swift
  */
 
 import { describe, expect, test } from "bun:test";

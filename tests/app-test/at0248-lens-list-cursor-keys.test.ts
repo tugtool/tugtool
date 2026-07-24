@@ -8,6 +8,10 @@
  * a real Lens snippets list with the ring held by keyboard: the cursor
  * (`data-key-cursor`) must move row-by-row on arrows, jump on Home/End, and
  * page on PageDown/PageUp — proving delegated delivery end-to-end.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/lens/
  */
 
 import { describe, expect, test } from "bun:test";

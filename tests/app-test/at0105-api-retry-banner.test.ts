@@ -23,6 +23,11 @@
  * escalates tone, and (5) a `cost_update` (turn boundary) dismisses it.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/api-retry.ts
+ * @covers tugdeck/src/components/tugways/tug-pane-bulletin.tsx
+ * @covers tugdeck/src/lib/banner-lifecycle.ts
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

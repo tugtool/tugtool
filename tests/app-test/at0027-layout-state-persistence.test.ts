@@ -51,6 +51,10 @@
  * one mode while leaving the other at its default.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
+ * @covers tugdeck/src/components/tugways/tug-accordion.tsx
+ * @covers tugdeck/src/serialization.ts
  */
 
 import { describe, expect, test } from "bun:test";

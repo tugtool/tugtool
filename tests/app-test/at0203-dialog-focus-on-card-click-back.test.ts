@@ -28,6 +28,11 @@
  *    view with the ring.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/default-focus.ts
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

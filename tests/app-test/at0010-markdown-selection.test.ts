@@ -45,6 +45,10 @@
  *      [A5])
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
+ * @covers tugdeck/src/components/tugways/text-selection-adapter.ts
+ * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

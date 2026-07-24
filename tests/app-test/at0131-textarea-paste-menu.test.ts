@@ -8,6 +8,11 @@
  * drives the actual gesture: set the system clipboard (pbcopy → NSPasteboard,
  * read by the native bridge), right-click the textarea to open the context
  * menu, click Paste, and assert the value updated.
+ *
+ * @covers tugdeck/src/components/tugways/tug-textarea.tsx
+ * @covers tugdeck/src/components/tugways/text-editing-menu.ts
+ * @covers tugdeck/src/lib/tug-native-clipboard.ts
+ * @covers tugdeck/src/lib/paste-transforms.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -17,6 +17,11 @@
  *   - Cancel sits immediately to the left of OK (both right-aligned).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-alert.tsx
+ * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-create-session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

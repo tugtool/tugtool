@@ -26,6 +26,10 @@
  *     hard-asserting test when the probe is deleted.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/focus-act.ts
+ * @covers tugdeck/src/components/tugways/hooks/
  */
 
 import { describe, expect, test } from "bun:test";

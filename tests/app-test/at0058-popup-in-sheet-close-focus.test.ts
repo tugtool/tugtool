@@ -29,6 +29,11 @@
  *
  * The test is satisfied if `document.activeElement` is a descendant
  * of the sheet content element OR the body's focus equivalent.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-sheet-stacking-context.ts
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

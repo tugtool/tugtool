@@ -18,6 +18,11 @@
  * Has teeth: before the fix the button submitted `/rew`, which is not a
  * registered command — it falls through to `send()`, adding a transcript row
  * and opening no sheet.
+ *
+ * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry-submit-button.ts
+ * @covers tugdeck/src/components/tugways/cards/completion-providers/
  */
 
 import { describe, expect, test } from "bun:test";

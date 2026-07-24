@@ -23,6 +23,11 @@
  * repo settings, and the test reads the file back directly to assert the write.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/permission-rules-store.ts
+ * @covers tugdeck/src/lib/permission-rules.ts
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

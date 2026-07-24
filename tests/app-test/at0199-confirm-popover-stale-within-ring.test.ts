@@ -12,6 +12,10 @@
  * fix the prior key view kept a `data-key-within` outline behind the popover.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

@@ -9,6 +9,10 @@
  * steal ledger stays flat, and `reasserted` does not climb unboundedly while
  * the surface is open (a Radix-vs-watchdog ping-pong would rack up
  * corrections at event cadence).
+ *
+ * @covers tugdeck/src/focus-theft-gate.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
  */
 
 import { describe, expect, test } from "bun:test";

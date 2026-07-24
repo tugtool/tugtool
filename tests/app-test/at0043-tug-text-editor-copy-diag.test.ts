@@ -40,6 +40,12 @@
  *   `<img>` reappears in the destination editor's DOM.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/lib/tug-native-clipboard.ts
+ * @covers tugdeck/src/lib/copy-as-plain-text.ts
+ * @covers tugdeck/src/lib/tug-atom-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

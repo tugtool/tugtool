@@ -33,6 +33,11 @@
  * the whole activation-click surface stays green together.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/default-focus.ts
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
  */
 
 import { describe, test } from "bun:test";

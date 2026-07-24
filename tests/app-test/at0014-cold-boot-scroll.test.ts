@@ -49,6 +49,12 @@
  * `at0014-scroll-persistence.test.ts` already gates tab-switch +
  * `simulateAppResign` round-trips inside one Tug.app process; this
  * file adds the cross-process variant they cannot exercise.
+ *
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/lib/tugbank-client.ts
+ * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx
+ * @covers tugapp/Sources/TugbankClient.swift
  */
 
 import { describe, expect, test } from "bun:test";

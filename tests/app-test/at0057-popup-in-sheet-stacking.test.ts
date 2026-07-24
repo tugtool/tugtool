@@ -31,6 +31,11 @@
  *     not in some unrelated corner of the viewport).
  *   - A menu item is clickable (synthesizing a click selects it
  *     and the readout below the trigger updates).
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-sheet-stacking-context.ts
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/lib/canvas-overlay-registry.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -20,6 +20,11 @@
  * Has teeth: if the focus-walk stage swallowed Tab instead of yielding, the
  * popup would not close, the completion would not be accepted (text stays
  * `/rew`), and focus could leave the editor (clearing the marker).
+ *
+ * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -44,6 +44,12 @@
  * uses internally). The legacy `gallery-prompt-input` was retired.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/chrome/card-host.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/serialization.ts
  */
 
 import { describe, expect, test } from "bun:test";

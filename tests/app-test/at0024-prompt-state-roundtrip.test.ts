@@ -99,6 +99,12 @@
  * restore path. After both, every test in this file passes.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

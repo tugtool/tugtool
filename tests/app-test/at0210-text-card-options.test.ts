@@ -12,6 +12,12 @@
  * mocks.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/text-card-top-bar.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card-controls.tsx
+ * @covers tugdeck/src/lib/text-card-settings.ts
+ * @covers tugdeck/src/lib/use-text-card-settings.ts
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor/
  */
 
 import { describe, expect, test } from "bun:test";

@@ -22,6 +22,10 @@
  *     the cursor (and ring) to `beta`; `beta` stays `data-state="off"`, the group
  *     keeps the key view;
  *   - **Space toggles the cursor item:** Space turns `beta` on (`data-state="on"`).
+ *
+ * @covers tugdeck/src/components/tugways/tug-option-group.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

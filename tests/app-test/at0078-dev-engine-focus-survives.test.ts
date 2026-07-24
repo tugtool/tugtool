@@ -44,6 +44,11 @@
  * non-find-row case.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/lib/app-lifecycle.ts
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

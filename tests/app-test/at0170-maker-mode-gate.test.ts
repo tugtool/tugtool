@@ -16,6 +16,10 @@
  * the assert-by-identifier rule.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/lib/maker-mode-bridge.ts
+ * @covers tugapp/Sources/TugbankClient.swift
  */
 
 import { describe, expect, test } from "bun:test";

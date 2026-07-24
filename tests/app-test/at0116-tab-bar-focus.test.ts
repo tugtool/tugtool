@@ -19,6 +19,10 @@
  *     `demo-tab-1` (the active tab), which stays active;
  *   - **arrows switch live:** ArrowRight moves the cursor to `demo-tab-2` AND
  *     makes it the active view, while the ring stays on the bar.
+ *
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

@@ -24,6 +24,11 @@
  *   1. Seed a deck: one free pane + one anchored rail (width 420).
  *   2. Assert the rail renders pinned to the right edge, full height.
  *   3. Drag the rail's title bar — assert it does not move (non-draggable).
+ *
+ * @covers tugdeck/src/layout-tree.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/chrome/deck-canvas.tsx
+ * @covers tugdeck/src/snap.ts
  */
 
 import { describe, expect, test } from "bun:test";

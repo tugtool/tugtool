@@ -17,6 +17,11 @@
  *
  * A failure isolates which leg of the model broke: cursor projection, Space
  * select, Enter descend, or Escape ascend.
+ *
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-row.tsx
+ * @covers tugdeck/src/components/tugways/internal/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -30,6 +30,11 @@
  * pre-populated by `system-metadata-fixture` from a captured JSONL,
  * yielding deterministic items even under app-test launch (the live
  * `@`-trigger file-tree provider depends on a bound workspace).
+ *
+ * @covers tugdeck/src/lib/canvas-overlay-registry.ts
+ * @covers tugdeck/src/lib/use-canvas-overlay.ts
+ * @covers tugdeck/src/components/chrome/canvas-overlay-root.tsx
+ * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -29,6 +29,11 @@
  * assertions ride this same vehicle in later steps.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/lib/session-restore.ts
+ * @covers tugdeck/src/lib/session-metadata-store.ts
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

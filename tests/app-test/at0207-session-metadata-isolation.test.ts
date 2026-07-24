@@ -24,6 +24,11 @@
  * assertion is that card A's model chip does not move.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)` — same vehicle as at0192.
+ *
+ * @covers tugdeck/src/lib/session-metadata-store.ts
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/lib/card-session-binding-store.ts
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

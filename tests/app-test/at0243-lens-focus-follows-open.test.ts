@@ -13,6 +13,11 @@
  *      Text card's editor.
  *   3. Cmd-L back into the Lens → the Text Files list holds the key view and its
  *      movement cursor sits on the just-opened file's row.
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/recent-documents.ts
+ * @covers tugdeck/src/lib/open-file-in-card.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

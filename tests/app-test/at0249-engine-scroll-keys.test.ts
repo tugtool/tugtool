@@ -13,6 +13,10 @@
  *
  * Pinned on a markdown card (the generic branch): focus never enters the
  * scroll container, yet the scroll keys page it.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
+ * @covers tugdeck/src/lib/smart-scroll.ts
  */
 
 import { describe, expect, test } from "bun:test";

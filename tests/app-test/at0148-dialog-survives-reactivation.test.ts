@@ -31,6 +31,11 @@
  * per-card seed regardless; the round-trip is the survival regression.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/default-focus.ts
  */
 
 import { describe, expect, test } from "bun:test";

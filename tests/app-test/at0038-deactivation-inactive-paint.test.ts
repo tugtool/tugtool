@@ -43,6 +43,10 @@
  * pre-deactivation live Range.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

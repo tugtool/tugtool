@@ -34,6 +34,11 @@
  * is a bug.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/session-lifecycle.ts
+ * @covers tugdeck/src/lib/session-lifecycle-log.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  */
 
 import { describe, expect, test } from "bun:test";

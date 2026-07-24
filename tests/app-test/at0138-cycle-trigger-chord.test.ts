@@ -24,6 +24,10 @@
  * (`responder-chain-provider.tsx`), so ⌥⇥ is never consumed as a reverse-tab.
  * This test guards the OS→WebView reach + the binding match; the mode handler is
  * a later step. Resolves [Q05]: ⌥⇥ is the trigger.
+ *
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugapp/Sources/MainWindow.swift
  */
 
 import { describe, expect, test } from "bun:test";

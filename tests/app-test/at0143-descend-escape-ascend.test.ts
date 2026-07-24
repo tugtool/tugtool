@@ -18,6 +18,10 @@
  * is then allowed to dismiss.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/focus-act.ts
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

@@ -20,6 +20,10 @@
  * (at0141's pattern): they travel the SAME document-capture pipeline a hardware
  * key does — the engine's act dispatch, the list's arrow handler, and the
  * bubble-stage default-button activation all run for real.
+ *
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/lib/slash-commands.ts
  */
 
 import { describe, expect, test } from "bun:test";

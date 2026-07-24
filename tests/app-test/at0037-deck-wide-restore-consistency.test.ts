@@ -54,6 +54,11 @@
  * `app.quitGracefully()` + relaunch.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

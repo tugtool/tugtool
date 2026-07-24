@@ -28,6 +28,9 @@
  * - `Bun.connect` surfaces ECONNREFUSED as a rejected promise with
  *   the errno in the error message. We match on "ECONNREFUSED" or
  *   the numeric errno 61 (macOS) / 111 (Linux) to stay resilient.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
  */
 
 import { describe, expect, test } from "bun:test";

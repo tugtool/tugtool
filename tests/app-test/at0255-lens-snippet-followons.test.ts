@@ -18,6 +18,10 @@
  *     beeping.
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
+ *
+ * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/lib/snippets-store.ts
+ * @covers tugdeck/src/lib/snippet-drag.ts
  */
 
 import { describe, expect, test } from "bun:test";

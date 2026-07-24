@@ -12,6 +12,11 @@
  * provider is covered by its own tests and the live app.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/open-quickly-store.ts
+ * @covers tugdeck/src/components/chrome/open-quickly-overlay.tsx
+ * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * @covers tugdeck/src/lib/open-file-in-card.ts
  */
 
 import { describe, expect, test } from "bun:test";

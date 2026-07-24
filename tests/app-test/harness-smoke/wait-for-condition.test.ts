@@ -31,6 +31,9 @@
  *   `translateError` maps that unknown name to a plain `Error` with
  *   `.name` preserved. We assert both `instanceof Error` and a match
  *   on `.name` / `.message` per the plan.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
  */
 
 import { describe, expect, test } from "bun:test";

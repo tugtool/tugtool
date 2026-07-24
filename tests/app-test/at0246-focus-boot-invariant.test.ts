@@ -22,6 +22,11 @@
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`) so the
  * snippets list has real rows and the `lens-section-snippets:0` focusable
  * registers.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/default-focus.ts
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/focus-theft-gate.ts
  */
 
 import { describe, expect, test } from "bun:test";

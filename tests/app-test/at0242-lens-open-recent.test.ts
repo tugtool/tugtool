@@ -19,6 +19,11 @@
  *   2. Cmd-L to focus the list, arrow onto the first recent, Enter to open it.
  *   3. The file becomes an open row titled with its basename; it is gone from
  *      RECENT; and the movement cursor sits on the new open row.
+ *
+ * @covers tugdeck/src/components/lens/sections/text-files-section.tsx
+ * @covers tugdeck/src/lib/recent-documents.ts
+ * @covers tugdeck/src/lib/open-file-in-card.ts
+ * @covers tugdeck/src/lib/text-card-open-registry.ts
  */
 
 import { describe, expect, test } from "bun:test";

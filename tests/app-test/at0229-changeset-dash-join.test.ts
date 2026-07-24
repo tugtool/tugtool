@@ -17,6 +17,11 @@
  * entries in the aggregate.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/changeset-join-store.ts
+ * @covers tugdeck/src/lib/changeset-verb-store.ts
+ * @covers tugrust/crates/tugdash-core/
+ * @covers tugrust/crates/tugutil/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

@@ -17,6 +17,10 @@
  * still reads the scheduled count (a false flip would read `1/1`).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/lib/session-restore.ts
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

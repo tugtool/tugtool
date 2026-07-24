@@ -18,6 +18,11 @@
  * targets are pinned: the pane title bar and the sheet panel itself.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
  */
 
 import { describe, expect, test } from "bun:test";

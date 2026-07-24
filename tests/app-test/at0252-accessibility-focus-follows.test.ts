@@ -16,6 +16,10 @@
  * mirror tracks arrow navigation and the ring stays on → flip back
  * re-parks the sink and removes the added tabindex → the watchdog report
  * stays clean (zero violations, empty steal ledger) across the whole tour.
+ *
+ * @covers tugdeck/src/keyboard-access-store.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/theme-accessibility.ts
  */
 
 import { describe, expect, test } from "bun:test";

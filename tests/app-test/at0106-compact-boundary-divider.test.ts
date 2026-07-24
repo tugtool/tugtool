@@ -17,6 +17,11 @@
  * store's real `frameToEvent → dispatch` path, and assert the divider.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/compaction-progress-store.ts
+ * @covers tugdeck/src/lib/compaction-request.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

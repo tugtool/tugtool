@@ -12,6 +12,11 @@
  * Driven on the gallery Basic Alert (confirmRole "action" → Action is default).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-alert.tsx
+ * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
+ * @covers tugdeck/src/components/tugways/spatial-order.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -26,6 +26,10 @@
  * is covered by at0023 / at0038.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/card-state-orchestrator.ts
  */
 
 import { describe, expect, test } from "bun:test";

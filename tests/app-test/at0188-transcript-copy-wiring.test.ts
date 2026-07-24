@@ -19,6 +19,11 @@
  *    OMITS the thinking block.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/transcript-export.ts
+ * @covers tugdeck/src/lib/copy-as-plain-text.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugdeck/src/components/tugways/text-selection-adapter.ts
  */
 
 import { describe, expect, test } from "bun:test";

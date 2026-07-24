@@ -17,6 +17,9 @@
  *   3. No `…` menu button renders anywhere.
  *   4. The Text Files list shows rows for the real files only — the missing
  *      paths are filtered out by the existence probe.
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
  */
 
 import { describe, expect, test } from "bun:test";

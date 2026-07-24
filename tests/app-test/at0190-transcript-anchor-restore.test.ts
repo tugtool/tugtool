@@ -19,6 +19,11 @@
  * | B     | relaunch → restore bag → settle                     | restored scrollTop == saved (≤ 2px)     |
  *
  * Real-derived, sanitized, committed fixture — no live archive.
+ *
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/lib/block-height-index.ts
+ * @covers tugdeck/src/lib/smart-scroll.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  */
 
 import { describe, expect, test } from "bun:test";

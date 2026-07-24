@@ -41,6 +41,11 @@
  * at0085 / at0221 precedent).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

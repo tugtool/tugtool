@@ -28,6 +28,11 @@
  * "popover still present 300ms after click" assertion.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/card-close-guard.ts
+ * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

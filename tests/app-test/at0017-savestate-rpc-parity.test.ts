@@ -21,6 +21,11 @@
  * the bags should match modulo source tag.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/test-surface.ts
+ * @covers tugapp/Sources/AppDelegate.swift
  */
 
 import { describe, expect, test } from "bun:test";

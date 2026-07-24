@@ -26,6 +26,10 @@
  * `keybinding-registry.test.ts`; that static global bindings still fire is
  * covered by the existing static-chord app-tests (at0085 ⇧⌘C, at0177 ⇧⌘P,
  * at0043 ⌘A/⌘C), which remain green after the dynamic layer was added.
+ *
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
+ * @covers tugdeck/src/components/tugways/hooks/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

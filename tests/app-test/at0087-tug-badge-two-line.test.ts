@@ -32,6 +32,9 @@
  *      the reserved slot width ([R01]); the active text still changes.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-badge.tsx
+ * @covers tugdeck/src/components/tugways/tug-badge.css
  */
 
 import { describe, expect, test } from "bun:test";

@@ -12,6 +12,10 @@
  *   2. Open Settings; the General tab is first (default).
  *   3. Pick the "Left" segment.
  *   4. Assert the rail flips to the left edge AND the side persists.
+ *
+ * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-lens-body.tsx
+ * @covers tugdeck/src/lib/lens-store/
  */
 
 import { describe, expect, test } from "bun:test";

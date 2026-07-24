@@ -13,6 +13,11 @@
  * layer (the replay workspace's changeset entries live ~2s). ⇧⌘C toggles this
  * same bottom sheet (and, on an empty composer, the mode) — not driven here
  * because ⇧⌘C collides with the editor's Copy-as-Plain-Text headless ([D117]).
+ *
+ * @covers tugdeck/src/lib/commit-mode-controller.ts
+ * @covers tugdeck/src/lib/changeset-draft-store.ts
+ * @covers tugdeck/src/lib/landing-receipt.ts
+ * @covers tugrust/crates/tugchanges-core/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

@@ -37,6 +37,12 @@
  * Probes and gating mirror `at0016-tab-close-handoff.test.ts`. Cards
  * use `gallery-input`; close-button selectors are
  * `data-testid="tug-tab-close-${cardId}"`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/lib/card-lifecycle.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

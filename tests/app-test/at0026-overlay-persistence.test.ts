@@ -48,6 +48,11 @@
  * (`[data-slot="tug-sheet"]`) appears after restore.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/lib/sheet-lifecycle.ts
+ * @covers tugdeck/src/serialization.ts
  */
 
 import { describe, expect, test } from "bun:test";

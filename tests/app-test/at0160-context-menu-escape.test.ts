@@ -17,6 +17,10 @@
  * restoration to a real editor is covered by at0020 (the editor context menu).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/internal/
  */
 
 import { describe, expect, test } from "bun:test";

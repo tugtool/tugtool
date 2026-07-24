@@ -22,6 +22,11 @@
  * reads the SAME JSONL and reverts to the picker on a `cwd` mismatch).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/compaction-progress-store.ts
+ * @covers tugdeck/src/lib/session-restore.ts
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

@@ -28,6 +28,10 @@
  * here by inserting 200ms+ pauses between each significant input.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor.css
  */
 
 import { describe, expect, test } from "bun:test";

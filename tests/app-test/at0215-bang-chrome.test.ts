@@ -23,6 +23,10 @@
  *      `side_question_answer` frame the probe pinned.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/bang-commands.ts
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/lib/commit-mode-controller.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

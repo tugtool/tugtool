@@ -16,6 +16,9 @@
  * snapshot walks the menu tree without a tracking session.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/lib/host-menu-state.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -54,6 +54,9 @@
  * if the grant is missing. See
  * [scripts/setup-dev-signing.sh](../../scripts/setup-dev-signing.sh)
  * and the [harness README](./README.md) for setup.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
  */
 
 import { describe, expect, test } from "bun:test";

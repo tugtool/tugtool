@@ -15,6 +15,11 @@
  *   3. Expand the top commit → the committer's identity (name + email), the
  *      message body, and the commit's changed files (a `TugChangesList`, served
  *      by the new GIT_COMMIT_FILES path) render.
+ *
+ * @covers tugdeck/src/lib/git-log-store.ts
+ * @covers tugdeck/src/lib/shade-view-controller.ts
+ * @covers tugdeck/src/components/tugways/blocks/block-chrome.tsx
+ * @covers tugrust/crates/tugcast/
  */
 
 import { describe, expect, test } from "bun:test";

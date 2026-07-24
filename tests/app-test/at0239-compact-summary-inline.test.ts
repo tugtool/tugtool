@@ -14,6 +14,10 @@
  * at the compaction point (not the top).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/compaction-progress-store.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugdeck/src/lib/code-session-store/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

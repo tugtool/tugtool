@@ -36,7 +36,10 @@ just setup-dev-signing
 #    Re-run only when Swift / Rust sources change.
 just build-app
 
-# 3. Run the full app-test sweep.
+# 3. Run the tests that cover what you changed. This is the everyday command.
+just app-test-changed
+
+# The ~20-test core tier — one test per load-bearing surface:
 just app-test
 
 # Run a single file:
@@ -45,7 +48,36 @@ just app-test harness-smoke/smoke.test.ts
 
 # Run a list of specific files in order:
 just app-test harness-smoke/smoke.test.ts at0003-pane-activation.test.ts
+
+# Every test file. Slow — one Tug.app launch per file.
+just app-test-all
 ```
+
+### Choosing what to run
+
+Running everything is almost never the right move: each file launches its own `Tug.app` subprocess, and the whole suite is serialized behind a machine-wide gate. Selection is derived, not guessed — every test declares the source it exercises in its header docblock:
+
+```ts
+/**
+ * at0240-lens-focus-grammar.test.ts — ...prose...
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ */
+```
+
+A `@covers` value is a repo-relative path (a trailing `/` means the whole subtree) or a glob. `just app-test-changed` reads the changed files out of `git status`, resolves them through those declarations, prints which changed file pulled in each test, and runs exactly that set. Prefer **generous** globs — a directory over a single file — so a rename inside the subsystem doesn't silently drop coverage.
+
+| Command | What it runs |
+|---|---|
+| `just app-test-changed [paths…]` | The tests whose `@covers` match your working diff (or the given paths) |
+| `just app-test-select [paths…]` | Same selection, printed but not run |
+| `just app-test` | The ~20-test core tier (defined in the `app-test` recipe) |
+| `just app-test <files…>` | Exactly the named files |
+| `just app-test-all` | Every test file |
+| `just app-test-covers-check` | Lint: every test declares `@covers`, and every path resolves |
+
+Two things `@covers` cannot scope: the harness (`tests/app-test/_harness/`) and the app shell (`tugapp/Sources/`, `tugdeck/src/main.tsx`). Those sit underneath every test, so the selector prints a **SWEEP ADVISED** advisory when it sees them changed and `just app-test-all` is the honest answer.
 
 `just app-test` ends every run with a structured summary block whose
 last stdout line is exactly `VERDICT: PASS  (...)` or `VERDICT: FAIL
@@ -162,12 +194,19 @@ Step-by-step:
    - Scenario: `tests/app-test/at{NNNN}-<slug>.test.ts`.
    - Smoke: `tests/app-test/harness-smoke/<descriptive>.test.ts`.
 
-3. **Gate on `TUGAPP_APP_TEST=1`.** Use
+3. **Declare `@covers` in the header docblock.** One line per source path
+   or glob the test exercises, at the end of the docblock. Without it the
+   test can never be selected by `just app-test-changed` — it silently
+   stops guarding its surface, which is exactly the drift that produced a
+   stale hand-maintained run list. `just app-test-covers-check` fails on a
+   missing declaration and on a path that no longer resolves.
+
+4. **Gate on `TUGAPP_APP_TEST=1`.** Use
    `describe.skipIf(!SHOULD_RUN)` at the top of every `describe`
    block. Without it, `bun x tsc --noEmit` runs are forced to skip
    too, which keeps CI honest.
 
-4. **Import from `@/_harness`.** The path alias resolves to
+5. **Import from `@/_harness`.** The path alias resolves to
    `tests/app-test/_harness/index.ts` regardless of subdirectory
    depth. Key exports:
 
@@ -185,7 +224,7 @@ Step-by-step:
    - `EXPECTED_SURFACE_VERSION` — pinned `window.__tug` surface
      version; must match tugdeck and the Swift bridge.
 
-5. **Drive, assert, close.** Seed state, drive gestures through the
+6. **Drive, assert, close.** Seed state, drive gestures through the
    typed wrappers, assert against both `__tug` state reads and the
    deck-trace ring:
 
@@ -203,14 +242,14 @@ Step-by-step:
    Call `registerSubsetMatcher()` once at module load to enable the
    `expect(...).toContainOrderedSubset(...)` fluent form.
 
-6. **Always close in `finally`.** Orphaned subprocesses accumulate
+7. **Always close in `finally`.** Orphaned subprocesses accumulate
    across runs and exhaust socket paths.
 
-7. **Within a single file, prefer `app.reset()`** over re-spawning
+8. **Within a single file, prefer `app.reset()`** over re-spawning
    when scenarios share the app — it is orders of magnitude faster
    than a subprocess boot. No state is shared across files.
 
-8. **Prefer production code paths over synthetic events.** For focus,
+9. **Prefer production code paths over synthetic events.** For focus,
    call `app.focusElement(selector)` — this uses the same `.focus()`
    path that production code takes, keeping the test inside the
    fidelity envelope. For trusted clicks/drags/keys, use
@@ -218,7 +257,7 @@ Step-by-step:
    `CGEvent`s and exercise WebKit's `isTrusted: true` paths that
    synthesized DOM events cannot reach.
 
-9. **`holdModifier` for modifier-bracketed sequences.** Hold modifiers
+10. **`holdModifier` for modifier-bracketed sequences.** Hold modifiers
    atomically Swift-side rather than driving them as separate events:
 
    ```ts
@@ -238,7 +277,7 @@ Step-by-step:
    reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
    nesting scopes.
 
-10. **Keybinding chords: dispatch a synthetic `KeyboardEvent`, not
+11. **Keybinding chords: dispatch a synthetic `KeyboardEvent`, not
     `nativeKey`.** This is the one place item 8 inverts. A keybinding is
     defined purely by `event.code` + modifier flags — `matchKeybinding`
     reads nothing else and does not check `isTrusted` — so a synthetic

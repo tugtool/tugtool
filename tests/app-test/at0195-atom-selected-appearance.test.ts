@@ -25,6 +25,11 @@
  * Has teeth: if `selectedAtomSyncPlugin` were absent or mis-detected
  * coverage, the chip would never gain `data-selected` and its `src`
  * would never change under selection.
+ *
+ * @covers tugdeck/src/lib/tug-atom-chip.tsx
+ * @covers tugdeck/src/lib/tug-atom-img.ts
+ * @covers tugdeck/src/lib/atom-mention-marker.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
  */
 
 import { describe, expect, test } from "bun:test";

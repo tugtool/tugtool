@@ -22,6 +22,11 @@
  * Driven through `/model` (the `KNOWN_MODELS` fallback needs no metadata setup).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

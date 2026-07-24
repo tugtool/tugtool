@@ -19,6 +19,10 @@
  *     (wrapper outline > 0) while the box's own outline stays 0;
  *   - **Space toggles:** Space on the focused checkbox flips its `data-state`;
  *   - **Tab walks to the next stop:** a second Tab moves the key view to `b`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-checkbox.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

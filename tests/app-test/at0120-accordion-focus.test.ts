@@ -21,6 +21,10 @@
  *   - **Enter descends** into the open section's inner control (key view leaves
  *     the accordion; the accordion shows `data-key-within`), Space acts on it,
  *     and **Escape ascends** back to the accordion (ring returns, within clears).
+ *
+ * @covers tugdeck/src/components/tugways/tug-accordion.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

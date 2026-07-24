@@ -24,6 +24,11 @@
  *   2. The Case toggle survives into a fresh bar (global persistence).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/text-card-find-bar.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card.tsx
+ * @covers tugdeck/src/lib/find-surface.ts
+ * @covers tugdeck/src/lib/text-match.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

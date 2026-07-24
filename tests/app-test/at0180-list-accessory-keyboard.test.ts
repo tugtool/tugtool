@@ -42,6 +42,11 @@
  * synthetic key can't fire a native `<button>` from the trap).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-row.tsx
+ * @covers tugdeck/src/lib/session-picker-data-source.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

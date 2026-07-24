@@ -14,6 +14,9 @@
  * every question is answered and the Next-boundary lands on Submit).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

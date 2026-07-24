@@ -16,6 +16,9 @@
  * ------
  * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs
  * without `TUGAPP_APP_TEST=1` skip every test.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/
  */
 
 import { describe, expect, test } from "bun:test";

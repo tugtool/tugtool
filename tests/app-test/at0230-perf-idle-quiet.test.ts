@@ -19,6 +19,11 @@
  * Budget: zero drift beats ≥80ms across the window, with ONE beat of
  * grace ≤150ms for an unlucky GC. A regression to always-on per-frame
  * work (the July 2026 profile) trips this by an order of magnitude.
+ *
+ * @covers tugdeck/src/lib/perf-monitor.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/lib/pulse-line/
+ * @covers tugdeck/src/lib/session-activity-store.ts
  */
 
 import { describe, expect, test } from "bun:test";

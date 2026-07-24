@@ -30,6 +30,12 @@
  *      content regardless of arrival order.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/shell-session-store.ts
+ * @covers tugdeck/src/lib/shell-line-classifier.ts
+ * @covers tugdeck/src/lib/shell-share.ts
+ * @covers tugdeck/src/lib/bang-commands.ts
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

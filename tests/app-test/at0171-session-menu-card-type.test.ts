@@ -18,6 +18,10 @@
  * test; live turn/transcript transitions by the live-state test.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/lib/host-menu-state.ts
+ * @covers tugdeck/src/lib/card-session-binding-store.ts
  */
 
 import { describe, expect, test } from "bun:test";

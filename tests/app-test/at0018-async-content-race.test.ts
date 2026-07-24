@@ -27,6 +27,10 @@
  * start failing; [AT0018] covers the async-content race.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

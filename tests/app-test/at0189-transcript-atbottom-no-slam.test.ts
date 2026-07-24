@@ -23,6 +23,11 @@
  *
  * Real-derived, sanitized, committed fixture — no live archive, no
  * gallery fixture. See `fixtures/README.md`.
+ *
+ * @covers tugdeck/src/lib/smart-scroll.ts
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  */
 
 import { describe, expect, test } from "bun:test";

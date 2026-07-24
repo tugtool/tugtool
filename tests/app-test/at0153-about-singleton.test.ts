@@ -20,6 +20,10 @@
  * ------
  * `describe.skipIf(!SHOULD_RUN)`. CI and `bun x tsc --noEmit` runs
  * without `TUGAPP_APP_TEST=1` skip every test.
+ *
+ * @covers tugdeck/src/components/tugways/cards/about-card.tsx
+ * @covers tugdeck/src/card-registry.ts
+ * @covers tugdeck/src/action-dispatch.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -26,6 +26,11 @@
  * cleanup. This file locks in current behavior.
  *
  * Probes and gating mirror `at0003-pane-activation.test.ts`.
+ *
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

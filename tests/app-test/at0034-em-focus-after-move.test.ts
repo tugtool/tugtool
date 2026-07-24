@@ -29,6 +29,11 @@
  * since the legacy `TugPromptInput`-direct surface was retired).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/card-drag-coordinator.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -23,6 +23,11 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)` matches the rest of the
  * `tests/app-test` suite — only runs under `TUGAPP_APP_TEST=1`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-entry-shell.tsx
  */
 
 import { describe, expect, test } from "bun:test";

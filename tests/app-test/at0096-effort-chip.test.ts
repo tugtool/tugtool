@@ -28,6 +28,12 @@
  * integration concern (live tugcode), out of this UI test's reach.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/effort.ts
+ * @covers tugdeck/src/lib/use-effort.ts
+ * @covers tugdeck/src/lib/default-effort-store.ts
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/effort-picker-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -13,6 +13,11 @@
  * `sendSpawnSession` path the full picker's Open uses; the spawn/resume
  * round-trip is a supervisor concern out of this store-only harness's reach.
  * This test pins the overlay's open / chrome / cancel-keeps-session contract.)
+ *
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/lib/session-picker-data-source.ts
+ * @covers tugdeck/src/lib/session-restore.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

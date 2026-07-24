@@ -22,6 +22,11 @@
  *      focused first responder, and the card is on the Code route.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/lib/markdown/
+ * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

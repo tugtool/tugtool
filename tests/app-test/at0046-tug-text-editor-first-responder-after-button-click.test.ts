@@ -38,6 +38,12 @@
  *
  * Either fix alone resolves the user-reported symptom; both together
  * are defense in depth.
+ *
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -17,6 +17,11 @@
  *      an option must update the chip to that mode.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/permission-mode.ts
+ * @covers tugdeck/src/lib/use-permission-mode.ts
+ * @covers tugdeck/src/lib/default-permission-mode-store.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";

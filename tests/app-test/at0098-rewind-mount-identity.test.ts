@@ -20,6 +20,10 @@
  * The rewind is driven by injecting the `rewind_result` ack — the local
  * truncation is a store/data-source concern, exercised here independently of
  * the sheet (the sheet round-trip is at0097). Deterministic; no live claude.
+ *
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

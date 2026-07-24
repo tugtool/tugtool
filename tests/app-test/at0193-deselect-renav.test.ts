@@ -10,6 +10,11 @@
  * state. This pins that recovery path through the real menu dispatch.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/action-dispatch.ts
+ * @covers tugdeck/src/components/chrome/deck-canvas.tsx
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

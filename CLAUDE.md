@@ -43,6 +43,26 @@ Run Rust tests with:
 cd tugrust && cargo nextest run
 ```
 
+### App-tests: run a selection, never a sweep
+
+Every app-test launches its own `Tug.app` subprocess and the whole invocation is serialized behind a machine-wide gate, so running the corpus is expensive. **Selective runs are the default.**
+
+```bash
+just app-test-changed        # the everyday command — derived from your working diff
+just app-test-select         # print that selection without running it
+```
+
+Selection is derived, not guessed: every `*.test.ts` declares the source it exercises with `@covers` lines in its header docblock, and `app-test-changed` resolves the changed files through those declarations. Any new test **must** carry `@covers` — `just app-test-covers-check` fails on a missing declaration or a path that no longer resolves.
+
+Do **not** run `just app-test-all` on your own initiative. Run the full corpus only when:
+
+- the user explicitly asks for it, or
+- you changed the harness (`tests/app-test/_harness/`) or the app shell (`tugapp/Sources/`, `tugdeck/src/main.tsx`) — these sit underneath every test, so no `@covers` line can scope them and `app-test-changed` prints a **SWEEP ADVISED** advisory.
+
+Bare `just app-test` (no arguments) is a curated **core tier** of ~20 tests — one per load-bearing surface — for a fast read on whether the app fundamentally works. It is deliberately not everything. `just app-test <files…>` runs exactly what you name.
+
+The doctrine is in [tuglaws/app-test-harness.md](tuglaws/app-test-harness.md#selection-is-derived-not-remembered); the how-to is in [tests/app-test/README.md](tests/app-test/README.md#choosing-what-to-run).
+
 ## Tugdeck — Theme Token Files
 
 Theme tokens live in `tugdeck/styles/themes/*.css` — `brio`/`nocturne`/`bravura` (dark) and `harmony`/`aria`/`vivace` (light). These are hand-authored CSS files — there is no generation script. Edit them directly when adding or tuning tokens. Each theme is one tint hue over a shared tone skeleton; see `tuglaws/theme-engine.md` for the authoring doctrine. Validate contrast with `bun run audit:theme-contrast` (no theme may exceed the `brio` accessibility budget). Register new themes in `SHIPPED_THEME_NAMES` (`tugdeck/src/action-dispatch.ts`).

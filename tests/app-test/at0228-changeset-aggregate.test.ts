@@ -25,6 +25,12 @@
  * ledger seeding — the files flow through the real compose + wire + render.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/changeset-all-store.ts
+ * @covers tugdeck/src/lib/changeset-types.ts
+ * @covers tugdeck/src/lib/session-state-changes-store.ts
+ * @covers tugrust/crates/tugchanges-core/
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

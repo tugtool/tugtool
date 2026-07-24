@@ -20,6 +20,10 @@
  * default-button `click()`, so the path is faithful and RPC-drivable unattended.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

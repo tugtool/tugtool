@@ -36,6 +36,11 @@
  *
  * Both cards are live dev sessions with two committed turns each (≥2
  * anchored turns is what makes `/rewind` have a target and open at all).
+ *
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/action-dispatch.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

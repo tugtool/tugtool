@@ -12,6 +12,11 @@
  * Three gallery cards share one pane (choice, option, radio); radio is active
  * and third. The test proves a SINGLE Tab rings the radio card's group, and the
  * hidden cards' groups never take the key view.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/spatial-order.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/chrome/card-host.tsx
  */
 
 import { describe, expect, test } from "bun:test";

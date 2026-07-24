@@ -23,6 +23,11 @@
  * Drives native CGEvents (click + drag) → strict AX preflight.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`. Runs only under `TUGAPP_APP_TEST=1`.
+ *
+ * @covers tugdeck/src/lib/shade-view-controller.ts
+ * @covers tugdeck/src/components/tugways/shade-height.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/layout-tree.ts
  */
 
 import { describe, expect, test } from "bun:test";

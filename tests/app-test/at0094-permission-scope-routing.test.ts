@@ -20,6 +20,10 @@
  * here — its path resolution is covered by the tugcast unit test.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/permission-rules-store.ts
+ * @covers tugdeck/src/lib/permission-rules.ts
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

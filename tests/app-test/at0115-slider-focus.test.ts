@@ -17,6 +17,10 @@
  *     faint behind-tint on the whole component, and fills the thumb with the
  *     role color ([P01] leaf signature);
  *   - **arrows step locally:** ArrowRight increases `aria-valuenow` by one step.
+ *
+ * @covers tugdeck/src/components/tugways/tug-slider.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

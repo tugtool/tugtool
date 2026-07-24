@@ -37,6 +37,12 @@
  *      and overlapping the active match — never floating over chrome.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/transcript-find-engine.ts
+ * @covers tugdeck/src/lib/transcript-search-index.ts
+ * @covers tugdeck/src/lib/transcript-search.ts
+ * @covers tugdeck/src/components/tugways/transcript-find-highlighter.ts
+ * @covers tugdeck/src/components/tugways/tug-find-cluster.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

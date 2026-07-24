@@ -20,6 +20,11 @@
  *     the reported drop, pinned red→green).
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
+ * @covers tugdeck/src/action-dispatch.ts
+ * @covers tugapp/Sources/AppDelegate.swift
  */
 
 import { describe, expect, test } from "bun:test";

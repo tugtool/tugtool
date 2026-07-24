@@ -16,6 +16,10 @@
  *
  * Escape / Return / Space semantics are a later step; this gates push/seed/wrap/
  * restore only.
+ *
+ * @covers tugdeck/src/components/tugways/hooks/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
  */
 
 import { describe, expect, test } from "bun:test";

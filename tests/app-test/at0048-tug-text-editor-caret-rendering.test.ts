@@ -26,6 +26,10 @@
  *     the inline-replaced widget hierarchy so it's unconstrained.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor.css
  */
 
 import { describe, expect, test } from "bun:test";

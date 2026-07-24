@@ -40,6 +40,11 @@
  *      passes the presence check but fails stability.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/tug-atom-chip.tsx
+ * @covers tugdeck/src/lib/tug-atom-img.ts
+ * @covers tugdeck/src/lib/atom-bytes-store.ts
+ * @covers tugdeck/src/lib/image-downsample.ts
  */
 
 import { describe, expect, test } from "bun:test";

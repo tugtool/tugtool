@@ -34,6 +34,10 @@
  * processes). This file exercises `app.appReload()` (in-process
  * reload, same Tug.app, same tugcast). They share the temp-tugbank
  * isolation primitive but are otherwise independent.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
+ * @covers tugapp/Sources/MainWindow.swift
  */
 
 import { describe, expect, test } from "bun:test";

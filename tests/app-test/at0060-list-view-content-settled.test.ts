@@ -47,6 +47,10 @@
  *  - [L24] the three signals correspond to the three state zones:
  *    loaded (local data — itemCount), rendered (structure — DOM
  *    cells), settled (appearance — scrollHeight stable).
+ *
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/lib/block-height-index.ts
+ * @covers tugdeck/src/lib/smart-scroll.ts
  */
 
 import { describe, expect, test } from "bun:test";

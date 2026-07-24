@@ -83,6 +83,25 @@ The procedural details (the typed wrappers' signatures, the worked examples, the
 
 ---
 
+## Selection is derived, not remembered
+
+Every app-test launches its own `Tug.app` subprocess, and whole invocations are serialized behind a machine-wide gate. Running the corpus is therefore expensive in the one currency that matters during development — the time between making a change and learning whether it broke something. The cost is why a run must be *selected*, and the selection must be *derived* rather than curated by hand: a hand-maintained "the tests we run" list decays silently, because a test added after the list was written is simply absent from it, and nothing fails to announce that.
+
+So coverage is declared at the test, in the header docblock:
+
+```
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+```
+
+`just app-test-changed` resolves the working diff through those declarations and runs the matching set; `just app-test-covers-check` fails on a test that declares nothing and on a path that no longer resolves. Colocation is the load-bearing property — a declaration that lives next to the test it describes moves when the test moves and is visible in the diff that changes the test, which is what a central manifest cannot offer.
+
+Two categories resist coverage-based scoping and are therefore excluded from it by design: the harness itself (`tests/app-test/_harness/`) and the app shell (`tugapp/Sources/`, `tugdeck/src/main.tsx`). Every test is downstream of both, so no `@covers` line can bound their blast radius; the selector emits a sweep advisory instead of pretending to a scope it cannot compute.
+
+The no-argument `just app-test` is a **curated core tier** of roughly twenty tests — one per load-bearing surface — not a sweep. It answers "does the app still fundamentally work," and its incompleteness is the point: it is a deliberately-chosen sample whose members are listed with a one-line rationale each in the `app-test` recipe. `just app-test-all` is the only command that claims to run everything.
+
+---
+
 ## The accessibility-grant relationship
 
 Posting a `CGEvent` requires `Tug.app` to hold the macOS Accessibility (TCC) grant — System Settings → Privacy & Security → Accessibility, with `Tug.app` toggled on. Without the grant, `CGEvent.post` silently no-ops: every native gesture appears to succeed, but no event reaches the WebView, every assertion fails, and the failure attribution is misleading because the verbs returned `void` rather than throwing.

@@ -28,6 +28,11 @@
  *      block was the turn-lock, not a dead key.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/lib/session-lifecycle.ts
  */
 
 import { describe, expect, test } from "bun:test";

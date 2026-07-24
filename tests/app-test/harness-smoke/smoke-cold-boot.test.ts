@@ -53,6 +53,12 @@
  *
  * `dev.tugtool.test` is a smoke-only domain; it does NOT collide
  * with the production card-state domain (`dev.tugtool.deck.cardstate`).
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
+ * @covers tugapp/Sources/TugbankClient.swift
+ * @covers tugrust/crates/tugbank/
+ * @covers tugrust/crates/tugbank-core/
  */
 
 import { describe, expect, test } from "bun:test";

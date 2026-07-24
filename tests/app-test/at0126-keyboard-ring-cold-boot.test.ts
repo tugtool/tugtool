@@ -12,6 +12,11 @@
  * Phase A failure ⇒ the ring was not captured onto the focus axis (focus left
  * the group before save, or the focus-key isn't emitted). Phase B failure ⇒
  * `applyBagFocus` didn't re-light the ring on restore.
+ *
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/keyboard-access-store.ts
+ * @covers tugdeck/src/focus-ring-modality-store.ts
  */
 
 import { describe, expect, test } from "bun:test";

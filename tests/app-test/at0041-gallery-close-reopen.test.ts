@@ -17,6 +17,11 @@
  * handler.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/action-dispatch.ts
+ * @covers tugdeck/src/lib/card-close-guard.ts
+ * @covers tugdeck/src/components/tugways/cards/
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

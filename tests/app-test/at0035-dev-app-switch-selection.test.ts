@@ -39,6 +39,13 @@
  * without burning wall-clock time on every CI run.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/lib/app-lifecycle.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-restore-gate.ts
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/selection-guard.ts
  */
 
 import { describe, expect, test } from "bun:test";

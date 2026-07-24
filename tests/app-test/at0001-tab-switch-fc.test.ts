@@ -34,6 +34,11 @@
  * The whole describe block is wrapped in `describe.skipIf(!SHOULD_RUN)`.
  * CI and local `bun x tsc --noEmit` runs without `TUGAPP_APP_TEST=1`
  * skip every test, matching the README recipe (`tests/app-test/README.md`).
+ *
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

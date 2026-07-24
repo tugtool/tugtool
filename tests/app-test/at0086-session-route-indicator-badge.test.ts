@@ -44,6 +44,11 @@
  *        across the round trip.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-badge.tsx
+ * @covers tugdeck/src/lib/bang-commands.ts
  */
 
 import { describe, expect, test } from "bun:test";

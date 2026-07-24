@@ -51,6 +51,11 @@
  * enabled), so it is verified by-eye rather than asserted here.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/hooks/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -25,6 +25,11 @@
  * point. The test surface mirrors the existing public method.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/lib/card-lifecycle.ts
+ * @covers tugdeck/src/layout-tree.ts
  */
 
 import { describe, expect, test } from "bun:test";

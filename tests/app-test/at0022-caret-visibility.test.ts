@@ -28,6 +28,12 @@
  * state could plausibly be in flux.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/default-focus.ts
  */
 
 import { describe, expect, test } from "bun:test";

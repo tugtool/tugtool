@@ -27,6 +27,11 @@
  * regress at this cadence.
  *
  * Probes and gating mirror `at0001-tab-switch-fc.test.ts`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/deck-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

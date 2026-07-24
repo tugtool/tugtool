@@ -31,6 +31,10 @@
  * entry's descendant rects are garbage under content-visibility), waits
  * for the entry to regain real layout, then reads rect deltas: header
  * bottom → the top of the body's first painted element.
+ *
+ * @covers tugdeck/src/components/tugways/blocks/
+ * @covers tugdeck/src/components/tugways/body-kinds/
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  */
 
 import { describe, expect, test } from "bun:test";

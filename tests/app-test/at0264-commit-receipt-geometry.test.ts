@@ -1,3 +1,12 @@
+/**
+ * at0264-commit-receipt-geometry.test.ts — the commit receipt block's geometry
+ * on the gallery card.
+ *
+ * @covers tugdeck/src/lib/landing-receipt.ts
+ * @covers tugdeck/src/components/tugways/body-kinds/commit-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-commit-receipt.tsx
+ */
+
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
 

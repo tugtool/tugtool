@@ -14,6 +14,11 @@
  * `data-default-ring` on the commit button while the key view is a non-button.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-sheet-scaffold.tsx
+ * @covers tugdeck/src/components/tugways/spatial-order.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

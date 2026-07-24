@@ -33,6 +33,10 @@
  * The placards render in-DOM inside the card (not portaled), so they are
  * addressed directly by `.tug-placard` / `[data-slot="tug-popup-list"]`
  * and this test asserts DOM geometry.
+ *
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-popovers.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";

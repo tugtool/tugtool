@@ -17,6 +17,10 @@
  * The code-restore dimension's real file revert is covered at the tugcode
  * layer (test-37 / test-39 probes); here the store-only harness verifies the
  * conversation-restore round-trip through the sheet UI.
+ *
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";

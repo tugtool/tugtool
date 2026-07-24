@@ -26,6 +26,10 @@
  *   2. Bind the card to the repo → the section requests and renders the repo's
  *      recent commits, most-recent-first.
  *   3. Collapse → the band summary reads `<branch> · <n> commits` (Spec S03).
+ *
+ * @covers tugdeck/src/lib/git-log-store.ts
+ * @covers tugdeck/src/components/lens/
+ * @covers tugrust/crates/tugcast/
  */
 
 import { describe, expect, test } from "bun:test";

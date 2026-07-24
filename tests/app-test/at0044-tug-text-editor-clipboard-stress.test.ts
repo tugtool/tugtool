@@ -19,6 +19,12 @@
  * user sees it again.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/lib/tug-native-clipboard.ts
+ * @covers tugdeck/src/lib/paste-transforms.ts
+ * @covers tugdeck/src/lib/tug-atom-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

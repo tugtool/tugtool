@@ -12,6 +12,10 @@
  * Everything is read from the live DOM — no section kind, title, or
  * default order is hardcoded — so the test survives any change to the
  * default section order or the set of registered sections.
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  */
 
 import { describe, expect, test } from "bun:test";

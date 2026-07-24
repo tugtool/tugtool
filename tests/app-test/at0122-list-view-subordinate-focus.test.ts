@@ -12,6 +12,10 @@
  *   - the scroll container is `tabIndex=-1` and carries no `data-tug-focusable`;
  *   - every rendered cell wrapper is `tabIndex=-1`;
  *   - selection still lives on a row (`data-selected="true"` exists).
+ *
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-row.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

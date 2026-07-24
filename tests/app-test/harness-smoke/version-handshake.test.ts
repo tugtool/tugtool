@@ -27,6 +27,9 @@
  *   error's `expected` / `actual` fields and checking the socket
  *   path is unlinked (the `process.on("exit")` cleanup will run on
  *   the next tick).
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugapp/Sources/TestHarness/
  */
 
 import { describe, expect, test } from "bun:test";

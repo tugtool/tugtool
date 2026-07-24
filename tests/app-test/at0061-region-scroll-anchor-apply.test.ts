@@ -55,6 +55,11 @@
  *  - [L07] writer + apply effects read live refs each commit.
  *  - [L19] new attribute + meta field documented in
  *    `state-preservation.md` and `RegionScrollSnapshot`.
+ *
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/lib/block-height-index.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/serialization.ts
  */
 
 import { describe, expect, test } from "bun:test";

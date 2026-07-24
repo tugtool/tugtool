@@ -30,6 +30,11 @@
  * what this test gates — the autosave loop is.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/text-card.tsx
+ * @covers tugdeck/src/lib/text-card-store.ts
+ * @covers tugdeck/src/lib/file-io.ts
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor/
  */
 
 import { describe, expect, test } from "bun:test";

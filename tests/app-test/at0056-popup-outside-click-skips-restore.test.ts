@@ -33,6 +33,11 @@
  *     click point and is governed by pane-focus-controller, not the
  *     service binding. The negative assertion (focus NOT on editor)
  *     is sufficient to prove the binding did not over-restore.
+ *
+ * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/lib/canvas-overlay-registry.ts
  */
 
 import { describe, expect, test } from "bun:test";

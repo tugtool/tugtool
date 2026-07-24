@@ -39,6 +39,11 @@
  * Every scenario opens a real disk path so no save lands in an NSSavePanel.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/text-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card-save-sheets.tsx
+ * @covers tugdeck/src/lib/text-card-store.ts
+ * @covers tugdeck/src/lib/file-io.ts
  */
 
 import { describe, expect, test } from "bun:test";

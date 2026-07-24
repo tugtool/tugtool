@@ -10,6 +10,10 @@
  * Repro for: "⌘, blinks the menu but no Settings card; mouse works."
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/action-dispatch.ts
  */
 
 import { describe, expect, test } from "bun:test";

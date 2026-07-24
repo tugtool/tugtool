@@ -16,6 +16,10 @@
  * chip paints with the label.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

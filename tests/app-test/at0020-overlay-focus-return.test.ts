@@ -30,6 +30,11 @@
  * the [AT0020] gap.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-editor-context-menu.tsx
+ * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
  */
 
 import { describe, expect, test } from "bun:test";

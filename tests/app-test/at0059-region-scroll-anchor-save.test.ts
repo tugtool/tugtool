@@ -49,6 +49,11 @@
  *    state, drives the attribute lifecycle.
  *  - [L19] component authoring guide — the new attribute is documented
  *    in `state-preservation.md` and the body kind / list view docs.
+ *
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/lib/block-height-index.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/serialization.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -28,6 +28,11 @@
  * (`run_in_background: true`, `task_type: "local_bash"`) is in the
  * IN-FLIGHT turn's scratch; a `RemoteTrigger` folds from its own
  * `tool_use` + `tool_result` (no task frame).
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/lib/session-activity-store.ts
+ * @covers tugdeck/src/lib/activity-meter.ts
+ * @covers tugdeck/src/lib/pulse-store.ts
  */
 
 import { describe, expect, test } from "bun:test";

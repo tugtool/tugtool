@@ -61,6 +61,12 @@
  * selection both restored.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/components/tugways/tug-input.tsx
+ * @covers tugdeck/src/components/tugways/tug-textarea.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -29,6 +29,11 @@
  * can't be exercised here. That path — parseV4 carrying `anchor` and
  * skipping the fit-clamp — is pinned by the `serialization` unit tests
  * (`layout-tree.test.ts`).
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/layout-tree.ts
+ * @covers tugdeck/src/focus-transfer.ts
  */
 
 import { describe, expect, test } from "bun:test";

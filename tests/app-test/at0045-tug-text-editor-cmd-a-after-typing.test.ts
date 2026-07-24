@@ -7,6 +7,11 @@
  * (File renamed from the earlier pasteboard-custom-mime probe; the
  * findings from that probe are baked into the redesign described in
  * `clipboard-filters.ts`.)
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/responder-chain.ts
+ * @covers tugdeck/src/components/tugways/text-editing-keybindings.ts
  */
 
 import { describe, expect, test } from "bun:test";

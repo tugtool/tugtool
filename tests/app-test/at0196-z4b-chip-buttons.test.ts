@@ -26,6 +26,10 @@
  * be real, enabled `<button>` elements.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
+ * @covers tugdeck/src/lib/session-metadata-store.ts
  */
 
 import { describe, expect, test } from "bun:test";

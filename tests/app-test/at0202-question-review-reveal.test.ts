@@ -29,6 +29,10 @@
  * view ON Submit; multi: the review step) does Return really submit.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
+ * @covers tugdeck/src/components/tugways/question-summary-list.tsx
+ * @covers tugdeck/src/lib/smart-scroll.ts
  */
 
 import { describe, expect, test } from "bun:test";

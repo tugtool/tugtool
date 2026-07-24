@@ -51,6 +51,11 @@
  * on the real re-resume path). The pin therefore lands LIVE from the
  * start: it guards the cold-boot restore channel through the
  * keyboard-as-engine-state rework rather than reproducing its trigger.
+ *
+ * @covers tugdeck/src/components/lens/
+ * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
  */
 
 import { describe, expect, test } from "bun:test";

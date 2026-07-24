@@ -16,6 +16,11 @@
  * tugcode emit half is covered by `tugcode/src/__tests__/session.test.ts`.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/permission-rules-store.ts
+ * @covers tugdeck/src/lib/permission-rules.ts
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugrust/crates/tugcast/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

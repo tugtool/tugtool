@@ -57,6 +57,11 @@
  * premise of the simplification.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
  */
 
 import { describe, expect, test } from "bun:test";

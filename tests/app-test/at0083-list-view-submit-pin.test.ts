@@ -66,6 +66,11 @@
  *  - [L23] user-visible state is honest: an explicit jump-to-latest
  *    always lands; a cold-boot restore reproduces the saved viewport
  *    until the user supersedes it.
+ *
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/lib/smart-scroll.ts
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/components/chrome/card-host.tsx
  */
 
 import { describe, expect, test } from "bun:test";

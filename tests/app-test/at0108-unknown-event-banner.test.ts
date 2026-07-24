@@ -22,6 +22,11 @@
  * type.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-pane-bulletin.tsx
+ * @covers tugdeck/src/lib/banner-lifecycle.ts
+ * @covers tugdeck/src/lib/code-session-store/
+ * @covers tugcode/
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

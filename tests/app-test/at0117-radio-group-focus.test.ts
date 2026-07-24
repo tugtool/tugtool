@@ -29,6 +29,10 @@
  *     `a`). ArrowUp moves the ring back to `a` without changing the selection;
  *     Space commits `a`. The group keeps the key view + behind-tint throughout
  *     (no container ring).
+ *
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

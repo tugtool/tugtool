@@ -20,6 +20,11 @@
  * Against the current (unfixed) code this FAILS — the post-click selection is
  * no longer the full "hello world". The S2 fix (capture on every pointerdown)
  * makes it pass.
+ *
+ * @covers tugdeck/src/components/tugways/tug-input.tsx
+ * @covers tugdeck/src/components/tugways/tug-editor-context-menu.tsx
+ * @covers tugdeck/src/components/tugways/text-editing-menu.ts
+ * @covers tugdeck/src/components/tugways/text-selection-adapter.ts
  */
 
 import { describe, expect, test } from "bun:test";

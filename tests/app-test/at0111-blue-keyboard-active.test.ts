@@ -18,6 +18,11 @@
  * against tone/intensity tuning and theme differences, since orange and blue sit
  * on disjoint hue arcs in both themes. A `gallery-list-view` card is mounted so
  * `tug-list-row.css` (which defines `--tugx-list-row-selected-bg`) is loaded.
+ *
+ * @covers tugdeck/styles/themes/
+ * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/theme-tokens.ts
+ * @covers tugdeck/src/components/tugways/active-color-target.ts
  */
 
 import { describe, expect, test } from "bun:test";

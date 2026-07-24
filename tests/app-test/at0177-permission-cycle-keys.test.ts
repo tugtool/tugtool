@@ -22,6 +22,11 @@
  * Has teeth: under the previous behavior (Shift+Tab folded into the focus walk
  * as the cycle) the second dispatch advanced Accept Edits → Plan and the final
  * assertion would fail; a broken ⇧⌘P binding fails the first.
+ *
+ * @covers tugdeck/src/lib/permission-mode.ts
+ * @covers tugdeck/src/lib/use-permission-mode.ts
+ * @covers tugdeck/src/components/tugways/keybinding-map.ts
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

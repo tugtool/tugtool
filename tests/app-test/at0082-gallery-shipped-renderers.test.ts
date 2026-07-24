@@ -37,6 +37,11 @@
  * component token.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)` — runs under `just app-test`.
+ *
+ * @covers tugdeck/src/components/tugways/body-kinds/
+ * @covers tugdeck/src/components/tugways/blocks/
+ * @covers tugdeck/src/components/tugways/cards/session-assistant-renderer-registrations.ts
+ * @covers tugdeck/src/components/tugways/cards/session-assistant-renderer-dispatch.ts
  */
 
 import { describe, expect, test } from "bun:test";

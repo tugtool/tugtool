@@ -28,6 +28,11 @@
  *      contenteditable — never anything else.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/default-focus.ts
  */
 
 import { describe, test } from "bun:test";

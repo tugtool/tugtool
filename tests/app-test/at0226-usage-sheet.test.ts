@@ -15,6 +15,11 @@
  *
  * Has teeth: before the parser + sheet render the windows there'd be no arc/
  * linear gauges; before the contributing parse there'd be no skills table.
+ *
+ * @covers tugdeck/src/lib/usage-store.ts
+ * @covers tugdeck/src/lib/usage-parse.ts
+ * @covers tugdeck/src/lib/usage-context.tsx
+ * @covers tugrust/crates/tugcast/
  */
 
 import { describe, expect, test } from "bun:test";

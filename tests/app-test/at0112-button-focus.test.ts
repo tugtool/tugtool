@@ -20,6 +20,11 @@
  * `data-key-view` carries the focusable's id; the test maps it back to a button
  * via that element's `data-testid`, so it never depends on the auto-generated
  * focusable id.
+ *
+ * @covers tugdeck/src/components/tugways/internal/
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

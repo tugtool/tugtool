@@ -33,6 +33,11 @@
  * require synthetic CSS that doesn't reflect production layouts.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/region-map.ts
+ * @covers tugdeck/src/lib/smart-scroll.ts
+ * @covers tugdeck/src/components/tugways/tug-markdown-view.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
  */
 
 import { describe, expect, test } from "bun:test";

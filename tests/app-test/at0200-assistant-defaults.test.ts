@@ -28,6 +28,12 @@
  * onDomainChanged path a real write does.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/lib/default-model-store.ts
+ * @covers tugdeck/src/lib/default-effort-store.ts
+ * @covers tugdeck/src/lib/model-catalog.ts
+ * @covers tugdeck/src/lib/use-unavailable-model-bulletin.ts
  */
 
 import { describe, expect, test } from "bun:test";

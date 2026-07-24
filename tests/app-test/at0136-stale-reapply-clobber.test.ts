@@ -21,6 +21,11 @@
  * diverge A's live value to empty, then click back into A (cross-card B→A
  * activation). Pre-fix this snapped A's value back to the stale snapshot;
  * now the live empty value survives.
+ *
+ * @covers tugdeck/src/components/tugways/tug-input.tsx
+ * @covers tugdeck/src/components/tugways/tug-textarea.tsx
+ * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/tugways/component-state-preservation-registry.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -29,6 +29,11 @@
  * bytes store → atom insertion → compose strip) are all real code paths.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/tug-entry-shell.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/
+ * @covers tugdeck/src/lib/file-aside.ts
  */
 
 import { describe, expect, test } from "bun:test";

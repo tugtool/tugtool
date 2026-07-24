@@ -26,6 +26,10 @@
  *     `beta`, deactivates `alpha`). ArrowUp moves the ring back to `alpha` without
  *     changing the active segment; Space commits `alpha`. The group keeps the key
  *     view + behind-tint throughout (no container ring).
+ *
+ * @covers tugdeck/src/components/tugways/tug-choice-group.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";

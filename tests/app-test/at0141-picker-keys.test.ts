@@ -48,6 +48,11 @@
  * drives, and it is the regression that actually bites.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ *
+ * @covers tugdeck/src/lib/session-picker-data-source.ts
+ * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/hooks/
  */
 
 import { describe, expect, test } from "bun:test";

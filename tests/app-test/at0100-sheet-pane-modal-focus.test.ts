@@ -13,6 +13,11 @@
  * Two panes: card A is a live dev session (with a prompt entry), card B opens
  * a sheet. With B's sheet open, clicking A's prompt entry must focus it — focus
  * lands in card A, not back inside card B's sheet.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/lib/sheet-lifecycle.ts
  */
 
 import { describe, expect, test } from "bun:test";

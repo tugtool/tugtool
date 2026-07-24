@@ -18,6 +18,10 @@
  * assertion fails); without the pop, it never clears (the dismiss assertion
  * fails). The trap mechanism itself — mode filtering, wrap, key-view
  * capture/restore — is pinned in the pure-logic `focus-walk.test.ts`.
+ *
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/lib/sheet-lifecycle.ts
  */
 
 import { describe, expect, test } from "bun:test";

@@ -27,6 +27,11 @@
  * decision to the simplistic login-PATH membership check, which an upcoming
  * feature replaces. Re-enable (`describe.skipIf(!SHOULD_RUN)`) once that
  * lands and the bare-typed classifier is the thing worth asserting.
+ *
+ * @covers tugdeck/src/lib/bang-commands.ts
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/lib/shell-session-store.ts
+ * @covers tugdeck/src/lib/find-session.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

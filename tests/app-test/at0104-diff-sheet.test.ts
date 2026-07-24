@@ -17,6 +17,12 @@
  * Has teeth: before the accordion is wired, `/diff` would open a sheet with
  * no `diff-file` items; before the body renders DiffBlock, expanding a file
  * would show no `diff-hunk`.
+ *
+ * @covers tugdeck/src/lib/git-diff-store.ts
+ * @covers tugdeck/src/lib/diff/
+ * @covers tugdeck/src/components/tugways/cards/diff-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-diff-document.tsx
+ * @covers tugdeck/src/lib/slash-commands.ts
  */
 
 import { describe, expect, test } from "bun:test";

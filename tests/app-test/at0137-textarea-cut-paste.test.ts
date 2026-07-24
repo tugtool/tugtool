@@ -10,6 +10,10 @@
  * `nativeRightClick` + `nativeClick`. No `evalJS .value=` / `setSelectionRange`
  * (those are isTrusted:false and bypass the AppKit field editor's real input /
  * undo / selection pipeline, which is exactly where this bug lives).
+ *
+ * @covers tugdeck/src/components/tugways/tug-textarea.tsx
+ * @covers tugdeck/src/components/tugways/text-editing-menu.ts
+ * @covers tugdeck/src/lib/tug-native-clipboard.ts
  */
 
 import { describe, expect, test } from "bun:test";

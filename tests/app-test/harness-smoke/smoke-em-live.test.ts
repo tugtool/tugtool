@@ -45,6 +45,9 @@
  * Justfile doesn't set TUGCODE_LIVE). Tests that explicitly pass
  * a path matching this file run normally; the gate is the env
  * var, not the file path.
+ *
+ * @covers tests/app-test/_harness/
+ * @covers tugcode/
  */
 
 import { describe, expect, test } from "bun:test";
