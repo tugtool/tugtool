@@ -693,6 +693,20 @@ export interface TranslateContext {
    */
   openTurnMsgId: string | null;
   /**
+   * True while the open turn was opened by a slash-command envelope
+   * ({@link isCommandEnvelope}) and no model content has arrived.
+   *
+   * A local slash command (`/model`, `/compact`) is answered by the CLI
+   * itself, not the model, so its turn legitimately ends with no
+   * assistant cycle — the JSONL holds the envelope and a
+   * `<local-command-stdout>` line and nothing else. Orphan synthesis
+   * would otherwise close it `interrupted`, painting a stop marker on a
+   * turn the user never interrupted. Cleared the moment content arrives
+   * ({@link noteContentMsgId}) — a skill command that DOES drive a model
+   * turn is an ordinary turn from that point on.
+   */
+  openTurnLocalCommand: boolean;
+  /**
    * Counter for synthesized opener ids. Bumped every time a new
    * synthesized id is minted (`u-<n>` for user-text openers,
    * `w-<n>` for wake openers — see {@link mintOpenerId}). Monotonic
@@ -757,6 +771,7 @@ export function makeTranslateContext(
     globalSeq: 0,
     turnsCommitted: 0,
     openTurnMsgId: null,
+    openTurnLocalCommand: false,
     orphanCounter: 0,
     blockCountByMsgId: new Map(),
     sessionInitTokens: null,
@@ -791,6 +806,7 @@ function noteContentMsgId(ctx: TranslateContext, msgId: string): void {
   if (msgId.length === 0) return;
   if (ctx.openTurnMsgId === msgId) return;
   ctx.openTurnMsgId = msgId;
+  ctx.openTurnLocalCommand = false;
 }
 
 /**
@@ -841,6 +857,10 @@ function parseEntryTimestamp(entry: JsonlEntry): number | undefined {
  * interrupted-before-response turn — `[user_message]` for `u-<n>`
  * openers, `[]` for `w-<n>` openers.
  *
+ * A turn opened by a slash-command envelope with no model content is
+ * the one exception: it closes `success`. See
+ * {@link TranslateContext.openTurnLocalCommand}.
+ *
  * Idempotent on no open turn — returns `[]` if `openTurnMsgId` is
  * null, so callers can invoke unconditionally before any new opener.
  */
@@ -850,13 +870,14 @@ function emitOrphanIfOpen(
 ): OutboundMessage[] {
   if (ctx.openTurnMsgId === null) return [];
   const msgId = ctx.openTurnMsgId;
+  const result = ctx.openTurnLocalCommand ? "success" : "interrupted";
   const timestamp =
     closingEntry !== undefined ? parseEntryTimestamp(closingEntry) : undefined;
   const turnComplete: TurnComplete = {
     type: "turn_complete",
     msg_id: msgId,
     seq: ctx.globalSeq++,
-    result: "interrupted",
+    result,
     timestamp,
     // An orphan/interrupted turn replays with zero cost: `closingEntry`
     // is the *next* opener (callers pass the arriving entry that closes
@@ -867,11 +888,12 @@ function emitOrphanIfOpen(
     telemetry: buildReplayTurnTelemetry(
       { ...ZERO_TURN_COST },
       ctx.sessionInitTokens,
-      "interrupted",
+      result === "success" ? "complete" : "interrupted",
     ),
     ipc_version: IPC_VERSION,
   };
   ctx.openTurnMsgId = null;
+  ctx.openTurnLocalCommand = false;
   ctx.turnsCommitted += 1;
   return [turnComplete];
 }
@@ -1000,9 +1022,12 @@ function contentBlocks(
  * persists the interaction as `user` JSONL entries: the `<command-name>`
  * / `<command-message>` / `<command-args>` markers of a slash
  * invocation and the `<local-command-stdout>` / `<local-command-caveat>`
- * output blocks. These are CLI-internal bookkeeping — the expanded
- * skill body that follows a slash command is a separate ordinary
- * `user` entry that replays on its own.
+ * output blocks. These are CLI-internal bookkeeping.
+ *
+ * The `<command-*>` envelope is the exception ({@link isCommandEnvelope}):
+ * it is the ONLY persisted record of what the user typed when they
+ * submitted a slash command, so it replays as a genuine submission.
+ * See {@link isCommandEnvelope} for why.
  */
 const COMMAND_SCAFFOLDING_PREFIXES: readonly string[] = [
   "<command-name>",
@@ -1011,6 +1036,46 @@ const COMMAND_SCAFFOLDING_PREFIXES: readonly string[] = [
   "<local-command-stdout>",
   "<local-command-caveat>",
 ];
+
+/** Matches one `<command-message|name|args>…</…>` envelope tag. */
+const COMMAND_ENVELOPE_TAG_RE =
+  /<command-(?:message|name|args)>[\s\S]*?<\/command-(?:message|name|args)>/g;
+
+/**
+ * True when a bare-string `message.content` is Claude Code's
+ * slash-command **envelope** — the record it writes in place of the
+ * literal the user typed:
+ *
+ * ```
+ * <command-message>NAME</command-message>
+ * <command-name>/NAME</command-name>
+ * <command-args>ARGS</command-args>
+ * ```
+ *
+ * This is the user's submission, not bookkeeping. Nothing else in the
+ * JSONL carries it: the expanded skill body that follows is `isMeta`
+ * (skipped), and a command with no expansion (`/compact`, `/model`)
+ * leaves the envelope plus a `<local-command-stdout>` line and nothing
+ * more. Skipping it — as every `<command-*>`-prefixed string once was —
+ * erased the user's row from a resumed transcript entirely: after a
+ * relaunch the `/compact` the user typed simply vanished, and the
+ * assistant's reply to a `/tugplug:…` skill invocation replayed as an
+ * assistant-originated opener with no prompt above it.
+ *
+ * Surfacing the envelope verbatim is what makes replay match live:
+ * tugdeck's `detectCommandEcho` (`lib/command-atom.ts`) parses exactly
+ * this shape back into the command chip + argument chips the composer
+ * showed on submit.
+ *
+ * Requires `<command-name>` and requires the string to be ONLY envelope
+ * tags plus whitespace — the same both-signals gate `detectCommandEcho`
+ * applies, so prose that merely quotes the tags is left to the ordinary
+ * text path.
+ */
+function isCommandEnvelope(text: string): boolean {
+  if (!text.includes("<command-name>")) return false;
+  return text.replace(COMMAND_ENVELOPE_TAG_RE, "").trim() === "";
+}
 
 /**
  * True when a `user` entry's bare-string `message.content` is NOT a
@@ -1033,6 +1098,7 @@ function isNonSubmissionUserString(entry: JsonlEntry, text: string): boolean {
   }
   const trimmed = text.trimStart();
   if (
+    !isCommandEnvelope(trimmed) &&
     COMMAND_SCAFFOLDING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
   ) {
     return true;
@@ -1347,7 +1413,11 @@ function handleUserEntry(
       return out;
     }
     const trimmed = rawContent.trimStart();
+    // The `<command-*>` envelope IS the user's submission — it falls
+    // through to the block walk below and opens a turn like any other
+    // prompt. Every other scaffolding string is CLI bookkeeping.
     if (
+      !isCommandEnvelope(trimmed) &&
       COMMAND_SCAFFOLDING_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
     ) {
       return out;
@@ -1373,6 +1443,7 @@ function handleUserEntry(
         ipc_version: IPC_VERSION,
       });
       ctx.openTurnMsgId = mintOpenerId(ctx, "w");
+      ctx.openTurnLocalCommand = false;
       return out;
     }
     // Fall through: plain-text submission. `contentBlocks` wraps it
@@ -1527,6 +1598,8 @@ function handleUserEntry(
     ipc_version: IPC_VERSION,
   });
   ctx.openTurnMsgId = mintOpenerId(ctx, "u");
+  ctx.openTurnLocalCommand =
+    typeof rawContent === "string" && isCommandEnvelope(rawContent.trimStart());
   return out;
 }
 
@@ -1633,6 +1706,7 @@ function handleAssistantEntry(
     };
     out.push(opener);
     ctx.openTurnMsgId = mintOpenerId(ctx, "a");
+    ctx.openTurnLocalCommand = false;
   }
 
   // Capture per-block records preserving the JSONL's arrival order.
@@ -2290,6 +2364,65 @@ export function computeDeadEntryIndices(
 }
 
 /**
+ * True when a `user` entry is the `/compact` invocation envelope.
+ */
+function isCompactCommandEntry(entry: JsonlEntry): boolean {
+  if (entry.type !== "user") return false;
+  const content = entry.message?.content;
+  if (typeof content !== "string") return false;
+  const trimmed = content.trimStart();
+  return isCommandEnvelope(trimmed) && trimmed.includes("<command-name>/compact<");
+}
+
+/**
+ * Move the `/compact` invocation envelope ahead of its `compact_boundary`
+ * record, in place.
+ *
+ * Claude Code writes the compaction *result* first — the boundary record
+ * and the continuation summary — and only then the scaffolding for the
+ * `/compact` the user typed to cause it. (The `parentUuid` chain says the
+ * same: the envelope parents to the last pre-compaction entry, while the
+ * summary parents to the boundary.) Replayed in file order, the "Session
+ * compacted" divider would sit ABOVE the user's own `/compact` row —
+ * inverted from what the live session showed.
+ *
+ * The scan stops at the first entry that opens a turn of its own, so it
+ * only ever reaches across the compaction's own scaffolding.
+ */
+function hoistCompactCommandEnvelope(
+  parsedEntries: Array<JsonlEntry | null>,
+): void {
+  for (let i = 0; i < parsedEntries.length; i++) {
+    const entry = parsedEntries[i];
+    if (entry === null) continue;
+    if (entry.type !== "system" || entry.subtype !== "compact_boundary") continue;
+    for (let j = i + 1; j < parsedEntries.length; j++) {
+      const candidate = parsedEntries[j];
+      if (candidate === null) continue;
+      if (isCompactCommandEntry(candidate)) {
+        parsedEntries.splice(j, 1);
+        parsedEntries.splice(i, 0, candidate);
+        break;
+      }
+      // A turn-opening entry means the compaction's scaffolding is behind
+      // us — the envelope isn't there to hoist.
+      if (candidate.type === "assistant") break;
+      if (
+        candidate.type === "user" &&
+        candidate.isMeta !== true &&
+        candidate.isCompactSummary !== true &&
+        typeof candidate.message?.content === "string" &&
+        !COMMAND_SCAFFOLDING_PREFIXES.some((p) =>
+          candidate.message!.content!.toString().trimStart().startsWith(p),
+        )
+      ) {
+        break;
+      }
+    }
+  }
+}
+
+/**
  * The real-corpus contract's tugcode side (#step-7): segment a whole JSONL
  * string into the ordered per-turn origin list `["user" | "assistant", …]`
  * by dry-running the real translator (`computeTurns`). The Rust engine
@@ -2594,6 +2727,8 @@ export async function* translateJsonlSession(
       parsedEntries[idx] = null;
     }
   }
+
+  hoistCompactCommandEnvelope(parsedEntries);
 
   // Which parent `Agent` calls were launched in the BACKGROUND — their
   // main-JSONL result is the async-launch echo (`isAsync` / `status:

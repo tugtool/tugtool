@@ -4,13 +4,13 @@
  * "Ring on the component, cursor on the row." When a list is authored into a
  * `focusGroup`, the scroll **container** registers as one item-container engine
  * stop and carries the focus ring ([P05]); cell wrappers drop out of the Tab
- * order (`tabIndex=-1`), so the list is one stop, not one-per-row. On Tab the
+ * order entirely, so the list is one stop, not one-per-row. On Tab the
  * movement cursor lands on the first row (`data-key-cursor`) — the ring stays on
  * the container and never moves onto a row ([P01]/[P03]).
  *
  * The gallery `TugListView (focus)` card mounts a container-stop list. The test
  * proves:
- *   - **rows are not Tab stops:** every cell wrapper is `tabIndex=-1`;
+ *   - **rows are not Tab stops:** no cell wrapper is a native Tab stop;
  *   - **Tab → one stop, perimeter ring on the container:** Tab lands the key view
  *     on the scroll container, which marks the whole list as the focused
  *     container with a ring on its perimeter (an inset `outline`). A list is a
@@ -22,6 +22,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-list-row.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-row.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
  */
@@ -66,15 +67,22 @@ const CONTAINER_PROBE = `(function(){
     backgroundImage: cs.backgroundImage,
     keyboardReached: el.hasAttribute("data-key-view-kbd"),
     tabIndex: el.getAttribute("tabindex"),
+    registered: el.hasAttribute("data-tug-focusable"),
   };
 })()`;
 
 // Whether EVERY rendered cell wrapper in the demo is tabIndex=-1.
+// "Not a native Tab stop" is the invariant; `tabindex="-1"` is only one way to
+// spell it. Under the focus engine a cell wrapper renders NO tabindex at all
+// (tug-list-view's no-tabindex rule) — a tabindex'd wrapper is still
+// mouse-focusable and invites the mousedown focus churn the watchdog then has
+// to park. Absent and "-1" both satisfy the contract; anything else is a stop.
 const ALL_ROWS_NON_FOCUSABLE = `(function(){
   var rows = document.querySelectorAll(${JSON.stringify(`${DEMO} [data-tug-list-cell-index]`)});
   if (rows.length === 0) return false;
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i].getAttribute("tabindex") !== "-1") return false;
+    var ti = rows[i].getAttribute("tabindex");
+    if (ti !== null && ti !== "-1") return false;
   }
   return true;
 })()`;
@@ -84,6 +92,7 @@ interface ContainerProbe {
   backgroundImage: string;
   keyboardReached: boolean;
   tabIndex: string | null;
+  registered: boolean;
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop", () => {
@@ -128,7 +137,14 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(onContainer?.keyboardReached).toBe(true);
         expect(parseFloat(onContainer?.outline ?? "0")).toBeGreaterThan(0);
         expect(onContainer?.backgroundImage ?? "none").not.toContain("gradient");
-        expect(onContainer?.tabIndex).toBe("0");
+        // "The list is one stop" is an ENGINE fact, not a tabindex fact. Once
+        // the focus engine drives the card the container renders no tabindex
+        // at all (tug-list-view's no-tabindex rule) — a tabindex'd container is
+        // still mouse-focusable and invites the mousedown focus churn the
+        // watchdog then has to park. The stop is the engine registration plus
+        // the key view the Tab above landed, both asserted here.
+        expect(onContainer?.tabIndex).toBeNull();
+        expect(onContainer?.registered).toBe(true);
 
         // (3) The movement cursor lands on the first row — the ring stays on the
         // container ([P03]), the cursor marks the current row.

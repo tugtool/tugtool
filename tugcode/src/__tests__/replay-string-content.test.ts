@@ -148,7 +148,6 @@ describe("translateJsonlSession — [W5a] genuine string-content prompt", () => 
 
 describe("translateJsonlSession — [W5a] command scaffolding is skipped", () => {
   for (const scaffold of [
-    "<command-name>/commit</command-name>",
     "<command-message>commit</command-message>",
     "<command-args>do the thing</command-args>",
     "<local-command-stdout>some output</local-command-stdout>",
@@ -176,6 +175,67 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
     });
   }
 
+  test("a <command-*> envelope IS a submission — it replays as the user's row", async () => {
+    // The envelope is the only record of what the user typed when they
+    // submitted a slash command: the expanded skill body that follows is
+    // `isMeta`, and a CLI-answered command (`/compact`, `/model`) writes
+    // nothing else at all. Skipping it erased the row from a resumed
+    // transcript. tugdeck's `detectCommandEcho` parses this exact shape
+    // back into the command chip the composer showed.
+    const envelope =
+      "<command-message>commit</command-message>\n" +
+      "<command-name>/commit</command-name>\n" +
+      "<command-args>do the thing</command-args>";
+    const jsonl = [
+      userStringEntry(envelope),
+      assistantEndTurn("m1", "reply"),
+    ].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const userReplays = addUserMessagesOf(out);
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].content).toEqual([{ type: "text", text: envelope }]);
+    // One turn — the envelope opened it and the assistant closed it.
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(0);
+    const turnCompletes = turnCompletesOf(out);
+    expect(turnCompletes).toHaveLength(1);
+    expect(turnCompletes[0].msg_id).toBe("m1");
+  });
+
+  test("prose that merely quotes the envelope tags is not an envelope", async () => {
+    const prose = "I ran <command-name>/help</command-name> earlier and it worked.";
+    const jsonl = [userStringEntry(prose), assistantEndTurn("m1", "ok")].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const userReplays = addUserMessagesOf(out);
+    expect(userReplays).toHaveLength(1);
+    expect(userReplays[0].content).toEqual([{ type: "text", text: prose }]);
+  });
+
+  test("a CLI-answered command with no model turn closes success, not interrupted", async () => {
+    // `/model` is answered by the CLI itself — the JSONL holds the
+    // envelope and a `<local-command-stdout>` line and no assistant
+    // entry. Orphan synthesis must not paint that as an interrupt.
+    const jsonl = [
+      userStringEntry(
+        "<command-name>/model</command-name>\n<command-args>opus</command-args>",
+      ),
+      userStringEntry("<local-command-stdout>Set model to opus</local-command-stdout>"),
+      userStringEntry("the next real prompt"),
+      assistantEndTurn("m1", "reply"),
+    ].join("\n");
+
+    const out = await collectSession(jsonl);
+
+    const turnCompletes = turnCompletesOf(out);
+    expect(turnCompletes).toHaveLength(2);
+    expect(turnCompletes[0].msg_id).toMatch(/^u-/);
+    expect(turnCompletes[0].result).toBe("success");
+    expect(turnCompletes[1].msg_id).toBe("m1");
+  });
+
   test("an isCompactSummary entry is skipped — the summary text never reaches the wire", async () => {
     const summary =
       "This session is being continued from a previous conversation " +
@@ -197,13 +257,15 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
         b.type === "text" && b.text.includes("being continued")))).toBe(false);
   });
 
-  test("a full /compact sequence: real prompts replay, scaffolding skipped, no junk turns", async () => {
-    // The shape a `/compact` leaves in the JSONL: a real turn, then
-    // the summary + caveat + command marker + Compacted stdout (all
-    // string scaffolding), then the model's continuation turn.
+  test("a full /compact sequence: the user's own row replays, ahead of the divider", async () => {
+    // The shape a `/compact` leaves in the JSONL: a real turn, then the
+    // boundary + summary (the compaction RESULT, written first), then the
+    // caveat + command envelope + Compacted stdout for the `/compact` the
+    // user actually typed, then the model's continuation turn.
     const jsonl = [
       userStringEntry("first real question"),
       assistantEndTurn("m_a", "first answer"),
+      JSON.stringify({ type: "system", subtype: "compact_boundary" }),
       compactSummaryEntry("This session is being continued from …"),
       userStringEntry("<local-command-caveat>Caveat: …</local-command-caveat>"),
       userStringEntry(
@@ -215,19 +277,26 @@ describe("translateJsonlSession — [W5a] command scaffolding is skipped", () =>
 
     const out = await collectSession(jsonl);
 
-    // Exactly two turns — the real question (user-originated) and the
-    // continuation (assistant-originated). None of the four scaffolding
-    // entries became an orphan turn.
+    // Two user rows: the real question and the `/compact` the user typed.
+    // The caveat / stdout scaffolding became neither.
     const userReplays = addUserMessagesOf(out);
-    expect(userReplays).toHaveLength(1);
+    expect(userReplays).toHaveLength(2);
     expect(userReplays[0].content).toEqual([
       { type: "text", text: "first real question" },
     ]);
-    // The continuation opens an honest `assistant_opener` (no user prompt
-    // — the summary entry was skipped scaffolding), not a fabricated user.
-    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(1);
-    // No msg_id on add_user_message per [D15]; msg_ids ("m_a" /
-    // "m_b") ride on the matching turn_complete frames below.
+    expect(
+      ((userReplays[1].content[0] ?? {}) as { text?: string }).text,
+    ).toContain("<command-name>/compact</command-name>");
+    // The continuation is that user row's own turn — no fabricated
+    // assistant-originated opener above it.
+    expect(out.filter((m) => m.type === "assistant_opener")).toHaveLength(0);
+    // The `/compact` row precedes the divider it caused, matching live.
+    const compactRowAt = out.indexOf(userReplays[1]);
+    const boundaryAt = out.findIndex((m) => m.type === "compact_boundary");
+    expect(boundaryAt).toBeGreaterThan(compactRowAt);
+    expect(out.findIndex((m) => m.type === "compact_summary")).toBeGreaterThan(
+      boundaryAt,
+    );
 
     const turnCompletes = turnCompletesOf(out);
     expect(turnCompletes).toHaveLength(2);

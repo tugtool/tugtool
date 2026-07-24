@@ -56,7 +56,8 @@ const SUBORDINATE_PROBE = `(function(){
   var rows = document.querySelectorAll(${JSON.stringify(`${DEMO} [data-tug-list-cell-index]`)});
   var rowsAllInert = rows.length > 0;
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i].getAttribute("tabindex") !== "-1") rowsAllInert = false;
+    var ti = rows[i].getAttribute("tabindex");
+    if (ti !== null && ti !== "-1") rowsAllInert = false;
   }
   var selected = document.querySelector(${JSON.stringify(`${DEMO} [data-selected="true"]`)});
   return {
@@ -96,8 +97,13 @@ describe.skipIf(!SHOULD_RUN)("AT0122: input-subordinate list contributes no Tab 
         );
 
         const probe = await app.evalJS<SubordinateProbe>(SUBORDINATE_PROBE);
-        // The list contributes zero Tab stops.
-        expect(probe?.containerTabIndex).toBe("-1");
+        // The list contributes zero Tab stops. A subordinate container renders
+        // NO tabindex rather than "-1" (tug-list-view's no-tabindex rule): the
+        // stop is absent by construction, not present-and-suppressed. Both
+        // spellings keep the container out of the Tab order.
+        expect(
+          probe?.containerTabIndex === null || probe?.containerTabIndex === "-1",
+        ).toBe(true);
         expect(probe?.containerRegistered).toBe(false);
         expect(probe?.rowsAllInert).toBe(true);
         // Selection still lives on a row (selectionRequired seeds the first row).

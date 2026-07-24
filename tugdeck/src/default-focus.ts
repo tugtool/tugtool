@@ -101,18 +101,37 @@ export const DEFAULT_FOCUS_SELECTORS: readonly string[] = [
 ];
 
 /**
+ * A control that refuses focus is outside the key loop, so it can never be a
+ * card's default focus target. Every selector in the chain can match one: a
+ * checkbox or switch authored into a focus group carries `data-tug-focus-key`
+ * (rungs 1-2), a persisted control carries `data-tug-state-key` (rung 3), and
+ * `button:not([disabled])` matches the whole button family (rung 4). Landing
+ * there gives the card a key view the user never asked for — the ring sits on
+ * a switch instead of the text surface beside it, and the next Tab resumes
+ * from the switch rather than entering the walk at the top.
+ *
+ * Checked per candidate rather than by appending `:not(...)` to each selector
+ * so the attribute can sit on an ancestor of the match (the Radix root wraps
+ * the element the chain actually finds).
+ */
+function refusesFocus(el: Element): boolean {
+  return el.closest('[data-tug-focus="refuse"]') !== null;
+}
+
+/**
  * Resolve the default focus target inside `cardRoot` using the
  * priority chain above. Returns the first selector that matches a
- * live, connected, non-hidden element.
+ * live, connected, non-hidden element that does not refuse focus.
  */
 export function resolveDefaultFocusTarget(cardRoot: HTMLElement): {
   el: HTMLElement | null;
   selector: string;
 } {
   for (const selector of DEFAULT_FOCUS_SELECTORS) {
-    const el = cardRoot.querySelector<HTMLElement>(selector);
-    if (el !== null && el.isConnected && !isElementHidden(el)) {
-      return { el, selector };
+    for (const el of cardRoot.querySelectorAll<HTMLElement>(selector)) {
+      if (el.isConnected && !isElementHidden(el) && !refusesFocus(el)) {
+        return { el, selector };
+      }
     }
   }
   return { el: null, selector: "" };

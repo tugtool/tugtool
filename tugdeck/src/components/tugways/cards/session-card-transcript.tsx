@@ -277,6 +277,7 @@ interface UserMessageCellProps extends TugListViewCellProps<SessionTranscriptDat
   row: SessionRowDescriptor;
   renderTurnTrailing?: TurnTrailingRenderer;
   codeSessionStore: CodeSessionStore;
+  sessionMetadataStore: SessionMetadataStore;
 }
 
 const UserMessageCell = React.memo(function UserMessageCell({
@@ -285,7 +286,12 @@ const UserMessageCell = React.memo(function UserMessageCell({
   dataSource,
   renderTurnTrailing,
   codeSessionStore,
+  sessionMetadataStore,
 }: UserMessageCellProps) {
+  // Known-command gate for a slash command the user wrote in backticks.
+  // Subscribed HERE in the cell, like the assistant row does, so the host
+  // renderer lambda stays identity-stable ([L02]/[L26]).
+  const isKnownSlashCommand = useKnownSlashCommand(sessionMetadataStore);
   // Address the row by its true session turn: the window's turn offset plus
   // the row's window-relative turn index ([L02]/[P04]). The user row carries
   // the `#u{turn}` address on its attribution row; image-atom captions carry
@@ -405,6 +411,7 @@ const UserMessageCell = React.memo(function UserMessageCell({
                 text={text}
                 atoms={atoms}
                 address={address}
+                isKnownSlashCommand={isKnownSlashCommand}
               />
               <TugAttachmentPreview
                 address={address}
@@ -1870,10 +1877,11 @@ export const SessionTranscriptHost = forwardRef<
           row={row}
           renderTurnTrailing={renderTurnTrailing}
           codeSessionStore={codeSessionStore}
+          sessionMetadataStore={sessionMetadataStore}
         />
       );
     },
-    [codeSessionStore, renderTurnTrailing],
+    [codeSessionStore, renderTurnTrailing, sessionMetadataStore],
   );
   // `codeSessionStore` is stable for the card's lifetime (same as the
   // `assistantRenderer` deps note above), so `ghostRenderer` stays a stable

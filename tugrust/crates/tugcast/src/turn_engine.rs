@@ -486,13 +486,34 @@ mod tests {
         let jsonl = r#"
 {"type":"user","isMeta":true,"message":{"role":"user","content":"[Image: source: /x]"}}
 {"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued"}}
-{"type":"user","message":{"role":"user","content":"<command-name>foo</command-name>"}}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>done</local-command-stdout>"}}
 {"type":"user","message":{"role":"user","content":"[Request interrupted by user]"}}
 "#;
         // The compact summary + the following orphan assistant would open
         // an assistant turn, but here there is no assistant content, so
         // nothing opens.
         assert_eq!(origins(jsonl), Vec::<TurnOrigin>::new());
+    }
+
+    #[test]
+    fn command_envelope_opens_a_user_turn() {
+        // The `<command-*>` envelope is the only record of a slash-command
+        // submission, so it opens a user turn — unlike the surrounding
+        // caveat / stdout scaffolding. Mirrors tugcode's `isCommandEnvelope`.
+        let jsonl = r#"
+{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"<command-message>compact</command-message>\n<command-name>/compact</command-name>\n<command-args>keep X</command-args>"}}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>Compacted</local-command-stdout>"}}
+"#;
+        assert_eq!(origins(jsonl), vec![TurnOrigin::User]);
+    }
+
+    #[test]
+    fn prose_quoting_the_envelope_tags_is_an_ordinary_submission() {
+        let jsonl = r#"
+{"type":"user","message":{"role":"user","content":"I ran <command-name>/help</command-name> earlier"}}
+"#;
+        assert_eq!(origins(jsonl), vec![TurnOrigin::User]);
     }
 
     #[test]

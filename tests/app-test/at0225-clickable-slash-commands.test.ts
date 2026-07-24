@@ -21,12 +21,19 @@
  *      argument text (`roadmap/find-route.md`) plus a command chip, is the
  *      focused first responder, and the card is on the Code route.
  *
+ * The second test covers the SUBMITTED command — the user's own row. On
+ * reload a slash command replays as claude's `<command-name>` envelope,
+ * which the deck turns back into a command chip rather than inline code.
+ * The chip's host span carries the same tag and the same click gesture.
+ *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/markdown/
+ * @covers tugdeck/src/lib/command-atom.ts
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugdeck/src/components/tugways/cards/tug-atom-markdown-body.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -48,6 +55,13 @@ const ARG = "roadmap/find-route.md";
 const ASSISTANT_TEXT =
   `Ready: \`/${KNOWN_CMD} ${ARG}\` — ` +
   "not `/definitely-not-a-command`, not `/Users/kocienda/x`.";
+
+// What claude persists in place of the literal the user typed when they
+// submitted `/tugplug:implement roadmap/find-route.md`.
+const COMMAND_ENVELOPE =
+  `<command-message>${KNOWN_CMD}</command-message>\n` +
+  `<command-name>/${KNOWN_CMD}</command-name>\n` +
+  `<command-args>${ARG}</command-args>`;
 
 const PROMPT_INPUT = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 
@@ -241,6 +255,85 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         );
         expect(route === null || route === "❯" || route.indexOf("❯") !== -1).toBe(
           true,
+        );
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0225] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a submitted command's chip is clickable in the user's own row",
+    async () => {
+      const app = await launchTugApp({
+        testName: "at0225-clickable-slash-commands-user-row",
+      });
+      const ingest = (decoded: unknown) =>
+        app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: CODE_OUTPUT_FEED,
+          decoded,
+        });
+
+      try {
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          { timeoutMs: 30_000 },
+        );
+        await app.bindSession("A", {
+          tugSessionId: SID,
+          sessionMode: "resume",
+        });
+
+        // The replay shape: the user's submission persists as claude's
+        // `<command-name>` envelope, never as the literal they typed.
+        await ingest(replayStarted());
+        await ingest(userMsg(COMMAND_ENVELOPE));
+        await ingest(asstText("m1", "on it", 0));
+        await ingest(turnDone("m1"));
+        await ingest(replayComplete());
+
+        // The envelope rebuilds as a command chip whose host span carries
+        // the command tag — no inline `<code>` involved.
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-md-cmd') !== null`,
+          { timeoutMs: 8000 },
+        );
+        const tagged = JSON.parse(
+          await app.evalJS<string>(`JSON.stringify((function(){
+            var el = document.querySelector('[data-card-id="A"] [data-slot="tug-atom-markdown-body"] span.tug-atom-chip-host.tugx-md-cmd');
+            return {
+              cmd: el.getAttribute('data-slash-command'),
+              args: el.getAttribute('data-slash-args'),
+              hasChip: el.querySelector('svg') !== null,
+            };
+          })())`),
+        ) as { cmd: string | null; args: string | null; hasChip: boolean };
+        expect(tagged.cmd).toBe(KNOWN_CMD);
+        expect(tagged.args).toBe(ARG);
+        expect(tagged.hasChip).toBe(true);
+
+        // The same click gesture the assistant-side span gets.
+        await app.click(
+          `[data-card-id="A"] span.tug-atom-chip-host[data-slash-command="${KNOWN_CMD}"]`,
+        );
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var cm = document.querySelector(${JSON.stringify(PROMPT_INPUT)});
+            if (!cm) return false;
+            return (cm.textContent || '').indexOf(${JSON.stringify(ARG)}) !== -1
+              && cm.querySelector('img') !== null;
+          })()`,
+          { timeoutMs: 8000 },
         );
 
         process.stdout.write("VERDICT: PASS\n");

@@ -57,6 +57,12 @@ import {
   atomHeightFor,
   type AtomSegment,
 } from "@/lib/tug-atom-img";
+import { hasLeadingCommandAtom } from "@/lib/command-atom";
+import {
+  COMMAND_CLASS,
+  parseSlashCommandLine,
+} from "@/lib/markdown/enhance-commands";
+import { buildSlashCommandLine } from "@/lib/slash-commands";
 import { decorateChipLabel } from "./tug-atom-text-body";
 import type { TurnAddress } from "../tug-transcript-entry";
 
@@ -127,6 +133,53 @@ function injectAtomHosts(root: HTMLElement, atomCount: number): HTMLElement[] {
   return hosts;
 }
 
+/**
+ * Tag the leading command chip's host span as a clickable command, so a
+ * `/command` the user *submitted* carries the same gesture a `/command`
+ * the assistant *wrote in backticks* does.
+ *
+ * The assistant path gets this from `enhanceCommands`, which walks inline
+ * `<code>` spans. A submitted command isn't code — it's a command atom
+ * plus its argument atoms, portalled in as chips — so nothing in the
+ * rendered markdown for `enhanceCommands` to find. Stamping the same
+ * class + `data-slash-*` dataset here means the transcript root's single
+ * delegated click listener services both without knowing the difference.
+ *
+ * The command line is reconstructed through {@link buildSlashCommandLine}
+ * (atoms expand to their values) and split by the same
+ * {@link parseSlashCommandLine} the assistant path uses, so the two can't
+ * disagree on where the name ends and the args begin. A bang routing
+ * (`!shell`) expands with a `!` sigil, fails that parse, and is left
+ * untagged — re-running a shell escape is not this gesture.
+ *
+ * No known-command predicate: the user typed this command and claude
+ * expanded it, which is stronger evidence than any catalog lookup.
+ */
+function tagLeadingCommandHost(
+  hosts: ReadonlyArray<HTMLElement>,
+  text: string,
+  atoms: ReadonlyArray<AtomSegment>,
+): void {
+  const host = hosts[0];
+  if (host === undefined) return;
+  if (!hasLeadingCommandAtom(text, atoms, TUG_ATOM_CHAR)) return;
+  // Pair each `U+FFFC` with its atom by ordinal — the same alignment
+  // `injectAtomHosts` walks — to get the positioned shape the builder wants.
+  const positioned: Array<{ position: number; segment: AtomSegment }> = [];
+  let at = text.indexOf(TUG_ATOM_CHAR);
+  for (let i = 0; at !== -1 && i < atoms.length; i++) {
+    positioned.push({ position: at, segment: atoms[i] });
+    at = text.indexOf(TUG_ATOM_CHAR, at + 1);
+  }
+  const parsed = parseSlashCommandLine(
+    buildSlashCommandLine(text, positioned),
+  );
+  if (parsed === null) return;
+  host.classList.add(COMMAND_CLASS);
+  host.dataset.slashCommand = parsed.name;
+  host.dataset.slashArgs = parsed.args;
+}
+
 export interface TugAtomMarkdownBodyProps {
   /** Raw substrate text with `U+FFFC` placeholders at atom positions. */
   text: string;
@@ -142,6 +195,14 @@ export interface TugAtomMarkdownBodyProps {
    * plain-text `TugAtomTextBody` path. See {@link decorateChipLabel}.
    */
   address?: TurnAddress;
+  /**
+   * Clickability gate for inline slash-command spans in this body's
+   * prose — a command the user wrote inside backticks rather than
+   * submitted as an atom. Forwarded to `TugMarkdownBlock`, which runs
+   * `enhanceCommands`. The submitted-command chip needs no predicate;
+   * see {@link tagLeadingCommandHost}.
+   */
+  isKnownSlashCommand?: (name: string) => boolean;
   /** Forwarded to the root element. */
   className?: string;
   /** Forwarded to the root element (test anchor). */
@@ -156,7 +217,14 @@ export const TugAtomMarkdownBody = React.forwardRef<
   HTMLDivElement,
   TugAtomMarkdownBodyProps
 >(function TugAtomMarkdownBody(
-  { text, atoms, address, className, "data-testid": dataTestid },
+  {
+    text,
+    atoms,
+    address,
+    isKnownSlashCommand,
+    className,
+    "data-testid": dataTestid,
+  },
   ref,
 ) {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -173,6 +241,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
     const root = rootRef.current;
     if (root === null) return;
     const hosts = injectAtomHosts(root, atoms.length);
+    tagLeadingCommandHost(hosts, text, atoms);
     setMounts(
       hosts.map((host, i) => ({ host, atom: atoms[i], key: `atom-${i}` })),
     );
@@ -212,6 +281,7 @@ export const TugAtomMarkdownBody = React.forwardRef<
         key={text}
         initialText={text}
         className="session-card-transcript-code-body"
+        isKnownSlashCommand={isKnownSlashCommand}
         findable
       />
       {mounts.map(({ host, atom, key }) =>

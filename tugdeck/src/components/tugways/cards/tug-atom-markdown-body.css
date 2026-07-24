@@ -12,6 +12,22 @@
   white-space: nowrap;
 }
 
+/* Clickable command chip — the host span of a submitted `/command` atom,
+   tagged by `tagLeadingCommandHost` with the same class + `data-slash-*`
+   dataset `enhance-commands` puts on an inline `<code>` command. Resting
+   appearance is the ordinary chip; only hover reveals interactivity, the
+   same rule the prose command follows.
+
+   The underline is a `box-shadow` rather than `text-decoration`: the host
+   span contains a single atomic inline (the chip `<svg>`), which text
+   decoration skips, and a `border-bottom` would grow the line box. */
+.tug-atom-chip-host.tugx-md-cmd {
+  cursor: pointer;
+}
+.tug-atom-chip-host.tugx-md-cmd:hover {
+  box-shadow: 0 1px 0 0 var(--tugx-md-link-color-hover);
+}
+
 /* Floor EVERY markdown line — chip-bearing or not — to atom-height + 4px,
    so a line reads the same whether or not it carries an atom (the hard
    invariant: atoms must never change line height). The chip baseline-aligns

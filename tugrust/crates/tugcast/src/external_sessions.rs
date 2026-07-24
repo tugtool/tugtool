@@ -228,6 +228,50 @@ const COMMAND_SCAFFOLDING_PREFIXES: [&str; 5] = [
     "<local-command-caveat>",
 ];
 
+/// The three tag names a slash-command envelope is built from.
+const COMMAND_ENVELOPE_OPEN_TAGS: [&str; 3] =
+    ["<command-message>", "<command-name>", "<command-args>"];
+
+/// Mirror of tugcode's `isCommandEnvelope`: the `<command-message>` /
+/// `<command-name>` / `<command-args>` envelope Claude Code persists in
+/// place of the literal a user typed when they submitted a slash command.
+/// It is the only record of that submission, so it opens a turn — unlike
+/// every other `<command-*>`-prefixed scaffolding string.
+///
+/// Requires `<command-name>` and requires the whole string to be envelope
+/// tags plus whitespace, so prose quoting the tags is not mistaken for one.
+fn is_command_envelope(text: &str) -> bool {
+    if !text.contains("<command-name>") {
+        return false;
+    }
+    let mut rest = text;
+    loop {
+        let Some(start) = rest.find("<command-") else {
+            return rest.trim().is_empty();
+        };
+        if !rest[..start].trim().is_empty() {
+            return false;
+        }
+        let after_open = &rest[start..];
+        let Some(open_len) = COMMAND_ENVELOPE_OPEN_TAGS
+            .iter()
+            .find(|tag| after_open.starts_with(**tag))
+            .map(|tag| tag.len())
+        else {
+            return false;
+        };
+        let body = &after_open[open_len..];
+        let Some(close_at) = body.find("</command-") else {
+            return false;
+        };
+        let tail = &body[close_at..];
+        let Some(gt) = tail.find('>') else {
+            return false;
+        };
+        rest = &tail[gt + 1..];
+    }
+}
+
 /// Mirror of tugcode's `isNonSubmissionUserString`: bare-string `user`
 /// content that is NOT a genuine submission — a `/compact` summary
 /// continuation, slash-command scaffolding, or a `<task-notification>` wake
@@ -238,9 +282,10 @@ fn is_non_submission_user_string(is_compact_summary: bool, text: &str) -> bool {
         return true;
     }
     let trimmed = text.trim_start();
-    if COMMAND_SCAFFOLDING_PREFIXES
-        .iter()
-        .any(|p| trimmed.starts_with(p))
+    if !is_command_envelope(trimmed)
+        && COMMAND_SCAFFOLDING_PREFIXES
+            .iter()
+            .any(|p| trimmed.starts_with(p))
     {
         return true;
     }

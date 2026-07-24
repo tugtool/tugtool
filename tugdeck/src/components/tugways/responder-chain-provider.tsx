@@ -976,22 +976,26 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // first-responder status from the active editor. This is the
     // web equivalent of Cocoa's acceptsFirstResponder = false.
     //
-    // Two document-level listeners implement this centrally:
+    // Three document-level listeners implement this centrally:
     //   - pointerdown (capture): skips first-responder promotion
+    //   - pointerdown (capture): skips engine key-view placement
     //   - mousedown (capture): calls preventDefault to stop browser focus
     //
-    // Controls only need to add the attribute. Both behaviors are
+    // Controls only need to add the attribute. All three behaviors are
     // handled here — no per-component onMouseDown handlers needed.
     //
-    // Narrowed semantics. Per `tugplan-dev-overlay-framework.md`
-    // [D01] (#mental-model), `data-tug-focus="refuse"` controls
-    // exactly two behaviors and nothing else: chain-promotion-skip
-    // (here, in `promoteOnPointerDown`) and browser-focus-prevention
-    // (here, in `preventFocusOnMouseDown`). It does NOT gate
-    // pane-focus-controller activation/deselect — that subsystem
-    // keys on `[data-slot="tug-canvas-overlay-root"]` directly.
-    // One attribute, one semantic. See [D01] for the disambiguation
-    // rationale and (#mental-model) for the five-subsystem model.
+    // Bounded semantics. Per `tugplan-dev-overlay-framework.md` [D01]
+    // (#mental-model), `data-tug-focus="refuse"` controls exactly the
+    // three keyboard-ownership behaviors above and nothing else:
+    // chain-promotion-skip (`promoteOnPointerDown`), key-view-placement-
+    // skip (`placeFromPointer`), and browser-focus-prevention
+    // (`preventFocusOnMouseDown`). The three are one idea — the control
+    // is outside the key loop, so no pointer gesture on it moves any
+    // keyboard register. It does NOT gate pane-focus-controller
+    // activation/deselect — that subsystem keys on
+    // `[data-slot="tug-canvas-overlay-root"]` directly. See [D01] for the
+    // disambiguation rationale and (#mental-model) for the five-subsystem
+    // model.
     const FOCUS_REFUSE_SELECTOR = '[data-tug-focus="refuse"]';
 
     function isFocusRefusing(target: EventTarget | null): boolean {
@@ -1147,6 +1151,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // card, matching pane-focus-controller's browser-default
       // suppression for the same gesture.
       if (cardId !== focusManager.keyCard()) return;
+      // A focus-refusing control is outside the key loop: clicking a button,
+      // checkbox, switch or slider actuates it and leaves the key view where
+      // it rested, so Tab re-enters the walk where the keyboard left it
+      // rather than where the mouse last landed. Cocoa's key loop behaves the
+      // same way — a button is not a key view, so clicking one never moves
+      // the insertion point out of the text field beside it. Returning
+      // outright (rather than falling through) also spares the `none`
+      // placement below: a click on chrome must not park a text surface's
+      // grant, which is the same reason the control refuses browser focus.
+      if (isFocusRefusing(el)) return;
       const marker = el.closest<HTMLElement>(
         "[data-tug-state-key], [data-tug-focusable], [data-responder-id]",
       );
