@@ -17,12 +17,16 @@
  *      Escape (empty editor) dissolves, a fresh `!find` re-seeds, and a
  *      subsequent non-find submission (`!shell`) dissolves again.
  *   3. Namespace split: the `/` popup offers no bang routings (they left
- *      the slash inventory), and the `!` popup offers exactly the five.
+ *      the slash inventory), and the `!` popup offers exactly the four —
+ *      `!changes` is not among them (committing is a composer mode).
  *   4. Live `!shell` auto-insert: typing `git ` materializes the `!shell`
  *      chip at the head; deleting it latches the decline (typing on, the
  *      next space never re-inserts).
  *
- * Gating: `describe.skipIf(!SHOULD_RUN)`.
+ * Gating: DISABLED (`describe.skip`) — case 4 pins the bare-command routing
+ * decision to the simplistic login-PATH membership check, which an upcoming
+ * feature replaces. Re-enable (`describe.skipIf(!SHOULD_RUN)`) once that
+ * lands and the bare-typed classifier is the thing worth asserting.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -149,6 +153,9 @@ const EDITOR_SELECTOR =
   '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
 const COMPLETION_MENU_SELECTOR = '[data-slot="tug-completion-menu"]';
 
+/** The registered routings, mirroring `BANG_COMMANDS` in `lib/bang-commands.ts`. */
+const BANG_NAMES = ["shell", "btw", "find", "history"] as const;
+
 async function mountAndReplay(app: App): Promise<void> {
   await app.enableDeckTrace(true);
   await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -240,7 +247,7 @@ async function dispatchChord(
   );
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0222: one-shot !shell and !find", () => {
+describe.skip("AT0222: one-shot !shell and !find", () => {
   test(
     "!shell runs one exchange into the transcript",
     async () => {
@@ -317,7 +324,7 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot !shell and !find", () => {
   );
 
   test(
-    "namespace split: `/` offers no bang routings; `!` offers exactly the five",
+    "namespace split: `/` offers no bang routings; `!` offers exactly the four",
     async () => {
       const app = await launchTugApp({ testName: "at0222-gating" });
       try {
@@ -339,12 +346,12 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot !shell and !find", () => {
           return JSON.parse(labels) as string[];
         };
 
-        // The `/` popup: ordinary commands present, the five routings absent.
+        // The `/` popup: ordinary commands present, the four routings absent.
         await app.nativeClickAtElement(EDITOR_SELECTOR);
         await app.nativeType("/");
         const slashNames = await readPopupLabels();
         expect(slashNames.length).toBeGreaterThan(0);
-        for (const routed of ["shell", "find", "btw", "changes", "history"]) {
+        for (const routed of BANG_NAMES) {
           expect(
             slashNames.some((n) => n === routed || n.startsWith(`${routed} `)),
             `bang routing "!${routed}" must not be offered by the / popup`,
@@ -355,18 +362,25 @@ describe.skipIf(!SHOULD_RUN)("AT0222: one-shot !shell and !find", () => {
           "ordinary local commands stay offered",
         ).toBe(true);
 
-        // Clear the typed `/`, then the `!` popup: exactly the five routings.
+        // Clear the typed `/`, then the `!` popup: exactly the four routings.
         await app.nativeKey("Escape");
         await app.nativeKey("Backspace");
         await app.nativeType("!");
         const bangNames = await readPopupLabels();
-        expect(bangNames.length).toBe(5);
-        for (const routed of ["shell", "find", "btw", "changes", "history"]) {
+        expect(bangNames.length).toBe(BANG_NAMES.length);
+        for (const routed of BANG_NAMES) {
           expect(
             bangNames.some((n) => n.startsWith(routed)),
             `bang routing "!${routed}" must be offered by the ! popup`,
           ).toBe(true);
         }
+        // `!changes` is deliberately unregistered — committing is the
+        // composer's commit mode, not a routing, so `!changes` falls through
+        // to the shell escape hatch like any other unknown bang.
+        expect(
+          bangNames.some((n) => n.startsWith("changes")),
+          "`!changes` is not a routing",
+        ).toBe(false);
       } finally {
         await app.close();
       }

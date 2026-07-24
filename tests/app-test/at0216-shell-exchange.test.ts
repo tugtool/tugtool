@@ -1,24 +1,28 @@
 /**
- * at0216-shell-route.test.ts — the `$` route end-to-end + restore
- * interleave ([P06]/[P07], Risk R02, roadmap/route-enhancements.md).
+ * at0216-shell-exchange.test.ts — the `!shell` routing end-to-end + restore
+ * interleave ([P07], Risk R02).
  *
- * Drives the REAL shell backend: submitting on the `$` route sends
- * SHELL_INPUT over the live connection, tugcast's per-session shell child
- * executes the command, and the SHELL_OUTPUT frames thread a settled
- * exchange row into the transcript as non-context ink ([P11]).
+ * Drives the REAL shell backend: a `!shell <cmd>` submission (and its bare
+ * `!<cmd>` escape hatch) sends SHELL_INPUT over the live connection,
+ * tugcast's per-session shell child executes the command, and the
+ * SHELL_OUTPUT frames thread a settled exchange row into the transcript as
+ * non-context ink ([P11]).
  *
  *   1. **Exchange e2e** — `echo` / `cd` / `pwd` submitted through the real
  *      prompt entry each settle a transcript row carrying the command, the
- *      combined output, and the exit label; the `cd` moves the live cwd
- *      chip ([P10]) and the following `pwd` proves the shell session is
- *      stateful across exchanges. A final `echo "$TUG_SESSION_ID"` proves
- *      the shell child inherits the card's session id (parity with the
- *      agent bridge's env export) — the value `tugutil changes` reads.
- *   2. **Non-context styling hook** — every shell row renders inside
+ *      combined output, and the exit label; the `cd` followed by `pwd`
+ *      proves the shell session is stateful across exchanges. A final
+ *      `echo "$TUG_SESSION_ID"` proves the shell child inherits the card's
+ *      session id (parity with the agent bridge's env export) — the value
+ *      `tugutil changes` reads.
+ *   2. **The escape hatch** — `!pwd` (an unregistered bang name) routes to
+ *      the shell verbatim, exactly like `!shell pwd`, and its row carries
+ *      the bare command.
+ *   3. **Non-context styling hook** — every shell row renders inside
  *      `[data-slot="session-transcript-shell-row"]` with
  *      `[data-participant="shell"]` on its transcript entry (the [P11]
  *      visual-distinctness anchor).
- *   3. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
+ *   4. **Restore interleave ([P07])** — after Maker ▸ Reload, a real
  *      `spawn_session(resume)` replays a fixture JSONL Claude turn while
  *      the ledgered shell exchanges restore through `list_shell_exchanges`;
  *      the fixture's timestamps predate the live execs, so the reloaded
@@ -50,14 +54,8 @@ const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
-const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
-const ROUTE_TRIGGER = `${TOOLBAR} button[aria-label="Route"]`;
-// Width-stabilized trigger holds a hidden alternate label too — read the
-// active variant for the live route label.
-const ROUTE_LABEL = `${ROUTE_TRIGGER} [data-tug-stable="active"]`;
 const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
 const ENTRIES = `${CARD} [data-slot="tug-transcript-entry"]`;
-const CWD_CHIP = `${CARD} [data-slot="cwd-chip"]`;
 
 /** Encode a project dir the way claude names its per-project subdir —
  *  mirrors tugcode's `encodeProjectDir` (see at0192 for the rationale). */
@@ -187,17 +185,17 @@ async function shellRowFacts(
   );
 }
 
-/** Submit `command` through the real prompt entry on the `$` route and
- *  block until shell row `expectedIndex` (0-based) settles with an exit
- *  label. The first exec also spawns the login-shell child, so the wait
- *  is generous. */
+/** Submit `line` — a `!shell <cmd>` routing or its bare `!<cmd>` escape
+ *  hatch — through the real prompt entry, and block until shell row
+ *  `expectedIndex` (0-based) settles with an exit label. The first exec also
+ *  spawns the login-shell child, so the wait is generous. */
 async function execAndSettle(
   app: App,
-  command: string,
+  line: string,
   expectedIndex: number,
 ): Promise<void> {
   await app.nativeClickAtElement(PROMPT);
-  await app.nativeType(command);
+  await app.nativeType(line);
   await new Promise((r) => setTimeout(r, 150));
   await app.nativeKey("Enter", ["cmd"]);
   await app.waitForCondition<boolean>(
@@ -212,12 +210,12 @@ async function execAndSettle(
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0216: shell route — exchange e2e, cwd, restore interleave",
+  "AT0216: !shell routing — exchange e2e, escape hatch, restore interleave",
   () => {
     test(
       "echo/cd/pwd settle real exchange rows; reload reproduces the interleaved order",
       async () => {
-        const app = await launchTugApp({ testName: "at0216-shell-route" });
+        const app = await launchTugApp({ testName: "at0216-shell-exchange" });
         try {
           await app.enableDeckTrace(true);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -251,27 +249,19 @@ describe.skipIf(!SHOULD_RUN)(
           });
           await frame({ type: "turn_complete", msg_id: "m1", result: "success" });
 
-          // --- Flip to the `$` route (route popup → Shell). ---
-          await app.click(ROUTE_TRIGGER);
-          await app.click(`.tug-menu-item[data-item-id="$"]`);
-          await app.waitForCondition<boolean>(
-            `(function(){
-              var lbl = document.querySelector(${JSON.stringify(ROUTE_LABEL)});
-              return lbl !== null && lbl.textContent.trim() === "Shell";
-            })()`,
-            { timeoutMs: 4000 },
-          );
+          // --- Four real exchanges through the live shell backend. The `pwd`
+          // rides the bare `!<cmd>` escape hatch (an unregistered bang name
+          // routes to the shell verbatim); the last reads $TUG_SESSION_ID,
+          // which the shell child must inherit from the card (parity with the
+          // agent bridge) so `tugutil changes` run from here resolves the
+          // session against the ledger. ---
+          await execAndSettle(app, "!shell echo hello-from-shell", 0);
+          await execAndSettle(app, "!shell cd sub", 1);
+          await execAndSettle(app, "!pwd", 2);
+          await execAndSettle(app, '!shell echo "sid=$TUG_SESSION_ID"', 3);
 
-          // --- Four real exchanges through the live shell backend. The last
-          // reads $TUG_SESSION_ID: the shell child must inherit the card's
-          // session id (parity with the agent bridge), so `tugutil changes`
-          // run from this route resolves the session against the ledger. ---
-          await execAndSettle(app, "echo hello-from-shell", 0);
-          await execAndSettle(app, "cd sub", 1);
-          await execAndSettle(app, "pwd", 2);
-          await execAndSettle(app, 'echo "sid=$TUG_SESSION_ID"', 3);
-
-          // Row facts: command, real output, exit label.
+          // Row facts: command, real output, exit label. The row carries the
+          // routed payload — the `!shell` / `!` sigil never reaches the shell.
           const live = await shellRowFacts(app);
           expect(live.length).toBe(4);
           expect(live[0].command).toBe("echo hello-from-shell");
@@ -279,23 +269,15 @@ describe.skipIf(!SHOULD_RUN)(
           expect(live[0].footer).toContain("exit 0");
           expect(live[1].command).toBe("cd sub");
           expect(live[1].footer).toContain("exit 0");
+          // The `cd` moved the shell child's cwd — the escape-hatch `pwd`
+          // prints the new one, proving the session is stateful across
+          // exchanges.
           expect(live[2].command).toBe("pwd");
           expect(live[2].output).toContain(join(projectDir, "sub"));
           expect(live[2].footer).toContain("exit 0");
           expect(live[3].command).toBe('echo "sid=$TUG_SESSION_ID"');
           expect(live[3].output).toContain(`sid=${SID}`);
           expect(live[3].footer).toContain("exit 0");
-
-          // The `cd` moved the live cwd chip ([P10]) — the full path rides
-          // the chip's Finder tooltip; the face may be ellipsized.
-          await app.waitForCondition<boolean>(
-            `(function(){
-              var chip = document.querySelector(${JSON.stringify(CWD_CHIP)});
-              return chip !== null &&
-                (chip.getAttribute("title") || "").indexOf(${JSON.stringify(join(projectDir, "sub"))}) !== -1;
-            })()`,
-            { timeoutMs: 4000 },
-          );
 
           // The block wears the standard tool-block header chevron, and it
           // collapses the output. The first disclosure in the card belongs to
@@ -349,7 +331,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await app.spawnSessionResume("A", { tugSessionId: SID, projectDir });
 
-          // The replayed Claude turn and the three restored exchanges must
+          // The replayed Claude turn and the four restored exchanges must
           // both land — then hold the identical interleave.
           await app.waitForCondition<boolean>(
             `(function(){
