@@ -209,8 +209,9 @@
 
 /* The per-row delete ✕ and header + are `TugIconButton`s — their hover /
    focus / active treatment comes from `tug-button.css` (reveal on row engage
-   is owned by `TugListRow`'s `trailingReveal="engaged"`). No bespoke button
-   CSS here. */
+   is owned by `TugListRow`'s `trailingReveal="claim"`, which holds no width at
+   rest so the incipit runs the full row and truncates only under the buttons
+   at engage-time). No bespoke button CSS here. */
 
 /* The draggable incipit rides the TugListRow content column. It is a drag
    HANDLE, not selectable prose — `user-select: none` stops a click that lands on

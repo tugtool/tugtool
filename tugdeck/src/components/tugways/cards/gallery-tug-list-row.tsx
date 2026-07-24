@@ -374,6 +374,41 @@ export function GalleryTugListRow(): React.ReactElement {
 
       <TugSeparator />
 
+      {/* ---- 4b. Trailing reveal — claim ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">
+          Trailing reveal — claim
+        </TugLabel>
+        <div style={captionStyle}>
+          <code>trailingReveal="claim"</code> reserves no width at rest:
+          the title runs the full row and the accessory takes its space
+          back on engage, truncating the title only while it shows. The
+          mode for dense one-line rows where standing gutter space would
+          cost more than the truncation does.
+        </div>
+        <div style={pillStackStyle}>
+          {RECENTS.map((path) => (
+            <TugListRow
+              key={path}
+              variant="pill"
+              title={`${path} — a long enough title to reach the trailing edge`}
+              trailingReveal="claim"
+              trailing={
+                <TugIconButton
+                  icon={<Trash2 size={14} aria-hidden="true" />}
+                  aria-label={`Trash ${path}`}
+                  title={`Trash ${path}`}
+                  tone="danger"
+                  onClick={() => setRevealResult(`Trash ${path}`)}
+                />
+              }
+            />
+          ))}
+        </div>
+      </div>
+
+      <TugSeparator />
+
       {/* ---- 5. States — the four-state selection ramp ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">States</TugLabel>

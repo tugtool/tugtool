@@ -557,3 +557,28 @@ body {
 .tug-list-view-cell[data-key-cursor] .tug-list-row .tug-list-row-trailing[data-reveal="engaged"] {
   opacity: 1;
 }
+
+/* `data-reveal="claim"` reserves NO width at rest: the content column runs
+   the full row and the accessory claims its space back on engage, truncating
+   the title under the same ellipsis it already uses. The negative start
+   margin cancels the row's flex gap, which a zero-width slot would otherwise
+   still hold open. Engagement is the same four states as `engaged`. */
+.tug-list-row-trailing[data-reveal="claim"] {
+  opacity: 0;
+  inline-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+  margin-inline-start: calc(-1 * var(--tugx-list-row-gap));
+  transition: opacity 100ms ease;
+}
+
+.tug-list-row:hover .tug-list-row-trailing[data-reveal="claim"],
+.tug-list-row:focus-within .tug-list-row-trailing[data-reveal="claim"],
+.tug-list-row[data-selected="true"] .tug-list-row-trailing[data-reveal="claim"],
+.tug-list-view-cell[data-key-cursor] .tug-list-row .tug-list-row-trailing[data-reveal="claim"] {
+  opacity: 1;
+  inline-size: auto;
+  overflow: visible;
+  pointer-events: auto;
+  margin-inline-start: 0;
+}

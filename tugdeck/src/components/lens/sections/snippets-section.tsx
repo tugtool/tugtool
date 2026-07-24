@@ -245,7 +245,7 @@ function SnippetDisplayRow({
           </>
         ) : undefined
       }
-      trailingReveal="engaged"
+      trailingReveal="claim"
     >
       <span
         className={

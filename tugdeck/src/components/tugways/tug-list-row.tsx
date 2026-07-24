@@ -49,7 +49,9 @@
  *    `imageView` / trailing `accessoryView`). `trailingReveal="engaged"`
  *    keeps the trailing accessory hidden until the row is engaged:
  *    hovered, holding focus within, selected, or under the keyboard
- *    movement cursor.
+ *    movement cursor. `trailingReveal="claim"` does the same but
+ *    reserves no width at rest — the accessory takes its space from the
+ *    content column on engage.
  *  - `selectedGlyph="check"` reserves a fixed-width leading checkmark
  *    column (UIKit's `.checkmark` accessory) — shown when `selected`,
  *    empty otherwise so titles align. It sits leading-most and coexists
@@ -86,8 +88,15 @@ import { TugLabel, type TugLabelSize } from "./tug-label";
  */
 export type TugListRowVariant = "flush" | "pill";
 
-/** Reveal policy for the trailing accessory. */
-export type TugListRowTrailingReveal = "always" | "engaged";
+/** Reveal policy for the trailing accessory.
+ *  - `"always"` — the accessory is present and holds its width.
+ *  - `"engaged"` — hidden at rest but still holding its width, so the
+ *    content column never reflows when it appears.
+ *  - `"claim"` — hidden AND zero-width at rest; on engage it claims its
+ *    width from the content column, truncating the title. The mode for
+ *    dense one-line rows whose text should run the full row width until
+ *    the pointer or the keyboard cursor arrives. */
+export type TugListRowTrailingReveal = "always" | "engaged" | "claim";
 
 /** Row density. `cozy` is the comfortable default; `compact` collapses the
  *  block padding to a hairline — the treatment for long enumerations (a
