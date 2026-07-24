@@ -20,8 +20,7 @@
 
 import type React from "react";
 
-import { TugBadge } from "@/components/tugways/tug-badge";
-import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
+import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
 import { BlockChrome } from "../blocks/block-chrome";
 import {
@@ -125,30 +124,26 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
   // trailer live in the copied text, not the glance (the header reads like the
   // Bash command line: one subject that may wrap, never the whole message).
   const subject = message.split("\n", 1)[0];
+  // The short sha stands where a tool block's verb would: the commit's name is
+  // its hash. Mono `code` tint + 8 chars, the same shape the History shade's
+  // rows lead with, so a sha reads identically wherever it appears.
   const identity = (
     <span className="commit-receipt-header">
+      <CommitShaText sha={sha} />
       <code className="commit-receipt-summary">{subject}</code>
-      <span className="commit-receipt-chips">
-        <TugBadge emphasis="ghost" role="inherit" size="sm">
-          {`${fileCount} ${fileCount === 1 ? "file" : "files"}`}
-        </TugBadge>
-        <TugBadge emphasis="ghost" role="inherit" size="sm">{`+${added} −${removed}`}</TugBadge>
-        <TugCopyBadge
-          className="commit-receipt-hash-badge"
-          emphasis="ghost"
-          role="inherit"
-          size="sm"
-          value={sha}
-        />
-      </span>
     </span>
   );
   return (
     <BlockChrome
       rootSlot="commit-receipt-block"
       variant="receipt"
-      toolName="Commit"
       identity={identity}
+      // The file count and diff stat as standard header result summaries —
+      // the same pipe-sectioned ghost badges every tool block reports with.
+      resultSummary={[
+        { kind: "count", count: fileCount, noun: "file" },
+        { kind: "diff", added, removed },
+      ]}
       phase="success"
       status="ready"
       copyText={`${sha} ${message}`.trim()}

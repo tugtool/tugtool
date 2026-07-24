@@ -201,11 +201,13 @@ export interface BlockHeaderProps {
    */
   target?: React.ReactNode;
   /**
-   * One-line result summary as DATA — the single trailing-info element,
-   * rendered quietly (plain muted text) in BOTH states. Tools supply it
-   * via `resultSummary` on the chrome.
+   * One-line result summary as DATA — the trailing-info element, rendered
+   * quietly (plain muted text) in BOTH states. Tools supply it via
+   * `resultSummary` on the chrome. A list renders one pipe-section per entry
+   * (a commit reports `5 files │ +39 −17`); the pipe-section rule gives each
+   * its own left rule, so any run composes without adjacency cases.
    */
-  summary?: ToolResultSummary;
+  summary?: ToolResultSummary | readonly ToolResultSummary[];
   /** Drift caution surfaced as an inline badge. */
   caution?: CautionFlag;
   /**
@@ -318,30 +320,35 @@ export const BlockHeader = React.forwardRef<
   // Write's growing line count reads LEFT of the live clock rather than
   // waiting for the call to land; the summary's role still carries pass/fail
   // signal (nonzero exit danger, exit 0 success, else neutral `inherit`).
+  const summaries =
+    summary === undefined ? [] : Array.isArray(summary) ? summary : [summary];
   const trailingNode = (
     <>
-      {summary !== undefined ? (
+      {summaries.map((entry, i) => (
         <span
+          // Summaries are a fixed, order-stable list per block kind (never
+          // reordered or filtered), so the index is a sound key.
+          key={i}
           className="tool-call-header-summary"
           data-slot="tool-call-header-summary"
         >
-          {summary.kind === "diff" ? (
+          {entry.kind === "diff" ? (
             // Diff stat — two ghost badges that take the header's own text
             // color, no green/red tint, so the pair reads as plain metadata
             // (the house monochrome +N −M doctrine, [P27]). Each badge copies
             // its own value on right-click.
-            <DiffSummaryBadges added={summary.added} removed={summary.removed} />
+            <DiffSummaryBadges added={entry.added} removed={entry.removed} />
           ) : (
             <TugBadge
               emphasis="ghost"
-              role={toolResultSummaryRole(summary)}
+              role={toolResultSummaryRole(entry)}
               size="sm"
             >
-              {formatToolResultSummary(summary)}
+              {formatToolResultSummary(entry)}
             </TugBadge>
           )}
         </span>
-      ) : null}
+      ))}
       {/* A LIVE elapsed clock while in flight (the only honest "still working"
           signal for a long silent tool), frozen to the recorded wall time
           once it lands. See {@link HeaderTiming}. */}

@@ -1,24 +1,23 @@
-/* SessionCommitReceiptBlock — the `/commit` receipt header ([P08]). Mirrors
-   the Git Commit receipt grammar (subject on the left, count + sha chips
-   pinned right) so a session commit reads at the same altitude as a bash
-   commit receipt. Appearance only ([L06]). */
+/* SessionCommitReceiptBlock — the `/commit` receipt header ([P08]). The short
+   sha leads (the commit's name, where a tool block's verb would sit), then the
+   subject; the file count and diff stat ride the header's standard trailing
+   summaries. Appearance only ([L06]). */
 
 .commit-receipt-header {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  /* The badges ride the first line of a message that wraps to up to three
-     lines, so they pin to the top-right rather than centering on the block. */
+  /* The sha rides the first line of a message that wraps to up to three lines,
+     so it pins to the top rather than centering on the block. */
   align-items: flex-start;
   gap: var(--tug-space-sm);
 }
 
-/* The full commit message. It is a `<code>` inside `.tool-call-header-detail`,
-   so it inherits the header's own command layout wholesale — the shared line
-   box, the wrap behaviour, and the 0.5px optical seat that lands a mono line
-   on the "Commit" name's baseline (the exact treatment the Bash header gives
-   its command). This adds only the identity-row need: grow to fill the row so
-   the chips pin right. */
+/* The commit subject. It is a `<code>` inside `.tool-call-header-detail`, so it
+   inherits the header's own command layout wholesale — the shared line box, the
+   wrap behaviour, and the 0.5px optical seat that lands a mono line on the
+   header baseline (the exact treatment the Bash header gives its command). This
+   adds only the identity-row need: grow to fill the row. */
 .commit-receipt-summary {
   flex: 1 1 auto;
   min-width: 0;
@@ -32,10 +31,10 @@
   color: var(--tugx-block-text-color);
 }
 
-.commit-receipt-chips {
+/* Same override for the sha, which would otherwise inherit the header's muted
+   command tone instead of the shared code tint. Never shrinks — the subject
+   beside it is what ellipsizes. */
+.commit-receipt-header .commit-sha-text {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-xs);
-  color: var(--tugx-block-text-color);
+  color: var(--tug-syntax-code);
 }

@@ -24,12 +24,12 @@
 
 import "./tug-history-list.css";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type React from "react";
 
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugCodeView } from "@/components/tugways/tug-code-view";
-import { useCopyableText } from "@/components/tugways/use-copyable-text";
+import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import {
   CommitChangesList,
@@ -42,35 +42,6 @@ import {
   EMPTY_COMMIT_FILES_SNAPSHOT,
   type GitCommitFilesStoreSnapshot,
 } from "@/lib/git-commit-files-store";
-
-/** Short-sha display length — enough to uniquely name a commit at a glance. */
-const SHA_DISPLAY_LEN = 8;
-
-/**
- * The commit's short sha as `code`-colored monospace text — right-click →
- * Copy writes the full 40-char hash. Leads the row before the ` : `
- * delimiter and the subject.
- */
-function CommitShaText({ sha }: { sha: string }): React.ReactElement {
-  const ref = useRef<HTMLElement | null>(null);
-  const { composedRef, handleContextMenu, contextMenu } = useCopyableText({
-    ref,
-    getText: () => sha,
-    copyMenu: true,
-  });
-  return (
-    <>
-      <code
-        ref={composedRef}
-        className="tug-history-list-commit-sha"
-        onContextMenu={handleContextMenu}
-      >
-        {sha.slice(0, SHA_DISPLAY_LEN)}
-      </code>
-      {contextMenu}
-    </>
-  );
-}
 
 /** Format a strict-ISO committer date into a complete, readable timestamp. */
 function formatCommitterDate(iso: string): string {

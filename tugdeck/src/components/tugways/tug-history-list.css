@@ -52,11 +52,6 @@
 }
 
 /* The short sha, rendered as `code`-colored monospace at the row's own size. */
-.tug-history-list-commit-sha {
-  color: var(--tug-syntax-code);
-  cursor: default;
-}
-
 .tug-history-list-commit-delim {
   color: var(--tugx-block-text-color-muted);
 }

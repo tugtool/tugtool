@@ -1,0 +1,9 @@
+/* @tug-pairings: none — a text atom; carries the code tint only [L20] */
+
+/* The commit sha wears the syntax `code` tint wherever it names a commit (the
+   History shade's rows, the `/commit` receipt header). Not a click target —
+   the copy gesture is the context menu. */
+.commit-sha-text {
+  color: var(--tug-syntax-code);
+  cursor: default;
+}

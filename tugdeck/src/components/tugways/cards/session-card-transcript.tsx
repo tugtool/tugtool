@@ -253,8 +253,10 @@ const USER_IDENTIFIER = "You";
 const SHELL_IDENTIFIER = "Shell";
 /** Identifier for a git-attributed row (the `/commit` receipt). The commit
  *  rides the shell ledger, but it ran no shell command the user typed — so the
- *  row is attributed to git, not to the shell that carried it. */
-const GIT_IDENTIFIER = "Git";
+ *  row is attributed to git, not to the shell that carried it. The operation
+ *  is named here, in the attribution, which frees the block header's verb slot
+ *  for the sha (the commit's real name). */
+const GIT_IDENTIFIER = "Git Commit";
 
 /**
  * Stable empty-atoms reference for the ghost-row defensive fallback —

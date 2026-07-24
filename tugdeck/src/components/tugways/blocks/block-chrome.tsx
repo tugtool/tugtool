@@ -219,11 +219,13 @@ export interface BlockChromeProps {
    */
   command?: React.ReactNode;
   /**
-   * The call's one-line result as DATA — the single trailing-info element,
-   * rendered quietly (plain muted text) in BOTH states. Tools supply it so
-   * collapsed and expanded read identically. See {@link ToolResultSummary}.
+   * The call's one-line result as DATA — the trailing-info element, rendered
+   * quietly (plain muted text) in BOTH states. Tools supply it so collapsed
+   * and expanded read identically. Pass a list to report more than one fact
+   * (a commit's `5 files │ +39 −17`); each renders as its own pipe-section.
+   * See {@link ToolResultSummary}.
    */
-  resultSummary?: ToolResultSummary;
+  resultSummary?: ToolResultSummary | readonly ToolResultSummary[];
   /** Lifecycle state per Spec S03's `ToolBlockStatus`. */
   status?: ToolBlockStatus;
   /**
