@@ -48,7 +48,18 @@ export function CommitShaText({
       >
         {sha.slice(0, SHA_DISPLAY_LEN)}
       </code>
-      {contextMenu}
+      {/* The copy menu's own gestures stop here. A React portal still bubbles
+          through the REACT tree, so without this a click on the menu's Copy
+          item would reach whatever wraps the sha — in the History shade, the
+          row's expand toggle — and fold the row on a right-click. `display:
+          contents` keeps the wrapper out of the host's layout. */}
+      <span
+        className="commit-sha-text-menu"
+        onClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.stopPropagation()}
+      >
+        {contextMenu}
+      </span>
     </>
   );
 }

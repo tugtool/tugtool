@@ -285,6 +285,14 @@ export interface BlockChromeProps {
    */
   headerActions?: React.ReactNode;
   /**
+   * Wrapper-supplied affordance(s) on the header's trailing edge, RIGHT of the
+   * chrome-owned Copy — where the whole-block chevron sits. For a block that
+   * discloses part of its OWN body (the `/commit` receipt's message detail),
+   * as distinct from the transcript's whole-block collapse. Visible in both
+   * states.
+   */
+  headerActionsTrailing?: React.ReactNode;
+  /**
    * Force the block expanded and the whole-block chevron disabled,
    * overriding the history-collapse handle WITHOUT swapping the wrapper.
    * The wrapper (`ToolBlockHistoryCollapse`) stays mounted — only its
@@ -316,6 +324,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
   rootSlot = "tool-block-chrome",
   copyText,
   headerActions,
+  headerActionsTrailing,
   forceExpanded = false,
   className,
 }) => {
@@ -471,6 +480,7 @@ export const BlockChrome: React.FC<BlockChromeProps> = ({
         copyText={copyText ?? blockCollapse?.copyText}
         disclosure={disclosure}
         actions={headerActions}
+        actionsTrailing={headerActionsTrailing}
         actionsSlotRef={setActionsTarget}
       />
       {/* The notice band sits OUTSIDE the collapse guard — between the header

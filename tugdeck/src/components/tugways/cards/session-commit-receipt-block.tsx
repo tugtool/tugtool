@@ -18,11 +18,13 @@
  * @module components/tugways/cards/session-commit-receipt-block
  */
 
-import type React from "react";
+import React, { useState } from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
+import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { BlockChrome } from "../blocks/block-chrome";
+import "@/components/tugways/commit-presentation.css";
 import {
   registerCommandBlock,
   type CommandBlockProps,
@@ -119,22 +121,44 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
     // Not an S02 summary — let the generic exchange block render raw output.
     return <ShellExchangeBlock {...props} />;
   }
+  return <CommitReceipt parsed={parsed} cwd={props.message.cwd} />;
+}
+
+/**
+ * The parsed receipt. Split from the matcher above so the message-detail
+ * disclosure can hold local state without a hook sitting behind the parse
+ * guard. The detail is UNCONTROLLED (local `useState`, like a History row) and
+ * mounts on expand / unmounts on collapse ([L26]).
+ */
+function CommitReceipt({
+  parsed,
+  cwd,
+}: {
+  parsed: ParsedCommitReceipt;
+  cwd: string;
+}): React.ReactElement {
+  const [detailOpen, setDetailOpen] = useState(false);
   const { sha, message, fileCount, added, removed, files } = parsed;
   // The header shows only the subject — the message's first line. The body +
-  // trailer live in the copied text, not the glance (the header reads like the
-  // Bash command line: one subject that may wrap, never the whole message).
+  // trailer live behind the detail cue and in the copied text, not the glance
+  // (the header reads like the Bash command line: one subject that may wrap,
+  // never the whole message).
   const subject = message.split("\n", 1)[0];
+  const body = message.slice(subject.length).replace(/^\n+/, "").replace(/\s+$/, "");
   // The short sha stands where a tool block's verb would: the commit's name is
-  // its hash. Mono `code` tint + 8 chars, the same shape the History shade's
-  // rows lead with, so a sha reads identically wherever it appears.
+  // its hash, then the ` : ` delimiter, then the subject — the same identity
+  // line the History shade's rows lead with, so a commit reads identically
+  // wherever it appears.
   const identity = (
     <span className="commit-receipt-header">
       <CommitShaText sha={sha} />
+      <span className="tugx-commit-delim">{" : "}</span>
       <code className="commit-receipt-summary">{subject}</code>
     </span>
   );
   return (
     <BlockChrome
+      className="tugx-commit"
       rootSlot="commit-receipt-block"
       variant="receipt"
       identity={identity}
@@ -147,14 +171,42 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
       phase="success"
       status="ready"
       copyText={`${sha} ${message}`.trim()}
+      // The message-detail cue rides the header's trailing edge — right of
+      // Copy, where the whole-block chevron sits — so the gesture that reveals
+      // a commit's body is in the same place on the receipt as on a History
+      // row. Absent for a subject-only commit: there is nothing to disclose.
+      headerActionsTrailing={
+        body.length > 0 ? (
+          <BlockFoldCue
+            collapsed={!detailOpen}
+            onToggle={(nextCollapsed) => setDetailOpen(!nextCollapsed)}
+            collapsedLabel="Show message"
+            expandedLabel="Hide message"
+            ariaLabelExpand={`Show commit message for ${subject}`}
+            ariaLabelCollapse={`Hide commit message for ${subject}`}
+            size="xs"
+            subtype="icon"
+            stabilizeScroll={false}
+            data-slot="commit-receipt-detail-cue"
+          />
+        ) : undefined
+      }
     >
+      {/* The message body reads exactly as it does in an expanded History row
+          — same `.tugx-commit-message` scale — and sits ABOVE the file list,
+          which can run arbitrarily long. */}
+      {detailOpen && body.length > 0 ? (
+        <pre className="tugx-commit-message" data-slot="commit-receipt-detail">
+          {body}
+        </pre>
+      ) : null}
       {/* The committed files as sha-backed changes rows ([P08]) — the same
           compact rows as the live list, each expanding into the committed
           hunks (lazy per-row `commit`-flavor fetch). `cwd` is the repo dir
           the `/commit` ran in — persisted in the ledger, so live and
           restored rows resolve the same workspace. */}
       {files.length > 0 ? (
-        <CommitChangesList root={props.message.cwd} sha={sha} files={files} />
+        <CommitChangesList root={cwd} sha={sha} files={files} />
       ) : null}
     </BlockChrome>
   );

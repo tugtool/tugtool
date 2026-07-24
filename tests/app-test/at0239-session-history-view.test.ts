@@ -162,7 +162,7 @@ describe.skipIf(!SHOULD_RUN)(
             const topShaText = await app.evalJS<string>(
               `(function(){
                 var row = document.querySelector(${JSON.stringify(ROW)});
-                var sha = row.querySelector('code.tug-history-list-commit-sha');
+                var sha = row.querySelector('code.commit-sha-text');
                 return sha ? sha.textContent.trim() : "";
               })()`,
             );

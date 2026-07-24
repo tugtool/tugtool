@@ -158,9 +158,14 @@ function CommitRow({
       data-sha={commit.sha}
       data-expanded={expanded ? "true" : undefined}
     >
+      {/* Primary button only — a right-click belongs to the sha's copy menu,
+          and must never fold the row under it. */}
       <div
         className="tug-history-list-row-hit"
-        onClick={() => setExpanded((e) => !e)}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          setExpanded((e) => !e);
+        }}
       >
         <TugListRow
           variant="flush"

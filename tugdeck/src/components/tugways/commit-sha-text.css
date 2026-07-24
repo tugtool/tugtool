@@ -7,3 +7,9 @@
   color: var(--tug-syntax-code);
   cursor: default;
 }
+
+/* The copy menu's event scope — a box only for gesture containment, never for
+   layout, so the host's flex / text flow sees the sha alone. */
+.commit-sha-text-menu {
+  display: contents;
+}

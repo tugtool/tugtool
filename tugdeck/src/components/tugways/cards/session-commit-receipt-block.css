@@ -31,6 +31,18 @@
   color: var(--tugx-block-text-color);
 }
 
+/* The disclosed message body. The chrome's body region carries no padding of
+   its own (each body kind owns its spacing), so the message states its own —
+   and separates itself from the file list that follows with a hairline, the
+   way the expanded History row's message sits above its files. */
+[data-slot="commit-receipt-detail"] {
+  padding: var(--tug-space-sm) var(--tug-space-md);
+}
+
+[data-slot="commit-receipt-detail"] + * {
+  border-top: 1px solid var(--tugx-block-hairline);
+}
+
 /* Same override for the sha, which would otherwise inherit the header's muted
    command tone instead of the shared code tint. Never shrinks — the subject
    beside it is what ellipsizes. */

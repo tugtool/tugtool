@@ -161,7 +161,15 @@ function CommitRow({
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="tugx-commit-entry" data-sha={commit.sha}>
-      <div className="tugx-commit-line-row" onClick={() => setExpanded((e) => !e)}>
+      {/* Primary button only — a right-click belongs to the sha's copy menu,
+          and must never fold the row under it. */}
+      <div
+        className="tugx-commit-line-row"
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          setExpanded((e) => !e);
+        }}
+      >
         <CommitIdentityLine sha={commit.sha} subject={commit.subject} />
         <CommitMetaCell
           author={commit.committer ?? commit.author}

@@ -241,6 +241,14 @@ export interface BlockHeaderProps {
    */
   actions?: React.ReactNode;
   /**
+   * Content rendered on the header's trailing edge, AFTER the standard Copy
+   * affordance — a block's own disclosure control, where the whole-block
+   * chevron would sit. Visible in both states (unlike `actions`), because a
+   * block that discloses part of its own body must be able to say so while
+   * the rest of the header is quiet.
+   */
+  actionsTrailing?: React.ReactNode;
+  /**
    * Callback receiving the actions-slot DOM node (EXPANDED state). The
    * chrome captures it and republishes it through
    * `ChromeActionsTargetContext` so embedded body kinds can `createPortal`
@@ -275,6 +283,7 @@ export const BlockHeader = React.forwardRef<
     copyText,
     disclosure,
     actions,
+    actionsTrailing,
     actionsSlotRef,
     altitude = "leaf",
     className,
@@ -391,6 +400,7 @@ export const BlockHeader = React.forwardRef<
           data-slot="tool-call-header-copy"
         />
       ) : null}
+      {actionsTrailing}
       {collapsible ? (
         <BlockFoldCue
           collapsed={collapsed}
