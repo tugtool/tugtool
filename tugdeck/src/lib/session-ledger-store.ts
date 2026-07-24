@@ -49,6 +49,20 @@ import {
 } from "./session-ledger-events";
 import { getConnectionLifecycle } from "./connection-lifecycle";
 
+/**
+ * A session that holds nothing: no turns, no recorded user prompt, and no
+ * title. Claude writes a transcript for every launch, so a session abandoned
+ * before its first prompt has nothing to resume into. The host drops these
+ * from `list_sessions`; this mirrors the rule for the `session_updated` push
+ * path, which would otherwise insert a just-spawned empty row into the list.
+ */
+export function isEmptySessionRow(row: SessionRow): boolean {
+  const blank = (s: string | null): boolean => (s ?? "").trim().length === 0;
+  return (
+    row.turn_count === 0 && blank(row.last_user_prompt) && blank(row.name)
+  );
+}
+
 export type WorkspaceLoadStatus = "idle" | "pending" | "ready" | "error";
 
 export interface WorkspaceSnapshot {
@@ -363,6 +377,10 @@ export class SessionLedgerStore {
    * picker will pick up the row when it next calls `getSnapshot`.
    */
   private patchRow(sessionId: string, row: SessionRow): void {
+    // A content-empty row never enters the list — see `isEmptySessionRow`.
+    // Spawn-time pushes carry exactly this shape, and the host already
+    // filters them out of `list_sessions`.
+    if (isEmptySessionRow(row)) return;
     // Locate the cache slot via the reverse index, falling back to the
     // payload's `project_dir` if the index doesn't yet know about this
     // session (the row was created on the server before the picker ever

@@ -188,6 +188,24 @@ describe("SessionLedgerStore", () => {
     store.dispose();
   });
 
+  it("session_updated for a prompt-free session never enters the list", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      sessions: [makeRow({ session_id: "s1", last_user_prompt: "hello" })],
+    });
+    // A just-spawned session: no turns, no prompt, no name.
+    publishSessionUpdated({
+      session_id: "fresh",
+      fields: makeRow({ session_id: "fresh", state: "live", card_id: "c1" }),
+    });
+    const snap = store.getSnapshot("ws-1");
+    expect(snap.rows.map((r) => r.session_id)).toEqual(["s1"]);
+    store.dispose();
+  });
+
   it("session_updated { removed: true } drops the row", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");

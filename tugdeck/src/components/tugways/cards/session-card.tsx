@@ -1841,6 +1841,13 @@ function SessionProjectPickerForm({
   // Sessions list (+ Move-all-to-Trash button) → Cancel/Open.
   const sessionsPending = sessionsDataSource.isPending();
   const nonLiveCount = sessionsDataSource.nonLiveCount();
+  // The list omits prompt-free sessions, but the trash sweep takes every
+  // session on the path — so the tooltip names both halves rather than
+  // implying the visible count is the whole of it.
+  const trashAllTooltip =
+    nonLiveCount > 0
+      ? `${nonLiveCount} ${nonLiveCount === 1 ? "session" : "sessions"}, plus all empty sessions`
+      : "All empty sessions";
   // The `list_sessions` round-trip carries a filesystem existence check
   // for the typed path. An explicit `false` (path confirmed missing)
   // disables Open so a doomed `spawn_session` is never sent; `undefined`
@@ -2020,17 +2027,16 @@ function SessionProjectPickerForm({
           <div
             className="session-card-picker-trash-all"
             data-disabled={nonLiveCount === 0 ? "true" : undefined}
+            title={trashAllTooltip}
           >
             <TugLabel emphasis="proposal" data-testid="session-card-picker-trash-all-label">
-              {nonLiveCount > 1
-                ? `Move all sessions to Trash for this path (${nonLiveCount})`
-                : "Move all sessions to Trash for this path"}
+              Move all sessions to Trash for this path
             </TugLabel>
             <TugConfirmPopover
               ref={trashAllConfirmRef}
               message={
                 nonLiveCount > 1
-                  ? `Move all ${nonLiveCount} sessions to Trash?`
+                  ? "Move all sessions to Trash?"
                   : "Move to Trash?"
               }
               confirmLabel="Trash"

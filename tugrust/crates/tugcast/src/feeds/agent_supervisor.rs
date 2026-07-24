@@ -1190,6 +1190,9 @@ pub struct ListedSession {
 /// `scan: None` yields the ledger-only preview (phase 1); `Some` yields the
 /// settled union (phase 2). Both phases route through this one builder so
 /// their annotation, dedupe, and ordering can never drift.
+///
+/// Content-empty rows ([`is_empty_session`]) are dropped from both phases —
+/// they never reach the wire.
 fn build_listed_union(
     rows: Vec<crate::session_ledger::SessionRow>,
     live: &HashMap<String, crate::terminal_registry::TerminalLiveEntry>,
@@ -1278,8 +1281,19 @@ fn build_listed_union(
             });
         }
     }
+    listed.retain(|entry| !is_empty_session(&entry.row));
     listed.sort_by(|a, b| b.row.last_used_at.cmp(&a.row.last_used_at));
     listed
+}
+
+/// A session that holds nothing: no turns, no recorded user prompt, and no
+/// title (neither a user rename nor a scanned `aiTitle`). Claude writes a
+/// JSONL for every launch, so a session abandoned before its first prompt
+/// leaves a transcript with nothing to resume into. The picker rendered these
+/// as "No prompts yet" rows; they are dropped from `list_sessions` instead.
+fn is_empty_session(row: &crate::session_ledger::SessionRow) -> bool {
+    let blank = |s: &Option<String>| s.as_deref().unwrap_or("").trim().is_empty();
+    row.turn_count == 0 && blank(&row.last_user_prompt) && blank(&row.name)
 }
 
 /// The session mode to stamp on an `Idle` rebound entry when a client spawn
@@ -10844,14 +10858,17 @@ mod tests {
         ledger
             .record_spawn("s-old", "ws-1", "/proj/alpha", "c1", 1_000, None)
             .unwrap();
+        ledger.record_user_prompt("s-old", "old prompt").unwrap();
         ledger.mark_closed("s-old").unwrap();
         ledger
             .record_spawn("s-new", "ws-1", "/proj/alpha", "c2", 5_000, None)
             .unwrap();
+        ledger.record_user_prompt("s-new", "new prompt").unwrap();
         ledger.mark_closed("s-new").unwrap();
         ledger
             .record_spawn("other", "ws-2", "/proj/beta", "c3", 3_000, None)
             .unwrap();
+        ledger.record_user_prompt("other", "other prompt").unwrap();
         ledger.mark_closed("other").unwrap();
 
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -11094,6 +11111,7 @@ mod tests {
         ledger
             .record_spawn("tug-row", "ws-1", "/proj/alpha", "c1", 9_000, None)
             .unwrap();
+        ledger.record_user_prompt("tug-row", "tug prompt").unwrap();
         ledger.mark_closed("tug-row").unwrap();
         seed_external_jsonl(&claude_root, "/proj/alpha", EXTERNAL_ID, "external prompt");
 
@@ -11128,6 +11146,59 @@ mod tests {
         // synthetic 9000ms-epoch timestamp.
         assert_eq!(sessions[0]["session_id"], EXTERNAL_ID);
         assert_eq!(sessions[1]["session_id"], "tug-row");
+    }
+
+    #[tokio::test]
+    async fn list_sessions_omits_prompt_free_sessions() {
+        // A session abandoned before its first prompt — a ledger row with
+        // nothing recorded, and an on-disk transcript carrying no user
+        // record — has nothing to resume into and never reaches the wire.
+        let tmp = tempfile::tempdir().unwrap();
+        let claude_root = tmp.path().join("projects");
+        let ledger = Arc::new(
+            SessionLedger::open_with_claude_root(
+                tmp.path().join("sessions.db"),
+                claude_root.clone(),
+            )
+            .unwrap(),
+        );
+        let (sup, ledger, mut rx) = make_supervisor_for_ledger(ledger, None);
+
+        ledger
+            .record_spawn("empty-row", "ws-1", "/proj/alpha", "c1", 9_000, None)
+            .unwrap();
+        ledger.mark_closed("empty-row").unwrap();
+        ledger
+            .record_spawn("used-row", "ws-1", "/proj/alpha", "c2", 9_500, None)
+            .unwrap();
+        ledger.record_user_prompt("used-row", "real work").unwrap();
+        ledger.mark_closed("used-row").unwrap();
+
+        let dir = claude_root.join(crate::session_ledger::encode_claude_project_name(
+            "/proj/alpha",
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(format!("{EXTERNAL_ID}.jsonl")),
+            format!(
+                "{{\"type\":\"mode\",\"mode\":\"normal\",\"sessionId\":\"{EXTERNAL_ID}\",\"cwd\":\"/proj/alpha\"}}"
+            ),
+        )
+        .unwrap();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_sessions",
+            "project_dir": "/proj/alpha",
+        }))
+        .unwrap();
+        sup.handle_control("list_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_list_sessions_settled(&mut rx).await;
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 1, "only the prompted row: {response}");
+        assert_eq!(sessions[0]["session_id"], "used-row");
     }
 
     #[tokio::test]
