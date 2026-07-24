@@ -163,8 +163,53 @@ export function usePaneFocusController(
     // selection; the next click interacts normally.
     let activationClick = false;
 
+    // Deferred activation for a gesture that starts on draggable content in a
+    // card that is not the first responder (focus-language.md § Drag and the
+    // keyboard). At pointerdown the gesture is not yet known to be a click or
+    // a drag, and the two want opposite outcomes: a click activates, a drag
+    // leaves the source card inactive (macOS background-drag semantics) and
+    // needs the paired mousedown NOT to be `preventDefault`ed, since a
+    // prevented mousedown is the browser's signal not to begin a native drag.
+    // So the classification is parked here and resolved by whichever ending
+    // arrives: `dragstart` cancels, `pointerup` commits. The two are mutually
+    // exclusive — once a native drag begins the browser ends the gesture with
+    // `dragend`, never `pointerup`.
+    let pendingActivation: {
+      outgoingCardId: string | null;
+      incomingCardId: string;
+    } | null = null;
+
+    function clearPendingActivation(): void {
+      if (pendingActivation === null) return;
+      pendingActivation = null;
+      getFocusManager()?.endDeferredGesture();
+    }
+
+    function commitPendingActivation(): void {
+      const pending = pendingActivation;
+      pendingActivation = null;
+      if (pending === null) return;
+      // The same transfer the synchronous branch runs. `suppressPointer-
+      // PlacementOnce` is deliberately NOT armed: the latch is consumed by
+      // the chain provider's `promoteOnPointerDown` at the *next* pointerdown,
+      // so arming it here would poison the following, unrelated gesture — and
+      // this gesture has no engine placement left to suppress anyway (the
+      // provider's placement pass self-gates on the key card, which was not
+      // this card when the pointerdown ran).
+      transferFocusForActivation({
+        outgoingCardId: pending.outgoingCardId,
+        incomingCardId: pending.incomingCardId,
+        store,
+        commitMutation: () => store.activateCard(pending.incomingCardId),
+      });
+      // Closed AFTER the transfer: the transfer's own focus writes are the
+      // legal outcome, and the browser-default churn window ends with them.
+      getFocusManager()?.endDeferredGesture();
+    }
+
     function onPointerDown(event: PointerEvent): void {
       activationClick = false;
+      clearPendingActivation();
       const root = deckRootRef.current;
       if (!root) return;
 
@@ -293,10 +338,26 @@ export function usePaneFocusController(
       // the same-bit case so a click back onto the only / already-
       // active pane still restores `data-focused="true"`.
       const outgoingCardId = store.getFirstResponderCardId();
+      const isActivation = outgoingCardId !== pane.activeCardId;
+
+      // Draggable content in a non-first-responder card: arm, don't commit.
+      // The gesture ending decides (see `pendingActivation` above).
+      if (isActivation && startEl.closest('[draggable="true"]') !== null) {
+        pendingActivation = {
+          outgoingCardId,
+          incomingCardId: pane.activeCardId,
+        };
+        // The gesture keeps the browser's mousedown focus default (below), so
+        // tell the engine to treat the resulting focus move as browser churn
+        // rather than a raw write worth ledgering.
+        getFocusManager()?.beginDeferredGesture();
+        return;
+      }
+
       // Flag the paired mousedown (below) when this click transfers the
       // first responder to a different card — including from a deselected
       // canvas (`null` outgoing).
-      activationClick = outgoingCardId !== pane.activeCardId;
+      activationClick = isActivation;
       // The same classification stands the engine's pointer placement
       // down for this gesture: the activation transfer realizes the
       // card's recorded destination, and the provider's later placement
@@ -332,6 +393,11 @@ export function usePaneFocusController(
     // the browser's default — an input click should still focus the
     // input normally; we only suppress the clearing path.
     //
+    // One carve-out: a gesture on draggable content in a background card
+    // is deferred rather than classified (see `pendingActivation`), and a
+    // deferred gesture keeps the browser default — a prevented mousedown
+    // never begins a native drag.
+    //
     // Why a separate listener instead of preventDefault on pointerdown:
     // preventDefault on pointerdown cancels ALL compatibility mouse
     // events (mousedown, mouseup, click), which breaks every downstream
@@ -353,6 +419,14 @@ export function usePaneFocusController(
       if (paneEl === null) return;
       if (event.metaKey) return;
       if (startEl.closest("[data-no-activate]")) return;
+      // Deferred-activation gesture: the pointerdown classifier parked this
+      // one instead of activating, so there is no placed focus to protect —
+      // and `preventDefault` here would stop the browser from ever beginning
+      // the native drag this gesture may turn out to be. Leave the default
+      // alone; the mousedown default on a `draggable` element prepares a drag
+      // rather than placing a caret, so nothing is lost if it turns out to be
+      // a plain click.
+      if (pendingActivation !== null) return;
       // Activation click (flagged by the pointerdown classifier above):
       // `transferFocusForActivation` has already placed focus on the
       // incoming card's destination. Suppress the browser's mousedown
@@ -380,13 +454,112 @@ export function usePaneFocusController(
       event.preventDefault();
     }
 
+    // Pointer-stream resync for the first click after a native drag.
+    //
+    // WebKit delivers NO `pointerdown` for the first click after a native
+    // drag session: the drag consumed the pointer stream's release, so the
+    // pointer-event state machine still holds the pointer "down" and the
+    // next press emits only `mousedown` (its release delivers the catch-up
+    // `pointerup` that re-syncs). Every pointer-gesture layer in the deck —
+    // this controller's activation classification, the chain's pointerdown
+    // promotion, list selection — rides capture-phase `pointerdown`, so
+    // that first click would be entirely invisible: no activation, no
+    // selection, nothing.
+    //
+    // Heal the stream in one place instead of teaching every layer a
+    // mousedown fallback: when a trusted primary-button mousedown arrives
+    // with no preceding pointerdown, dispatch the missing pointerdown on
+    // the same target. `dispatchEvent` is synchronous, so the entire
+    // pointerdown pass (document capture listeners and React's root
+    // delegation alike) completes before the remaining mousedown listeners
+    // — including this controller's own `onMouseDown` below — run.
+    let sawTrustedPointerDown = false;
+    function trackPointerDown(event: PointerEvent): void {
+      if (event.isTrusted) sawTrustedPointerDown = true;
+    }
+    function resyncPointerStreamOnMouseDown(event: MouseEvent): void {
+      const saw = sawTrustedPointerDown;
+      sawTrustedPointerDown = false;
+      if (saw || !event.isTrusted || event.button !== 0) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      target.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: event.button,
+          buttons: event.buttons,
+          detail: event.detail,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+        }),
+      );
+    }
+
+    // Resolution listeners for the deferred-activation latch. `dragstart`
+    // means the gesture was a drag — the source card stays inactive.
+    // `pointerup` means it was a click — activate now. `pointercancel` and
+    // `dragend` are belt-and-suspenders: neither should reach an armed latch
+    // (a drag always passes through `dragstart` first), but a latch left armed
+    // across gestures would activate on an unrelated pointerup.
+    function onDragStart(): void {
+      clearPendingActivation();
+    }
+    function onPointerUp(): void {
+      commitPendingActivation();
+    }
+    function onGestureAbandoned(): void {
+      clearPendingActivation();
+    }
+
+    // The resync pair registers FIRST so the healed pointerdown reaches
+    // `onPointerDown` before `onMouseDown` reads the gesture classification.
+    document.addEventListener("pointerdown", trackPointerDown, {
+      capture: true,
+    });
+    document.addEventListener("mousedown", resyncPointerStreamOnMouseDown, {
+      capture: true,
+    });
     document.addEventListener("pointerdown", onPointerDown, { capture: true });
     document.addEventListener("mousedown", onMouseDown, { capture: true });
+    document.addEventListener("dragstart", onDragStart, { capture: true });
+    document.addEventListener("pointerup", onPointerUp, { capture: true });
+    document.addEventListener("pointercancel", onGestureAbandoned, {
+      capture: true,
+    });
+    document.addEventListener("dragend", onGestureAbandoned, { capture: true });
     return () => {
+      document.removeEventListener("pointerdown", trackPointerDown, {
+        capture: true,
+      });
+      document.removeEventListener(
+        "mousedown",
+        resyncPointerStreamOnMouseDown,
+        { capture: true },
+      );
       document.removeEventListener("pointerdown", onPointerDown, {
         capture: true,
       });
       document.removeEventListener("mousedown", onMouseDown, {
+        capture: true,
+      });
+      document.removeEventListener("dragstart", onDragStart, { capture: true });
+      document.removeEventListener("pointerup", onPointerUp, { capture: true });
+      document.removeEventListener("pointercancel", onGestureAbandoned, {
+        capture: true,
+      });
+      document.removeEventListener("dragend", onGestureAbandoned, {
         capture: true,
       });
     };

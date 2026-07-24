@@ -337,8 +337,9 @@ export type BagFocusResolution =
  * Consults `bag.focus` and resolves it to a {@link BagFocusResolution}
  * suitable for {@link applyBagFocus}. Side-effect free: reads the
  * bag, the host root, the engine-hook registration via
- * `store.hasEngineHooks`, and the live DOM via `querySelector`.
- * Does not mutate focus, selection, or any DOM state.
+ * `store.hasEngineHooks`, the focus engine's live key card / key
+ * view, and the live DOM via `querySelector`. Does not mutate
+ * focus, selection, or any DOM state.
  *
  * Single source of truth for "where does focus go on this
  * activation?" — the [L23] single-channel contract.
@@ -366,6 +367,20 @@ export function resolveBagFocus(
         return { kind: "engine", cardId };
       }
       return { kind: "deferred-engine", cardId };
+    }
+    // The focus engine already holds this card's keyboard — a live key view
+    // recorded/projected for exactly this card (the ring a Cmd-L or a
+    // background-card placement just put on a list). The activation realizes
+    // THAT target ([P20]); the generic default-focus walk below must not
+    // displace it (it would land on the first tabbable — a section's filter
+    // input — and yank the ring off the just-placed list).
+    const manager = getFocusManager();
+    if (
+      manager !== null &&
+      manager.keyCard() === cardId &&
+      manager.keyView() !== null
+    ) {
+      return { kind: "none" };
     }
     if (hostRoot === null || !hostRoot.isConnected) {
       return { kind: "none" };

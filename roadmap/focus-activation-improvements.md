@@ -41,7 +41,8 @@ The root causes are structural, not one-off bugs: the activation layer is blind 
 - A snippet drop into any card's prompt entry inserts the text but changes neither `document.activeElement`, the key card, nor the deck first responder (fixes C; app-test asserts all three unchanged across a synthetic drop).
 - Starting from the (now unreachable via drop, but still constructible) state "editor holds DOM focus in a non-key card," one click on the prompt entry activates the card **and** lands a blinking caret (fixes D, E; app-test pin).
 - Dragging from an inactive card does not activate it; a plain click (no drag) on the same row still activates the card (verified by app-test: pointerdown → dragstart → no activation; pointerdown → pointerup → activation).
-- `getFocusInvariantReport()` shows a warn-level ledger entry whenever `parkKeySink` cannot find a sink; zero such entries during the app-test suite's steal-budget assertions, excepting the entries the Step 7 illegal-state pin deliberately provokes inside its own scoped scenario.
+- `getFocusInvariantReport()` shows a warn-level ledger entry whenever `parkKeySink` cannot find a sink; zero such entries during the app-test suite's steal-budget assertions.
+- A gesture on draggable content in a background card keeps the browser's mousedown focus default (a prevented mousedown never starts a native drag), so the resulting focus move is classified as browser churn and corrected quietly rather than ledgered as a steal — otherwise every snippet drag would warn about a write no author could fix.
 - `bunx vite build` passes; `just app-test` passes.
 
 #### Scope {#scope}
@@ -340,14 +341,14 @@ Harness conventions that bind here: space synthetic gestures with settle delays;
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Tuglaws: drag-and-keyboard doctrine | pending | — |
-| #step-2 | Idempotent engine focus grant | pending | — |
-| #step-3 | Drop inserts without focus | pending | — |
-| #step-4 | Deferred activation for draggable content | pending | — |
-| #step-5 | TugListView selection on pointerdown | pending | — |
-| #step-6 | Watchdog honesty: loud failed corrections | pending | — |
-| #step-7 | App-test pins | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Tuglaws: drag-and-keyboard doctrine | done | (dash) |
+| #step-2 | Idempotent engine focus grant | done | (dash) |
+| #step-3 | Drop inserts without focus | done | (dash) |
+| #step-4 | Deferred activation for draggable content | done | (dash) |
+| #step-5 | TugListView selection on pointerdown | done | (dash) |
+| #step-6 | Watchdog honesty: loud failed corrections | done | (dash) |
+| #step-7 | App-test pins | done | (dash) |
+| #step-8 | Integration checkpoint | done (automated); manual walk pending the user's vet | (dash) |
 
 #### Step 1: Tuglaws: drag-and-keyboard doctrine {#step-1}
 
@@ -572,8 +573,10 @@ Harness conventions that bind here: space synthetic gestures with settle delays;
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Revisit the watchdog's `<body>` carve-out if the new warn ledger shows body-stranding in practice ([Q02]).
+- [x] ~~A raw focus write on a background card poisons that card's next activation.~~ RESOLVED during iteration: the "poison" was never the raw write — any activation click that found `document.activeElement` parked on the engine's key sink fell through the focus-theft gate's decision tree to the "user has focus somewhere real, don't steal" refusal, so `applyBagFocus` never ran and the card came forward with settled registers but no caret (the user's canvas-deselect → drag → click flow reached the same state with no illegal write at all). Fixed with gate branch 5b: a parked sink is the engine holding the keyboard, counted as nothing-to-steal. Pinned as at0267 scenario 6; the sink rule is recorded in focus-language.md § One writer.
 - [ ] Multi-select `TugListView` semantics (AppKit deselect-on-mouseup nuance) if a multi-select consumer arrives.
 - [ ] Text-file / session rows in the Lens as drag sources under the same doctrine (Lens redesign v2 inherits [P01]/[P02]/[P05]).
+- [ ] The **file**-drop path in `drop-extension.ts` (`processAttachmentFiles`) still calls `view.focus()` after inserting image atoms — the same [P01] violation as the snippet path, but its focus call carries a documented widget-paint rationale (an empty, never-focused editor may mint the atom widget without painting it). Left in place by this plan: removing it needs its own investigation of whether `view.requestMeasure` alone flushes the paint, which is not covered by any current test.
 
 | Checkpoint | Verification |
 |------------|--------------|

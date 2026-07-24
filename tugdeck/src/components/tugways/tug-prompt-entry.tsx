@@ -1711,6 +1711,11 @@ export const TugPromptEntry = React.forwardRef<
   // snapshot; [L03] useLayoutEffect so the doc change lands in one paint; the
   // slot survives until an editor exists (no consume on a missing view) so a
   // drop is never silently dropped.
+  //
+  // No focus claim: a drop inserts content and leaves activation and focus
+  // where the user left them (focus-language.md § Drag and the keyboard).
+  // The dispatched `selection` records the insertion point; it becomes the
+  // visible caret when the editor is next granted focus legitimately.
   const pendingSnippetInsert = snap.pendingSnippetInsert;
   useLayoutEffect(() => {
     if (pendingSnippetInsert === null) return;
@@ -1738,7 +1743,6 @@ export const TugPromptEntry = React.forwardRef<
       scrollIntoView: true,
     });
     codeSessionStore.consumePendingSnippetInsert();
-    editor.focus();
   }, [pendingSnippetInsert, codeSessionStore]);
 
   // Code's Z5 button follows the Claude session lifecycle unchanged.

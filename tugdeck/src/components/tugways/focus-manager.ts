@@ -2663,6 +2663,57 @@ export class FocusManager {
     return id === null || !this.responderHasFocusContract(id);
   }
 
+  /**
+   * True while a pointer gesture whose activation the pane-focus-controller
+   * DEFERRED is in flight (a gesture on draggable content in a background
+   * card — see focus-language.md § Drag and the keyboard).
+   *
+   * Such a gesture deliberately leaves the browser's mousedown focus default
+   * alone, because a prevented mousedown never begins a native drag. The
+   * default then walks up from the click target and focuses the nearest
+   * tabindex'd ancestor — a background card's container — which the watchdog
+   * corrects on its next pass. That correction is browser churn from a
+   * gesture the engine chose to let through, not a raw focus write by our
+   * code, so it is corrected QUIETLY: same class as the browser focusing the
+   * engine's own stop. Attributing it as a steal would mean every snippet
+   * drag ledgered a warn that no writer could ever fix.
+   */
+  private deferredGestureActive = false;
+
+  /** Open the browser-default focus window for a deferred pointer gesture. */
+  beginDeferredGesture(): void {
+    this.deferredGestureActive = true;
+  }
+
+  /** Close it — on drag start, on gesture abandon, or after the commit. */
+  endDeferredGesture(): void {
+    this.deferredGestureActive = false;
+  }
+
+  /**
+   * Ledger a correction the watchdog wanted to run but could not.
+   *
+   * Corrections never fail silently (focus-language.md § One writer, "The
+   * watchdog is enforcement, not observation"): a watchdog that classifies a
+   * steal correctly and then no-ops without a trace converts a caught bug
+   * into an uncaught one. The entry rides the same steal ledger the dev panel
+   * surfaces and app-tests budget-assert, so a failed correction is a test
+   * failure for free. The offender key names the correction, not an element —
+   * the element is in the log payload.
+   */
+  private ledgerFailedCorrection(
+    correction: string,
+    detail: { offender: string; legal: string; route: KeyboardRoute; reason: string },
+  ): void {
+    const key = `(correction failed: ${correction})`;
+    this.stealsByOffender.set(key, (this.stealsByOffender.get(key) ?? 0) + 1);
+    tugDevLogStore.warn(
+      "focus-watchdog",
+      `correction failed: ${correction} — the illegal focus stands (${detail.reason})`,
+      detail,
+    );
+  }
+
   private checkFocusInvariant(reason: string): void {
     if (typeof document === "undefined") return;
     const ctx = this.activeContext();
@@ -2695,7 +2746,14 @@ export class FocusManager {
       }
       ctx.noteGrantLost();
       if (this.spendReassertBudget(reason, "(grant-lost park)")) {
-        this.parkKeySink();
+        if (!this.parkKeySink()) {
+          this.ledgerFailedCorrection("park (no key sink)", {
+            offender: activeDesc,
+            legal: "(key sink)",
+            route,
+            reason,
+          });
+        }
       }
       return;
     }
@@ -2764,11 +2822,15 @@ export class FocusManager {
     const ctxKeyView = ctx.keyView();
     const keyViewEl =
       ctxKeyView !== null ? this.elementForFocusKey(ctxKeyView) : null;
+    // Browser churn corrected quietly: the engine's own stop taking browser
+    // focus, and the mousedown default of a deferred drag gesture (see
+    // `deferredGestureActive`).
     const ownStop =
-      keyViewEl !== null &&
-      (keyViewEl === active ||
-        keyViewEl.contains(active) ||
-        active.contains(keyViewEl));
+      this.deferredGestureActive ||
+      (keyViewEl !== null &&
+        (keyViewEl === active ||
+          keyViewEl.contains(active) ||
+          active.contains(keyViewEl)));
 
     // Reassert the legal element, and ledger the correction. The offender
     // is attributed so a raw focus write introduced next month announces
@@ -2782,7 +2844,7 @@ export class FocusManager {
       if (ownStop) {
         tugDevLogStore.debug(
           "focus-watchdog",
-          `re-${route === "dom-granted" ? "granting" : "parking"} after browser focus on the engine's own stop ${offender} (${reason})`,
+          `re-${route === "dom-granted" ? "granting" : "parking"} after browser focus on ${this.deferredGestureActive ? "a deferred drag gesture's target" : "the engine's own stop"} ${offender} (${reason})`,
           { offender, legal: legalDesc, route, reason },
         );
       } else {
@@ -2800,15 +2862,24 @@ export class FocusManager {
     if (!this.spendReassertBudget(reason, `${offender}→${legalDesc}|${route}`)) {
       return;
     }
+    const failureDetail = {
+      offender,
+      legal: legalDesc,
+      route,
+      reason,
+    };
     if (route === "dom-granted") {
-      ctx.regrantCurrentTarget();
+      const regranted = ctx.regrantCurrentTarget();
+      if (regranted !== "placed") {
+        this.ledgerFailedCorrection(`re-grant (${regranted})`, failureDetail);
+      }
     } else if (
       this.accessMode === "accessibility" &&
       this.mirrorKeyViewFocus()
     ) {
       // Accessibility mode reasserts the mirror, not the sink ([P10]).
-    } else {
-      this.parkKeySink();
+    } else if (!this.parkKeySink()) {
+      this.ledgerFailedCorrection("park (no key sink)", failureDetail);
     }
   }
 

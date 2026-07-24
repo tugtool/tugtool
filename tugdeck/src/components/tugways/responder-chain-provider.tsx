@@ -1026,6 +1026,26 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return el !== null && el.closest(FR_PRESERVE_SELECTOR) !== null;
     }
 
+    // A pointerdown on draggable content inside a card that is NOT the key
+    // card — the gesture whose activation the pane-focus-controller defers
+    // until `dragstart` or `pointerup` says which it was. Mirrors that
+    // controller's arming condition, so the two halves of the deferral agree
+    // by construction.
+    function isDeferredDragActivation(target: EventTarget | null): boolean {
+      const el =
+        target instanceof Element
+          ? target
+          : target instanceof Node
+            ? target.parentElement
+            : null;
+      if (el === null) return false;
+      if (el.closest('[draggable="true"]') === null) return false;
+      const cardEl = el.closest<HTMLElement>("[data-card-id]");
+      if (cardEl === null) return false;
+      const cardId = cardEl.getAttribute("data-card-id");
+      return cardId !== null && cardId !== focusManager.keyCard();
+    }
+
     // ---- Modal scrim barrier: card-modal ([P16]/[P19]) + pane-modal ----
     //
     // While an inline dialog (permission / question) is pending its card is
@@ -1198,6 +1218,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         promoteFromTarget(redirect);
         return;
       }
+      // Draggable content in a background card: promotion defers with
+      // activation (focus-language.md § Drag and the keyboard). The
+      // pane-focus-controller has parked this gesture's activation until it
+      // is known to be a click or a drag; promoting eagerly would strand the
+      // chain first responder on the drag source while the deck first
+      // responder stayed on the key card — a split register that mis-routes
+      // the next accelerator. If the gesture is a click, the pointerup
+      // activation commit settles the chain register through
+      // `settleFirstResponderForActivation`; if it is a drag, nothing moves.
+      if (isDeferredDragActivation(event.target)) return;
       // Chain promotion, then the engine placement: the click's focus
       // transition is driven by the engine at pointerdown (ahead of the
       // browser's mousedown focus default), never derived after the fact.

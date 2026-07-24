@@ -3688,12 +3688,34 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         e.currentTarget.querySelector('[contenteditable="true"], input, textarea') !==
           null;
       const pointerDownCb = (e: React.PointerEvent<HTMLDivElement>): void => {
-        if (!focusEngineActiveRef.current) return;
+        if (e.button !== 0) return;
         if (!cellIsPickable()) return;
         // A pointerdown anywhere in the open editor's cell stays with the
         // editor: the editor's own focusable (found by the capture-phase pointer
         // placement) keeps the caret, so the click lands as expected.
         if (cellHasOpenEditor(e)) return;
+        // Selection commits HERE, not on click (focus-language.md § Drag and
+        // the keyboard): mousedown on a row selects it and a drag then carries
+        // what it selected, as `NSTableView` does. Click-gated selection is
+        // unreachable from any gesture that becomes a drag (a drag fires no
+        // click) and from a first-click-activates gesture (the activation
+        // mousedown `preventDefault` eats the click).
+        //
+        // A `defaultPrevented` pointerdown belongs to a finer gesture
+        // affordance that claimed the pointer before it bubbled here — a
+        // reorder grip's pointer-capture drag — and is not a row-selection
+        // gesture: a grip drag must reorder without selecting (for a session
+        // row, `onSelect` fronts the bound card mid-drag).
+        //
+        // Selection is list state and commits whether or not the focus engine
+        // is running; only the cursor / key-view half below is engine state.
+        if (!e.defaultPrevented) {
+          delegateRef.current?.onSelect?.(index);
+          if (selectionRequiredRef.current || focusEngineActiveRef.current) {
+            setSelectedIndex(index);
+          }
+        }
+        if (!focusEngineActiveRef.current) return;
         // Promote the keyboard-navigable listbox to the KEYBOARD key view on
         // POINTERDOWN — the same event dispatch as the capture-phase pointer
         // placement (`responder-chain-provider`), which parks the container as
@@ -3713,7 +3735,16 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           );
         }
       };
+      // The click path is the fallback for clicks with no pointer gesture
+      // behind them — a focusable child inside a cell activated by Space fires
+      // a synthetic click that bubbles to this wrapper (the `keyDownCb`
+      // double-fire guard below documents consumers relying on it). Every real
+      // pointer click already committed its selection at pointerdown, so
+      // `detail === 0` (no click count — the keyboard-synthesized shape) is
+      // what distinguishes the two and keeps a consumer's `onSelect` from
+      // firing twice for one pointer gesture.
       const clickCb = (e: React.MouseEvent<HTMLDivElement>): void => {
+        if (e.detail !== 0) return;
         if (!cellIsPickable()) return;
         // A click in the open editor's cell is the editor's, not a re-selection
         // of the container's row (mirrors the pointerdown guard).

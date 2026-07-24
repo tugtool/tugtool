@@ -975,6 +975,13 @@ export function tugDropExtension(
        * hidden under the drag image — a line off from where the drop caret
        * promised the text would land. Claiming first (and stopping the
        * event) makes the painted caret and the insertion the same position.
+       *
+       * The handler inserts and stops. It claims no focus and does not
+       * activate the card: a drop is a content gesture on both ends
+       * (focus-language.md § Drag and the keyboard). `insertMixedAt`
+       * records the insertion point in `view.state.selection`, which
+       * becomes the visible caret if and when the editor is next
+       * granted focus legitimately.
        */
       const onDropCapture = (event: DragEvent): void => {
         const text = readSnippetDrag(event.dataTransfer);
@@ -986,7 +993,6 @@ export function tugDropExtension(
         insertMixedAt(view, at ?? view.state.doc.length, [
           { kind: "text", text },
         ]);
-        view.focus();
       };
       const onDrop = (event: DragEvent): void => {
         const files = event.dataTransfer?.files;

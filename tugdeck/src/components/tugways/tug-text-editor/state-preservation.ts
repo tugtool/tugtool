@@ -9,7 +9,8 @@
  *      honors saved scroll position and intentionally does NOT focus
  *      so the active / inactive paint channels can decide that
  *      separately.
- *   - `paintMirrorAsActive(view, state?)` — claim focus, assert
+ *   - `paintMirrorAsActive(view, state?)` — claim focus if the view
+ *      does not already hold it, assert
  *      selection (when state is supplied), assert scrollTop. The only
  *      paint path that legitimately writes the global Selection. Used
  *      by exactly one editor per page at a time — the deck-level
@@ -237,8 +238,10 @@ export function restoreEditState(
  * `view.state.selection` matches the saved value before focus claims
  * the global Selection. Then `view.focus()` — CM6's own
  * selection-to-browser sync writes `window.getSelection()` from
- * `view.state.selection`. When `state.scrollTop` is a number, write
- * it on `view.scrollDOM`.
+ * `view.state.selection`. The focus call is skipped when the view
+ * already holds focus; re-`focus()`ing a focused contenteditable
+ * blurs to `<body>` in WebKit. When `state.scrollTop` is a number,
+ * write it on `view.scrollDOM`.
  *
  * Skips silently on disconnected views.
  *
@@ -275,7 +278,13 @@ export function paintMirrorAsActive(
   // maintaining `view.state.selection` itself), `view.focus()`
   // alone is sufficient; CM6's own focus-sync writes the global
   // Selection from `view.state.selection`.
-  view.focus();
+  //
+  // The grant is idempotent (focus-language.md § One writer, "Grants
+  // are idempotent"): WebKit drops focus to `<body>` when an
+  // already-focused contenteditable is re-`focus()`ed, and the
+  // watchdog does not correct `<body>`. The selection and scroll
+  // re-asserts below are idempotent already and stay unconditional.
+  if (!view.hasFocus) view.focus();
   if (state?.selection) {
     view.dispatch({
       selection: EditorSelection.range(

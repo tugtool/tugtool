@@ -519,7 +519,11 @@ export const TugTextCardEditor = React.forwardRef<
     if (store === null) return;
     return store.registerEngineHooks(engineCardId, {
       paintMirrorAsActive: () => {
-        viewRef.current?.focus();
+        // Idempotent grant (focus-language.md § One writer): WebKit
+        // blurs an already-focused contenteditable to `<body>` on a
+        // redundant re-`focus()`.
+        const view = viewRef.current;
+        if (view !== null && !view.hasFocus) view.focus();
       },
       paintMirrorAsInactive: () => {},
     });

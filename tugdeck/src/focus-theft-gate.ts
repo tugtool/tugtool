@@ -34,6 +34,14 @@
  *      {@link isNonFocusCapturingChrome}) → **true** (transient
  *      focus on drag handles, tab buttons between clicks, etc. —
  *      the user hasn't actually moved focus to a new control).
+ *   5b. Focus is parked on the focus engine's key sink
+ *      (`data-tug-key-sink`) → **true** (the sink is the engine's
+ *      own register for engine-routed targets — the engine holding
+ *      the keyboard, not the user on a control; nothing to steal).
+ *      A live engine keyboard behind the park is protected in
+ *      `resolveBagFocus`, which resolves to `none` when the engine
+ *      already holds the target card's key view — a permitted
+ *      dispatch never displaces a live ring.
  *   6. Focus is inside a different deck card's host element (walks
  *      up from `activeElement` to find a `[data-card-id]` ancestor,
  *      matches against `state.cards`) → **true** (card-to-card
@@ -70,6 +78,7 @@
 
 import type { DeckState } from "./layout-tree";
 import { isFocusDestination } from "./deck-store-selectors";
+import { KEY_SINK_ATTRIBUTE } from "./components/tugways/focus-manager";
 
 /**
  * Data attribute that chrome elements set to opt out of being
@@ -151,6 +160,22 @@ export function canProgrammaticallyFocus(
 
   // Branch 5: focus is on non-focus-capturing chrome.
   if (isNonFocusCapturingChrome(active)) return true;
+
+  // Branch 5b: focus is parked on the engine's key sink. The sink is the
+  // focus engine's own register — `document.activeElement` rests there for
+  // every engine-routed target (focus-language.md § One writer) — so focus
+  // on it is the ENGINE holding the keyboard, never the user focused on a
+  // real control. Nothing-to-steal, like body: refusing would strand an
+  // activation with no focus anywhere (the activation-click mousedown
+  // suppression means no browser default fills in behind a refused
+  // transfer, and the user needs a second click to land the caret the
+  // first click already promised). A live engine keyboard behind the park
+  // (a ringed list) is protected downstream, not here: `resolveBagFocus`
+  // resolves to `none` when the engine already holds the target card's key
+  // view, so a permitted dispatch never displaces a live ring.
+  if (active instanceof Element && active.hasAttribute(KEY_SINK_ATTRIBUTE)) {
+    return true;
+  }
 
   // Branch 6: focus is inside a different deck card. Card-to-card
   // focus transfer on activation (e.g., intra-pane tab switch or
