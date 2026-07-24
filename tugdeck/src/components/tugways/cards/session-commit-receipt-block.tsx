@@ -129,13 +129,13 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
     <span className="commit-receipt-header">
       <code className="commit-receipt-summary">{subject}</code>
       <span className="commit-receipt-chips">
-        <TugBadge emphasis="outlined" role="inherit" size="sm">
+        <TugBadge emphasis="ghost" role="inherit" size="sm">
           {`${fileCount} ${fileCount === 1 ? "file" : "files"}`}
         </TugBadge>
-        <TugBadge emphasis="outlined" role="inherit" size="sm">{`+${added} −${removed}`}</TugBadge>
+        <TugBadge emphasis="ghost" role="inherit" size="sm">{`+${added} −${removed}`}</TugBadge>
         <TugCopyBadge
           className="commit-receipt-hash-badge"
-          emphasis="outlined"
+          emphasis="ghost"
           role="inherit"
           size="sm"
           value={sha}

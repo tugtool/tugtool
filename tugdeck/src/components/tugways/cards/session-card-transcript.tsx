@@ -173,7 +173,9 @@ import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
 import { resolveCommandBlock } from "./session-command-block-registry";
 // Side-effect import: registers the bespoke `/commit` receipt renderer with
 // the command-block registry before the first `resolveCommandBlock` call ([P08]).
-import "./session-commit-receipt-block";
+// `matchesCommitReceipt` is the same predicate the registry matches on, reused
+// here so the row's git attribution and the block renderer never disagree.
+import { matchesCommitReceipt } from "./session-commit-receipt-block";
 import { composeShellShareText } from "./shell-exchange-view";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
@@ -249,6 +251,10 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 const SHELL_IDENTIFIER = "Shell";
+/** Identifier for a git-attributed row (the `/commit` receipt). The commit
+ *  rides the shell ledger, but it ran no shell command the user typed — so the
+ *  row is attributed to git, not to the shell that carried it. */
+const GIT_IDENTIFIER = "Git";
 
 /**
  * Stable empty-atoms reference for the ghost-row defensive fallback —
@@ -580,14 +586,20 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
   // command family it understands; everything else renders through
   // the generic exchange block. Resolution is total.
   const CommandBlock = resolveCommandBlock(message.command);
+  // A `/commit` lands in the shell ledger like any other exchange, but the user
+  // typed no shell command — so it reads as a git operation, not a shell one:
+  // the git participant + icon, and no `exit N · duration` end-state (a commit's
+  // outcome is the receipt itself).
+  const isGitRow = matchesCommitReceipt(message.command);
   return (
     <div
       className="session-card-transcript-shell-row"
       data-slot="session-transcript-shell-row"
+      data-git-row={isGitRow ? "true" : undefined}
     >
       <TugTranscriptEntry
-        participant="shell"
-        identifier={SHELL_IDENTIFIER}
+        participant={isGitRow ? "git" : "shell"}
+        identifier={isGitRow ? GIT_IDENTIFIER : SHELL_IDENTIFIER}
         // Time • cwd — the exec time paired with the directory the
         // command ran in (`message.cwd`, the per-exchange cwd, not the
         // live session cwd), bulleted like the shell Z1B end-state row.
@@ -662,8 +674,9 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
         }
         // Z1B end-state row ([D111]) — the exchange's exit badge + duration,
         // beneath the block, exactly where a Claude turn shows its OK/Error
-        // badge + timing.
-        controls={<SessionZ1B participant="shell" turn={turn} />}
+        // badge + timing. A git row shows none: `exit 0 · 0ms` says nothing
+        // about a commit that the receipt above doesn't already say.
+        controls={isGitRow ? undefined : <SessionZ1B participant="shell" turn={turn} />}
       />
     </div>
   );

@@ -63,7 +63,7 @@
 import "./tug-transcript-entry.css";
 
 import React from "react";
-import { Bot, Shell, User } from "lucide-react";
+import { Bot, GitCommitHorizontal, Shell, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -77,7 +77,7 @@ import { cn } from "@/lib/utils";
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
  */
-export type Participant = "user" | "assistant" | "shell";
+export type Participant = "user" | "assistant" | "shell" | "git";
 
 /**
  * Icon rendered in the gutter for each participant. Lucide glyphs picked
@@ -86,6 +86,9 @@ export type Participant = "user" | "assistant" | "shell";
  *   - `User` for `user` — the human in the session.
  *   - `Bot` for `assistant` — Claude / the AI.
  *   - `Shell` for `shell` — shell command output.
+ *   - `GitCommitHorizontal` for `git` — a git operation on the repo (the
+ *     `/commit` receipt), attributed to git rather than to the shell that
+ *     carried it.
  *
  * The route prefix character (`>` / `$`) lives alongside the typed
  * input itself — in the body for `user`, in the identifier for `shell`
@@ -108,6 +111,7 @@ const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   user: <User size={ICON_PIXEL_SIZE} />,
   assistant: <Bot size={ICON_PIXEL_SIZE} />,
   shell: <Shell size={ICON_PIXEL_SIZE} />,
+  git: <GitCommitHorizontal size={ICON_PIXEL_SIZE} />,
 };
 
 // ---------------------------------------------------------------------------

@@ -82,10 +82,12 @@ body {
   --tugx-transcript-header-pin-gap: 4px;
 
   /* Per-participant icon flavors. You wears the theme accent; the agent
-   * wears the theme key (action) hue; shell stays on the data hue. */
+   * wears the theme key (action) hue; shell stays on the data hue; git —
+   * a landed change to the repo — wears the success hue. */
   --tugx-transcript-icon-color-user:    var(--tug7-element-tone-icon-normal-accent-rest);
   --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-active-rest);
   --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
+  --tugx-transcript-icon-color-git:     var(--tug7-element-tone-icon-normal-success-rest);
 
   /* Icon legibility halo — grounds the colored speaker icon against the
    * header surface. The light/dark decision lives in the theme: the light
@@ -170,6 +172,9 @@ body {
 }
 .tug-transcript-entry[data-participant="shell"] {
   --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-shell);
+}
+.tug-transcript-entry[data-participant="git"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-git);
 }
 
 .tug-transcript-entry__body-column {
