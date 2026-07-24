@@ -14,7 +14,12 @@
  * Track height comes from inline `height` on the root (driven by the
  * parent's `size` prop). Width fills the parent container.
  *
- * Motion: [L13] indeterminate stripe scroll runs as a CSS `@keyframes`.
+ * Motion: [L13] indeterminate stripe scroll runs as a CSS `@keyframes`
+ * translateX on a promoted `::before` stripe layer one period wider
+ * than the track (the track's `overflow: hidden` clips it) — transform,
+ * never `background-position`, so WebKit runs the scroll on the
+ * compositor thread and the stripes stay smooth while the main thread
+ * is busy (which is precisely when an indeterminate bar is shown).
  * Paused state suppresses the animation via `animation-play-state`.
  */
 
@@ -39,6 +44,20 @@
 .tug-progress-bar-indeterminate {
   width: 100% !important;
   background-color: transparent;
+}
+
+/* The stripes live on a layer one 28.28px period wider than the fill,
+   parked one period to the left; the loop translates it right by
+   exactly one period, which is visually seamless (the pattern is
+   period-invariant). The track's `overflow: hidden` clips the
+   overhang and its `border-radius` keeps rounding the corners. */
+.tug-progress-bar-indeterminate::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -28.28px;
+  width: calc(100% + 28.28px);
+  height: 100%;
   background-image: repeating-linear-gradient(
     -45deg,
     var(--tugx-progress-indicator-fill, currentColor) 0,
@@ -48,14 +67,15 @@
   );
   background-size: 28.28px 100%;
   animation: tug-progress-bar-scroll calc(600ms * var(--tug-timing, 1)) linear infinite;
+  will-change: transform;
 }
 
 @keyframes tug-progress-bar-scroll {
-  from { background-position-x: 0; }
-  to   { background-position-x: 28.28px; }
+  from { transform: translateX(0); }
+  to   { transform: translateX(28.28px); }
 }
 
-.tug-progress-bar-paused .tug-progress-bar-indeterminate {
+.tug-progress-bar-paused .tug-progress-bar-indeterminate::before {
   animation-play-state: paused;
 }
 
@@ -63,6 +83,6 @@
   opacity: var(--tugx-control-disabled-opacity, 0.45);
 }
 
-.tug-progress-bar-disabled .tug-progress-bar-indeterminate {
+.tug-progress-bar-disabled .tug-progress-bar-indeterminate::before {
   animation-play-state: paused;
 }

@@ -56,11 +56,22 @@
 
 /* Running pulse: each bar loops its own keyframes on a shared 960ms
    period. `--tug-timing` scales the period; the global motion-off rule
-   zeroes the duration so the bars rest at their seeded inline pose. */
+   zeroes the duration so the bars rest at their seeded inline pose.
+
+   `will-change: transform` promotes each running bar to its own
+   compositing layer so WebKit runs the scaleY loop on the compositor
+   thread — the wave stays smooth no matter what the main thread is
+   doing (streaming sessions, layout bursts, GC). Without the explicit
+   promotion the loop is main-thread-painted and janks under load; it
+   only ever LOOKED smooth while unrelated layer explosion happened to
+   promote this region incidentally. Scoped to `running` so a static
+   wave costs zero layers; three word-sized layers per running wave is
+   the deliberate price of guaranteed smoothness. */
 .tug-progress-wave[data-state="running"] .tug-progress-wave-bar {
   animation-duration: calc(960ms * var(--tug-timing, 1));
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+  will-change: transform;
 }
 
 .tug-progress-wave[data-state="running"] .tug-progress-wave-bar:nth-child(1) {

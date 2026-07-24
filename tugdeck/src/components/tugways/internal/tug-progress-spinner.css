@@ -48,6 +48,9 @@
     calc(var(--tugx-progress-spinner-cycle) * var(--tug-timing, 1))
     linear
     infinite;
+  /* Compositor promotion: an opacity loop without a layer of its own is
+     main-thread-painted and janks under load. Scoped to running. */
+  will-change: opacity;
 }
 
 .tug-progress-spinner-paused .tug-progress-spinner-spoke {

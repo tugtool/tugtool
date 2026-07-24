@@ -47,6 +47,10 @@
 .tug-progress-ring-indeterminate .tug-progress-ring-svg {
   transform: none;
   animation: tug-progress-ring-spin calc(1200ms * var(--tug-timing, 1)) linear infinite;
+  /* Compositor promotion: keeps the spin off the main thread. Scoped
+     to indeterminate — a determinate ring holds still and costs no
+     layer. */
+  will-change: transform;
 }
 
 @keyframes tug-progress-ring-spin {

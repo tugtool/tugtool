@@ -60,6 +60,9 @@
 }
 .session-changes-scanning-spin {
   animation: session-changes-scanning-spin 1s linear infinite;
+  /* Compositor promotion: keeps the spin off the main thread — the
+     scanning state shows exactly while the app is busy. */
+  will-change: transform;
 }
 @keyframes session-changes-scanning-spin {
   to {

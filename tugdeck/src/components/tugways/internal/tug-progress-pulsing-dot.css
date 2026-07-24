@@ -70,6 +70,12 @@
   box-sizing: border-box;
   display: none;
   transform: translate(-50%, -50%);
+  /* The WAAPI pulse animates transform + opacity; promoting the ring
+     lets WebKit run it on the compositor thread, immune to main-thread
+     stalls. Free at rest: `display: none` means no box and no layer —
+     the layer exists only while the component shows the ring to pulse
+     it. */
+  will-change: transform, opacity;
 }
 
 /* Static outer ring for the settled / held states (everything but
