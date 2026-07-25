@@ -44,10 +44,16 @@
   gap: var(--tugx-list-row-trailing-gap);
 }
 
-/* The expanded diff well under a row. */
+/* The expanded diff well under a row. The embedded `DiffBlock` types itself
+   with the shared block code tokens (`--tugx-block-code-*`), sized for
+   transcript tool blocks; re-declaring them here steps the whole block —
+   body rows, header strip, fold cue — down to the compact list's own `xs`
+   scale so an expanded diff matches the rows around it. */
 .tug-changes-list-file-diff {
   min-width: 0;
   padding: 2px 8px 6px;
+  --tugx-block-code-font-size: var(--tug-font-size-xs);
+  --tugx-block-code-line-height: 1.5;
 }
 
 .tug-changes-list-file-block-notice {
