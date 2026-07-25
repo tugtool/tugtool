@@ -72,9 +72,21 @@ function nthHasAttr(
   );
 }
 
+// Whether the KEYBOARD is still inside the sheet. The engine's key view is the
+// authority: an engine-routed stop parks `document.activeElement` on the key
+// sink, which lives outside the sheet, so `sheet.contains(activeElement)` reads
+// false for a ring that is sitting exactly where the arrow sequence put it.
+// Real focus inside the sheet (a dom-granted text surface) counts too.
 function focusInsideSheet(app: App): Promise<boolean> {
   return app.evalJS<boolean>(
-    `(function(){var sheet=document.querySelector(${JSON.stringify(SHEET)});var ae=document.activeElement;return sheet!==null && ae!==null && sheet.contains(ae);})()`,
+    `(function(){
+       var sheet=document.querySelector(${JSON.stringify(SHEET)});
+       if (sheet===null) return false;
+       var ae=document.activeElement;
+       if (ae!==null && sheet.contains(ae)) return true;
+       var kv=document.querySelector("[data-key-view]");
+       return kv!==null && sheet.contains(kv);
+     })()`,
   );
 }
 

@@ -99,7 +99,19 @@ describe.skipIf(!SHOULD_RUN)("AT0179: dynamic context-scoped keybinding", () => 
         // Bring the panel into context (its responder becomes first responder).
         await app.nativeClickAtElement(DEMO_TARGET);
         await app.waitForCondition<boolean>(
-          `(function(){ var t = document.querySelector(${JSON.stringify(DEMO_TARGET)}); return t !== null && t.contains(document.activeElement); })()`,
+          // "In context" is a RESPONDER CHAIN fact, not a DOM-focus fact: the
+          // chord resolves against the first responder. Under the engine route
+          // `activeElement` parks on the key sink outside this panel, so DOM
+          // containment never becomes true even though the panel is exactly as
+          // in-context as the chord needs. Read the chain's own marker, and keep
+          // containment as the dom-granted alternative.
+          `(function(){
+             var t = document.querySelector(${JSON.stringify(DEMO_TARGET)});
+             if (t === null) return false;
+             if (t.contains(document.activeElement)) return true;
+             var fr = document.querySelector("[data-first-responder]");
+             return fr !== null && (t.contains(fr) || fr.contains(t));
+           })()`,
           { timeoutMs: 6000 },
         );
 

@@ -418,6 +418,61 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // slider value axis — [P25]) keeps them: the navigator yields when the key view
     // captures the key. When the ring rests on a selection group, an in-group arrow
     // delegates to its cursor; only an edge arrow crosses a seam ([P24] / [Q12]).
+    // ---- Engine-synthesized acts on a leaf key view ----
+    //
+    // A leaf control (button, checkbox, switch, slider) operates natively: the
+    // browser turns Space into a press, and Radix reads arrows off its own
+    // keydown handler. Native handling needs the control to hold DOM focus —
+    // but an engine-routed key view parks `document.activeElement` on the key
+    // sink, so the control never sees the key and the stop is dead to the
+    // keyboard.
+    //
+    // The engine closes that gap by synthesizing the act rather than by
+    // surrendering the keyboard: the key view stays the router ([P01]) and the
+    // sink stays parked, and the engine hands the named element the key it
+    // would have received. DOM focus never becomes the truth for a leaf. This
+    // is the standard-mode sibling of what accessibility mode does through
+    // `mirrorKeyViewFocus`, minus the focus move.
+    //
+    // The re-entrancy latch is load-bearing: the forwarded event must bubble
+    // (React attaches its handlers at the root container, so a non-bubbling
+    // dispatch would never reach the component), which means it re-enters
+    // these same document-level listeners.
+    let deliveringToLeaf = false;
+    function deliverToEngineLeaf(event: KeyboardEvent): boolean {
+      if (deliveringToLeaf) return false;
+      if (focusManager.keyboardRoute() !== "engine-routed") return false;
+      const leaf = document.querySelector<HTMLElement>("[data-key-view]");
+      if (leaf === null) return false;
+      // Already holding real focus: the native pipeline is live, leave it be.
+      const active = document.activeElement;
+      if (active !== null && leaf.contains(active)) return false;
+      const forwarded = new KeyboardEvent("keydown", {
+        key: event.key,
+        code: event.code,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+      });
+      deliveringToLeaf = true;
+      try {
+        leaf.dispatchEvent(forwarded);
+      } finally {
+        deliveringToLeaf = false;
+      }
+      // A synthetic keydown carries no default action, so Space/Enter on a
+      // button-class control has to be completed as a press. Skipped when the
+      // component consumed the key itself (a slider stepping its value).
+      const isPress =
+        event.key === " " || event.key === "Spacebar" || event.key === "Enter";
+      if (isPress && !forwarded.defaultPrevented) leaf.click();
+      return true;
+    }
+
     function arrowNavListener(event: KeyboardEvent): void {
       const direction = arrowDirection(event.key);
       if (direction === null) return;
@@ -455,8 +510,16 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         shiftKey: event.shiftKey,
       };
       // A component that captures this arrow (a slider's value axis — [P25]) keeps
-      // it; the spatial plane yields.
-      if (focusManager.keyViewCaptures(focusKey)) return;
+      // it; the spatial plane yields. Yielding is not enough on its own when the
+      // route is engine-routed: nothing downstream holds DOM focus, so the
+      // engine delivers the arrow to the capturing leaf itself.
+      if (focusManager.keyViewCaptures(focusKey)) {
+        if (deliverToEngineLeaf(event)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
       if (focusManager.moveKeyViewSpatial(direction)) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -621,6 +684,17 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             behavior.onAct();
             // [P15] an item-group value commit may relinquish a toggleable cycle.
             focusManager.applyCommitDisposition("act");
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            break;
+          }
+          // A leaf key view under the engine route: no native press can reach
+          // it, so the engine synthesizes the act on the named element.
+          // Ordered ahead of the space-dismiss branch below, which is for a
+          // Space that lands on a popover's own non-interactive chrome — that
+          // branch requires an empty / non-interactive key view, which is
+          // exactly the case this one declines to handle.
+          if (deliverToEngineLeaf(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
             break;

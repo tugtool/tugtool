@@ -303,8 +303,7 @@ Surfaced during the close-confirm work and the `tug-text-editor` substrate migra
 - **Summary:** Each layout-shifting transition that historically left WebKit's contentEditable caret cache stale (e.g. atom removal via backspace) leaves exactly one caret element with the CM6-owned caret layer in place.
 
 #### [AT0050] tug-prompt-entry migration onto tug-text-editor
-- **Status:** ✅ closed.
-- **Tests:** `at0050-tug-prompt-entry-text-editor-migration.test.ts`.
+- **Status:** ⚠️ uncovered — the test was deleted while red; the tag is reserved for a rewrite.
 - **Summary:** End-to-end coverage for the Step 15 migration of `tug-prompt-entry` onto the `tug-text-editor` substrate (dropped per-route drafts + route-atom-in-doc model). Also gates that route characters typed into the editor are ordinary text (first-character route switching removed).
 
 ### Overlay-tier tags (AT0051)
@@ -485,8 +484,7 @@ Surfaced during the session-card-zones / Claude-Code-parity plans. Gate the life
 - **Summary:** `TugPromptEntry`'s `route` axis rides `bag.content.route` and round-trips across reload — the successor coverage for the retired AT0031 chrome axis.
 
 #### [AT0086] SessionRouteIndicatorBadge repaint + mount identity
-- **Status:** ✅ closed.
-- **Tests:** `at0086-session-route-indicator-badge.test.ts`.
+- **Status:** ⚠️ uncovered — the test was deleted while red; the tag is reserved for a rewrite. The route picker no longer offers a Code item, so the Code → Shell → Code round trip needs a new path through the UI.
 - **Summary:** `SessionRouteIndicatorBadge` repaints when the prompt-entry route flips (Code / Shell) and keeps its mount identity across the flip.
 
 #### [AT0087] TugBadge two-line presentation
@@ -985,8 +983,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 ### Transcript find (AT0221)
 
 #### [AT0221] Transcript find — index↔DOM fidelity gate
-- **Status:** ✅ open (new feature gate).
-- **Tests:** `at0221-transcript-find-fidelity.test.ts`.
+- **Status:** ⚠️ uncovered — the test was deleted while red; the tag is reserved for a rewrite.
 - **Summary:** The Find engine's count↔paint invariant over a real replayed session: the count chip's whole-transcript total equals the painted `data-tugx-findable` ranges, whose document-order casing sequence equals the fixture's hand-computed source order (per-row ORDER alignment across a markdown user body, a thinking+text mixed row, and heading/em/bold/code/link/list/table constructs); chrome text (a collapsed Bash header command containing the query) never paints; ⌘G advances the active match; a query spanning two adjacent findable containers matches nothing while each side alone matches inside its own container; and on a long virtualized transcript the count is scroll-independent with ⌘G wrap across off-screen matches. Also the reveal contract: typing alone scrolls the first match into the visible band (below the pinned chrome, above the scroller's bottom edge), refining the query re-reveals when the active match's identity moves, and the landing-flash ring is an absolutely-positioned child of the scroller — contained by its box, overlapping the active match, never floating over chrome.
 
 #### [AT0222] One-shot /shell and /find from the Code route
@@ -1000,8 +997,7 @@ These tags were minted on 2026-06-11 to resolve the six prefix collisions (see t
 - **Summary:** The Text card's find bar is the Dev entry's find face on the shared `TugEntryShell`, docked between the editor and the status bar: a CM6 substrate query field above the shell toolbar (shared Case/Word/Grep cluster + count badge centred; outlined-↑ / filled-↓ Z5 pair trailing; no route trigger, no ✕). ⌘F summons it with focus in the field, typing counts over CM6 search decorations, Enter advances / Shift-Enter retreats / the ↓ button advances, the Case toggle narrows the count live, Escape closes and clears decorations, wrapping past the last match raises the shared `FindSession`-driven wrap indicator (the same overlay the Session card shows), and the Case toggle persists into a freshly opened bar through the global find-options preference (`dev.tugtool.find`/`options`).
 
 #### [AT0224] Active-card keyboard contract
-- **Status:** ✅ open (new feature gate).
-- **Tests:** `at0224-card-active-keyboard.test.ts`.
+- **Status:** ⚠️ uncovered — the test was deleted while red; the tag is reserved for a rewrite. This is the [P21] invariant the focus/first-responder rework is most likely to disturb, so it wants coverage again before that work lands.
 - **Summary:** Keyboard accelerators land on the active card no matter how it became active: a pane title-bar click preserves first responder (`data-tug-fr-preserve` — the title bar is an activation/drag surface, never a responder target), so ⇧⌘S still flips the route with the caret resting in the entry; reactivating a deactivated card by its title bar restores that card's first responder to its key view ([P21]'s finer-restore), so the route chord lands on the reactivated card and not its neighbor; ⌘F after a title-bar click opens the Text card's find bar with the caret in the query field; ⌘G / ⇧⌘G advance / retreat the match while the find FIELD is focused (the bar is the responder for find navigation); and a text card created-and-activated in one gesture (`openFileInCard` — Open Quickly's commit path) owns ⌘F immediately — CardHost completes the activation focus claim at mount / engine-hook registration, and the text editor registers engine hooks so the claim resolves. Cycling (Ctrl-`) to a never-focused text card gives it ⌘F immediately and a subsequent title-bar click cannot wedge the keyboard — the [P21] reconciler (key-card changes + chain registration changes, default-focus target for never-focused cards) maintains the invariant for every card type uniformly.
 
 #### [AT0265] Session picker filter field

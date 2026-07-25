@@ -151,6 +151,19 @@ describe.skipIf(!SHOULD_RUN)("AT0112: base button focus is engine-driven", () =>
         await app.waitForCondition<boolean>(`${KEY_VIEW_TESTID} === "focus-walk-beta"`, {
           timeoutMs: 6000,
         });
+        // Reveal Alpha before clicking it. The Focus Walk panel sits below this
+        // card's fold, and a native click targets an element's rect center —
+        // a rect reports its laid-out position even when the element is
+        // scrolled outside the pane, so the CGEvent would land on bare canvas.
+        // The controller reads that as a background click and deselects, which
+        // nulls the key card, activates the empty default focus context, and
+        // wipes `data-key-view` off Beta — a failure that looks like "the
+        // button stole the key view" but is really "the click missed the card".
+        await app.evalJS(
+          `(function(){ var el = document.querySelector(${JSON.stringify(ALPHA)}); if (el) el.scrollIntoView({ block: "center" }); return true; })()`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
         await app.nativeClickAtElement(ALPHA);
         await new Promise((resolve) => setTimeout(resolve, 400));
         expect(await app.evalJS<string | null>(KEY_VIEW_TESTID)).toBe("focus-walk-beta");

@@ -67,7 +67,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="session-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} button[aria-label="Route"]`;
+const ROUTE = `${CARD} button[aria-label="Route this input"]`;
 // The three Z4B indicator chips now in the cycle ([P10] revised — no control
 // left behind): the route indicator (Claude Code / Shell), the Session badge,
 // and the Project button. Each is a leaf stop carrying `data-key-view-kbd`

@@ -83,13 +83,23 @@ describe.skipIf(!SHOULD_RUN)("AT0159: tug-alert Escape is engine-owned", () => {
           { timeoutMs: 6000 },
         );
 
-        // Focus returned to the opener context — into the card, not stranded on
-        // the removed overlay / <body>.
+        // The keyboard returned to the opener card — not stranded on the removed
+        // overlay or on <body>. "Returned to the card" is an ENGINE fact, and it
+        // has two legal DOM shapes: a dom-granted text surface holds real focus
+        // inside the card, while an engine-routed target parks `activeElement`
+        // on the key sink, which lives OUTSIDE the card. Asserting card
+        // containment alone would fail the engine-routed case even though the
+        // keyboard went exactly where it should, so the card bit is read from
+        // the focused-card id and the DOM check only rules out stranding.
         await app.waitForCondition<boolean>(
           `(function(){
             var ae = document.activeElement;
+            if (ae === null || ae === document.body) return false;
             var card = document.querySelector(${JSON.stringify(CARD)});
-            return card !== null && ae !== null && card.contains(ae);
+            if (card === null) return false;
+            var parkedOnSink = ae.hasAttribute("data-tug-key-sink");
+            return (card.contains(ae) || parkedOnSink) &&
+              window.__tug.getFocusedCardId() === "A";
           })()`,
           { timeoutMs: 6000 },
         );

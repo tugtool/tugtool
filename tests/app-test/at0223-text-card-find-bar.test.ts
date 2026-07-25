@@ -188,7 +188,7 @@ describe.skipIf(!SHOULD_RUN)("AT0223: text card bottom find bar", () => {
                 cluster: bar?.querySelector('[data-slot="find-cluster"]') !== null,
                 prev: bar?.querySelector('button[aria-label="Find previous"]') !== null,
                 next: bar?.querySelector('button[aria-label="Find next"]') !== null,
-                route: bar?.querySelector('button[aria-label="Route"]') !== null,
+                route: bar?.querySelector('button[aria-label="Route this input"]') !== null,
                 close: bar?.querySelector('button[aria-label="Close find"]') !== null,
               });
             })()`,
