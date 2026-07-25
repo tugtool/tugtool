@@ -3,21 +3,22 @@
  *
  * A query that should have found one commit finds thirty when it is matched
  * against everything: a word common in file paths swamps the one commit whose
- * subject says it. So the reader aims the filter — three independent surfaces,
+ * subject says it. So the reader aims the filter — four independent surfaces,
  * all on by default:
  *
+ *  - `hash`    — the commit's sha, at its full 40 characters even though rows
+ *                show eight, so a hash pasted from anywhere finds its commit.
  *  - `message` — the subject and the message body.
  *  - `detail`  — who and when: author, committer, email, and the date stamps
  *                AS DISPLAYED (so `July 24` matches what the row shows).
  *  - `files`   — the paths the commit touched.
  *
- * The commit's **hash is not one of the three** — it is always matched. A sha
- * pasted from anywhere is an exact address, not a text surface, and a reader
- * who narrows to `files` has not asked to stop being able to look a commit up
- * by its id.
+ * Hash leads the group because it is the narrowest of the four — one commit,
+ * exactly — and because a query of bare hex is the one query that wants nothing
+ * else looked at.
  *
- * All three off is a real state, not an error: the reader has switched every
- * surface off and the query then only resolves hashes. That is why a missing
+ * All four off is a real state, not an error: the reader has switched every
+ * surface off and nothing can match until one comes back. That is why a missing
  * entry (never set) and an empty entry (set to nothing) must stay
  * distinguishable — the former falls back to the default, the latter doesn't.
  * The shade says as much when a query in that state finds nothing.
@@ -39,19 +40,20 @@ import { useTugbankValue } from "@/lib/use-tugbank-value";
 import type { TaggedValue } from "@/lib/tugbank-client";
 
 /** One aimable surface of a commit. */
-export type CommitFilterScope = "message" | "detail" | "files";
+export type CommitFilterScope = "hash" | "message" | "detail" | "files";
 
 export const COMMIT_FILTER_SCOPE_DOMAIN = "dev.commit-filter";
 export const COMMIT_FILTER_SCOPE_KEY = "history-scope";
 
 /** Every surface, in the order the option group shows them. */
 export const COMMIT_FILTER_SCOPES: readonly CommitFilterScope[] = [
+  "hash",
   "message",
   "detail",
   "files",
 ];
 
-/** All three — an unaimed filter reads the whole commit. */
+/** All four — an unaimed filter reads the whole commit. */
 export const DEFAULT_COMMIT_FILTER_SCOPE: readonly CommitFilterScope[] =
   COMMIT_FILTER_SCOPES;
 

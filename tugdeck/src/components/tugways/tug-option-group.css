@@ -441,6 +441,40 @@
    per-size item padding `var(…, <default>)` above, so an item's on-state
    background covers it for free. [L06] — appearance keyed off a data
    attribute, not React state. */
+/* ---- Band-mounted: on the header's own baseline ----
+ *
+ * A `tool-call-header` aligns its row by giving every first-row item the SAME
+ * one-line box (`--tugx-toolheader-line`) and centering its content in it —
+ * "same line box at one type size" is what makes the row share a baseline
+ * (block-header.css). An option group mounted in a band joins that contract
+ * instead of centering its own shorter pill in the row: the group takes the
+ * line box, its items stretch to fill it, and the labels drop to the same `xs`
+ * type the band's filter field wears — one step from the band title, which
+ * lands on the same device row (the half-ascent argument in
+ * tug-filter-field.css).
+ *
+ * `top: 1px` is the same optical nudge the header name and the filter field
+ * carry; without it the group centres on the row while its neighbours centre
+ * 1px lower, which is exactly the 1px of float the eye reads as "these labels
+ * are not on the line". */
+.tool-call-header .tug-option-group {
+  position: relative;
+  top: 1px;
+  /* The line box is the group's OUTER box — border-box, because the group
+     carries a 1px border and 2px of padding around its items. On the default
+     content-box those 6px would land OUTSIDE the line box, standing the group
+     (and with it the whole actions cluster, which centers on its tallest
+     child) 3px taller than the row and dropping the field's text 3px below the
+     band title. The items then stretch to what is left, which is the pill
+     height this size wants anyway. */
+  box-sizing: border-box;
+  block-size: var(--tugx-toolheader-line);
+}
+
+.tool-call-header .tug-option-group .tug-option-group-item {
+  font-size: var(--tug-font-size-xs);
+}
+
 .tug-option-group[data-side-padding="2xs"] { --tugx-option-group-side-padding: var(--tug-space-2xs); }
 .tug-option-group[data-side-padding="xs"] { --tugx-option-group-side-padding: var(--tug-space-xs); }
 .tug-option-group[data-side-padding="sm"] { --tugx-option-group-side-padding: var(--tug-space-sm); }

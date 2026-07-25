@@ -9,9 +9,8 @@
  * Multi-term queries AND across the union of fields, which is what makes
  * "a path plus a word" a usable way to find one commit.
  *
- * The scope block pins the aiming contract: Message / Detail / Files each
- * contribute only their own surface, the hash is matched whatever the scope
- * (an address is not a text surface), and the persisted form keeps
+ * The scope block pins the aiming contract: Hash / Message / Detail / Files
+ * each contribute only their own surface, and the persisted form keeps
  * "set to nothing" distinct from "never set".
  */
 
@@ -122,7 +121,12 @@ describe("commitFilterFields", () => {
 
 describe("commitFilterFields scope", () => {
   test("the default scope reads every surface", () => {
-    expect(DEFAULT_COMMIT_FILTER_SCOPE).toEqual(["message", "detail", "files"]);
+    expect(DEFAULT_COMMIT_FILTER_SCOPE).toEqual([
+      "hash",
+      "message",
+      "detail",
+      "files",
+    ]);
     // The no-argument form IS the default scope — the callers that don't aim
     // (the transcript's receipt rows) keep matching everything.
     expect(matchesIn([...DEFAULT_COMMIT_FILTER_SCOPE], "view.tsx")).toBe(
@@ -148,10 +152,17 @@ describe("commitFilterFields scope", () => {
     expect(matchesIn(["files"], "metadata toggle")).toBe(false);
   });
 
-  test("the hash matches whatever the scope — an address is not a surface", () => {
-    expect(matchesIn(["files"], "eec07b49")).toBe(true);
-    expect(matchesIn([], COMMIT.sha)).toBe(true);
-    // …and with every target off, nothing else does.
+  test("hash alone reads the sha, at any prefix length, and nothing else", () => {
+    expect(matchesIn(["hash"], "eec07b49")).toBe(true);
+    expect(matchesIn(["hash"], COMMIT.sha)).toBe(true);
+    expect(matchesIn(["hash"], "metadata toggle")).toBe(false);
+    // With Hash off, a pasted sha stops finding its commit — that IS the
+    // control, and the reason it leads the group.
+    expect(matchesIn(["message", "detail", "files"], COMMIT.sha)).toBe(false);
+  });
+
+  test("every target off matches nothing at all", () => {
+    expect(matchesIn([], COMMIT.sha)).toBe(false);
     expect(matchesIn([], "metadata toggle")).toBe(false);
     expect(matchesIn([], "view.tsx")).toBe(false);
   });

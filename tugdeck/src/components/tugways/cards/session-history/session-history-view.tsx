@@ -43,12 +43,12 @@
  * state — the field and the list are in one component, so the module-store
  * adapter the Lens sections need does not apply here.
  *
- * Beside it, a `TugOptionGroup` AIMS the filter: Message / Detail / Files, all
- * on by default, each independently switchable ({@link useCommitFilterScope}
- * holds the reader's standing choice deck-wide). A word common in file paths
- * otherwise swamps the one commit whose subject says it — narrowing is how a
- * filter stays a way of finding one commit rather than a way of listing many.
- * The hash is outside the group and always matched.
+ * Beside it, a `TugOptionGroup` AIMS the filter: Hash / Message / Detail /
+ * Files, all on by default, each independently switchable
+ * ({@link useCommitFilterScope} holds the reader's standing choice deck-wide).
+ * A word common in file paths otherwise swamps the one commit whose subject
+ * says it — narrowing is how a filter stays a way of finding one commit rather
+ * than a way of listing many.
  *
  * Laws: [L02] the log store enters React through `useSyncExternalStore`;
  * [L06] no appearance state in React; [L28] the store is the source of both
@@ -404,6 +404,7 @@ export function SessionHistoryView({
                   aria-label="Filter targets"
                   data-testid="session-history-filter-scope"
                   items={[
+                    { value: "hash", label: "Hash", title: "Match the commit hash" },
                     { value: "message", label: "Message", title: "Match the commit subject and message body" },
                     { value: "detail", label: "Detail", title: "Match the author, committer, and date" },
                     { value: "files", label: "Files", title: "Match the paths the commit changed" },
@@ -494,10 +495,9 @@ export function SessionHistoryView({
     return shell(
       <div className="session-history-empty" data-testid="session-history-no-matches">
         {filterScope.length === 0
-          ? // Every target is off, so only a hash can match — a real state the
-            // reader chose, and the one no-match message that has an answer
-            // worth naming.
-            `Nothing but a commit hash can match “${filterQuery}” — every filter target is off.`
+          ? // Nothing is being read at all — a real state the reader chose, and
+            // the one no-match message that has an answer worth naming.
+            `Nothing can match “${filterQuery}” — every filter target is off.`
           : searchCapped
             ? `No commits match “${filterQuery}” in the newest ${payload.commits.length}. Scroll to search further back.`
           : payload.has_more

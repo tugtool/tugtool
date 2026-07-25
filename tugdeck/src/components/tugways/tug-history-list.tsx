@@ -82,21 +82,23 @@ import {
 } from "@/lib/git-commit-files-store";
 
 /**
- * Everything a History filter matches a commit on, aimed by `scope`: its
- * message (subject + body), its details (who and when), and the paths it
+ * Everything a History filter matches a commit on, aimed by `scope`: its hash,
+ * its message (subject + body), its details (who and when), and the paths it
  * touched. Not the diffs — a filter that read hunks would be searching the
  * repo, and this is a control for trimming a list of commits down to the ones
  * worth reading.
  *
- * The hash is outside the scope and always matched, at its full 40 characters
- * even though rows display eight — a sha pasted from anywhere is an address,
- * and it finds its commit however the reader has aimed the text surfaces.
+ * The hash is matched at its full 40 characters even though rows display
+ * eight, so a sha pasted from anywhere finds its commit.
  */
 export function commitFilterFields(
   commit: GitLogCommit,
   scope: readonly CommitFilterScope[] = DEFAULT_COMMIT_FILTER_SCOPE,
 ): readonly (string | undefined)[] {
-  const fields: (string | undefined)[] = [commit.sha];
+  const fields: (string | undefined)[] = [];
+  if (scope.includes("hash")) {
+    fields.push(commit.sha);
+  }
   if (scope.includes("message")) {
     fields.push(commit.subject, commit.body);
   }
@@ -188,9 +190,13 @@ function matchedContext(
   scope: readonly CommitFilterScope[],
 ): readonly string[] {
   if (query === "") return [];
-  // Everything the collapsed row already shows. If the whole query is in here,
-  // the marks on the row itself are the explanation.
-  const visible = `${shortSha} ${commit.subject}`;
+  // Everything the collapsed row shows AND the filter was told to read. If the
+  // whole query is in here, the marks on the row itself are the explanation —
+  // but a subject the filter skipped explains nothing, however it reads.
+  const visible = [
+    scope.includes("hash") ? shortSha : "",
+    scope.includes("message") ? commit.subject : "",
+  ].join(" ");
   if (filterQueryMatch(query, [visible])) return [];
   const hits: string[] = [];
   if (scope.includes("message")) {
@@ -384,7 +390,10 @@ function CommitRow({
           <CommitIdentityLine
             sha={commit.sha}
             subject={commit.subject}
-            shaContent={renderFilterHighlight(shortSha, filterQuery)}
+            shaContent={renderFilterHighlight(
+              shortSha,
+              scopedQuery(filterQuery, filterScope, "hash"),
+            )}
             subjectContent={renderFilterHighlight(
               commit.subject,
               scopedQuery(filterQuery, filterScope, "message"),

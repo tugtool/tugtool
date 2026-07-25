@@ -19,7 +19,8 @@
  *      to matching rows, and a row kept by its file roster names the path that
  *      matched (otherwise the match is invisible and reads as a filter bug).
  *      Then switch the header's `Files` target off → those rows drop, because
- *      the roster was the only thing that kept them; back on, they return.
+ *      the roster was the only thing that kept them; back on, they return. The
+ *      band's title, field text, and target labels share one baseline.
  *   4. Filter by a word that appears ONLY in some commit's message BODY → the
  *      collapsed row shows the matching line marked, and expanding it marks the
  *      term inside the syntax-highlighted message itself. This is the path that
@@ -29,6 +30,7 @@
  *
  * @covers tugdeck/src/lib/git-log-store.ts
  * @covers tugdeck/src/lib/commit-filter-scope.ts
+ * @covers tugdeck/src/components/tugways/tug-option-group.css
  * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  * @covers tugdeck/src/components/tugways/filter-highlight.tsx
@@ -293,6 +295,41 @@ describe.skipIf(!SHOULD_RUN)(
             const restoredAll = `${shasNow}.filter(function(s){ return ${JSON.stringify(byPath)}.indexOf(s) >= 0; }).length === ${byPath.length}`;
             await app.waitForCondition<boolean>(restoredAll, { timeoutMs: 8_000 });
             expect(await app.evalJS<boolean>(restoredAll)).toBe(true);
+
+            // ── 3C. The band reads as one line of text ────────────────────
+            // The title, the filter field's text, and the target labels each
+            // ride the header's one-line box, which is what puts them on a
+            // shared baseline. Measured, not eyeballed: the text baseline of a
+            // run centered in a box is derivable from the box, the line height,
+            // and the font's own ascent (Canvas reports it), and drift here is
+            // a 1-3px float the eye reads immediately but no DOM assertion
+            // about heights or paddings would catch.
+            const baselines = await app.evalJS<Record<string, number>>(
+              `(function(){
+                var cv = document.createElement("canvas").getContext("2d");
+                function baseline(el){
+                  var cs = getComputedStyle(el);
+                  cv.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+                  var m = cv.measureText("Hxg");
+                  var A = m.fontBoundingBoxAscent, D = m.fontBoundingBoxDescent;
+                  var r = el.getBoundingClientRect();
+                  var top = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+                  var bot = r.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom);
+                  var L = cs.lineHeight === "normal" ? (A + D) : parseFloat(cs.lineHeight);
+                  return top + ((bot - top) - L)/2 + (L - (A + D))/2 + A;
+                }
+                var hdr = document.querySelector('[data-testid="session-history-header"]');
+                return {
+                  title: baseline(hdr.querySelector(".tool-call-header-name")),
+                  field: baseline(hdr.querySelector(".tug-filter-field-input")),
+                  target: baseline(hdr.querySelector('[data-option-value="message"]')),
+                };
+              })()`,
+            );
+            const spread =
+              Math.max(...Object.values(baselines)) -
+              Math.min(...Object.values(baselines));
+            expect(spread).toBeLessThan(1);
 
             // ── 4. Filter by a word only the message BODY carries ─────────
             await app.evalJS(
