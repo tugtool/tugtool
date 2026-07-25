@@ -29,8 +29,9 @@
  *
  * The host trims the list ({@link commitFilterFields} says what a commit is
  * matched on) and passes the query down as `filterQuery` so each row can show
- * WHY it survived: the matched spans of the sha and the subject wear the
- * shared filter mark, and a row kept by a term that only appears in its file
+ * WHY it survived: the matched spans of the sha, the subject, and the join
+ * badge wear the shared filter mark, and a row kept by a term that only
+ * appears in its file
  * roster names the paths that matched — otherwise a commit whose subject says
  * nothing about the query reads as a mismatch the filter failed to remove.
  *
@@ -82,6 +83,15 @@ import {
 } from "@/lib/git-commit-files-store";
 
 /**
+ * The join badge's words ([P09]) — what a commit that landed as a dash join
+ * says on its row. One function so the filter matches the string the reader
+ * sees, marks land on the characters that matched, and the two can never drift.
+ */
+function joinBadgeText(dashName: string): string {
+  return `from dash ${dashName}`;
+}
+
+/**
  * Everything a History filter matches a commit on, aimed by `scope`: its hash,
  * its message (subject + body), its details (who and when), and the paths it
  * touched. Not the diffs — a filter that read hunks would be searching the
@@ -101,6 +111,12 @@ export function commitFilterFields(
   }
   if (scope.includes("message")) {
     fields.push(commit.subject, commit.body);
+    // The dash attribution rides with the message: `Tug-Dash:` is a trailer on
+    // the message itself, and the badge is how the row states it. Matched as
+    // the badge READS, so `from dash lens-routes` and the bare name both find
+    // the commit and both mark the badge.
+    const dashName = dashNameFromTrailer(commit.tug_dash);
+    if (dashName !== null) fields.push(joinBadgeText(dashName));
   }
   if (scope.includes("detail")) {
     const iso = commit.committer_date ?? "";
@@ -193,9 +209,11 @@ function matchedContext(
   // Everything the collapsed row shows AND the filter was told to read. If the
   // whole query is in here, the marks on the row itself are the explanation —
   // but a subject the filter skipped explains nothing, however it reads.
+  const dashName = dashNameFromTrailer(commit.tug_dash);
   const visible = [
     scope.includes("hash") ? shortSha : "",
     scope.includes("message") ? commit.subject : "",
+    scope.includes("message") && dashName !== null ? joinBadgeText(dashName) : "",
   ].join(" ");
   if (filterQueryMatch(query, [visible])) return [];
   const hits: string[] = [];
@@ -405,7 +423,10 @@ function CommitRow({
                   className="tug-history-list-join-badge"
                   data-testid="session-history-join-badge"
                 >
-                  from dash {dashName}
+                  {renderFilterHighlight(
+                    joinBadgeText(dashName),
+                    scopedQuery(filterQuery, filterScope, "message"),
+                  )}
                 </span>
               ) : undefined
             }

@@ -147,6 +147,20 @@ describe("commitFilterFields scope", () => {
     expect(matchesIn(["detail"], "metadata toggle")).toBe(false);
   });
 
+  test("the dash attribution rides with the message", () => {
+    // `Tug-Dash:` is a trailer ON the message, and the row states it as
+    // `from dash <name>` — so the name, and the badge's own words, both find
+    // the commit under Message and neither does under any other target.
+    const joined: GitLogCommit = { ...COMMIT, tug_dash: "tugdash/lens-routes" };
+    expect(filterQueryMatch("lens-routes", commitFilterFields(joined, ["message"]))).toBe(true);
+    expect(filterQueryMatch("from dash lens-routes", commitFilterFields(joined, ["message"]))).toBe(true);
+    expect(filterQueryMatch("lens-routes", commitFilterFields(joined, ["detail", "files"]))).toBe(false);
+    // A hand commit has no attribution to match — and the trailer's own
+    // `tugdash/` ref prefix is plumbing, not something the row ever shows.
+    expect(filterQueryMatch("lens-routes", commitFilterFields(COMMIT, ["message"]))).toBe(false);
+    expect(filterQueryMatch("tugdash/lens-routes", commitFilterFields(joined, ["message"]))).toBe(false);
+  });
+
   test("files alone reads the paths, not the message", () => {
     expect(matchesIn(["files"], "session-history/view.tsx")).toBe(true);
     expect(matchesIn(["files"], "metadata toggle")).toBe(false);

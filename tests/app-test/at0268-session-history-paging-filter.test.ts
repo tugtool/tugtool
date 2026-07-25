@@ -20,7 +20,8 @@
  *      matched (otherwise the match is invisible and reads as a filter bug).
  *      Then switch the header's `Files` target off → those rows drop, because
  *      the roster was the only thing that kept them; back on, they return. The
- *      band's title, field text, and target labels share one baseline.
+ *      band's title, field text, and target labels share one baseline, and a
+ *      dash's name finds its join commit and marks the badge that states it.
  *   4. Filter by a word that appears ONLY in some commit's message BODY → the
  *      collapsed row shows the matching line marked, and expanding it marks the
  *      term inside the syntax-highlighted message itself. This is the path that
@@ -147,6 +148,25 @@ function rosterOnlyMatch(): { sha: string; token: string } {
     }
   }
   throw new Error("no recent commit has a roster-only file name — fixture assumption broke");
+}
+
+/**
+ * The newest commit that landed as a dash join, and the dash it came from —
+ * the row that wears a `from dash <name>` badge ([P09]).
+ */
+function joinCommit(): { sha: string; name: string } | null {
+  for (const line of gitOut([
+    "log",
+    "-n200",
+    "--format=%H%x1f%(trailers:key=Tug-Dash,valueonly)",
+  ]).split("\n")) {
+    const [sha, trailer] = line.split("\x1f");
+    const ref = (trailer ?? "").trim().split(/\s+/)[0] ?? "";
+    if (!ref.startsWith("tugdash/")) continue;
+    const name = ref.slice("tugdash/".length);
+    if (name.length >= 6) return { sha: sha ?? "", name };
+  }
+  return null;
 }
 
 describe.skipIf(!SHOULD_RUN)(
@@ -330,6 +350,37 @@ describe.skipIf(!SHOULD_RUN)(
               Math.max(...Object.values(baselines)) -
               Math.min(...Object.values(baselines));
             expect(spread).toBeLessThan(1);
+
+            // ── 3D. The dash attribution filters as part of the Message ───
+            // `Tug-Dash:` is a trailer on the message, and the badge is how the
+            // row states it — so the dash's name finds the commit, and the mark
+            // lands on the badge the reader is looking at.
+            const join = joinCommit();
+            if (join !== null) {
+              await app.evalJS(
+                `(function(){
+                  var i = document.querySelector(${JSON.stringify(FILTER)});
+                  i.value = "";
+                  i.dispatchEvent(new Event("input", { bubbles: true }));
+                })()`,
+              );
+              await app.type(FILTER, join.name);
+              const joinRow = `${VIEW} [data-testid="session-history-commit"][data-sha="${join.sha}"]`;
+              await app.waitForCondition<boolean>(
+                `document.querySelector(${JSON.stringify(joinRow)} + ' [data-testid="session-history-join-badge"] mark.tug-filter-mark') !== null`,
+                { timeoutMs: 8_000 },
+              );
+              const badge = await app.evalJS<{ text: string; mark: string }>(
+                `(function(){
+                  var el = document.querySelector(${JSON.stringify(joinRow)} + ' [data-testid="session-history-join-badge"]');
+                  var m = el.querySelector('mark.tug-filter-mark');
+                  return { text: el.textContent, mark: m ? m.textContent : "" };
+                })()`,
+              );
+              expect(badge.text).toContain(`from dash ${join.name}`);
+              expect(badge.mark.length).toBeGreaterThan(0);
+              expect(join.name).toContain(badge.mark);
+            }
 
             // ── 4. Filter by a word only the message BODY carries ─────────
             await app.evalJS(
