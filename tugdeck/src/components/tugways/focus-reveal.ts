@@ -17,8 +17,8 @@
  *    re-measuring after each write (an outer scroll moves the target);
  *  - scrolls each by the MINIMUM delta that brings the target inside — so an
  *    already-visible target costs nothing and no write is ever gratuitous;
- *  - subtracts any sticky header currently stuck over the scrollport's top
- *    band, so the target lands BELOW the header rather than under it;
+ *  - insets the scrollport by any sticky chrome parked over its edges, so the
+ *    target lands BELOW a stuck header rather than under it;
  *  - leaves {@link RING_GAP_PX} of air on the leading edge, because the focus
  *    ring paints outside the border box (`--tugx-focus-ring-offset` +
  *    `--tugx-focus-ring-width`, `focus-ring.css`) and a flush landing clips it;
@@ -87,12 +87,12 @@ function revealWithin(scroller: HTMLElement, target: HTMLElement): void {
   const portRight = portLeft + scroller.clientWidth;
 
   const rect = target.getBoundingClientRect();
-  const obstructedTop = stuckHeaderBottom(scroller, target, portTop);
+  const band = stickyBand(scroller, target, portTop, portBottom);
   const deltaY = revealDelta(
     rect.top,
     rect.bottom,
-    obstructedTop + RING_GAP_PX,
-    portBottom - RING_GAP_PX,
+    band.top + RING_GAP_PX,
+    band.bottom - RING_GAP_PX,
   );
   const deltaX = revealDelta(rect.left, rect.right, portLeft, portRight);
 
@@ -125,21 +125,30 @@ function revealDelta(
 }
 
 /**
- * The bottom of the sticky header currently stuck over `scroller`'s top band,
- * or `portTop` when nothing is stuck.
+ * The band of `scroller` that is actually free to show content — the port
+ * inset by whatever sticky chrome is parked over its edges.
  *
  * Only the target's own ancestor chain is examined (and only each ancestor's
- * direct children), which is both bounded and sufficient: a header that can
+ * direct children), which is both bounded and sufficient: chrome that can
  * cover the target is by construction pinned by a box the target sits inside —
- * the transcript block's `.tool-call-header` over its `.tool-block-chrome`.
- * Nested stuck headers stack, so the deepest bottom wins.
+ * the transcript entry's `__pin` rail and the block's `.tool-call-header` over
+ * their respective ancestors. Stacked chrome accumulates, so the lowest header
+ * bottom (and the highest footer top) wins.
+ *
+ * A sticky element counts as chrome over an edge when it sits in that half of
+ * the port and precedes / follows the target in document order — the same test
+ * whether it is currently pinned or merely near the edge it pins to. Treating a
+ * not-yet-pinned header as chrome costs a few pixels of extra scroll; missing a
+ * pinned one leaves the target under it, invisible.
  */
-function stuckHeaderBottom(
+function stickyBand(
   scroller: HTMLElement,
   target: HTMLElement,
   portTop: number,
-): number {
-  let bottom = portTop;
+  portBottom: number,
+): { top: number; bottom: number } {
+  const middle = (portTop + portBottom) / 2;
+  const band = { top: portTop, bottom: portBottom };
   for (
     let node = target.parentElement;
     node !== null && node !== scroller;
@@ -150,10 +159,14 @@ function stuckHeaderBottom(
       if (child === target || child.contains(target)) continue;
       if (window.getComputedStyle(child).position !== "sticky") continue;
       const r = child.getBoundingClientRect();
-      // Stuck over the top band: its top has been held at (or above) the band
-      // while its bottom still hangs below it.
-      if (r.top <= bottom + EPSILON_PX && r.bottom > bottom) bottom = r.bottom;
+      const where = child.compareDocumentPosition(target);
+      const beforeTarget = (where & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      if (beforeTarget) {
+        if (r.bottom > band.top && r.top < middle) band.top = r.bottom;
+      } else {
+        if (r.top < band.bottom && r.bottom > middle) band.bottom = r.top;
+      }
     }
   }
-  return bottom;
+  return band;
 }

@@ -40,6 +40,8 @@ const DIALOG = `${CARD} [data-slot="session-question-dialog"]`;
 const OPTIONS = `${DIALOG} .session-question-dialog-options-list`;
 const CHAT_ABOUT = `${DIALOG} [data-slot="session-question-dialog-chat-about"]`;
 const CHAT_ABOUT_BUTTON = `${CHAT_ABOUT} .tug-button`;
+const ACTIONBAR = `${DIALOG} [data-slot="session-question-dialog-actionbar"]`;
+const RAIL_BUTTONS = `${ACTIONBAR} .tug-button`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -72,12 +74,16 @@ interface RevealState {
   scrollTop: number;
 }
 
-function readState(app: App): Promise<RevealState> {
+function readState(
+  app: App,
+  targetSel: string = CHAT_ABOUT,
+  buttonSel: string = CHAT_ABOUT_BUTTON,
+): Promise<RevealState> {
   return app.evalJS<RevealState>(
     `(function(){
       var s = document.querySelector(${JSON.stringify(SCROLLER)});
-      var t = document.querySelector(${JSON.stringify(CHAT_ABOUT)});
-      var b = document.querySelector(${JSON.stringify(CHAT_ABOUT_BUTTON)});
+      var t = document.querySelector(${JSON.stringify(targetSel)});
+      var bs = document.querySelectorAll(${JSON.stringify(buttonSel)});
       var d = document.querySelector(${JSON.stringify(DIALOG)});
       var chrome = d ? d.closest('.tool-block-chrome') : null;
       var h = chrome ? chrome.querySelector('.tool-call-header') : null;
@@ -90,7 +96,9 @@ function readState(app: App): Promise<RevealState> {
         targetTop: tr.top,
         targetBottom: tr.bottom,
         headerBottom: hr.bottom,
-        ringed: b !== null && b.hasAttribute("data-key-view-kbd"),
+        ringed: Array.prototype.some.call(bs, function(b){
+          return b.hasAttribute("data-key-view-kbd");
+        }),
         scrollTop: s ? s.scrollTop : -1
       };
     })()`,
@@ -238,6 +246,60 @@ describe.skipIf(!SHOULD_RUN)("AT0272: keyboard focus reveals its target", () => 
           after.scrollTop,
           "the reveal actually scrolled",
         ).toBeGreaterThan(before.scrollTop);
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0272] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+  test(
+    "arrowing up to the action bar scrolls the rail into view",
+    async () => {
+      const app = await launchTugApp({ testName: "at0272-focus-reveal-rail" });
+      try {
+        await openQuestion(app);
+
+        // Park at the live edge — the state a real conversation is in when the
+        // question streams in. The action bar sits at the TOP of the dialog,
+        // so it starts off the top edge.
+        await app.evalJS(
+          `(function(){
+            var s = document.querySelector(${JSON.stringify(SCROLLER)});
+            if (!s) return false;
+            s.scrollTop = s.scrollHeight - s.clientHeight;
+            s.dispatchEvent(new Event('scroll', { bubbles: false }));
+            return true;
+          })()`,
+        );
+        await sleep(300);
+
+        const before = await readState(app, ACTIONBAR, RAIL_BUTTONS);
+        expect(
+          visible(before),
+          `action bar starts off the top — ${JSON.stringify(before)}`,
+        ).toBe(false);
+
+        // ArrowUp off the options list's top edge seams to the rail.
+        let ringed = false;
+        for (let i = 0; i < 8 && !ringed; i += 1) {
+          await app.nativeKey("ArrowUp");
+          await sleep(200);
+          ringed = (await readState(app, ACTIONBAR, RAIL_BUTTONS)).ringed;
+        }
+
+        const after = await readState(app, ACTIONBAR, RAIL_BUTTONS);
+        expect(
+          after.ringed,
+          `a rail button took the ring — ${JSON.stringify(after)}`,
+        ).toBe(true);
+        expect(
+          visible(after),
+          `action bar revealed on focus — ${JSON.stringify(after)}`,
+        ).toBe(true);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0272] log tail:\n${tail}\n`);
