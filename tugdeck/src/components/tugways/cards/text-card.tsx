@@ -779,7 +779,16 @@ export function TextCardContent({ cardId }: { cardId: string }) {
 
   // ---- Render ----
 
-  if (snapshot.phase === "empty" || snapshot.phase === "loading") {
+  // A card that is reading a file is already bound to a path — it is on its
+  // way to the editor, so it renders a bare surface rather than the open
+  // prompt. Flashing the chooser here would advertise "no file" for the
+  // duration of a disk read that almost always settles in well under a
+  // frame budget's worth of perceptible time.
+  if (snapshot.phase === "loading") {
+    return <div className="text-card text-card--loading" data-slot="text-card" />;
+  }
+
+  if (snapshot.phase === "empty") {
     return (
       <div className="text-card text-card--open" data-slot="text-card">
         <div className="text-card-open-surface">
@@ -794,11 +803,10 @@ export function TextCardContent({ cardId }: { cardId: string }) {
               aria-label="File path"
               autoFocus
               onSubmit={() => openPath(chooserValue)}
-              disabled={snapshot.phase === "loading"}
             />
             <TugPushButton
               onClick={() => openPath(chooserValue)}
-              disabled={snapshot.phase === "loading" || chooserValue.trim() === ""}
+              disabled={chooserValue.trim() === ""}
             >
               Open
             </TugPushButton>
@@ -812,7 +820,6 @@ export function TextCardContent({ cardId }: { cardId: string }) {
                 if (isManual) void store.openUntitled(cardId);
                 else void store.openDraft(cardId);
               }}
-              disabled={snapshot.phase === "loading"}
             >
               New Untitled File
             </TugPushButton>

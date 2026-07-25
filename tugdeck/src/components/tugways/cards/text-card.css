@@ -199,7 +199,11 @@
   background: var(--tugx-popover-bg);
 }
 
-/* ---- Open (empty/loading) surface ---- */
+/* ---- Open (empty) surface ---- */
+
+/* `.text-card--loading` carries no rules of its own: a card reading a file
+ * renders a bare `.text-card` column so the pane shows nothing but its own
+ * surface until the editor mounts. */
 
 .text-card-open-surface {
   display: flex;
