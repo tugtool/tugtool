@@ -109,3 +109,38 @@ export const ScrollerProvider: React.FC<ScrollerProviderProps> = ({
 export function useScroller(): Scroller {
   return React.useContext(ScrollerContext);
 }
+
+// ---- Element registry ----
+//
+// The same façade, reachable from outside React. The focus engine's reveal
+// (`focus-reveal.ts`) discovers scrollports by walking the DOM, not by sitting
+// in a component tree, so it cannot read the context — but it must still
+// release follow-bottom cooperatively before writing `scrollTop`. A host
+// registers its scroll container here alongside the provider; the map is weak,
+// so an unmounted host's entry goes with it even if `detach` never runs.
+
+const scrollerByElement = new WeakMap<HTMLElement, Scroller>();
+
+/**
+ * Bind `element` (a scroll container) to its {@link Scroller} façade for
+ * DOM-side lookup. Returns the detach function — call it on unmount.
+ */
+export function attachScrollerElement(
+  element: HTMLElement,
+  scroller: Scroller,
+): () => void {
+  scrollerByElement.set(element, scroller);
+  return () => {
+    if (scrollerByElement.get(element) === scroller) {
+      scrollerByElement.delete(element);
+    }
+  };
+}
+
+/**
+ * The {@link Scroller} façade bound to `element`, or `null` when the element is
+ * a plain overflow box with no host façade behind it.
+ */
+export function scrollerForElement(element: HTMLElement): Scroller | null {
+  return scrollerByElement.get(element) ?? null;
+}

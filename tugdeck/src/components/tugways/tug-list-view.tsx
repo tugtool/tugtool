@@ -102,7 +102,11 @@ import {
 import { computePageNavigation } from "./internal/list-view-page-navigation";
 import { computeWindow } from "./internal/list-view-window";
 import { OuterScrollportProvider } from "./internal/outer-scrollport-context";
-import { ScrollerProvider, type Scroller } from "./internal/scroller-context";
+import {
+  ScrollerProvider,
+  attachScrollerElement,
+  type Scroller,
+} from "./internal/scroller-context";
 import { useSavedRegionScroll } from "./use-component-state-preservation";
 import {
   TugListRowLayoutProvider,
@@ -2365,11 +2369,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
       el.addEventListener("tug-region-scroll-set", onRegionScrollSet);
 
+      // Publish the same façade `ScrollerProvider` gives descendants under
+      // the scroll container itself, so a DOM-side caller that never sees the
+      // React tree — the focus engine's reveal — can release follow-bottom
+      // before it writes `scrollTop`.
+      const detachScroller = attachScrollerElement(el, scrollerFacadeRef.current);
+
       return () => {
         if (atTopSeedRaf !== null) {
           cancelAnimationFrame(atTopSeedRaf);
           atTopSeedRaf = null;
         }
+        detachScroller();
         el.removeEventListener("tug-region-scroll-set", onRegionScrollSet);
         smartScroll.dispose();
         smartScrollRef.current = null;

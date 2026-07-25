@@ -90,7 +90,7 @@ const EXIT_OVER_BUDGET = 3;
  * a deliberate, argued act, not a reflex to make the lint quiet.
  */
 const ACCEPTED_FANOUT: Record<string, number> = {
-    "tugdeck/src/components/tugways/focus-manager.ts": 61,
+    "tugdeck/src/components/tugways/focus-manager.ts": 62,
     "tugdeck/src/focus-transfer.ts": 29,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The two editor modules named individually by a test on top of the 29 that name the

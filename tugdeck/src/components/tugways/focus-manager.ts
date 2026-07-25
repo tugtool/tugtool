@@ -49,6 +49,7 @@ import type { TugAction } from "./action-vocabulary";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
 import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spatial-order";
+import { revealFocusTarget } from "./focus-reveal";
 import { resolveDefaultFocusTarget } from "@/default-focus";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { isFocusDestination } from "@/deck-store-selectors";
@@ -537,6 +538,12 @@ export class FocusContext {
   // unreliable for the engine's programmatic `.focus()`, so the engine marks
   // its own keyboard navigation rather than depending on the browser.
   private keyViewKeyboard = false;
+
+  // Reveal suppression for the current realization: set while a
+  // `preventScroll` placement runs, so the keyboard key view it writes rings
+  // where it is instead of scrolling the surface out from under a
+  // reactivation-class restore ([L23]).
+  private revealSuppressed = false;
   // Stack of buttons that have opted into the persistent default ring (the
   // "Return's home" filled+ring shown while the keyboard rests on a non-button
   // control). The engine owns the `data-default-ring` DOM attribute so the
@@ -644,12 +651,23 @@ export class FocusContext {
    *
    * `keyboard` defaults to `false` (pointer / chain reflection); the Tab walk
    * and surface entry pass `true`.
+   *
+   * A keyboard key view is REVEALED: a ring the user cannot see is not a focus
+   * mark, so the new key view is scrolled into view by its owning scrollports
+   * ({@link revealFocusTarget}). The early return above is what keeps this to
+   * one reveal per move — a re-assertion of the same `(id, keyboard)` pair
+   * never re-scrolls. Suppressed under `preventScroll` realizations, where the
+   * user's scroll position must survive the placement ([L23]).
    */
   setKeyView(id: string | null, keyboard = false): void {
     if (this.keyViewId === id && this.keyViewKeyboard === keyboard) return;
     this.keyViewId = id;
     this.keyViewKeyboard = keyboard;
     this.reproject();
+    if (keyboard && !this.revealSuppressed && this.isActive()) {
+      const el = this.keyViewElement();
+      if (el !== null) revealFocusTarget(el);
+    }
     this.notify();
   }
 
@@ -1031,6 +1049,27 @@ export class FocusContext {
    * over a destination that is not there.
    */
   realizeTarget(
+    target: FocusTarget,
+    modality: FocusModality,
+    opts?: { preventScroll?: boolean },
+  ): PlaceResult {
+    if (opts?.preventScroll === true) {
+      this.revealSuppressed = true;
+      try {
+        return this.realizeResolvedTarget(target, modality, opts);
+      } finally {
+        this.revealSuppressed = false;
+      }
+    }
+    return this.realizeResolvedTarget(target, modality, opts);
+  }
+
+  /**
+   * `realizeTarget`'s body, split out so the `preventScroll` reveal
+   * suppression above wraps every branch (and every `setKeyView` under them)
+   * from one place.
+   */
+  private realizeResolvedTarget(
     target: FocusTarget,
     modality: FocusModality,
     opts?: { preventScroll?: boolean },
