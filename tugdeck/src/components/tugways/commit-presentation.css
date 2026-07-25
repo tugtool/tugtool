@@ -27,15 +27,14 @@
      what makes the tighter continuation leading above read as one entry. */
 
   /* The hanging indent for a wrapped subject: the content column is mono, so
-     the 8-char sha + the 3-char ` : ` delimiter measure exactly 11ch. */
-  --tugx-commit-hang: 11ch;
+     the 8-char sha + its single separating space measure exactly 9ch. */
+  --tugx-commit-hang: 9ch;
 
   /* The subject reads at the compact mono list row's own scale — the size the
      History shade's rows already use, unchanged. */
   --tugx-commit-subject-font: var(--tug-font-family-mono);
   --tugx-commit-subject-size: var(--tug-font-size-xs);
   --tugx-commit-subject-color: var(--tugx-block-text-color);
-  --tugx-commit-delim-color: var(--tugx-block-text-color-muted);
 
   /* The timestamp. Mono + tabular figures so stamps stack into a true column
      across rows; one step down and muted so it reads as provenance. */
@@ -52,7 +51,7 @@
 
 /* ---- One entry ---- */
 
-/* The identity: `<sha> : <subject>`. The first line rides the shared one-line
+/* The identity: `<sha> <subject>`. The first line rides the shared one-line
    box; wrapped lines fall to the tighter continuation leading at the hanging
    indent, so the entry reads as one paragraph. */
 .tugx-commit-identity {
@@ -68,9 +67,6 @@
   padding-top: calc((var(--tugx-commit-line) - 1em * var(--tugx-commit-wrap-leading)) / 2);
 }
 
-.tugx-commit-delim {
-  color: var(--tugx-commit-delim-color);
-}
 
 /* The metadata cell — whichever of author / date / time the reader has asked
    for, on the trailing edge beside the controls. The author is sans (quiet

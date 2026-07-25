@@ -143,13 +143,14 @@ function CommitReceipt({
   const subject = message.split("\n", 1)[0];
   const body = message.slice(subject.length).replace(/^\n+/, "").replace(/\s+$/, "");
   // The short sha stands where a tool block's verb would: the commit's name is
-  // its hash, then the ` : ` delimiter, then the subject — the same identity
-  // line the History shade's rows lead with, so a commit reads identically
-  // wherever it appears.
+  // its hash, then a single space, then the subject — the same identity line
+  // the History shade's rows lead with, so a commit reads identically wherever
+  // it appears. The sha's own tint is what separates the two; a heavier
+  // delimiter only spent width.
   const identity = (
     <span className="commit-receipt-header">
       <CommitShaText sha={sha} />
-      <span className="tugx-commit-delim">{" : "}</span>
+      {" "}
       <code className="commit-receipt-summary">{subject}</code>
     </span>
   );

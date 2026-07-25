@@ -126,7 +126,9 @@ export function CommitMetaCell({
 }
 
 /**
- * `<sha> : <subject>` — the commit's identity line. The sha is a
+ * `<sha> <subject>` — the commit's identity line, the two parted by a single
+ * space (the sha's own tint is what separates them; a heavier delimiter only
+ * spent width). The sha is a
  * {@link CommitShaText} (right-click → copy the full hash); a trailing
  * `badge` slot carries surface-specific marks (the History shade's dash-join
  * badge, say) inside the same text flow so it wraps with the subject.
@@ -151,7 +153,7 @@ export function CommitIdentityLine({
       title={subject}
     >
       <CommitShaText sha={sha} />
-      <span className="tugx-commit-delim">{" : "}</span>
+      {" "}
       {subject}
       {badge}
     </span>
