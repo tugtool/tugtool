@@ -288,6 +288,24 @@ body {
   width: 100%;
 }
 
+/* ---- Focused answer field: ONE ring, on the border ----
+ *
+ * These two fields are the surfaces the user types their answer into, so a
+ * focused one must be unmistakable however the focus arrived — clicked into
+ * with the mouse or walked to with the keyboard. Both states paint the SAME
+ * ring, drawn over the field's own border (the substrate's `[data-key-view-kbd]`
+ * rule uses this identical geometry), so the keyboard case never stacks a
+ * second ring outside the first and the mouse case is never left with only a
+ * quiet border-colour shift. */
+
+/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-focus */
+.session-question-dialog-freetext .tug-text-editor[data-focused],
+.session-question-dialog-decline .tug-text-editor[data-focused] {
+  border-color: var(--tugx-focus-ring);
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+}
+
 /* The sizer stand-in: an empty box holding the field's resting height (plus
  * the substrate frame's 1px top + bottom border) inside each hidden panel
  * sizer, so a sizer accounts for the field without mounting a second editor.
@@ -388,10 +406,16 @@ body {
 .session-question-dialog-options-list.tug-list-view {
   height: auto;
   padding-inline: 0;
-  /* Round the perimeter ring to match the question panel (no frame border —
-     the options are borderless on the panel surface). Same self-frame radius
-     token the dev picker uses, so the ring shape is consistent app-wide. */
+  /* The options are a BOX, not a run of rows bleeding into the panel: the
+     list draws its own frame at rest (`TugListView`'s self-frame, the dev
+     picker idiom) in the same edge the answer field below it wears, so the
+     two read as one family. On keyboard focus the list-view's own ring rule
+     recolors this frame to the ring hue and adds the remaining width as an
+     outline at offset 0 — so the ring OVERLAPS the border rather than
+     floating outside it as a second edge. */
   --tugx-list-view-radius: var(--tugx-question-panel-radius);
+  --tugx-list-view-frame-width: 1px;
+  --tugx-list-view-frame-color: var(--tug7-element-field-border-normal-plain-rest);
   --tugx-list-view-padding-block: 0;
   --tugx-list-view-padding-block-start: 0;
   --tugx-list-view-padding-block-end: 0;

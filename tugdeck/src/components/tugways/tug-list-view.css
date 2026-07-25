@@ -343,22 +343,26 @@ body {
    default "New session" row). MUST come after the draw rule above. Color only —
    the 1px is kept, so neither the row height nor the cursor bar shifts.
 
-   A row whose selection rides its CONTROL (`selectionSurface="control"`) is
-   excluded: it paints no fill, so there is no block for a divider to interrupt
-   — the hairlines stay, exactly as on its unselected neighbours. */
-.tug-list-view[data-row-layout="flush"] .tug-list-view-cell[data-selected="true"],
-.tug-list-view[data-row-layout="flush"]
+   A CONTROL-selection list (`selectionSurface="control"`) is excluded outright,
+   and so is any individual control-selection row: neither paints a fill, so
+   there is no block for a divider to interrupt — every hairline stays drawn.
+   The list-level exclusion is the load-bearing one, because the wrapper's
+   `data-selected` tracks the list's OWN selected index (which under a focus
+   group moves with Space/Enter commits), and suppressing dividers around it
+   reads as separators randomly going missing. */
+.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"]) .tug-list-view-cell[data-selected="true"],
+.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-layout="flush"]
+.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
-.tug-list-view[data-row-layout="flush"]
+.tug-list-view[data-row-layout="flush"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-separator="on"] .tug-list-view-cell[data-selected="true"],
-.tug-list-view[data-row-separator="on"]
+.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"]) .tug-list-view-cell[data-selected="true"],
+.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])),
-.tug-list-view[data-row-separator="on"]
+.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(+ .tug-list-view-cell[data-selected="true"]),
-.tug-list-view[data-row-separator="on"]
+.tug-list-view[data-row-separator="on"]:not([data-selection-surface="control"])
   .tug-list-view-cell:has(+ .tug-list-view-cell .tug-list-row[data-selected="true"]:not([data-selection-surface="control"])) {
   border-bottom-color: transparent;
 }

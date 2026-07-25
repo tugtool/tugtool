@@ -1323,3 +1323,57 @@ describe("runReplay — frame batching", () => {
     expect(emitted.filter((f) => f.type === "turn_complete")).toHaveLength(120);
   });
 });
+
+// ---------------------------------------------------------------------------
+// runReplay — bracket-close guarantee under exceptions
+// ---------------------------------------------------------------------------
+
+describe("runReplay — bracket close is exception-proof", () => {
+  // Regression pin for the 2026-07-25 capture blackout. A throw inside the
+  // replay loop after `replay_started` used to escape the fire-and-forget
+  // caller with the bracket still open — and tugcast's relay latches
+  // `in_replay` between the bracket frames, so a lost `replay_complete`
+  // silently disabled Bash and turn attribution for the relay's remaining
+  // life. The bracket must close on EVERY exit, carrying the error.
+  test("a throw after replay_started still emits replay_complete (error: replay_exception)", async () => {
+    const { manager } = await makePrimedManager({});
+    // `injectPendingRowSynthetics` runs inside the try, immediately after
+    // the bracket-open frame is written — the earliest post-open throw site.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).injectPendingRowSynthetics = () => {
+      throw new Error("synthetic replay failure");
+    };
+    const { raw } = await captureIpc(async () => {
+      await manager.runReplay();
+    });
+
+    expect(raw.filter((f) => f.type === "replay_started")).toHaveLength(1);
+    const completes = raw.filter((f) => f.type === "replay_complete");
+    expect(completes).toHaveLength(1);
+    const complete = completes[0] as ReplayComplete;
+    expect(complete.error?.kind).toBe("replay_exception");
+    expect(complete.error?.message).toContain("synthetic replay failure");
+  });
+
+  test("an in-flight snapshot throw does not lose the clean bracket close", async () => {
+    const { manager } = await makePrimedManager({});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).emitInflightTurnFromActiveTurn = () => {
+      throw new Error("bad inflight state");
+    };
+    // Give the manager an active turn so the snapshot path runs. The
+    // object only needs to be non-null at the `inflight !== null` check;
+    // the throwing stub never touches it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (manager as any).activeTurn = { suppressEmit: false };
+    const { raw } = await captureIpc(async () => {
+      await manager.runReplay();
+    });
+
+    const completes = raw.filter((f) => f.type === "replay_complete");
+    expect(completes).toHaveLength(1);
+    // The snapshot failure is contained: the translator's own
+    // replay_complete (no error) still closes the bracket.
+    expect((completes[0] as ReplayComplete).error).toBeUndefined();
+  });
+});

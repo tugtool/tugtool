@@ -270,6 +270,10 @@ export interface TugListRowProps
    *    checkbox group rather than a highlighted list. Hover graze and the
    *    list-view's keyboard cursor are unaffected — they are separate
    *    channels. Requires a `selectedGlyph`.
+   *
+   * Inherited from the enclosing `TugListView`'s `selectionSurface` when that
+   * is set, so a list authored as a radio / checkbox group states the mode
+   * once; an explicit prop here overrides it.
    * @selector [data-selection-surface="control"]
    * @default "fill"
    */
@@ -301,6 +305,7 @@ export interface TugListRowLayout {
   variant: TugListRowVariant | null;
   selectedAccent: boolean;
   density?: TugListRowDensity | null;
+  selectionSurface?: TugListRowSelectionSurface | null;
 }
 
 const TugListRowLayoutContext = React.createContext<TugListRowLayout | null>(
@@ -450,6 +455,11 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
     // Accent border: explicit prop wins; otherwise inherit the
     // enclosing list view's `selectedAccent`; otherwise off.
     const resolvedAccent = selectedAccent ?? layout?.selectedAccent ?? false;
+    // Selection surface: explicit prop wins; otherwise inherit the enclosing
+    // list view's mode (a list authored as a radio / checkbox group publishes
+    // it once for all its rows); otherwise the default fill.
+    const resolvedSelectionSurface =
+      selectionSurface ?? layout?.selectionSurface ?? "fill";
     const glyphState = resolveListRowSelectedGlyph(selectedGlyph, selected);
 
     const hasLeading = isRenderable(leading);
@@ -466,7 +476,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
         data-disabled={disabled ? "true" : undefined}
         data-selected-accent={resolvedAccent ? "true" : undefined}
         data-selection-surface={
-          selectionSurface === "control" ? "control" : undefined
+          resolvedSelectionSurface === "control" ? "control" : undefined
         }
         data-mono={mono ? "true" : undefined}
         className={cn("tug-list-row", className)}

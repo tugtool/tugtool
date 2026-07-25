@@ -793,9 +793,6 @@ const QuestionOptionCell: TugListViewCellRenderer<QuestionOptionsDataSource> =
         subtitleMaxLines={0}
         selected={selected}
         selectedGlyph={multi ? "checkbox" : "radio"}
-        // Selection rides the radio / checkbox, not a row fill — the options
-        // read as a real radio / checkbox group.
-        selectionSurface="control"
         role={multi ? "checkbox" : "radio"}
         aria-checked={selected}
         data-option-label={label}
@@ -910,6 +907,11 @@ const QuestionOptions: React.FC<QuestionOptionsProps> = ({
         cellRenderers={QUESTION_OPTION_CELL_RENDERERS}
         rowLayout="flush"
         inline
+        // Selection rides each row's radio / checkbox, not a row fill: the
+        // options read as a real radio / checkbox group, and every hairline
+        // divider stays drawn (a filled row is what makes a list drop the
+        // dividers touching it).
+        selectionSurface="control"
         className="session-question-dialog-options-list"
         focusGroup={focusGroup}
         focusOrder={focusOrder}
@@ -951,6 +953,7 @@ function QuestionOptionsSizer({
       rowLayout="flush"
       inline
       interactive={false}
+      selectionSurface="control"
       className="session-question-dialog-options-list"
       listRole={question.multiSelect ? "group" : "radiogroup"}
       itemRole="presentation"

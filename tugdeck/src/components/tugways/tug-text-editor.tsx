@@ -2678,6 +2678,12 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           ref={composedHostRef}
           data-slot="tug-text-editor"
           data-focus-style={focusStyle}
+          // Authored into a focus group ([P02]) — i.e. this editor is a stop in
+          // the engine's walk and can become a ringed key view. Gates the
+          // key-view ring treatment in the CSS, so an editor that is NOT a stop
+          // (the prompt entry, a text card) keeps its own focus language
+          // untouched.
+          data-focus-stop={focusGroup !== undefined ? "true" : undefined}
           data-borderless={borderless ? "" : undefined}
           data-disabled={disabled ? "" : undefined}
           // Reflect soft-wrap onto the host so the CSS can pin the

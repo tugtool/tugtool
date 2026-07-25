@@ -107,6 +107,7 @@ import { useSavedRegionScroll } from "./use-component-state-preservation";
 import {
   TugListRowLayoutProvider,
   type TugListRowDensity,
+  type TugListRowSelectionSurface,
   type TugListRowVariant,
 } from "./tug-list-row";
 import {
@@ -882,6 +883,26 @@ export interface TugListViewProps<
   selectedAccent?: boolean;
 
   /**
+   * Which surface carries row selection in this list. Published to descendant
+   * `TugListRow`s through `TugListRowLayoutContext` (a row may still override
+   * with its own prop), and stamped on the list root so the list's own chrome
+   * can account for it.
+   *
+   *  - `"fill"` (default) — the picker idiom: the selected row wears the
+   *    selection fill, and the hairline dividers touching it drop so the fill
+   *    reads as one clean block.
+   *  - `"control"` — selection rides each row's leading radio / checkbox and
+   *    no row is filled (see `TugListRow`'s `selectionSurface`). With no fill
+   *    there is no block for a divider to interrupt, so **every** divider
+   *    stays drawn — including around the list's own selected index, whose
+   *    suppression otherwise reads as randomly missing separators.
+   *
+   * @default "fill"
+   * @selector .tug-list-view[data-selection-surface="control"]
+   */
+  selectionSurface?: TugListRowSelectionSurface;
+
+  /**
    * Opt into PageUp / PageDown keyboard navigation by *entry*, where
    * each cell is one entry. When `true`, the list view installs a
    * keyboard handler so PageUp / PageDown — and the macOS
@@ -1284,6 +1305,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       rowDensity,
       rowSeparator,
       selectedAccent = false,
+      selectionSurface,
       pageByEntry,
       selectionRequired = false,
       onSelectionChange,
@@ -3831,8 +3853,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // scroll-tick re-renders — the context value churning would re-render
     // every row needlessly.
     const rowLayoutValue = React.useMemo(
-      () => ({ variant: rowLayout ?? null, selectedAccent, density: rowDensity ?? null }),
-      [rowLayout, selectedAccent, rowDensity],
+      () => ({
+        variant: rowLayout ?? null,
+        selectedAccent,
+        density: rowDensity ?? null,
+        selectionSurface: selectionSurface ?? null,
+      }),
+      [rowLayout, selectedAccent, rowDensity, selectionSurface],
     );
 
     // Resolve `rowSeparator` into the divider's CSS custom-property
@@ -3867,6 +3894,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         data-tug-scroll-key={scrollKey ?? "tug-list-view"}
         data-row-layout={rowLayout}
         data-row-separator={rowSeparatorMode}
+        data-selection-surface={
+          selectionSurface === "control" ? "control" : undefined
+        }
         data-interactive={interactive ? undefined : "false"}
         data-offscreen-skip={
           inline === true && offscreenSkip ? "" : undefined
