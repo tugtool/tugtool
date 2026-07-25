@@ -287,9 +287,8 @@ export interface BlockChromeProps {
   /**
    * Wrapper-supplied affordance(s) on the header's trailing edge, RIGHT of the
    * chrome-owned Copy — where the whole-block chevron sits. For a block that
-   * discloses part of its OWN body (the `/commit` receipt's message detail),
-   * as distinct from the transcript's whole-block collapse. Visible in both
-   * states.
+   * discloses part of its OWN body, as distinct from the transcript's
+   * whole-block collapse. Visible in both states. No block uses this today.
    */
   headerActionsTrailing?: React.ReactNode;
   /**

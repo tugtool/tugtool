@@ -547,6 +547,30 @@ const GhostRowCell = React.memo(function GhostRowCell({
 // `shell`-origin turn, its sole `shell_exchange` Message rendered as
 // non-context ink ([P11]) inside a `participant="shell"` transcript entry.
 // ---------------------------------------------------------------------------
+/**
+ * The shell row's block frame: the whole-block history collapse for an ordinary
+ * exchange, or nothing at all for a row that must not be foldable (a git
+ * commit receipt). Rendering the children bare — rather than passing a flag
+ * into the wrapper — is what leaves `ToolBlockCollapseContext` unset, which is
+ * how `BlockChrome` decides to render no chevron ([P02]).
+ */
+function ShellBlockFrame({
+  collapsible,
+  toolUseId,
+  children,
+}: {
+  collapsible: boolean;
+  toolUseId: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  if (!collapsible) return <>{children}</>;
+  return (
+    <ToolBlockHistoryCollapse toolUseId={toolUseId} defaultCollapsed={false}>
+      {children}
+    </ToolBlockHistoryCollapse>
+  );
+}
+
 interface ShellTurnCellProps {
   index: number;
   row: SessionRowDescriptor;
@@ -646,10 +670,12 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
           // so long output is collapsible from the header. Keyed on the
           // exchange id so the user's expand/collapse choice persists across
           // windowed remounts. Defaults expanded — the user just ran it.
-          <ToolBlockHistoryCollapse
-            toolUseId={message.exchangeId}
-            defaultCollapsed={false}
-          >
+          //
+          // A git row is NOT wrapped: a commit receipt is a fixed-size record
+          // (a summary over its file list), not open-ended output that needs
+          // folding away. Without the wrapper the chrome sees no disclosure
+          // context and renders no chevron at all.
+          <ShellBlockFrame collapsible={!isGitRow} toolUseId={message.exchangeId}>
             <CommandBlock
               message={message}
               // Share ([P08]): compose the fenced text at click time and
@@ -679,7 +705,7 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
               // Only rendered for an auto-routed row.
               onSendToClaude={() => codeSessionStore.send(message.command, [])}
             />
-          </ToolBlockHistoryCollapse>
+          </ShellBlockFrame>
         }
         // Z1B end-state row ([D111]) — the exchange's exit badge + duration,
         // beneath the block, exactly where a Claude turn shows its OK/Error

@@ -18,11 +18,10 @@
  * @module components/tugways/cards/session-commit-receipt-block
  */
 
-import React, { useState } from "react";
+import type React from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
-import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { BlockChrome } from "../blocks/block-chrome";
 import "@/components/tugways/commit-presentation.css";
 import {
@@ -125,10 +124,10 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
 }
 
 /**
- * The parsed receipt. Split from the matcher above so the message-detail
- * disclosure can hold local state without a hook sitting behind the parse
- * guard. The detail is UNCONTROLLED (local `useState`, like a History row) and
- * mounts on expand / unmounts on collapse ([L26]).
+ * The parsed receipt: the commit's summary line over its file list, stated in
+ * full. Nothing here folds — the row carries no expand control of its own, and
+ * the transcript leaves it out of the whole-block history collapse — so a
+ * landed commit reads at a glance without a gesture.
  */
 function CommitReceipt({
   parsed,
@@ -137,12 +136,10 @@ function CommitReceipt({
   parsed: ParsedCommitReceipt;
   cwd: string;
 }): React.ReactElement {
-  const [detailOpen, setDetailOpen] = useState(false);
   const { sha, message, fileCount, added, removed, files } = parsed;
-  // The header shows only the subject — the message's first line. The body +
-  // trailer live behind the detail cue and in the copied text, not the glance
-  // (the header reads like the Bash command line: one subject that may wrap,
-  // never the whole message).
+  // The header carries the subject — the message's first line — so it reads
+  // like the Bash header's command line; the body (when there is one) follows
+  // below it, above the file list.
   const subject = message.split("\n", 1)[0];
   const body = message.slice(subject.length).replace(/^\n+/, "").replace(/\s+$/, "");
   // The short sha stands where a tool block's verb would: the commit's name is
@@ -171,31 +168,13 @@ function CommitReceipt({
       phase="success"
       status="ready"
       copyText={`${sha} ${message}`.trim()}
-      // The message-detail cue rides the header's trailing edge — right of
-      // Copy, where the whole-block chevron sits — so the gesture that reveals
-      // a commit's body is in the same place on the receipt as on a History
-      // row. Absent for a subject-only commit: there is nothing to disclose.
-      headerActionsTrailing={
-        body.length > 0 ? (
-          <BlockFoldCue
-            collapsed={!detailOpen}
-            onToggle={(nextCollapsed) => setDetailOpen(!nextCollapsed)}
-            collapsedLabel="Show message"
-            expandedLabel="Hide message"
-            ariaLabelExpand={`Show commit message for ${subject}`}
-            ariaLabelCollapse={`Hide commit message for ${subject}`}
-            size="xs"
-            subtype="icon"
-            stabilizeScroll={false}
-            data-slot="commit-receipt-detail-cue"
-          />
-        ) : undefined
-      }
     >
       {/* The message body reads exactly as it does in an expanded History row
           — same `.tugx-commit-message` scale — and sits ABOVE the file list,
-          which can run arbitrarily long. */}
-      {detailOpen && body.length > 0 ? (
+          which can run arbitrarily long. Always shown: a commit receipt is a
+          durable record, so it states itself in full rather than hiding half
+          of itself behind a cue. */}
+      {body.length > 0 ? (
         <pre className="tugx-commit-message" data-slot="commit-receipt-detail">
           {body}
         </pre>
