@@ -81,6 +81,10 @@ const PULSE_FORWARD_ALLOWLIST: &[&str] = &[
     // refusal fallback and an output-truncation ceiling hit.
     "model_refusal_fallback",
     "output_truncated",
+    // A compaction landed — manual `/compact` or auto at capacity. The
+    // stretch it covers streams nothing, so this is the only frame that
+    // tells the strip anything about it.
+    "compact_boundary",
 ];
 
 /// Active daemon subprocess handles, mirrored on `SessionChild`'s
@@ -643,6 +647,15 @@ mod tests {
         assert_eq!(
             forwardable_session(
                 br#"{"tug_session_id":"s1","type":"task_progress","last_tool_name":"Bash"}"#,
+                &mut muted,
+            ),
+            Some("s1".to_string())
+        );
+        // A compaction boundary is the only frame a compacting stretch
+        // emits, so it crosses the pipe.
+        assert_eq!(
+            forwardable_session(
+                br#"{"tug_session_id":"s1","type":"compact_boundary","trigger":"manual"}"#,
                 &mut muted,
             ),
             Some("s1".to_string())

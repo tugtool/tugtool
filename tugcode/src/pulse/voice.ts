@@ -30,6 +30,7 @@
 
 import type {
   AssistantText,
+  CompactBoundary,
   OutboundMessage,
   ToolInputProgress,
   ToolUse,
@@ -77,6 +78,11 @@ export interface VoiceLine {
    * on turn-boundary markers.
    */
   intent?: string;
+}
+
+/** Token counts at strip scale: thousands above 1k, exact below. */
+function formatTokens(tokens: number): string {
+  return tokens >= 1_000 ? `${Math.round(tokens / 1_000)}k` : `${tokens}`;
 }
 
 /** Collapse whitespace to one line. */
@@ -658,6 +664,14 @@ export class PulseVoice {
         return this.onTurnEnd(state, scope, atMs, "Done", frame);
       case "turn_cancelled":
         return this.onTurnEnd(state, scope, atMs, "Stopped", frame);
+      // A compaction landed — on a manual `/compact` (the whole turn) or
+      // mid-turn at capacity. It emits IMMEDIATELY rather than through the
+      // flush loop: on a manual `/compact` the boundary is followed within
+      // a frame or two by `turn_complete`, which resets the scope, so a
+      // throttled beat would be swallowed and the run would read as if it
+      // had never happened.
+      case "compact_boundary":
+        return this.onCompactBoundary(state, scope, atMs, frame);
       // --- Beats the prose monologue never covers, surfaced directly ---
       // A backgrounded job reached a terminal state. (The launch + a
       // subagent's own tool calls are already narrated via the tool_use
@@ -782,6 +796,34 @@ export class PulseVoice {
     }
     // The deck reducer's rule: partial appends, complete replaces.
     state.blockText = frame.is_partial ? state.blockText + frame.text : frame.text;
+  }
+
+  /**
+   * The compaction beat. Everything the scope was carrying — the
+   * in-progress thought, its retained intent, any tool line — describes
+   * the context that was just summarized away, so the scope starts clean
+   * from here.
+   */
+  private onCompactBoundary(
+    state: ScopeVoiceState,
+    scope: string,
+    atMs: number,
+    frame: CompactBoundary,
+  ): VoiceLine {
+    const verb =
+      frame.trigger === "auto" ? "Auto-compacted context" : "Compacted context";
+    const pre =
+      typeof frame.pre_tokens === "number" && frame.pre_tokens > 0
+        ? ` (was ${formatTokens(frame.pre_tokens)})`
+        : "";
+    state.blockKey = null;
+    state.blockText = "";
+    state.directLine = null;
+    state.lastIntent = null;
+    const text = `${verb}${pre}`;
+    state.lastEmitAt = atMs;
+    state.shownText = text;
+    return { scope, text };
   }
 
   private onTurnEnd(

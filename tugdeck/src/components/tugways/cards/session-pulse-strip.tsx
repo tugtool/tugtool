@@ -18,10 +18,13 @@
  *    glyphs into a smash), and the dwell already paces changes ≥1.8s
  *    apart, so an instant replace reads calm; the sparkline carries the
  *    liveness. Only one string is ever painted, so overlap is impossible;
- *  - a dimmed `None` placeholder before the session's first line.
+ *  - a dimmed `None` placeholder before the session's first line;
+ *  - a `Compacting context…` PIN for the length of a `/compact` run
+ *    started from this card — the one stretch the voice cannot narrate,
+ *    since the wire streams nothing between the submit and the boundary.
  *
- * Laws: [L02] both stores via `useSyncExternalStore` (`usePulse` and
- *       the session-id selector below);
+ * Laws: [L02] every store via `useSyncExternalStore` (`usePulse`, the
+ *       session-id selector, and `compactionProgressStore`);
  *       [L06] the dwell queue is local presentation data
  *       (`useState`/`useRef`), which changes WHAT text exists, not how it
  *       looks — no appearance passes through React state;
@@ -60,6 +63,7 @@ import {
 } from "@/components/tugways/tug-popup-list";
 import { useFocusable } from "@/components/tugways/use-focusable";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
+import { compactionProgressStore } from "@/lib/compaction-progress-store";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   groupPulseHistory,
@@ -110,19 +114,37 @@ interface DisplayEntry {
    *  pinned) when present. */
   intent?: string;
   placeholder: boolean;
+  /** Swap this entry in the moment it arrives, skipping the dwell — the
+   *  user's own clear and the compaction pin both answer a gesture. */
+  immediate?: boolean;
 }
 
 const NONE_ENTRY: DisplayEntry = Object.freeze({
   key: "__pulse_none__",
   text: "None",
   placeholder: true,
+  immediate: true,
+});
+
+/**
+ * The compaction pin. A `/compact` turn streams nothing for minutes, and
+ * the submit that opened it cleared the strip — so without this the whole
+ * run reads as an idle `None`, which is exactly when the user has pulled
+ * the progress sheet down and has only the strip to go on. Held for the
+ * run's lifetime, not the sheet's.
+ */
+const COMPACTING_ENTRY: DisplayEntry = Object.freeze({
+  key: "__pulse_compacting__",
+  text: "Compacting context…",
+  placeholder: false,
+  immediate: true,
 });
 
 /**
  * The dwell queue: `target` is what the store wants shown; `current`
  * is what the strip shows. A swap happens immediately when the
- * current line has dwelt long enough (or the target is the user-clear
- * placeholder); otherwise the newest target waits out the remainder.
+ * current line has dwelt long enough (or the target is marked
+ * `immediate`); otherwise the newest target waits out the remainder.
  * A swap replaces the text INSTANTLY — one node, no animation (text can't
  * cross-fade without the two strings smashing together).
  */
@@ -149,9 +171,9 @@ function useDwellDisplay(target: DisplayEntry): {
       pendingRef.current = null;
       return;
     }
-    // The user's own clear (submit → placeholder) feels immediate;
-    // dwell only paces the machine's stream.
-    if (target.placeholder) {
+    // The user's own clear (submit → placeholder) and the compaction pin
+    // feel immediate; dwell only paces the machine's stream.
+    if (target.immediate === true) {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -189,10 +211,18 @@ function useDwellDisplay(target: DisplayEntry): {
 
 export function SessionPulseStrip({
   codeSessionStore,
+  cardId,
   focusGroup,
   focusOrder,
 }: {
   codeSessionStore: CodeSessionStore;
+  /**
+   * The owning card — the scope of the compaction pin ({@link
+   * COMPACTING_ENTRY}). `compactionProgressStore` is an app-wide
+   * singleton that names its initiating card, so only that card's strip
+   * wears the pin. Omitted in gallery / fixture mounts (no pin).
+   */
+  cardId?: string;
   /**
    * Author the PULSE label into a focus group ([P10] revised) — when set, the
    * label registers as a **leaf** cycle stop (its own Tab stop, like the Z2
@@ -229,6 +259,18 @@ export function SessionPulseStrip({
       [codeSessionStore],
     ),
   );
+  // A manual `/compact` run started from THIS card. The wire is silent for
+  // its whole duration, so the pin below is the only thing the strip can
+  // say about it; the daemon's own `Compacted context` beat closes it out.
+  const compaction = useSyncExternalStore(
+    compactionProgressStore.subscribe,
+    compactionProgressStore.getSnapshot,
+  );
+  const compacting =
+    cardId !== undefined &&
+    compaction !== null &&
+    compaction.cardId === cardId &&
+    compaction.outcome === null;
   // Lines cleared by this card's last submit stay hidden; the next
   // turn's voice repopulates the strip.
   const latest = latestLineForScope(
@@ -236,8 +278,9 @@ export function SessionPulseStrip({
     tugSessionId,
     pulse.cleared.get(tugSessionId),
   );
-  const target: DisplayEntry =
-    latest !== null
+  const target: DisplayEntry = compacting
+    ? COMPACTING_ENTRY
+    : latest !== null
       ? {
           key: latest.key,
           text: latest.text,

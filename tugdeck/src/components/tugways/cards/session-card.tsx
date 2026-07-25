@@ -4150,6 +4150,7 @@ export function SessionCardBody({
               <cycle.CycleScope>
                 <SessionPulseStrip
                   codeSessionStore={codeSessionStore}
+                  cardId={cardId}
                   focusGroup={SESSION_CYCLE_GROUP}
                   focusOrder={SESSION_CYCLE_ORDER_PULSE}
                 />

@@ -337,6 +337,31 @@ describe("PulseVoice — the monologue", () => {
     );
   });
 
+  test("a compaction boundary speaks immediately, ahead of the flush", () => {
+    const voice = new PulseVoice();
+    voice.onFrame("s1", assistantText("Reading through the reducer."), 0);
+    // Not a flush emission — the boundary line comes straight back.
+    expect(
+      voice.onFrame(
+        "s1",
+        { type: "compact_boundary", trigger: "manual", pre_tokens: 172_400, ipc_version: 2 },
+        1_000,
+      ),
+    ).toEqual({ scope: "s1", text: "Compacted context (was 172k)" });
+    // The pre-compaction thought went with the context it described.
+    expect(voice.flush(3_000)).toEqual([]);
+  });
+
+  test("an auto-compaction names itself; a boundary without metadata stays plain", () => {
+    const voice = new PulseVoice();
+    expect(
+      voice.onFrame("s1", { type: "compact_boundary", trigger: "auto", pre_tokens: 168_000, ipc_version: 2 }, 0),
+    ).toEqual({ scope: "s1", text: "Auto-compacted context (was 168k)" });
+    expect(
+      voice.onFrame("s2", { type: "compact_boundary", ipc_version: 2 }, 0),
+    ).toEqual({ scope: "s2", text: "Compacted context" });
+  });
+
   test("a backgrounded agent's task_progress keeps the pulse alive", () => {
     const voice = new PulseVoice();
     // Launch sets the agent label.
