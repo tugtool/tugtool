@@ -104,6 +104,45 @@ impl InspectedToolResult {
     }
 }
 
+/// Partial-shape view of a `replay_batch` wire line — tugcode's replay
+/// path flushes committed-turn content as one line carrying up to 256
+/// inner frames (`{"type":"replay_batch","frames":[…]}`). The inner
+/// frames keep their individual wire shapes, so each element re-parses
+/// with [`InspectedToolUse`] / [`InspectedToolResult`]. Without this
+/// unwrap the relay's per-line intercept sees the envelope, fails the
+/// flat parse, and every batched `tool_use`/`tool_result` — the entire
+/// replay backfill, plus any live frames a mid-turn replay swallowed
+/// into its bracket — is invisible to attribution.
+#[derive(Debug, Deserialize)]
+pub struct InspectedReplayBatch {
+    pub frames: Vec<Box<serde_json::value::RawValue>>,
+}
+
+impl InspectedReplayBatch {
+    /// Parse a `replay_batch` line. `None` on malformed JSON or a missing
+    /// `frames` array.
+    pub fn from_slice(bytes: &[u8]) -> Option<Self> {
+        serde_json::from_slice(bytes).ok()
+    }
+}
+
+/// The exact top-level `"type"` of a wire line, or `None` when the line is
+/// not a JSON object with a string `type`. Used by the relay to tell a
+/// frame that *is* a `tool_use`/`tool_result` but failed the inspected
+/// parse (shape drift — must warn) from a frame of another type that merely
+/// embeds the substring in its payload (streamed text quoting this very
+/// codebase — silent).
+pub fn top_level_type(bytes: &[u8]) -> Option<String> {
+    #[derive(Deserialize)]
+    struct TypeOnly {
+        #[serde(rename = "type")]
+        r#type: String,
+    }
+    serde_json::from_slice::<TypeOnly>(bytes)
+        .ok()
+        .map(|t| t.r#type)
+}
+
 /// The `op` verb recorded for an exact-attribution tool, or `None` for any
 /// tool this module does not attribute exactly (`Bash` is bracketed in
 /// Step 4; everything else is ignored). `MultiEdit` is the legacy multi-

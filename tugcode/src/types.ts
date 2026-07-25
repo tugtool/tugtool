@@ -1225,7 +1225,8 @@ export interface ReplayComplete {
       | "jsonl_missing"
       | "jsonl_unreadable"
       | "jsonl_malformed"
-      | "replay_timeout";
+      | "replay_timeout"
+      | "replay_exception";
     message: string;
   };
   /**

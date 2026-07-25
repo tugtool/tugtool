@@ -4676,6 +4676,14 @@ export class SessionManager {
       | { kind: "exit"; code: number | null }
       | { kind: "abort" }
       | null = null;
+    // Bracket accounting: once `replay_started` is on the wire, exactly one
+    // `replay_complete` MUST follow — tugcast's relay latches an `in_replay`
+    // flag between the two, and a bracket left open disables its Bash and
+    // turn attribution for the rest of the relay's life. Every exit from
+    // this function below funnels through this pair of flags.
+    let bracketOpened = false;
+    let bracketClosed = false;
+    let replayException: unknown = null;
     // The translator yields `replay_complete` BEFORE returning. Buffer
     // the bracket-close so we can write it last after the loop, in case
     // a future caller (Step 5.6's pending-row injection) wants to add
@@ -4758,6 +4766,7 @@ export class SessionManager {
             // pending submissions render before the JSONL pass emits
             // anything else. See `injectPendingRowSynthetics`.
             writeRaw(msg);
+            bracketOpened = true;
             if (!pendingRowSyntheticsInjected) {
               pendingRowSyntheticsInjected = true;
               this.injectPendingRowSynthetics(input, (m) => batch.push(m));
@@ -4823,14 +4832,38 @@ export class SessionManager {
       // `turn_cancelled` so the bracket delivers a complete
       // TurnEntry.
       if (inflight !== null) {
-        this.emitInflightTurnFromActiveTurn(inflight);
+        try {
+          this.emitInflightTurnFromActiveTurn(inflight);
+        } catch (err) {
+          // The snapshot is a rendering nicety; the bracket-close below is
+          // load-bearing (see `bracketOpened`). Never let a bad in-flight
+          // turn state take `replay_complete` down with it.
+          logReplay("error", {
+            session_id: this.sessionId,
+            kind: "inflight_snapshot_exception",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       // After clean iterator completion (no abort): emit the buffered
       // replay_complete raw to close the bracket.
       if (aborted === null && bufferedReplayComplete !== null) {
         writeRaw(bufferedReplayComplete);
+        bracketClosed = true;
       }
+    } catch (err) {
+      // A throw anywhere in the replay loop (translator, synthetics
+      // injection, write plumbing) must not escape with the bracket open:
+      // the caller is fire-and-forget, so an escaped rejection is only a
+      // log line — while tugcast would keep `in_replay` latched forever.
+      // Record it; the fallback close-out below emits the error bracket.
+      replayException = err;
+      logReplay("error", {
+        session_id: this.sessionId,
+        kind: "replay_exception",
+        message: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       if (timeoutHandle !== null) clearTimeout(timeoutHandle);
       this.replayActive = false;
@@ -4963,6 +4996,27 @@ export class SessionManager {
         0,
       );
       return;
+    }
+
+    // Bracket-close backstop: every early `return` above wrote its own
+    // `replay_complete`; the only way to reach here with the bracket still
+    // open is the exception path (`replayException`) — or a future edit
+    // that forgets the contract. Either way, close it: an open bracket is
+    // a standing attribution outage on the tugcast side.
+    if (bracketOpened && !bracketClosed) {
+      const complete: ReplayComplete = {
+        type: "replay_complete",
+        count,
+        error: {
+          kind: "replay_exception",
+          message:
+            replayException instanceof Error
+              ? replayException.message
+              : String(replayException ?? "replay ended without bracket close"),
+        },
+        ipc_version: 2,
+      };
+      writeLine(complete);
     }
 
     logReplay("complete", {
@@ -5158,7 +5212,7 @@ export class SessionManager {
         }
         if (result.done) {
           const remaining = buffer.trim();
-          if (remaining.length > 0) this.handleClaudeLine(remaining);
+          if (remaining.length > 0) this.handleClaudeLineGuarded(remaining);
           buffer = "";
           break;
         }
@@ -5167,7 +5221,7 @@ export class SessionManager {
         while (lineEnd >= 0) {
           const line = buffer.slice(0, lineEnd).trim();
           buffer = buffer.slice(lineEnd + 1);
-          if (line.length > 0) this.handleClaudeLine(line);
+          if (line.length > 0) this.handleClaudeLineGuarded(line);
           lineEnd = buffer.indexOf("\n");
         }
       }
@@ -5192,6 +5246,26 @@ export class SessionManager {
    * Bad JSON is logged and skipped (preserves the pre-R1e
    * `handleUserMessage` shape).
    */
+  /**
+   * {@link handleClaudeLine} behind a throw barrier. The stdout drain has
+   * no `catch`: before this guard, one synchronous throw from any handler
+   * escaped the read loop, the drain exited for good, and every subsequent
+   * claude line — tool frames, turn completes, everything — was silently
+   * lost while the process stayed alive (a full session wedge that also
+   * blinds attribution). One bad line loses that line only.
+   */
+  private handleClaudeLineGuarded(line: string): void {
+    try {
+      this.handleClaudeLine(line);
+    } catch (err) {
+      logSessionLifecycle("stdout_drain.line_exception", {
+        session_id: this.sessionId,
+        message: err instanceof Error ? err.message : String(err),
+        line_preview: line.slice(0, 200),
+      });
+    }
+  }
+
   private handleClaudeLine(line: string): void {
     let event: Record<string, unknown>;
     try {

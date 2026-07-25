@@ -30,8 +30,9 @@ use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::attribution::{
-    InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls, exact_op_for_tool,
-    file_path_for_tool, file_repo_root, repo_root_for, snapshot_worktree,
+    InspectedReplayBatch, InspectedToolResult, InspectedToolUse, OpenBracket, PendingCalls,
+    exact_op_for_tool, file_path_for_tool, file_repo_root, repo_root_for, snapshot_worktree,
+    top_level_type,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
 use crate::path_resolver::CanonicalPath;
@@ -849,6 +850,67 @@ async fn ensure_repo_root(
     Some(cp)
 }
 
+/// Resolve and record one exact-tool row from a consumed [`PendingCall`]
+/// ([P03]/[P04]) — the single write path shared by the live `tool_result`
+/// intercept and the `replay_batch` unwrap, so the per-file repo-root rule
+/// and the replay timestamp rule live in exactly one place. `replayed`
+/// selects `at`: a replayed row keeps its historical frame time (so the
+/// upsert PK collapses re-streams at a stable value), a live row stamps now.
+/// Returns the recorded repo-relative path on success; a ledger error is
+/// warned and yields `None` — best-effort, never gates wire delivery.
+#[allow(clippy::too_many_arguments)]
+async fn record_exact_pending(
+    pending: crate::feeds::attribution::PendingCall,
+    tool_use_id: &str,
+    result_timestamp: Option<i64>,
+    origin: &'static str,
+    replayed: bool,
+    tug_session_id: &TugSessionId,
+    canonical_project_dir: &CanonicalPath,
+    repo_root_cache: &mut Option<CanonicalPath>,
+    project_dir: &str,
+    ledger: &crate::session_ledger::SessionLedger,
+) -> Option<String> {
+    let at = if replayed {
+        pending
+            .timestamp
+            .or(result_timestamp)
+            .unwrap_or_else(crate::session_ledger::now_millis)
+    } else {
+        crate::session_ledger::now_millis()
+    };
+    // Repo membership is a per-file fact: the row's project_dir is the
+    // file's OWN repo root (a nested worktree's root for a worktree file),
+    // never the session's. Off-repo files fall back to the session's dir.
+    let file_root = file_repo_root(&pending.file_path).await;
+    let (row_project_dir, row_repo_root) = match file_root {
+        Some(root) => (root.clone(), Some(root)),
+        None => (
+            canonical_project_dir.clone(),
+            ensure_repo_root(repo_root_cache, project_dir).await,
+        ),
+    };
+    let row = pending.into_row(
+        tug_session_id.as_str(),
+        tool_use_id,
+        &row_project_dir,
+        row_repo_root.as_ref(),
+        origin,
+        at,
+    );
+    match ledger.record_file_event(&row) {
+        Ok(()) => Some(row.file_path),
+        Err(err) => {
+            warn!(
+                session = %tug_session_id,
+                error = %err,
+                "record_file_event failed; frame forwarded unchanged"
+            );
+            None
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // relay_session_io — generic, testable inner relay
 // ---------------------------------------------------------------------------
@@ -886,6 +948,10 @@ pub async fn relay_session_io(
     // subsequent EOF from `Crashed` (would retry) to `ResumeFailed`
     // (terminal).
     let mut resume_failed: Option<(String, String)> = None;
+
+    // How long a replay bracket may stay open before the relay declares it
+    // wedged and forces live capture back on (see the watchdog below).
+    const REPLAY_BRACKET_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
 
     // Replay-window flag. Set when tugcode emits `replay_started`,
     // cleared on `replay_complete`. Gates `record_turn` so replayed
@@ -1126,6 +1192,32 @@ pub async fn relay_session_io(
                         // events between those markers are persisted
                         // history, not new turns, and must not re-bump
                         // the ledger's `turn_count`.
+                        // Replay-bracket watchdog. tugcode now guarantees a
+                        // `replay_complete` for every `replay_started` (the
+                        // bracket close is exception-proofed), but a latched
+                        // bracket is too expensive to leave to one process's
+                        // good behavior: while `in_replay` is stuck true the
+                        // relay opens no Bash brackets, never closes the turn
+                        // bracket, and mislabels exact rows — a standing
+                        // attribution outage (the 2026-07-25 blackout class).
+                        // A real replay completes in milliseconds-to-seconds;
+                        // one open this long is wedged. Force live mode and
+                        // say so.
+                        if in_replay {
+                            if let Some(t0) = replay_forward_started {
+                                if t0.elapsed() > REPLAY_BRACKET_DEADLINE {
+                                    warn!(
+                                        session = %tug_session_id,
+                                        open_secs = t0.elapsed().as_secs(),
+                                        "replay bracket open past deadline; forcing live capture (bash/turn attribution was suppressed while open)"
+                                    );
+                                    in_replay = false;
+                                    replay_telemetry = None;
+                                    replay_forward_started = None;
+                                }
+                            }
+                        }
+
                         if line.contains("\"type\":\"replay_started\"") {
                             in_replay = true;
                             replay_forward_started = Some(std::time::Instant::now());
@@ -1357,6 +1449,18 @@ pub async fn relay_session_io(
                             stamped
                         } else if line.contains("\"type\":\"turn_complete\"") {
                             if in_replay {
+                                // A live turn ending inside a replay bracket
+                                // is the incident signature ([G8]): its turn
+                                // bracket cannot close here, so its delta
+                                // goes unattributed. Loud, never silent —
+                                // the watchdog above bounds how long this
+                                // state can persist.
+                                if open_turn.is_some() {
+                                    warn!(
+                                        session = %tug_session_id,
+                                        "turn_complete during replay with an open turn bracket; this turn's delta is not attributed"
+                                    );
+                                }
                                 if let Some(ref map) = replay_telemetry {
                                     inject_replay_telemetry(line.as_bytes(), map)
                                 } else {
@@ -1490,7 +1594,90 @@ pub async fn relay_session_io(
                         // delivery. (Bash bracketing is layered on in the
                         // next step.)
                         if let Some(ledger) = session_ledger {
-                            if line.contains("\"type\":\"tool_use\"") {
+                            if line.contains("\"type\":\"replay_batch\"") {
+                                // Batched replay frames. tugcode's replay
+                                // path flushes committed-turn content as one
+                                // `replay_batch` line of up to 256 inner
+                                // frames — including every historical
+                                // `tool_use`/`tool_result` pair the replay
+                                // backfill exists to re-record, and any live
+                                // frames a mid-turn replay swallowed into
+                                // its bracket. Unwrap and run the same
+                                // exact-tool intercept per inner frame
+                                // (origin='replay', historical `at`, PK
+                                // collapses re-streams). Bash is never
+                                // bracketed here: a batched frame is
+                                // replayed history and the pre-command
+                                // fingerprint is gone (G1).
+                                match InspectedReplayBatch::from_slice(line.as_bytes()) {
+                                    Some(batch) => {
+                                        let mut recorded_any = false;
+                                        for inner in &batch.frames {
+                                            let bytes = inner.get().as_bytes();
+                                            if let Some(tu) = InspectedToolUse::from_slice(bytes) {
+                                                if let (Some(op), Some(path)) = (
+                                                    exact_op_for_tool(&tu.tool_name),
+                                                    file_path_for_tool(&tu.tool_name, &tu.input),
+                                                ) {
+                                                    pending_calls.insert(
+                                                        tu.tool_use_id.clone(),
+                                                        crate::feeds::attribution::PendingCall {
+                                                            tool_name: tu.tool_name,
+                                                            file_path: path,
+                                                            op,
+                                                            parent_tool_use_id: tu.parent_tool_use_id,
+                                                            timestamp: tu.timestamp,
+                                                        },
+                                                    );
+                                                }
+                                            } else if let Some(tr) =
+                                                InspectedToolResult::from_slice(bytes)
+                                            {
+                                                if let Some(pending) =
+                                                    pending_calls.take(&tr.tool_use_id)
+                                                {
+                                                    if !tr.is_error
+                                                        && record_exact_pending(
+                                                            pending,
+                                                            &tr.tool_use_id,
+                                                            tr.timestamp,
+                                                            "replay",
+                                                            true,
+                                                            tug_session_id,
+                                                            &canonical_project_dir,
+                                                            &mut repo_root_cache,
+                                                            project_dir,
+                                                            ledger,
+                                                        )
+                                                        .await
+                                                        .is_some()
+                                                    {
+                                                        recorded_any = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if recorded_any {
+                                            changeset_bumper.bump(Path::new(project_dir));
+                                        }
+                                    }
+                                    None => {
+                                        warn!(
+                                            session = %tug_session_id,
+                                            "replay_batch line failed to parse; its frames are invisible to attribution"
+                                        );
+                                    }
+                                }
+                            } else if line.contains("\"type\":\"tool_use\"")
+                                || line.contains("\"type\":\"tool_result\"")
+                            {
+                                // The parse decides, not the substring: a
+                                // `tool_result` whose output embeds the
+                                // `tool_use` literal (any edit to this very
+                                // codebase does it) must still resolve as a
+                                // result, and a frame that IS a tool frame
+                                // but fails both parses is shape drift that
+                                // must be loud, not silent.
                                 if let Some(tu) = InspectedToolUse::from_slice(line.as_bytes()) {
                                     if let (Some(op), Some(path)) = (
                                         exact_op_for_tool(&tu.tool_name),
@@ -1535,9 +1722,9 @@ pub async fn relay_session_io(
                                             );
                                         }
                                     }
-                                }
-                            } else if line.contains("\"type\":\"tool_result\"") {
-                                if let Some(tr) = InspectedToolResult::from_slice(line.as_bytes()) {
+                                } else if let Some(tr) =
+                                    InspectedToolResult::from_slice(line.as_bytes())
+                                {
                                     if let Some(pending) = pending_calls.take(&tr.tool_use_id) {
                                         // Exact call. is_error → dropped
                                         // (already taken from the map): a
@@ -1545,54 +1732,22 @@ pub async fn relay_session_io(
                                         // nothing.
                                         if !tr.is_error {
                                             let origin = if in_replay { "replay" } else { "exact" };
-                                            let at = if in_replay {
-                                                pending
-                                                    .timestamp
-                                                    .or(tr.timestamp)
-                                                    .unwrap_or_else(
-                                                        crate::session_ledger::now_millis,
-                                                    )
-                                            } else {
-                                                crate::session_ledger::now_millis()
-                                            };
-                                            // Repo membership is a per-file
-                                            // fact: the row's project_dir is
-                                            // the file's OWN repo root (a
-                                            // nested worktree's root for a
-                                            // worktree file), never the
-                                            // session's. Off-repo files fall
-                                            // back to the session's dir.
-                                            let file_root =
-                                                file_repo_root(&pending.file_path).await;
-                                            let (row_project_dir, row_repo_root) = match file_root
-                                            {
-                                                Some(root) => (root.clone(), Some(root)),
-                                                None => (
-                                                    canonical_project_dir.clone(),
-                                                    ensure_repo_root(
-                                                        &mut repo_root_cache,
-                                                        project_dir,
-                                                    )
-                                                    .await,
-                                                ),
-                                            };
-                                            let row = pending.into_row(
-                                                tug_session_id.as_str(),
+                                            if let Some(recorded_path) = record_exact_pending(
+                                                pending,
                                                 &tr.tool_use_id,
-                                                &row_project_dir,
-                                                row_repo_root.as_ref(),
+                                                tr.timestamp,
                                                 origin,
-                                                at,
-                                            );
-                                            if let Err(err) = ledger.record_file_event(&row) {
-                                                warn!(
-                                                    session = %tug_session_id,
-                                                    error = %err,
-                                                    "record_file_event failed; frame forwarded unchanged"
-                                                );
-                                            } else {
+                                                in_replay,
+                                                tug_session_id,
+                                                &canonical_project_dir,
+                                                &mut repo_root_cache,
+                                                project_dir,
+                                                ledger,
+                                            )
+                                            .await
+                                            {
                                                 if open_turn.is_some() {
-                                                    turn_recorded_paths.insert(row.file_path.clone());
+                                                    turn_recorded_paths.insert(recorded_path);
                                                 }
                                                 changeset_bumper.bump(Path::new(project_dir));
                                             }
@@ -1634,6 +1789,22 @@ pub async fn relay_session_io(
                                             changeset_bumper.bump(Path::new(project_dir));
                                         }
                                     }
+                                } else if matches!(
+                                    top_level_type(line.as_bytes()).as_deref(),
+                                    Some("tool_use" | "tool_result")
+                                ) {
+                                    // A genuine tool frame that neither
+                                    // inspected parse accepts is wire-shape
+                                    // drift — the exact silent-miss class the
+                                    // 2026-07-25 capture blackout hid. Lines
+                                    // of another type that merely embed the
+                                    // substring (streamed text quoting this
+                                    // codebase) stay silent by design.
+                                    warn!(
+                                        session = %tug_session_id,
+                                        preview = %line.chars().take(200).collect::<String>(),
+                                        "tool frame failed the attribution parse; exact capture missed this call (shape drift?)"
+                                    );
                                 }
                             }
                         }
@@ -2162,6 +2333,67 @@ mod tests {
             forwarded[1].payload,
             splice_tug_session_id(tool_result.as_bytes(), "tug-1")
         );
+    }
+
+    /// Regression pin for the 2026-07-25 capture blackout, half one:
+    /// tugcode's replay path flushes committed-turn content as ONE
+    /// `replay_batch` wire line of up to 256 inner frames. The line-oriented
+    /// intercept used to match the `tool_use` substring, fail the flat
+    /// parse, and silently skip — so the replay backfill (the doctrine's
+    /// healing layer for missed live capture) recorded nothing, ever. The
+    /// relay must unwrap the envelope and record each inner exact pair with
+    /// `origin='replay'` at its historical timestamp.
+    #[tokio::test]
+    async fn attribution_unwraps_replay_batch_and_backfills_exact_rows() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"assistant_text","text":"editing now"},{"type":"tool_use","tool_name":"Edit","tool_use_id":"tu-b1","input":{"file_path":"/proj/b.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-b1","output":"ok","is_error":false,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        let forwarded = drive_relay(ledger.clone(), "tug-2", "/proj", &[batch]).await;
+
+        let rows = ledger.file_events_for_session("tug-2").unwrap();
+        assert_eq!(rows.len(), 1, "batched exact pair backfills one row");
+        assert_eq!(rows[0].file_path, "/proj/b.rs");
+        assert_eq!(rows[0].op, "edit");
+        assert_eq!(rows[0].origin, "replay");
+        assert_eq!(
+            rows[0].at, 1753460000000,
+            "backfilled row keeps the historical frame time"
+        );
+
+        // The envelope forwards unchanged — unwrapping is capture-only.
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(
+            forwarded[0].payload,
+            splice_tug_session_id(batch.as_bytes(), "tug-2")
+        );
+    }
+
+    /// Regression pin, half two: a `tool_result` whose structured `output`
+    /// OBJECT embeds a raw `"type":"tool_use"` member (string payloads
+    /// escape their quotes; nested objects do not) used to be routed down
+    /// the substring-matched `tool_use` arm, fail the flat parse, and never
+    /// resolve — the pending call leaked and the edit went unrecorded. The
+    /// parse, not the substring, must decide which arm handles the line.
+    #[tokio::test]
+    async fn attribution_resolves_tool_result_that_embeds_tool_use_literal() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Edit","tool_use_id":"tu-e1","input":{"file_path":"/proj/agent_bridge.rs"}}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-e1","output":{"type":"tool_use","note":"structured echo"},"is_error":false}"#;
+        assert!(
+            tool_result.contains("\"type\":\"tool_use\""),
+            "fixture embeds the raw literal the pre-filter matches on"
+        );
+
+        drive_relay(ledger.clone(), "tug-3", "/proj", &[tool_use, tool_result]).await;
+
+        let rows = ledger.file_events_for_session("tug-3").unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "embedded literal does not derail the resolve"
+        );
+        assert_eq!(rows[0].file_path, "/proj/agent_bridge.rs");
+        assert_eq!(rows[0].origin, "exact");
     }
 
     #[tokio::test]
