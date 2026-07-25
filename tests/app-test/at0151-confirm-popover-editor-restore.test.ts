@@ -23,6 +23,7 @@
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/card-close-guard.ts
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { describe, expect, test } from "bun:test";

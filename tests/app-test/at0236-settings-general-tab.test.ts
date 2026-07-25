@@ -16,6 +16,7 @@
  * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-lens-body.tsx
  * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";

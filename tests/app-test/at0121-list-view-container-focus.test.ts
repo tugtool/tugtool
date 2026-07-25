@@ -25,6 +25,7 @@
  * @covers tugdeck/src/components/tugways/tug-list-row.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-list-view-focus.tsx
  */
 
 import { describe, expect, test } from "bun:test";

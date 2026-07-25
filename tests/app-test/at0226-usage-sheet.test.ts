@@ -20,6 +20,11 @@
  * @covers tugdeck/src/lib/usage-parse.ts
  * @covers tugdeck/src/lib/usage-context.tsx
  * @covers tugrust/crates/tugcast/
+ * @covers tugdeck/src/components/tugways/cards/usage-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-arc-gauge.css
+ * @covers tugdeck/src/components/tugways/tug-arc-gauge.tsx
+ * @covers tugdeck/src/components/tugways/tug-linear-gauge.css
+ * @covers tugdeck/src/components/tugways/tug-linear-gauge.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -16,6 +16,8 @@
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

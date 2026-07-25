@@ -25,6 +25,7 @@
  * @covers tugdeck/src/components/tugways/tug-accordion.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-accordion.tsx
  */
 
 import { describe, expect, test } from "bun:test";

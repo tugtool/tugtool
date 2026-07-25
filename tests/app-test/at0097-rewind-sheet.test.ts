@@ -21,6 +21,7 @@
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/code-session-store/
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/rewind-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

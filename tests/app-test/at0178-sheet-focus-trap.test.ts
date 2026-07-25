@@ -22,6 +22,7 @@
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/lib/sheet-lifecycle.ts
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

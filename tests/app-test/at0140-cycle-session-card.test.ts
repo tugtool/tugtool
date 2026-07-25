@@ -56,6 +56,15 @@
  * @covers tugdeck/src/components/tugways/hooks/
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/lib/model-label.ts
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-id-badge.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-route-indicator-badge.tsx
+ * @covers tugdeck/src/components/tugways/tug-placard.tsx
+ * @covers tugdeck/src/components/tugways/tug-popover.tsx
  */
 
 import { describe, expect, test } from "bun:test";

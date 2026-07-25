@@ -23,6 +23,9 @@
  * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

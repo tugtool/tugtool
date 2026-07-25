@@ -25,6 +25,7 @@
  * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/lib/canvas-overlay-registry.ts
  * @covers tugdeck/src/card-state-orchestrator.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -18,6 +18,9 @@
  * @covers tugdeck/src/lib/text-card-settings.ts
  * @covers tugdeck/src/lib/use-text-card-settings.ts
  * @covers tugdeck/src/components/tugways/tug-text-card-editor/
+ * @covers tugdeck/src/components/tugways/cards/text-card-status-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

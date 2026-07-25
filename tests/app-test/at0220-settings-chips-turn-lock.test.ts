@@ -33,6 +33,8 @@
  * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
  * @covers tugdeck/src/lib/session-lifecycle.ts
+ * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/lib/model-label.ts
  */
 
 import { describe, expect, test } from "bun:test";

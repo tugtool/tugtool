@@ -34,6 +34,8 @@
  * @covers tugdeck/src/components/tugways/tug-entry-shell.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/lib/file-aside.ts
+ * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.css
+ * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
  */
 
 import { describe, expect, test } from "bun:test";

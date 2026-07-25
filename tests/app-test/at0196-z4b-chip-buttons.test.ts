@@ -30,6 +30,9 @@
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  * @covers tugdeck/src/lib/session-metadata-store.ts
+ * @covers tugdeck/src/components/tugways/chrome/session-id-badge.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-route-indicator-badge.css
+ * @covers tugdeck/src/components/tugways/chrome/session-route-indicator-badge.tsx
  */
 
 import { describe, expect, test } from "bun:test";

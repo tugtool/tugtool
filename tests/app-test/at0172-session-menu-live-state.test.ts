@@ -28,6 +28,7 @@
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/lib/session-lifecycle.ts
  * @covers tugdeck/src/lib/card-session-binding-store.ts
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

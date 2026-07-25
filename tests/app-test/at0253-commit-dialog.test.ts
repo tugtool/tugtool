@@ -18,6 +18,7 @@
  * @covers tugdeck/src/lib/changeset-draft-store.ts
  * @covers tugdeck/src/lib/landing-receipt.ts
  * @covers tugrust/crates/tugchanges-core/
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

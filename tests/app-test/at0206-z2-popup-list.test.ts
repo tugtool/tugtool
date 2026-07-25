@@ -37,6 +37,7 @@
  * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-popovers.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
  */
 
 import { describe, expect, test } from "bun:test";

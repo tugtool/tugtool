@@ -28,6 +28,7 @@
  * @covers tugdeck/src/components/tugways/tug-pane-bulletin.tsx
  * @covers tugdeck/src/lib/banner-lifecycle.ts
  * @covers tugcode/
+ * @covers tugdeck/src/components/tugways/tug-pane-banner.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

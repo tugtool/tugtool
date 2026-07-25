@@ -27,6 +27,7 @@
  * @covers tugdeck/src/lib/permission-rules-store.ts
  * @covers tugdeck/src/lib/permission-rules.ts
  * @covers tugrust/crates/tugcast/
+ * @covers tugdeck/src/components/tugways/cards/permission-rules-editor.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

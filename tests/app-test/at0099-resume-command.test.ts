@@ -18,6 +18,7 @@
  * @covers tugdeck/src/lib/session-picker-data-source.ts
  * @covers tugdeck/src/lib/session-restore.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/resume-sheet.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

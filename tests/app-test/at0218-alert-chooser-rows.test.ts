@@ -22,6 +22,8 @@
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  * @covers tugdeck/src/components/tugways/tug-create-session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-alert.tsx
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

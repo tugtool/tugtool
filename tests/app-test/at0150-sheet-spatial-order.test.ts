@@ -18,6 +18,9 @@
  * @covers tugdeck/src/components/tugways/spatial-order.ts
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

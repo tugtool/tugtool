@@ -125,6 +125,31 @@ describe("findModelRow", () => {
   test("never containment-matches the default row; unknowns are null", () => {
     expect(findModelRow("gpt-4o", ROWS)).toBeNull();
   });
+
+  test("a junk row never matches every model", () => {
+    // The rows are untrusted (live capabilities OR the tugbank-persisted
+    // catalog). A bare `includes` let these match EVERY id, so both cards in
+    // at0207 rendered the junk row's title instead of their own model.
+    const withJunk: CapabilityModel[] = [
+      ...ROWS,
+      { value: "claude", displayName: "Newer version available" },
+      { value: "e", displayName: "Newer version available" },
+    ];
+    expect(findModelRow("claude-opus-4-8", withJunk)?.value).toBe("opus");
+    expect(findModelRow("claude-sonnet-4-6", withJunk)?.value).toBe("sonnet");
+    expect(findModelRow("gpt-4o", withJunk)).toBeNull();
+  });
+
+  test("the most specific row wins regardless of row order", () => {
+    const rows: CapabilityModel[] = [
+      { value: "opus", displayName: "Opus" },
+      { value: "opus-4-8", displayName: "Opus 4.8" },
+    ];
+    expect(findModelRow("claude-opus-4-8", rows)?.value).toBe("opus-4-8");
+    expect(findModelRow("claude-opus-4-8", [...rows].reverse())?.value).toBe(
+      "opus-4-8",
+    );
+  });
 });
 
 describe("knownModelRows", () => {

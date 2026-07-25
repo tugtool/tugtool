@@ -24,6 +24,7 @@
  * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

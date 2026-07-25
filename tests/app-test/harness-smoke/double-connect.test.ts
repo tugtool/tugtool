@@ -1,17 +1,19 @@
 /**
- * double-connect.test.ts — "Second connect gets ECONNREFUSED"
- * regression test for the Swift listener's single-client guarantee.
- * Covers harness test:
- *
- *   "Double-connect test: second harness client hits ECONNREFUSED."
+ * double-connect.test.ts — "Second connect is refused" regression test
+ * for the Swift listener's single-client guarantee.
  *
  * Mechanism: the listener closes its listening FD once the first
  * client is accepted. The bound inode stays at the socket path, but
- * the kernel has no listener to dispatch incoming connects to, so
- * `connect()` returns ECONNREFUSED. See the
+ * the kernel has no listener to dispatch incoming connects to, so a
+ * second `connect()` fails while the path itself remains. See the
  * `TestHarnessListener.handleAccept` comment in
  * `tugapp/Sources/TestHarness/TestHarnessListener.swift` for the
  * rationale.
+ *
+ * The test therefore asserts three things the app owns — the second
+ * connect rejects, the socket path survives it, and the first
+ * connection keeps working — rather than the errno, which belongs to
+ * Bun (see the design note below).
  *
  * Skipped by default unless `TUGAPP_APP_TEST=1` is set. The test
  * needs a built debug Tug.app binary at the default path (or
@@ -25,14 +27,18 @@
  * - We can't use `launchTugApp` for the second "client" — it always
  *   spawns a fresh subprocess. Instead we call `Bun.connect` directly
  *   at the same socket path the first `App` is using.
- * - `Bun.connect` surfaces ECONNREFUSED as a rejected promise with
- *   the errno in the error message. We match on "ECONNREFUSED" or
- *   the numeric errno 61 (macOS) / 111 (Linux) to stay resilient.
+ * - `Bun.connect` surfaces the refusal as a rejected promise, but its
+ *   errno for an AF_UNIX connect is unreliable: Bun reports ENOENT (-2)
+ *   even while the socket file is present (its TCP path reports
+ *   ECONNREFUSED correctly). So we assert the rejection plus the
+ *   surviving socket path — the two facts the app actually owns — and
+ *   leave Bun's errno spelling alone.
  *
  * @covers tests/app-test/_harness/
  * @covers tugapp/Sources/TestHarness/
  */
 
+import { existsSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "../_harness";
 
@@ -74,20 +80,33 @@ describe.skipIf(!SHOULD_RUN)("in-app: double-connect refused", () => {
         caught = e;
       }
 
+      // The rejection itself IS the single-client guarantee: a second
+      // client that got accepted would have resolved here.
       expect(caught).toBeDefined();
       const err = caught as Error;
-      // Tolerate a few shapes: Bun may surface the system errno as
-      // `code`, as a string fragment in `.message`, or both.
-      const codeField = (err as unknown as { code?: unknown }).code;
-      const codeStr = typeof codeField === "string" ? codeField : "";
-      const errnoField = (err as unknown as { errno?: unknown }).errno;
-      const message = typeof err.message === "string" ? err.message : "";
-      const looksRefused =
-        codeStr === "ECONNREFUSED" ||
-        message.includes("ECONNREFUSED") ||
-        errnoField === 61 || // macOS
-        errnoField === 111; // Linux
-      expect(looksRefused).toBe(true);
+
+      // We deliberately do NOT assert the errno. Bun reports a refused
+      // AF_UNIX connect as ENOENT (-2) even when the socket file is
+      // plainly present — its own TCP path reports ECONNREFUSED (-61)
+      // correctly, so this is Bun's mapping, not the kernel's answer.
+      // Pinning the errno tested Bun's formatting and broke on it.
+      //
+      // The mechanism check that actually belongs to Tug is the socket
+      // path: `TestHarnessListener.handleAccept` closes the LISTENING fd
+      // after the first accept and leaves the bound inode in place (only
+      // `close()` unlinks it). So the path must still exist — the second
+      // client was refused by a live app, not by a vanished socket.
+      const shape = JSON.stringify({
+        name: err.name,
+        message: err.message,
+        code: (err as unknown as { code?: unknown }).code,
+        errno: (err as unknown as { errno?: unknown }).errno,
+      });
+      expect(
+        existsSync(app.socketPath)
+          ? "socket path present"
+          : `socket path is GONE — the refusal was ENOENT for real, not a live-app refusal (${shape})`,
+      ).toBe("socket path present");
 
       // The first connection must still be alive — refusing the
       // second client must not have disturbed the first.

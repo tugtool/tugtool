@@ -65,6 +65,7 @@
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/default-focus.ts
+ * @covers tugdeck/src/components/tugways/tug-pane-banner.tsx
  */
 
 import { describe, expect, test } from "bun:test";

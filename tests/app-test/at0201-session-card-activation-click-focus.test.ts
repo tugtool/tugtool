@@ -38,6 +38,8 @@
  * @covers tugdeck/src/focus-transfer.ts
  * @covers tugdeck/src/default-focus.ts
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  */
 
 import { describe, test } from "bun:test";

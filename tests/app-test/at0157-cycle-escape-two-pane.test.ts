@@ -30,6 +30,9 @@
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/focus-act.ts
  * @covers tugdeck/src/components/tugways/hooks/
+ * @covers tugdeck/src/components/tugways/tug-placard.tsx
+ * @covers tugdeck/src/components/tugways/tug-popover.tsx
+ * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
 
 import { describe, expect, test } from "bun:test";

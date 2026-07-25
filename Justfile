@@ -1353,6 +1353,17 @@ app-test-changed *PATHS:
     #!/usr/bin/env bash
     set -uo pipefail
     FILES="$(cd tests/app-test && bun scripts/select-tests.ts {{PATHS}})"
+    STATUS=$?
+    # Exit 3 = the selection blew the budget. The script already explained itself
+    # and printed the would-be selection; stop here rather than silently running a
+    # sweep's worth of tests (or, worse, reporting "nothing to run").
+    if [ "$STATUS" -eq 3 ]; then
+        exit 1
+    fi
+    if [ "$STATUS" -ne 0 ]; then
+        echo "==> select-tests failed (status $STATUS)." >&2
+        exit "$STATUS"
+    fi
     if [ -z "$FILES" ]; then
         echo "==> no app-test covers the changed files — nothing to run."
         exit 0
@@ -1370,7 +1381,7 @@ app-test-select *PATHS:
 app-test-all:
     #!/usr/bin/env bash
     set -uo pipefail
-    FILES="$(cd tests/app-test && ls harness-smoke/*.test.ts | sort; cd tests/app-test && ls *.test.ts | sort)"
+    FILES="$(cd tests/app-test && { ls harness-smoke/*.test.ts | sort; ls *.test.ts | sort; })"
     just app-test $FILES
 
 # An unannotated test can never be selected by `app-test-changed`, so it

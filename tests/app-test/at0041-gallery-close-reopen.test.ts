@@ -22,6 +22,8 @@
  * @covers tugdeck/src/lib/card-close-guard.ts
  * @covers tugdeck/src/components/tugways/cards/
  * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  */
 
 import { describe, expect, test } from "bun:test";

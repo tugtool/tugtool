@@ -42,6 +42,19 @@
  * @covers tugdeck/src/components/tugways/blocks/
  * @covers tugdeck/src/components/tugways/cards/session-assistant-renderer-registrations.ts
  * @covers tugdeck/src/components/tugways/cards/session-assistant-renderer-dispatch.ts
+ * @covers tugdeck/src/components/tugways/cards/blocks/bash-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/blocks/default-tool-block.css
+ * @covers tugdeck/src/components/tugways/cards/blocks/default-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/blocks/edit-tool-block.css
+ * @covers tugdeck/src/components/tugways/cards/blocks/edit-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/blocks/notebook-edit-tool-block.css
+ * @covers tugdeck/src/components/tugways/cards/blocks/notebook-edit-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/blocks/read-tool-block.css
+ * @covers tugdeck/src/components/tugways/cards/blocks/read-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/blocks/write-tool-block.css
+ * @covers tugdeck/src/components/tugways/cards/blocks/write-tool-block.tsx
+ * @covers tugdeck/src/components/tugways/chrome/session-thinking-block.css
+ * @covers tugdeck/src/components/tugways/chrome/session-thinking-block.tsx
  */
 
 import { describe, expect, test } from "bun:test";

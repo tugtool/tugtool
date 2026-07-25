@@ -35,6 +35,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-badge.tsx
  * @covers tugdeck/src/components/tugways/tug-badge.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-registrations.tsx
  */
 
 import { describe, expect, test } from "bun:test";

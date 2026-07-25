@@ -20,10 +20,24 @@
  *   bun scripts/select-tests.ts                  # derive changed paths from git
  *   bun scripts/select-tests.ts <path>...        # explicit changed paths
  *   bun scripts/select-tests.ts --print          # print the selection, run nothing
- *   bun scripts/select-tests.ts --check          # lint: exit 1 if any test lacks @covers
+ *   bun scripts/select-tests.ts --check          # lint: @covers present, resolving, and scoped
+ *   bun scripts/select-tests.ts --allow-large    # emit a selection that exceeds MAX_SELECTED
  *
  * Selected test filenames go to stdout, one per line (feed straight to `just app-test`).
  * Reasons, advisories, and diagnostics go to stderr.
+ *
+ * ## The selection budget
+ *
+ * A derived selection is only useful if it stays small. Past MAX_SELECTED files the run
+ * stops being "the tests for my change" and becomes a sweep in disguise — twenty minutes
+ * of serialized Tug.app launches nobody asked for. So the budget is a REFUSAL, not a
+ * warning: over it, this script emits no filenames and exits EXIT_OVER_BUDGET, and the
+ * caller must either narrow the diff or opt in explicitly with `--allow-large`.
+ *
+ * `--check` enforces the same ceiling ahead of time: no single source path may fan out to
+ * more than MAX_SELECTED tests. Today's hub files already exceed it and are recorded in
+ * ACCEPTED_FANOUT as known debt — the lint holds that line so the fan-out can shrink but
+ * never grow, and a NEW hub fails the check on the commit that creates it.
  */
 
 import { Glob } from "bun";
@@ -39,13 +53,52 @@ const REPO_ROOT = resolve(APP_TEST_DIR, "..", "..");
  * still runs, but the caller is told a full sweep is the honest answer.
  */
 const SWEEP_TRIGGERS = [
+    // The harness and the app shell.
     "tests/app-test/_harness/",
     "tests/app-test/scripts/",
     "tugapp/Sources/",
     "tugdeck/src/main.tsx",
     "tugdeck/index.html",
     "tugdeck/vite.config.ts",
+    // Shared UI substrate: components most tests drive without naming, because they
+    // mount inside every card. Declaring these honestly in each test that touches them
+    // would make one edit select 23–79 files — a sweep wearing a selection's clothes.
+    // They are listed here instead, so a change says plainly that it cannot be scoped.
+    "tugdeck/src/components/chrome/card-host.tsx",
+    "tugdeck/src/components/tugways/tug-text-editor.tsx",
+    "tugdeck/src/gesture-interpreter.ts",
+    "tugdeck/src/components/tugways/tug-sheet.tsx",
+    "tugdeck/src/components/tugways/cards/session-card.tsx",
+    "tugdeck/src/components/tugways/cards/session-card-transcript.tsx",
 ];
+
+/**
+ * The most test files a derived selection may run without an explicit opt-in. Sized to
+ * the core tier (~20 files, a few minutes): past this, selection has stopped scoping the
+ * change and the caller should be the one deciding to spend the time.
+ */
+const MAX_SELECTED = 20;
+
+/** Exit code for a selection that exceeds {@link MAX_SELECTED}; distinct from a hard error. */
+const EXIT_OVER_BUDGET = 3;
+
+/**
+ * Source paths already fanning out past {@link MAX_SELECTED}, with the count observed when
+ * each was recorded. These are real coupling, not sloppy `@covers` — `focus-manager.ts` is
+ * genuinely exercised by most focus tests — so the lint accepts them at their CURRENT number
+ * and fails if it climbs. Lower a number when the fan-out shrinks; adding an entry should be
+ * a deliberate, argued act, not a reflex to make the lint quiet.
+ */
+const ACCEPTED_FANOUT: Record<string, number> = {
+    "tugdeck/src/components/tugways/focus-manager.ts": 61,
+    "tugdeck/src/focus-transfer.ts": 29,
+    "tugdeck/src/components/tugways/tug-text-editor/": 29,
+    // The two editor modules named individually by a test on top of the 29 that name the
+    // whole directory — the directory declaration is what actually costs here.
+    "tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts": 30,
+    "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
+    "tugdeck/src/card-state-orchestrator.ts": 21,
+};
 
 interface TestCoverage {
     file: string;
@@ -116,6 +169,8 @@ function changedFromGit(): string[] {
 const args = process.argv.slice(2);
 const printOnly = args.includes("--print");
 const checkOnly = args.includes("--check");
+const holesOnly = args.includes("--holes");
+const allowLarge = args.includes("--allow-large");
 const explicit = args.filter((a) => !a.startsWith("--"));
 
 const coverage = testFiles().map(readCoverage);
@@ -129,11 +184,91 @@ function resolvesOnDisk(pattern: string): boolean {
     return existsSync(join(REPO_ROOT, dir));
 }
 
+/**
+ * A concrete changed-file path standing in for a `@covers` value, so a pattern's fan-out can
+ * be measured with the same {@link matches} the real selection uses. A subtree pattern is
+ * probed with a file inside it; a bare path is probed as itself.
+ */
+function representativePath(pattern: string): string {
+    if (pattern.endsWith("/")) return `${pattern}__probe__.ts`;
+    return pattern.replace(/\/?\*\*?$/, "/__probe__.ts");
+}
+
+/** How many test files a change to `path` would select. */
+function fanOut(path: string): number {
+    return coverage.filter((c) => c.covers.some((q) => matches(q, path))).length;
+}
+
+/**
+ * Source roots an app-test can meaningfully cover. Everything outside these is either not
+ * app-test territory (Rust unit-tested crates, build scripts) or is a SWEEP_TRIGGER, whose
+ * blast radius no `@covers` line can scope anyway.
+ */
+const HOLE_ROOTS = ["tugdeck/src/", "tugdeck/styles/", "tugcode/src/"];
+
+/** Source files no app-test selects — a change there runs nothing. */
+function coverageHoles(): string[] {
+    const proc = Bun.spawnSync(["git", "ls-files", "-z", ...HOLE_ROOTS], { cwd: REPO_ROOT });
+    if (proc.exitCode !== 0) return [];
+    return new TextDecoder()
+        .decode(proc.stdout)
+        .split("\0")
+        .filter((p) => /\.(ts|tsx|css)$/.test(p))
+        .filter((p) => !p.includes("/__tests__/") && !p.endsWith(".test.ts"))
+        // Retired code nothing mounts — a "hole" there is not a gap to close.
+        .filter((p) => !p.includes("/_archive/"))
+        .filter((p) => !SWEEP_TRIGGERS.some((t) => matches(t, p)))
+        .filter((p) => fanOut(p) === 0);
+}
+
+if (holesOnly) {
+    const holes = coverageHoles();
+    const byDir = new Map<string, number>();
+    for (const h of holes) {
+        const dir = h.slice(0, h.lastIndexOf("/") + 1);
+        byDir.set(dir, (byDir.get(dir) ?? 0) + 1);
+    }
+    process.stderr.write(
+        `[select-tests] ${holes.length} source file(s) no app-test selects, by directory:\n`,
+    );
+    for (const [dir, n] of [...byDir].sort((a, b) => b[1] - a[1])) {
+        process.stderr.write(`  ${String(n).padStart(4)}  ${dir}\n`);
+    }
+    for (const h of holes) process.stdout.write(`${h}\n`);
+    process.exit(0);
+}
+
 if (checkOnly) {
     const missing = coverage.filter((c) => c.covers.length === 0);
     const dangling = coverage.flatMap((c) =>
         c.covers.filter((p) => !resolvesOnDisk(p)).map((p) => ({ file: c.file, pattern: p })),
     );
+
+    // Every distinct declared path, measured for blast radius.
+    const patterns = [...new Set(coverage.flatMap((c) => c.covers))];
+    const overBudget: { pattern: string; count: number; accepted: number | undefined }[] = [];
+    for (const pattern of patterns) {
+        const count = fanOut(representativePath(pattern));
+        if (count <= MAX_SELECTED) continue;
+        const accepted = ACCEPTED_FANOUT[pattern];
+        if (accepted !== undefined && count <= accepted) continue;
+        overBudget.push({ pattern, count, accepted });
+    }
+
+    if (overBudget.length > 0) {
+        process.stderr.write(
+            `[select-tests] ${overBudget.length} path(s) fan out past the ${MAX_SELECTED}-file selection\n` +
+                `               budget — a one-line edit there turns 'app-test-changed' into a sweep:\n`,
+        );
+        for (const o of overBudget) {
+            const was = o.accepted === undefined ? "not accepted" : `accepted at ${o.accepted}`;
+            process.stderr.write(`  ${o.pattern}  →  ${o.count} tests (${was})\n`);
+        }
+        process.stderr.write(
+            `               Narrow the @covers lines that name it, split the module, or — if the\n` +
+                `               coupling is real — record it in ACCEPTED_FANOUT with its count.\n`,
+        );
+    }
 
     if (missing.length > 0) {
         process.stderr.write(
@@ -149,9 +284,15 @@ if (checkOnly) {
         );
         for (const d of dangling) process.stderr.write(`  ${d.file}  →  ${d.pattern}\n`);
     }
-    if (missing.length === 0 && dangling.length === 0) {
+    if (missing.length === 0 && dangling.length === 0 && overBudget.length === 0) {
+        const worst = patterns
+            .map((p) => ({ p, n: fanOut(representativePath(p)) }))
+            .sort((a, b) => b.n - a.n)
+            .slice(0, 3);
         process.stderr.write(
-            `[select-tests] all ${coverage.length} test files declare @covers; every path resolves.\n`,
+            `[select-tests] ${coverage.length} test files: @covers present, resolving, and within\n` +
+                `               the ${MAX_SELECTED}-file budget. Widest fan-out: ` +
+                `${worst.map((w) => `${w.p} (${w.n})`).join(", ")}\n`,
         );
         process.exit(0);
     }
@@ -193,6 +334,21 @@ if (tripped.length > 0) {
     );
     for (const p of tripped) process.stderr.write(`  ${p}\n`);
     process.stderr.write(`               Consider 'just app-test-all' (every test file).\n\n`);
+}
+
+// The budget refusal. Deliberately AFTER the per-test reasons above, so an over-budget
+// caller still sees exactly what would have run and why before deciding.
+if (!printOnly && !allowLarge && selected.length > MAX_SELECTED) {
+    process.stderr.write(
+        `\n[select-tests] REFUSED — ${selected.length} test files exceeds the ${MAX_SELECTED}-file\n` +
+            `               selection budget. That is ~${Math.round((selected.length * 15) / 60)} minutes of\n` +
+            `               serialized Tug.app launches, which is a sweep, not a scoped run.\n\n` +
+            `               Narrow the diff, or name the few tests you actually want:\n` +
+            `                 just app-test <file>...\n` +
+            `               Or opt in deliberately:\n` +
+            `                 just app-test-changed --allow-large\n`,
+    );
+    process.exit(EXIT_OVER_BUDGET);
 }
 
 if (!printOnly) {

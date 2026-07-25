@@ -53,6 +53,7 @@
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/lib/sheet-lifecycle.ts
  * @covers tugdeck/src/serialization.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

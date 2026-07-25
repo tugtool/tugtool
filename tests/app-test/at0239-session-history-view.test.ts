@@ -20,6 +20,9 @@
  * @covers tugdeck/src/lib/shade-view-controller.ts
  * @covers tugdeck/src/components/tugways/blocks/block-chrome.tsx
  * @covers tugrust/crates/tugcast/
+ * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
+ * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -34,6 +34,7 @@
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  * @covers tugdeck/src/components/tugways/cards/tug-atom-markdown-body.tsx
+ * @covers tugdeck/src/components/tugways/cards/tug-atom-markdown-body.css
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

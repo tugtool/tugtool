@@ -30,6 +30,7 @@
  * @covers tugdeck/src/lib/command-atom.ts
  * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
  * @covers tugdeck/src/lib/transcript-export.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-transcript-copy.tsx
  */
 
 import { describe, expect, test } from "bun:test";

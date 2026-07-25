@@ -21,6 +21,8 @@
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/question-summary-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-list-row.css
+ * @covers tugdeck/src/components/tugways/tug-list-row.tsx
  */
 
 import { describe, expect, test } from "bun:test";

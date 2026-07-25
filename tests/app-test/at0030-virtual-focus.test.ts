@@ -68,6 +68,9 @@
  * @covers tugdeck/src/components/tugways/tug-choice-group.tsx
  * @covers tugdeck/src/components/tugways/tug-option-group.tsx
  * @covers tugdeck/src/components/tugways/tug-slider.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-choice-group.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-option-group.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

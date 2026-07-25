@@ -25,6 +25,7 @@
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-chain-actions.tsx
  */
 
 import { describe, expect, test } from "bun:test";

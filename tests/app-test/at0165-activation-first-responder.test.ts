@@ -25,6 +25,7 @@
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/action-dispatch.ts
  * @covers tugapp/Sources/AppDelegate.swift
+ * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -125,8 +125,11 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(CHIP)}) !== null`,
             { timeoutMs: 6000 },
           );
+          // The chip renders its label through `TugMarkdownBlock`, whose block
+          // element carries trailing whitespace of its own. Trim it: the label
+          // text is the subject here, not markdown's line boundaries.
           const label = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(CHIP)})||{}).textContent || ""`,
+            `((document.querySelector(${JSON.stringify(CHIP)})||{}).textContent || "").trim()`,
           );
           expect(label).toBe("loop pacing");
 

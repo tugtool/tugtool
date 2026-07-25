@@ -19,6 +19,8 @@
  * @covers tugdeck/src/components/tugways/tug-sheet-scaffold.tsx
  * @covers tugdeck/src/components/tugways/spatial-order.ts
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

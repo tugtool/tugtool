@@ -28,6 +28,7 @@
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugapp/Sources/MainWindow.swift
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { describe, expect, test } from "bun:test";

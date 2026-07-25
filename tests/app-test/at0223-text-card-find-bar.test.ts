@@ -29,6 +29,9 @@
  * @covers tugdeck/src/components/tugways/cards/text-card.tsx
  * @covers tugdeck/src/lib/find-surface.ts
  * @covers tugdeck/src/lib/text-match.ts
+ * @covers tugdeck/src/components/tugways/tug-find-cluster.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

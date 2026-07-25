@@ -28,6 +28,7 @@
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

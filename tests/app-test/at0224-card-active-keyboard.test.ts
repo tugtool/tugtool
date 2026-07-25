@@ -69,6 +69,11 @@
  * @covers tugdeck/src/components/tugways/responder-chain.ts
  * @covers tugdeck/src/card-state-orchestrator.ts
  * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card-find-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-find-cluster.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

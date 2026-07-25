@@ -17,6 +17,11 @@
  * @covers tugdeck/src/serialization.ts
  * @covers tugdeck/src/keyboard-access-store.ts
  * @covers tugdeck/src/focus-ring-modality-store.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-accordion.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-radio-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-accordion.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

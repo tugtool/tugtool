@@ -16,6 +16,7 @@
  * @covers tugdeck/src/components/tugways/tug-alert.tsx
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

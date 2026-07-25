@@ -22,6 +22,7 @@
  * @covers tugdeck/src/lib/use-permission-mode.ts
  * @covers tugdeck/src/lib/default-permission-mode-store.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

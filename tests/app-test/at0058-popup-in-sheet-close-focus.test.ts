@@ -34,6 +34,8 @@
  * @covers tugdeck/src/components/tugways/tug-sheet-stacking-context.ts
  * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-sheet.tsx
+ * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

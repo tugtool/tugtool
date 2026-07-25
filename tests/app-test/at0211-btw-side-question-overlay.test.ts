@@ -30,6 +30,9 @@
  * @covers tugdeck/src/components/tugways/cards/side-question-overlay.tsx
  * @covers tugdeck/src/lib/bang-commands.ts
  * @covers tugcode/
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

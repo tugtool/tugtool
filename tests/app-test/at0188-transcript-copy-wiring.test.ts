@@ -24,6 +24,9 @@
  * @covers tugdeck/src/lib/copy-as-plain-text.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  * @covers tugdeck/src/components/tugways/text-selection-adapter.ts
+ * @covers tugdeck/src/components/tugways/blocks/block-chrome.css
+ * @covers tugdeck/src/components/tugways/blocks/block-chrome.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-transcript-copy.tsx
  */
 
 import { describe, expect, test } from "bun:test";

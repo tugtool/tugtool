@@ -19,6 +19,8 @@
  * @covers tugdeck/src/components/lens/sections/text-files-section.tsx
  * @covers tugdeck/src/components/lens/sections/text-files-data-source.ts
  * @covers tugdeck/src/lib/text-card-open-registry.ts
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

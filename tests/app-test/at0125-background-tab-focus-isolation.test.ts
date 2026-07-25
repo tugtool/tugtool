@@ -17,6 +17,9 @@
  * @covers tugdeck/src/components/tugways/spatial-order.ts
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/chrome/card-host.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-radio-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

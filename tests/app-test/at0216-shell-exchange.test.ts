@@ -36,6 +36,11 @@
  * @covers tugdeck/src/lib/shell-share.ts
  * @covers tugdeck/src/lib/bang-commands.ts
  * @covers tugrust/crates/tugcast/
+ * @covers tugdeck/src/components/tugways/blocks/block-header.css
+ * @covers tugdeck/src/components/tugways/blocks/block-header.tsx
+ * @covers tugdeck/src/components/tugways/body-kinds/terminal-block.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-z1b.tsx
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

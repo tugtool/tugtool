@@ -34,6 +34,10 @@
  * @covers tugdeck/src/lib/session-restore.ts
  * @covers tugdeck/src/lib/session-metadata-store.ts
  * @covers tugcode/
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/lib/model-label.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

@@ -30,6 +30,7 @@
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  * @covers tugdeck/src/components/tugways/hooks/
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-chain-actions.tsx
  */
 
 import { describe, expect, test } from "bun:test";

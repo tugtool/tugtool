@@ -22,6 +22,7 @@
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/focus-act.ts
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
+ * @covers tugdeck/src/components/tugways/tug-accordion.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

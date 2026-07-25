@@ -23,6 +23,7 @@
  * @covers tugdeck/src/components/tugways/cards/diff-sheet.tsx
  * @covers tugdeck/src/components/tugways/tug-diff-document.tsx
  * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

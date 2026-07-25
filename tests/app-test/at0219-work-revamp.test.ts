@@ -33,6 +33,8 @@
  * @covers tugdeck/src/lib/session-activity-store.ts
  * @covers tugdeck/src/lib/activity-meter.ts
  * @covers tugdeck/src/lib/pulse-store.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
+ * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -30,6 +30,7 @@
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor.css
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -32,6 +32,7 @@
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/shell-session-store.ts
  * @covers tugdeck/src/lib/find-session.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card-z1b.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

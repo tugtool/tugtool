@@ -24,6 +24,8 @@
  * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
  * @covers tugdeck/src/components/tugways/responder-chain.ts
  * @covers tugdeck/src/components/tugways/tug-dialog-button.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

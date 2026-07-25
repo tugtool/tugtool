@@ -25,6 +25,7 @@
  * @covers tugdeck/src/lib/tug-native-clipboard.ts
  * @covers tugdeck/src/lib/paste-transforms.ts
  * @covers tugdeck/src/lib/tug-atom-chip.tsx
+ * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  */
 
 import { describe, expect, test } from "bun:test";

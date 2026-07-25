@@ -50,7 +50,8 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
       await app.waitForCondition<boolean>(
         `${countByComponent("settings")} === 1`,
       );
-      // The internal TugTabBar renders the fixed Session Card tab inside the card.
+      // The internal TugTabBar renders the card's fixed tab strip. "General"
+      // leads it (`settings-card.tsx` SETTINGS_TABS) and so opens selected.
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-testid="settings-card"] [role="tablist"]') !== null`,
       );
@@ -58,7 +59,7 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
         await app.getElementText(
           '[data-testid="settings-card"] [role="tab"][aria-selected="true"]',
         ),
-      ).toContain("Session Card");
+      ).toContain("General");
 
       // ---- Put another pane on top so the raise is observable.
       await app.evalJS(

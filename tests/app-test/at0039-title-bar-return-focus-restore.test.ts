@@ -67,6 +67,7 @@
  * @covers tugdeck/src/components/tugways/tug-textarea.tsx
  * @covers tugdeck/src/card-state-orchestrator.ts
  * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { describe, expect, test } from "bun:test";

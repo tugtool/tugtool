@@ -28,6 +28,8 @@
  * @covers tugdeck/src/lib/permission-rules-store.ts
  * @covers tugdeck/src/lib/fs-complete.ts
  * @covers tugrust/crates/tugcast/
+ * @covers tugdeck/src/components/tugways/cards/permission-rules-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-file-chooser.css
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

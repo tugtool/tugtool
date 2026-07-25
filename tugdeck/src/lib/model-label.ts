@@ -143,7 +143,43 @@ export function modelRowTitle(row: CapabilityModel): string {
  * display label (`Sonnet 4.6`) — matched first by exact selector value, then
  * by the row's value appearing in the string (the `default` row never
  * containment-matches; a resolved id names a family, not "default").
+ *
+ * The containment pass is deliberately narrow, because the rows are untrusted:
+ * they come from claude's live capabilities or from the catalog persisted in
+ * tugbank, so a malformed or non-model row can be present. A bare `includes`
+ * let such a row match EVERY model id — a row whose value is a fragment like
+ * `e`, or the vendor prefix itself, sits inside every id — and the chip then
+ * showed that row's title for every session. Two rules keep the match honest:
+ *
+ *  - **Vendor prefix is not evidence.** `claude-` leads every id, so it
+ *    discriminates nothing; it is stripped from both sides before comparing.
+ *  - **Token boundaries only.** The row's value must sit at the start/end of
+ *    the string or against a non-alphanumeric neighbor, so `sonnet` matches
+ *    `claude-sonnet-4-6` but `e` never matches inside `sonnet`.
+ *
+ * Among surviving candidates the LONGEST value wins, so a specific row beats a
+ * generic one rather than the match depending on row order.
  */
+function stripVendorPrefix(s: string): string {
+  return s.startsWith(CLAUDE_PREFIX) ? s.slice(CLAUDE_PREFIX.length) : s;
+}
+
+/** True when `needle` occurs in `haystack` delimited by non-alphanumerics. */
+function containsAtTokenBoundary(haystack: string, needle: string): boolean {
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return false;
+    const before = at === 0 ? "" : haystack[at - 1];
+    const afterIndex = at + needle.length;
+    const after = afterIndex >= haystack.length ? "" : haystack[afterIndex];
+    const opens = before === "" || !/[a-z0-9]/.test(before);
+    const closes = after === "" || !/[a-z0-9]/.test(after);
+    if (opens && closes) return true;
+    from = at + 1;
+  }
+}
+
 export function findModelRow(
   model: string,
   rows: CapabilityModel[],
@@ -151,14 +187,21 @@ export function findModelRow(
   const lower = model.toLowerCase();
   const exact = rows.find((r) => r.value.toLowerCase() === lower);
   if (exact !== undefined) return exact;
-  return (
-    rows.find(
-      (r) =>
-        r.value !== "default" &&
-        r.value.length > 0 &&
-        lower.includes(r.value.toLowerCase()),
-    ) ?? null
-  );
+
+  const haystack = stripVendorPrefix(lower);
+  let best: CapabilityModel | null = null;
+  let bestLength = 0;
+  for (const row of rows) {
+    if (row.value === "default" || row.value.length === 0) continue;
+    const needle = stripVendorPrefix(row.value.toLowerCase());
+    if (needle.length === 0) continue;
+    if (!containsAtTokenBoundary(haystack, needle)) continue;
+    if (needle.length > bestLength) {
+      best = row;
+      bestLength = needle.length;
+    }
+  }
+  return best;
 }
 
 /**

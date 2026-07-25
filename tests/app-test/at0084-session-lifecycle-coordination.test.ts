@@ -39,6 +39,7 @@
  * @covers tugdeck/src/lib/session-lifecycle-log.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
  */
 
 import { describe, expect, test } from "bun:test";

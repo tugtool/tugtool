@@ -35,6 +35,8 @@
  * @covers tugdeck/src/lib/text-card-store.ts
  * @covers tugdeck/src/lib/file-io.ts
  * @covers tugdeck/src/components/tugways/tug-text-card-editor/
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";

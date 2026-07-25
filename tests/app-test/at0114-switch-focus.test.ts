@@ -23,6 +23,7 @@
  * @covers tugdeck/src/components/tugways/tug-switch.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-switch.tsx
  */
 
 import { describe, expect, test } from "bun:test";

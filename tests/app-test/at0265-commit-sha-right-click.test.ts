@@ -9,6 +9,7 @@
  * @covers tugdeck/src/components/tugways/commit-sha-text.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  * @covers tugdeck/src/components/tugways/cards/gallery-commit-surfaces.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

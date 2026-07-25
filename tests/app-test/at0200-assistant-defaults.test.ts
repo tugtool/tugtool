@@ -41,6 +41,13 @@
  * @covers tugdeck/src/lib/model.ts
  * @covers tugdeck/src/lib/model-domains.ts
  * @covers tugdeck/src/lib/model-selector.ts
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/lib/model-label.ts
+ * @covers tugdeck/src/components/tugways/cards/model-picker-sheet.tsx
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

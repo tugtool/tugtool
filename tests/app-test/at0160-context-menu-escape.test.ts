@@ -21,6 +21,7 @@
  * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/internal/
+ * @covers tugdeck/src/components/tugways/cards/gallery-context-menu.tsx
  */
 
 import { describe, expect, test } from "bun:test";

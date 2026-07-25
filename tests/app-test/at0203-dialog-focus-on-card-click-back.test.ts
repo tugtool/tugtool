@@ -33,6 +33,7 @@
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
  * @covers tugdeck/src/default-focus.ts
  * @covers tugdeck/src/focus-transfer.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
  */
 
 import { describe, expect, test } from "bun:test";

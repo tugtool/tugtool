@@ -27,6 +27,8 @@
  * @covers tugdeck/src/lib/session-restore.ts
  * @covers tugdeck/src/lib/code-session-store/
  * @covers tugcode/
+ * @covers tugdeck/src/components/tugways/blocks/block-header.css
+ * @covers tugdeck/src/components/tugways/blocks/block-header.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

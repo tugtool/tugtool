@@ -71,6 +71,7 @@
  * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/lib/region-map.ts
  * @covers tugdeck/src/components/chrome/card-host.tsx
+ * @covers tugdeck/src/components/tugways/cards/gallery-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

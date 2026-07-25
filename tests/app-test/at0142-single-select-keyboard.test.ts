@@ -24,6 +24,7 @@
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/components/tugways/cards/rewind-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";

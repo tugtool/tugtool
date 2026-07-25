@@ -27,6 +27,10 @@
  * @covers tugdeck/src/lib/bang-commands.ts
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/commit-mode-controller.ts
+ * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/side-question-overlay.tsx
+ * @covers tugdeck/src/components/tugways/tug-find-cluster.tsx
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

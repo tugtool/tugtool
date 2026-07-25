@@ -24,6 +24,7 @@
  * @covers tugdeck/styles/focus-ring.css
  * @covers tugdeck/src/theme-tokens.ts
  * @covers tugdeck/src/components/tugways/active-color-target.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-list-view.tsx
  */
 
 import { describe, expect, test } from "bun:test";

@@ -19,6 +19,7 @@
  * @covers tugdeck/src/components/lens/sections/sessions-section.tsx
  * @covers tugdeck/src/components/lens/block-reorder.ts
  * @covers tugdeck/src/lib/lens-store/
+ * @covers tugdeck/src/components/tugways/body-kinds/affordances/block-grip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

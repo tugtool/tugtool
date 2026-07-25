@@ -31,6 +31,8 @@
  * @covers tugdeck/src/components/tugways/cards/settings-app-body.tsx
  * @covers tugdeck/src/settings-api.ts
  * @covers tugdeck/src/lib/editor-settings-store.ts
+ * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
+ * @covers tugdeck/src/components/tugways/tug-switch.tsx
  */
 
 import { describe, expect, test } from "bun:test";

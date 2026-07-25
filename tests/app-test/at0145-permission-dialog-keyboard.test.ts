@@ -37,6 +37,8 @@
  * @covers tugdeck/src/components/tugways/chrome/session-permission-dialog.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/lib/permission-mode.ts
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
+ * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  */
 
 import { describe, expect, test } from "bun:test";

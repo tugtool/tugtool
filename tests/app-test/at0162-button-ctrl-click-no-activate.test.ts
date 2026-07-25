@@ -19,6 +19,7 @@
  * @covers tugdeck/src/components/tugways/internal/
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  * @covers tugdeck/src/components/tugways/tug-icon-button.tsx
+ * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";

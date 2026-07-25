@@ -34,6 +34,7 @@
  * @covers tugdeck/src/lib/session-transcript-data-source.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
  * @covers tugcode/
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

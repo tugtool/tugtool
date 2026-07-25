@@ -7,8 +7,9 @@
  * `{ focused, cardCount, closable }` per pane on every deck change):
  *
  *   - **Close Card** (`file.closeCard`, ⌘W) — enabled only when the
- *     focused pane's active card is closable. The label is static
- *     "Close Card"; the web layer decides card-vs-pane close.
+ *     focused pane's active card is closable. The label is the static
+ *     "Close" whether ⌘W will close the card or the whole pane; the web
+ *     layer makes that choice, so the menu never renames itself.
  *   - **Close All Card Tabs** (`file.closeAllCardTabs`, ⌥⌘W) — enabled only
  *     when the focused pane holds more than one card.
  *
@@ -96,7 +97,7 @@ describe.skipIf(!SHOULD_RUN)(
           const closeCard = await waitMenuEnabled(app, CLOSE_CARD, true);
           expect(closeCard.found, "file.closeCard must exist").toBe(true);
           expect(closeCard.enabled, "Close Card enabled for a closable card").toBe(true);
-          expect(closeCard.title, "label is the static 'Close Card'").toBe("Close Card");
+          expect(closeCard.title, "label is the static 'Close'").toBe("Close");
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, false);
           expect(closeAll.found, "file.closeAllCardTabs must exist").toBe(true);
@@ -125,7 +126,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           const closeCard = await waitMenuEnabled(app, CLOSE_CARD, true);
           expect(closeCard.enabled, "Close Card enabled in a multi-card pane").toBe(true);
-          expect(closeCard.title, "label is the static 'Close Card'").toBe("Close Card");
+          expect(closeCard.title, "label is the static 'Close'").toBe("Close");
 
           const closeAll = await waitMenuEnabled(app, CLOSE_ALL, true);
           expect(closeAll.enabled, "Close All Card Tabs enabled for a multi-card pane").toBe(true);

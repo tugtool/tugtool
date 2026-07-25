@@ -33,6 +33,8 @@
  * @covers tugdeck/src/components/tugways/tug-radio-group.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
+ * @covers tugdeck/src/components/tugways/cards/gallery-radio-group.tsx
+ * @covers tugdeck/src/components/tugways/tug-radio-group.css
  */
 
 import { describe, expect, test } from "bun:test";

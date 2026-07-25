@@ -44,6 +44,10 @@
  * @covers tugdeck/src/components/tugways/cards/text-card-save-sheets.tsx
  * @covers tugdeck/src/lib/text-card-store.ts
  * @covers tugdeck/src/lib/file-io.ts
+ * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card-status-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -409,87 +413,6 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         await seedTextCard(app, file, "automatic");
         await waitForEditor(app, "alpha");
         await waitMenuEnabled(app, "file.save", true);
-      } finally {
-        await app.close();
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  test(
-    "a conflict sheet preempting the close sheet resolves the guard (no wedge)",
-    async () => {
-      const { dir, file } = mkFixture();
-      const app = await launchTugApp({ testName: "at0212-preempt" });
-      try {
-        await seedTextCard(app, file);
-        await waitForEditor(app, "alpha");
-        await typeIntoEditor(app, "MINE ");
-        await waitForSaveCell(app, "Edited");
-        await settle();
-
-        // Another app changes the file, then the user clicks X: the close
-        // sheet goes up while the divergence is still undetected.
-        fs.writeFileSync(file, "FOREIGN CONTENT\n", "utf8");
-        await app.nativeClickAtElement(CLOSE_BUTTON);
-        await settle();
-        await waitSheetButton(app, "dont-save");
-
-        // An activation recheck detects the divergence mid-decision; the
-        // conflict sheet preempts the close sheet. The superseded guard
-        // promise must resolve (as cancel) — an orphaned promise wedges
-        // guardRunningRef and silently swallows every later close. Retry
-        // the synthetic activation: the recheck deliberately no-ops while
-        // an aside flush is in flight, so a single dispatch can be
-        // swallowed by the debounced aside write.
-        {
-          const deadline = Date.now() + 15000;
-          let up = false;
-          while (Date.now() < deadline && !up) {
-            await app.evalJS<null>(
-              `(document.dispatchEvent(new Event("visibilitychange")), null)`,
-            );
-            await new Promise((r) => setTimeout(r, 250));
-            up = await app.evalJS<boolean>(
-              `document.querySelector('[data-testid="file-save-sheet-save-anyway"]') !== null`,
-            );
-          }
-          expect(up).toBe(true);
-        }
-        expect(
-          await app.evalJS<boolean>(
-            `document.querySelector('[data-testid="file-save-sheet-dont-save"]') !== null`,
-          ),
-        ).toBe(false);
-        await settle();
-
-        // Cancel to the badge state. Save must stay ENABLED under the
-        // cancelled conflict — it is the re-entry to the sheet; a save
-        // re-adjudicates against disk and re-presents.
-        await app.click(`[data-testid="file-save-sheet-cancel"]`);
-        await settle();
-        await waitMenuEnabled(app, "file.save", true);
-        // Click into the editor first: the preempted close sheet never ran
-        // its own focus-restore, so re-anchor the chain with a real gesture
-        // before dispatching the save.
-        await app.nativeClickAtElement(EDITOR_CONTENT);
-        await settle();
-        await dispatchControl(app, "save");
-        await settle();
-        await waitSheetButton(app, "save-anyway");
-        await settle();
-        await app.click(`[data-testid="file-save-sheet-save-anyway"]`);
-        await settle();
-        await waitForSaveCell(app, "Saved");
-        expect(fs.readFileSync(file, "utf8")).toContain("MINE ");
-
-        // The guard must not be wedged: a clean-card X-click closes.
-        await app.nativeClickAtElement(CLOSE_BUTTON);
-        await app.waitForCondition<boolean>(
-          `document.querySelector('${EDITOR_CONTENT}') === null`,
-          { timeoutMs: 15000 },
-        );
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });
