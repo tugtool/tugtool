@@ -47,6 +47,30 @@
   min-height: var(--tugx-commit-line);
 }
 
+/* The filter's receipt: the paths a query matched, under the identity line
+   that could not explain the row's survival. Set at the detail scale in the
+   mono face so a path reads as a path, and started under the SUBJECT — the
+   row's compact inline padding plus the identity's 9ch hanging indent — so the
+   line hangs off the text it is explaining rather than off the sha. */
+.tug-history-list-matched-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  padding-left: calc(
+    var(--tugx-list-row-padding-inline-compact, 8px) + var(--tugx-commit-hang)
+  );
+  padding-bottom: 2px;
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-history-list-matched-path-overflow {
+  font-family: var(--tug-font-family-sans);
+  font-style: italic;
+}
+
 /* The expanded detail well under a row. */
 .tug-history-list-commit-detail {
   padding: 2px 8px 6px;

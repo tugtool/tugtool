@@ -137,11 +137,22 @@ export function CommitMetaCell({
 export function CommitIdentityLine({
   sha,
   subject,
+  shaContent,
+  subjectContent,
   badge,
   className,
 }: {
   sha: string;
   subject: string;
+  /**
+   * The two `*Content` slots let a host paint the same text differently — the
+   * History filter wraps its matched spans in `<mark>`. They are decoration
+   * only: `sha` and `subject` remain the authority for the copy payload and
+   * the `title`, so a decorated line and a plain one always SAY the same
+   * thing. Omitted ⇒ the plain text.
+   */
+  shaContent?: React.ReactNode;
+  subjectContent?: React.ReactNode;
   badge?: React.ReactNode;
   className?: string;
 }): React.ReactElement {
@@ -153,9 +164,9 @@ export function CommitIdentityLine({
       data-slot="commit-identity"
       title={subject}
     >
-      <CommitShaText sha={sha} />
+      <CommitShaText sha={sha} content={shaContent} />
       {" "}
-      {subject}
+      {subjectContent ?? subject}
       {badge}
     </span>
   );

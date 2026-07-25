@@ -17,6 +17,27 @@
  * or the last request errored. `refresh()` re-requests the current root
  * unconditionally (mount-time request + future affordances).
  *
+ * ## Paging
+ *
+ * The log is read one page at a time. `requestLog` asks for the newest
+ * {@link GIT_LOG_PAGE_SIZE} commits; {@link GitLogStore.loadMore} asks for the
+ * next page, skipping everything already held, and APPENDS it — the snapshot's
+ * `payload.commits` is the accumulated walk, not the last page. `has_more`
+ * comes from the server (which measures it by walking one commit past the
+ * page), so the client never guesses whether history has run out.
+ *
+ * A page past the first is loaded WITHOUT dropping what is on screen:
+ * `loadingMore` goes true while `phase` stays `ready` and the payload stands.
+ * The list only ever grows at the bottom, so the scroller's offset stays
+ * meaningful and the reader's place does not move under them.
+ *
+ * A `refresh()` (a `GIT_HEAD` move, a reconnect) re-reads the WHOLE loaded span
+ * in one request rather than resetting to page one, so a reader who has
+ * scrolled deep does not get yanked back to HEAD by someone else's commit. It
+ * also keeps the current payload visible while the re-read is in flight —
+ * only a change of ROOT blanks the list, because only then is what is on
+ * screen about the wrong project.
+ *
  * `formatGitLog` (the section's text presentation) lives here too so it is
  * unit-testable without React or a live connection.
  *
@@ -54,6 +75,12 @@ export interface GitLogCommit {
   /** The `Tug-Dash:` trailer value when the commit landed as a dash join —
    *  drives the History join badge ([P09]). */
   tug_dash?: string;
+  /** The commit's changed paths (`--name-only`), repo-relative — paths only.
+   *  They ride the log so the History filter can match a commit by the files
+   *  it touched; the statuses and line counts an expanded row shows still come
+   *  from its own `GIT_COMMIT_FILES` request. Empty for a merge or an empty
+   *  commit. */
+  files?: string[];
 }
 
 /** A single-shot recent-commits payload from tugcast (GIT_LOG feed). */
@@ -64,6 +91,12 @@ export interface GitLogPayload {
   branch: string;
   /** True when the project dir is not inside a git working tree. */
   no_repo: boolean;
+  /** How many commits the page skipped. On the ACCUMULATED payload the store
+   *  publishes this is always `0` — the walk it holds starts at HEAD. */
+  offset: number;
+  /** True when history continues past what is held — what `loadMore` reads to
+   *  decide whether there is another page to ask for. */
+  has_more: boolean;
   /** Most-recent-first commits. */
   commits: GitLogCommit[];
 }
@@ -78,8 +111,14 @@ export interface GitLogStoreSnapshot {
   requestId: string | null;
   /** Project dir of the in-flight (or last) request; `null` before any. */
   requestedRoot: string | null;
-  /** The resolved payload when `phase === "ready"`. */
+  /** The resolved payload when `phase === "ready"`, its `commits` accumulated
+   *  across every page loaded so far. Held across a `refresh()` of the same
+   *  root so the list never blinks; dropped only when the root changes. */
   payload: GitLogPayload | null;
+  /** True while a page PAST the first is in flight — `phase` stays `ready` and
+   *  the payload stands, so the list keeps its content and its scroll offset
+   *  while the next page lands. */
+  loadingMore: boolean;
   /** Human-readable error when `phase === "error"`. */
   error: string | null;
 }
@@ -89,8 +128,15 @@ const EMPTY_SNAPSHOT: GitLogStoreSnapshot = {
   requestId: null,
   requestedRoot: null,
   payload: null,
+  loadingMore: false,
   error: null,
 };
+
+/**
+ * Commits per page. Enough to overflow the shade at any height it can be
+ * dragged to, so the first page always leaves something to scroll toward.
+ */
+export const GIT_LOG_PAGE_SIZE = 40;
 
 /** Parse a GIT_LOG feed payload into a `GitLogPayload`, or `null`. */
 export function parseGitLogPayload(payload: unknown): GitLogPayload | null {
@@ -103,6 +149,8 @@ export function parseGitLogPayload(payload: unknown): GitLogPayload | null {
     workspace_key: typeof p.workspace_key === "string" ? p.workspace_key : "",
     branch: typeof p.branch === "string" ? p.branch : "",
     no_repo: p.no_repo === true,
+    offset: typeof p.offset === "number" ? p.offset : 0,
+    has_more: p.has_more === true,
     commits: p.commits as GitLogCommit[],
   };
 }
@@ -181,9 +229,39 @@ export class GitLogStore {
       phase: "ready",
       requestId: parsed.request_id,
       requestedRoot: this._snapshot.requestedRoot,
-      payload: parsed,
+      payload: this._merge(parsed),
+      loadingMore: false,
       error: null,
     });
+  }
+
+  /**
+   * Fold a landed page into the walk the store holds.
+   *
+   * A page at offset `0` IS the walk — a first load or a refresh that re-read
+   * the whole loaded span, so it replaces outright. A later page appends, and
+   * the accumulated payload keeps `offset: 0` because the walk it describes
+   * starts at HEAD however many requests built it.
+   *
+   * Append dedups by sha. The offset the page asked for was measured against
+   * the walk as it stood when the request went out; a commit landing in
+   * between shifts every later commit one position deeper, which would hand
+   * back a commit already held. Dropping the repeat keeps the list's React
+   * keys unique and its order honest — the newly-arrived commit shows up on
+   * the next `GIT_HEAD` refresh, at the top where it belongs.
+   */
+  private _merge(page: GitLogPayload): GitLogPayload {
+    const held = this._snapshot.payload;
+    if (page.offset === 0 || held === null) {
+      return { ...page, offset: 0 };
+    }
+    const seen = new Set(held.commits.map((c) => c.sha));
+    const fresh = page.commits.filter((c) => !seen.has(c.sha));
+    return {
+      ...page,
+      offset: 0,
+      commits: held.commits.concat(fresh),
+    };
   }
 
   /**
@@ -220,16 +298,39 @@ export class GitLogStore {
    * depth limit trips. Retry is the store's to schedule — {@link refresh},
    * driven by a reconnect, a `GIT_HEAD` signal, or an explicit gesture.
    */
-  requestLog(projectDir: string, limit = 20): void {
+  requestLog(projectDir: string, limit = GIT_LOG_PAGE_SIZE): void {
     if (projectDir === this._snapshot.requestedRoot) return;
-    this._send(projectDir, limit);
+    this._send(projectDir, 0, limit);
   }
 
-  /** Re-request the current root unconditionally (mount + future affordances). */
-  refresh(limit = 20): void {
+  /**
+   * Re-request the current root unconditionally (mount, reconnect, `GIT_HEAD`).
+   *
+   * Re-reads the WHOLE span already loaded, not just the first page: a reader
+   * scrolled forty commits deep should not be pulled back to HEAD because
+   * someone committed. The current payload stays visible while the re-read is
+   * in flight, so the list holds still.
+   */
+  refresh(): void {
     const root = this._snapshot.requestedRoot;
     if (root === null) return;
-    this._send(root, limit);
+    const loaded = this._snapshot.payload?.commits.length ?? 0;
+    this._send(root, 0, Math.max(GIT_LOG_PAGE_SIZE, loaded));
+  }
+
+  /**
+   * Load the next page and append it — the load-on-scroll gesture.
+   *
+   * A no-op unless there is a resolved walk with more history behind it and
+   * nothing already in flight, so a scroller may call it on every intersection
+   * without debouncing.
+   */
+  loadMore(pageSize = GIT_LOG_PAGE_SIZE): void {
+    const { requestedRoot, payload, phase, loadingMore } = this._snapshot;
+    if (requestedRoot === null || payload === null) return;
+    if (phase !== "ready" || loadingMore) return;
+    if (!payload.has_more) return;
+    this._send(requestedRoot, payload.commits.length, pageSize);
   }
 
   /**
@@ -244,28 +345,39 @@ export class GitLogStore {
     this.refresh();
   }
 
-  private _send(projectDir: string, limit: number): void {
+  private _send(projectDir: string, offset: number, limit: number): void {
+    // What is on screen survives anything but a change of project: a page
+    // request and a refresh are both re-reads of THIS root's history, so the
+    // list keeps its rows (and therefore its scroll offset) until the answer
+    // lands. A different root makes the held walk simply wrong, so it goes.
+    const sameRoot = projectDir === this._snapshot.requestedRoot;
+    const held = sameRoot ? this._snapshot.payload : null;
     const conn = getConnection();
     if (!conn) {
       this._set({
         phase: "error",
         requestId: null,
         requestedRoot: projectDir,
-        payload: null,
+        payload: held,
+        loadingMore: false,
         error: "Lost the connection to tugcast.",
       });
       return;
     }
     this._seq += 1;
     const requestId = `gl-${this._storeId}-${this._seq}`;
+    // A page request leaves the walk `ready` — the list is not reloading, it is
+    // growing, and blanking it under the reader's scroll would be a lie.
+    const paging = offset > 0 && held !== null;
     this._set({
-      phase: "loading",
+      phase: paging ? "ready" : "loading",
       requestId,
       requestedRoot: projectDir,
-      payload: null,
+      payload: held,
+      loadingMore: paging,
       error: null,
     });
-    const query = { root: projectDir, requestId, limit };
+    const query = { root: projectDir, requestId, offset, limit };
     const bytes = new TextEncoder().encode(JSON.stringify(query));
     conn.send(FeedId.GIT_LOG_QUERY, bytes);
   }
@@ -298,7 +410,8 @@ export class GitLogStore {
       phase: "ready",
       requestId: parsed.request_id,
       requestedRoot: this._snapshot.requestedRoot,
-      payload: parsed,
+      payload: this._merge(parsed),
+      loadingMore: false,
       error: null,
     });
   }

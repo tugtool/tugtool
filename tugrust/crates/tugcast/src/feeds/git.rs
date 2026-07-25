@@ -347,21 +347,26 @@ const LOG_FIELD_SEP: char = '\u{1f}';
 /// values with — chosen so it survives the `-z` NUL record terminator.
 const LOG_TRAILER_SEP: char = '\u{1e}';
 
-/// Assemble a single-shot [`GitLogSnapshot`] of the `limit` most-recent commits
-/// in `repo_dir`.
+/// Assemble a single-shot [`GitLogSnapshot`] — one page of `limit` commits in
+/// `repo_dir`, starting `offset` commits back from HEAD.
 ///
 /// Gated on [`is_within_git_worktree`] — a non-git dir short-circuits to
 /// `no_repo: true` before any git fork. The branch comes from
 /// `git branch --show-current` (empty/`None` → `"(detached)"`, which also
-/// covers an unborn HEAD spelled empty). The commit body is one `%x1f`-delimited
-/// record per line; a malformed line (fewer than four fields) is skipped with a
-/// `warn!`. A failed `git log` — most commonly an unborn HEAD in a fresh
-/// `git init` — yields empty `commits` with `no_repo: false`, mirroring how
-/// [`build_git_diff_snapshot`] treats a `HEAD`-less repo as empty, not an error.
+/// covers an unborn HEAD spelled empty). A failed `git log` — most commonly an
+/// unborn HEAD in a fresh `git init` — yields empty `commits` with
+/// `no_repo: false`, mirroring how [`build_git_diff_snapshot`] treats a
+/// `HEAD`-less repo as empty, not an error.
+///
+/// `has_more` is measured, not guessed: the walk asks git for one commit MORE
+/// than the page needs and reports whether that probe came back, then drops it.
+/// A count (`git rev-list --count`) would walk the whole history to answer a
+/// yes/no question; the extra commit costs one more record.
 pub async fn build_git_log_snapshot(
     repo_dir: &Path,
     request_id: String,
     workspace_key: &str,
+    offset: u32,
     limit: u32,
 ) -> GitLogSnapshot {
     if !is_within_git_worktree(repo_dir).await {
@@ -370,14 +375,17 @@ pub async fn build_git_log_snapshot(
             workspace_key: workspace_key.to_string(),
             branch: String::new(),
             no_repo: true,
+            offset,
+            has_more: false,
             commits: Vec::new(),
         };
     }
     let branch = run_git_line(repo_dir, &["branch", "--show-current"])
         .await
         .unwrap_or_else(|| "(detached)".to_string());
-    let limit_arg = format!("-n{limit}");
-    let commits = match run_git_capture(
+    let limit_arg = format!("-n{}", limit.saturating_add(1));
+    let skip_arg = format!("--skip={offset}");
+    let mut commits = match run_git_capture(
         repo_dir,
         &[
             "-c",
@@ -387,6 +395,7 @@ pub async fn build_git_log_snapshot(
             // field can span multiple lines without a newline-split
             // mis-parsing it as a fresh commit.
             "-z",
+            &skip_arg,
             &limit_arg,
             // Fields are `%x1f`-delimited: sha, author name, author date
             // (short), committer name, committer email, committer date (strict
@@ -395,6 +404,10 @@ pub async fn build_git_log_snapshot(
             // (`%b`). The trailer's own multi-value separator is `%x1e` (RS) —
             // NOT `%x00`, which `-z` now owns as the record terminator.
             "--format=%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f%(trailers:key=Tug-Dash,valueonly,separator=%x1e)%x1f%b",
+            // Each commit's changed paths follow its record, so the History
+            // filter can match on the files a commit touched. Paths only —
+            // statuses and line counts stay on the `GIT_COMMIT_FILES` route.
+            "--name-only",
             "--date=short",
         ],
     )
@@ -403,31 +416,61 @@ pub async fn build_git_log_snapshot(
         Some(output) => parse_git_log(&output),
         None => Vec::new(),
     };
+    // The probe commit answered "is there more"; it is not part of this page.
+    let has_more = commits.len() > limit as usize;
+    commits.truncate(limit as usize);
     GitLogSnapshot {
         request_id,
         workspace_key: workspace_key.to_string(),
         branch,
         no_repo: false,
+        offset,
+        has_more,
         commits,
     }
 }
 
-/// Parse
-/// `%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f<trailer>%x1f%b` records —
-/// one commit per NUL-terminated chunk (git's `-z`) — into [`GitLogCommit`]s.
-/// The 8th field is the `Tug-Dash:` trailer value (empty when absent; a
+/// Parse `git log -z --name-only` output into [`GitLogCommit`]s.
+///
+/// `-z` NUL-terminates every chunk, and `--name-only` makes two kinds of chunk
+/// share the stream: a commit's
+/// `%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f<trailer>%x1f%b` record,
+/// then one chunk per changed path (git prefixes the first path of a commit
+/// with a newline, which is stripped). The two are told apart by the field
+/// separator: a record always carries eight of them, and a path cannot contain
+/// one — `%x1f` is a control byte no checked-in path uses. Every path chunk
+/// belongs to the record that most recently preceded it, so a commit with no
+/// files (a merge, an empty commit) simply collects none.
+///
+/// The 8th record field is the `Tug-Dash:` trailer value (empty when absent; a
 /// repeated trailer's values are `%x1e`-joined and only the first is kept); the
 /// 9th is the multi-line body, trailing whitespace trimmed. Records with fewer
-/// than seven fields (no subject) are skipped with a `warn!`.
+/// than seven fields (no subject) are skipped with a `warn!`, and so are the
+/// paths that would have followed them.
 fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
-    let mut commits = Vec::new();
-    for record in output.split('\0') {
-        if record.is_empty() {
+    let mut commits: Vec<GitLogCommit> = Vec::new();
+    // False while the paths of a record we rejected stream past, so they are
+    // never misfiled onto the previous (good) commit.
+    let mut collecting = false;
+    for chunk in output.split('\0') {
+        // Only the first path of each commit carries git's leading newline;
+        // trimming it here costs nothing on the others.
+        let chunk = chunk.trim_start_matches('\n');
+        if chunk.is_empty() {
             continue;
         }
-        let fields: Vec<&str> = record.splitn(9, LOG_FIELD_SEP).collect();
+        if !chunk.contains(LOG_FIELD_SEP) {
+            if collecting {
+                if let Some(commit) = commits.last_mut() {
+                    commit.files.push(chunk.to_string());
+                }
+            }
+            continue;
+        }
+        let fields: Vec<&str> = chunk.splitn(9, LOG_FIELD_SEP).collect();
         if fields.len() < 7 {
-            warn!(record, "skipping malformed git log record");
+            warn!(record = chunk, "skipping malformed git log record");
+            collecting = false;
             continue;
         }
         let tug_dash = fields
@@ -450,7 +493,9 @@ fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
             subject: fields[6].to_string(),
             body,
             tug_dash,
+            files: Vec::new(),
         });
+        collecting = true;
     }
     commits
 }
@@ -1390,7 +1435,8 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_log_snapshot_recent_commits_most_recent_first() {
         let temp = init_log_fixture_repo().await;
-        let snapshot = build_git_log_snapshot(temp.path(), "gl-1".to_string(), "ws-key", 20).await;
+        let snapshot =
+            build_git_log_snapshot(temp.path(), "gl-1".to_string(), "ws-key", 0, 20).await;
 
         assert!(!snapshot.no_repo);
         assert_eq!(snapshot.request_id, "gl-1");
@@ -1416,13 +1462,94 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_log_snapshot_honors_limit() {
         let temp = init_log_fixture_repo().await;
-        let snapshot = build_git_log_snapshot(temp.path(), "gl-2".to_string(), "ws", 2).await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-2".to_string(), "ws", 0, 2).await;
         let subjects: Vec<&str> = snapshot
             .commits
             .iter()
             .map(|c| c.subject.as_str())
             .collect();
         assert_eq!(subjects, ["third", "second"], "the newest two only");
+        assert_eq!(snapshot.offset, 0);
+        assert!(snapshot.has_more, "`first` is still past this page");
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_pages_by_offset() {
+        let temp = init_log_fixture_repo().await;
+
+        // Page two picks up exactly where page one stopped — no overlap, no gap.
+        let page2 = build_git_log_snapshot(temp.path(), "gl-p2".to_string(), "ws", 2, 2).await;
+        let subjects: Vec<&str> = page2.commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, ["first"], "the third commit back, alone");
+        assert_eq!(page2.offset, 2, "the request's offset is echoed");
+        assert!(!page2.has_more, "the root commit ends the walk");
+
+        // Paging past the end is empty, not an error.
+        let past = build_git_log_snapshot(temp.path(), "gl-p3".to_string(), "ws", 99, 2).await;
+        assert!(past.commits.is_empty());
+        assert!(!past.has_more);
+        assert_eq!(past.offset, 99);
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_has_more_false_at_exact_boundary() {
+        // A page that ends flush with the root commit has nothing after it —
+        // the probe commit is what proves that, not arithmetic on the count.
+        let temp = init_log_fixture_repo().await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-b".to_string(), "ws", 0, 3).await;
+        assert_eq!(snapshot.commits.len(), 3);
+        assert!(!snapshot.has_more);
+    }
+
+    #[tokio::test]
+    async fn test_build_git_log_snapshot_carries_changed_paths() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["init", "-b", "main"]).await;
+        git_in(&repo, &["config", "user.name", "Test Author"]).await;
+        git_in(&repo, &["config", "user.email", "test@test.com"]).await;
+
+        fs::write(repo.join("alpha.txt"), "a\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        git_in(&repo, &["commit", "-m", "add alpha"]).await;
+
+        fs::create_dir(repo.join("src")).unwrap();
+        fs::write(repo.join("src/beta.rs"), "b\n").unwrap();
+        fs::write(repo.join("alpha.txt"), "a2\n").unwrap();
+        git_in(&repo, &["add", "-A"]).await;
+        // A multi-line body sits between the record and its path list — the
+        // parser must not read its lines as paths.
+        git_in(
+            &repo,
+            &["commit", "-m", "add beta", "-m", "with a body\nover lines"],
+        )
+        .await;
+
+        git_in(&repo, &["commit", "--allow-empty", "-m", "nothing"]).await;
+
+        let snapshot = build_git_log_snapshot(&repo, "gl-f".to_string(), "ws", 0, 20).await;
+        let by_subject: Vec<(&str, Vec<&str>)> = snapshot
+            .commits
+            .iter()
+            .map(|c| {
+                (
+                    c.subject.as_str(),
+                    c.files.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            by_subject,
+            [
+                ("nothing", vec![]),
+                ("add beta", vec!["alpha.txt", "src/beta.rs"]),
+                ("add alpha", vec!["alpha.txt"]),
+            ],
+        );
+        assert_eq!(
+            snapshot.commits[1].body, "with a body\nover lines",
+            "the body survives the path stream intact"
+        );
     }
 
     #[tokio::test]
@@ -1430,7 +1557,7 @@ Binary files a/img.png and b/img.png differ
         // Fresh `git init` (unborn HEAD): a real repo with no commits.
         let temp = TempDir::new().unwrap();
         git_in(temp.path(), &["init", "-b", "trunk"]).await;
-        let snapshot = build_git_log_snapshot(temp.path(), "gl-3".to_string(), "ws", 20).await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-3".to_string(), "ws", 0, 20).await;
         assert!(
             !snapshot.no_repo,
             "an initialized repo is not flagged no_repo"
@@ -1445,10 +1572,11 @@ Binary files a/img.png and b/img.png differ
     #[tokio::test]
     async fn test_build_git_log_snapshot_non_repo_flags_no_repo() {
         let temp = TempDir::new().unwrap();
-        let snapshot = build_git_log_snapshot(temp.path(), "gl-4".to_string(), "ws", 20).await;
+        let snapshot = build_git_log_snapshot(temp.path(), "gl-4".to_string(), "ws", 0, 20).await;
         assert!(snapshot.no_repo);
         assert!(snapshot.commits.is_empty());
         assert_eq!(snapshot.branch, "");
+        assert!(!snapshot.has_more, "a non-repo has nothing more to page");
     }
 
     #[tokio::test]
@@ -1457,7 +1585,7 @@ Binary files a/img.png and b/img.png differ
         let repo = temp.path();
         let head = run_git_line(repo, &["rev-parse", "HEAD"]).await.unwrap();
         git_in(repo, &["checkout", &head]).await;
-        let snapshot = build_git_log_snapshot(repo, "gl-5".to_string(), "ws", 20).await;
+        let snapshot = build_git_log_snapshot(repo, "gl-5".to_string(), "ws", 0, 20).await;
         assert_eq!(snapshot.branch, "(detached)");
         assert_eq!(
             snapshot.commits.len(),
@@ -1489,7 +1617,7 @@ Binary files a/img.png and b/img.png differ
         )
         .await;
 
-        let snapshot = build_git_log_snapshot(&repo, "gl-6".to_string(), "ws", 20).await;
+        let snapshot = build_git_log_snapshot(&repo, "gl-6".to_string(), "ws", 0, 20).await;
         assert_eq!(snapshot.commits.len(), 1);
         assert_eq!(snapshot.commits[0].author, "Ünïcode Nàme");
         assert_eq!(snapshot.commits[0].subject, "", "empty subject stays empty");

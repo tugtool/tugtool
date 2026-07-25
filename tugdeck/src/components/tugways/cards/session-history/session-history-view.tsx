@@ -14,6 +14,35 @@
  * single-store limitation, not a correctness hazard (each re-requests when
  * it regains focus). `GIT_HEAD` auto-refreshes the store after a commit.
  *
+ * ## Paging
+ *
+ * History is read a page at a time and grows downward, the way a feed does.
+ * Two things ask for the next page, both through the store's idempotent
+ * `loadMore`:
+ *
+ *  - An `IntersectionObserver` watching a sentinel at the foot of the list,
+ *    rooted on the scroller with a margin so the page is already in flight by
+ *    the time the reader arrives at the bottom.
+ *  - A top-up pass after every payload change, for the two cases an
+ *    intersection cannot report: a page that did not fill the shade (so the
+ *    sentinel never left the viewport and never re-fires), and a live filter
+ *    whose matches are thin — there, the walk keeps going until the filter has
+ *    enough rows to show or history runs out, so a match forty commits back is
+ *    found rather than hidden behind a scroll the reader has no reason to make.
+ *
+ * Pages APPEND, so the scroller's content only ever grows at the bottom: every
+ * row already on screen keeps its offset and the reader's place does not move.
+ * That is also why the store holds the current payload through a refresh — the
+ * one thing that would jump the list is having it emptied and rebuilt.
+ *
+ * ## Filtering
+ *
+ * The `TugFilterField` in the header strip trims the list to the commits whose
+ * hash, message, details, or changed paths match ({@link commitFilterFields});
+ * diffs are deliberately not searched. The query is this view's own React
+ * state — the field and the list are in one component, so the module-store
+ * adapter the Lens sections need does not apply here.
+ *
  * Laws: [L02] the log store enters React through `useSyncExternalStore`;
  * [L06] no appearance state in React; [L28] the store is the source of both
  * the log and its retry policy — this view subscribes and asks once per root,
@@ -24,18 +53,38 @@
 
 import "./session-history-view.css";
 
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type React from "react";
 import { History as HistoryIcon } from "lucide-react";
 
-import { TugHistoryList } from "@/components/tugways/tug-history-list";
+import {
+  TugHistoryList,
+  commitFilterFields,
+} from "@/components/tugways/tug-history-list";
 import { TugNonRepoNotice } from "@/components/tugways/tug-non-repo-notice";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import type { TugFilterFieldDelegate } from "@/components/tugways/tug-filter-field";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useCommitMetaFields } from "@/lib/commit-meta-fields";
-import { useFocusable, useSeedKeyView } from "@/components/tugways/use-focusable";
+import {
+  useFocusable,
+  useFocusManager,
+  useSeedKeyView,
+} from "@/components/tugways/use-focusable";
+import { CardIdContext } from "@/lib/card-id-context";
+import { filterAndRank } from "@/lib/text-match";
 import {
   gitLogStore,
   type GitLogStoreSnapshot,
@@ -46,8 +95,23 @@ const EMPTY_SNAPSHOT: GitLogStoreSnapshot = {
   requestId: null,
   requestedRoot: null,
   payload: null,
+  loadingMore: false,
   error: null,
 };
+
+/**
+ * How close to the foot of the scroller the next page starts loading. Wide
+ * enough that a page is already in flight before the reader reaches the end.
+ */
+const PREFETCH_MARGIN_PX = 500;
+
+/**
+ * How many matching rows a live filter walks history for before it stops
+ * paging on its own. Comfortably more than the shade shows at any height it
+ * can be dragged to, so the reader gets a full screen of matches and the
+ * scroll gesture takes over from there.
+ */
+const FILTERED_ROW_TARGET = 25;
 
 /** Read the shared Git History store reactively ([L02]). */
 function useGitLogSnapshot(): GitLogStoreSnapshot {
@@ -95,6 +159,12 @@ export function SessionHistoryView({
   const focusGroup = useId();
   const LIST_ORDER = 0;
   const DONE_ORDER = 1;
+  // The filter field registers BEHIND the list at order -1 with a `skip`
+  // policy, exactly as the Lens section bands do: click-reachable and
+  // ArrowDown-escapable, but out of the Tab walk and never the seeded key
+  // view — the list stays the shade's opening destination, so Return still
+  // means Done.
+  const FILTER_ORDER = -1;
   const focusGated = active && onClose !== undefined;
   useSeedKeyView(focusGated ? `${focusGroup}:${LIST_ORDER}` : null);
   const { focusableRef: listFocusableRef } = useFocusable({
@@ -103,6 +173,38 @@ export function SessionHistoryView({
     order: LIST_ORDER,
     register: focusGated,
   });
+
+  // The scroller node, for the intersection root and the top-up measurement.
+  // `useFocusable` hands back a callback ref, so the two compose here.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const setScrollerRef = useCallback(
+    (el: HTMLDivElement | null): void => {
+      scrollerRef.current = el;
+      listFocusableRef(el);
+    },
+    [listFocusableRef],
+  );
+
+  // ── Filtering ────────────────────────────────────────────────────────────
+  const [filterQuery, setFilterQuery] = useState("");
+  const focusManager = useFocusManager();
+  const cardId = useContext(CardIdContext);
+  const filterDelegate = useMemo<TugFilterFieldDelegate>(
+    () => ({
+      filterFieldDidChangeQuery: setFilterQuery,
+      // ArrowDown hands the key view down to the list, the same landing a
+      // click on a row would make.
+      filterFieldDidRequestAdvance: () => {
+        if (cardId === null) return;
+        focusManager?.place(
+          cardId,
+          { kind: "focus-key", focusKey: `${focusGroup}:${LIST_ORDER}` },
+          { modality: "keyboard" },
+        );
+      },
+    }),
+    [cardId, focusGroup, focusManager],
+  );
 
   // Request only while this card's History view is the active slot (the store
   // is a singleton keyed by one root). Idempotent via the store's
@@ -143,6 +245,74 @@ export function SessionHistoryView({
     gitLogStore()?.refresh();
   }, [active, projectDir, snapshot]);
 
+  // ── Paging ───────────────────────────────────────────────────────────────
+
+  // While the singleton is showing another card's project, treat it as loading
+  // for us until our request lands.
+  const payload =
+    snapshot.requestedRoot === projectDir ? snapshot.payload : null;
+  const commits = payload?.commits;
+  const filtered = useMemo(
+    () =>
+      commits === undefined
+        ? []
+        : filterAndRank(commits, filterQuery, commitFilterFields),
+    [commits, filterQuery],
+  );
+
+  // The sentinel enters React state rather than a ref so the observer effect
+  // re-runs the moment it mounts (it exists only once the list has content).
+  // A node handle is not appearance ([L06] is untouched).
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
+
+  // The scroll driver: the next page starts loading a screen-ish before the
+  // reader reaches the foot. `loadMore` is a no-op unless there is more to
+  // fetch and nothing in flight, so the observer may fire freely.
+  useEffect(() => {
+    const root = scrollerRef.current;
+    if (!active || root === null || sentinel === null) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          gitLogStore()?.loadMore();
+        }
+      },
+      { root, rootMargin: `${PREFETCH_MARGIN_PX}px 0px` },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [active, sentinel]);
+
+  // The top-up pass, for the two cases an intersection cannot report. An
+  // observer only fires on a CHANGE in intersection, so a page that lands
+  // while the sentinel is already visible — because the shade is taller than
+  // the content, or because the filter dropped nearly all of it — raises no
+  // event and the walk would stall short.
+  //
+  // This does not re-derive a request from a phase ([L28]): each pass consumes
+  // `has_more`, which only ever turns off, and every page strictly advances
+  // the offset, so the walk terminates at the root commit. A `loadMore` the
+  // store declines changes nothing, which is precisely what stops the effect
+  // from re-entering.
+  useEffect(() => {
+    if (!active || payload === null) return;
+    if (!payload.has_more || snapshot.loadingMore) return;
+    const root = scrollerRef.current;
+    if (root === null) return;
+    const wantsMore =
+      filterQuery === ""
+        ? root.scrollHeight - root.scrollTop - root.clientHeight <
+          PREFETCH_MARGIN_PX
+        : filtered.length < FILTERED_ROW_TARGET;
+    if (wantsMore) gitLogStore()?.loadMore();
+  }, [active, payload, snapshot.loadingMore, filterQuery, filtered.length]);
+
+  // Only a repo with commits gets a filter — but once it has one, keep it
+  // through an empty result set, so a query that matches nothing still has a
+  // field to clear.
+  const filterable =
+    payload !== null && !payload.no_repo && payload.commits.length > 0;
+
   // The view fills the sheet's shade body ([P17]): the header strip pinned
   // above, the scrolling view below. The shade panel (geometry, scrim,
   // grabber, modality, Escape close) is `TugSheetContent
@@ -160,10 +330,31 @@ export function SessionHistoryView({
             </span>
           }
           name="History"
+          // The filter holds the header's trailing edge, where the Lens
+          // sections carry theirs — pinned above the scroller, so the control
+          // that trims the list never scrolls away from it. Mounted only for a
+          // repo with commits: there is nothing to trim otherwise, and a field
+          // over "No commits" would be an affordance that does nothing. It
+          // survives that gate once shown, so filtering to zero can never
+          // strand the field that is the only way back.
+          actions={
+            filterable ? (
+              <TugFilterField
+                className="session-history-filter"
+                delegate={filterDelegate}
+                placeholder="Filter commits"
+                aria-label="Filter commits"
+                data-testid="session-history-filter"
+                focusGroup={focusGroup}
+                focusOrder={FILTER_ORDER}
+                focusPolicy="skip"
+              />
+            ) : undefined
+          }
         />
       </div>
       <div
-        ref={listFocusableRef}
+        ref={setScrollerRef}
         className="session-history-view"
         data-slot="session-history-view"
         tabIndex={0}
@@ -219,11 +410,6 @@ export function SessionHistoryView({
     );
   }
 
-  // While the singleton is showing another card's project, treat it as loading
-  // for us until our request lands.
-  const payload =
-    snapshot.requestedRoot === projectDir ? snapshot.payload : null;
-
   if (payload?.no_repo) {
     return shell(<TugNonRepoNotice projectDir={projectDir} />);
   }
@@ -240,14 +426,35 @@ export function SessionHistoryView({
   if (payload.commits.length === 0) {
     return shell(<div className="session-history-empty">No commits</div>);
   }
+  if (filtered.length === 0) {
+    // Every commit loaded was walked and none matched; the walk is only
+    // finished, though, once `has_more` is off — say which, so a reader who
+    // sees nothing knows whether to wait.
+    return shell(
+      <div className="session-history-empty" data-testid="session-history-no-matches">
+        {payload.has_more
+          ? "Searching further back…"
+          : `No commits match “${filterQuery}”.`}
+      </div>,
+    );
+  }
 
   return shell(
     <div className="session-history-view-body">
       <TugHistoryList
-      commits={payload.commits}
-      projectDir={projectDir}
-      metaFields={metaFields}
-    />
+        commits={filtered}
+        projectDir={projectDir}
+        metaFields={metaFields}
+        filterQuery={filterQuery}
+      />
+      {/* The foot of the walk. The sentinel is what the observer watches, so
+          it must sit inside the scroller and below the last row; the note
+          beside it is the only thing that says a page is on its way. */}
+      <div className="session-history-view-foot" ref={setSentinel}>
+        {snapshot.loadingMore ? (
+          <span data-testid="session-history-loading-more">Loading more…</span>
+        ) : null}
+      </div>
     </div>,
   );
 }

@@ -25,6 +25,15 @@
  * the detail body mounts on expand and unmounts on collapse ([L26]), so each
  * expanded row's commit-files store lives exactly as long as its body.
  *
+ * ## Filtering
+ *
+ * The host trims the list ({@link commitFilterFields} says what a commit is
+ * matched on) and passes the query down as `filterQuery` so each row can show
+ * WHY it survived: the matched spans of the sha and the subject wear the
+ * shared filter mark, and a row kept by a term that only appears in its file
+ * roster names the paths that matched — otherwise a commit whose subject says
+ * nothing about the query reads as a mismatch the filter failed to remove.
+ *
  * Laws: [L02] the commit-files store enters React through
  * `useSyncExternalStore`; [L06] tones and hover affordances paint via CSS,
  * never React state; [L26] the detail body collapses by unmount.
@@ -48,17 +57,47 @@ import {
   formatCommitStamp,
   type CommitMetaField,
 } from "@/components/tugways/commit-presentation";
+import { SHA_DISPLAY_LEN } from "@/components/tugways/commit-sha-text";
 import {
   CommitChangesList,
   type CommitChangesFile,
 } from "@/components/tugways/tug-changes-list";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { dashNameFromTrailer } from "@/lib/landing-receipt";
+import { filterHighlightRanges } from "@/lib/text-match";
 import type { GitLogCommit } from "@/lib/git-log-store";
 import {
   createCommitFilesStore,
   EMPTY_COMMIT_FILES_SNAPSHOT,
   type GitCommitFilesStoreSnapshot,
 } from "@/lib/git-commit-files-store";
+
+/**
+ * Everything a History filter matches a commit on: its hash, its message
+ * (subject + body), its details (who and when), and the paths it touched. Not
+ * the diffs — a filter that read hunks would be searching the repo, and this
+ * is a control for trimming a list of commits down to the ones worth reading.
+ *
+ * The full 40-char sha is matched even though rows display eight characters,
+ * so a hash pasted from anywhere finds its commit.
+ */
+export function commitFilterFields(
+  commit: GitLogCommit,
+): readonly (string | undefined)[] {
+  return [
+    commit.sha,
+    commit.subject,
+    commit.body,
+    commit.author,
+    commit.committer,
+    commit.committer_email,
+    commit.date,
+    ...(commit.files ?? []),
+  ];
+}
+
+/** How many matched paths a row names before it says "and N more". */
+const MATCHED_PATH_LIMIT = 4;
 
 /** Read one expanded row's commit-files store reactively ([L02]). */
 function useCommitFilesSnapshot(
@@ -138,15 +177,27 @@ function CommitRow({
   commit,
   projectDir,
   metaFields,
+  filterQuery = "",
 }: {
   commit: GitLogCommit;
   projectDir: string;
   metaFields: readonly CommitMetaField[];
+  filterQuery?: string;
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   // A commit that landed as a dash join carries the `Tug-Dash:` trailer;
   // History badges it so joins read differently from hand commits ([P09]).
   const dashName = dashNameFromTrailer(commit.tug_dash);
+  const shortSha = commit.sha.slice(0, SHA_DISPLAY_LEN);
+  // The paths the query hit. A row can survive on its file roster alone, so
+  // naming them is what makes the match legible; without this such a row looks
+  // like the filter simply failed to drop it.
+  const matchedPaths = useMemo(() => {
+    if (filterQuery === "") return [];
+    return (commit.files ?? []).filter(
+      (path) => filterHighlightRanges(filterQuery, path).length > 0,
+    );
+  }, [commit.files, filterQuery]);
   return (
     <div
       className="tug-history-list-commit-block"
@@ -207,6 +258,8 @@ function CommitRow({
           <CommitIdentityLine
             sha={commit.sha}
             subject={commit.subject}
+            shaContent={renderFilterHighlight(shortSha, filterQuery)}
+            subjectContent={renderFilterHighlight(commit.subject, filterQuery)}
             className="tug-history-list-commit-header"
             badge={
               dashName !== null ? (
@@ -221,6 +274,27 @@ function CommitRow({
           />
         </TugListRow>
       </div>
+      {/* The filter's receipt for this row: the paths the query found, under
+          the identity line it could not explain. Capped at a visible count —
+          a commit that touched a hundred matching files says so rather than
+          quietly showing four. */}
+      {matchedPaths.length > 0 ? (
+        <div
+          className="tug-history-list-matched-paths"
+          data-testid="session-history-matched-paths"
+        >
+          {matchedPaths.slice(0, MATCHED_PATH_LIMIT).map((path) => (
+            <span className="tug-history-list-matched-path" key={path}>
+              {renderFilterHighlight(path, filterQuery)}
+            </span>
+          ))}
+          {matchedPaths.length > MATCHED_PATH_LIMIT ? (
+            <span className="tug-history-list-matched-path-overflow">
+              and {matchedPaths.length - MATCHED_PATH_LIMIT} more
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {expanded ? (
         <CommitDetail commit={commit} projectDir={projectDir} />
       ) : null}
@@ -239,6 +313,12 @@ export interface TugHistoryListProps {
    * persistence).
    */
   metaFields?: readonly CommitMetaField[];
+  /**
+   * The live filter query, for the rows' own account of the match — the marks
+   * over the sha and subject, and the matched-path line. The host has ALREADY
+   * trimmed `commits` by it; this list filters nothing itself.
+   */
+  filterQuery?: string;
   className?: string;
 }
 
@@ -249,6 +329,7 @@ export function TugHistoryList({
   commits,
   projectDir,
   metaFields = DEFAULT_META_FIELDS,
+  filterQuery = "",
   className,
 }: TugHistoryListProps): React.ReactElement {
   return (
@@ -266,6 +347,7 @@ export function TugHistoryList({
           commit={commit}
           projectDir={projectDir}
           metaFields={metaFields}
+          filterQuery={filterQuery}
         />
       ))}
     </div>

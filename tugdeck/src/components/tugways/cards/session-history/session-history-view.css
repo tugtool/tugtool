@@ -8,6 +8,26 @@
   padding: 8px 10px 12px;
 }
 
+/* The header's filter field. Sized like the Lens sections' — it shares the
+   band altitude and must not crowd the "History" title beside it. */
+.session-history-filter {
+  flex: 1 1 auto;
+  min-inline-size: 7rem;
+  max-inline-size: 12rem;
+}
+
+/* The foot of the walk: the paging sentinel, and the note that says the next
+   page is coming. It keeps a height even while empty so the sentinel is a real
+   box the intersection observer can see. */
+.session-history-view-foot {
+  flex: 0 0 auto;
+  min-height: 1.25rem;
+  padding: 4px 0 2px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
 .session-history-empty {
   margin: auto;
   padding: var(--tug-space-4, 16px);

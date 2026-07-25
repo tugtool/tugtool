@@ -185,6 +185,14 @@ pub struct GitLogCommit {
     /// commit landed as a dash join — the History join badge ([P09]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tug_dash: Option<String>,
+    /// The commit's changed paths (`--name-only`), repo-relative. Paths ONLY —
+    /// the per-file statuses and line counts stay on the `GIT_COMMIT_FILES`
+    /// route the expanded row asks for. They ride the log so the History
+    /// filter can match a commit by the files it touched without a fan-out of
+    /// one request per row. Empty for a merge commit (`--name-only` states no
+    /// files for one) and for an empty commit.
+    #[serde(default)]
+    pub files: Vec<String>,
 }
 
 /// A HEAD-moved signal, broadcast on the GIT_HEAD feed (0x27) whenever a
@@ -210,6 +218,10 @@ pub struct GitHeadSignal {
 /// branch (`git branch --show-current`), `"(detached)"` when detached, and
 /// `""` when `no_repo`. `commits` is most-recent-first, capped at the request's
 /// `limit`.
+///
+/// The log is paged: `offset` echoes how many commits the request skipped and
+/// `has_more` says whether the walk continued past this page, which is what a
+/// load-on-scroll client needs to decide whether to ask for another one.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GitLogSnapshot {
     /// Correlation id echoed from the request.
@@ -223,6 +235,16 @@ pub struct GitLogSnapshot {
     /// client can say "not a git repository". `commits` is empty in that case.
     #[serde(default)]
     pub no_repo: bool,
+    /// How many commits this page skipped, echoed from the request. `0` is the
+    /// first page; a client appends any higher offset to what it already holds
+    /// rather than replacing it.
+    #[serde(default)]
+    pub offset: u32,
+    /// True when at least one commit exists past this page — the walk was cut
+    /// by `limit`, not by the end of history. `false` means the client has
+    /// reached the root commit and must stop asking.
+    #[serde(default)]
+    pub has_more: bool,
     /// Most-recent-first commits, at most the request's `limit`.
     pub commits: Vec<GitLogCommit>,
 }
@@ -712,6 +734,8 @@ mod tests {
             workspace_key: "/work/repo".to_string(),
             branch: "main".to_string(),
             no_repo: false,
+            offset: 20,
+            has_more: true,
             commits: vec![
                 GitLogCommit {
                     sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
@@ -723,6 +747,7 @@ mod tests {
                     committer_email: "ada@example.com".to_string(),
                     committer_date: "2026-07-15T09:30:00-07:00".to_string(),
                     tug_dash: Some("tugdash/feature onto main".to_string()),
+                    files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
                 },
                 GitLogCommit {
                     sha: "89abcdef0123456789abcdef0123456789abcdef".to_string(),
@@ -734,6 +759,7 @@ mod tests {
                     committer_email: "grace@example.com".to_string(),
                     committer_date: "2026-07-14T12:00:00-07:00".to_string(),
                     tug_dash: None,
+                    files: Vec::new(),
                 },
             ],
         };
@@ -782,11 +808,22 @@ mod tests {
 
     #[test]
     fn test_git_log_snapshot_no_repo_defaults() {
-        // A payload with no `no_repo` field decodes to `false`.
+        // A payload with no `no_repo` / paging fields decodes to the first
+        // page of a non-repo: nothing skipped, nothing more to ask for.
         let json = r#"{"request_id":"gl-2","workspace_key":"ws","branch":"","commits":[]}"#;
         let decoded: GitLogSnapshot = serde_json::from_str(json).unwrap();
         assert!(!decoded.no_repo);
+        assert_eq!(decoded.offset, 0);
+        assert!(!decoded.has_more);
         assert!(decoded.commits.is_empty());
+    }
+
+    #[test]
+    fn test_git_log_commit_files_default_to_empty() {
+        // A commit record with no `files` key decodes to an empty roster.
+        let json = r#"{"sha":"abc","subject":"s","author":"a","date":"2026-07-24"}"#;
+        let decoded: GitLogCommit = serde_json::from_str(json).unwrap();
+        assert!(decoded.files.is_empty());
     }
 
     #[test]

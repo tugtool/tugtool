@@ -25,10 +25,17 @@ export const SHA_DISPLAY_LEN = 8;
 
 export function CommitShaText({
   sha,
+  content,
   className,
 }: {
   /** The full commit sha; displayed and copied truncated to the short form. */
   sha: string;
+  /**
+   * The short sha rendered with decoration — filter-match `<mark>`s, say.
+   * MUST read as the same characters the plain form shows; it replaces how the
+   * sha is painted, never what it says. Omitted ⇒ the plain short text.
+   */
+  content?: React.ReactNode;
   className?: string;
 }): React.ReactElement {
   const ref = useRef<HTMLElement | null>(null);
@@ -57,7 +64,7 @@ export function CommitShaText({
         onMouseUp={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
-        {sha.slice(0, SHA_DISPLAY_LEN)}
+        {content ?? sha.slice(0, SHA_DISPLAY_LEN)}
       </code>
       {/* The copy menu's own gestures stop here. A React portal still bubbles
           through the REACT tree, so without this a click on the menu's Copy

@@ -660,7 +660,7 @@ async fn main() {
     });
 
     // Adapter: router sends raw Frames on GIT_LOG_QUERY. Parse `{root,
-    // requestId, limit}`, then run one `git log` there and broadcast the
+    // requestId, offset, limit}`, then run one `git log` there and broadcast the
     // `GitLogSnapshot` on GIT_LOG. Each request runs in its own task so a slow
     // git invocation never head-of-line-blocks another card's history; the
     // response is a broadcast every client sees, so correlation is entirely
@@ -682,6 +682,9 @@ async fn main() {
             root: Option<String>,
             #[serde(rename = "requestId")]
             request_id: Option<String>,
+            /// How many commits back from HEAD this page starts. Absent ⇒ the
+            /// first page.
+            offset: Option<u32>,
             limit: Option<u32>,
         }
         while let Some(frame) = gl_input_rx.recv().await {
@@ -714,13 +717,21 @@ async fn main() {
                 ),
             };
             let request_id = raw.request_id.unwrap_or_default();
-            let limit = raw.limit.unwrap_or(20).clamp(1, 200);
+            let offset = raw.offset.unwrap_or(0);
+            // The ceiling is a page size, not a history depth — a client walks
+            // as deep as it likes by paging, so this only bounds one round
+            // trip. It is roomy enough for the one request that is legitimately
+            // not a page: a HEAD-moved refresh re-reads everything the client
+            // has already scrolled through, in one shot, so the list never
+            // shrinks under the reader.
+            let limit = raw.limit.unwrap_or(20).clamp(1, 1000);
             let response_tx = gl_response_tx_loop.clone();
             tokio::spawn(async move {
                 let snapshot = crate::feeds::git::build_git_log_snapshot(
                     &project_dir,
                     request_id,
                     &workspace_key,
+                    offset,
                     limit,
                 )
                 .await;
