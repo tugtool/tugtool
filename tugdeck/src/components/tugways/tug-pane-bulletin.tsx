@@ -187,6 +187,9 @@ export function TugPaneBulletinProvider({
                 : placement
           }
           toastOptions={{ className: "tug-pane-bulletin", unstyled: true }}
+          // Every bulletin carries a close affordance — dismissal never waits
+          // on the auto-dismiss timeout.
+          closeButton
           icons={BULLETIN_ICONS}
           gap={8}
         />

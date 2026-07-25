@@ -19,8 +19,11 @@ body {
   --tugx-pane-bulletin-fg:             var(--tug7-element-global-text-normal-default-rest);
   --tugx-pane-bulletin-border:         var(--tug7-element-global-border-normal-default-rest);
   --tugx-pane-bulletin-shadow:         var(--tug7-element-global-shadow-normal-overlay-rest);
+  /* B is the right padding and clears the close button's inset + box. */
   --tugx-pane-bulletin-space-a: 0.75rem;
-  --tugx-pane-bulletin-space-b: 1.5rem;
+  --tugx-pane-bulletin-space-b: 2.25rem;
+  --tugx-pane-bulletin-close-size: 1.25rem;
+  --tugx-pane-bulletin-close-inset: 0.5rem;
   --tugx-pane-bulletin-accent-default: var(--tug7-element-global-border-normal-muted-rest);
   --tugx-pane-bulletin-accent-success: var(--tug7-element-tone-border-normal-success-rest);
   --tugx-pane-bulletin-accent-danger:  var(--tug7-element-tone-border-normal-danger-rest);
@@ -156,14 +159,15 @@ body {
   background-color: var(--tug7-surface-control-primary-ghost-action-active);
 }
 
-/* ---- Close button (Sonner renders it when closable) ---- */
+/* ---- Close button — Sonner renders it as the toast's first child; taking it
+   out of flow keeps it off the grid and pinned to the top-right corner ---- */
 
 .tug-pane-bulletin [data-close-button] {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  width: 1.25rem;
-  height: 1.25rem;
+  top: var(--tugx-pane-bulletin-close-inset);
+  right: var(--tugx-pane-bulletin-close-inset);
+  width: var(--tugx-pane-bulletin-close-size);
+  height: var(--tugx-pane-bulletin-close-size);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -172,10 +176,15 @@ body {
   background-color: transparent;
   color: var(--tugx-pane-bulletin-fg);
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0.55;
   padding: 0;
 }
 
 .tug-pane-bulletin [data-close-button]:hover {
   opacity: 1;
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.tug-pane-bulletin [data-close-button]:active {
+  background-color: var(--tug7-surface-control-primary-ghost-action-active);
 }

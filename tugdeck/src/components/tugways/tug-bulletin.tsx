@@ -103,6 +103,9 @@ export function TugBulletinProvider({ position = "top-right", children }: TugBul
         className: "tug-bulletin",
         unstyled: true,
       },
+      // Every bulletin carries a close affordance — dismissal never waits on
+      // the auto-dismiss timeout.
+      closeButton: true,
       icons: BULLETIN_ICONS,
       gap: 8,
     }),

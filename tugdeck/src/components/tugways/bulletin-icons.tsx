@@ -9,14 +9,16 @@
  * as foreign (the "bad icon"). Overriding `icons` swaps in the same lucide set
  * used everywhere else, at Sonner's 20px icon box and in `currentColor` — the
  * tone is already carried by the toast's left accent bar, so the glyph stays
- * the bulletin's foreground like every other lucide mark in the app. Keys left
- * unset (e.g. `loading`) fall back to Sonner's defaults.
+ * the bulletin's foreground like every other lucide mark in the app. `close`
+ * does the same for the dismiss button both toasters enable. Keys left unset
+ * (e.g. `loading`) fall back to Sonner's defaults.
  */
 
 import React from "react";
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from "lucide-react";
 
 const ICON_SIZE = 20;
+const CLOSE_ICON_SIZE = 14;
 
 /** Sonner `icons` map: tone → lucide glyph, matching tugdeck's icon language. */
 export const BULLETIN_ICONS: Partial<Record<string, React.ReactNode>> = {
@@ -24,4 +26,5 @@ export const BULLETIN_ICONS: Partial<Record<string, React.ReactNode>> = {
   error: <CircleAlert size={ICON_SIZE} aria-hidden />,
   warning: <TriangleAlert size={ICON_SIZE} aria-hidden />,
   info: <Info size={ICON_SIZE} aria-hidden />,
+  close: <X size={CLOSE_ICON_SIZE} aria-hidden />,
 };

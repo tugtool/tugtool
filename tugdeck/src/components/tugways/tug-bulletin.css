@@ -18,9 +18,12 @@ body {
   --tugx-bulletin-fg:              var(--tug7-element-global-text-normal-default-rest);
   --tugx-bulletin-border:          var(--tug7-element-global-border-normal-default-rest);
   --tugx-bulletin-shadow:          var(--tug7-element-global-shadow-normal-overlay-rest);
-  /* Spacing grid: A=tight, B=generous (matches alert/sheet conventions) */
+  /* Spacing grid: A=tight, B=generous (matches alert/sheet conventions).
+     B is the right padding and clears the close button's inset + box. */
   --tugx-bulletin-space-a: 0.75rem;
-  --tugx-bulletin-space-b: 1.5rem;
+  --tugx-bulletin-space-b: 2.25rem;
+  --tugx-bulletin-close-size: 1.25rem;
+  --tugx-bulletin-close-inset: 0.5rem;
   /* Tone accent borders */
   --tugx-bulletin-accent-default: var(--tug7-element-global-border-normal-muted-rest);
   --tugx-bulletin-accent-success: var(--tug7-element-tone-border-normal-success-rest);
@@ -149,14 +152,15 @@ body {
   background-color: var(--tug7-surface-control-primary-ghost-action-active);
 }
 
-/* ---- Close button (Sonner renders it when closable) ---- */
+/* ---- Close button — Sonner renders it as the toast's first child; taking it
+   out of flow keeps it off the grid and pinned to the top-right corner ---- */
 
 .tug-bulletin [data-close-button] {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  width: 1.25rem;
-  height: 1.25rem;
+  top: var(--tugx-bulletin-close-inset);
+  right: var(--tugx-bulletin-close-inset);
+  width: var(--tugx-bulletin-close-size);
+  height: var(--tugx-bulletin-close-size);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -165,13 +169,17 @@ body {
   background-color: transparent;
   color: var(--tugx-bulletin-fg);
   cursor: pointer;
-  opacity: 0.5;
-  font-size: 0.75rem;
+  opacity: 0.55;
   padding: 0;
 }
 
 .tug-bulletin [data-close-button]:hover {
   opacity: 1;
+  background-color: var(--tug7-surface-control-primary-ghost-action-hover);
+}
+
+.tug-bulletin [data-close-button]:active {
+  background-color: var(--tug7-surface-control-primary-ghost-action-active);
 }
 
 /* ---- Sonner viewport container — ensure correct z-layering ---- */
