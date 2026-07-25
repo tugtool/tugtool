@@ -43,6 +43,13 @@
  * state — the field and the list are in one component, so the module-store
  * adapter the Lens sections need does not apply here.
  *
+ * Beside it, a `TugOptionGroup` AIMS the filter: Message / Detail / Files, all
+ * on by default, each independently switchable ({@link useCommitFilterScope}
+ * holds the reader's standing choice deck-wide). A word common in file paths
+ * otherwise swamps the one commit whose subject says it — narrowing is how a
+ * filter stays a way of finding one commit rather than a way of listing many.
+ * The hash is outside the group and always matched.
+ *
  * Laws: [L02] the log store enters React through `useSyncExternalStore`;
  * [L06] no appearance state in React; [L28] the store is the source of both
  * the log and its retry policy — this view subscribes and asks once per root,
@@ -78,6 +85,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useCommitMetaFields } from "@/lib/commit-meta-fields";
+import { useCommitFilterScope } from "@/lib/commit-filter-scope";
 import {
   useFocusable,
   useFocusManager,
@@ -156,8 +164,18 @@ export function SessionHistoryView({
   // per-card, so the shade reads and writes the one deck default.
   const { fields: metaFields, setFields } = useCommitMetaFields();
   const metaSenderId = useId();
+
+  // Where the filter looks — the reader's other standing choice, persisted the
+  // same way and read by the same responder form. Both groups dispatch
+  // `setValue` with a `string[]`; the sender id is what tells them apart.
+  const { scope: filterScope, setScope } = useCommitFilterScope();
+  const scopeSenderId = useId();
+
   const { ResponderScope, responderRef } = useResponderForm({
-    setValueStringArray: { [metaSenderId]: setFields },
+    setValueStringArray: {
+      [metaSenderId]: setFields,
+      [scopeSenderId]: setScope,
+    },
   });
 
   // Focus language ([P14]): the scrolling commit list holds the shade's key
@@ -267,8 +285,10 @@ export function SessionHistoryView({
     () =>
       commits === undefined
         ? []
-        : filterAndRank(commits, filterQuery, commitFilterFields),
-    [commits, filterQuery],
+        : filterAndRank(commits, filterQuery, (commit) =>
+            commitFilterFields(commit, filterScope),
+          ),
+    [commits, filterQuery, filterScope],
   );
 
   // The sentinel enters React state rather than a ref so the observer effect
@@ -360,15 +380,36 @@ export function SessionHistoryView({
           // strand the field that is the only way back.
           actions={
             filterable ? (
-              <TugFilterField
-                delegate={filterDelegate}
-                placeholder="Filter commits"
-                aria-label="Filter commits"
-                data-testid="session-history-filter"
-                focusGroup={focusGroup}
-                focusOrder={FILTER_ORDER}
-                focusPolicy="skip"
-              />
+              <>
+                <TugFilterField
+                  delegate={filterDelegate}
+                  placeholder="Filter commit history"
+                  aria-label="Filter commit history"
+                  data-testid="session-history-filter"
+                  focusGroup={focusGroup}
+                  focusOrder={FILTER_ORDER}
+                  focusPolicy="skip"
+                />
+                {/* Where the field looks. Beside the field, not in the footer
+                    with the row-metadata toggles: this one changes what the
+                    list CONTAINS, so it belongs to the control it modifies and
+                    within a glance of the query being typed. Focus-refusing
+                    (every `TugOptionGroup` item is), so aiming mid-query never
+                    takes the caret out of the field. */}
+                <TugOptionGroup
+                  value={filterScope as string[]}
+                  senderId={scopeSenderId}
+                  size="xs"
+                  emphasis="default"
+                  aria-label="Filter targets"
+                  data-testid="session-history-filter-scope"
+                  items={[
+                    { value: "message", label: "Message", title: "Match the commit subject and message body" },
+                    { value: "detail", label: "Detail", title: "Match the author, committer, and date" },
+                    { value: "files", label: "Files", title: "Match the paths the commit changed" },
+                  ]}
+                />
+              </>
             ) : undefined
           }
         />
@@ -452,8 +493,13 @@ export function SessionHistoryView({
     // finished at the root commit — so say which rather than a bare "none".
     return shell(
       <div className="session-history-empty" data-testid="session-history-no-matches">
-        {searchCapped
-          ? `No commits match “${filterQuery}” in the newest ${payload.commits.length}. Scroll to search further back.`
+        {filterScope.length === 0
+          ? // Every target is off, so only a hash can match — a real state the
+            // reader chose, and the one no-match message that has an answer
+            // worth naming.
+            `Nothing but a commit hash can match “${filterQuery}” — every filter target is off.`
+          : searchCapped
+            ? `No commits match “${filterQuery}” in the newest ${payload.commits.length}. Scroll to search further back.`
           : payload.has_more
             ? "Searching further back…"
             : `No commits match “${filterQuery}”.`}
@@ -468,6 +514,7 @@ export function SessionHistoryView({
         projectDir={projectDir}
         metaFields={metaFields}
         filterQuery={filterQuery}
+        filterScope={filterScope}
       />
       {/* The foot of the walk. The sentinel is what the observer watches, so
           it must sit inside the scroller and below the last row; the note

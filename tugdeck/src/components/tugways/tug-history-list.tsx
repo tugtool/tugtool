@@ -34,6 +34,11 @@
  * roster names the paths that matched — otherwise a commit whose subject says
  * nothing about the query reads as a mismatch the filter failed to remove.
  *
+ * `filterScope` aims that match at some of the commit's surfaces rather than
+ * all of them ({@link CommitFilterScope}), and the marks obey it: a mark is a
+ * claim that this text is why the row is here, so text the filter was told not
+ * to read is left unmarked even when the query happens to appear in it.
+ *
  * Laws: [L02] the commit-files store enters React through
  * `useSyncExternalStore`; [L06] tones and hover affordances paint via CSS,
  * never React state; [L26] the detail body collapses by unmount.
@@ -64,6 +69,10 @@ import {
 } from "@/components/tugways/tug-changes-list";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { dashNameFromTrailer } from "@/lib/landing-receipt";
+import {
+  DEFAULT_COMMIT_FILTER_SCOPE,
+  type CommitFilterScope,
+} from "@/lib/commit-filter-scope";
 import { filterHighlightRanges, filterQueryMatch } from "@/lib/text-match";
 import type { GitLogCommit } from "@/lib/git-log-store";
 import {
@@ -73,34 +82,59 @@ import {
 } from "@/lib/git-commit-files-store";
 
 /**
- * Everything a History filter matches a commit on: its hash, its message
- * (subject + body), its details (who and when), and the paths it touched. Not
- * the diffs — a filter that read hunks would be searching the repo, and this
- * is a control for trimming a list of commits down to the ones worth reading.
+ * Everything a History filter matches a commit on, aimed by `scope`: its
+ * message (subject + body), its details (who and when), and the paths it
+ * touched. Not the diffs — a filter that read hunks would be searching the
+ * repo, and this is a control for trimming a list of commits down to the ones
+ * worth reading.
  *
- * The full 40-char sha is matched even though rows display eight characters,
- * so a hash pasted from anywhere finds its commit.
+ * The hash is outside the scope and always matched, at its full 40 characters
+ * even though rows display eight — a sha pasted from anywhere is an address,
+ * and it finds its commit however the reader has aimed the text surfaces.
  */
 export function commitFilterFields(
   commit: GitLogCommit,
+  scope: readonly CommitFilterScope[] = DEFAULT_COMMIT_FILTER_SCOPE,
 ): readonly (string | undefined)[] {
-  const iso = commit.committer_date ?? "";
-  return [
-    commit.sha,
-    commit.subject,
-    commit.body,
-    commit.author,
-    commit.committer,
-    commit.committer_email,
-    commit.date,
-    // The stamps AS DISPLAYED, not just the raw ISO. `filterAndRank`'s contract
-    // is to judge the strings the row shows, so `July 24` and `7:31:26` find
-    // the commit a reader can plainly see — and the mark then lands on the very
-    // characters that matched.
-    formatCommitStamp(iso, "datetime"),
-    formatCommitStamp(iso, "full"),
-    ...(commit.files ?? []),
-  ];
+  const fields: (string | undefined)[] = [commit.sha];
+  if (scope.includes("message")) {
+    fields.push(commit.subject, commit.body);
+  }
+  if (scope.includes("detail")) {
+    const iso = commit.committer_date ?? "";
+    fields.push(
+      commit.author,
+      commit.committer,
+      commit.committer_email,
+      commit.date,
+      // The stamps AS DISPLAYED, not just the raw ISO. `filterAndRank`'s
+      // contract is to judge the strings the row shows, so `July 24` and
+      // `7:31:26` find the commit a reader can plainly see — and the mark then
+      // lands on the very characters that matched.
+      formatCommitStamp(iso, "datetime"),
+      formatCommitStamp(iso, "full"),
+    );
+  }
+  if (scope.includes("files")) {
+    fields.push(...(commit.files ?? []));
+  }
+  return fields;
+}
+
+/**
+ * The query as far as one surface is concerned — itself when the filter reads
+ * that surface, empty when it does not.
+ *
+ * A mark says "this is what the filter found". A commit kept by its subject
+ * while `files` is off must not paint its paths just because the word appears
+ * there too; the reader turned that surface off and the row should not argue.
+ */
+function scopedQuery(
+  query: string,
+  scope: readonly CommitFilterScope[],
+  surface: CommitFilterScope,
+): string {
+  return scope.includes(surface) ? query : "";
 }
 
 /** How many context lines a row names before it says "and N more". */
@@ -143,24 +177,34 @@ function matchExcerpt(line: string, query: string): string {
  * the line that answers "why is this here" — and it is suppressed entirely when
  * the visible row already carries every term, so a plain subject match adds no
  * noise.
+ *
+ * Only surfaces in `scope` are cited: the line answers "why is this here", and
+ * a surface the filter never read is not why.
  */
 function matchedContext(
   commit: GitLogCommit,
   shortSha: string,
   query: string,
+  scope: readonly CommitFilterScope[],
 ): readonly string[] {
   if (query === "") return [];
   // Everything the collapsed row already shows. If the whole query is in here,
   // the marks on the row itself are the explanation.
   const visible = `${shortSha} ${commit.subject}`;
   if (filterQueryMatch(query, [visible])) return [];
-  const hits = (commit.body ?? "")
-    .split("\n")
-    .filter((line) => line.trim().length > 0)
-    .filter((line) => filterHighlightRanges(query, line.trim()).length > 0)
-    .map((line) => matchExcerpt(line, query));
-  for (const path of commit.files ?? []) {
-    if (filterHighlightRanges(query, path).length > 0) hits.push(path);
+  const hits: string[] = [];
+  if (scope.includes("message")) {
+    for (const line of (commit.body ?? "").split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      if (filterHighlightRanges(query, trimmed).length === 0) continue;
+      hits.push(matchExcerpt(trimmed, query));
+    }
+  }
+  if (scope.includes("files")) {
+    for (const path of commit.files ?? []) {
+      if (filterHighlightRanges(query, path).length > 0) hits.push(path);
+    }
   }
   return hits;
 }
@@ -196,10 +240,12 @@ function CommitDetail({
   commit,
   projectDir,
   filterQuery = "",
+  filterScope = DEFAULT_COMMIT_FILTER_SCOPE,
 }: {
   commit: GitLogCommit;
   projectDir: string;
   filterQuery?: string;
+  filterScope?: readonly CommitFilterScope[];
 }): React.ReactElement {
   const snapshot = useCommitFilesSnapshot(projectDir, commit.sha);
   const body = commit.body ?? "";
@@ -220,7 +266,7 @@ function CommitDetail({
       {body.length > 0 ? (
         <CommitMessage
           body={body}
-          highlightQuery={filterQuery}
+          highlightQuery={scopedQuery(filterQuery, filterScope, "message")}
           dataSlot="tug-history-list-message"
         />
       ) : null}
@@ -229,7 +275,7 @@ function CommitDetail({
           root={projectDir}
           sha={commit.sha}
           files={files}
-          highlightQuery={filterQuery}
+          highlightQuery={scopedQuery(filterQuery, filterScope, "files")}
         />
       ) : snapshot.phase === "ready" ? (
         <div className="tug-history-list-commit-files-empty">
@@ -239,7 +285,10 @@ function CommitDetail({
       {/* Attribution is one string so a query spanning the name and the email
           (`ken kocienda@mac.com`) marks across the whole line, not per part. */}
       <div className="tug-history-list-commit-meta tugx-commit-attribution">
-        {renderFilterHighlight(attribution, filterQuery)}
+        {renderFilterHighlight(
+          attribution,
+          scopedQuery(filterQuery, filterScope, "detail"),
+        )}
       </div>
     </div>
   );
@@ -257,11 +306,13 @@ function CommitRow({
   projectDir,
   metaFields,
   filterQuery = "",
+  filterScope = DEFAULT_COMMIT_FILTER_SCOPE,
 }: {
   commit: GitLogCommit;
   projectDir: string;
   metaFields: readonly CommitMetaField[];
   filterQuery?: string;
+  filterScope?: readonly CommitFilterScope[];
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   // A commit that landed as a dash join carries the `Tug-Dash:` trailer;
@@ -269,8 +320,8 @@ function CommitRow({
   const dashName = dashNameFromTrailer(commit.tug_dash);
   const shortSha = commit.sha.slice(0, SHA_DISPLAY_LEN);
   const context = useMemo(
-    () => matchedContext(commit, shortSha, filterQuery),
-    [commit, shortSha, filterQuery],
+    () => matchedContext(commit, shortSha, filterQuery, filterScope),
+    [commit, shortSha, filterQuery, filterScope],
   );
   return (
     <div
@@ -301,7 +352,7 @@ function CommitRow({
                 author={commit.committer ?? commit.author}
                 iso={commit.committer_date ?? ""}
                 fields={metaFields}
-                highlightQuery={filterQuery}
+                highlightQuery={scopedQuery(filterQuery, filterScope, "detail")}
               />
               <CommitCopyControl
                 getText={() =>
@@ -334,7 +385,10 @@ function CommitRow({
             sha={commit.sha}
             subject={commit.subject}
             shaContent={renderFilterHighlight(shortSha, filterQuery)}
-            subjectContent={renderFilterHighlight(commit.subject, filterQuery)}
+            subjectContent={renderFilterHighlight(
+              commit.subject,
+              scopedQuery(filterQuery, filterScope, "message"),
+            )}
             className="tug-history-list-commit-header"
             badge={
               dashName !== null ? (
@@ -376,6 +430,7 @@ function CommitRow({
           commit={commit}
           projectDir={projectDir}
           filterQuery={filterQuery}
+          filterScope={filterScope}
         />
       ) : null}
     </div>
@@ -399,6 +454,12 @@ export interface TugHistoryListProps {
    * trimmed `commits` by it; this list filters nothing itself.
    */
   filterQuery?: string;
+  /**
+   * Which of the commit's surfaces that query was aimed at. The rows use it for
+   * their receipts only — the host already applied it when trimming — so the
+   * marks and the matched-context line cite nothing the filter did not read.
+   */
+  filterScope?: readonly CommitFilterScope[];
   className?: string;
 }
 
@@ -410,6 +471,7 @@ export function TugHistoryList({
   projectDir,
   metaFields = DEFAULT_META_FIELDS,
   filterQuery = "",
+  filterScope = DEFAULT_COMMIT_FILTER_SCOPE,
   className,
 }: TugHistoryListProps): React.ReactElement {
   return (
@@ -428,6 +490,7 @@ export function TugHistoryList({
           projectDir={projectDir}
           metaFields={metaFields}
           filterQuery={filterQuery}
+          filterScope={filterScope}
         />
       ))}
     </div>

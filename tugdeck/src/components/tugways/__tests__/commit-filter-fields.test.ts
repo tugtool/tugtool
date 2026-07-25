@@ -8,6 +8,11 @@
  *
  * Multi-term queries AND across the union of fields, which is what makes
  * "a path plus a word" a usable way to find one commit.
+ *
+ * The scope block pins the aiming contract: Message / Detail / Files each
+ * contribute only their own surface, the hash is matched whatever the scope
+ * (an address is not a text surface), and the persisted form keeps
+ * "set to nothing" distinct from "never set".
  */
 
 import { describe, test, expect } from "bun:test";
@@ -16,6 +21,11 @@ import { commitFilterFields } from "../tug-history-list";
 import { formatCommitStamp } from "../commit-presentation";
 import { filterAndRank, filterQueryMatch } from "@/lib/text-match";
 import type { GitLogCommit } from "@/lib/git-log-store";
+import {
+  DEFAULT_COMMIT_FILTER_SCOPE,
+  parseCommitFilterScope,
+  type CommitFilterScope,
+} from "@/lib/commit-filter-scope";
 
 const COMMIT: GitLogCommit = {
   sha: "eec07b495ede18478b70e293a6f8df320b6a30c1",
@@ -31,6 +41,10 @@ const COMMIT: GitLogCommit = {
 
 function matches(query: string, commit: GitLogCommit = COMMIT): boolean {
   return filterQueryMatch(query, commitFilterFields(commit));
+}
+
+function matchesIn(scope: CommitFilterScope[], query: string): boolean {
+  return filterQueryMatch(query, commitFilterFields(COMMIT, scope));
 }
 
 describe("commitFilterFields", () => {
@@ -103,5 +117,82 @@ describe("commitFilterFields", () => {
     };
     const kept = filterAndRank([COMMIT, rustish], "git.rs", commitFilterFields);
     expect(kept.map((c) => c.sha)).toEqual(["aaa111"]);
+  });
+});
+
+describe("commitFilterFields scope", () => {
+  test("the default scope reads every surface", () => {
+    expect(DEFAULT_COMMIT_FILTER_SCOPE).toEqual(["message", "detail", "files"]);
+    // The no-argument form IS the default scope — the callers that don't aim
+    // (the transcript's receipt rows) keep matching everything.
+    expect(matchesIn([...DEFAULT_COMMIT_FILTER_SCOPE], "view.tsx")).toBe(
+      matches("view.tsx"),
+    );
+  });
+
+  test("message alone reads the subject and body, not the paths or the author", () => {
+    expect(matchesIn(["message"], "metadata toggle")).toBe(true);
+    expect(matchesIn(["message"], "selection state")).toBe(true);
+    expect(matchesIn(["message"], "view.tsx")).toBe(false);
+    expect(matchesIn(["message"], "kocienda@mac.com")).toBe(false);
+  });
+
+  test("detail alone reads who and when, not the message", () => {
+    expect(matchesIn(["detail"], "kocienda@mac.com")).toBe(true);
+    expect(matchesIn(["detail"], "July")).toBe(true);
+    expect(matchesIn(["detail"], "metadata toggle")).toBe(false);
+  });
+
+  test("files alone reads the paths, not the message", () => {
+    expect(matchesIn(["files"], "session-history/view.tsx")).toBe(true);
+    expect(matchesIn(["files"], "metadata toggle")).toBe(false);
+  });
+
+  test("the hash matches whatever the scope — an address is not a surface", () => {
+    expect(matchesIn(["files"], "eec07b49")).toBe(true);
+    expect(matchesIn([], COMMIT.sha)).toBe(true);
+    // …and with every target off, nothing else does.
+    expect(matchesIn([], "metadata toggle")).toBe(false);
+    expect(matchesIn([], "view.tsx")).toBe(false);
+  });
+
+  test("a narrowed scope drops rows a wide one would keep", () => {
+    const pathOnly: GitLogCommit = {
+      ...COMMIT,
+      sha: "aaa111",
+      subject: "tugcast(git): page the log route",
+      body: "",
+      files: ["tugdeck/src/components/tugways/cards/session-history/view.tsx"],
+    };
+    const commits = [COMMIT, pathOnly];
+    const wide = filterAndRank(commits, "session-history", (c) =>
+      commitFilterFields(c, ["message", "detail", "files"]),
+    );
+    const narrow = filterAndRank(commits, "session-history", (c) =>
+      commitFilterFields(c, ["message"]),
+    );
+    expect(wide.map((c) => c.sha)).toEqual([COMMIT.sha, "aaa111"]);
+    // Only the commit whose SUBJECT says `session-history` survives — the one
+    // that merely touched a file under that directory is gone. This is the
+    // whole point of the control.
+    expect(narrow.map((c) => c.sha)).toEqual([COMMIT.sha]);
+  });
+
+  test("a persisted scope round-trips, and an empty one stays empty", () => {
+    expect(parseCommitFilterScope({ kind: "string", value: "message,files" })).toEqual([
+      "message",
+      "files",
+    ]);
+    // Stored order does not matter — the canonical order is the group's.
+    expect(parseCommitFilterScope({ kind: "string", value: "files,message" })).toEqual([
+      "message",
+      "files",
+    ]);
+    // Set-to-nothing and never-set must stay distinguishable: the first is a
+    // choice the reader made, the second falls back to the default.
+    expect(parseCommitFilterScope({ kind: "string", value: "" })).toEqual([]);
+    expect(parseCommitFilterScope(undefined)).toBeNull();
+    // A value from a future (or drifted) build contributes nothing.
+    expect(parseCommitFilterScope({ kind: "string", value: "diffs" })).toEqual([]);
   });
 });

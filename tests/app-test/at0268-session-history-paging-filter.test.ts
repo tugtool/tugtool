@@ -18,6 +18,8 @@
  *   3. Type a path only some commits touched into the filter → the list trims
  *      to matching rows, and a row kept by its file roster names the path that
  *      matched (otherwise the match is invisible and reads as a filter bug).
+ *      Then switch the header's `Files` target off → those rows drop, because
+ *      the roster was the only thing that kept them; back on, they return.
  *   4. Filter by a word that appears ONLY in some commit's message BODY → the
  *      collapsed row shows the matching line marked, and expanding it marks the
  *      term inside the syntax-highlighted message itself. This is the path that
@@ -26,6 +28,7 @@
  *   6. Clear the filter → the full walk comes back, no shorter than before.
  *
  * @covers tugdeck/src/lib/git-log-store.ts
+ * @covers tugdeck/src/lib/commit-filter-scope.ts
  * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  * @covers tugdeck/src/components/tugways/filter-highlight.tsx
@@ -94,6 +97,56 @@ function bodyOnlyMatch(): { sha: string; word: string } {
   throw new Error("no recent commit has a body-only word — fixture assumption broke");
 }
 
+/**
+ * A recent commit plus a file name it changed that NO commit in reach of the
+ * filter's own walk mentions in its message — so a query for it can only ever
+ * be answered by a file roster.
+ *
+ * That exclusivity is the point: it makes "switch Files off ⇒ nothing matches"
+ * a statement about the control rather than about this repo's phrasing. A
+ * hardcoded path fails it the moment someone writes the file name into a commit
+ * message, which is exactly what commit messages are for.
+ */
+function rosterOnlyMatch(): { sha: string; token: string } {
+  // The `-z --name-only` stream interleaves record and path chunks; records
+  // carry the field separator, paths never do (the same rule `parse_git_log`
+  // classifies on). Scanned as deep as the filter's automatic walk can page,
+  // so a commit the walk reaches cannot contradict the fixture.
+  const commits: { sha: string; text: string; files: string[] }[] = [];
+  for (const raw of gitOut([
+    "log",
+    "-z",
+    "-n400",
+    "--name-only",
+    "--format=%H%x1f%s%x1f%b%x1f",
+  ]).split("\0")) {
+    const chunk = raw.replace(/^\n+/, "");
+    if (chunk.length === 0) continue;
+    if (chunk.includes("\x1f")) {
+      const [sha, subject, body] = chunk.split("\x1f");
+      commits.push({
+        sha: sha ?? "",
+        text: `${subject ?? ""}\n${body ?? ""}`.toLowerCase(),
+        files: [],
+      });
+    } else if (commits.length > 0) {
+      commits[commits.length - 1]!.files.push(chunk);
+    }
+  }
+  const messages = commits.map((c) => c.text);
+  // Only the newest commits are candidates — the row has to be on screen
+  // before the reader ever aims the filter.
+  for (const commit of commits.slice(0, 40)) {
+    for (const path of commit.files) {
+      const token = (path.split("/").pop() ?? "").toLowerCase();
+      if (token.length < 10) continue;
+      if (messages.some((m) => m.includes(token))) continue;
+      return { sha: commit.sha, token };
+    }
+  }
+  throw new Error("no recent commit has a roster-only file name — fixture assumption broke");
+}
+
 describe.skipIf(!SHOULD_RUN)(
   "at0268 — History pages in on scroll and filters down",
   () => {
@@ -103,6 +156,7 @@ describe.skipIf(!SHOULD_RUN)(
         const head8 = gitOut(["rev-parse", "HEAD"]).slice(0, 8);
         const headSubject = gitOut(["show", "-s", "--format=%s", "HEAD"]);
         const { sha: bodySha, word: bodyWord } = bodyOnlyMatch();
+        const { token: rosterToken } = rosterOnlyMatch();
 
         const tugbankPath = mkTempTugbank();
         try {
@@ -185,11 +239,11 @@ describe.skipIf(!SHOULD_RUN)(
             expect(grown.slice(0, firstPage.length)).toEqual(firstPage);
 
             // ── 3. Filter by a path ───────────────────────────────────────
-            // A file only some commits touch. It appears in no commit SUBJECT
-            // in this repo's recent history, so a row that survives can only
+            // A file only some commits touch, whose name appears in no commit
+            // MESSAGE within the walk's reach — so a row that survives can only
             // have been kept by its file roster.
             await app.click(FILTER);
-            await app.type(FILTER, "tug-history-list.css");
+            await app.type(FILTER, rosterToken);
             await app.waitForCondition<boolean>(
               `document.querySelectorAll(${JSON.stringify(ROW)}).length < ${grown.length}`,
               { timeoutMs: 8_000 },
@@ -211,8 +265,34 @@ describe.skipIf(!SHOULD_RUN)(
                 return { text: el.textContent, mark: m ? m.textContent : "" };
               })()`,
             );
-            expect(pathContext.text).toContain("tug-history-list.css");
+            expect(pathContext.text.toLowerCase()).toContain(rosterToken);
             expect(pathContext.mark.length).toBeGreaterThan(0);
+
+            // ── 3B. Aim the filter: switch Files off ──────────────────────
+            // Those rows were kept BY their file roster, so turning the Files
+            // target off must drop them — the option group is what makes the
+            // filter a way of finding one commit instead of listing many.
+            const SCOPE = `[data-testid="session-history-filter-scope"]`;
+            const FILES_OPTION = `${SCOPE} [data-option-value="files"]`;
+            await app.click(FILES_OPTION);
+            // No message in the walk's reach names the file, so with Files off
+            // nothing accounts for the query at all.
+            await app.waitForCondition<boolean>(
+              `document.querySelectorAll(${JSON.stringify(ROW)}).length === 0`,
+              { timeoutMs: 8_000 },
+            );
+            const offState = await app.evalJS<string | null>(
+              `document.querySelector(${JSON.stringify(FILES_OPTION)}).getAttribute("data-state")`,
+            );
+            expect(offState).toBe("off");
+
+            // Back on, and every row returns — the choice is a lens over the
+            // walk already held, not a re-fetch. (At least: the automatic walk
+            // kept paging while nothing matched, so it may now hold more.)
+            await app.click(FILES_OPTION);
+            const restoredAll = `${shasNow}.filter(function(s){ return ${JSON.stringify(byPath)}.indexOf(s) >= 0; }).length === ${byPath.length}`;
+            await app.waitForCondition<boolean>(restoredAll, { timeoutMs: 8_000 });
+            expect(await app.evalJS<boolean>(restoredAll)).toBe(true);
 
             // ── 4. Filter by a word only the message BODY carries ─────────
             await app.evalJS(
