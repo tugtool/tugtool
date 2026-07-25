@@ -1,17 +1,19 @@
 /**
  * markdown-text-styling.ts — markdown styling as a one-shot filter.
  *
- * `styleMarkdownText(text)` takes a string and returns styled lines: the
+ * `applyMarkdownTextStyle(text)` takes a string and returns styled lines: the
  * raw text split at newlines, each line carrying its syntax runs and its
  * hanging-indent width. Pure, synchronous, no editor, no DOM, no promise.
  *
  * Same three ingredients the editor's markdown styling uses, so a commit
  * message reads identically in a composer and in a receipt:
  *
- *  - the `@codemirror/lang-markdown` grammar — imported STATICALLY here.
- *    `Parser.parse()` runs to completion in one call, so styling lands in
- *    the first paint. A lazy chunk would flash unstyled text first, and
- *    the grammar is small enough that deferring it buys nothing.
+ *  - {@link markdownTextStyleParser} — the scheme's one configured grammar,
+ *    shared with the editor's extension bundle so both forms parse the same
+ *    dialect. Imported STATICALLY: `Parser.parse()` runs to completion in one
+ *    call, so styling lands in the first paint. A lazy chunk would flash
+ *    unstyled text first, and the grammar is small enough that deferring it
+ *    buys nothing.
  *  - {@link tugHighlightStyleInner} — the shared Lezer-tag → `--tug-syntax-*`
  *    map, walked by `highlightTree`. Raw markdown syntax is never removed
  *    or hidden: the `#`, `*`, `` ` `` markers stay in the text and take a
@@ -28,10 +30,13 @@
  * @module lib/markdown-text-styling
  */
 
-import { markdownLanguage } from "@codemirror/lang-markdown";
-
+import {
+  markdownHangingIndent,
+  markdownTextStyleParser,
+} from "@/lib/markdown-text-style-grammar";
 import {
   highlightRunsByLine,
+  lineIndexAt,
   lineStartOffsets,
   tugHighlightStyleInner,
   type FragmentToken,
@@ -53,16 +58,17 @@ export interface MarkdownStyledLine {
    * plus its trailing space, or 0 for a line that starts no list item.
    */
   indent: number;
+  /**
+   * True when the line lies inside a fenced or indented code block, fence
+   * delimiter lines included, so the block reads as one. The renderer gives
+   * these lines the code face: a fence body highlighted by its own grammar
+   * carries that grammar's tags and no longer carries `monospace`, so the
+   * face cannot ride on the tag alone.
+   */
+  code: boolean;
   /** The line's runs, in order, covering its full text. */
   spans: MarkdownSpan[];
 }
-
-/**
- * The list prefix: optional leading indent, a bullet (`-`/`*`/`+`) or an
- * ordered marker (`1.`/`1)`), then the run of spaces before the item's
- * content. Its length is the hanging-indent width.
- */
-const LIST_PREFIX = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
 
 /** Cut one line's text into spans at its highlight-run boundaries. */
 function spansForLine(text: string, runs: readonly FragmentToken[]): MarkdownSpan[] {
@@ -85,31 +91,44 @@ function spansForLine(text: string, runs: readonly FragmentToken[]): MarkdownSpa
  * order; an empty input returns one empty line (the shape a renderer needs
  * to paint a blank row rather than nothing).
  */
-export function styleMarkdownText(text: string): MarkdownStyledLine[] {
+export function applyMarkdownTextStyle(text: string): MarkdownStyledLine[] {
   const starts = lineStartOffsets(text);
   const lines = text.split("\n");
-  const tree = markdownLanguage.parser.parse(text);
+  const tree = markdownTextStyleParser.parse(text);
   const runs = highlightRunsByLine(tree, text, tugHighlightStyleInner);
 
   // The hanging indent keys off `ListMark` nodes rather than the regex
   // alone, so a `-` at the head of a line inside a fenced code block is
   // never mistaken for a list marker.
   const indents = new Map<number, number>();
+  // Lines inside a code block, keyed the same way: from the tree, so an
+  // indented block and a fence are both caught and prose never is.
+  const codeLines = new Set<number>();
   // `ListMark` nodes arrive in ascending position, so one forward cursor
   // walks every line start exactly once.
   let cursor = 0;
   tree.iterate({
     enter(node) {
+      if (node.name === "FencedCode" || node.name === "CodeBlock") {
+        for (let i = lineIndexAt(starts, node.from); i < starts.length; i++) {
+          if (starts[i] >= node.to && starts[i] > node.from) break;
+          codeLines.add(i);
+        }
+        return;
+      }
       if (node.name !== "ListMark") return;
       while (cursor + 1 < starts.length && starts[cursor + 1] <= node.from) cursor++;
-      const match = LIST_PREFIX.exec(lines[cursor] ?? "");
-      if (match !== null) indents.set(cursor, match[1].length);
+      indents.set(
+        cursor,
+        markdownHangingIndent(lines[cursor] ?? "", starts[cursor], node.to),
+      );
     },
   });
 
   return lines.map((line, i) => ({
     text: line,
     indent: indents.get(i) ?? 0,
+    code: codeLines.has(i),
     spans: spansForLine(line, runs[i] ?? []),
   }));
 }

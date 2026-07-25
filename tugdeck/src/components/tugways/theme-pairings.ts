@@ -2592,6 +2592,7 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
 
   // ---- tug-code.css ----
   { element: "--tugx-syntax-comment", surface: "--tugx-codeBlock-bg", role: "informational" },
+  { element: "--tugx-syntax-quote", surface: "--tugx-codeBlock-bg", role: "informational" },
   { element: "--tugx-syntax-operator", surface: "--tugx-codeBlock-bg", role: "content" },
   { element: "--tugx-codeBlock-header-fg", surface: "--tugx-codeBlock-header-bg", role: "informational" },
   { element: "--tugx-chat-attachment-fg", surface: "--tugx-chat-attachment-bg", role: "informational" },

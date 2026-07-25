@@ -2541,15 +2541,13 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     // mount-kick path: two async paths would race, and a load resolving
     // after the prop flipped off would strand styling on.
     //
-    // Enable is async (the grammar chunk lazy-loads), so the resolve
-    // handler guards against three ways the request can be stale by the
-    // time it resolves: the effect was cleaned up (`alive`), the view is
-    // gone (`viewRef.current`), or the prop already flipped back off
-    // (`markdownTextStylingRef.current` — the flip-during-load race, read
-    // live per [L07]). A rejected load retries with backoff so a transient
-    // chunk-fetch failure doesn't leave the editor unstyled. Disable is
-    // synchronous. [L06] appearance via a compartment swap — no React
-    // state, no document/selection loss.
+    // Enable resolves a promise, so the resolve handler guards against three
+    // ways the request can be stale by the time it runs: the effect was
+    // cleaned up (`alive`), the view is gone (`viewRef.current`), or the prop
+    // already flipped back off (`markdownTextStylingRef.current` — the
+    // flip-during-load race, read live per [L07]). Disable is synchronous.
+    // [L06] appearance via a compartment swap — no React state, no
+    // document/selection loss.
     useLayoutEffect(() => {
       const view = viewRef.current;
       if (view === null) return;
@@ -2560,37 +2558,19 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         return;
       }
       let alive = true;
-      // Enable is async (the grammar chunk lazy-loads). If the load rejects
-      // — a chunk fetch failing while the dev server rebuilds, a transient
-      // drop — retry with a short backoff so a one-off hiccup doesn't strand
-      // this editor unstyled. `loadMarkdownTextStyling` no longer caches a
-      // rejection, so each retry re-attempts a fresh import.
-      const maxAttempts = 4;
-      const apply = (attempt: number): void => {
-        loadMarkdownTextStyling().then(
-          (bundle) => {
-            if (!alive) return;
-            const live = viewRef.current;
-            if (live === null) return;
-            if (!markdownTextStylingRef.current) return;
-            live.dispatch({
-              effects: markdownStylingCompartment.reconfigure(bundle),
-            });
-          },
-          (err) => {
-            if (!alive) return;
-            tugDevLogStore.warn(
-              "tug-text-editor",
-              `markdown styling load failed (attempt ${attempt + 1}/${maxAttempts}): ${String(err)}`,
-            );
-            if (attempt + 1 >= maxAttempts) return;
-            setTimeout(() => {
-              if (alive) apply(attempt + 1);
-            }, 200 * (attempt + 1));
-          },
-        );
-      };
-      apply(0);
+      // The grammar is a static import, so this bundle is built by the time
+      // the promise is created and resolves on the next microtask — async in
+      // signature, synchronous in practice. The guards below still matter:
+      // even one microtask is enough for the prop to flip or the view to go.
+      void loadMarkdownTextStyling().then((bundle) => {
+        if (!alive) return;
+        const live = viewRef.current;
+        if (live === null) return;
+        if (!markdownTextStylingRef.current) return;
+        live.dispatch({
+          effects: markdownStylingCompartment.reconfigure(bundle),
+        });
+      });
       return () => {
         alive = false;
       };

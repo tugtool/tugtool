@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented on `tugdash/markdown-text-style`, awaiting join |
 | Target branch | main |
 | Last updated | 2026-07-25 |
 
@@ -573,15 +573,15 @@ App-test surface: `gallery-prompt-entry` (composes the real `TugPromptEntry`), t
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rename `styleMarkdownText` → `applyMarkdownTextStyle` | pending | — |
-| #step-2 | Shared grammar module; both forms adopt it | pending | — |
-| #step-3 | Shared hanging-indent math with fallback | pending | — |
-| #step-4 | Blockquote, horizontal rule, strikethrough tones | pending | — |
-| #step-5 | Hard-line-break tint | pending | — |
-| #step-6 | Mono face for inline and block code | pending | — |
-| #step-7 | Fenced-code sub-language highlighting | pending | — |
-| #step-8 | Tests: corpus unit suite + app-test at0269 | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Rename `styleMarkdownText` → `applyMarkdownTextStyle` | done | `dc207a88e` |
+| #step-2 | Shared grammar module; both forms adopt it | done | `a0053ab95` |
+| #step-3 | Shared hanging-indent math with fallback | done | `cedc38112` |
+| #step-4 | Blockquote, horizontal rule, strikethrough tones | done | `1a71357bf` |
+| #step-5 | Hard-line-break tint | done | `7a4d8ef37` |
+| #step-6 | Mono face for inline and block code | done | `68302fa7b` |
+| #step-7 | Fenced-code sub-language highlighting | done | `daf9eb61c` |
+| #step-8 | Tests: corpus unit suite + app-test at0269 | done | `bfebd5d03` |
+| #step-9 | Integration checkpoint | done | verification only |
 
 ---
 

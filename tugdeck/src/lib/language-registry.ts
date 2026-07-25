@@ -33,7 +33,7 @@ import {
   ensureSyntaxTree,
   syntaxTree,
 } from "@codemirror/language";
-import { highlightTree, tags } from "@lezer/highlight";
+import { highlightTree, tags, Tag } from "@lezer/highlight";
 import type { Tree } from "@lezer/common";
 import { StyleModule } from "style-mod";
 
@@ -56,6 +56,18 @@ import { StyleModule } from "style-mod";
  */
 // Every rule but the link/url pair, which the two variants below style
 // differently (default underline vs none) while sharing this base.
+/**
+ * A Tug-owned tag for markdown's `HardBreak` node — the two trailing spaces
+ * that end a line with a line break.
+ *
+ * The construct is documented, meaningful, and has no glyphs, so a foreground
+ * color paints nothing; the tint below is the one place in the markdown text
+ * styling scheme where appearance is not carried by the characters themselves.
+ * Declared here beside the spec that styles it, which also keeps the grammar
+ * module's import direction one-way.
+ */
+export const tugHardBreakTag = Tag.define();
+
 const tugHighlightSpecsBase = [
   { tag: [tags.keyword, tags.modifier, tags.operatorKeyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword, tags.self], color: "var(--tug-syntax-keyword)" },
   { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: "var(--tug-syntax-string)" },
@@ -75,7 +87,26 @@ const tugHighlightSpecsBase = [
   { tag: tags.heading, color: "var(--tug-syntax-keyword)", fontWeight: "bold" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strong, fontWeight: "bold" },
-  { tag: tags.monospace, color: "var(--tug-syntax-code)" },
+  // Code takes a code face as well as a code tone: on a proportional host —
+  // a prompt entry under a sans face, a commit body at the host's prose face
+  // — a color alone leaves `foo` reading as prose. Family only, never size:
+  // a uniform line box is what makes these surfaces read as text.
+  { tag: tags.monospace, color: "var(--tug-syntax-code)", fontFamily: "var(--tug-font-family-mono)" },
+  // Markdown block constructs. A blockquote body takes a muted tone so the
+  // one block element whose purpose is "set apart" reads as set apart; a
+  // horizontal rule takes the marker tone every other markup character has,
+  // since `---` is markup that happens to fill a line. Strikethrough is the
+  // rare construct where the styling IS the meaning, so it takes the
+  // decoration and no color. None of these remove a character: the `>`, the
+  // `---`, and the `~~` all stay on screen.
+  { tag: tags.quote, color: "var(--tugx-syntax-quote)" },
+  { tag: tags.contentSeparator, color: "var(--tug-syntax-decorator)" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  // A hard break has no glyphs to color, so it takes a background tint —
+  // making visible something already in the buffer rather than adding or
+  // hiding a character. The override replaces the node's marker tag, so this
+  // spec is the whole treatment; there is no foreground to set.
+  { tag: tugHardBreakTag, backgroundColor: "var(--tug-syntax-hard-break-bg)" },
 ];
 
 export const tugHighlightStyleInner = HighlightStyle.define([
@@ -369,7 +400,7 @@ const LANG_ID_ALIASES: Record<string, string> = {
 };
 
 /** Resolve a language id/alias to a registered extension key, or null. */
-function extForLangId(langId: string): string | null {
+export function extForLangId(langId: string): string | null {
   const id = langId.toLowerCase().trim();
   if (id === "") return null;
   const aliased = LANG_ID_ALIASES[id] ?? id;
@@ -430,7 +461,7 @@ export function lineStartOffsets(text: string): number[] {
 }
 
 /** Index of the line containing absolute offset `pos`. */
-function lineIndexAt(starts: number[], pos: number): number {
+export function lineIndexAt(starts: number[], pos: number): number {
   // Linear from a hint would suffice, but a small binary search keeps
   // whole-file snippets cheap.
   let lo = 0;

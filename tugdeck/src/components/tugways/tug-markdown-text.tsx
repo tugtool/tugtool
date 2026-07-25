@@ -7,7 +7,7 @@
  * the raw syntax left in place. Read-only: no editor, no gestures, no
  * selection model of its own beyond the browser's.
  *
- * Styling is a synchronous filter ({@link styleMarkdownText}), so the first
+ * Styling is a synchronous filter ({@link applyMarkdownTextStyle}), so the first
  * paint is the styled paint. Text renders verbatim, whitespace preserved.
  *
  * `highlightQuery` paints a list filter's matches over the styled text — the
@@ -24,11 +24,15 @@
 
 import "./tug-markdown-text.css";
 
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type React from "react";
 
 import { renderFilterHighlightSpans } from "@/components/tugways/filter-highlight";
-import { styleMarkdownText } from "@/lib/markdown-text-styling";
+import {
+  getMarkdownGrammarRevision,
+  subscribeMarkdownGrammars,
+} from "@/lib/markdown-text-style-grammar";
+import { applyMarkdownTextStyle } from "@/lib/markdown-text-styling";
 
 export interface TugMarkdownTextProps {
   /** The markdown to style. Rendered verbatim — nothing is hidden. */
@@ -49,7 +53,19 @@ export function TugMarkdownText({
   className,
   dataSlot,
 }: TugMarkdownTextProps): React.ReactElement {
-  const lines = useMemo(() => styleMarkdownText(text), [text]);
+  // A fenced block's grammar loads lazily, and the filter is synchronous, so
+  // its first pass over a ```ts fence returns a flat body. The revision
+  // changes when a grammar arrives, which re-runs the filter — by then the
+  // description has its support cached and the body tokenizes. [L02].
+  const grammarRevision = useSyncExternalStore(
+    subscribeMarkdownGrammars,
+    getMarkdownGrammarRevision,
+    getMarkdownGrammarRevision,
+  );
+  const lines = useMemo(
+    () => applyMarkdownTextStyle(text),
+    [text, grammarRevision],
+  );
   return (
     <div
       className={
@@ -60,7 +76,11 @@ export function TugMarkdownText({
       {lines.map((line, i) => (
         <div
           key={i}
-          className="tug-markdown-text-line"
+          className={
+            line.code
+              ? "tug-markdown-text-line tug-markdown-text-line-code"
+              : "tug-markdown-text-line"
+          }
           // The hanging indent: the block indents by the marker width so
           // wrapped lines start there, and the first visual line pulls back
           // by the same amount so the marker itself still reads flush.

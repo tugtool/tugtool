@@ -41,12 +41,7 @@ import {
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { language, syntaxTree } from "@codemirror/language";
 
-/**
- * The list prefix: optional leading indent, a bullet (`-`/`*`/`+`) or an
- * ordered marker (`1.`/`1)`), then the run of spaces before the item's
- * content. Its length is the hanging-indent width, in monospace cells.
- */
-const LIST_PREFIX = /^(\s*(?:[-*+]|\d+[.)])\s+)/;
+import { markdownHangingIndent } from "@/lib/markdown-text-style-grammar";
 
 /** Reuse one decoration per indent width (CM6 prefers stable objects). */
 const decoCache = new Map<number, Decoration>();
@@ -77,10 +72,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       enter(node) {
         if (node.name !== "ListMark") return;
         const line = doc.lineAt(node.from);
-        const match = LIST_PREFIX.exec(line.text);
-        // Fall back to marker-end + one space if the regex somehow misses
-        // (e.g. a tab after the marker), so a list line always indents.
-        const indent = match ? match[1].length : node.to - line.from + 1;
+        const indent = markdownHangingIndent(line.text, line.from, node.to);
         builder.add(line.from, line.from, lineDecoForIndent(indent));
       },
     });

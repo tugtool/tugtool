@@ -12,6 +12,7 @@
  * | Element                                       | Surface                                          | Role         | Context                                          |
  * |-----------------------------------------------|--------------------------------------------------|--------------|--------------------------------------------------|
  * | --tugx-syntax-comment (element-global-text-normal-muted-rest)               | --tugx-codeBlock-bg (surface-global-primary-normal-control-rest)             | informational | Code comment text in code block                  |
+ * | --tugx-syntax-quote (element-global-text-normal-muted-rest)                 | --tugx-codeBlock-bg (surface-global-primary-normal-control-rest)             | informational | Blockquote body text                            |
  * | --tugx-syntax-operator (element-global-text-normal-default-rest)            | --tugx-codeBlock-bg (surface-global-primary-normal-control-rest)             | content      | Code operator/punctuation text in code block     |
  * | --tugx-codeBlock-header-fg (element-global-text-normal-subtle-rest)         | --tugx-codeBlock-header-bg (surface-global-primary-normal-sunken-rest)       | informational | Code block header text on sunken header          |
  * | --tugx-chat-attachment-fg (element-global-text-normal-muted-rest)           | --tugx-chat-attachment-bg (surface-global-primary-normal-overlay-rest)       | informational | Chat attachment label on overlay background      |
@@ -44,6 +45,8 @@ body {
   --tug-syntax-variable: --tug-color(cyan, l: 800, c: 240);
   /* text-derived — inherits per-theme via fg-muted override */
   --tugx-syntax-comment: var(--tug7-element-global-text-normal-muted-rest);
+  /* text-derived — blockquote bodies, the same muted rung as comments */
+  --tugx-syntax-quote: var(--tug7-element-global-text-normal-muted-rest);
   /* text-derived — inherits per-theme via fg-default override */
   --tugx-syntax-operator: var(--tug7-element-global-text-normal-default-rest);
   --tugx-syntax-punctuation: var(--tug7-element-global-text-normal-default-rest);
@@ -51,6 +54,12 @@ body {
   --tug-syntax-code: var(--tug7-element-tone-text-normal-code-rest);
   --tug-syntax-constant: --tug-color(gold, l: 840, c: 240);
   --tug-syntax-decorator: --tug-color(purple, l: 760, c: 280);
+  /* Markdown hard break: a tint under the two trailing spaces that end a
+     line with a break. Decorative — it is painted under whitespace, carries
+     no foreground, and therefore takes no pairing-map contrast role. Purple
+     keeps it inside the marker vocabulary and clear of the red/green
+     reserved for diff semantics. */
+  --tug-syntax-hard-break-bg: --tug-color(purple, l: 760, c: 280, a: 220);
   --tug-syntax-tag: --tug-color(pink, l: 780, c: 280);
   --tug-syntax-attribute: --tug-color(cyan, l: 800, c: 240);
 }
@@ -73,6 +82,7 @@ body {
   --tug-syntax-variable: --tug-color(cyan, l: 440, c: 400);
   --tug-syntax-constant: --tug-color(gold, l: 510, c: 340);
   --tug-syntax-decorator: --tug-color(purple, l: 460, c: 340);
+  --tug-syntax-hard-break-bg: --tug-color(purple, l: 460, c: 340, a: 180);
   --tug-syntax-tag: --tug-color(pink, l: 490, c: 360);
   --tug-syntax-attribute: --tug-color(cyan, l: 440, c: 400);
 }

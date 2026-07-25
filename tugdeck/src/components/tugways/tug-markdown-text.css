@@ -20,3 +20,12 @@
      the author typed survive. */
   min-height: 1lh;
 }
+
+/* A line inside a fenced or indented code block. Family only — the size,
+   leading, and color stay the host's, so a code block differs from the prose
+   around it in face and tone and never in scale. Carried per line rather than
+   by the `monospace` tag because a fence highlighted by its own grammar
+   carries that grammar's tags instead. */
+.tug-markdown-text-line-code {
+  font-family: var(--tug-font-family-mono);
+}

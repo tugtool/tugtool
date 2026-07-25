@@ -766,7 +766,8 @@ export const TugCodeView = React.forwardRef<
     let alive = true;
     // The markdown text-styling bundle takes precedence over a `language`
     // grammar: it carries its own markdown grammar + editing highlight + list
-    // hanging-indent, lazy-loaded like the language chunks.
+    // hanging-indent. Unlike the language chunks below it is a static import,
+    // so it settles on the next microtask; the `alive` guard still applies.
     if (markdownTextStyling) {
       void loadMarkdownTextStyling().then((bundle) => {
         if (!alive) return;
