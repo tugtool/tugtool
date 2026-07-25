@@ -31,6 +31,7 @@ beforeAll(() => {
     getPath: () => "/old.txt",
     getDisplayName: () => "old.txt",
     isDirty: () => true, // dirty frontmost card
+    hasUnsavedMark: () => true,
     revealLine: () => {},
     openFile: () => {
       throw new Error("dirty card must not be rebound ([P11])");

@@ -37,6 +37,9 @@ export type TextFilesRow = {
   readonly cardId: string;
   readonly path: string | null;
   readonly title: string;
+  /** The card wears its unsaved-changes mark (manual mode, dirty buffer); the
+   *  row paints the same dot after the filename. */
+  readonly unsaved: boolean;
 };
 
 /** The trailing filename of a path (`/a/b/c.txt` → `c.txt`). */
@@ -84,18 +87,27 @@ export type OpenCardDisplayNameResolver = (cardId: string) => string | null;
 const registryDisplayNameResolver: OpenCardDisplayNameResolver = (cardId) =>
   getOpenTextCard(cardId)?.getDisplayName() ?? null;
 
+/** Resolve whether an open Text card wears its unsaved-changes mark. Default
+ *  reads the open registry. */
+export type OpenCardUnsavedResolver = (cardId: string) => boolean;
+
+const registryUnsavedResolver: OpenCardUnsavedResolver = (cardId) =>
+  getOpenTextCard(cardId)?.hasUnsavedMark() ?? false;
+
 /**
  * Build the row list from the deck snapshot: one row per open Text card, in
- * deck-card order. Pure over `(inputs, resolvePath, resolveDisplayName)` — the
- * bound path of each open card comes through `resolvePath` and its untitled
- * name through `resolveDisplayName` (defaults: the open registry, re-read on
- * every recompute), so a test can inject its own. A bound card titles from the
- * path basename; an unbound one titles from its buffer name (`"Untitled"`).
+ * deck-card order. Pure over its resolvers — the bound path of each open card
+ * comes through `resolvePath`, its untitled name through `resolveDisplayName`,
+ * and its unsaved mark through `resolveUnsaved` (defaults: the open registry,
+ * re-read on every recompute), so a test can inject its own. A bound card
+ * titles from the path basename; an unbound one titles from its buffer name
+ * (`"Untitled"`).
  */
 export function buildTextFilesRows(
   inputs: Pick<TextFilesInputs, "deck">,
   resolvePath: OpenCardPathResolver = registryPathResolver,
   resolveDisplayName: OpenCardDisplayNameResolver = registryDisplayNameResolver,
+  resolveUnsaved: OpenCardUnsavedResolver = registryUnsavedResolver,
 ): TextFilesRow[] {
   const rows: TextFilesRow[] = [];
   const cards = inputs.deck?.cards ?? [];
@@ -106,7 +118,13 @@ export function buildTextFilesRows(
       path !== null
         ? basename(path)
         : resolveDisplayName(card.id) ?? (card.title || "Untitled");
-    rows.push({ kind: "text-open", cardId: card.id, path, title });
+    rows.push({
+      kind: "text-open",
+      cardId: card.id,
+      path,
+      title,
+      unsaved: resolveUnsaved(card.id),
+    });
   }
   return rows;
 }

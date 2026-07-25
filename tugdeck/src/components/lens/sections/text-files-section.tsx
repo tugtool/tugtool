@@ -79,22 +79,44 @@ function useTextFilesFilterQuery(): string {
 }
 
 /** A two-line row on the shared `TugListRow` chrome: filename (title) over its
- *  dimmed directory (subtitle). Both lines paint their filter matches — against
- *  the exact strings rendered here, which is why the abbreviated directory (not
- *  the raw path) is what both the matcher and the highlighter see. */
+ *  dimmed directory (subtitle) — the same two-line type scale the Sessions rows
+ *  wear (`sm` title, `xs` second line; see `text-files-section.css`). Both
+ *  lines paint their filter matches — against the exact strings rendered here,
+ *  which is why the abbreviated directory (not the raw path) is what both the
+ *  matcher and the highlighter see.
+ *
+ *  A card with unsaved changes carries the same `•` after its filename that the
+ *  card's own header wears (`text-card.tsx` sets it on `cardTitleStore`), so
+ *  the dirty bit reads identically wherever the file appears. */
 function FileRow({
   name,
   dir,
+  unsaved,
 }: {
   name: string;
   dir: string;
+  unsaved: boolean;
 }): React.ReactElement {
   const filterQuery = useTextFilesFilterQuery();
   const shownDir = dir.length > 0 ? displayDir(dir) : "";
   return (
     <TugListRow
       className="text-files-row"
-      title={renderFilterHighlight(name, filterQuery)}
+      title={
+        <>
+          {renderFilterHighlight(name, filterQuery)}
+          {unsaved ? (
+            <span
+              className="text-files-row-unsaved"
+              data-testid="lens-text-file-unsaved"
+              title="Unsaved changes"
+              aria-label="Unsaved changes"
+            >
+              •
+            </span>
+          ) : null}
+        </>
+      }
       titleSize="sm"
       subtitle={
         shownDir.length > 0
@@ -111,7 +133,11 @@ const TextFilesCell: TugListViewCellRenderer<LensTextFilesDataSource> = ({
 }: TugListViewCellProps<LensTextFilesDataSource>) => {
   const row = dataSource.rowAt(index);
   return (
-    <FileRow name={row.title} dir={row.path !== null ? dirname(row.path) : ""} />
+    <FileRow
+      name={row.title}
+      dir={row.path !== null ? dirname(row.path) : ""}
+      unsaved={row.unsaved}
+    />
   );
 };
 

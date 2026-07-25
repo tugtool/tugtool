@@ -519,6 +519,10 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       getPath: () => store.getSnapshot().path,
       getDisplayName: () => store.getSnapshot().fileName,
       isDirty: () => store.getSnapshot().saveState !== "clean",
+      hasUnsavedMark: () => {
+        const snap = store.getSnapshot();
+        return snap.saveMode === "manual" && snap.saveState !== "clean";
+      },
       revealLine: (line, endLine) => editorRef.current?.revealLine(line, endLine),
       openFile: (path, line, endLine) => {
         // Reuse this card for a different file: flush the current
@@ -536,13 +540,20 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     // fileName change so the Lens titles the open row the moment the binding
     // resolves — instead of stranding a nameless row until the next deck
     // re-render.
+    // The unsaved mark rides the same channel: the Lens row paints the dot the
+    // card header wears, so it must re-read when the dirty bit sets or clears.
+    const unsavedMark = (snap: ReturnType<typeof store.getSnapshot>): boolean =>
+      snap.saveMode === "manual" && snap.saveState !== "clean";
     let lastPath = store.getSnapshot().path;
     let lastName = store.getSnapshot().fileName;
+    let lastMark = unsavedMark(store.getSnapshot());
     const unsubscribe = store.subscribe(() => {
       const snap = store.getSnapshot();
-      if (snap.path !== lastPath || snap.fileName !== lastName) {
+      const mark = unsavedMark(snap);
+      if (snap.path !== lastPath || snap.fileName !== lastName || mark !== lastMark) {
         lastPath = snap.path;
         lastName = snap.fileName;
+        lastMark = mark;
         notifyOpenTextCardsChanged();
       }
     });

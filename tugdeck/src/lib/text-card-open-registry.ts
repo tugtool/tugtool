@@ -31,6 +31,13 @@ export interface TextCardOpenEntry {
    */
   isDirty(): boolean;
   /**
+   * True when the card wears its unsaved-changes mark — manual mode with a
+   * dirty buffer. Narrower than {@link isDirty}, which counts the transient
+   * non-clean states an automatic-save buffer passes through. The Lens Text
+   * Files row paints the same dot the card header does.
+   */
+  hasUnsavedMark(): boolean;
+  /**
    * Reveal line(s) and momentarily flash them in the theme accent —
    * caret at `line` (1-based), a fading accent wash over `line`..`endLine`
    * (or just `line`). No persistent selection.
@@ -47,13 +54,15 @@ export interface TextCardOpenEntry {
 const entries = new Map<string, TextCardOpenEntry>();
 
 /** Observers notified when the set of open cards — or a card's bound path —
- *  changes. A card binds its path asynchronously (mount → file read), so a
- *  consumer that projects open cards (the Lens Text Files list) must re-read
- *  when the binding lands, not just when the card mounts. */
+ *  changes, or its unsaved mark sets or clears. A card binds its path
+ *  asynchronously (mount → file read), so a consumer that projects open cards
+ *  (the Lens Text Files list) must re-read when the binding lands, not just
+ *  when the card mounts. */
 const listeners = new Set<() => void>();
 let version = 0;
 
-/** Subscribe to registry changes (register / unregister / path-bind). */
+/** Subscribe to registry changes (register / unregister / path-bind /
+ *  unsaved-mark flip). */
 export function subscribeOpenTextCards(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

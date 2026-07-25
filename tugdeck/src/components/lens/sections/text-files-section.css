@@ -33,6 +33,10 @@
   margin: 6px;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
+  /* Same row inset as the Sessions list, so the two sections' text starts on
+     one vertical line down the Lens. */
+  --tugx-list-row-padding-inline: 10px;
+  --tugx-list-row-indicator-gutter: 0px;
   /* Framed + rounded like the session picker's boxes (see the Sessions list). */
   --tugx-list-view-radius: var(--tug-radius-sm);
   --tugx-list-view-frame-width: 1px;
@@ -43,6 +47,20 @@
 .tug-list-view.lens-text-files-list[data-row-layout="flush"]
   .tug-list-view-cell:not(:last-child) {
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
+}
+
+/* The directory line matches the Sessions rows' pulse line — one step down from
+   the title, not the row primitive's default `sm`. The two sections are the
+   same kind of two-line row and must read as one type scale. */
+.lens-text-files-list .tug-list-row-subtitle {
+  font-size: var(--tug-font-size-xs);
+}
+
+/* The unsaved-changes dot — the same `•` the card's own header wears, set just
+   off the filename and muted so the name stays the row's voice. */
+.text-files-row-unsaved {
+  margin-inline-start: 0.35em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* Terse, centered empty label — matches the Snippets section's empty state
