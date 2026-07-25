@@ -3,17 +3,22 @@
  * `/compact`.
  *
  * Native `/compact` compacts the conversation in place (same session, same
- * JSONL). It is a ~20 s opaque run — nothing streams between dispatch and the
- * `compact_boundary`, so there is no honest determinate signal. This sheet
+ * JSONL). It is an opaque run lasting minutes on a full context (measured:
+ * 111 s and 159 s at 140k / 170k tokens) — nothing streams between dispatch and
+ * the `compact_boundary`, so there is no honest determinate signal. This sheet
  * covers the card for the duration with an **indeterminate** "Compacting…"
  * indicator plus a Cancel button that interrupts the run (the turn interrupt,
  * the same path Stop / Escape take).
  *
- * The run owns the sheet's lifetime, not the user: the store transitions
- * (begin → succeed/cancel/fail → clear) decide what shows and when it
- * dismisses. The card raises the closing bulletin off the terminal `outcome`,
- * then `clear`s the store; this component watches for that and dismisses the
- * host sheet.
+ * The store drives the sheet, and Cancel is the **only** thing that cancels.
+ * The store transitions (begin → succeed/cancel/fail → clear) decide what shows
+ * and when it dismisses: the card raises the closing bulletin off the terminal
+ * `outcome`, then `clear`s the store; this component watches for that and
+ * dismisses the host sheet. A close that arrives from anywhere else — Escape,
+ * Cmd-., a host unmount while the sheet is open — dismisses this surface and
+ * leaves the run alone; the card's watcher settles it either way. Nothing may
+ * read "the sheet went away" as "the user canceled" (see the `compact` handler
+ * in `session-card.tsx` for what that cost).
  *
  * Laws: [L02] store state via `useSyncExternalStore`; [L06] appearance via
  *       CSS / the TugProgressIndicator's own DOM attributes; [L20] composed

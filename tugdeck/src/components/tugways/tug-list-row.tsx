@@ -60,6 +60,10 @@
  *    column (UIKit's `.checkmark` accessory) — shown when `selected`,
  *    empty otherwise so titles align. It sits leading-most and coexists
  *    with an independent `leading` accessory.
+ *  - `selectionSurface="control"` moves selection off the row fill and onto
+ *    that glyph: the radio / checkbox paints its own resting on-state and the
+ *    row keeps the host surface's background and text color. A list of options
+ *    then reads as a real radio / checkbox group.
  *
  * The default `variant` is read from the enclosing `TugListView`'s
  * `rowLayout` through `TugListRowLayoutContext` when present, so a
@@ -253,7 +257,30 @@ export interface TugListRowProps
    * @default "none"
    */
   selectedGlyph?: TugListRowSelectedGlyph;
+
+  /**
+   * Which surface carries the row's selection.
+   *  - `"fill"` (default) — the row's blue selection fill, with the leading
+   *    glyph inverted to the selected-text tone so it stays legible on it.
+   *    The picker idiom: the whole row is the chosen thing.
+   *  - `"control"` — the leading radio / checkbox alone, painted in its own
+   *    resting on-state (the filled blue a `TugRadioGroup` / `TugCheckbox`
+   *    wears anywhere else). The row paints NO selection fill and keeps the
+   *    host surface's text color, so the list reads as a real radio /
+   *    checkbox group rather than a highlighted list. Hover graze and the
+   *    list-view's keyboard cursor are unaffected — they are separate
+   *    channels. Requires a `selectedGlyph`.
+   * @selector [data-selection-surface="control"]
+   * @default "fill"
+   */
+  selectionSurface?: TugListRowSelectionSurface;
 }
+
+/**
+ * Which surface carries a row's selection — see
+ * {@link TugListRowProps.selectionSurface}.
+ */
+export type TugListRowSelectionSurface = "fill" | "control";
 
 // ---------------------------------------------------------------------------
 // Layout context — published by TugListView's `rowLayout` / `selectedAccent`
@@ -408,6 +435,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
       disabled,
       selectedAccent,
       selectedGlyph,
+      selectionSurface,
       mono,
       children,
       className,
@@ -437,6 +465,9 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
         data-selected={selected ? "true" : undefined}
         data-disabled={disabled ? "true" : undefined}
         data-selected-accent={resolvedAccent ? "true" : undefined}
+        data-selection-surface={
+          selectionSurface === "control" ? "control" : undefined
+        }
         data-mono={mono ? "true" : undefined}
         className={cn("tug-list-row", className)}
         {...rest}

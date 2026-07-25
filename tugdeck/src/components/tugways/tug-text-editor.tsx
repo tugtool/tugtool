@@ -196,6 +196,8 @@ import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import type { FocusPolicy } from "./focus-manager";
+import { useFocusable } from "./use-focusable";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type {
@@ -758,6 +760,37 @@ export interface TugTextEditorProps
    * @default false
    */
   tabMovesFocus?: boolean;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this editor is authored into ([P02]). When set, the editor
+   * registers as a stop in the engine's Tab / arrow walk under the SAME id as
+   * its responder, so the key view resolves to the responder's focus contract
+   * (`view.focus()`) and the route classifies as `dom-granted` — the caret
+   * lands in the document and the editor owns its keys. When omitted the
+   * editor stays outside the walk and is reached by click / an explicit
+   * `focusResponder` (the prompt entry's path). Supplied by the surface that
+   * owns the Tab order.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
+  /**
+   * Walk policy when registered: `accept` (default) is an ordinary stop;
+   * `skip` is reachable only in accessibility mode.
+   */
+  focusPolicy?: FocusPolicy;
+  /**
+   * Arrow directions this editor RELEASES back to the spatial plane ([P25]) —
+   * a space-separated subset of `up down left right`, written onto the
+   * `contentDOM` so the chain's arrow listener reads it off the focused
+   * element. A focused editor otherwise owns every arrow for the caret; a
+   * short optional field with nothing to navigate releases Up / Down while
+   * empty so a bare arrow moves the ring out rather than dead-ending on the
+   * caret. Reactive: the consumer flips it as the document fills. [L06]
+   */
+  arrowRelease?: string;
   /**
    * Soft-wrap long lines at the editor's width. When true, adds
    * `EditorView.lineWrapping` (sets `white-space: break-spaces` on
@@ -1216,6 +1249,10 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       growDirection = "down",
       disabled = false,
       tabMovesFocus = false,
+      focusGroup,
+      focusOrder = 0,
+      focusPolicy,
+      arrowRelease,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
       highlightActiveLineGutter: highlightActiveLineGutterProp = false,
@@ -1922,6 +1959,20 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       cmAdapterRef.current = view !== null ? createCMSelectionAdapter(view) : null;
     }, [view]);
 
+    // [P25] arrow-release marker. The chain's arrow listener reads the
+    // attribute off `document.activeElement`, which for a focused editor is
+    // CM6's `contentDOM` — so the marker goes there, not on the host wrapper.
+    // Appearance/behavior-zone DOM write, never React state ([L06]).
+    useLayoutEffect(() => {
+      if (view === null) return;
+      const content = view.contentDOM;
+      if (arrowRelease === undefined || arrowRelease === "") {
+        content.removeAttribute("data-tug-arrow-release");
+        return;
+      }
+      content.setAttribute("data-tug-arrow-release", arrowRelease);
+    }, [view, arrowRelease]);
+
     // Right-clicked file/directory atom's path, captured at menu-open
     // time so the OPEN_FILE responder handler below can dispatch it
     // when the "Open in Editor" item is activated [L07].
@@ -2333,17 +2384,33 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       focus: () => viewRef.current?.focus(),
     });
 
+    // Focus-engine stop ([P02]), opt-in via `focusGroup`. Registered under the
+    // SAME id as the responder above, so the engine's key-view placement
+    // resolves this editor's focus CONTRACT (`view.focus()`) rather than
+    // walking the host for a tabbable child — and `classifyRoute` reads the
+    // contract to route the keyboard `dom-granted`, i.e. straight to the
+    // caret. The focusable element is the host wrapper (which also carries
+    // `data-responder-id`), so the engine's ring paints on the field.
+    const { focusableRef } = useFocusable({
+      id: responderId,
+      group: focusGroup ?? "",
+      order: focusOrder,
+      policy: focusPolicy,
+      register: focusGroup !== undefined,
+    });
+
 // Compose the host ref so a single ref callback writes the local
     // `hostRef`, the `responderRef` (which writes `data-responder-id`
-    // for first-responder promotion on click), and the standard
-    // `useRef` slot. Mirrors the `composedRef` pattern in
-    // `useTextInputResponder`.
+    // for first-responder promotion on click), the focusable
+    // registration attribute, and the standard `useRef` slot. Mirrors
+    // the `composedRef` pattern in `useTextInputResponder`.
     const composedHostRef = useCallback(
       (el: HTMLDivElement | null) => {
         hostRef.current = el;
         responderRef(el);
+        focusableRef(el);
       },
-      [responderRef],
+      [responderRef, focusableRef],
     );
 
     // Mount the EditorView. Cleanup destroys it; re-mount creates

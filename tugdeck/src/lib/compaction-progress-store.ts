@@ -2,13 +2,17 @@
  * `compactionProgressStore` — drives the `/compact` progress sheet.
  *
  * Native `/compact` dispatches as a stream-json user message and compacts in
- * place (same session, same JSONL). It is a ~20 s opaque run with no streamed
- * volume to meter, so the sheet is pane-modal and **indeterminate**: the run is
- * either in flight or settled. This singleton is the seam between the session-card
- * handler that opens the run (`begin`) and drives it off `codeSessionStore`
- * snapshots (`succeed` / `cancel` / `fail`), and the sheet that renders off the
- * same store. The card watches the terminal `outcome` to raise the closing
- * bulletin and `clear`.
+ * place (same session, same JSONL). It is an opaque run — minutes on a full
+ * context — with no streamed volume to meter, so the sheet is pane-modal and
+ * **indeterminate**: the run is either in flight or settled. This singleton is
+ * the seam between the session-card handler that opens the run (`begin`) and
+ * drives it off `codeSessionStore` snapshots (`succeed` / `cancel` / `fail`),
+ * and the sheet that renders off the same store. The card watches the terminal
+ * `outcome` to raise the closing bulletin and `clear`.
+ *
+ * The run's lifetime is this store's, NOT the sheet's: the card's watcher is
+ * subscribed here, so a sheet dismissed early (Escape, a host unmount) leaves
+ * the compaction running and still settling into the transcript.
  *
  * `null` snapshot = idle (no compaction, no sheet). A non-null snapshot with
  * `outcome === null` is a run in flight; a non-null snapshot with a terminal

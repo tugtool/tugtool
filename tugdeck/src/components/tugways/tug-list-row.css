@@ -298,7 +298,17 @@ body {
   border-color: var(--tugx-list-row-checkbox-on-hover);
 }
 
-/* ---- Indicator on a SELECTED row — invert to the contrast tone ----
+/* ---- Selection carried by the CONTROL (`selectionSurface="control"`) ----
+   The row paints no selection fill and keeps the host surface's text color;
+   the radio / checkbox above is the whole selection signal, in its own resting
+   on-state (the filled blue it wears in a TugRadioGroup / TugCheckbox). Every
+   fill / recolor / inversion rule in this file therefore excludes the mode via
+   `:not([data-selection-surface="control"])` rather than being overridden
+   here — an excluded rule leaves the label's own colours standing, where an
+   override would have to guess them. What remains is the neutral hover graze
+   and the list-view's keyboard cursor: orthogonal channels, untouched.
+
+   ---- Indicator on a SELECTED row — invert to the contrast tone ----
    The whole list speaks one blue, so on a selected row the row fill IS that blue
    and a blue-filled indicator (radio dot / checkbox box) would vanish into it.
    This is the one place a second tone is essential: switch the shown indicator to
@@ -308,18 +318,18 @@ body {
    cursor), since all of them set `data-selected`. Placed after the fill rules so
    it wins their specificity tie.
    @tug-renders-on: --tugx-list-row-selected-bg */
-.tug-list-row[data-selected="true"]
+.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
   .tug-list-row-check[data-state="shown"]
   .tug-list-row-radio {
   background-color: transparent;
   border-color: var(--tugx-list-row-selected-text);
 }
-.tug-list-row[data-selected="true"]
+.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
   .tug-list-row-check[data-state="shown"]
   .tug-list-row-radio-dot {
   background-color: var(--tugx-list-row-selected-text);
 }
-.tug-list-row[data-selected="true"]
+.tug-list-row[data-selected="true"]:not([data-selection-surface="control"])
   .tug-list-row-check[data-state="shown"]
   .tug-list-row-checkbox {
   background-color: transparent;
@@ -379,8 +389,8 @@ body {
    light theme, where a dark muted subtitle sits on the blue). The
    two-class + attribute selector outranks `TugLabel`'s own
    `.tug-label-emphasis-calm` color rule. */
-.tug-list-row[data-selected="true"] .tug-list-row-content,
-.tug-list-row[data-selected="true"] .tug-list-row-content .tug-label {
+.tug-list-row[data-selected="true"]:not([data-selection-surface="control"]) .tug-list-row-content,
+.tug-list-row[data-selected="true"]:not([data-selection-surface="control"]) .tug-list-row-content .tug-label {
   color: var(--tugx-list-row-selected-text);
 }
 
@@ -434,7 +444,7 @@ body {
   background-color: var(--tugx-list-row-flush-hover-bg);
 }
 
-.tug-list-row[data-variant="flush"][data-selected="true"] {
+.tug-list-row[data-variant="flush"][data-selected="true"]:not([data-selection-surface="control"]) {
   background-color: var(--tugx-list-row-selected-bg);
   color: var(--tugx-list-row-selected-text);
 }
@@ -444,7 +454,7 @@ body {
    `:not([data-disabled])` lifts this above the plain `:hover` rule's
    specificity, so hovering a selected row never falls back to the
    unselected hover fill. */
-.tug-list-row[data-variant="flush"][data-selected="true"]:hover:not([data-disabled="true"]) {
+.tug-list-row[data-variant="flush"][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
   background-color: var(--tugx-list-row-selected-hover-bg);
 }
 
@@ -471,7 +481,7 @@ body {
   border-color: var(--tugx-list-row-pill-hover-border);
 }
 
-.tug-list-row[data-variant="pill"][data-selected="true"] {
+.tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]) {
   background-color: var(--tugx-list-row-selected-bg);
   border-color: var(--tugx-list-row-pill-rest-border);
   color: var(--tugx-list-row-selected-text);
@@ -479,7 +489,7 @@ body {
 
 /* Selected + hover — see the `flush` counterpart for the specificity
    rationale. */
-.tug-list-row[data-variant="pill"][data-selected="true"]:hover:not([data-disabled="true"]) {
+.tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
   background-color: var(--tugx-list-row-selected-hover-bg);
 }
 

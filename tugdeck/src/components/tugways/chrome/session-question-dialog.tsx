@@ -79,6 +79,15 @@
  * but submit gates on completeness" rule the user signed off on)
  * and is focused on mount so a Return key submits.
  *
+ * **The options are the answer, in full.** Every option renders its label and
+ * its description unclamped — the option list is the entire basis for the
+ * user's choice, so nothing about it may be abbreviated. Selection rides the
+ * control, not a row fill (`selectionSurface="control"`): the radio dot /
+ * checkbox wears its own on-state and no row is washed blue, so a question
+ * reads as a real radio / checkbox group. The row's hover graze and the
+ * list-view's keyboard cursor stay what they always are — "the mouse is
+ * here", "the keyboard is here" — and never stand in for the answer.
+ *
  * **Space changes, Return advances** — uniform across arities (the
  * options are ONE {@link QuestionOptions} component — a `TugListView`
  * whose glyph is a radio dot or a checkbox). **Space / click** only
@@ -156,7 +165,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { TugTextarea } from "@/components/tugways/tug-textarea";
+import { TugMessageEditor } from "@/components/tugways/tug-message-editor";
 import {
   TugConfirmPopover,
   type TugConfirmPopoverHandle,
@@ -775,10 +784,18 @@ const QuestionOptionCell: TugListViewCellRenderer<QuestionOptionsDataSource> =
     return (
       <TugListRow
         title={label}
+        // An option and its description are the whole basis for the user's
+        // choice, so both render IN FULL — no clamp, no ellipsis. A long
+        // option grows its row (and, through the panel sizers, the panel);
+        // it is never abbreviated.
+        titleMaxLines={0}
         subtitle={option?.description}
-        subtitleMaxLines={4}
+        subtitleMaxLines={0}
         selected={selected}
         selectedGlyph={multi ? "checkbox" : "radio"}
+        // Selection rides the radio / checkbox, not a row fill — the options
+        // read as a real radio / checkbox group.
+        selectionSurface="control"
         role={multi ? "checkbox" : "radio"}
         aria-checked={selected}
         data-option-label={label}
@@ -808,7 +825,7 @@ const QUESTION_OPTIONS_ORDER = 4;
 const QUESTION_FREETEXT_ORDER = 5;
 // Decline mode ([P02], `Chat about this`). The action row is `Back` (reuses
 // the wizard-nav Back slot — the nav row isn't rendered in decline mode) and
-// `Reply` (the `Send reply` slot); plus the reply textarea and the
+// `Reply` (the `Send reply` slot); plus the reply field and the
 // wizard-mode `Chat about this` entry control — each a focus stop /
 // spatial-grid node in the mode it belongs to. There is NO whole-question
 // Cancel in decline mode: the user must `Back` to the questions first.
@@ -947,54 +964,75 @@ function QuestionOptionsSizer({
  *  rendered a notch smaller than the typing font (see the `.css`). */
 const FREE_TEXT_PLACEHOLDER = "or type your own answer…";
 
-/** Default visible rows for the free-text answer field. */
-const FREE_TEXT_ROWS = 3;
+/** Maximum visible rows before the free-text answer field scrolls. */
+const FREE_TEXT_MAX_ROWS = 8;
 
 interface QuestionFreeTextProps {
-  /** Current free-text value (controlled — lives in the wizard's `freeTexts`). */
+  /** The question's free text, seeded into the field at mount. */
   value: string;
-  /** Typed input — sets the row's free text and clears its labels ([P01]). */
+  /** Typed input — sets the row's free text and releases its labels ([P01]). */
   onChange: (value: string) => void;
   /** Shift/⌘-Return = advance the wizard ([K3]); plain Return = newline. */
-  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: () => void;
   /** Focus group + order — the field is one stop in the dialog's trap. */
   focusGroup: string;
   focusOrder: number;
 }
 
 /**
- * The current question's free-text answer field ([P01]) — a multi-line
- * {@link TugTextarea} (three rows by default) below the options. Always
- * present (constant geometry: it rides the panel sizers, and the panel's
- * min-height floor ratchets so typing past three rows never shrinks the
- * panel back), so it's a stable focus stop and spatial-grid node ([K1]) the
- * user can Tab/arrow into. Controlled: the value lives in the wizard's
- * `freeTexts` state (and the [A9] bag preserves it), so no
- * `componentStatePreservationKey` ([K2], uncontrolled-only). The substrate
- * editing responder (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) is wired
- * automatically — `TugTextarea` registers it inside the card's provider.
+ * The current question's free-text answer field ([P01]) — a
+ * {@link TugMessageEditor} (the CM6 substrate, three resting rows) below the
+ * options. Always present (constant geometry: the panel sizers reserve its
+ * box, and the panel's min-height floor ratchets so typing past three rows
+ * never shrinks the panel back), so it's a stable focus stop and spatial-grid
+ * node ([K1]) the user can Tab/arrow into.
+ *
+ * The document lives in CM6, not in a controlled React value ([L02]): `value`
+ * seeds the field once at mount and `onChange` mirrors user edits back into
+ * the wizard's `freeTexts` (which the [A9] bag preserves). The call site keys
+ * this component by question index so stepping to another question remounts
+ * it against that question's seed. Clipboard / undo responders
+ * (CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO) come free with the substrate ([P26]).
  */
 const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
   value,
   onChange,
-  onKeyDown,
+  onSubmit,
   focusGroup,
   focusOrder,
 }) => {
+  // Tracked separately from the wizard's state only to decide the [P25] arrow
+  // release below — the answer itself lives in `freeTexts` via `onChange`.
+  const [empty, setEmpty] = React.useState(value === "");
   return (
     <div
       className="session-question-dialog-freetext"
       data-slot="session-question-dialog-freetext"
     >
-      <TugTextarea
+      <TugMessageEditor
         className="session-question-dialog-freetext-field"
         value={value}
         placeholder={FREE_TEXT_PLACEHOLDER}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={onKeyDown}
-        autoResize
-        rows={FREE_TEXT_ROWS}
-        maxRows={8}
+        // A notch under the editor default, so the field reads as a quiet
+        // input surface. Handed to the substrate (not set as CSS on the host)
+        // because only the substrate's own token reaches `.cm-content`.
+        fontSize="var(--tugx-question-field-size)"
+        onChange={(text) => {
+          setEmpty(text === "");
+          onChange(text);
+        }}
+        onSubmit={onSubmit}
+        // The field wears the substrate's own frame (the standalone form),
+        // not a borderless embed in someone else's well.
+        borderless={false}
+        lineWrap
+        maxRows={FREE_TEXT_MAX_ROWS}
+        // Tab belongs to the dialog's cycle, not to indentation: the action
+        // buttons must stay one Tab away from the answer field.
+        tabMovesFocus
+        // A transient, in-dialog field — never the card's primary text
+        // surface, so it must not churn the card's engine hooks.
+        suppressCardEngineHooks
         focusGroup={focusGroup}
         focusOrder={focusOrder}
         aria-label="Type your own answer"
@@ -1002,29 +1040,25 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
         // bare Up/Down should move the ring to the adjacent row rather than
         // dead-end on the (empty) caret ([P25] release seam). Once there's
         // text, the caret owns every arrow again.
-        data-tug-arrow-release={value === "" ? "up down" : undefined}
+        arrowRelease={empty ? "up down" : undefined}
       />
     </div>
   );
 };
 
 /**
- * The inert face of the free-text field for the panel's hidden sizers —
- * the SAME three-row box, disabled and unfocusable, so each sizer reserves
- * the field's height and the panel never resizes when the live field gains
- * or loses text. No `focusGroup` (no engine registration), no handlers.
+ * The inert face of the free-text field for the panel's hidden sizers — a
+ * plain box reserving the field's resting height (the same three-row metric
+ * the live field's CSS declares), so each sizer accounts for the field and
+ * the panel never resizes when the live field gains or loses text. NOT a
+ * second editor: a CM6 view is a real editing surface with a responder and a
+ * document, and a hidden stack of them would be pure cost for a measurement
+ * the field's own height metric already states.
  */
 function QuestionFreeTextSizer(): React.ReactElement {
   return (
     <div className="session-question-dialog-freetext" aria-hidden="true">
-      <TugTextarea
-        className="session-question-dialog-freetext-field"
-        rows={FREE_TEXT_ROWS}
-        disabled
-        readOnly
-        tabIndex={-1}
-        placeholder={FREE_TEXT_PLACEHOLDER}
-      />
+      <div className="session-question-dialog-freetext-sizer" />
     </div>
   );
 }
@@ -1143,9 +1177,10 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
 
   // [P02] `Chat about this` — whether the dialog is in decline mode (the
   // freeform reply field replaces the wizard) and the in-progress reply
-  // text. Both are user data → preserved via the [A9] bag. The reply is
-  // controlled (value from React state), so no `componentStatePreservation
-  // Key` on the textarea ([K2]).
+  // text. Both are user data → preserved via the [A9] bag. The reply
+  // document lives in the field's CM6 substrate and is mirrored here on
+  // every edit, so this state is what the bag captures ([K2] — no
+  // `componentStatePreservationKey` on the field).
   const [declineMode, setDeclineMode] = React.useState<boolean>(
     () => seed.declineMode ?? false,
   );
@@ -1344,13 +1379,20 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     [questions, markVisited, armAdvance, clearFreeText],
   );
 
-  // The free-text answer field ([P01]). Typing into it sets the row's
-  // free text and — when non-blank — clears that row's option labels
-  // (mutual exclusivity, [Q02]); a non-blank value marks the question
-  // visited so it counts toward the headline and Submit gate. Controlled
-  // (value from React state), so the value lives in `freeTexts` and the
-  // [A9] bag preserves it across reload ([K2] — no `componentStatePreservation
-  // Key`, which is uncontrolled-only).
+  // The free-text answer field ([P01]). Typing into it sets the row's free
+  // text and RELEASES that row's option labels ([P01] mutual exclusivity,
+  // [Q02]): the instant the field carries any character at all — a space
+  // included — the canned answer is no longer the user's answer, so the
+  // selection is dropped rather than left standing under a half-typed reply.
+  // Emptying the field back out releases nothing further; the question simply
+  // reads unanswered until the user types or picks again.
+  //
+  // Blank-but-not-empty (a lone space) deliberately does NOT mark the question
+  // visited or count as an answer: `questionAnswered` trims, so Submit stays
+  // gated and no selection is silently re-established on the user's behalf.
+  //
+  // The document lives in the field's CM6 substrate ([L02]); this mirrors it
+  // into `freeTexts`, which the [A9] bag preserves across reload.
   const handleFreeTextChange = React.useCallback(
     (questionIndex: number, value: string) => {
       setFreeTexts((prev) => {
@@ -1359,28 +1401,25 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
         next[questionIndex] = value;
         return next;
       });
-      if (value.trim() !== "") {
+      if (value !== "") {
         setSelections((prev) => {
           if ((prev[questionIndex]?.length ?? 0) === 0) return prev;
           const next = prev.slice();
           next[questionIndex] = [];
           return next;
         });
-        markVisited(questionIndex);
       }
+      if (value.trim() !== "") markVisited(questionIndex);
     },
     [markVisited],
   );
 
-  // [K3] The free-text field is a multi-line textarea, so plain Return inserts
-  // a newline (native). Shift/⌘-Return advances the wizard (mark visited +
-  // reuse the shared advance machinery), mirroring the decline reply's send
-  // chord. The engine's [P25] guard passes the keystroke through to the
-  // focused textarea, so we read it off the field's own `onKeyDown`.
-  const handleFreeTextKeyDown = React.useCallback(
-    (questionIndex: number, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key !== "Enter" || !(event.shiftKey || event.metaKey)) return;
-      event.preventDefault();
+  // [K3] The free-text field is multi-line, so plain Return inserts a newline.
+  // Shift/⌘-Return is the field's submit chord (the substrate's `onSubmit`):
+  // it advances the wizard (mark visited + the shared advance machinery),
+  // mirroring the decline reply's send chord.
+  const handleFreeTextSubmit = React.useCallback(
+    (questionIndex: number) => {
       markVisited(questionIndex);
       armAdvance(questionIndex);
     },
@@ -1491,20 +1530,11 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
     session.respondQuestion(requestId, { response: declineText });
   }, [session, requestId, declineText]);
 
-  // [P06]/[P09] The reply field's submit semantics: plain Return inserts a
-  // newline (native textarea), Shift-Return sends the reply (the advertised
-  // hint). ⌘-Return is kept as a silent alias for muscle-memory. The engine's
-  // [P25] guard yields the keystroke to the focused textarea, so we read it
-  // off the field's own `onKeyDown`.
-  const handleDeclineKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && (event.shiftKey || event.metaKey)) {
-        event.preventDefault();
-        respondDecline();
-      }
-    },
-    [respondDecline],
-  );
+  // [P06]/[P09] The reply field's submit semantics come from the substrate's
+  // `returnAction="newline"` contract: plain Return inserts a newline,
+  // Shift-Return sends the reply (the advertised hint), and ⌘-Return is the
+  // substrate's standing submit alias for muscle memory. All three land on
+  // `respondDecline` through the field's `onSubmit`.
 
   // Cancel — the unified Stop / Esc gesture. `session.popInteractive()`
   // is the same path Escape walks through the responder chain
@@ -1567,7 +1597,7 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   const spatialOrder = React.useMemo<SpatialOrder>(() => {
     const key = (order: number): string => `${focusGroup}:${order}`;
     // Decline mode ([P02]/[K1]) swaps in its own grid — `Back` + `Reply` on
-    // top, then the reply textarea — so arrows stay within the reply surface
+    // top, then the reply field — so arrows stay within the reply surface
     // and never reach the (hidden) wizard. No whole-question Cancel here.
     if (declineMode) {
       return rowGridOrder([
@@ -2089,10 +2119,12 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
   // [P02]/[P09] Decline mode — the freeform reply field. It swaps in for the
   // working surface (the options panel, single OR multi) while the rail above
   // (if any) stays put, so entering decline relayouts only the area below the
-  // rail. A controlled `TugTextarea` (value in React state, preserved via the
-  // [A9] bag — no `componentStatePreservationKey`, [K2]) authored as the mode's
-  // focus stop, under a keyboard hint. `Back` / `Reply` live in the top action
-  // bar; there is no whole-question Cancel here.
+  // rail. A `TugMessageEditor` (the CM6 substrate) authored as the mode's focus
+  // stop, under a keyboard hint. The document lives in the field ([L02]),
+  // seeded at mount from `declineText` and mirrored back into it on every
+  // edit, so the [A9] bag preserves the in-progress reply across reload.
+  // `Back` / `Reply` live in the top action bar; there is no whole-question
+  // Cancel here.
   //
   // The reply surface fills the SAME height the panel reserved (`panelFloorRef`,
   // measured while the wizard was up — for both arities now that the single
@@ -2108,15 +2140,18 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
           : undefined
       }
     >
-      <TugTextarea
+      <TugMessageEditor
         className="session-question-dialog-decline-field"
         value={declineText}
-        onChange={(event) => setDeclineText(event.target.value)}
-        onKeyDown={handleDeclineKeyDown}
+        onChange={setDeclineText}
+        onSubmit={respondDecline}
         placeholder="Type your reply to Claude…"
-        autoResize
-        rows={3}
+        fontSize="var(--tugx-question-field-size)"
+        borderless={false}
+        lineWrap
         maxRows={10}
+        tabMovesFocus
+        suppressCardEngineHooks
         focusGroup={focusGroup}
         focusOrder={QUESTION_DECLINE_TEXT_ORDER}
         aria-label="Reply to Claude"
@@ -2258,13 +2293,15 @@ export const QuestionWizard: React.FC<QuestionWizardProps> = ({
                     />
                   </div>
                   <QuestionFreeText
+                    // Keyed by question: the field seeds its document once at
+                    // mount, so stepping to another question must remount it
+                    // against that question's own text.
+                    key={`freetext:${currentIndex}`}
                     value={freeTexts[currentIndex] ?? ""}
                     onChange={(value) =>
                       handleFreeTextChange(currentIndex, value)
                     }
-                    onKeyDown={(event) =>
-                      handleFreeTextKeyDown(currentIndex, event)
-                    }
+                    onSubmit={() => handleFreeTextSubmit(currentIndex)}
                     focusGroup={focusGroup}
                     focusOrder={QUESTION_FREETEXT_ORDER}
                   />

@@ -2,8 +2,10 @@
  * `TugMessageEditor` — a small reusable multi-line message field over the
  * {@link TugTextEditor} CM6 substrate.
  *
- * One borderless CM6 field for short authored messages (the Changeset card's
- * commit-message composer is the first consumer). It composes the substrate
+ * One CM6 field for short authored messages (the Changeset card's
+ * commit-message composer is the first consumer; the question wizard's answer
+ * and reply fields are the standalone-frame form, `borderless={false}` plus a
+ * `focusGroup` stop). It composes the substrate
  * exactly as {@link TextCardFindBar} composes it for its query field: a
  * `borderless`, `preserveState={false}` mount with an
  * `EditorView.updateListener` that mirrors the document text back out — no
@@ -46,7 +48,9 @@ import { cn } from "@/lib/utils";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
+  type TugTextEditorFocusStyle,
 } from "@/components/tugways/tug-text-editor";
+import type { FocusPolicy } from "@/components/tugways/focus-manager";
 
 /**
  * Resting/maximum visible rows before the field scrolls. The 3-row resting
@@ -109,11 +113,43 @@ export interface TugMessageEditorProps {
   /** Read-only + non-editable when true. */
   disabled?: boolean;
   /**
+   * Suppress the substrate's own field frame. `true` (the default) is the
+   * embedded form: the consumer's surrounding well owns the border, as the
+   * Changeset composer's does. Set `false` for a standalone field that should
+   * wear the substrate's field border + focus treatment — the same frame the
+   * retired `TugTextarea` drew. @default true
+   */
+  borderless?: boolean;
+  /**
+   * Focus indication style for the field frame, forwarded to the substrate.
+   * @default "background"
+   */
+  focusStyle?: TugTextEditorFocusStyle;
+  /**
    * Let Tab move keyboard focus out of the field instead of indenting.
    * Forwarded to the substrate. Use in a dialog whose action buttons must stay
    * keyboard-reachable from the message field. @default false
    */
   tabMovesFocus?: boolean;
+
+  // ---- Focus engine ([P01], [P02]) ----
+
+  /**
+   * Focus group this field is authored into, forwarded to the substrate. When
+   * set, the field becomes a stop in the engine's Tab / arrow walk and the
+   * key view lands the caret through the editor's focus contract.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. */
+  focusOrder?: number;
+  /** Walk policy when registered. */
+  focusPolicy?: FocusPolicy;
+  /**
+   * Arrow directions released back to the spatial plane while focused ([P25]),
+   * forwarded to the substrate — e.g. `"up down"` on an empty optional field
+   * so a bare arrow moves the ring out instead of dead-ending on the caret.
+   */
+  arrowRelease?: string;
   /**
    * Forwarded to the substrate: a transient, in-list editor (the Lens snippet
    * editor) that is not its card's primary text surface should NOT register
@@ -144,7 +180,13 @@ export const TugMessageEditor = React.forwardRef<
     markdownTextStyling,
     fontSize,
     disabled = false,
+    borderless = true,
+    focusStyle,
     tabMovesFocus = false,
+    focusGroup,
+    focusOrder,
+    focusPolicy,
+    arrowRelease,
     className,
     "data-testid": dataTestid,
     "aria-label": ariaLabel,
@@ -229,7 +271,8 @@ export const TugMessageEditor = React.forwardRef<
       data-slot="tug-message-editor"
       data-testid={dataTestid}
       aria-label={ariaLabel}
-      borderless
+      borderless={borderless}
+      focusStyle={focusStyle}
       suppressCardEngineHooks={suppressCardEngineHooks}
       preserveState={false}
       returnAction="newline"
@@ -240,6 +283,10 @@ export const TugMessageEditor = React.forwardRef<
       placeholder={placeholder}
       disabled={disabled}
       tabMovesFocus={tabMovesFocus}
+      focusGroup={focusGroup}
+      focusOrder={focusOrder}
+      focusPolicy={focusPolicy}
+      arrowRelease={arrowRelease}
       onSubmit={onSubmit}
       extensions={messageEditorExtensions}
     />
