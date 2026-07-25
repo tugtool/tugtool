@@ -309,7 +309,9 @@ fn with_rename_sources(repo_root: &Path, files: &[String]) -> Vec<String> {
     let mut paths = files.to_vec();
     for line in name_status.lines() {
         let mut fields = line.split('\t');
-        let Some(status) = fields.next() else { continue };
+        let Some(status) = fields.next() else {
+            continue;
+        };
         if !status.starts_with('R') {
             continue;
         }
@@ -520,7 +522,10 @@ mod tests {
         assert_eq!(by_path("base.txt").status, "modified");
         assert_eq!(by_path("gone.txt").status, "deleted");
         let status = git::git_stdout(root, &["status", "--porcelain"]).unwrap();
-        assert!(status.trim().is_empty(), "tree clean after commit: {status}");
+        assert!(
+            status.trim().is_empty(),
+            "tree clean after commit: {status}"
+        );
     }
 
     #[test]
@@ -545,7 +550,10 @@ mod tests {
         assert_eq!(receipt.files.len(), 1);
         assert_eq!(receipt.files[0].path, "new.txt");
         let status = git::git_stdout(root, &["status", "--porcelain"]).unwrap();
-        assert!(status.trim().is_empty(), "tree clean after commit: {status}");
+        assert!(
+            status.trim().is_empty(),
+            "tree clean after commit: {status}"
+        );
     }
 
     #[test]
