@@ -1886,6 +1886,10 @@ export function TugPane({
   // `size.width` to the pane; the anchored reopen-width mirror to
   // `lensStore` lives in the deck manager's card-moved handler, keeping
   // this pane lens-agnostic.
+  //
+  // The exposed edge snaps with Option held, exactly like any other pane
+  // edge: the rail is the moving side and every other pane is a
+  // stationary snap target. [D01, D03, D04]
   const handleAnchoredResizeStart = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
@@ -1906,28 +1910,73 @@ export function TugPane({
       // motion grows it.
       const growSign = anchorSide === "left" ? 1 : -1;
 
+      // Snap targets and geometry, snapshotted once at gesture start. The
+      // pinned edge is measured rather than derived from `position`, which
+      // an anchored rail does not use.
+      const canvasBounds = frame.parentElement?.getBoundingClientRect() ?? null;
+      const otherRects = snapshotCardRects(canvasBounds, id, zoom).map((r) => r.rect);
+      const guideEdgeOffsets = measureGuideEdgeOffsets(frame, zoom);
+      const frameRect = frame.getBoundingClientRect();
+      const canvasLeft = canvasBounds ? canvasBounds.left : 0;
+      const pinnedEdge =
+        anchorSide === "left"
+          ? (frameRect.left - canvasLeft) / zoom
+          : (frameRect.right - canvasLeft) / zoom;
+
       frame.setPointerCapture(event.pointerId);
       frame.setAttribute("data-gesture", "resize");
 
       let width = startWidth;
       let latestX = startClientX;
+      let latestAlt = event.altKey;
       let rafId: number | null = null;
 
-      const apply = (): void => {
-        rafId = null;
+      const computeWidth = (): number => {
         // Convert the visual pointer delta to layout space via zoom, then
         // apply the deck-facing grow direction.
         const deltaLayout = (latestX - startClientX) / zoom;
-        const next = Math.min(
+        let next = Math.min(
           maxWidth,
           Math.max(minWidth, startWidth + growSign * deltaLayout),
         );
-        width = next;
-        frame.style.width = `${next}px`;
+
+        if (!latestAlt) {
+          clearGuideElements(resizeGuideEls);
+          return next;
+        }
+
+        // The exposed edge is the only one being resized; the pinned edge
+        // never moves, so width follows directly from the snapped edge.
+        const exposedEdge = pinnedEdge + growSign * next;
+        const snapResult = computeResizeSnap(
+          anchorSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
+          otherRects,
+          -SNAP_GAP_PX,
+        );
+        const snapped = anchorSide === "left" ? snapResult.right : snapResult.left;
+        if (snapped !== undefined) {
+          next = Math.min(
+            maxWidth,
+            Math.max(minWidth, growSign * (snapped - pinnedEdge)),
+          );
+        }
+
+        const container = frame.parentElement;
+        if (container) {
+          syncGuideElements(resizeGuideEls, snapResult.guides, container, guideEdgeOffsets);
+        }
+        return next;
+      };
+
+      const apply = (): void => {
+        rafId = null;
+        width = computeWidth();
+        frame.style.width = `${width}px`;
       };
 
       const onPointerMove = (e: PointerEvent): void => {
         latestX = e.clientX;
+        latestAlt = e.altKey;
         if (rafId === null) rafId = requestAnimationFrame(apply);
       };
 
@@ -1941,7 +1990,11 @@ export function TugPane({
         frame.releasePointerCapture(e.pointerId);
         frame.removeAttribute("data-gesture");
         latestX = e.clientX;
-        apply();
+        latestAlt = e.altKey;
+        // Final width with snap applied, THEN clear the guides. [D03]
+        width = computeWidth();
+        clearGuideElements(resizeGuideEls);
+        frame.style.width = `${width}px`;
         onCardMoved(id, position, { width, height: size.height });
       };
 
