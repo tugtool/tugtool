@@ -4041,11 +4041,20 @@ export function SessionCardBody({
                   ref={historySheetRef}
                   onOpenChange={handleHistorySheetOpenChange}
                 >
+                  {/* History is content-sized ([P17] `shadeAutoSize`): it pages
+                      the log in as the reader scrolls, so a fixed fraction
+                      would cap a list that always has more to show. `fit-
+                      content` under a full-slot cap gives the one rule that
+                      fits: only a COMPLETE history short enough to fit sizes
+                      the shade small and leaves the transcript showing —
+                      anything longer fills the transcript and scrolls inside.
+                      The grabber goes with it (autosize never shows one): the
+                      content owns the height, so there is nothing to drag. */}
                   <TugSheetContent
                     title="History"
                     presentation="shade"
                     persistKey="session-card"
-                    shadeGrabber={false}
+                    shadeAutoSize
                     modalScopeSelector='.session-view-pane[data-view="transcript"]'
                   >
                     <SessionHistoryView

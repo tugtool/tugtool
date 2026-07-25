@@ -18,12 +18,18 @@
  *   3. Type a path only some commits touched into the filter → the list trims
  *      to matching rows, and a row kept by its file roster names the path that
  *      matched (otherwise the match is invisible and reads as a filter bug).
- *   4. Filter by a commit's short sha → exactly that commit survives.
- *   5. Clear the filter → the full walk comes back, no shorter than before.
+ *   4. Filter by a word that appears ONLY in some commit's message BODY → the
+ *      collapsed row shows the matching line marked, and expanding it marks the
+ *      term inside the syntax-highlighted message itself. This is the path that
+ *      silently painted nothing before `renderFilterHighlightSpans`.
+ *   5. Filter by a commit's short sha → exactly that commit survives.
+ *   6. Clear the filter → the full walk comes back, no shorter than before.
  *
  * @covers tugdeck/src/lib/git-log-store.ts
  * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
+ * @covers tugdeck/src/components/tugways/filter-highlight.tsx
+ * @covers tugdeck/src/components/tugways/tug-markdown-text.tsx
  * @covers tugrust/crates/tugcast/src/feeds/git.rs
  */
 
@@ -58,6 +64,36 @@ function gitOut(args: string[]): string {
   return r.stdout.toString().trim();
 }
 
+/**
+ * A recent commit with a distinctive word in its message BODY that appears
+ * nowhere in its subject — the exact shape whose match was invisible before
+ * the styled-span highlight path existed.
+ *
+ * Derived from the repo rather than hardcoded, so the test does not rot as
+ * history moves past whichever commit happened to fit when it was written.
+ */
+function bodyOnlyMatch(): { sha: string; word: string } {
+  const records = gitOut([
+    "log",
+    "-z",
+    "-n40",
+    "--format=%H%x1f%s%x1f%b",
+  ]).split("\0");
+  for (const record of records) {
+    const [sha, subject, body] = record.split("\x1f");
+    if (sha === undefined || subject === undefined || body === undefined) continue;
+    const subjectLower = subject.toLowerCase();
+    for (const word of body.toLowerCase().match(/[a-z]{8,}/g) ?? []) {
+      // Not in the subject, and not in the sha's hex either, so the collapsed
+      // row genuinely cannot account for the match on its own.
+      if (subjectLower.includes(word)) continue;
+      if (sha.slice(0, 8).includes(word)) continue;
+      return { sha, word };
+    }
+  }
+  throw new Error("no recent commit has a body-only word — fixture assumption broke");
+}
+
 describe.skipIf(!SHOULD_RUN)(
   "at0268 — History pages in on scroll and filters down",
   () => {
@@ -66,6 +102,7 @@ describe.skipIf(!SHOULD_RUN)(
       async () => {
         const head8 = gitOut(["rev-parse", "HEAD"]).slice(0, 8);
         const headSubject = gitOut(["show", "-s", "--format=%s", "HEAD"]);
+        const { sha: bodySha, word: bodyWord } = bodyOnlyMatch();
 
         const tugbankPath = mkTempTugbank();
         try {
@@ -164,16 +201,86 @@ describe.skipIf(!SHOULD_RUN)(
             // filter trims, it does not fetch a different list.
             for (const sha of byPath) expect(grown).toContain(sha);
 
-            // The match is legible: the row names the path the query found.
-            const matchedPathText = await app.evalJS<string>(
+            // The match is legible: the row names the path the query found,
+            // with the matched span marked inside it.
+            const pathContext = await app.evalJS<{ text: string; mark: string }>(
               `(function(){
-                var el = document.querySelector('[data-testid="session-history-matched-paths"]');
-                return el ? el.textContent : "";
+                var el = document.querySelector('[data-testid="session-history-matched-context"]');
+                if (!el) return { text: "", mark: "" };
+                var m = el.querySelector('mark.tug-filter-mark');
+                return { text: el.textContent, mark: m ? m.textContent : "" };
               })()`,
             );
-            expect(matchedPathText).toContain("tug-history-list.css");
+            expect(pathContext.text).toContain("tug-history-list.css");
+            expect(pathContext.mark.length).toBeGreaterThan(0);
 
-            // ── 4. Filter by a short sha ─────────────────────────────────
+            // ── 4. Filter by a word only the message BODY carries ─────────
+            await app.evalJS(
+              `(function(){
+                var i = document.querySelector(${JSON.stringify(FILTER)});
+                i.value = "";
+                i.dispatchEvent(new Event("input", { bubbles: true }));
+              })()`,
+            );
+            await app.type(FILTER, bodyWord);
+            const bodyRow = `${VIEW} [data-testid="session-history-commit"][data-sha="${bodySha}"]`;
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(bodyRow)}) !== null`,
+              { timeoutMs: 8_000 },
+            );
+
+            // Collapsed, the row cannot explain itself from its subject — so it
+            // shows the matching message line, marked.
+            const collapsedEvidence = await app.evalJS<{
+              context: string;
+              mark: string;
+            }>(
+              `(function(){
+                var row = document.querySelector(${JSON.stringify(bodyRow)});
+                var el = row.querySelector('[data-testid="session-history-matched-context"]');
+                if (!el) return { context: "", mark: "" };
+                var m = el.querySelector('mark.tug-filter-mark');
+                return { context: el.textContent, mark: m ? m.textContent.toLowerCase() : "" };
+              })()`,
+            );
+            expect(collapsedEvidence.context.toLowerCase()).toContain(bodyWord);
+            expect(collapsedEvidence.mark).toBe(bodyWord);
+
+            // Expanded, the term is marked inside the real message body — the
+            // syntax-highlighted render, where a plain string renderer could
+            // not reach and so used to paint nothing at all.
+            await app.click(`${bodyRow} .tug-history-list-row-hit`);
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(bodyRow)} + '' ) !== null && document.querySelector(${JSON.stringify(bodyRow)}).getAttribute("data-expanded") === "true"`,
+              { timeoutMs: 5_000 },
+            );
+            const bodyMark = await app.evalJS<string>(
+              `(function(){
+                var row = document.querySelector(${JSON.stringify(bodyRow)});
+                var msg = row.querySelector('[data-slot="tug-history-list-message"]');
+                if (!msg) return "";
+                var m = msg.querySelector('mark.tug-filter-mark');
+                return m ? m.textContent.toLowerCase() : "";
+              })()`,
+            );
+            expect(bodyMark).toBe(bodyWord);
+
+            // The expanded detail reads in a recessed well, like a tool
+            // block's body — a real painted surface, not a bare region.
+            const wellPainted = await app.evalJS<boolean>(
+              `(function(){
+                var row = document.querySelector(${JSON.stringify(bodyRow)});
+                var well = row.querySelector('.tug-history-list-commit-detail');
+                if (!well) return false;
+                var cs = getComputedStyle(well);
+                var bg = cs.backgroundColor;
+                return bg !== "" && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)"
+                  && parseFloat(cs.borderTopWidth) > 0;
+              })()`,
+            );
+            expect(wellPainted).toBe(true);
+
+            // ── 5. Filter by a short sha ─────────────────────────────────
             await app.evalJS(
               `(function(){
                 var i = document.querySelector(${JSON.stringify(FILTER)});
@@ -206,7 +313,7 @@ describe.skipIf(!SHOULD_RUN)(
             expect(head8).toContain(markText);
             expect(markText.length).toBeGreaterThan(0);
 
-            // ── 5. Clearing restores the whole walk ──────────────────────
+            // ── 6. Clearing restores the whole walk ──────────────────────
             await app.click(
               `[data-testid="session-history-filter"] [aria-label="Clear filter"]`,
             );

@@ -47,15 +47,16 @@
   min-height: var(--tugx-commit-line);
 }
 
-/* The filter's receipt: the paths a query matched, under the identity line
-   that could not explain the row's survival. Set at the detail scale in the
-   mono face so a path reads as a path, and started under the SUBJECT — the
-   row's compact inline padding plus the identity's 9ch hanging indent — so the
-   line hangs off the text it is explaining rather than off the sha. */
-.tug-history-list-matched-paths {
+/* The filter's receipt: the message lines and paths a query matched, under an
+   identity line that could not explain the row's survival. Set at the detail
+   scale in the mono face, and started under the SUBJECT — the row's compact
+   inline padding plus the identity's 9ch hanging indent — so it hangs off the
+   text it is explaining rather than off the sha. One entry per line (not a
+   wrapping row): a body excerpt is prose-length, so entries side by side would
+   read as one run-on sentence. */
+.tug-history-list-matched-context {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 10px;
+  flex-direction: column;
   padding-left: calc(
     var(--tugx-list-row-padding-inline-compact, 8px) + var(--tugx-commit-hang)
   );
@@ -66,14 +67,35 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.tug-history-list-matched-path-overflow {
+.tug-history-list-matched-line {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tug-history-list-matched-overflow {
   font-family: var(--tug-font-family-sans);
   font-style: italic;
 }
 
-/* The expanded detail well under a row. */
+/* The expanded detail — a RECESSED WELL, the same move a tool block's expanded
+   body makes (`block-chrome.css`): the content drops off the list surface onto
+   `--tugx-block-well-bg` inside the shared block hairline, so a commit's
+   message, syntax tones, and diff rows have a grounded surface to read
+   against instead of floating on the row surface with its neighbors.
+   `--tugx-block-bg` is re-scoped as well as painted because the body kinds
+   composed inside (the diff blocks under each file row) read the token rather
+   than the background. */
+/* @tug-renders-on: --tugx-block-well-bg */
 .tug-history-list-commit-detail {
-  padding: 2px 8px 6px;
+  --tugx-block-bg: var(--tugx-block-well-bg);
+  background: var(--tugx-block-well-bg);
+  border: 1px solid var(--tugx-block-hairline);
+  border-radius: var(--tugx-block-chrome-radius);
+  /* Inset from the row's edges so the well reads as a panel under the row
+     rather than a full-bleed band, and aligned to the row's own inline
+     padding so its left edge sits under the row's status column. */
+  margin: 2px var(--tugx-list-row-padding-inline-compact, 8px) 6px;
+  padding: 6px 8px;
 }
 
 /* Committer identity + complete date — the full attribution, right-aligned at

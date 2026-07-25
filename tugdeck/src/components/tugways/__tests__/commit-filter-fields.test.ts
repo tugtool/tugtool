@@ -13,6 +13,7 @@
 import { describe, test, expect } from "bun:test";
 
 import { commitFilterFields } from "../tug-history-list";
+import { formatCommitStamp } from "../commit-presentation";
 import { filterAndRank, filterQueryMatch } from "@/lib/text-match";
 import type { GitLogCommit } from "@/lib/git-log-store";
 
@@ -49,6 +50,22 @@ describe("commitFilterFields", () => {
     expect(matches("Kocienda")).toBe(true);
     expect(matches("kocienda@mac.com")).toBe(true);
     expect(matches("2026-07-24")).toBe(true);
+  });
+
+  test("the stamp matches AS DISPLAYED, not only as raw ISO", () => {
+    // What the row shows is what the filter must judge — otherwise a reader
+    // types the date they can see and gets nothing, and a match that did land
+    // would have no visible characters to mark.
+    // Taken from the formatter, not hardcoded: the stamp renders in the local
+    // zone, so a literal clock time would only pass in one timezone.
+    const full = formatCommitStamp(COMMIT.committer_date!, "full");
+    const clock = formatCommitStamp(COMMIT.committer_date!, "time");
+    expect(full).toContain("July");
+    expect(matches("July")).toBe(true);
+    expect(matches(clock)).toBe(true);
+    // The raw ISO's `T` separator is NOT what a reader sees, and the displayed
+    // forms don't contain it — so this is a genuine "displayed strings" check.
+    expect(full).not.toContain("T");
   });
 
   test("a changed path matches, even when the message never names it", () => {

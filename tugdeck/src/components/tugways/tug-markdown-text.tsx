@@ -10,6 +10,12 @@
  * Styling is a synchronous filter ({@link styleMarkdownText}), so the first
  * paint is the styled paint. Text renders verbatim, whitespace preserved.
  *
+ * `highlightQuery` paints a list filter's matches over the styled text — the
+ * marks nest INSIDE the syntax runs (`renderFilterHighlightSpans`), so a match
+ * inside inline code keeps the code tone and wears the highlight. Matching runs
+ * per LINE, which is also the only correct grain: a query term cannot span a
+ * newline.
+ *
  * Laws: [L06] every tone comes from the shared highlight classes and the
  * component's own CSS; nothing here is React state.
  *
@@ -21,11 +27,17 @@ import "./tug-markdown-text.css";
 import { useMemo } from "react";
 import type React from "react";
 
+import { renderFilterHighlightSpans } from "@/components/tugways/filter-highlight";
 import { styleMarkdownText } from "@/lib/markdown-text-styling";
 
 export interface TugMarkdownTextProps {
   /** The markdown to style. Rendered verbatim — nothing is hidden. */
   text: string;
+  /**
+   * A list filter's live query. Its matches are marked inside the styled runs.
+   * Empty / absent ⇒ no marks and DOM identical to the unfiltered render.
+   */
+  highlightQuery?: string;
   className?: string;
   /** Test hook on the block element. */
   dataSlot?: string;
@@ -33,6 +45,7 @@ export interface TugMarkdownTextProps {
 
 export function TugMarkdownText({
   text,
+  highlightQuery = "",
   className,
   dataSlot,
 }: TugMarkdownTextProps): React.ReactElement {
@@ -60,15 +73,7 @@ export function TugMarkdownText({
               : undefined
           }
         >
-          {line.spans.map((span, j) =>
-            span.className === "" ? (
-              span.text
-            ) : (
-              <span key={j} className={span.className}>
-                {span.text}
-              </span>
-            ),
-          )}
+          {renderFilterHighlightSpans(line.spans, line.text, highlightQuery)}
         </div>
       ))}
     </div>

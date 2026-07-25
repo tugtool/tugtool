@@ -29,6 +29,7 @@ import "./commit-presentation.css";
 import type React from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugMarkdownText } from "@/components/tugways/tug-markdown-text";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 
@@ -78,10 +79,14 @@ export function formatCommitStamp(iso: string, grain: CommitStampGrain): string 
 export function CommitStamp({
   iso,
   grain,
+  highlightQuery = "",
   className,
 }: {
   iso: string;
   grain: CommitStampGrain;
+  /** A list filter's live query, marked over the FORMATTED stamp — the string
+   *  the reader actually sees, which is what the filter matches on too. */
+  highlightQuery?: string;
   className?: string;
 }): React.ReactElement {
   const text = formatCommitStamp(iso, grain);
@@ -91,7 +96,7 @@ export function CommitStamp({
       data-slot="commit-stamp"
       title={formatCommitStamp(iso, "full")}
     >
-      {text}
+      {renderFilterHighlight(text, highlightQuery)}
     </span>
   );
 }
@@ -109,10 +114,13 @@ export function CommitMetaCell({
   author,
   iso,
   fields,
+  highlightQuery = "",
 }: {
   author: string;
   iso: string;
   fields: readonly CommitMetaField[];
+  /** A list filter's live query — the cell is matchable content, so it marks. */
+  highlightQuery?: string;
 }): React.ReactElement {
   const wantsDate = fields.includes("date");
   const wantsTime = fields.includes("time");
@@ -120,8 +128,12 @@ export function CommitMetaCell({
     wantsDate && wantsTime ? "datetime" : wantsDate ? "date" : wantsTime ? "time" : null;
   return (
     <span className="tugx-commit-meta" data-slot="commit-meta">
-      {fields.includes("author") ? <span>{author}</span> : null}
-      {grain !== null ? <CommitStamp iso={iso} grain={grain} /> : null}
+      {fields.includes("author") ? (
+        <span>{renderFilterHighlight(author, highlightQuery)}</span>
+      ) : null}
+      {grain !== null ? (
+        <CommitStamp iso={iso} grain={grain} highlightQuery={highlightQuery} />
+      ) : null}
     </span>
   );
 }
@@ -182,14 +194,26 @@ export function CommitIdentityLine({
  */
 export function CommitMessage({
   body,
+  highlightQuery,
   dataSlot,
 }: {
   /** The message body (subject excluded — it leads the identity line). */
   body: string;
+  /** A list filter's live query — its matches are marked inside the syntax
+   *  tones. The History filter matches on the body, so a row expanded under a
+   *  filter must show WHERE it matched. */
+  highlightQuery?: string;
   /** `data-slot` for the well, so each surface keeps its own test hook. */
   dataSlot: string;
 }): React.ReactElement {
-  return <TugMarkdownText text={body} className="tugx-commit-message" dataSlot={dataSlot} />;
+  return (
+    <TugMarkdownText
+      text={body}
+      highlightQuery={highlightQuery}
+      className="tugx-commit-message"
+      dataSlot={dataSlot}
+    />
+  );
 }
 
 /**

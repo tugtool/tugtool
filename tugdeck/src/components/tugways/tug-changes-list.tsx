@@ -45,6 +45,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -123,13 +124,19 @@ function FilePathLink({
   op,
   gitStatus,
   projectRoot,
+  highlightQuery = "",
 }: {
   path: string;
   op: string;
   gitStatus: string;
   projectRoot: string;
+  highlightQuery?: string;
 }) {
   const absolutePath = projectRoot ? `${projectRoot}/${path}` : path;
+  // The path is matchable content wherever a filtered list shows it, so the
+  // marks go on the rendered string. `path` stays the authority for the
+  // `title`, the menu, and the open action.
+  const shown = renderFilterHighlight(path, highlightQuery);
 
   const handleClick = useCallback(
     (event: React.MouseEvent) => {
@@ -153,7 +160,7 @@ function FilePathLink({
   if (isDeleted(op, gitStatus) || !projectRoot) {
     return (
       <span className="tug-changes-list-file-path" title={path}>
-        {path}
+        {shown}
       </span>
     );
   }
@@ -174,7 +181,7 @@ function FilePathLink({
         onMouseDown={handleMouseDown}
         onClick={handleClick}
       >
-        {path}
+        {shown}
       </span>
     </TugContextMenu>
   );
@@ -371,9 +378,11 @@ function orphanedFileData(file: OrphanedFile): FileBlockData {
 function FileIdentity({
   file,
   projectRoot,
+  highlightQuery,
 }: {
   file: FileBlockData;
   projectRoot: string;
+  highlightQuery?: string;
 }) {
   const provenance =
     file.origin === ""
@@ -388,6 +397,7 @@ function FileIdentity({
         op={file.op}
         gitStatus={file.git_status}
         projectRoot={projectRoot}
+        highlightQuery={highlightQuery}
       />
       {file.shared ? (
         <span className="tug-changes-list-badge tug-changes-list-badge-shared">
@@ -427,9 +437,13 @@ export function ChangesFileRow({
   popOut,
   body,
   onClaim,
+  highlightQuery,
 }: {
   file: FileBlockData;
   projectRoot: string;
+  /** A list filter's live query — marks the path where it matched. Absent for
+   *  the live Changes list, which carries no filter. */
+  highlightQuery?: string;
   /** The `+N −M` pair when known (live: from the eager entry diff; receipt:
    *  from the frozen record). Absent → no badges (binary, still loading). */
   counts: { added: number; removed: number } | null;
@@ -503,7 +517,11 @@ export function ChangesFileRow({
             </span>
           }
         >
-          <FileIdentity file={file} projectRoot={projectRoot} />
+          <FileIdentity
+            file={file}
+            projectRoot={projectRoot}
+            highlightQuery={highlightQuery}
+          />
         </TugListRow>
       </div>
       {expanded ? (
@@ -744,10 +762,12 @@ function CommitFileRow({
   root,
   sha,
   file,
+  highlightQuery,
 }: {
   root: string;
   sha: string;
   file: CommitChangesFile;
+  highlightQuery?: string;
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   const storeId = `commit:${sha}:${file.path}`;
@@ -779,6 +799,7 @@ function CommitFileRow({
       onToggle={setExpanded}
       popOut={descriptor}
       body={expanded ? fileBlockBody(snapshot, file.path) : null}
+      highlightQuery={highlightQuery}
     />
   );
 }
@@ -795,17 +816,28 @@ export function CommitChangesList({
   root,
   sha,
   files,
+  highlightQuery,
 }: {
   /** The project dir the commit lives in (resolves the workspace). */
   root: string;
   /** The commit's full sha, parsed from the receipt record. */
   sha: string;
   files: readonly CommitChangesFile[];
+  /** A list filter's live query — marks the paths it matched. The History
+   *  filter matches on a commit's file roster, so an expanded row under a
+   *  filter must show which of its files the query found. */
+  highlightQuery?: string;
 }): React.ReactElement {
   return (
     <div className="tug-changes-list-file-list" data-slot="tug-commit-changes-list">
       {files.map((file) => (
-        <CommitFileRow key={file.path} root={root} sha={sha} file={file} />
+        <CommitFileRow
+          key={file.path}
+          root={root}
+          sha={sha}
+          file={file}
+          highlightQuery={highlightQuery}
+        />
       ))}
     </div>
   );
