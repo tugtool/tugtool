@@ -549,10 +549,10 @@ const GhostRowCell = React.memo(function GhostRowCell({
 // ---------------------------------------------------------------------------
 /**
  * The shell row's block frame: the whole-block history collapse for an ordinary
- * exchange, or nothing at all for a row that must not be foldable (a git
- * commit receipt). Rendering the children bare — rather than passing a flag
- * into the wrapper — is what leaves `ToolBlockCollapseContext` unset, which is
- * how `BlockChrome` decides to render no chevron ([P02]).
+ * exchange, or nothing at all for a row that supplies its own collapse handle
+ * (a git commit receipt). Rendering the children bare — rather than passing a
+ * flag into the wrapper — is what leaves `ToolBlockCollapseContext` unset here,
+ * so the receipt's own provider is the one `BlockChrome` reads ([P02]).
  */
 function ShellBlockFrame({
   collapsible,
@@ -671,10 +671,9 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
           // exchange id so the user's expand/collapse choice persists across
           // windowed remounts. Defaults expanded — the user just ran it.
           //
-          // A git row is NOT wrapped: a commit receipt is a fixed-size record
-          // (a summary over its file list), not open-ended output that needs
-          // folding away. Without the wrapper the chrome sees no disclosure
-          // context and renders no chevron at all.
+          // A git row is NOT wrapped here: the commit receipt provides its own
+          // collapse handle (defaulting expanded) so the same fold rides along
+          // wherever the receipt renders, transcript or gallery.
           <ShellBlockFrame collapsible={!isGitRow} toolUseId={message.exchangeId}>
             <CommandBlock
               message={message}

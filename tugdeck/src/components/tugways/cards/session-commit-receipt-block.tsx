@@ -15,6 +15,10 @@
  * pixel-identical; a parse miss falls back to the generic block so raw output
  * always renders.
  *
+ * The receipt carries one fold: the chrome's header chevron, which folds the
+ * message body and the file list away behind the identity line. It defaults
+ * expanded.
+ *
  * @module components/tugways/cards/session-commit-receipt-block
  */
 
@@ -24,6 +28,7 @@ import { CommitShaText } from "@/components/tugways/commit-sha-text";
 import { CommitMessage } from "@/components/tugways/commit-presentation";
 import { CommitChangesList } from "@/components/tugways/tug-changes-list";
 import { BlockChrome } from "../blocks/block-chrome";
+import { ToolBlockHistoryCollapse } from "../blocks/collapse-context";
 import "@/components/tugways/commit-presentation.css";
 import {
   registerCommandBlock,
@@ -121,21 +126,33 @@ export function SessionCommitReceiptBlock(props: CommandBlockProps): React.React
     // Not an S02 summary — let the generic exchange block render raw output.
     return <ShellExchangeBlock {...props} />;
   }
-  return <CommitReceipt parsed={parsed} cwd={props.message.cwd} />;
+  return (
+    <CommitReceipt
+      parsed={parsed}
+      cwd={props.message.cwd}
+      exchangeId={props.message.exchangeId}
+    />
+  );
 }
 
 /**
- * The parsed receipt: the commit's summary line over its file list, stated in
- * full. Nothing here folds — the row carries no expand control of its own, and
- * the transcript leaves it out of the whole-block history collapse — so a
- * landed commit reads at a glance without a gesture.
+ * The parsed receipt: the commit's summary line over its file list. The block
+ * owns its own whole-block fold — it wraps itself in
+ * {@link ToolBlockHistoryCollapse}, which is what makes `BlockChrome` render
+ * the header chevron on the far right — so the message body and the file list
+ * can be folded away behind the identity line. It defaults EXPANDED: a landed
+ * commit reads in full without a gesture, and collapsing is the reader's
+ * choice. Keyed on the exchange id, so that choice survives a windowed remount
+ * and a restore.
  */
 function CommitReceipt({
   parsed,
   cwd,
+  exchangeId,
 }: {
   parsed: ParsedCommitReceipt;
   cwd: string;
+  exchangeId: string;
 }): React.ReactElement {
   const { sha, message, fileCount, added, removed, files } = parsed;
   // The header carries the subject — the message's first line — so it reads
@@ -156,37 +173,38 @@ function CommitReceipt({
     </span>
   );
   return (
-    <BlockChrome
-      rootSlot="commit-receipt-block"
-      variant="receipt"
-      identity={identity}
-      // The file count and diff stat as standard header result summaries —
-      // the same pipe-sectioned ghost badges every tool block reports with.
-      resultSummary={[
-        { kind: "count", count: fileCount, noun: "file" },
-        { kind: "diff", added, removed },
-      ]}
-      phase="success"
-      status="ready"
-      copyText={`${sha} ${message}`.trim()}
-    >
-      {/* The message body reads exactly as it does in an expanded History row
-          — same `.tugx-commit-message` scale — and sits ABOVE the file list,
-          which can run arbitrarily long. Always shown: a commit receipt is a
-          durable record, so it states itself in full rather than hiding half
-          of itself behind a cue. */}
-      {body.length > 0 ? (
-        <CommitMessage body={body} dataSlot="commit-receipt-detail" />
-      ) : null}
-      {/* The committed files as sha-backed changes rows ([P08]) — the same
-          compact rows as the live list, each expanding into the committed
-          hunks (lazy per-row `commit`-flavor fetch). `cwd` is the repo dir
-          the `/commit` ran in — persisted in the ledger, so live and
-          restored rows resolve the same workspace. */}
-      {files.length > 0 ? (
-        <CommitChangesList root={cwd} sha={sha} files={files} />
-      ) : null}
-    </BlockChrome>
+    <ToolBlockHistoryCollapse toolUseId={exchangeId} defaultCollapsed={false}>
+      <BlockChrome
+        rootSlot="commit-receipt-block"
+        variant="receipt"
+        identity={identity}
+        // The file count and diff stat as standard header result summaries —
+        // the same pipe-sectioned ghost badges every tool block reports with.
+        resultSummary={[
+          { kind: "count", count: fileCount, noun: "file" },
+          { kind: "diff", added, removed },
+        ]}
+        phase="success"
+        status="ready"
+        copyText={`${sha} ${message}`.trim()}
+      >
+        {/* The message body reads exactly as it does in an expanded History
+            row — same `.tugx-commit-message` scale — and sits ABOVE the file
+            list, which can run arbitrarily long. Both fold together under the
+            header chevron; expanded is the default. */}
+        {body.length > 0 ? (
+          <CommitMessage body={body} dataSlot="commit-receipt-detail" />
+        ) : null}
+        {/* The committed files as sha-backed changes rows ([P08]) — the same
+            compact rows as the live list, each expanding into the committed
+            hunks (lazy per-row `commit`-flavor fetch). `cwd` is the repo dir
+            the `/commit` ran in — persisted in the ledger, so live and
+            restored rows resolve the same workspace. */}
+        {files.length > 0 ? (
+          <CommitChangesList root={cwd} sha={sha} files={files} />
+        ) : null}
+      </BlockChrome>
+    </ToolBlockHistoryCollapse>
   );
 }
 
