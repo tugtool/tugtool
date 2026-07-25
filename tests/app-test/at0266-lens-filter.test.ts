@@ -21,6 +21,11 @@
  *     ladder ran instead.
  *   - **Clear restores (D):** the ✕ brings every row back, and the list still
  *     walks under the cursor keys.
+ *   - **A narrow Lens keeps its band whole (E):** with the rail at its minimum
+ *     width, the field gives its own width and every band still ends with its
+ *     drag grip inside the band. Fails if the field holds its dial width under
+ *     pressure — the row then overflows and pushes the grip out past the rail's
+ *     edge, where it cannot be grabbed.
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), so the rows are
  * real and deterministic.
@@ -43,6 +48,7 @@ import {
   mkTempTugbank,
   rmTempTugbank,
   seedTugbankForLaunch,
+  tugbankWrite,
 } from "./_harness/tugbank-helpers";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
@@ -120,6 +126,9 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
       );
       try {
         seedTugbankForLaunch(tugbankPath);
+        // Open the rail at its floor (`MIN_LENS_WIDTH_PX`) — the narrowest the
+        // user can drag it to, and the width case (E) measures against.
+        tugbankWrite(tugbankPath, "dev.tugtool.lens", "widthPx", "int", "320");
         const app = await launchTugApp({
           testName: "at0266-lens-filter",
           env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
@@ -219,6 +228,38 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             { timeoutMs: 5_000 },
           );
           expect(await app.evalJS<number>(MARK_COUNT)).toBe(0);
+
+          // (E) The rail opened at its MINIMUM width (seeded above), which is
+          // the narrowest the user can drag it to. Every band must still end
+          // with its grip inside the band's own box, and the field must be the
+          // thing that gave — narrower than its resting dial width.
+          const bands = await app.evalJS<
+            { kind: string; overflow: number }[]
+          >(`Array.prototype.map.call(
+            document.querySelectorAll('.lens-section'),
+            function (section) {
+              var band = section.querySelector('.tool-call-header');
+              var grip = band.querySelector('.block-grip');
+              return {
+                kind: section.getAttribute('data-lens-section'),
+                overflow: grip.getBoundingClientRect().right
+                  - (band.getBoundingClientRect().right - parseFloat(getComputedStyle(band).paddingRight)),
+              };
+            }
+          )`);
+          expect(bands.length).toBeGreaterThan(0);
+          for (const band of bands) {
+            expect({ kind: band.kind, clipped: band.overflow > 0.5 }).toEqual({
+              kind: band.kind,
+              clipped: false,
+            });
+          }
+          // …and giving is not vanishing: the field keeps its floor, so it is
+          // still a field the user can type a query into.
+          const fieldWidth = await app.evalJS<number>(
+            `document.querySelector(${JSON.stringify(FILTER_INPUT)}).getBoundingClientRect().width`,
+          );
+          expect(fieldWidth).toBeGreaterThan(60);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {

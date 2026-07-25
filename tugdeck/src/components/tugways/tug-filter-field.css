@@ -25,6 +25,10 @@
      number means "how much query is visible", not "how wide is the box".
      Every filter field in the app resolves through it; change it here. */
   --tugx-filter-field-width: 20ch;
+  /* The floor the text lane gives down to when its row runs out of room. Same
+     units and meaning as the width dial — enough query to stay a usable field,
+     short enough that the row's other items keep their place. */
+  --tugx-filter-field-min-width: 6ch;
 
   position: relative;
   display: flex;
@@ -38,13 +42,26 @@
 
 /* Reserve the ✕'s lane at all times so text never reflows when it appears, and
    size the field off the width dial. Outranks `.tug-input`'s own `width: 100%`
-   and the per-size padding. */
+   and the per-size padding.
+
+   `min-inline-size` is what makes the wrapper's `flex-shrink: 1` real. An
+   `<input>` carries an intrinsic min-content width of its own (the `size`
+   attribute's default measure), and a flex item's automatic minimum is that
+   min-content — so without this the box held its full dial width however
+   cramped the row got, and the overflow pushed the row's trailing items (a
+   section band's drag grip) off the edge instead. The floor is the same three
+   terms as the width above, with the text lane swapped for its minimum, so a
+   fully-given field still shows the ✕ in its reserved lane. */
 .tug-filter-field .tug-input.tug-filter-field-input {
   padding-inline-end: calc(
     var(--tugx-filter-field-clear-width) + var(--tugx-filter-field-clear-inset)
   );
   inline-size: calc(
     var(--tugx-filter-field-width) + var(--tugx-filter-field-clear-width) +
+      var(--tugx-filter-field-clear-inset)
+  );
+  min-inline-size: calc(
+    var(--tugx-filter-field-min-width) + var(--tugx-filter-field-clear-width) +
       var(--tugx-filter-field-clear-inset)
   );
 }

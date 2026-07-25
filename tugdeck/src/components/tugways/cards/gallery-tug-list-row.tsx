@@ -409,18 +409,23 @@ export function GalleryTugListRow(): React.ReactElement {
 
       <TugSeparator />
 
-      {/* ---- 5. States — the four-state selection ramp ---- */}
+      {/* ---- 5. States — the selection ramp, plus the press ---- */}
       <div className="cg-section">
         <TugLabel className="cg-section-title">States</TugLabel>
         <div style={captionStyle}>
           The list owns its own selection family (the blue selection
-          tokens), distinct from the popup-button menus. The ramp is
-          four states: <strong>rest → hover → selected → selected +
+          tokens), distinct from the popup-button menus. The ramp is{" "}
+          <strong>rest → hover → pressed → selected → selected +
           hover</strong>. <em>Hover the rows below</em> — a hovered
           selected row paints a stronger fill than a resting selected
           row, and differs from a hovered unselected row.{" "}
-          <code>selected</code> and <code>disabled</code> are inputs the
-          consumer feeds — the row reflects them, it does not own them.
+          <em>Now hold the mouse down on one</em> — the press wears the
+          selection&apos;s own hue, a preview of what the click commits, so
+          a row whose click acts without selecting still answers the
+          finger. A press on an already-selected row steps one ramp
+          further. <code>selected</code> and <code>disabled</code> are
+          inputs the consumer feeds — the row reflects them, it does not
+          own them.
         </div>
         <div style={variantsRowStyle}>
           <div style={labelColumnStyle}>

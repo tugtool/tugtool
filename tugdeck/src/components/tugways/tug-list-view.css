@@ -292,6 +292,33 @@ body {
   background-color: transparent;
 }
 
+/* The press pose goes the same way, and for the same reason: an inert row that
+   lights up under the finger promises a click it will not honor. The variant
+   attribute matches the shape of the press rules in `tug-list-row.css` so this
+   outranks them whichever file the bundler emits first — text selection inside
+   a read-only listing drags across rows with the pointer down, and that must
+   stay a quiet gesture. */
+.tug-list-view[data-interactive="false"] .tug-list-row[data-variant="flush"]:active:not([data-disabled="true"]),
+.tug-list-view[data-interactive="false"] .tug-list-row[data-variant="pill"]:active:not([data-disabled="true"]) {
+  background-color: transparent;
+}
+
+/* The fill's companion: the press also recolors the content column, so drop
+   that too or a read-only row's text would flip tone under a fill that is no
+   longer there. `inherit` returns the column to the host surface's color — the
+   resting state of a `flush` row, which paints no foreground of its own. */
+.tug-list-view[data-interactive="false"] .tug-list-row:active:not([data-disabled="true"]) .tug-list-row-content,
+.tug-list-view[data-interactive="false"] .tug-list-row:active:not([data-disabled="true"]) .tug-list-row-content .tug-label {
+  color: inherit;
+}
+
+/* Unless the row is selected — then the selection fill IS still under the text
+   and the selected tone is the resting state to return to. */
+.tug-list-view[data-interactive="false"] .tug-list-row[data-selected="true"]:not([data-selection-surface="control"]):active .tug-list-row-content,
+.tug-list-view[data-interactive="false"] .tug-list-row[data-selected="true"]:not([data-selection-surface="control"]):active .tug-list-row-content .tug-label {
+  color: var(--tugx-list-row-selected-text);
+}
+
 /* ---- Row layout — opt-in via the `rowLayout` prop ----
 
    `rowLayout` writes `data-row-layout` on the scroll container. When

@@ -170,9 +170,11 @@ export function LensSection({
         actions={
           <>
             {/* The filter field leads the actions cluster while the section is
-                expanded. It registers at `focusOrder: -1` with a `skip` policy:
-                click-reachable always, out of the ordinary Tab walk, and never
-                the ⌘L seed target (which addresses `<group>:0`, the list).
+                expanded. It registers at `focusOrder: -1` in the section's own
+                group with the default `accept` policy, so the Tab walk reaches
+                it just before that section's list: filter → list → next
+                section's filter → next list. It is still never the ⌘L seed
+                target, which addresses `<group>:0` by key — the list.
                 Registration is deliberately NOT gated on the section having
                 content — filtering to zero must never strand the field that is
                 the only way back ([R02]). The field remounts per expand seeded
@@ -185,7 +187,6 @@ export function LensSection({
                 data-testid="lens-section-filter"
                 focusGroup={host.focusGroup}
                 focusOrder={-1}
-                focusPolicy="skip"
               />
             )}
             {/* Section-contributed controls sit LEFT of the chevron and,

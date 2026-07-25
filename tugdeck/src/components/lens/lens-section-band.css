@@ -84,6 +84,27 @@
    adopts the band's line box and type so it rides the section title's baseline.
    See tug-filter-field.css. */
 
+/* The Lens narrows with its rail, so this band's actions cluster gives instead
+   of overflowing. `block-header.css` pins the cluster at `flex: 0 0 auto` — the
+   right call for the transcript tool header, whose actions are fixed-size icon
+   buttons with nothing to give — but a Lens band's cluster leads with a filter
+   field that has a whole text lane to spare, and holding the cluster rigid
+   pushed the drag grip past the pane's edge. Shrinking is scoped to the section
+   altitude, and the field absorbs all of it: every other item in the cluster is
+   pinned rigid below, so the field is the only thing that narrows — down to its
+   own floor, after which the band overflows as before. */
+.lens-section > .tool-call-header .tool-call-header-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Everything in the cluster except the field holds its size — the section's
+   own controls (Snippets' `+`, Sessions' expand/collapse pair) and the fold
+   chevron are glyph-sized already and have nothing to give. */
+.lens-section > .tool-call-header .tool-call-header-actions > :not(.tug-filter-field) {
+  flex: 0 0 auto;
+}
+
 .lens-section-body {
   display: flex;
   flex-direction: column;

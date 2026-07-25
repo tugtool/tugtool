@@ -23,7 +23,6 @@ import {
   languageLabelFor,
 } from "@/lib/language-registry";
 import { centerTruncate, TAB_TITLE_MAX } from "@/components/tugways/tug-tab-bar";
-import { segmentsOf } from "@/components/chrome/card-path-menu";
 
 const json = (value: unknown): TaggedValue => ({ kind: "json", value } as TaggedValue);
 
@@ -128,19 +127,5 @@ describe("centerTruncate", () => {
     expect(out).toContain("…");
     expect(out.startsWith("a-very")).toBe(true);
     expect(out.endsWith(".tsx")).toBe(true);
-  });
-});
-
-describe("segmentsOf", () => {
-  test("splits to innermost-first, dropping empties", () => {
-    expect(segmentsOf("/Users/k/src/tug/file.md")).toEqual([
-      "file.md",
-      "tug",
-      "src",
-      "k",
-      "Users",
-    ]);
-    expect(segmentsOf("/")).toEqual([]);
-    expect(segmentsOf("solo")).toEqual(["solo"]);
   });
 });

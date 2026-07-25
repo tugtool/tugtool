@@ -12,8 +12,10 @@
  *  - [L06] appearance via `data-` attributes (`data-variant`,
  *    `data-selected`, `data-disabled`, `data-reveal`) + CSS, never
  *    React state.
- *  - [L15] token-driven state visuals; rest → hover → selected are
- *    color transitions only.
+ *  - [L15] token-driven state visuals; rest → hover → pressed →
+ *    selected are color transitions only. The pressed pose is the one
+ *    state keyed on a pseudo-class (`:active`) rather than an
+ *    attribute — the pointer-down window is the engine's to track.
  *  - [L16] every foreground rule declares its surface — see the
  *    `@tug-pairings` block and the `@tug-renders-on` annotation.
  *  - [L17] every `--tugx-list-row-*` alias resolves to a `--tug7-*` /
@@ -33,6 +35,8 @@
  * | --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg        | control | .tug-list-row[data-variant="pill"]:hover (border)|
  * | --tugx-list-row-selected-text        | --tugx-list-row-selected-bg          | content | .tug-list-row[data-selected="true"] (color)      |
  * | --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg    | content | .tug-list-row[data-selected="true"]:hover (color)|
+ * | --tugx-list-row-selected-text        | --tugx-list-row-pressed-bg           | content | .tug-list-row:active (color)                     |
+ * | --tugx-list-row-selected-text        | --tugx-list-row-selected-pressed-bg  | content | .tug-list-row[data-selected="true"]:active (color)|
  * | --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg          | control | .tug-list-row[data-variant="pill"][data-selected] (border) |
  * | --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg        | control | .tug-list-row[data-selected][data-selected-accent] (accent border) |
  * | --tugx-list-row-radio-dot            | --tugx-list-row-radio-on             | control | .tug-list-row-check[data-state="shown"] .tug-list-row-radio-dot (dot on filled ring) |
@@ -53,6 +57,8 @@
   --tugx-list-row-pill-hover-border    | --tugx-list-row-pill-hover-bg     | control
   --tugx-list-row-selected-text        | --tugx-list-row-selected-bg       | content
   --tugx-list-row-selected-text        | --tugx-list-row-selected-hover-bg | content
+  --tugx-list-row-selected-text        | --tugx-list-row-pressed-bg        | content
+  --tugx-list-row-selected-text        | --tugx-list-row-selected-pressed-bg | content
   --tugx-list-row-pill-rest-border     | --tugx-list-row-selected-bg       | control
   --tugx-list-row-selected-accent-border | --tugx-list-row-selected-bg     | control
   --tugx-list-row-radio-dot            | --tugx-list-row-radio-on          | control
@@ -139,6 +145,16 @@ body {
      reads clearly, well short of the vibrant `selected` ramp that glared. */
   --tugx-list-row-selected-hover-bg:      var(--tug7-surface-selection-primary-normal-quiet-strong);
   --tugx-list-row-selected-text:          var(--tug7-element-selection-text-normal-selected-rest);
+  /* Pressed — the pointer is DOWN on the row, before the click commits. The
+     press is a PREVIEW of the selection, so it borrows the selection's own hue
+     rather than deepening the neutral hover graze: the row answers the finger
+     in the same language the click will leave behind. It is the top rung of the
+     quiet ramp, so a press reads clearly against the neutral hover the pointer
+     is already showing. A row that is ALREADY selected presses one ramp further
+     — into the vibrant `selected` blue the popup menus use — since a press onto
+     the resting quiet fill would land on the fill it is already wearing. */
+  --tugx-list-row-pressed-bg:             var(--tug7-surface-selection-primary-normal-quiet-strong);
+  --tugx-list-row-selected-pressed-bg:    var(--tug7-surface-selection-primary-normal-selected-rest);
   --tugx-list-row-selected-accent-border: var(--tug7-element-tone-border-normal-accent-rest);
   --tugx-list-row-accent-border-width:    1.5px;
   /* Demoted selection — the row stays marked but yields the emphasis while
@@ -491,6 +507,50 @@ body {
    rationale. */
 .tug-list-row[data-variant="pill"][data-selected="true"]:not([data-selection-surface="control"]):hover:not([data-disabled="true"]) {
   background-color: var(--tugx-list-row-selected-hover-bg);
+}
+
+/* ---- Pressed ----
+   The pointer-down pose, shared by both variants. It closes a real gap: a row
+   whose click ACTS without leaving a selection behind (the Lens session
+   monitor fronts the clicked card and marks nothing) had no visual answer to
+   the press at all — the row did the work silently.
+
+   `:active` and not a `data-` attribute, for the same reason the split-pane
+   sash uses it: the pose lasts exactly as long as the button is down, the
+   engine already tracks that, and no handler can drop the release. It is
+   appearance-only, so it stays inside CSS ([L06]/[L15] — a color transition).
+
+   The `:has()` guard is what keeps the press on the ROW's own hit area.
+   `:active` matches every ancestor of the pressed element, so without it a
+   click on a row's trailing button (a snippet's Copy or ✕) would flash the
+   whole row as though the row itself had been pressed — two signals for one
+   gesture, and the wrong one is the loud one.
+
+   `selectionSurface="control"` opts out along with every other fill rule: in
+   that mode the radio / checkbox is the whole selection signal and the row
+   paints no fill of its own. */
+/* @tug-renders-on: --tugx-list-row-pressed-bg */
+.tug-list-row[data-variant="flush"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)),
+.tug-list-row[data-variant="pill"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) {
+  background-color: var(--tugx-list-row-pressed-bg);
+  color: var(--tugx-list-row-selected-text);
+}
+
+/* Pressing an already-selected row steps to the vibrant ramp — see the token.
+   Placed after the plain press so it wins the specificity tie. */
+/* @tug-renders-on: --tugx-list-row-selected-pressed-bg */
+.tug-list-row[data-variant="flush"][data-selected="true"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)),
+.tug-list-row[data-variant="pill"][data-selected="true"]:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) {
+  background-color: var(--tugx-list-row-selected-pressed-bg);
+}
+
+/* The content column follows the fill, exactly as it does for a selected row:
+   `TugLabel` paints its own title / muted-subtitle colors, so the row's own
+   `color` alone would leave the text standing at its resting tone on a
+   saturated fill. Same selected-text tone for both press rungs. */
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content,
+.tug-list-row:active:not([data-disabled="true"]):not([data-selection-surface="control"]):not(:has(button:active, input:active, textarea:active, .block-grip:active)) .tug-list-row-content .tug-label {
+  color: var(--tugx-list-row-selected-text);
 }
 
 /* ---- Accent selection border (opt-in via `selectedAccent`) ----
