@@ -2,13 +2,15 @@
  * TugProgressIndicator — Unified indicator for indeterminate progress, phase,
  * and determinate progress.
  *
- * Six visual variants live behind one prop surface:
+ * Seven visual variants live behind one prop surface:
  *
  *   ring          — stroked SVG arc (determinate or indeterminate rotating)
  *   bar           — horizontal track + fill (determinate or barber-pole)
  *   pie           — conic-gradient wedge (determinate or rotating)
  *   spinner       — single-arc rotor
  *   pulsing-dot   — dot + pulsing ring (replaces TugStateIndicator)
+ *   large-pulsing-dot — the big sibling: the dot breathes on a 2s cycle
+ *                   and emits its ring as the breath falls past 75%
  *   wave          — three-bar staggered pulse (replaces TugThinkingIndicator)
  *
  * The component is a compound dispatch [L20]: it owns role-color injection,
@@ -65,8 +67,9 @@
  * Laws: [L02] state arrives via props from the consumer's external store;
  *       [L06] appearance via CSS / DOM attributes, never React state;
  *       [L13] motion is per internal variant — CSS keyframes for the
- *             continuous glyphs (wave/ring/bar/pie/spinner), raw WAAPI
- *             one-shots for the pulsing-dot ring (per-pulse completion);
+ *             continuous glyphs (wave/ring/bar/pie/spinner/large-pulsing-
+ *             dot), raw WAAPI one-shots for the pulsing-dot ring
+ *             (per-pulse completion);
  *       [L15] token-driven states;
  *       [L16] pairings declared in CSS;
  *       [L19] component authoring guide;
@@ -89,6 +92,7 @@ import { TugProgressBar } from "./internal/tug-progress-bar";
 import { TugProgressPie } from "./internal/tug-progress-pie";
 import { TugProgressSpinner } from "./internal/tug-progress-spinner";
 import { TugProgressPulsingDot } from "./internal/tug-progress-pulsing-dot";
+import { TugProgressLargePulsingDot } from "./internal/tug-progress-large-pulsing-dot";
 import { TugProgressWave } from "./internal/tug-progress-wave";
 
 // ---------------------------------------------------------------------------
@@ -101,6 +105,7 @@ export type TugProgressIndicatorVariant =
   | "pie"
   | "spinner"
   | "pulsing-dot"
+  | "large-pulsing-dot"
   | "wave";
 
 /**
@@ -176,7 +181,7 @@ const ROLE_TO_TOKEN_SUFFIX: Record<Exclude<TugProgressIndicatorRole, "inherit">,
  * All variants resolve their fill from the same token family —
  * `--tug7-surface-toggle-primary-normal-{role}-rest` — so the role
  * tone reads identically across ring/bar/pie/spinner/pulsing-dot/
- * wave. This is the same family used for any control-surface tone
+ * large-pulsing-dot/wave. This is the same family used for any control-surface tone
  * elsewhere in the system; switching to it makes the indicator's
  * "action" tone match every other active control — now the theme's Key.
  */
@@ -228,7 +233,7 @@ export interface TugProgressIndicatorProps
   extends Omit<React.ComponentPropsWithoutRef<"span">, "role" | "children"> {
   /**
    * Visual treatment.
-   * @selector [data-variant="ring"] | [data-variant="bar"] | [data-variant="pie"] | [data-variant="spinner"] | [data-variant="pulsing-dot"] | [data-variant="wave"]
+   * @selector [data-variant="ring"] | [data-variant="bar"] | [data-variant="pie"] | [data-variant="spinner"] | [data-variant="pulsing-dot"] | [data-variant="large-pulsing-dot"] | [data-variant="wave"]
    * @default "ring"
    */
   variant?: TugProgressIndicatorVariant;
@@ -390,6 +395,8 @@ function renderGlyph({ variant, state, disabled, value, max, size }: GlyphProps)
       return <TugProgressSpinner size={size} state={state} disabled={disabled} />;
     case "pulsing-dot":
       return <TugProgressPulsingDot size={size} state={state} disabled={disabled} />;
+    case "large-pulsing-dot":
+      return <TugProgressLargePulsingDot size={size} state={state} disabled={disabled} />;
     case "wave":
       return <TugProgressWave size={size} state={state} disabled={disabled} />;
   }

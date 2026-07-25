@@ -117,11 +117,43 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 32px;
+  flex-wrap: wrap;
   min-height: 64px;
   padding: 16px;
   border: 1px solid var(--tug7-element-global-divider-normal-default-rest);
   border-radius: var(--tug-radius-md, 8px);
   background-color: var(--tug7-surface-global-primary-normal-sunken-rest);
+}
+
+/* ============================================================================
+   Lens-row preview — the glyph beside the two-line type it will sit next to
+   in a Lens Sessions row (13px title over a 12px pulse line), so the dot can
+   be judged at its destination scale rather than floating on its own.
+   ========================================================================= */
+
+.gpi-row-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gpi-row-preview-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
+.gpi-row-preview-title {
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
+.gpi-row-preview-pulse {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ============================================================================

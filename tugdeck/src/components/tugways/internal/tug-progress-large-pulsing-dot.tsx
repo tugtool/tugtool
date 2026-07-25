@@ -1,0 +1,156 @@
+/**
+ * TugProgressLargePulsingDot — Internal building block for the large
+ * breathing-dot glyph.
+ *
+ * App code should use {@link TugProgressIndicator} instead.
+ *
+ * The bigger sibling of {@link TugProgressPulsingDot}, and a different
+ * motion: where the small glyph holds a fixed dot and chains one-shot
+ * ring pulses, this one **breathes** — the inner dot scales up and down
+ * on a continuous 2s cycle, and the ring is emitted from that breath
+ * rather than clocked on its own.
+ *
+ * Two visible elements on ONE shared 2s period:
+ *
+ *   - **Dot** — a solid circle that eases between `DOT_SCALE_MIN` and
+ *     1.0 and back over the cycle (inhale on the first half, exhale on
+ *     the second), traveling the full swing every time. Its color
+ *     resolves from the parent's live `--tugx-progress-indicator-fill`.
+ *   - **Ring** — fired a few degrees before the top of the breath
+ *     ({@link EMIT_OFFSET_PCT}), so it is already alive and moving when
+ *     the dot turns. It is born at the dot's own edge and expands
+ *     outward to the glyph box, fading as it goes — so the exhale is one
+ *     gesture: the dot falls away from the ring it just shed.
+ *
+ * **Phase lock without a clock.** Both elements run CSS `@keyframes` on
+ * the same duration, started in the same frame, so the ring's emission
+ * stop stays welded to the dot's turn with no timer, no WAAPI chaining,
+ * and no per-frame main-thread work. Firing near the turn also keeps the
+ * ring inside a single cycle — lit at 47%, gone by 100% — so the pulse
+ * needs no wrap across the cycle boundary.
+ *
+ * State semantics mirror the small dot:
+ *   running   — the dot breathes and emits rings.
+ *   paused    — dot held at full size; static outer ring.
+ *   stopped   — quiet (reduced) dot; static outer ring.
+ *   completed — quiet dot; static outer ring, success tint from parent.
+ *   aborted   — full-size dot; static outer ring, danger tint.
+ *
+ * Laws: [L02] state arrives via props from the parent indicator;
+ *       [L06] tone is a live CSS variable and the motion is gated on
+ *       `data-state` — never React state;
+ *       [L13] the breath and the ring are continuous loops with no
+ *       per-pulse completion requirement, so they are declarative CSS
+ *       `@keyframes` (motion-off zeroes them through the global
+ *       `body[data-tug-motion="off"]` rule), not programmatic motion.
+ *
+ * @module components/tugways/internal/tug-progress-large-pulsing-dot
+ */
+
+import "./tug-progress-large-pulsing-dot.css";
+
+import React from "react";
+
+import { cn } from "@/lib/utils";
+import type { TugProgressIndicatorState } from "../tug-progress-indicator";
+
+/**
+ * Glyph box diameter when the caller names no size. Sized against the Z5
+ * submit button (36px square) — this glyph is meant to be legible across
+ * the room the way that button is. It runs a little under, since motion
+ * carries some of the load that size alone carries for a static control.
+ */
+const DEFAULT_SIZE = 32;
+
+/**
+ * Dot diameter as a fraction of the glyph box, at the top of the breath.
+ * The dot is the object being looked at, so it takes most of the box; the
+ * remainder is the room the emitted ring expands into.
+ */
+const DOT_RATIO = 0.6;
+
+/**
+ * Trough of the breath — the dot's scale at the bottom of the cycle. A
+ * wide swing on purpose: the dot travels the full distance every cycle,
+ * and the ring's emission is a waypoint on the way down, not the end of
+ * the fall.
+ */
+export const DOT_SCALE_MIN = 0.35;
+
+/**
+ * Where in the cycle the ring is emitted, as a percentage — **ignition
+ * advance**, borrowed from a spark engine. Top dead center is the top of
+ * the breath at 50%; the spark fires a few degrees before it, so the
+ * pressure is already building when the piston turns. Read the cycle as
+ * 360°: 47% is 169.2°, about **10.8° BTDC** — a plausible advance for a
+ * real engine, and the same reasoning applies here. The ring needs a few
+ * frames to become visible and start moving; lighting it exactly at the
+ * turn means the eye catches it slightly late, trailing the dot.
+ *
+ * Two earlier rounds landed elsewhere. Emitting at the 75% crossing
+ * (66.667%) read as a HESITATION in the dot's fall that its keyframes
+ * never make — a ring arriving that far down is an event the eye
+ * back-fills a cause for. Emitting exactly at the turn (50%) fixed that
+ * but ran a touch behind the beat.
+ */
+export const EMIT_OFFSET_PCT = 47;
+
+/** Settled states paint a reduced dot; held / canceled keep it full-size. */
+function isQuiet(state: TugProgressIndicatorState): boolean {
+  return state === "stopped" || state === "completed";
+}
+
+const IDLE_DOT_SCALE = 0.85;
+
+export interface TugProgressLargePulsingDotProps {
+  /** Glyph box diameter in CSS px. @default 24 */
+  size?: number;
+  /** Lifecycle state. @default "running" */
+  state?: TugProgressIndicatorState;
+  /** When true, opacity dims. */
+  disabled?: boolean;
+  /** Additional CSS class names. */
+  className?: string;
+}
+
+export const TugProgressLargePulsingDot = React.forwardRef<
+  HTMLSpanElement,
+  TugProgressLargePulsingDotProps
+>(function TugProgressLargePulsingDot(
+  { size = DEFAULT_SIZE, state = "running", disabled = false, className },
+  forwardedRef,
+) {
+  // The dot's box is its full-scale diameter; the breath scales it down
+  // from there, so the running glyph never grows past the box.
+  const dotSizePx = size * DOT_RATIO;
+  const rootStyle: React.CSSProperties = {
+    ["--tugx-progress-large-pulsing-dot-size" as string]: `${size}px`,
+    ["--tugx-progress-large-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
+  };
+
+  // Seed the static pose inline. It equals the breath's 0% keyframe, so a
+  // running glyph starts from the same pose it rests at — no first-frame
+  // jump — and the non-running states simply hold it.
+  const staticScale = isQuiet(state) ? IDLE_DOT_SCALE : 1;
+
+  return (
+    <span
+      ref={forwardedRef}
+      data-slot="tug-progress-large-pulsing-dot"
+      data-state={state}
+      aria-hidden="true"
+      style={rootStyle}
+      className={cn(
+        "tug-progress-large-pulsing-dot",
+        disabled && "tug-progress-large-pulsing-dot-disabled",
+        className,
+      )}
+    >
+      <span
+        className="tug-progress-large-pulsing-dot-dot"
+        style={{ transform: `translate(-50%, -50%) scale(${staticScale})` }}
+      />
+      <span className="tug-progress-large-pulsing-dot-ring" />
+    </span>
+  );
+});

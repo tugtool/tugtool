@@ -6,9 +6,12 @@
  * indicator subsumes all three predecessors.
  *
  * Layout:
- *  - Variants  — six glyphs in a wrapping card grid
+ *  - Variants  — seven glyphs in a wrapping card grid
+ *  - large-pulsing-dot — the workshop bench for the breathing dot: size
+ *                picker, all five states, and a Lens-row preview beside the
+ *                small dot at the same size
  *  - Roles     — eight role tones in a wrapping card grid (ring variant)
- *  - States    — a 3 × 5 matrix (variant rows × state columns)
+ *  - States    — a 4 × 5 matrix (variant rows × state columns)
  *  - Determinate — a 3 × 5 matrix (variant rows × value columns)
  *  - Value readout — showValue percentage on bar / ring / pie + labeled bar
  *  - Phase     — phase picker + live indicator using phaseLabels/phaseVisual
@@ -21,8 +24,10 @@
 import "./gallery-tug-progress-indicator.css";
 
 import React, { useId, useState } from "react";
+import { ArrowUp } from "lucide-react";
 
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
@@ -39,6 +44,7 @@ const VARIANTS: ReadonlyArray<TugProgressIndicatorVariant> = [
   "bar",
   "spinner",
   "pulsing-dot",
+  "large-pulsing-dot",
   "wave",
   "pie",
 ];
@@ -57,6 +63,7 @@ const ROLES: ReadonlyArray<TugProgressIndicatorRole> = [
 const STATE_DEMO_VARIANTS: ReadonlyArray<TugProgressIndicatorVariant> = [
   "ring",
   "pulsing-dot",
+  "large-pulsing-dot",
   "wave",
 ];
 
@@ -122,6 +129,16 @@ function GalleryCell({ caption, children, wide }: GalleryCellProps): React.React
 // GalleryTugProgressIndicator
 // ---------------------------------------------------------------------------
 
+/**
+ * Sizes for the `large-pulsing-dot` workshop, bracketing the Z5 submit
+ * button's 36px square — the legibility bar this variant is aiming at.
+ */
+const LARGE_DOT_SIZES = [24, 28, 32, 36, 40] as const;
+const LARGE_DOT_SIZE_ITEMS = LARGE_DOT_SIZES.map((s) => ({
+  value: String(s),
+  label: String(s),
+}));
+
 const PHASE_ITEMS = DEMO_PHASE_KEYS.map((p) => ({ value: p, label: p }));
 const GLYPH_POSITION_ITEMS = [
   { value: "left", label: "left" },
@@ -134,10 +151,12 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
   const [glyphPosition, setGlyphPosition] = useState<"left" | "right" | "both">(
     "both",
   );
+  const [largeDotSize, setLargeDotSize] = useState<number>(32);
 
   const phaseGroupId = useId();
   const layoutPhaseGroupId = useId();
   const glyphPositionGroupId = useId();
+  const largeDotSizeGroupId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     selectValue: {
@@ -145,6 +164,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
       [layoutPhaseGroupId]: setPhase,
       [glyphPositionGroupId]: (v: string) =>
         setGlyphPosition(v as "left" | "right" | "both"),
+      [largeDotSizeGroupId]: (v: string) => setLargeDotSize(Number(v)),
     },
   });
 
@@ -157,7 +177,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
       {/* Variants ---------------------------------------------------- */}
       <section className="cg-section">
         <TugLabel className="cg-section-title">
-          Variants — six glyphs, default role/state
+          Variants — seven glyphs, default role/state
         </TugLabel>
         <div className="gpi-grid">
           {VARIANTS.map((v) => (
@@ -168,6 +188,90 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
               />
             </GalleryCell>
           ))}
+        </div>
+      </section>
+
+      <TugSeparator />
+
+      {/* Large pulsing dot — the workshop bench --------------------- */}
+      <section className="cg-section">
+        <TugLabel className="cg-section-title">
+          large-pulsing-dot — breathing dot, ring on the fall
+        </TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
+          The inner dot eases between 0.35 and full size over a 2s cycle,
+          traveling the whole swing every time. The ring is not on its own
+          clock: it is lit a few degrees before top dead center — 47% of the
+          cycle, ~10.8° BTDC — flush with the dot's edge, so it is already
+          moving when the dot turns over it. It then widens to the glyph box
+          and fades across the exhale. Two rejected timings: the 75% crossing
+          read as a hesitation the dot never makes, and exact TDC ran a hair
+          behind the beat.
+        </TugLabel>
+        <TugChoiceGroup
+          size="sm"
+          value={String(largeDotSize)}
+          senderId={largeDotSizeGroupId}
+          items={LARGE_DOT_SIZE_ITEMS}
+          aria-label="Large dot size"
+        />
+        <div className="gpi-grid">
+          {STATES.map((s) => (
+            <GalleryCell key={s} caption={s}>
+              <TugProgressIndicator
+                variant="large-pulsing-dot"
+                size={largeDotSize}
+                state={s}
+              />
+            </GalleryCell>
+          ))}
+        </div>
+        <TugLabel size="2xs" emphasis="calm">
+          The scale reference is the real Z5 submit button (36px square), shown
+          here beside the glyph. Below it, the destination: the leading slot of
+          a Lens Sessions row, small dot then large, over the row's own
+          two-line type.
+        </TugLabel>
+        <div className="gpi-demo-frame">
+          <div className="gpi-row-preview">
+            <TugPushButton
+              subtype="icon"
+              size="lg"
+              emphasis="filled"
+              role="action"
+              aria-label="Z5 submit button, for scale"
+              icon={<ArrowUp size={16} strokeWidth={2.5} />}
+            />
+            <TugProgressIndicator
+              variant="large-pulsing-dot"
+              size={largeDotSize}
+              state="running"
+            />
+          </div>
+        </div>
+        <div className="gpi-demo-frame">
+          <div className="gpi-row-preview">
+            <TugProgressIndicator
+              variant="pulsing-dot"
+              size={largeDotSize}
+              state="running"
+            />
+            <div className="gpi-row-preview-text">
+              <div className="gpi-row-preview-title">tugtool/coral-clip</div>
+              <div className="gpi-row-preview-pulse">Read select-tests.ts…</div>
+            </div>
+          </div>
+          <div className="gpi-row-preview">
+            <TugProgressIndicator
+              variant="large-pulsing-dot"
+              size={largeDotSize}
+              state="running"
+            />
+            <div className="gpi-row-preview-text">
+              <div className="gpi-row-preview-title">tugtool/coral-clip</div>
+              <div className="gpi-row-preview-pulse">Read select-tests.ts…</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -192,7 +296,7 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
       {/* States matrix ---------------------------------------------- */}
       <section className="cg-section">
         <TugLabel className="cg-section-title">
-          States — three variants × five states
+          States — four variants × five states
         </TugLabel>
         <div
           className="gpi-matrix"
