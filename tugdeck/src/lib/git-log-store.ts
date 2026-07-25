@@ -209,18 +209,19 @@ export class GitLogStore {
 
   /**
    * Request the recent log for `projectDir`. Idempotent by the requested-key
-   * guard: a no-op when `projectDir` is already the requested root and the
-   * phase is `loading` or `ready`, so re-renders and collapse toggles can call
-   * it freely. A different root — or a prior error — fires a fresh query.
+   * guard: a no-op when `projectDir` is already the requested root, WHATEVER
+   * the phase, so re-renders and collapse toggles can call it freely.
+   *
+   * `error` is inside the guard, not an exception to it ([L28]). A failed send
+   * publishes `phase: "error"` synchronously (no connection takes that path),
+   * so a caller that retried on error would be re-deriving the source's retry
+   * policy from the source's own output: request → error → request, with no
+   * await in between. A React effect wired that way loops until the render
+   * depth limit trips. Retry is the store's to schedule — {@link refresh},
+   * driven by a reconnect, a `GIT_HEAD` signal, or an explicit gesture.
    */
   requestLog(projectDir: string, limit = 20): void {
-    const s = this._snapshot;
-    if (
-      projectDir === s.requestedRoot &&
-      (s.phase === "loading" || s.phase === "ready")
-    ) {
-      return;
-    }
+    if (projectDir === this._snapshot.requestedRoot) return;
     this._send(projectDir, limit);
   }
 

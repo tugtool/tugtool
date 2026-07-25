@@ -29,6 +29,7 @@ import "./commit-presentation.css";
 import type React from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
+import { TugMarkdownText } from "@/components/tugways/tug-markdown-text";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 
 /** How much of the clock a stamp states. */
@@ -161,9 +162,12 @@ export function CommitIdentityLine({
 }
 
 /**
- * A commit's message body — the literal text of the record, preformatted.
- * Shared by the History shade's expanded rows and the `/commit` receipt so the
- * two can't drift.
+ * A commit's message body — the literal text of the record, markdown-styled.
+ * Commit messages are written as markdown (bulleted change lists, backticked
+ * paths, the odd heading), so they read as markdown here: the syntax stays
+ * visible, its tones come from the shared highlight style, and a wrapped
+ * bullet hangs under its content. Shared by the History shade's expanded rows
+ * and the `/commit` receipt so the two can't drift.
  */
 export function CommitMessage({
   body,
@@ -174,11 +178,7 @@ export function CommitMessage({
   /** `data-slot` for the well, so each surface keeps its own test hook. */
   dataSlot: string;
 }): React.ReactElement {
-  return (
-    <pre className="tugx-commit-message" data-slot={dataSlot}>
-      {body}
-    </pre>
-  );
+  return <TugMarkdownText text={body} className="tugx-commit-message" dataSlot={dataSlot} />;
 }
 
 /**

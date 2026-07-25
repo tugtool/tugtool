@@ -38,9 +38,11 @@
 }
 
 /* The disclosed message body. The chrome's body region carries no padding of
-   its own (each body kind owns its spacing), so the message states its own. */
+   its own (each body kind owns its spacing), so the message states its own —
+   block only: the inline inset is the shared `.tugx-commit-message` rule's,
+   which lines the message up with the file rows beneath it. */
 [data-slot="commit-receipt-detail"] {
-  padding: var(--tug-space-sm) var(--tug-space-md);
+  padding-block: var(--tug-space-sm);
 }
 
 /* Same override for the sha, which would otherwise inherit the header's muted

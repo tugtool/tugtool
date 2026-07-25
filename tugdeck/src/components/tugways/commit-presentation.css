@@ -104,20 +104,26 @@
   min-width: 0;
 }
 
-/* The message body — the record's literal text, wrapped but otherwise
-   preformatted. Self-contained type values: the well is used inside hosts that
-   do NOT wear the `.tugx-commit` scope class (the transcript's `/commit`
-   receipt), so it restates the two it needs rather than inheriting them. */
+/* The message body — the record's literal text, markdown-styled. This states
+   the TYPE only; `TugMarkdownText` owns the line layout (wrapping, blank-line
+   height, the list hanging indent) and the syntax runs carry their own tones.
+   Self-contained type values: the well is used inside hosts that do NOT wear
+   the `.tugx-commit` scope class (the transcript's `/commit` receipt), so it
+   restates the two it needs rather than inheriting them. */
 .tugx-commit-message {
   --tugx-commit-message-size: var(--tug-font-size-xs);
   --tugx-commit-message-leading: 1.45;
-  margin: 0;
-  min-width: 0;
+  /* Line up with the file list below it. Both surfaces set the message over a
+     `compact` `TugChangesList`, so the message takes that row's own content
+     inset — its inline padding plus the row's standing leading gutter — read
+     from the row's tokens rather than copied as a number. */
+  padding-inline-start: calc(
+    var(--tugx-list-row-padding-inline-compact) + var(--tugx-list-row-indicator-gutter)
+  );
   font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-commit-message-size);
   line-height: var(--tugx-commit-message-leading);
   color: var(--tugx-block-text-color);
-  white-space: pre-wrap;
 }
 
 /* Committer identity + complete timestamp, closing the expanded area. */

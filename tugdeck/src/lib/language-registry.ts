@@ -34,6 +34,7 @@ import {
   syntaxTree,
 } from "@codemirror/language";
 import { highlightTree, tags } from "@lezer/highlight";
+import type { Tree } from "@lezer/common";
 import { StyleModule } from "style-mod";
 
 // ---------------------------------------------------------------------------
@@ -403,20 +404,24 @@ export interface FragmentToken {
  *  whatever the incremental tree already covers (plain text at worst). */
 const PARSE_TIMEOUT_MS = 100;
 
-/** The highlight style's generated CSS is mounted once, lazily, so the
- *  classes `highlightTree` emits resolve to `--tug-syntax-*` colors even
- *  outside a live `EditorView` (which would mount it itself). */
-let highlightModuleMounted = false;
-function ensureHighlightModuleMounted(): void {
-  if (highlightModuleMounted) return;
+/** Highlight styles whose generated CSS is already in the document. */
+const mountedHighlightModules = new WeakSet<HighlightStyle>();
+
+/**
+ * Mount a highlight style's generated CSS, once per style. Static callers
+ * need this so the classes `highlightTree` emits resolve to `--tug-syntax-*`
+ * colors outside a live `EditorView` (which would mount it itself).
+ */
+export function mountHighlightStyle(style: HighlightStyle): void {
   if (typeof document === "undefined") return;
-  const mod = tugHighlightStyleInner.module;
+  if (mountedHighlightModules.has(style)) return;
+  const mod = style.module;
   if (mod !== null) StyleModule.mount(document, mod);
-  highlightModuleMounted = true;
+  mountedHighlightModules.add(style);
 }
 
 /** Offsets of each line's first character in `text` (index 0 = line 0). */
-function lineStartOffsets(text: string): number[] {
+export function lineStartOffsets(text: string): number[] {
   const starts = [0];
   for (let i = 0; i < text.length; i++) {
     if (text.charCodeAt(i) === 10 /* \n */) starts.push(i + 1);
@@ -453,13 +458,33 @@ async function tokenizeWithExtension(
   text: string,
   languageExt: Extension | null,
 ): Promise<FragmentToken[][]> {
-  const starts = lineStartOffsets(text);
-  const perLine: FragmentToken[][] = starts.map(() => []);
-  if (languageExt === null || text.length === 0) return perLine;
-  ensureHighlightModuleMounted();
+  if (languageExt === null || text.length === 0) {
+    return lineStartOffsets(text).map(() => []);
+  }
   const state = EditorState.create({ doc: text, extensions: [languageExt] });
   const tree = ensureSyntaxTree(state, text.length, PARSE_TIMEOUT_MS) ?? syntaxTree(state);
-  highlightTree(tree, tugHighlightStyleInner, (from, to, className) => {
+  return highlightRunsByLine(tree, text, tugHighlightStyleInner);
+}
+
+/**
+ * Walk `tree` with `style` and return the emitted highlight runs split at
+ * line boundaries — line N of `text` maps to result[N], with runs stated in
+ * line-relative columns. A styled run that spans a line break (a block
+ * comment, a fenced code block) contributes one run per line it covers.
+ *
+ * Mounts `style`'s generated CSS as a side effect, so a caller rendering the
+ * runs into ordinary DOM gets the same colors a live editor would paint.
+ */
+export function highlightRunsByLine(
+  tree: Tree,
+  text: string,
+  style: HighlightStyle,
+): FragmentToken[][] {
+  const starts = lineStartOffsets(text);
+  const perLine: FragmentToken[][] = starts.map(() => []);
+  if (text.length === 0) return perLine;
+  mountHighlightStyle(style);
+  highlightTree(tree, style, (from, to, className) => {
     const first = lineIndexAt(starts, from);
     for (let line = first; line < starts.length && starts[line] < to; line++) {
       // Line content excludes its trailing newline.

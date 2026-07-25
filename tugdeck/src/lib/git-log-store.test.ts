@@ -6,8 +6,9 @@
  *   / no_repo default).
  * - `formatGitLog` (ordering, sha shortening, column layout, empty, unicode).
  * - Store: `_ingestForTest` matching id → ready; a non-matching feed-path
- *   response ignored; the requested-key guard (same root no-op, different root
- *   re-requests, `refresh()` always re-requests) and the query shape.
+ *   response ignored; the requested-key guard (same root no-op WHATEVER the
+ *   phase — including a synchronous send error — different root re-requests,
+ *   `refresh()` always re-requests) and the query shape.
  */
 
 import { describe, test, expect, beforeEach, mock } from "bun:test";
@@ -227,6 +228,32 @@ describe("GitLogStore", () => {
     store.refresh();
     expect(mock.sent).toHaveLength(3);
     expect(mock.sent[2].obj.root).toBe("/b");
+  });
+
+  test("an errored root does not re-request — retry is refresh(), not requestLog", () => {
+    // No connection: the send fails and publishes `error` SYNCHRONOUSLY. A
+    // caller that treated `error` as "request again" would re-enter here with
+    // no await in between; a React effect keyed on `phase` spins to the render
+    // depth limit ([L28] — the source owns its retry policy).
+    activeConnection = null;
+    store.requestLog("/proj");
+    expect(store.getSnapshot().phase).toBe("error");
+    expect(store.getSnapshot().requestedRoot).toBe("/proj");
+
+    // Every later call for the same root is a no-op, error or not.
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    for (let i = 0; i < 5; i++) store.requestLog("/proj");
+    expect(notifications).toBe(0);
+
+    // Recovery is explicit: the connection returns, an activation refreshes.
+    activeConnection = mock;
+    store.refresh();
+    expect(store.getSnapshot().phase).toBe("loading");
+    expect(mock.sent).toHaveLength(1);
+    expect(mock.sent[0].obj.root).toBe("/proj");
   });
 
   test("a GIT_HEAD signal for the shown workspace with a new head re-requests", () => {

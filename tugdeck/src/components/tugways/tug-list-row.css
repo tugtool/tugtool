@@ -69,6 +69,11 @@ body {
   --tugx-list-row-gap:               var(--tug-space-sm);
   --tugx-list-row-padding-block:     8px;
   --tugx-list-row-padding-inline:    14px;
+  /* The `compact` density's inline padding, declared here rather than inside
+     the density rule so a sibling OUTSIDE a row can read it and line its own
+     content up with the rows beside it (a commit's message over its file
+     list). Alignment stated as the row's own measure, not a copied number. */
+  --tugx-list-row-padding-inline-compact: 8px;
   /* Reserved left gutter on every row — a touch of standing left breathing room.
      (The keyboard cursor is a leading-edge bar drawn by the enclosing list-view
      cell at the cell edge, not a glyph in this gutter, so nothing here reflows
@@ -397,7 +402,7 @@ body {
    takes the tighter value. */
 .tug-list-row[data-density="compact"] {
   --tugx-list-row-padding-block: 1px;
-  --tugx-list-row-padding-inline: 8px;
+  --tugx-list-row-padding-inline: var(--tugx-list-row-padding-inline-compact);
 }
 
 /* ---- Variant: flush ----

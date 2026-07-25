@@ -15,7 +15,9 @@
  * it regains focus). `GIT_HEAD` auto-refreshes the store after a commit.
  *
  * Laws: [L02] the log store enters React through `useSyncExternalStore`;
- * [L06] no appearance state in React.
+ * [L06] no appearance state in React; [L28] the store is the source of both
+ * the log and its retry policy — this view subscribes and asks once per root,
+ * and never re-derives "request again" from a phase the store publishes.
  *
  * @module components/tugways/cards/session-history/session-history-view
  */
@@ -107,34 +109,38 @@ export function SessionHistoryView({
   // requested-key guard; `GIT_HEAD` auto-refreshes the store after a commit.
   // Re-request when the singleton's root has drifted away from ours (another
   // card requested its project while we were away).
+  //
+  // Keyed on the root ALONE — never on `phase` ([L28]). The store is the source
+  // of both the data and the retry policy; an effect that re-requested on a
+  // phase the store publishes synchronously would drive the source from the
+  // source's own output and spin. Recovery is the activation pass below.
   useEffect(() => {
     if (!active || projectDir === null) return;
-    if (snapshot.requestedRoot === projectDir && snapshot.phase !== "error") {
-      return;
-    }
+    if (snapshot.requestedRoot === projectDir) return;
     gitLogStore()?.requestLog(projectDir);
-  }, [active, projectDir, snapshot.requestedRoot, snapshot.phase]);
+  }, [active, projectDir, snapshot.requestedRoot]);
 
-  // A cached `no_repo` snapshot is unstable: the dir may have been `git init`'d
-  // out of band (a terminal, or before the git-init control frame learned to
-  // nudge this store). An unborn HEAD moves no HEAD, so no GIT_HEAD signal
-  // shakes it loose and `requestLog` no-ops on the same root. Re-verify once
-  // per activation — the ref gates it so a genuinely non-repo dir never spins.
-  const reverifiedNoRepo = useRef(false);
+  // Two snapshots for our root are stale rather than wrong, and neither moves
+  // on its own: a cached `no_repo` (the dir may have been `git init`'d out of
+  // band — an unborn HEAD moves no HEAD, so no GIT_HEAD signal shakes it
+  // loose), and an `error` (the send found no connection, which may since have
+  // come back). `requestLog` no-ops on the same root, so revalidate explicitly
+  // — once per activation, the ref gating it so neither a genuinely non-repo
+  // dir nor a still-dead connection can spin.
+  const revalidated = useRef(false);
   useEffect(() => {
     if (!active) {
-      reverifiedNoRepo.current = false;
+      revalidated.current = false;
       return;
     }
-    if (reverifiedNoRepo.current || projectDir === null) return;
-    if (
-      snapshot.requestedRoot === projectDir &&
-      snapshot.phase === "ready" &&
-      snapshot.payload?.no_repo === true
-    ) {
-      reverifiedNoRepo.current = true;
-      gitLogStore()?.refresh();
-    }
+    if (revalidated.current || projectDir === null) return;
+    if (snapshot.requestedRoot !== projectDir) return;
+    const stale =
+      snapshot.phase === "error" ||
+      (snapshot.phase === "ready" && snapshot.payload?.no_repo === true);
+    if (!stale) return;
+    revalidated.current = true;
+    gitLogStore()?.refresh();
   }, [active, projectDir, snapshot]);
 
   // The view fills the sheet's shade body ([P17]): the header strip pinned

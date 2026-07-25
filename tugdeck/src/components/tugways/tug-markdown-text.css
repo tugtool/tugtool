@@ -1,0 +1,22 @@
+/* @tug-pairings: none — no color of its own; the syntax runs carry the
+ * shared `--tug-syntax-*` classes the highlight style generates [L17] */
+
+/* TugMarkdownText — read-only markdown-styled prose. Type (family, size,
+   leading, color) is the HOST's: the component sets none, so a commit
+   message reads at the commit scale and a note reads at the note scale.
+   Appearance only ([L06]). */
+
+.tug-markdown-text {
+  min-width: 0;
+}
+
+/* One source line per block, so a hanging indent has something to hang on
+   and a wrapped line stays inside its own line. Whitespace is preserved and
+   long lines wrap — the same reading a `pre-wrap` block gives. */
+.tug-markdown-text-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* A blank source line is an empty block; hold one line box so the gaps
+     the author typed survive. */
+  min-height: 1lh;
+}
