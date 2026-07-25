@@ -29,6 +29,24 @@ import {
   parsePersistedModel,
 } from "./model";
 
+/**
+ * Write the deck-wide default selector: optimistic `setLocalValue` (which
+ * synchronously fires `onDomainChanged`, so an open {@link DefaultModelStore}
+ * and every card's reader reflect it at once) plus the PUT. Exported so the
+ * unavailable-model bulletin can repair a stale deck default at its source
+ * without holding a store instance.
+ */
+export function writePersistedDefaultModel(selector: string): void {
+  const client = getTugbankClient();
+  if (client) {
+    client.setLocalValue(MODEL_DEFAULT_DOMAIN, MODEL_DEFAULT_KEY, {
+      kind: "string",
+      value: selector,
+    });
+  }
+  putDefaultModel(selector);
+}
+
 export class DefaultModelStore {
   private _selector: string;
   private _listeners: Set<() => void> = new Set();
@@ -76,15 +94,7 @@ export class DefaultModelStore {
     if (!isModelSelector(selector) || selector === this._selector) return;
     this._selector = selector;
     for (const listener of this._listeners) listener();
-
-    const client = getTugbankClient();
-    if (client) {
-      client.setLocalValue(MODEL_DEFAULT_DOMAIN, MODEL_DEFAULT_KEY, {
-        kind: "string",
-        value: selector,
-      });
-    }
-    putDefaultModel(selector);
+    writePersistedDefaultModel(selector);
   }
 
   /** Dispose subscriptions. */

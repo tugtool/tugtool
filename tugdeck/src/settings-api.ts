@@ -19,7 +19,7 @@ import type { TugbankClient, TaggedValue } from "./lib/tugbank-client";
 import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
-import { MODEL_DOMAIN } from "./lib/model";
+import { MODEL_DOMAIN } from "./lib/model-domains";
 import type { FindOptions } from "./lib/transcript-search";
 
 const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";

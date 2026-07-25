@@ -95,6 +95,9 @@ describe.skipIf(!SHOULD_RUN)("at0155: Settings Session Card edits reach open Dev
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-testid="settings-card"]') !== null`,
       );
+      // The card opens on the General tab; the switches this test drives live
+      // in the Session Card tab's panel, so select it first.
+      await app.click('[data-testid="tug-tab-sessionCard"]');
       await app.waitForCondition<boolean>(
         `document.querySelector('[data-testid="settings-general"]') !== null`,
       );

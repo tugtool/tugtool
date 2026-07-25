@@ -18,9 +18,13 @@
  *      the two chips show the byte-identical label.
  *   3. **Isolation.** Changing one card's model through its own Z4B picker
  *      leaves the deck default and every other open card unchanged.
- *   4. **Bulletin.** A persisted per-card selector absent from the persisted
- *      live catalog raises the pane-modal alert at card mount, resets the
- *      card to Default, and its confirm opens the Settings card.
+ *   4. **Bulletin.** A persisted per-card selector no catalog row could be
+ *      raises the pane-modal alert at card mount, resets the card to Default,
+ *      and its confirm opens the Settings card.
+ *   5. **Respelling is not breakage.** A selector the catalog now offers under
+ *      a different string (`claude-fable-5` → `claude-fable-5[1m]`) is
+ *      migrated to the current spelling at mount: the card keeps the model
+ *      the user picked and no bulletin is raised.
  *
  * Capabilities are injected via `ingestSessionMetadata` (the chip's
  * SESSION_SIDEBAND seam — no live claude needed); tugbank state is seeded
@@ -34,6 +38,9 @@
  * @covers tugdeck/src/lib/default-effort-store.ts
  * @covers tugdeck/src/lib/model-catalog.ts
  * @covers tugdeck/src/lib/use-unavailable-model-bulletin.ts
+ * @covers tugdeck/src/lib/model.ts
+ * @covers tugdeck/src/lib/model-domains.ts
+ * @covers tugdeck/src/lib/model-selector.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -90,6 +97,29 @@ function capabilities() {
   };
 }
 
+/**
+ * Capability payload whose Fable row carries the fully-qualified `[1m]`
+ * spelling — the catalog a card that saved the bare `claude-fable-5` meets
+ * after claude respells its own selector.
+ */
+function fableCapabilities() {
+  const base = capabilities();
+  return {
+    ...base,
+    models: [
+      base.models[0],
+      {
+        value: "claude-fable-5[1m]",
+        displayName: "Fable",
+        description: "Fable 5 · Most capable for your hardest tasks",
+        supportsEffort: true,
+        supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+      },
+      ...base.models.slice(1),
+    ],
+  };
+}
+
 /** One pane per card, side by side, so every card's Z4B row stays visible. */
 function deckShape(cardIds: string[]) {
   return {
@@ -120,6 +150,23 @@ async function textAt(app: App, selector: string): Promise<string | null> {
       var el = document.querySelector(${JSON.stringify(selector)});
       return el ? el.textContent.trim() : null;
     })()`,
+  );
+}
+
+/**
+ * Bring up the Settings card's **Session Card** tab — where the Assistant box
+ * lives. The card opens on the General tab, so the tab is selected explicitly
+ * rather than assumed.
+ */
+async function openSessionCardTab(app: App): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `document.querySelector('[data-testid="settings-card"]') !== null`,
+    { timeoutMs: 8000 },
+  );
+  await app.click('[data-testid="tug-tab-sessionCard"]');
+  await app.waitForCondition<boolean>(
+    `document.querySelector(${JSON.stringify(SETTINGS)}) !== null`,
+    { timeoutMs: 8000 },
   );
 }
 
@@ -158,13 +205,11 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindSession("B");
           await app.awaitEngineReady("B");
 
-          // ---- Open Settings (same control action as ⌘,).
+          // ---- Open Settings (same control action as ⌘,) on its Assistant tab.
           await app.evalJS(
             `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
           );
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SETTINGS)}) !== null`,
-          );
+          await openSessionCardTab(app);
 
           // ---- All three Assistant controls are the real chips, and the old
           //      Permission Mode dropdown is gone.
@@ -401,10 +446,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // ---- Confirm ("Review Defaults") opens the Settings card.
           await app.click('[data-testid="alert-confirm"]');
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SETTINGS)}) !== null`,
-            { timeoutMs: 8000 },
-          );
+          await openSessionCardTab(app);
 
           // ---- The card was reset to the `default` selector: once its
           //      session reports capabilities, the seed is Default (no
@@ -416,6 +458,62 @@ describe.skipIf(!SHOULD_RUN)(
           const tail = app.tailLog(200);
           if (tail !== "") {
             process.stderr.write(`\n[at0200-model-bulletin] log tail:\n${tail}\n`);
+          }
+          throw err;
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a selector claude has merely respelled is migrated to the current spelling — model kept, no bulletin",
+      async () => {
+        const app = await launchTugApp({ testName: "at0200-model-respelled" });
+        try {
+          await app.enableDeckTrace(true);
+
+          // Persist a catalog offering Fable under the `[1m]` spelling, and a
+          // per-card selector saved under the OLD spelling — the shape that
+          // shipped when the 1M variant became the offered form. Both name the
+          // same model, so the card must keep it, silently.
+          await app.waitForCondition<boolean>(
+            `typeof window.__tug !== "undefined"`,
+          );
+          await app.evalJS(
+            `window.__tug.setTugbankValue("dev.tugtool.models", "catalog", {
+              kind: "json",
+              value: ${JSON.stringify(fableCapabilities().models)},
+            })`,
+          );
+          await app.evalJS(
+            `window.__tug.setTugbankValue("dev.model", "A", { kind: "string", value: "claude-fable-5" })`,
+          );
+
+          await app.seedDeckState({ state: deckShape(["A"]), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `window.__tug.assertHostRootRegistered("A")`,
+          );
+          await app.bindSession("A");
+          await app.awaitEngineReady("A");
+          await app.ingestSessionMetadata("A", fableCapabilities());
+
+          // ---- The saved pick survives: the chip names Fable, not the
+          //      account default it would have been reset to.
+          await waitForText(app, cardModelValue("A"), "Fable 5");
+
+          // ---- And nothing was raised — a respelling is not a breakage.
+          const alertPresent = await app.evalJS<boolean>(
+            `document.querySelector('[data-testid="alert-confirm"]') !== null`,
+          );
+          expect(alertPresent, "a respelled selector must not raise the bulletin").toBe(
+            false,
+          );
+        } catch (err) {
+          const tail = app.tailLog(200);
+          if (tail !== "") {
+            process.stderr.write(`\n[at0200-model-respelled] log tail:\n${tail}\n`);
           }
           throw err;
         } finally {
