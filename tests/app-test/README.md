@@ -155,6 +155,24 @@ latency is allowed up to 20s for cold-start claude; full-turn up to
 60s. Failure surfaces the last 50 lines of tugcode's stdout/stderr to
 stderr.
 
+## Selectors that mirror the product
+
+Product strings and ids a test queries — an `aria-label`, a dialog island class,
+a focus-engine mark — live in [`_harness/selectors.ts`](_harness/selectors.ts),
+not inline in each test. A rename in the product otherwise goes undetected:
+`querySelector` keeps parsing and keeps returning `null`, so the failure reads
+as a behavior regression in whatever the test was actually checking. Renaming
+one `aria-label` broke seven files that way.
+
+`selectors.ts` also carries `keyboardIsInCard(cardId)`, the engine-fact form of
+"the keyboard is here." Under the focus engine, `document.activeElement` parks
+on the key sink **outside** every card whenever the route is `engine-routed`, so
+card containment of the active element is not a test for keyboard location — it
+is a test for a `dom-granted` text surface specifically. Assert engine facts
+(`getFocusedCardId()`, `[data-key-view]`, `[data-first-responder]`); reach for
+`document.activeElement` only where a grant is the thing under test, and say so
+in a comment.
+
 ## Adding a new test
 
 Canonical test shape:
@@ -315,6 +333,7 @@ Step-by-step:
 ```
 tests/app-test/
   _harness/                   # Bun-side harness library. Imported via @/_harness.
+    selectors.ts              # Product strings + engine marks the tests mirror.
   harness-smoke/              # Primitive gates: smoke + protocol tests.
     smoke.test.ts             # Minimal launchTugApp → evalJS → close.
     smoke-native.test.ts      # CGEvent click / type / Cmd+A / drag / double-click.

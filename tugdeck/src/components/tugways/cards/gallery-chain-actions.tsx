@@ -13,6 +13,7 @@
 import React, { useState } from "react";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useResponder } from "@/components/tugways/use-responder";
+import { useFocusable } from "@/components/tugways/use-focusable";
 import { useKeybindings } from "@/components/tugways/use-keybindings";
 import type { ActionEvent, GalleryAction } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS, TUG_GALLERY_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -108,9 +109,18 @@ function ActionEventDemo() {
  * `submit`, handled locally to bump a counter) that is live **only while this
  * panel's responder is in context** — i.e. while it (or a descendant) is the
  * first responder. Click the panel to make it first responder, then ⇧⌘Y bumps
- * the count; with focus elsewhere the same chord resolves to nothing. The
- * panel carries `tabIndex={0}` + `responderRef` so a pointer/keyboard focus
- * promotes it to first responder.
+ * the count; with focus elsewhere the same chord resolves to nothing.
+ *
+ * The panel is a **focus destination**, so it says so: it registers as a
+ * focusable, which is what lets a click park the key view on it (the engine
+ * places what it can name, and a bare `data-responder-id` with no focus
+ * contract names nothing). Its policy is `skip`, so it is addressable by
+ * pointer without joining the standard Tab walk — the FocusWalkDemo below is
+ * the walk demo, and its cycle is deliberately just its own two accept stops.
+ * In `accessibility` mode `skip` stops rejoin the walk, so it stays reachable
+ * where reachability matters. It renders no `tabindex`: an engine-routed stop
+ * never holds DOM focus, and not rendering one removes WebKit's
+ * focus-the-nearest-tabindex'd-ancestor steal by construction.
  *
  * The `useKeybindings` call lives inside the `ResponderScope` so it registers
  * under this responder's id (its `ResponderParentContext`).
@@ -125,6 +135,19 @@ function KeybindingDemo() {
       },
     },
   });
+  const { focusableRef } = useFocusable({
+    id: "gallery-keybinding-demo",
+    group: "gallery-keybinding",
+    order: 0,
+    policy: "skip",
+  });
+  const panelRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      responderRef(el);
+      focusableRef(el);
+    },
+    [responderRef, focusableRef],
+  );
   return (
     <div className="cg-section" data-testid="keybinding-demo">
       <TugLabel className="cg-section-title">Dynamic Keybinding</TugLabel>
@@ -133,8 +156,7 @@ function KeybindingDemo() {
         only while this panel&apos;s responder is in context.
       </TugLabel>
       <div
-        ref={responderRef}
-        tabIndex={0}
+        ref={panelRef}
         data-testid="keybinding-demo-target"
         className="cg-variant-row"
       >
@@ -179,10 +201,9 @@ function KeybindingDemoBinding() {
  * standard mode), wrapping. Each button keeps the default no-steal-on-click
  * (`data-tug-focus="refuse"`), so clicking one never moves the key view.
  *
- * This is the controlled scenario for the Step-9 app-test: authoring focusables
- * here makes the walk non-empty for this card only, which is exactly the
- * end-state model — a control joins the Tab walk when its surface authors a
- * focus group for it.
+ * This is the controlled app-test scenario: authoring focusables here makes the
+ * walk non-empty for this card only, which is exactly the end-state model — a
+ * control joins the Tab walk when its surface authors a focus group for it.
  */
 function FocusWalkDemo() {
   return (

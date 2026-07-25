@@ -58,8 +58,21 @@ import { describe, expect, test } from "bun:test";
 import {
   launchTugApp,
   registerSubsetMatcher,
+  type App,
   type CaretState,
 } from "./_harness";
+
+/**
+ * Block until the composite first-responder bit names `cardId`. The harness
+ * has `expectFocusedCard` for the z-order bit; this is its counterpart for the
+ * bit the focus engine follows as its key card, which settles independently.
+ */
+async function expectActiveCard(app: App, cardId: string): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `window.__tug.getActiveCardId() === ${JSON.stringify(cardId)}`,
+    { timeoutMs: 6000 },
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Matcher registration (once per module load)
@@ -196,7 +209,12 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       await app.nativeClickAtElement(paneTitleSelectorFor("p2"));
 
       await app.expectFocusedCard("A2");
-      expect(await app.getActiveCardId()).toBe("A2");
+      // `expectFocusedCard` polls the z-order bit (`getFocusedCardId` — the
+      // topmost pane's active card). The composite first-responder bit
+      // (`getActiveCardId`) settles on its own schedule, so read it with a
+      // poll too: an unpolled read here can catch the pre-flip value on a
+      // loaded machine, which reads as an activation regression.
+      await expectActiveCard(app, "A2");
 
       // Ordered-subsequence trace assertion for the p1→p2 transition.
       //
@@ -232,7 +250,7 @@ describe.skipIf(!SHOULD_RUN)("m03: pane-chrome click activates other pane and sa
       await app.nativeClickAtElement(paneTitleSelectorFor("p1"));
 
       await app.expectFocusedCard("A1");
-      expect(await app.getActiveCardId()).toBe("A1");
+      await expectActiveCard(app, "A1");
 
       // Core restore assertion: A1's caret should land back at offset 5
       // (end of "hello"). `expectCaret` polls via `waitForCondition` so

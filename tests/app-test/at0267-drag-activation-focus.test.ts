@@ -47,7 +47,6 @@
  * after each scenario and the DELTA asserted, so one scenario's corrections
  * can never be absorbed by another's budget.
  *
- * @covers tugdeck/src/focus-theft-gate.ts
  * @covers tugdeck/src/components/chrome/pane-focus-controller.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts

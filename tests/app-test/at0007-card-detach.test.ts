@@ -44,6 +44,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { keyboardIsInCard } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
@@ -147,14 +148,11 @@ describe.skipIf(!SHOULD_RUN)("m07: card detach preserves focus + value", () => {
       // preserved across React's portal reconciliation).
       expect(await app.getFormControlValue("A", INPUT_PERSIST_KEY)).toBe("alpha");
 
-      // Focus is inside A's card subtree — the helper's transfer
-      // step (or the default-focus fallback) lands the caret on a
-      // sensible target inside the moved card.
-      const focusedInsideA = await app.evalJS<boolean>(
-        `document.activeElement !== null &&
-         document.querySelector('[data-card-host][data-card-id="A"]')?.contains(document.activeElement) === true`,
-      );
-      expect(focusedInsideA).toBe(true);
+      // The keyboard is in A — the helper's transfer step (or the
+      // default-focus fallback) lands on a sensible target inside the
+      // moved card. Either engine shape counts: a marked key view with
+      // the sink parked outside, or a dom-granted surface inside.
+      expect(await app.evalJS<boolean>(keyboardIsInCard("A"))).toBe(true);
     } catch (err) {
       const tail = app.tailLog(200);
       if (tail !== "") {

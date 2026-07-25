@@ -29,6 +29,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { keyboardIsInCard } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -131,7 +132,12 @@ describe.skipIf(!SHOULD_RUN)("AT0120: accordion is a single item-container stop 
 
         await app.nativeClickAtElement(TITLE);
         await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 6000 });
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        // The click activates the card; the Tab below is only meaningful once
+        // that activation has settled the keyboard into the card. Waiting on
+        // the engine fact rather than a fixed delay keeps the first key from
+        // racing the activation transfer when the machine is loaded — a bare
+        // sleep here is what made this file order-sensitive in large batches.
+        await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
 
         // (1) Tab → one stop: the perimeter ring lands on the ACCORDION (a
         // row-based item-group container rings its own bounds, matching the list)

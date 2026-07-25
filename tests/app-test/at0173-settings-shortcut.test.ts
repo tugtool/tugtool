@@ -93,7 +93,9 @@ describe.skipIf(!SHOULD_RUN)("AT0173: ⌘, opens Settings", () => {
         await app.awaitEngineReady("A");
 
         // Put the caret inside the CodeMirror prompt editor — the
-        // real-usage state where ⌘, was reported dead.
+        // real-usage state where ⌘, was reported dead. A text surface is
+        // dom-granted, so containment of `document.activeElement` is the
+        // correct read for the grant landing.
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.waitForCondition<boolean>(
           `(function(){ var c = document.querySelector(${JSON.stringify(PROMPT_INPUT)}); return c !== null && c.contains(document.activeElement); })()`,

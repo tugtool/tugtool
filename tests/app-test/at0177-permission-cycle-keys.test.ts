@@ -109,7 +109,9 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⇧⌘P, never on Shift+Tab", () 
         );
 
         // Focus the card so the key-card-scoped chord resolves a key card, and
-        // wait for the first responder to land inside it.
+        // wait for the first responder to land inside it. The prompt entry is a
+        // dom-granted text surface, so containment of `document.activeElement`
+        // is the correct read for it; the engine fact is the first responder.
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.waitForCondition<boolean>(
           `(function(){ var c = document.querySelector(${JSON.stringify(PROMPT_INPUT)}); var fr = document.querySelector("[data-first-responder]"); var card = document.querySelector(${JSON.stringify(CARD)}); return c !== null && c.contains(document.activeElement) && fr !== null && card !== null && card.contains(fr); })()`,

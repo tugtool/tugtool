@@ -147,6 +147,8 @@ describe.skipIf(!SHOULD_RUN)("AT0176: Tab accepts an open completion (editor kee
           `(function(){ var e = document.querySelector(${JSON.stringify(PROMPT_INPUT)}); return e !== null && e.textContent.indexOf("/rew") === -1; })()`,
         );
         expect(fragmentGone).toBe(true);
+        // The prompt editor is a dom-granted text surface: the engine grants it
+        // real DOM focus, so containment is the right assertion here.
         const focusInEditor = await app.evalJS<boolean>(
           `(function(){ var c = document.querySelector(${JSON.stringify(PROMPT_INPUT)}); return c !== null && c.contains(document.activeElement); })()`,
         );

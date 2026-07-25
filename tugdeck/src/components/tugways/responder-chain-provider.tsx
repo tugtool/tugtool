@@ -42,6 +42,7 @@ import {
   registerEditCapsRefresher,
 } from "../../lib/host-menu-state";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
+import { currentGesture, targetRefusesFocus } from "@/gesture-interpreter";
 import { isSyntheticEscape } from "./internal/synthetic-escape";
 
 // ---- Fallback context menu ----
@@ -1047,150 +1048,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     //
     // Controls marked with data-tug-focus="refuse" (buttons, checkboxes,
     // switches, sliders, etc.) should not steal keyboard focus or
-    // first-responder status from the active editor. This is the
-    // web equivalent of Cocoa's acceptsFirstResponder = false.
+    // first-responder status from the active editor. This is the web
+    // equivalent of Cocoa's acceptsFirstResponder = false.
     //
-    // Three document-level listeners implement this centrally:
-    //   - pointerdown (capture): skips first-responder promotion
-    //   - pointerdown (capture): skips engine key-view placement
-    //   - mousedown (capture): calls preventDefault to stop browser focus
-    //
-    // Controls only need to add the attribute. All three behaviors are
-    // handled here — no per-component onMouseDown handlers needed.
+    // The refusal is one of the facts the gesture interpreter classifies, so
+    // for pointer gestures it arrives here as `promotion: "skip"` /
+    // `placement: "skip"` on the record, and the interpreter's own mousedown
+    // handler is what prevents the browser focus default. Controls only need
+    // the attribute; nothing here re-derives it from the event.
     //
     // Bounded semantics. Per `tugplan-dev-overlay-framework.md` [D01]
-    // (#mental-model), `data-tug-focus="refuse"` controls exactly the
-    // three keyboard-ownership behaviors above and nothing else:
-    // chain-promotion-skip (`promoteOnPointerDown`), key-view-placement-
-    // skip (`placeFromPointer`), and browser-focus-prevention
-    // (`preventFocusOnMouseDown`). The three are one idea — the control
-    // is outside the key loop, so no pointer gesture on it moves any
-    // keyboard register. It does NOT gate pane-focus-controller
-    // activation/deselect — that subsystem keys on
-    // `[data-slot="tug-canvas-overlay-root"]` directly. See [D01] for the
-    // disambiguation rationale and (#mental-model) for the five-subsystem
-    // model.
-    const FOCUS_REFUSE_SELECTOR = '[data-tug-focus="refuse"]';
-
-    function isFocusRefusing(target: EventTarget | null): boolean {
-      if (!(target instanceof Element)) {
-        if (target instanceof Node && target.parentElement) {
-          return target.parentElement.closest(FOCUS_REFUSE_SELECTOR) !== null;
-        }
-        return false;
-      }
-      return target.closest(FOCUS_REFUSE_SELECTOR) !== null;
-    }
-
-    // First-responder-preserving chrome. Structural gesture surfaces (the
-    // pane title bar) are activation/drag targets, never responder targets:
-    // a click there must not promote the coarse pane/card container — which
-    // would strand every accelerator registered on the card's CONTENT
-    // (route switching on the prompt entry, find on the editors, cut/copy/
-    // paste) since the chain walk is upward-only. Distinct from
-    // `data-tug-focus="refuse"` (button-class-only by doctrine); this is
-    // the structural-marker sibling the responder-chain doc calls for.
-    // Cross-pane activation still lands first responder on the newly-active
-    // card through the engine's [P21] restore.
-    const FR_PRESERVE_SELECTOR = "[data-tug-fr-preserve]";
-
-    function isFrPreserving(target: EventTarget | null): boolean {
-      const el =
-        target instanceof Element
-          ? target
-          : target instanceof Node
-            ? target.parentElement
-            : null;
-      return el !== null && el.closest(FR_PRESERVE_SELECTOR) !== null;
-    }
-
-    // A pointerdown on draggable content inside a card that is NOT the key
-    // card — the gesture whose activation the pane-focus-controller defers
-    // until `dragstart` or `pointerup` says which it was. Mirrors that
-    // controller's arming condition, so the two halves of the deferral agree
-    // by construction.
-    function isDeferredDragActivation(target: EventTarget | null): boolean {
-      const el =
-        target instanceof Element
-          ? target
-          : target instanceof Node
-            ? target.parentElement
-            : null;
-      if (el === null) return false;
-      if (el.closest('[draggable="true"]') === null) return false;
-      const cardEl = el.closest<HTMLElement>("[data-card-id]");
-      if (cardEl === null) return false;
-      const cardId = cardEl.getAttribute("data-card-id");
-      return cardId !== null && cardId !== focusManager.keyCard();
-    }
-
-    // ---- Modal scrim barrier: card-modal ([P16]/[P19]) + pane-modal ----
-    //
-    // While an inline dialog (permission / question) is pending its card is
-    // card-modal: the keyboard is trapped in the dialog and the surround is
-    // scrimmed. The CSS scrim drops `pointer-events` on the dimmed regions so
-    // wheel still reaches the scroll container — but that very passthrough means
-    // a click on dimmed content (or the bare scroll viewport) lands on an
-    // interactive ancestor and promotes IT to first responder, coarsening the
-    // dialog's key view and stealing its ring ("focus follows my click").
-    //
-    // The fix completes the modality at the single promotion seam: a pointerdown
-    // anywhere in a card-modal card but OUTSIDE its bright dialog island is a
-    // stray click. We redirect the promotion to the dialog island itself, so the
-    // gesture (a) activates the card if it was in the background and (b) leaves
-    // first responder on the dialog — never on the scrimmed surround. Returns the
-    // dialog island element to redirect to, or `null` when the target is not a
-    // stray modal-scrim click (the common path).
-    const CARD_MODAL_SCRIM_SELECTOR = '[data-inline-dialog-pending="true"]';
-    const DIALOG_ISLAND_SELECTOR =
-      ".session-question-dialog, .session-permission-dialog";
-
-    function modalScrimRedirectTarget(target: EventTarget | null): Element | null {
-      const el =
-        target instanceof Element
-          ? target
-          : target instanceof Node
-            ? target.parentElement
-            : null;
-      if (el === null) return null;
-      // Pane-modal barrier: the pane's built-in scrim ([D18]) only receives
-      // pointer events while a sheet has raised it (`data-scrim="on"` flips it
-      // to `pointer-events: auto`), so a pointerdown targeting the scrim IS a
-      // stray click on a pane-modal surround. Redirect the promotion to the
-      // topmost open sheet panel in that pane, mirroring the card-modal rule:
-      // the gesture activates the pane but first responder and the key-view
-      // ring stay in the sheet.
-      if (el.classList.contains("tug-pane-scrim")) {
-        const pane = el.closest(".tug-pane");
-        if (pane !== null) {
-          const sheets = pane.querySelectorAll('[data-slot="tug-sheet"]');
-          if (sheets.length > 0) return sheets[sheets.length - 1];
-        }
-        return null;
-      }
-      let card = el.closest(CARD_MODAL_SCRIM_SELECTOR);
-      if (card === null) {
-        // Pane chrome around a card-modal card — the title bar, frame, and
-        // resize edges live OUTSIDE the card root that carries the scrim
-        // attribute, but the modality covers them all the same: a click
-        // there (including the activation click that brings the pane back)
-        // must not promote the pane responder and coarsen the dialog's
-        // trapped key view. Match the pane whose VISIBLE card is card-modal
-        // (an inactive tab's dialog is display:none → offsetParent null).
-        const pane = el.closest(".tug-pane");
-        const paneModal =
-          pane?.querySelector<HTMLElement>(CARD_MODAL_SCRIM_SELECTOR) ?? null;
-        card =
-          paneModal !== null && paneModal.offsetParent !== null
-            ? paneModal
-            : null;
-      }
-      if (card === null) return null;
-      // A click already inside the bright dialog island behaves normally.
-      if (el.closest(DIALOG_ISLAND_SELECTOR) !== null) return null;
-      // Stray click on the scrimmed surround → redirect to the dialog island.
-      return card.querySelector(DIALOG_ISLAND_SELECTOR);
-    }
+    // (#mental-model), `data-tug-focus="refuse"` controls exactly three
+    // keyboard-ownership behaviors and nothing else: chain-promotion-skip,
+    // key-view-placement-skip, and browser-focus-prevention. The three are one
+    // idea — the control is outside the key loop, so no pointer gesture on it
+    // moves any keyboard register. It does NOT gate pane activation or
+    // deselect. See [D01] for the disambiguation rationale and
+    // (#mental-model) for the five-subsystem model.
 
     // ---- Pointer-driven placement (Risk R01's mitigation) ----
     // Click transitions are ENGINE-FIRST: a pointerdown that resolves to an
@@ -1203,7 +1077,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // that resolves to nothing engine-addressable while a text surface holds
     // the grant places `none` — the keyboard leaves the surface (matching
     // the pre-inversion blur) and parks at the engine.
-    function placeFromPointer(target: EventTarget | null): void {
+    //
+    // Whether the gesture may place at all is the interpreter's call
+    // (`placement: "place"`): it is what knows that a focus-refusing control is
+    // outside the key loop, that a cross-card activation click realizes the
+    // card's RECORDED destination rather than whatever sat under the pointer,
+    // and that a surface may have declared its chrome placement-suppressing.
+    // This body is only the resolution — which engine target the click names.
+    function placeFromPointer(target: EventTarget | null, cardId: string): void {
       const el =
         target instanceof Element
           ? target
@@ -1211,30 +1092,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             ? target.parentElement
             : null;
       if (el === null) return;
-      const cardEl = el.closest<HTMLElement>("[data-card-id]");
-      if (cardEl === null) return; // canvas / pane chrome: not a focus target
-      const cardId = cardEl.getAttribute("data-card-id");
-      if (cardId === null) return;
-      // Cross-card ACTIVATION click (Mac first-click-activates): the click
-      // activates the card; it does not also place. The activation
-      // transfer realizes the card's RECORDED destination (its resting
-      // editor, a pushed dialog trap) — a pointer place here would
-      // overwrite that recorded target with whatever sat under the click
-      // (or `none` for prose), stripping the caret the transfer is about
-      // to land. Placement from a pointer applies only within the key
-      // card, matching pane-focus-controller's browser-default
-      // suppression for the same gesture.
-      if (cardId !== focusManager.keyCard()) return;
-      // A focus-refusing control is outside the key loop: clicking a button,
-      // checkbox, switch or slider actuates it and leaves the key view where
-      // it rested, so Tab re-enters the walk where the keyboard left it
-      // rather than where the mouse last landed. Cocoa's key loop behaves the
-      // same way — a button is not a key view, so clicking one never moves
-      // the insertion point out of the text field beside it. Returning
-      // outright (rather than falling through) also spares the `none`
-      // placement below: a click on chrome must not park a text surface's
-      // grant, which is the same reason the control refuses browser focus.
-      if (isFocusRefusing(el)) return;
       const marker = el.closest<HTMLElement>(
         "[data-tug-state-key], [data-tug-focusable], [data-responder-id]",
       );
@@ -1277,70 +1134,42 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       }
     }
 
+    // The chain's half of a classified pointer gesture. Every decision here is
+    // read from the interpreter's record:
+    //
+    //   - `skip` — a focus-refusing control (targeted dispatch makes the first
+    //     responder irrelevant to its action, and accelerators need the
+    //     responder left on the editor), first-responder-preserving chrome (an
+    //     activation/drag surface, not a responder target), or draggable
+    //     content in a background card, whose promotion defers with its
+    //     activation so the chain and deck registers cannot split.
+    //   - `redirect` — a stray click on a modal scrim promotes the dialog
+    //     island instead of the click target, so first responder lands on (and
+    //     activates) the dialog's card rather than the scrimmed surround.
+    //   - `target` — promote from the click target, then place, so the click's
+    //     focus transition is driven by the engine at pointerdown, ahead of the
+    //     browser's mousedown focus default, never derived after the fact.
     function promoteOnPointerDown(event: PointerEvent): void {
-      // Consume the activation-click one-shot FIRST — before any early
-      // return — so a refused or redirected activation click cannot
-      // leave the latch armed for the next gesture. When armed, the
-      // activation transfer owns this gesture's placement and the
-      // pointer place below stands down.
-      const placementSuppressed =
-        focusManager.consumePointerPlacementSuppression();
-      // Focus-refusing controls skip first-responder promotion.
-      // This is safe because controls use targeted dispatch
-      // (sendToTarget parent) — the first responder is irrelevant
-      // for their actions. Keyboard shortcuts use nil-targeted
-      // dispatch and need the first responder to stay on the
-      // editor, so skipping promotion here is correct for both.
-      if (isFocusRefusing(event.target)) return;
-      // First-responder-preserving chrome (the pane title bar): an
-      // activation/drag gesture, not a responder target — leave first
-      // responder wherever the user was working.
-      if (isFrPreserving(event.target)) return;
-      // Card-modal barrier: a stray click on the scrimmed surround promotes the
-      // dialog island instead of the click target — first responder lands on
-      // (and activates) the dialog's card, while the companion mousedown
-      // preventDefault keeps browser focus (and therefore the derived key view
-      // + ring) on the dialog's default.
-      const redirect = modalScrimRedirectTarget(event.target);
-      if (redirect !== null) {
-        promoteFromTarget(redirect);
+      const gesture = currentGesture();
+      if (gesture === null) {
+        // No interpreter installed (a bare provider outside the deck): promote
+        // from the target and leave the engine placement alone.
+        promoteFromTarget(event.target as Node | null);
         return;
       }
-      // Draggable content in a background card: promotion defers with
-      // activation (focus-language.md § Drag and the keyboard). The
-      // pane-focus-controller has parked this gesture's activation until it
-      // is known to be a click or a drag; promoting eagerly would strand the
-      // chain first responder on the drag source while the deck first
-      // responder stayed on the key card — a split register that mis-routes
-      // the next accelerator. If the gesture is a click, the pointerup
-      // activation commit settles the chain register through
-      // `settleFirstResponderForActivation`; if it is a drag, nothing moves.
-      if (isDeferredDragActivation(event.target)) return;
-      // Chain promotion, then the engine placement: the click's focus
-      // transition is driven by the engine at pointerdown (ahead of the
-      // browser's mousedown focus default), never derived after the fact.
+      if (gesture.promotion.kind === "skip") return;
+      if (gesture.promotion.kind === "redirect") {
+        promoteFromTarget(gesture.promotion.to);
+        return;
+      }
       promoteFromTarget(event.target as Node | null);
-      if (!placementSuppressed) placeFromPointer(event.target);
-    }
-
-    function preventFocusOnMouseDown(event: MouseEvent): void {
-      // Focus-refusing controls prevent the browser from moving keyboard
-      // focus on mousedown. This keeps focus in the active editor so the
-      // caret and selection are preserved. The click event still fires
-      // normally. A stray click on a card-modal scrim does the same — the
-      // browser must not drop a caret in (or select text out of) the dimmed
-      // surround; the dialog owns focus. The click event still fires.
-      if (
-        isFocusRefusing(event.target) ||
-        isFrPreserving(event.target) ||
-        modalScrimRedirectTarget(event.target) !== null
-      ) {
-        event.preventDefault();
+      if (gesture.placement === "place" && gesture.cardId !== null) {
+        placeFromPointer(event.target, gesture.cardId);
       }
     }
 
     function promoteOnFocusIn(event: FocusEvent): void {
-      if (isFocusRefusing(event.target)) return;
+      if (targetRefusesFocus(event.target)) return;
       promoteFromTarget(event.target as Node | null);
       // Granted-surface legalization: a text surface that claims DOM focus
       // through its own channel becomes the engine's dom-granted target —
@@ -1430,7 +1259,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("keydown", engineScrollKeyListener, { capture: true });
     document.addEventListener("keydown", bubbleListener);
     document.addEventListener("pointerdown", promoteOnPointerDown, { capture: true });
-    document.addEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
     document.addEventListener("focusin", promoteOnFocusIn, { capture: true });
     document.addEventListener("contextmenu", fallbackContextMenu);
 
@@ -1445,7 +1273,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       document.removeEventListener("keydown", engineScrollKeyListener, { capture: true });
       document.removeEventListener("keydown", bubbleListener);
       document.removeEventListener("pointerdown", promoteOnPointerDown, { capture: true });
-      document.removeEventListener("mousedown", preventFocusOnMouseDown, { capture: true });
       document.removeEventListener("focusin", promoteOnFocusIn, { capture: true });
       document.removeEventListener("contextmenu", fallbackContextMenu);
       selectionGuard.detach();

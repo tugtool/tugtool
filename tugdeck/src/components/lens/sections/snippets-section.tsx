@@ -43,6 +43,7 @@ import React, {
 } from "react";
 import { Copy, Plus, TextQuote, X } from "lucide-react";
 
+import { PLACEMENT_POLICY_ATTRIBUTE } from "@/gesture-interpreter";
 import { getSnippetsStore } from "@/lib/snippets-store";
 import { snippetIncipit, type Snippet } from "@/lib/snippets-doc";
 import { snippetDragStart } from "@/lib/snippet-drag";
@@ -361,20 +362,32 @@ function SnippetEditorRow({
   // A pointerdown on the card's own CHROME (the sticky header, the well padding
   // around the text — anything that is NOT the editor's contenteditable) is not
   // a departure from the editor. Left alone, the engine's pointer placement
-  // (`responder-chain-provider`) resolves such a click to the row's plain
-  // wrapper focusable, which is engine-routed: it parks focus at the key sink,
-  // blurring the caret and committing (closing) the snippet. Arm the engine's
-  // one-shot placement suppression for the gesture — on WINDOW capture, so it is
-  // set BEFORE the engine's document-capture promotion consumes it — so the
-  // caret simply stays put. A pointerdown in the text (which the engine resolves
-  // to the editor's own dom-granted responder), in another row, or outside the
+  // resolves such a click to the row's plain wrapper focusable, which is
+  // engine-routed: it parks focus at the key sink, blurring the caret and
+  // committing (closing) the snippet. The wrapper declares itself
+  // placement-suppressing and the editor re-declares itself placeable
+  // (`PLACEMENT_POLICY_ATTRIBUTE`, nearest marker wins), so the gesture
+  // interpreter classifies a chrome click as `placement: "suppressed"` and the
+  // caret stays put. A pointerdown in the text, in another row, or outside the
   // Lens is untouched, so those still place / commit as before.
+  //
   // Timestamp of the last card-chrome pointerdown, read by `onBlur` as a
   // last-resort net. A recency window (not a one-shot boolean) is robust to the
   // blur firing either synchronously in the gesture OR a tick later — both land
   // inside the window. A non-chrome pointerdown or any keydown resets it to 0,
   // so clicking a different row / Escape / Tab still commits.
   const chromeClickTsRef = useRef(0);
+
+  // The editor's own contenteditable is placeable — the marker on the wrapper
+  // above would otherwise suppress placement for the text too, and a click in
+  // the text must still resolve to the editor's dom-granted responder. Stamped
+  // on the mounted CM6 root, which `TugMessageEditor` owns.
+  useLayoutEffect(() => {
+    wellRef.current
+      ?.querySelector(".cm-editor")
+      ?.setAttribute(PLACEMENT_POLICY_ATTRIBUTE, "place");
+  }, []);
+
   useLayoutEffect(() => {
     const inChrome = (t: EventTarget | null): boolean => {
       const el = wrapRef.current;
@@ -385,16 +398,10 @@ function SnippetEditorRow({
         (!(t instanceof Element) || t.closest(".cm-editor") === null)
       );
     };
-    // On a chrome pointerdown: stamp the recency window and arm the engine's
-    // one-shot placement suppression so the engine does not re-route the caret
-    // to the key sink. Any other pointerdown clears the window.
+    // On a chrome pointerdown: stamp the recency window. Any other pointerdown
+    // clears it.
     const onDown = (e: PointerEvent): void => {
-      if (inChrome(e.target)) {
-        chromeClickTsRef.current = Date.now();
-        manager?.suppressPointerPlacementOnce();
-      } else {
-        chromeClickTsRef.current = 0;
-      }
+      chromeClickTsRef.current = inChrome(e.target) ? Date.now() : 0;
     };
     // Stop the browser's OWN mousedown focus default too: the chrome is not
     // focusable, so the native default would pull DOM focus off the caret
@@ -528,6 +535,7 @@ function SnippetEditorRow({
         wrapRef.current = el;
         focusableRef(el);
       }}
+      {...{ [PLACEMENT_POLICY_ATTRIBUTE]: "suppress" }}
       tabIndex={-1}
       onFocus={onFocus}
       onBlur={onBlur}

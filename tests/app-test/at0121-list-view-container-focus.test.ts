@@ -142,8 +142,13 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         // at all (tug-list-view's no-tabindex rule) — a tabindex'd container is
         // still mouse-focusable and invites the mousedown focus churn the
         // watchdog then has to park. The stop is the engine registration plus
-        // the key view the Tab above landed, both asserted here.
-        expect(onContainer?.tabIndex).toBeNull();
+        // the key view the Tab above landed, both asserted here. The tabindex
+        // check states the invariant the same way ALL_ROWS_NON_FOCUSABLE does:
+        // absent and "-1" both keep the container out of the native Tab order,
+        // and a positive value is the only stop.
+        expect(
+          onContainer?.tabIndex === null || onContainer?.tabIndex === "-1",
+        ).toBe(true);
         expect(onContainer?.registered).toBe(true);
 
         // (3) The movement cursor lands on the first row — the ring stays on the

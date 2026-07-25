@@ -34,6 +34,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { ROUTE_BUTTON } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -41,7 +42,7 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const ROOT = `${CARD} [data-testid="session-card"]`;
 const SUBMIT = `${CARD} .tug-prompt-entry-submit-button`;
-const ROUTE = `${CARD} button[aria-label="Route this input"]`;
+const ROUTE = `${CARD} ${ROUTE_BUTTON}`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const Z2_TIME = `${CARD} [data-priority="time"]`;
 

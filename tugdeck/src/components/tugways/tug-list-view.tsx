@@ -87,6 +87,7 @@ import "./tug-list-view.css";
 
 import React from "react";
 
+import { currentGesture } from "@/gesture-interpreter";
 import { SmartScroll } from "@/lib/smart-scroll";
 import {
   anchorDepthFromEnd,
@@ -3716,6 +3717,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           }
         }
         if (!focusEngineActiveRef.current) return;
+        // The gesture's own placement decision governs the engine half. The
+        // list does not re-derive it: the interpreter is what knows this
+        // gesture is a cross-card activation click (which realizes the card's
+        // recorded destination rather than the clicked row) or landed on a
+        // surface that declared its chrome placement-suppressing. Selection
+        // above is list state and commits either way.
+        if (currentGesture()?.placement === "suppressed") return;
         // Promote the keyboard-navigable listbox to the KEYBOARD key view on
         // POINTERDOWN — the same event dispatch as the capture-phase pointer
         // placement (`responder-chain-provider`), which parks the container as

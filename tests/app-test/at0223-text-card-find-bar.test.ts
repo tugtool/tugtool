@@ -41,6 +41,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchTugApp, type App } from "./_harness";
+import { ROUTE_BUTTON } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -130,12 +131,14 @@ async function openBar(app: App): Promise<void> {
     { timeoutMs: 4000 },
   );
   // The bar focuses its CM6 field on mount — wait for the caret so typed
-  // queries land in the field, not the document editor.
+  // queries land in the field, not the document editor. A text surface is a
+  // dom-granted target, so `document.activeElement` IS the truth here; the
+  // engine grants it real focus rather than parking the sink.
   await app.waitForCondition<boolean>(
     `(() => {
       const input = document.querySelector(${JSON.stringify(INPUT_SELECTOR)});
       return input !== null && document.activeElement !== null &&
-        input.contains(document.activeElement) || input === document.activeElement;
+        (input.contains(document.activeElement) || input === document.activeElement);
     })()`,
     { timeoutMs: 4000 },
   );
@@ -188,7 +191,7 @@ describe.skipIf(!SHOULD_RUN)("AT0223: text card bottom find bar", () => {
                 cluster: bar?.querySelector('[data-slot="find-cluster"]') !== null,
                 prev: bar?.querySelector('button[aria-label="Find previous"]') !== null,
                 next: bar?.querySelector('button[aria-label="Find next"]') !== null,
-                route: bar?.querySelector('button[aria-label="Route this input"]') !== null,
+                route: bar?.querySelector(${JSON.stringify(ROUTE_BUTTON)}) !== null,
                 close: bar?.querySelector('button[aria-label="Close find"]') !== null,
               });
             })()`,

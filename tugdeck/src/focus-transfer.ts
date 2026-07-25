@@ -129,7 +129,7 @@ import { getFocusManager } from "./components/tugways/focus-manager";
 import { selectionGuard } from "./components/tugways/selection-guard";
 import { deckTrace, formatElement } from "./deck-trace";
 import { traceApplyDefaultFocus } from "./default-focus";
-import { canProgrammaticallyFocus } from "./focus-theft-gate";
+import { mayClaimActivationFocus } from "./components/tugways/focus-manager";
 
 import type { FocusModality, FocusTarget } from "./components/tugways/focus-manager";
 import type { IDeckManagerStore } from "./deck-manager-store";
@@ -374,6 +374,13 @@ export function resolveBagFocus(
     // THAT target ([P20]); the generic default-focus walk below must not
     // displace it (it would land on the first tabbable — a section's filter
     // input — and yank the ring off the just-placed list).
+    //
+    // This is the downstream half of the activation permission ([P04]), not a
+    // leftover. `mayClaimActivationFocus` answers "may this claim happen at
+    // all"; it deliberately permits a claim on a card the engine already
+    // serves, because a card's own keyboard is not something to be stolen
+    // from. What must not happen is the RESOLUTION overwriting a live ring —
+    // a question about which target to realize, which belongs here.
     const manager = getFocusManager();
     if (
       manager !== null &&
@@ -773,17 +780,17 @@ export function transferFocusForActivation(
     });
   }
 
-  // Step 3 — Gate through focus-theft rules ([A8]).
+  // Step 3 — Ask the engine whether this claim is permitted (Spec S03).
   //
-  // Reads `document.activeElement` directly; we are post-commit so
-  // the DOM is consistent with the store snapshot we hand the gate.
-  const targetCardHostEl = store.peekCardHostRoot(incomingCardId);
-  const allowed = canProgrammaticallyFocus(
-    incomingCardId,
-    store.getSnapshot(),
-    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
-  );
-  if (!allowed) return;
+  // Post-commit, so the DOM is consistent with the store snapshot handed to
+  // the query.
+  if (
+    !mayClaimActivationFocus(incomingCardId, store.getSnapshot(), {
+      reason: "focus-transfer",
+    })
+  ) {
+    return;
+  }
 
   // Step 4 — Single-channel dispatch via `applyBagFocus`.
   //
@@ -805,8 +812,7 @@ export function transferFocusForActivation(
   // restore them post-dispatch.
   if (result === "applied") {
     const bag = store.getCardState(incomingCardId);
-    const cardRoot =
-      targetCardHostEl ?? store.peekCardHostRoot(incomingCardId);
+    const cardRoot = store.peekCardHostRoot(incomingCardId);
     if (
       bag?.domSelection !== undefined &&
       bag.domSelection !== null &&
@@ -938,7 +944,7 @@ export interface TransferFocusAfterMoveOptions {
  * pointercancel). Three-step body — no save here; drag-start
  * already captured the bag.
  *
- *   1. Gate through {@link canProgrammaticallyFocus}.
+ *   1. Ask the engine for permission (`mayClaimActivationFocus`).
  *   2. Single-channel dispatch via {@link applyBagFocus}.
  *   3. Post-dispatch DOM-selection restore.
  *
@@ -956,14 +962,14 @@ export function transferFocusAfterMove(
 ): void {
   const { sourceCardId, store } = options;
 
-  // Step 1 — Gate.
-  const targetCardHostEl = store.peekCardHostRoot(sourceCardId);
-  const allowed = canProgrammaticallyFocus(
-    sourceCardId,
-    store.getSnapshot(),
-    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
-  );
-  if (!allowed) return;
+  // Step 1 — Permission (Spec S03).
+  if (
+    !mayClaimActivationFocus(sourceCardId, store.getSnapshot(), {
+      reason: "focus-transfer-after-move",
+    })
+  ) {
+    return;
+  }
 
   // Step 2 — Single-channel dispatch.
   const result = applyBagFocus(sourceCardId, store, {
@@ -973,8 +979,7 @@ export function transferFocusAfterMove(
   // Step 3 — Post-dispatch DOM-selection restore.
   if (result === "applied") {
     const bag = store.getCardState(sourceCardId);
-    const cardRoot =
-      targetCardHostEl ?? store.peekCardHostRoot(sourceCardId);
+    const cardRoot = store.peekCardHostRoot(sourceCardId);
     if (
       bag?.domSelection !== undefined &&
       bag.domSelection !== null &&
@@ -1007,9 +1012,8 @@ export function transferFocusAfterMove(
  *   1. Resolve `cardId` from `store.getFirstResponderCardId()`. If
  *      `null` (canvas-background deselect, or boot before the first
  *      activation), return — there is no destination to reactivate.
- *   2. Read the host root via `store.peekCardHostRoot` and gate
- *      through {@link canProgrammaticallyFocus}. The gate's
- *      `state.hasFocus` branch is correctly `true` at this point
+ *   2. Ask the engine for permission (`mayClaimActivationFocus`).
+ *      Its `state.hasFocus` rule is correctly `true` at this point
  *      because the listener flipped it to `true` immediately before
  *      this call.
  *   3. Single-channel dispatch via {@link applyBagFocus} with
@@ -1032,14 +1036,14 @@ export function reactivateCurrentFocusDestination(
   const cardId = store.getFirstResponderCardId();
   if (cardId === null) return;
 
-  // Step 1 — Gate.
-  const targetCardHostEl = store.peekCardHostRoot(cardId);
-  const allowed = canProgrammaticallyFocus(
-    cardId,
-    store.getSnapshot(),
-    targetCardHostEl !== null ? { targetCardHostEl } : undefined,
-  );
-  if (!allowed) return;
+  // Step 1 — Permission (Spec S03).
+  if (
+    !mayClaimActivationFocus(cardId, store.getSnapshot(), {
+      reason: "focus-transfer-reactivate",
+    })
+  ) {
+    return;
+  }
 
   // Step 2 — Single-channel dispatch via `applyBagFocus`.
   const result = applyBagFocus(cardId, store, {
@@ -1050,7 +1054,7 @@ export function reactivateCurrentFocusDestination(
   // Step 3 — Post-dispatch DOM-selection restore.
   if (result === "applied") {
     const bag = store.getCardState(cardId);
-    const cardRoot = targetCardHostEl ?? store.peekCardHostRoot(cardId);
+    const cardRoot = store.peekCardHostRoot(cardId);
     if (
       bag?.domSelection !== undefined &&
       bag.domSelection !== null &&

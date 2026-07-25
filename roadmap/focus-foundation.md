@@ -113,7 +113,7 @@ A concrete, currently-unfixed defect motivates the projection move (brief §5 se
 
 **Plan to resolve:** Step 3 reproduces the failing batch order, bisects the preceding-file set, and instruments with `window.__tug.getFocusInvariantReport()` + dev-log reads at failure time. Outcome is either a fix or a written cause in `tuglaws/app-test-inventory.md` with a quarantine note.
 
-**Resolution:** OPEN until #step-3 lands.
+**Resolution:** DECIDED (#step-3). Neither harness state leakage nor app residue: a **load-dependent race inside the test**. at0120 clicked the panel title, waited for `document.hasFocus()`, then slept a fixed 150ms before its first `Tab`. The click's activation transfer had not necessarily settled the keyboard into the card by then, so on a loaded machine the `Tab` raced the transfer and the cursor assertion timed out. The sleep is now a `waitForCondition` on the engine fact (`keyboardIsInCard("A")` from the step-1 selectors module). The 21-file baseline batch ran green four times (including one forced cold-build run) before and after the fix, so the original failure was not reproducible on demand — the fix removes the mechanism rather than a proven repro. Batch signals from the focus selection are trustworthy; a fixed delay before the first native key of a gesture chain is the general shape to watch for.
 
 ---
 
@@ -229,6 +229,8 @@ A concrete, currently-unfixed defect motivates the projection move (brief §5 se
 **Implications:**
 - Cards whose focusables register via `useFocusable` get registry-resolved defaults; cards with only raw DOM focusables (native inputs with `data-tug-state-key`, untagged content) still fall through to the selector chain.
 - The priority contract is preserved: an author-tagged `data-tug-focus-key="primary"` maps to the registry's authored order (rung 1–2 ≈ named-group stops); rung 3–4 remain DOM fallback.
+
+**Build-time amendment (#step-9), NARROWED to the first-responder settle.** Registry-first resolution shipped for `settleFirstResponderForActivation` only. Routing the default focus CLAIM through it as well is a user-visible behavior change, not a refactor: the registry head of a button-class card is a nameable stop, so `placeViaEngine` places it and the card acquires a key view merely for coming forward — and the first Tab then advances PAST the card's first authored stop instead of landing on it. at0112/at0113/at0114 encode the current contract ("Tab → key view lands on the first accept stop") and went red on exactly that; they are also on the baseline this plan promises to keep green (#success-criteria). Two premises of the decision were also wrong in the code: `walkOrder()` does **not** filter refuse — refusal governs what a POINTER gesture may move, while registration is an explicit authoring act, so a refusing button authored into a focus group is a legitimate stop — and the walk's rendered/interactive filters make a background card's registry answer empty exactly when the DOM chain's `isElementHidden` does. The claim half wants its own decision about whether activation should seed a key view; it is not foundation work. `FocusManager.defaultFocusableIdForCard` / `defaultFocusableForCard` are the shipped resolution, and `default-focus.ts`'s chain still owns the claim.
 
 #### [P07] Test assertions state invariants, not mechanisms (DECIDED) {#p07-invariant-assertions}
 
@@ -424,17 +426,17 @@ Replaces `canProgrammaticallyFocus`. Inputs: deck snapshot (`hasFocus`, `isFocus
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Corpus sweep + selector constants | pending | — |
-| #step-2 | Restore at0224 against engine facts | pending | — |
-| #step-3 | at0120 order-sensitivity diagnosis | pending | — |
-| #step-4 | State-driven projection | pending | — |
-| #step-5 | Watchdog as reconciler | pending | — |
-| #step-6 | Fold the theft gate | pending | — |
-| #step-7 | Gesture interpreter + activation/deselect | pending | — |
-| #step-8 | Provider + list consume the classification | pending | — |
-| #step-9 | Engine-registry default focus | pending | — |
-| #step-10 | Doctrine rewrite | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Corpus sweep + selector constants | done | `54f5d1643` |
+| #step-2 | Restore at0224 against engine facts | done | `f2c261335` |
+| #step-3 | at0120 order-sensitivity diagnosis | done | `332b69e62` |
+| #step-4 | State-driven projection | done | `fe7c467df` |
+| #step-5 | Watchdog as reconciler | done | `37232a479` |
+| #step-6 | Fold the theft gate | done | `9715fa561` |
+| #step-7 | Gesture interpreter + activation/deselect | done | `db3d984ca` |
+| #step-8 | Provider + list consume the classification | done | `ca301a565` |
+| #step-9 | Engine-registry default focus | done (narrowed — see [P06] amendment) | `61340e068` |
+| #step-10 | Doctrine rewrite | done | `e0cb05182` |
+| #step-11 | Integration checkpoint | done | verification only |
 
 #### Step 1: Corpus sweep + selector constants {#step-1}
 
@@ -708,9 +710,11 @@ Replaces `canProgrammaticallyFocus`. Inputs: deck snapshot (`hasFocus`, `isFocus
 - [ ] `just app-test` (core tier) plus the explicit focus selection: at0003 at0100 at0112 at0113 at0114 at0115 at0120 at0121 at0122 at0140 at0148 at0150 at0157 at0159 at0179 at0201 at0203 at0223 at0224 at0246 at0247 at0248 at0250 at0251 at0267, plus the step-4 projection app-test.
 
 **Checkpoint:**
-- [ ] All listed tests green in one batch (at0120's [Q03] resolution honored).
-- [ ] `bunx tsc --noEmit`, tugdeck unit tests, `bunx vite build`, `just app-test-covers-check` all clean.
-- [ ] The single-classifier and gate-deletion greps from #success-criteria pass.
+- [x] All listed tests green in one batch (at0120's [Q03] resolution honored) — 29 files, 43 tests, in two batches plus the core tier.
+- [x] `bunx tsc --noEmit`, tugdeck unit tests (4726), `bunx vite build`, `just app-test-covers-check` (234 files) all clean.
+- [x] The single-classifier and gate-deletion greps from #success-criteria pass.
+
+**Outcome: one pre-existing failure surfaced and repaired.** The core tier's `at0109-focus-ring` was red — red at `main` (`54feb467f`) and at every commit of this branch, verified by running it against a `main` checkout of `tugdeck/src`. Two things were wrong, neither an engine defect. A **fixture gap**: its click target, the gallery's keybinding-demo panel, carried `tabIndex={0}` and `data-responder-id` but was not a registered focusable and declared no focus contract, so the engine's pointer placement had nothing nameable to place. The panel is a focus destination, so it now declares itself one (`useFocusable` with `policy: "skip"` — pointer-addressable without joining the neighbouring FocusWalkDemo's deliberately-two-stop Tab cycle) and drops its `tabindex`, since an engine-routed stop never holds DOM focus. And a **mechanism assertion** ([P07]): the test required `activeElement` to be the key sink, but a bare `<body>` left by the browser's own mousedown default is equally legal (a standing legality class) and is what settles here — it now asserts that the keyboard is not on the control, with a clean tripwire. Core tier is 20/20.
 
 ---
 

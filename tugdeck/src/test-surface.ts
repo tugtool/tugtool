@@ -39,6 +39,7 @@ import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { getFocusManager } from "./components/tugways/focus-manager";
+import { currentGesture } from "./gesture-interpreter";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
   cardSessionBindingStore,
@@ -151,8 +152,19 @@ import {
  * payload, so the `/btw` overlay app-test can render an answer (and assert the
  * transcript stays clean) without a live claude round-trip. Additive; major
  * stays `1`.
+ *
+ * `1.15.0`: adds {@link TugTestSurface.reprojectFocus} — asks the focus engine
+ * to reproject its DOM marks from current state, so a test can prove the marks
+ * are a convergent image of that state (reproject, diff, expect no change)
+ * rather than a residue of the transitions that wrote them. Additive; major
+ * stays `1`.
+ *
+ * `1.16.0`: adds {@link TugTestSurface.currentGesture} — the live pointer
+ * gesture's classification record, so a test can assert what the interpreter
+ * decided (activation, promotion, placement, the named reasons) rather than
+ * only the downstream effects. Additive; major stays `1`.
  */
-export const SURFACE_VERSION = "1.14.0" as const;
+export const SURFACE_VERSION = "1.16.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -509,6 +521,39 @@ export interface TugTestSurface {
       keyCard: string | null;
       reason: string;
     } | null;
+  } | null;
+
+  /**
+   * Ask the focus engine to reproject its DOM marks from current state.
+   *
+   * The projection is a pure derivation applied by a convergence pass, so
+   * running it again from unchanged state must change nothing. That is the
+   * property this exposes: a test can reproject and diff the marks, which is
+   * how "the DOM is an image of engine state" is falsifiable rather than
+   * merely asserted. No-op when no `FocusManager` is mounted.
+   */
+  reprojectFocus(): void;
+
+  /**
+   * The live pointer gesture's classification, or `null` between gestures.
+   *
+   * One record per gesture, computed once at capture-phase pointerdown and read
+   * by every consumer. Exposing it lets a test assert the decision itself —
+   * that a click on bare canvas classified `deselect` while a click that merely
+   * missed every pane classified `chrome` — instead of inferring it from what
+   * happened afterward.
+   */
+  currentGesture(): {
+    gestureId: number;
+    button: number;
+    site: string;
+    paneId: string | null;
+    cardId: string | null;
+    activation: string;
+    promotion: string;
+    placement: string;
+    preventMousedownDefault: boolean;
+    reasons: string[];
   } | null;
 
   /**
@@ -1354,6 +1399,29 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     getFocusInvariantReport() {
       return getFocusManager()?.focusInvariantReport() ?? null;
+    },
+
+    reprojectFocus(): void {
+      getFocusManager()?.reproject();
+    },
+
+    currentGesture() {
+      const g = currentGesture();
+      if (g === null) return null;
+      // `promotion.to` is an Element — flattened to its kind so the record
+      // survives the harness's JSON round trip.
+      return {
+        gestureId: g.gestureId,
+        button: g.button,
+        site: g.site,
+        paneId: g.paneId,
+        cardId: g.cardId,
+        activation: g.activation,
+        promotion: g.promotion.kind,
+        placement: g.placement,
+        preventMousedownDefault: g.preventMousedownDefault,
+        reasons: g.reasons,
+      };
     },
 
     getSelection(cardId?: string): SelectionSnapshot | null {

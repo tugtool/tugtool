@@ -51,6 +51,8 @@ import type { ResponderChainManager } from "./responder-chain";
 import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spatial-order";
 import { resolveDefaultFocusTarget } from "@/default-focus";
 import { getDeckStore } from "@/lib/deck-store-registry";
+import { isFocusDestination } from "@/deck-store-selectors";
+import type { DeckState } from "@/layout-tree";
 
 /**
  * The behavior a key-view component declares to the engine ([P01]): the pure
@@ -291,6 +293,47 @@ export const KEY_WITHIN_ATTRIBUTE = "data-key-within";
 export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
 
 /**
+ * The part of the projection derived from a single context's state — no deck
+ * globals, no DOM. Split out from {@link FocusProjection} so the derivation can
+ * be compared across a state round trip without a document.
+ */
+export interface FocusProjectionState {
+  keyViewId: string | null;
+  keyViewKeyboard: boolean;
+  keyWithinId: string | null;
+  /** `null` at the base mode; the trap's scope id while one is pushed. */
+  focusMode: string | null;
+  route: KeyboardRoute;
+}
+
+/**
+ * The complete DOM projection of engine state: every focus mark, plus the one
+ * legal `document.activeElement`, derived by a single pure computation.
+ *
+ * Engine state is the truth and this is its write-through image. Nothing here
+ * is read back as truth — {@link FocusManager.reproject} applies it, and the
+ * watchdog reconciles the DOM against it. The `*Id` fields come from
+ * {@link FocusProjectionState}; the element fields are those ids resolved
+ * against the live document (all `null` in a DOM-free environment).
+ */
+export interface FocusProjection extends FocusProjectionState {
+  /** The element that should carry `data-key-view`. */
+  keyViewEl: HTMLElement | null;
+  /** Whether that element should also carry `data-key-view-kbd`. */
+  keyViewKbd: boolean;
+  /** The element that should carry `data-key-within`. */
+  keyWithinEl: HTMLElement | null;
+  /** The element that should carry `data-default-ring`. */
+  defaultRingEl: HTMLElement | null;
+  /**
+   * The one legal `activeElement` for this state. `null` under `dom-granted`
+   * means the granted surface is GONE — the incoherence case the watchdog
+   * reports rather than corrects.
+   */
+  legalActive: HTMLElement | null;
+}
+
+/**
  * A focus mode (scope) on a context's stack. Mirrors a CFRunLoop mode: while it
  * is current, the Tab walk services only the focusables registered into it
  * ({@link FocusContext.walkModeSet}) — a focus trap for free, for EVERY pushed
@@ -472,12 +515,15 @@ export interface FocusableRecord {
  * It reads deck-global settings (keyboard-access mode, ring modality) and the
  * "am I the key card?" gate from its coordinator ({@link FocusManager}), and
  * notifies the coordinator's single global subscriber set on change. **Only the
- * key card's context projects to the DOM**: every projection method is a no-op
- * when this context is not active, so a background card mutating its own stack
- * (a dialog mounting at `display:none`) never clobbers the active card's marks.
- * The coordinator calls {@link projectAll} when this context becomes the key
- * card, reconciling the DOM via the same "clear all globally, then stamp" pass
- * that is the safety net against a stale mark from a just-deactivated context.
+ * key card's context projects to the DOM**: {@link FocusContext.reproject} is a
+ * no-op when this context is not active, so a background card mutating its own
+ * stack (a dialog mounting at `display:none`) never clobbers the active card's
+ * marks.
+ *
+ * A context does not write marks itself. It contributes
+ * {@link FocusContext.projectionState} — its share of the derivation — and the
+ * coordinator computes the whole projection and converges the DOM onto it
+ * ({@link FocusManager.computeProjection} / {@link FocusManager.reproject}).
  */
 export class FocusContext {
   private focusables: Map<string, FocusableRecord> = new Map();
@@ -603,7 +649,7 @@ export class FocusContext {
     if (this.keyViewId === id && this.keyViewKeyboard === keyboard) return;
     this.keyViewId = id;
     this.keyViewKeyboard = keyboard;
-    this.syncKeyViewDomAttribute();
+    this.reproject();
     this.notify();
   }
 
@@ -622,7 +668,7 @@ export class FocusContext {
   refreshKeyViewProjection(keyboard?: boolean): void {
     if (this.keyViewId === null) return;
     if (keyboard !== undefined) this.keyViewKeyboard = keyboard;
-    this.syncKeyViewDomAttribute();
+    this.reproject();
   }
 
   /** The current key-view id, or `null` if none. */
@@ -1125,8 +1171,7 @@ export class FocusContext {
       // captures here, BEFORE its claim, so the pop restores the prior responder.
       restoreFirstResponder: this.coord.firstResponder(),
     });
-    this.syncFocusModeDomAttribute();
-    this.syncKeyWithinDomAttribute();
+    this.reproject();
     this.notify();
   }
 
@@ -1173,8 +1218,7 @@ export class FocusContext {
     if (at === -1) return;
     const wasTop = at === this.modeStack.length - 1;
     const [entry] = this.modeStack.splice(at, 1);
-    this.syncFocusModeDomAttribute();
-    this.syncKeyWithinDomAttribute();
+    this.reproject();
     if (wasTop) {
       // Restore the prior key view AND its keyboard-ness, so a key view that
       // wore the ring before this mode was pushed (e.g. a focus-cycling stop
@@ -1260,8 +1304,7 @@ export class FocusContext {
     // One transition: drop the host cycle AND everything above it (this surface,
     // plus any modes between) in a single splice.
     this.modeStack.splice(hostAt);
-    this.syncFocusModeDomAttribute();
-    this.syncKeyWithinDomAttribute();
+    this.reproject();
     // Land on the cycle's restore target. The resting caret is typically a
     // responder (not a key view), so this clears the key view and the cycle
     // consumer's `restingFocus` reclaim (fired off `cycling` → false) lands the
@@ -1756,7 +1799,7 @@ export class FocusContext {
   registerDefaultRing(node: HTMLElement): void {
     if (this.defaultRingStack.includes(node)) return;
     this.defaultRingStack.push(node);
-    this.syncDefaultRingDomAttribute();
+    this.reproject();
   }
 
   /** Remove a persistent-default-ring node (on unmount / opt-out). */
@@ -1765,69 +1808,59 @@ export class FocusContext {
     if (i < 0) return;
     this.defaultRingStack.splice(i, 1);
     node.removeAttribute("data-default-ring");
-    this.syncDefaultRingDomAttribute();
+    this.reproject();
   }
 
   // ---- DOM projection (key-card only) ----
 
   /**
-   * Project all three engine marks for this context — called by the coordinator
-   * when this context becomes the key card. The per-mark sync methods are gated
-   * on active (so a background context never projects); at the moment the
-   * coordinator calls this, this context IS active. Each runs its "clear all
-   * globally, then stamp" pass, which doubles as the safety net that wipes a
-   * stale mark left by the just-deactivated context.
+   * Reproject this context's engine marks onto the DOM.
+   *
+   * Gated on active: a background context never projects, so this is a no-op
+   * unless this context is the key card's. When it IS active, the coordinator
+   * recomputes the whole projection from engine state and converges the DOM to
+   * it — see {@link FocusManager.reproject}.
    */
-  projectAll(): void {
-    this.syncKeyViewDomAttribute();
-    this.syncKeyWithinDomAttribute();
-    this.syncFocusModeDomAttribute();
+  reproject(): void {
+    if (!this.isActive()) return;
+    this.coord.reproject();
   }
 
   /**
-   * Project the key view onto the DOM: clear `data-key-view` from any element
-   * that carries it, then stamp it on the element whose `data-responder-id`
-   * or `data-tug-focusable` matches the current key-view id. Gated on active —
-   * only the key card's context writes the projection.
+   * The mark half of the projection for THIS context — the part derived from
+   * context state alone, with no deck globals and no DOM reads. Split out so
+   * the derivation can be exercised without a document; the coordinator adds
+   * the deck-global fields and resolves elements.
    */
-  private syncKeyViewDomAttribute(): void {
-    if (typeof document === "undefined" || !this.isActive()) return;
-    document.querySelectorAll<HTMLElement>("[data-key-view]").forEach((el) => {
-      el.removeAttribute("data-key-view");
-      el.removeAttribute("data-key-view-kbd");
-    });
-    const el = this.keyViewElement();
-    if (el !== null && this.keyViewId !== null) {
-      el.setAttribute("data-key-view", this.keyViewId);
-      // The focus ring paints on a keyboard-reached key view (the engine's own
-      // signal, since `:focus-visible` is unreliable for programmatic focus) —
-      // and, when the ring-follows-pointer policy is on, on any pointer-driven
-      // key-view change too.
-      if (this.keyViewKeyboard || this.coord.ringFollowsPointerMode()) {
-        el.setAttribute("data-key-view-kbd", "");
-      }
-    }
-    // The default ring tracks the same signal, so it is recomputed in lockstep
-    // with the key view ([P14] one filled+ring per scope).
-    this.syncDefaultRingDomAttribute();
-    // Accessibility mode ([P10]): every projection of an engine-routed key
-    // view re-mirrors real DOM focus onto it. Arrow-roving moves the key
-    // view through `refreshKeyViewProjection` without a placement, so the
-    // projection is the one choke point that sees every move.
-    if (
-      el !== null &&
-      this.route === "engine-routed" &&
-      this.coord.keyboardAccessMode() === "accessibility"
-    ) {
-      this.coord.mirrorKeyViewFocus();
-    }
-    // Every projection is a promise about where the keyboard is; verify it
-    // once the surrounding task's paint-then-focus pair has settled.
-    this.coord.scheduleFocusInvariantCheck("projection");
+  projectionState(): FocusProjectionState {
+    const top = this.modeStack[this.modeStack.length - 1];
+    // Only a DESCEND scope (`trapped: false` — an accordion section, a list
+    // row) projects the within mark: there the key view moves INTO a container
+    // that stays its DOM ancestor, so marking that container "contains the
+    // active component" is true. A trapped floating surface (popover / sheet /
+    // alert / menu) is portaled OUT of its trigger — the captured
+    // `restoreKeyView` is the trigger, which does not contain the surface — so
+    // projecting the within mark onto it paints a spurious ring on the host
+    // control behind the open surface.
+    const keyWithinId =
+      top === undefined || top.trapped ? null : (top.restoreKeyView ?? null);
+    const mode = this.currentFocusMode();
+    return {
+      keyViewId: this.keyViewId,
+      keyViewKeyboard: this.keyViewKeyboard,
+      keyWithinId,
+      focusMode: mode === BASE_FOCUS_MODE ? null : mode,
+      route: this.route,
+    };
+  }
+
+  /** The top of this context's default-ring stack, or `null` at base. */
+  defaultRingTop(): HTMLElement | null {
+    return this.defaultRingStack[this.defaultRingStack.length - 1] ?? null;
   }
 
   /** Resolve the DOM element carrying the current key view, or `null`. */
-  private keyViewElement(): HTMLElement | null {
+  keyViewElement(): HTMLElement | null {
     if (typeof document === "undefined" || this.keyViewId === null) return null;
     const escaped =
       typeof CSS !== "undefined" && typeof CSS.escape === "function"
@@ -1842,79 +1875,10 @@ export class FocusContext {
    * Whether the current key view is itself a button — the one control that
    * claims the scope's Return for its own activation.
    */
-  private keyViewIsButton(): boolean {
+  keyViewIsButton(): boolean {
     const el = this.keyViewElement();
     if (el === null) return false;
     return el instanceof HTMLButtonElement || el.closest(".tug-button") !== null;
-  }
-
-  /**
-   * Project the persistent default ring: clear `data-default-ring` from every
-   * element that carries it, then stamp it on the TOP node of THIS context's
-   * stack iff the current key view is not itself a button ([P14]). Gated on
-   * active. The clear is global (not just this context's own stack) so that when
-   * a different pane becomes the key card, its projection wipes the stale ring
-   * the just-deactivated context left behind — the same "clear all globally,
-   * then stamp" safety net the key-view / key-within syncs run. A per-stack
-   * clear reconciles only the active context and strands a background context's
-   * ring lit (a Done button keeping its ring after another pane took focus).
-   */
-  private syncDefaultRingDomAttribute(): void {
-    if (typeof document === "undefined" || !this.isActive()) return;
-    document
-      .querySelectorAll<HTMLElement>("[data-default-ring]")
-      .forEach((el) => el.removeAttribute("data-default-ring"));
-    const top = this.defaultRingStack[this.defaultRingStack.length - 1];
-    if (top === undefined) return;
-    if (!this.keyViewIsButton()) top.setAttribute("data-default-ring", "");
-  }
-
-  /**
-   * Project the **immediate container** of the key view onto the DOM (depth 1):
-   * clear `data-key-within` from any element that carries it, then — when a scope
-   * is descended into — stamp it on the element whose `data-tug-focusable` /
-   * `data-responder-id` matches the top scope's `restoreKeyView`. Gated on
-   * active. At base (no pushed scope) nothing is marked.
-   */
-  private syncKeyWithinDomAttribute(): void {
-    if (typeof document === "undefined" || !this.isActive()) return;
-    document
-      .querySelectorAll<HTMLElement>(`[${KEY_WITHIN_ATTRIBUTE}]`)
-      .forEach((el) => el.removeAttribute(KEY_WITHIN_ATTRIBUTE));
-    const top = this.modeStack[this.modeStack.length - 1];
-    // Only a DESCEND scope (`trapped: false` — an accordion section, a list row)
-    // projects the within mark: there the key view moves INTO a container that
-    // stays its DOM ancestor, so marking that container "contains the active
-    // component" is true. A trapped floating surface (popover / sheet / alert /
-    // menu) is portaled OUT of its trigger — the captured `restoreKeyView` is the
-    // trigger, which does not contain the surface — so projecting the within mark
-    // onto it paints a spurious ring on the host control behind the open surface.
-    if (top === undefined || top.trapped) return;
-    const withinId = top.restoreKeyView ?? null;
-    if (withinId === null) return;
-    const escaped =
-      typeof CSS !== "undefined" && typeof CSS.escape === "function"
-        ? CSS.escape(withinId)
-        : withinId;
-    const el = document.querySelector<HTMLElement>(
-      `[data-responder-id="${escaped}"], [data-tug-focusable="${escaped}"]`,
-    );
-    el?.setAttribute(KEY_WITHIN_ATTRIBUTE, "");
-  }
-
-  /**
-   * Project the current (top) focus mode onto the document root: set
-   * `data-focus-mode="<scopeId>"` while a trap is current, remove it at base.
-   * Gated on active — the document root carries exactly the key card's mode.
-   */
-  private syncFocusModeDomAttribute(): void {
-    if (typeof document === "undefined" || !this.isActive()) return;
-    const mode = this.currentFocusMode();
-    if (mode === BASE_FOCUS_MODE) {
-      document.documentElement.removeAttribute(FOCUS_MODE_ATTRIBUTE);
-    } else {
-      document.documentElement.setAttribute(FOCUS_MODE_ATTRIBUTE, mode);
-    }
   }
 
   // ---- Internal ----
@@ -1995,17 +1959,16 @@ export class FocusManager {
 
   /**
    * Set the key card and project its context to the DOM ([P21] activation). The
-   * new active context's `projectAll` runs its "clear all globally, then stamp"
-   * pass, reconciling away the just-deactivated context's marks. Idempotent for
-   * an unchanged key card (re-projects so a re-activation of the same card — a
-   * window blur→focus — re-stamps its marks). Pass `null` to clear the key card
-   * (back to the default context).
+   * reprojection derives every mark from the NEW active context's state, so it
+   * reconciles away the just-deactivated context's marks in the same pass.
+   * Idempotent for an unchanged key card (re-projects so a re-activation of the
+   * same card — a window blur→focus — re-stamps its marks). Pass `null` to clear
+   * the key card (back to the default context).
    */
   setKeyCard(cardId: string | null): void {
     const changed = this.keyCardId !== cardId;
     this.keyCardId = cardId;
-    const active = this.activeContext();
-    active.projectAll();
+    this.reproject();
     // Reconcile the first responder for the now-active card — the per-card FR
     // axis of activation. setKeyCard is the UNIVERSAL activation signal: the
     // provider's `syncKeyCard` fires it for every way a card becomes active
@@ -2115,9 +2078,14 @@ export class FocusManager {
     const cardEl = document.querySelector<HTMLElement>(
       `[data-card-id="${cssEscapeId(cardId)}"]`,
     );
-    // …else the default-focus target's responder (never-focused card)…
+    // …else the default target's responder (never-focused card). The card's own
+    // registry answers first; the DOM chain covers cards with no registered
+    // focusables (raw native controls, engine-less bootstraps) and cards whose
+    // children have not registered yet when this settle runs.
     if (target === null && cardEl !== null) {
-      const { el } = resolveDefaultFocusTarget(cardEl);
+      const el =
+        this.defaultFocusableForCard(cardId)?.el ??
+        resolveDefaultFocusTarget(cardEl).el;
       target = el ? chain.findResponderForTarget(el) : null;
     }
     // …else the card's own container responder (Cmd-W must still land).
@@ -2577,9 +2545,153 @@ export class FocusManager {
   }
 
   /**
+   * Derive the complete DOM projection of the current engine state — every
+   * focus mark AND the one legal `activeElement`, from one computation.
+   *
+   * Side-effect-free: it reads engine state and the document, and writes
+   * nothing. {@link reproject} applies it; the watchdog reconciles against it.
+   * Because it derives from STATE rather than from a transition, any caller may
+   * run it at any time and get the same answer — which is what makes a
+   * transient key-card change recoverable instead of a wipe nothing restamps.
+   */
+  computeProjection(): FocusProjection {
+    const ctx = this.activeContext();
+    const state = ctx.projectionState();
+    const keyViewEl = ctx.keyViewElement();
+    const keyWithinEl =
+      state.keyWithinId === null
+        ? null
+        : this.elementForFocusKey(state.keyWithinId);
+    // The default ring and the key view track the same signal, so they are
+    // derived in lockstep ([P14] one filled+ring per scope): the ring shows on
+    // the top of the stack unless the key view is itself a button.
+    const ringTop = ctx.defaultRingTop();
+    return {
+      ...state,
+      keyViewEl,
+      // The focus ring paints on a keyboard-reached key view (the engine's own
+      // signal, since `:focus-visible` is unreliable for programmatic focus) —
+      // and, when the ring-follows-pointer policy is on, on any pointer-driven
+      // key-view change too.
+      keyViewKbd: state.keyViewKeyboard || this.ringFollowsPointer,
+      keyWithinEl,
+      defaultRingEl: ringTop !== null && !ctx.keyViewIsButton() ? ringTop : null,
+      legalActive: this.legalKeyboardElement().legal,
+    };
+  }
+
+  /**
+   * Converge the DOM onto {@link computeProjection}'s answer.
+   *
+   * Diff-then-write per mark: a mark is removed only from elements that should
+   * not carry it and set only where it is missing, so a reprojection that
+   * changes nothing writes nothing. The clear pass is document-wide rather than
+   * scoped to the active context's own elements — that is what wipes a stale
+   * mark left behind by a just-deactivated context (a Done button keeping its
+   * ring after another pane took focus).
+   *
+   * Gated on having a document. The active-context gate lives in
+   * {@link FocusContext.reproject}: contexts call through there, and the
+   * coordinator's own call sites are already operating on the active context.
+   */
+  reproject(): void {
+    if (this.applyProjection() === null) return;
+    // Every projection is a promise about where the keyboard is; verify it once
+    // the surrounding task's paint-then-focus pair has settled.
+    this.scheduleFocusInvariantCheck("projection");
+  }
+
+  /**
+   * The convergence pass itself, without the follow-up invariant check.
+   *
+   * Returns how many mark writes it had to make — `0` when the DOM already
+   * agreed with engine state, which is the steady-state answer. The reconciler
+   * calls this directly (rather than {@link reproject}) so that healing a mark
+   * cannot schedule the check that is currently running. `null` means there was
+   * no document to converge.
+   */
+  private applyProjection(): number | null {
+    if (typeof document === "undefined") return null;
+    const p = this.computeProjection();
+    let writes = 0;
+
+    for (const el of document.querySelectorAll<HTMLElement>("[data-key-view]")) {
+      if (el !== p.keyViewEl) {
+        el.removeAttribute("data-key-view");
+        el.removeAttribute("data-key-view-kbd");
+        writes += 1;
+      }
+    }
+    if (p.keyViewEl !== null && p.keyViewId !== null) {
+      if (p.keyViewEl.getAttribute("data-key-view") !== p.keyViewId) {
+        p.keyViewEl.setAttribute("data-key-view", p.keyViewId);
+        writes += 1;
+      }
+      const hasKbd = p.keyViewEl.hasAttribute("data-key-view-kbd");
+      if (p.keyViewKbd && !hasKbd) {
+        p.keyViewEl.setAttribute("data-key-view-kbd", "");
+        writes += 1;
+      } else if (!p.keyViewKbd && hasKbd) {
+        p.keyViewEl.removeAttribute("data-key-view-kbd");
+        writes += 1;
+      }
+    }
+
+    for (const el of document.querySelectorAll<HTMLElement>(
+      `[${KEY_WITHIN_ATTRIBUTE}]`,
+    )) {
+      if (el !== p.keyWithinEl) {
+        el.removeAttribute(KEY_WITHIN_ATTRIBUTE);
+        writes += 1;
+      }
+    }
+    if (p.keyWithinEl !== null && !p.keyWithinEl.hasAttribute(KEY_WITHIN_ATTRIBUTE)) {
+      p.keyWithinEl.setAttribute(KEY_WITHIN_ATTRIBUTE, "");
+      writes += 1;
+    }
+
+    for (const el of document.querySelectorAll<HTMLElement>("[data-default-ring]")) {
+      if (el !== p.defaultRingEl) {
+        el.removeAttribute("data-default-ring");
+        writes += 1;
+      }
+    }
+    if (p.defaultRingEl !== null && !p.defaultRingEl.hasAttribute("data-default-ring")) {
+      p.defaultRingEl.setAttribute("data-default-ring", "");
+      writes += 1;
+    }
+
+    const root = document.documentElement;
+    if (p.focusMode === null) {
+      if (root.hasAttribute(FOCUS_MODE_ATTRIBUTE)) {
+        root.removeAttribute(FOCUS_MODE_ATTRIBUTE);
+        writes += 1;
+      }
+    } else if (root.getAttribute(FOCUS_MODE_ATTRIBUTE) !== p.focusMode) {
+      root.setAttribute(FOCUS_MODE_ATTRIBUTE, p.focusMode);
+      writes += 1;
+    }
+
+    // Accessibility mode ([P10]): every projection of an engine-routed key view
+    // re-mirrors real DOM focus onto it. Arrow-roving moves the key view
+    // without a placement, so the projection is the one choke point that sees
+    // every move. `mirrorKeyViewFocus` is a no-op when the grant already holds,
+    // so this does not count as a write.
+    if (
+      p.keyViewEl !== null &&
+      p.route === "engine-routed" &&
+      this.accessMode === "accessibility"
+    ) {
+      this.mirrorKeyViewFocus();
+    }
+    return writes;
+  }
+
+  /**
    * Resolve the one legal `activeElement` for the current engine state
-   * (Spec S03). `null` for dom-granted means the granted surface is GONE —
-   * the incoherence case.
+   * (Spec S03) — the register half of {@link computeProjection}, which is its
+   * only caller. `null` for dom-granted means the granted surface is GONE: the
+   * incoherence case the reconciler reports rather than corrects.
    */
   private legalKeyboardElement(): {
     legal: HTMLElement | null;
@@ -2587,6 +2699,9 @@ export class FocusManager {
   } {
     const ctx = this.activeContext();
     const route = ctx.keyboardRoute();
+    // With no document there is no register to be legal or illegal; the route
+    // is still real engine state, so it is reported.
+    if (typeof document === "undefined") return { legal: null, route };
     // Accessibility mode ([P10]): real DOM focus mirrors the engine-routed
     // key view. Dom-granted routes keep their standard resolution — the
     // granted surface already IS real DOM focus, and the key view can lag
@@ -2714,18 +2829,62 @@ export class FocusManager {
     );
   }
 
+  /**
+   * The projection reconciler: recompute the projection from engine state,
+   * diff it against the DOM, and write back the difference — for the marks and
+   * for `document.activeElement` alike.
+   *
+   * Both halves answer to {@link computeProjection}, so the marks and the legal
+   * register can no longer drift from each other: they are fields of one
+   * record. The marks are healed unconditionally and quietly (drift is not a
+   * steal — nothing took the keyboard). The register is the loud half, with the
+   * ledger and budget the dev panel and app-tests read.
+   *
+   * Everything that survives as a special case is a NAMED CONTRACT, marked as
+   * such below and documented in `focus-language.md`: grant-lost model repair,
+   * standing legality classes (any sink park, bare native controls),
+   * jurisdiction, body tolerance, browser churn (the engine's own stop and the
+   * deferred-gesture window), and the reassert budget's stand-down. A carve-out
+   * that cannot be named is a bug.
+   */
   private checkFocusInvariant(reason: string): void {
     if (typeof document === "undefined") return;
     const ctx = this.activeContext();
-    const { legal, route } = this.legalKeyboardElement();
+
+    // The reconciler's first act: converge the MARKS. Everything the engine
+    // projects — key view, ring modality, key-within, focus mode, default ring
+    // — is recomputed from state and rewritten where the DOM disagrees. This is
+    // the capability the transition-driven syncs never had: a mark stripped by
+    // something outside the engine (a React re-render dropping an attribute, a
+    // peer script, a wipe from a transient key-card change) is healed on the
+    // next pass instead of standing until some unrelated transition happens to
+    // restamp it. In the steady state the diff writes nothing.
+    const healed = this.applyProjection() ?? 0;
+    if (healed > 0) {
+      // Mark drift is not a focus steal — nothing took the keyboard, the image
+      // of engine state simply fell out of date — so it rides `debug`, not the
+      // steal ledger. It is still worth naming: a mark that needs healing every
+      // pass means a peer writer, and the count is how that shows up.
+      tugDevLogStore.debug(
+        "focus-watchdog",
+        `reconciled ${healed} focus mark write(s) (${reason})`,
+        { writes: healed, keyCard: this.keyCardId, reason },
+      );
+    }
+
+    const p = this.computeProjection();
+    const legal = p.legalActive;
+    const route = p.route;
     const active =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
 
-    // Incoherence the watchdog cannot fix: a dom-granted route whose
-    // granted surface is gone. Fall back to engine-routed (the enclosing
-    // target keeps routing keys) and report loudly.
+    // NAMED CONTRACT — grant lost. Incoherence the reconciler cannot fix by
+    // reprojecting: a dom-granted route whose granted surface is gone. This is
+    // MODEL repair, not projection repair — the engine's own state is wrong, so
+    // it falls back to engine-routed (the enclosing target keeps routing keys)
+    // and reports loudly rather than quietly.
     if (route === "dom-granted" && legal === null) {
       const activeDesc = describeElementForInvariant(active);
       const signature = `grant-lost→${activeDesc}`;
@@ -2762,11 +2921,18 @@ export class FocusManager {
       active !== null &&
       legal !== null &&
       (legal === active || legal.contains(active));
-    // ANY sink is a legal park (a jailing surface hosts its own; see
-    // KEY_SINK_ATTRIBUTE), and a bare native form control is legal by
-    // class. In accessibility mode a sink park is legal only while there
-    // is no key view to mirror — with one present, the mirror is the one
-    // legal answer (Spec S03) and a stale park gets corrected onto it.
+    // NAMED CONTRACT — standing legality classes. The projection names ONE
+    // legal element, but two classes are legal wherever they appear:
+    //
+    //  - ANY key sink is a legal park (a jailing surface hosts its own; see
+    //    KEY_SINK_ATTRIBUTE), because parking is hygiene and every sink parks
+    //    equally well. In accessibility mode a sink park is legal only while
+    //    there is no key view to mirror — with one present, the mirror is the
+    //    one legal answer (Spec S03) and a stale park gets corrected onto it.
+    //  - A bare native form control is legal by CLASS: it is a text surface by
+    //    nature even when it carries no engine identity the target union can
+    //    name, and the engine grants focus to exactly this class, so grant and
+    //    legality stay symmetric (see `isBareNativeControl`).
     const sinkIsLegalPark =
       active !== null &&
       active.hasAttribute(KEY_SINK_ATTRIBUTE) &&
@@ -2781,28 +2947,17 @@ export class FocusManager {
       return;
     }
 
-    // Jurisdiction: the watchdog governs the ENGINE's universe. An element
-    // with no engine identity anywhere in its ancestry — not inside any
-    // card, carrying no focusable / responder / state-key marker — is
-    // foreign DOM the engine does not own (a dev overlay, a body-portaled
-    // utility menu, a harness fixture). Correcting it would fight a system
-    // the engine knows nothing about; leave it alone. Every governed
-    // surface (cards, portaled sheets whose fields register focusables)
-    // stays in scope by construction.
-    if (
-      active !== null &&
-      active !== document.body &&
-      active.closest("[data-card-id]") === null &&
-      active.closest(
-        "[data-tug-focusable], [data-responder-id], [data-tug-state-key]",
-      ) === null
-    ) {
+    // NAMED CONTRACT — jurisdiction. The reconciler governs the ENGINE's
+    // universe and nothing else; see {@link governsElement}. Correcting a
+    // foreign surface would fight a system the engine knows nothing about.
+    if (active !== null && !this.governsElement(active)) {
       this.lastInvariantSignature = null;
       this.resetReassertEpisode();
       return;
     }
 
-    // Focus resting on `<body>` / nothing is NOT corrected: parking is
+    // NAMED CONTRACT — body tolerance. Focus resting on `<body>` / nothing is
+    // NOT corrected: parking is
     // hygiene, not a routing precondition ([P04]) — keys route from the
     // engine's target regardless, and placements park at commit time. More
     // load-bearing: a blur-to-body is routinely the TRANSIENT middle of the
@@ -2816,15 +2971,19 @@ export class FocusManager {
       return;
     }
 
-    // The engine's own projected key view receiving browser focus (a
-    // clicked stop taking mousedown focus) is not a steal — ring and
-    // router agree; only the register is off. Correct quietly.
-    const ctxKeyView = ctx.keyView();
-    const keyViewEl =
-      ctxKeyView !== null ? this.elementForFocusKey(ctxKeyView) : null;
-    // Browser churn corrected quietly: the engine's own stop taking browser
-    // focus, and the mousedown default of a deferred drag gesture (see
-    // `deferredGestureActive`).
+    // NAMED CONTRACT — browser churn, corrected quietly. Two cases, both of
+    // them the browser doing its job rather than a writer taking the keyboard:
+    //
+    //  - The engine's own projected key view receiving browser focus (a clicked
+    //    stop taking mousedown focus). Ring and router already agree; only the
+    //    register is off, so this is a reproject, not a steal.
+    //  - The mousedown default of a DEFERRED drag gesture. A prevented
+    //    mousedown never begins a native drag, so the engine deliberately lets
+    //    the default through and accepts the focus it lands; attributing that
+    //    as a steal would ledger a warn on every snippet drag that no writer
+    //    could fix. The window is opened and closed explicitly by the gesture
+    //    owner (`beginDeferredGesture` / `endDeferredGesture`).
+    const keyViewEl = p.keyViewEl;
     const ownStop =
       this.deferredGestureActive ||
       (keyViewEl !== null &&
@@ -2884,6 +3043,110 @@ export class FocusManager {
   }
 
   /**
+   * Whether `el` belongs to the engine's universe — the one question the
+   * engine asks about a DOM element, and the boundary of its authority.
+   *
+   * Governed: `<body>` (the empty register), anything inside a deck card,
+   * anything carrying an engine identity marker (focusable / responder /
+   * state-key — which is how a portaled sheet's fields stay in scope despite
+   * having no `[data-card-id]` ancestor), and any key sink.
+   *
+   * Not governed: a dev overlay, a body-portaled utility menu, a harness
+   * fixture, a browser-native surface — DOM the engine neither placed nor
+   * models. The engine does not correct focus there and does not claim focus
+   * away from there.
+   *
+   * This is deliberately a membership test, not a taxonomy of element kinds.
+   * The predicate the theft gate used to run — "is this a body? a chrome
+   * handle? a sink? another card? a sheet?" — was reverse-engineering engine
+   * facts from the shape of whatever held `activeElement`. Ownership is the
+   * only distinction the engine actually needs.
+   */
+  governsElement(el: Element): boolean {
+    if (typeof document === "undefined") return false;
+    if (el === document.body) return true;
+    if (el.hasAttribute(KEY_SINK_ATTRIBUTE)) return true;
+    if (el.closest("[data-card-id]") !== null) return true;
+    return (
+      el.closest(
+        "[data-tug-focusable], [data-responder-id], [data-tug-state-key]",
+      ) !== null
+    );
+  }
+
+  /**
+   * May an activation dispatch claim the keyboard for `targetCardId`?
+   * (Spec S03 — the replacement for the retired `focus-theft-gate` module.)
+   *
+   * The question every programmatic focus path must answer is "would this
+   * steal the keyboard from the user?" The gate answered it by classifying
+   * `document.activeElement` against a taxonomy of element kinds — nine
+   * branches enumerating the configurations in which DOM focus was really the
+   * engine's own. Every one of those was an engine fact reverse-engineered
+   * from the DOM: "body has focus" meant no grant was outstanding, "the sink
+   * is focused" meant the engine held an engine-routed park, "focus is in
+   * another card" meant another card held the grant. The engine knows all of
+   * that directly, because it placed it.
+   *
+   * What is left is four rules:
+   *
+   *  - **Deck state.** A backgrounded app never claims (touching `.focus()`
+   *    while another window owns the caret is how reload-steals-typing bugs
+   *    happen), and neither does a caller whose model of the active card is
+   *    already stale.
+   *  - **An empty register is free.** Nothing is being taken.
+   *  - **The chrome allowlist** (`data-tug-chrome="non-focus-capturing"`) —
+   *    the one genuinely un-modeled DOM input that survives, for chrome that
+   *    briefly owns focus between interactions (drag handles, tab buttons).
+   *    It shrinks as the engine models more of those gestures.
+   *  - **Ownership.** If the engine governs whatever holds the register, the
+   *    keyboard is somewhere the engine put it or models, and moving it is
+   *    engine business rather than theft — whether that is this card
+   *    (idempotent), another card (deliberate navigation), a pane-modal
+   *    sheet, or a sink park. Otherwise a real surface outside the engine's
+   *    universe holds the keyboard: refuse.
+   */
+  mayClaimActivationFocus(
+    targetCardId: string,
+    state: DeckState,
+    opts?: { reason?: string },
+  ): boolean {
+    const refuse = (why: string): false => {
+      tugDevLogStore.debug(
+        "focus-activation",
+        `refusing activation focus claim for ${targetCardId}: ${why}`,
+        { targetCardId, why, reason: opts?.reason ?? "(unspecified)" },
+      );
+      return false;
+    };
+
+    if (!state.hasFocus) return refuse("app is backgrounded");
+    if (!isFocusDestination(targetCardId, state)) {
+      return refuse("target is not the current focus destination");
+    }
+    // No document: no register, nothing to take.
+    if (typeof document === "undefined") return true;
+
+    const active = document.activeElement;
+    if (active === null || active === document.body) return true;
+    if (
+      active.closest('[data-tug-chrome="non-focus-capturing"]') !== null
+    ) {
+      return true;
+    }
+    if (this.governsElement(active)) return true;
+    return refuse("a surface outside the engine's universe holds the keyboard");
+  }
+
+  /**
+   * The deck-state half of {@link mayClaimActivationFocus}, callable without
+   * an engine — see the module-level `mayClaimActivationFocus` wrapper.
+   */
+  static deckStatePermits(targetCardId: string, state: DeckState): boolean {
+    return state.hasFocus && isFocusDestination(targetCardId, state);
+  }
+
+  /**
    * Spend one unit of the reassert budget. Returns whether the
    * correction may proceed. On exhaustion the watchdog STANDS DOWN for
    * the rest of the episode (until a legal pass or a fresh placement
@@ -2905,38 +3168,6 @@ export class FocusManager {
     }
     this.reassertEpisodeCount += 1;
     return true;
-  }
-
-  // ---- Pointer-placement suppression (one gesture) ----
-
-  /**
-   * One-shot latch armed by the pane activation classifier for a
-   * cross-card ACTIVATION click (Mac first-click-activates: the click
-   * that brings a background card forward activates it and does not
-   * also place). The activation transfer realizes the card's RECORDED
-   * destination; the provider's pointerdown placement pass — which runs
-   * later in the same dispatch, after the card has already become the
-   * key card — would otherwise overwrite that destination with whatever
-   * sat under the click (or strip a just-granted editor with a `none`
-   * place on prose). Mirrors pane-focus-controller's mousedown
-   * `preventDefault` for the same gesture.
-   */
-  private pointerPlacementSuppressedOnce = false;
-
-  /** Arm the one-shot: the current pointer gesture is an activation click. */
-  suppressPointerPlacementOnce(): void {
-    this.pointerPlacementSuppressedOnce = true;
-  }
-
-  /**
-   * Consume the one-shot. Called once per pointerdown at the provider's
-   * promotion-listener entry (before any early return, so a refused or
-   * redirected click cannot leave a stale latch for the next gesture).
-   */
-  consumePointerPlacementSuppression(): boolean {
-    const armed = this.pointerPlacementSuppressedOnce;
-    this.pointerPlacementSuppressedOnce = false;
-    return armed;
   }
 
   // ---- Keyboard-access mode (deck-global) ----
@@ -3112,6 +3343,66 @@ export class FocusManager {
   walkOrder(): FocusableRecord[] {
     return this.activeContext().walkOrder();
   }
+
+  /**
+   * The card's default focus target chosen from its OWN registry: the head of
+   * the authored walk order.
+   *
+   * The walk already encodes everything the DOM selector chain had to learn
+   * piecemeal — authored group order, mode participation, rendered-ness,
+   * interactivity — so this is the same question with one source of truth. The
+   * chain's `data-tug-focus="refuse"` exclusion has no counterpart here:
+   * refusal governs what a POINTER gesture may move, while registration is an
+   * explicit authoring act that puts a control in the keyboard walk. A button
+   * authored into a focus group is a legitimate default target even though
+   * clicking it never moves the key view.
+   *
+   * `skip` is injected so the rule itself stays free of DOM reads.
+   *
+   * Returns `null` when the card has no context yet, has registered no
+   * focusables, or every stop is skipped: a cold boot, or a card whose children
+   * have not run their registration effects when the activation settles. The
+   * DOM selector chain covers those.
+   *
+   * This resolves the card's default for the FIRST-RESPONDER settle. It is
+   * deliberately not the resolution behind the default focus CLAIM: placing the
+   * registry head on activation would give a card a key view merely for coming
+   * forward, and the first Tab would then advance past the card's first
+   * authored stop instead of landing on it.
+   */
+  defaultFocusableIdForCard(
+    cardId: string,
+    skip: (id: string) => boolean,
+  ): string | null {
+    const ctx = this.contexts.get(cardId);
+    if (ctx === undefined) return null;
+    for (const record of ctx.walkOrder()) {
+      if (!skip(record.id)) return record.id;
+    }
+    return null;
+  }
+
+  /**
+   * {@link defaultFocusableIdForCard} resolved against the document: the id plus
+   * the element carrying it. A stop with no element in the document is passed
+   * over — it registered but has not mounted (or has already unmounted).
+   */
+  defaultFocusableForCard(
+    cardId: string,
+  ): { id: string; el: HTMLElement } | null {
+    if (typeof document === "undefined") return null;
+    let resolved: { id: string; el: HTMLElement } | null = null;
+    const id = this.defaultFocusableIdForCard(cardId, (candidateId) => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-tug-focusable="${cssEscapeId(candidateId)}"]`,
+      );
+      if (el === null) return true;
+      resolved = { id: candidateId, el };
+      return false;
+    });
+    return id === null ? null : resolved;
+  }
+
   registerDefaultRing(node: HTMLElement): void {
     this.activeContext().registerDefaultRing(node);
   }
@@ -3149,6 +3440,28 @@ export function registerFocusManager(manager: FocusManager | null): void {
 /** The active FocusManager, or `null` outside a mounted provider. */
 export function getFocusManager(): FocusManager | null {
   return activeFocusManager;
+}
+
+/**
+ * May an activation dispatch claim the keyboard for `targetCardId`?
+ * (Spec S03.) The entry point every programmatic focus path calls — see
+ * {@link FocusManager.mayClaimActivationFocus} for the rules.
+ *
+ * With no engine mounted (a gallery preview, a headless bootstrap) only the
+ * deck-state half applies: there is no engine-routed keyboard to protect and
+ * no activation channel to strand, so ownership is not a question anyone can
+ * ask. This is the honest degradation, not a permissive default.
+ */
+export function mayClaimActivationFocus(
+  targetCardId: string,
+  state: DeckState,
+  opts?: { reason?: string },
+): boolean {
+  const manager = activeFocusManager;
+  if (manager === null) {
+    return FocusManager.deckStatePermits(targetCardId, state);
+  }
+  return manager.mayClaimActivationFocus(targetCardId, state, opts);
 }
 
 /**

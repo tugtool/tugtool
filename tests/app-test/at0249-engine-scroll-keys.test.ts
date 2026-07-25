@@ -90,7 +90,10 @@ describe.skipIf(!SHOULD_RUN)("at0249 — engine scroll-key route", () => {
             timeoutMs: 6_000,
           });
 
-          // Precondition: DOM focus is NOT inside the scroll container.
+          // Precondition: DOM focus is NOT inside the scroll container — the
+          // engine-routed park keeps `document.activeElement` on the sink
+          // outside every card. This is the negative form of the dom-granted
+          // read: the scroll region is driven without a grant.
           const focusInContainer = await app.evalJS<boolean>(
             `(function(){
               var el = document.querySelector(${JSON.stringify(SCROLL_SELECTOR)});

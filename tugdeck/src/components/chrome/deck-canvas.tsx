@@ -24,6 +24,7 @@ import { useResponderChain } from "@/components/tugways/responder-chain-provider
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { transferFocusForActivation } from "@/focus-transfer";
+import { CANVAS_BACKGROUND_ATTRIBUTE } from "@/gesture-interpreter";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
 import { CanvasOverlayRoot } from "./canvas-overlay-root";
@@ -599,9 +600,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         * containerRef wrapper: positioning context for card frames, snap guides,
         * and SVG flash elements. Fills the full canvas area (position:absolute, inset:0).
         * [D03]
+        *
+        * It also carries the canvas-background marker. Every pane renders as a
+        * child of this element, so a pointerdown whose target IS this element
+        * struck bare canvas — a deliberate deselect. The gesture interpreter
+        * matches on target identity, not containment, so a click that merely
+        * misses every pane (a portal gap, an overlay seam, geometry below the
+        * fold) does not deselect.
         */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
+      <div
+        ref={containerRef}
+        style={{ position: "absolute", inset: 0 }}
+        {...{ [CANVAS_BACKGROUND_ATTRIBUTE]: "" }}
+      >
       {/* TugPanes: one per pane in deckState.panes.
           Rendered in stable ID order (no DOM reordering on focus change).
           Z-index from store array position (first = lowest). Panes whose

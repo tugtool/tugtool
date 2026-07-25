@@ -39,6 +39,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { launchTugApp } from "./_harness";
+import { keyboardIsInCard } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 
@@ -142,13 +143,12 @@ describe.skipIf(!SHOULD_RUN)("m21: drag aborted by Escape preserves focus", () =
       // ran, so the input is untouched).
       expect(await app.getFormControlValue("A", INPUT_PERSIST_KEY)).toBe("alpha");
 
-      // Focus restored inside A's content via the cancel hook in
-      // cardDragCoordinator#onDocumentKeydown → transferFocusAfterMove.
-      const focusedInsideA = await app.evalJS<boolean>(
-        `document.activeElement !== null &&
-         document.querySelector('[data-card-host][data-card-id="A"]')?.contains(document.activeElement) === true`,
-      );
-      expect(focusedInsideA).toBe(true);
+      // Keyboard restored to A via the cancel hook in
+      // cardDragCoordinator#onDocumentKeydown → transferFocusAfterMove. The
+      // engine may satisfy that by marking A's key view with the sink parked
+      // outside the card, or by granting a text surface inside it real DOM
+      // focus; `keyboardIsInCard` accepts either.
+      expect(await app.evalJS<boolean>(keyboardIsInCard("A"))).toBe(true);
     } catch (err) {
       const tail = app.tailLog(200);
       if (tail !== "") {

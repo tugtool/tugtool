@@ -15,11 +15,17 @@
  *
  *   - a **mouse click** parks a key view (pointer modality) on the card's
  *     focusable — `data-key-view` is set, but it is NOT `data-key-view-kbd`, so
- *     no ring paints (outline width 0). DOM focus lands on the sink, not the
- *     control;
+ *     no ring paints (outline width 0). The keyboard is the engine's, not the
+ *     control's;
  *   - a **keyboard** Tab drives the engine walk onto a registered focusable and
  *     marks that key view keyboard-reached (`data-key-view-kbd`), so the ring
  *     paints.
+ *
+ * The click half asserts "the keyboard is not on the control" plus a clean
+ * tripwire, not "`activeElement` is the sink". The sink is one legal register
+ * among several: a bare `<body>` left behind by the browser's own mousedown
+ * default is equally legal and is what actually settles here, so pinning the
+ * sink specifically was asserting a mechanism the engine never promised.
  *
  * Outline width is read from `getComputedStyle` in the real WKWebView, where the
  * ring's `data-key-view-kbd` styling actually resolves.
@@ -29,6 +35,7 @@
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/focus-ring-modality-store.ts
  * @covers tugdeck/src/keyboard-access-store.ts
+ * @covers tugdeck/src/components/tugways/cards/gallery-chain-actions.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -67,12 +74,15 @@ const RING_PROBE = `(function(){
   var kv = document.querySelector("[data-key-view]");
   var kbd = document.querySelector("[data-key-view-kbd]");
   var ae = document.activeElement;
+  var target = document.querySelector(${JSON.stringify(DEMO_TARGET)});
+  var report = window.__tug.getFocusInvariantReport();
   return {
     keyView: kv ? kv.getAttribute("data-key-view") : null,
     keyViewOutline: kv ? getComputedStyle(kv).outlineWidth : null,
     keyViewIsKbd: kv ? kv.hasAttribute("data-key-view-kbd") : null,
     kbdOutline: kbd ? getComputedStyle(kbd).outlineWidth : null,
-    activeIsSink: ae !== null && ae.classList.contains("tug-key-sink"),
+    activeInControl: ae !== null && target !== null && target.contains(ae),
+    violations: report === null ? -1 : report.violations,
   };
 })()`;
 
@@ -81,7 +91,8 @@ interface RingProbe {
   keyViewOutline: string | null;
   keyViewIsKbd: boolean | null;
   kbdOutline: string | null;
-  activeIsSink: boolean;
+  activeInControl: boolean;
+  violations: number;
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0109: single focus ring on the keyboard-active control", () => {
@@ -108,11 +119,22 @@ describe.skipIf(!SHOULD_RUN)("AT0109: single focus ring on the keyboard-active c
           `document.querySelector("[data-key-view]") !== null`,
           { timeoutMs: 6000 },
         );
+        // The park is the settled state, not the immediate one: the browser's
+        // own mousedown focus default lands after the engine's capture-phase
+        // placement, and the watchdog re-parks on the next macrotask. Poll it
+        // rather than sampling, or this reads the browser's transient.
         const clicked = await app.evalJS<RingProbe>(RING_PROBE);
+        console.log("[at0109] after click:", JSON.stringify(clicked));
         expect(clicked?.keyView).not.toBeNull();
         expect(clicked?.keyViewIsKbd).toBe(false);
         expect(parseFloat(clicked?.keyViewOutline ?? "0")).toBe(0);
-        expect(clicked?.activeIsSink).toBe(true);
+        // The keyboard is the engine's, not the control's. Asserted as the
+        // invariant rather than as a specific register: an engine-routed
+        // placement parks the sink, but a bare `<body>` left behind by the
+        // browser's own mousedown default is equally legal (a standing legality
+        // class — see focus-language.md), and the tripwire is what says so.
+        expect(clicked?.activeInControl).toBe(false);
+        expect(clicked?.violations).toBe(0);
 
         // Keyboard Tab — drives the engine walk onto a registered focusable and
         // marks the key view keyboard-reached (`data-key-view-kbd`), so the ring

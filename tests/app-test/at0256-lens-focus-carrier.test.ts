@@ -111,6 +111,8 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
           // list RECLAIMS the ring. Neither step leaves the list carrier-less.
           await app.nativeKey(" ");
           await app.waitForCondition<boolean>(EDITOR, { timeoutMs: 4_000 });
+          // The snippet editor is a dom-granted text surface — containment of
+          // `document.activeElement` is the correct read for the grant.
           await app.waitForCondition<boolean>(
             `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true`,
             { timeoutMs: 3_000 },

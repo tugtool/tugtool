@@ -141,9 +141,9 @@ function installDeckStoreFocusListeners(): void {
     const store = getDeckStore();
     if (store === null) return;
     // Order matters: setHasFocus(true) must land before the helper
-    // call because canProgrammaticallyFocus reads state.hasFocus —
-    // the gate would refuse a transfer issued while hasFocus is
-    // still false from the prior blur.
+    // call because the engine's activation-permission query reads
+    // state.hasFocus — it would refuse a transfer issued while
+    // hasFocus is still false from the prior blur.
     store.setHasFocus(true);
     reactivateCurrentFocusDestination(store);
   };
