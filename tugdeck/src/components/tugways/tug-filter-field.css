@@ -95,6 +95,24 @@
   border-color: transparent;
 }
 
+/* ---- Disabled: recede, never darken ----
+ *
+ * `TugInput`'s disabled pose swaps in a distinct field surface, which on the
+ * dark themes is DARKER than the resting one. On a form that is right — the
+ * dead field sinks into the sheet. In a section band it inverts: the band is
+ * already dark, so a darker box is a HIGHER-contrast box, and the one field
+ * with nothing to offer became the loudest thing on the row.
+ *
+ * So a disabled filter field keeps the resting surface and simply fades. The
+ * whole box goes — fill, placeholder, and all — by the same disabled opacity
+ * every other control uses, which is a reduction in presence at any theme's
+ * tone, light or dark, rather than a swap that has to guess the direction.
+ */
+.tug-filter-field .tug-input.tug-filter-field-input:disabled {
+  background-color: var(--tug7-surface-field-primary-normal-plain-rest);
+  opacity: var(--tugx-control-disabled-opacity, 0.65);
+}
+
 /* ---- Band-mounted: on the header's own baseline ----
  *
  * A `tool-call-header` aligns its row by putting every item in a one-line box

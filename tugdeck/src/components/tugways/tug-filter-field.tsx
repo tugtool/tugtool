@@ -25,6 +25,15 @@
  *    body reads through `useSyncExternalStore` (the Lens sections, via
  *    `lens-filter-store.ts`).
  *
+ * ## Nothing to filter
+ *
+ * `disabled` is for a list that is EMPTY, not one that has been filtered empty
+ * — see the prop. The distinction is the whole safety of the feature: the
+ * filtered-to-zero state is the one where the field is the only way back, so it
+ * must stay live there, while a list with no items at all has no query worth
+ * offering. A disabled field goes gray, refuses the caret, and registers no
+ * focus stop, so the Tab walk passes a dead control by.
+ *
  * ## Value authority and resets
  *
  * The `<input>` is uncontrolled: the DOM owns the text, `defaultValue` seeds
@@ -115,6 +124,18 @@ export interface TugFilterFieldProps {
    * @default "sm"
    */
   size?: TugInputSize;
+  /**
+   * Inert: there is nothing to filter. A list with no items at all makes its
+   * filter a control with no work to do, so the field goes gray and drops out
+   * of the Tab walk (`TugInput` declines to register a disabled stop) rather
+   * than standing there inviting a query that could only ever return nothing.
+   *
+   * This is the UNFILTERED emptiness, never the filtered one: a query that
+   * matches nothing must leave the field live, or it disables itself the
+   * instant it succeeds at narrowing and the user cannot clear it ([R02]).
+   * @default false
+   */
+  disabled?: boolean;
   /** Author the field into a focus group ([P02]); forwarded to `TugInput`. */
   focusGroup?: string;
   /** Order within {@link focusGroup}. */
@@ -139,6 +160,7 @@ export function TugFilterField({
   defaultValue,
   fill = false,
   size = "sm",
+  disabled = false,
   focusGroup,
   focusOrder,
   focusPolicy,
@@ -281,6 +303,7 @@ export function TugFilterField({
           ref={inputRef}
           type="text"
           size={size}
+          disabled={disabled}
           className="tug-filter-field-input"
           placeholder={placeholder}
           aria-label={ariaLabel ?? placeholder}
@@ -302,6 +325,7 @@ export function TugFilterField({
             icon={<X />}
             aria-label="Clear filter"
             size="2xs"
+            disabled={disabled}
             onClick={clear}
           />
         </span>

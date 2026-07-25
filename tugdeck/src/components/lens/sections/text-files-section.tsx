@@ -25,7 +25,7 @@ import { Clock3, FileText } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
-import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import { setSectionContent } from "@/components/lens/lens-section-content";
 import { dispatchAction } from "@/action-dispatch";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import {
@@ -226,13 +226,23 @@ function TextFilesSectionBody({ host }: { host: LensSectionHost }): React.ReactE
   const count = dataSource.numberOfItems();
   const listRef = useRef<TugListViewHandle>(null);
 
-  // Every row is a cursorable open-file cell. Publish whether the band holds
-  // any so the Lens skips it for the Cmd-L seed / Tab walk when it is empty.
+  // Every row is a cursorable open-file cell. Publish what the band holds:
+  // `navigable` so the Lens skips it for the Cmd-L seed / Tab walk when the
+  // list shows nothing, `populated` (the count BEFORE the filter) so the band
+  // knows whether there is anything to filter at all.
   const hasContent = count > 0;
+  const hasItems = dataSource.unfilteredCount() > 0;
   useLayoutEffect(() => {
-    setSectionHasContent(host.focusGroup, hasContent);
-    return () => setSectionHasContent(host.focusGroup, false);
-  }, [host.focusGroup, hasContent]);
+    setSectionContent(host.focusGroup, {
+      navigable: hasContent,
+      populated: hasItems,
+    });
+    return () =>
+      setSectionContent(host.focusGroup, {
+        navigable: false,
+        populated: false,
+      });
+  }, [host.focusGroup, hasContent, hasItems]);
 
   const initialSelectedIndex = useMemo(() => {
     if (lastSelectedTextId === null) return undefined;

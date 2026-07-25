@@ -26,6 +26,9 @@
  *     drag grip inside the band. Fails if the field holds its dial width under
  *     pressure — the row then overflows and pushes the grip out past the rail's
  *     edge, where it cannot be grabbed.
+ *   - **An empty section's filter is inert (F):** a band whose list has no items
+ *     at all disables its field and registers no focus stop for it. The pair
+ *     with (B) is the point: emptiness disables, filtered-emptiness never does.
  *
  * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), so the rows are
  * real and deterministic.
@@ -64,6 +67,10 @@ const MATCHING_FRAGMENT = "zebra";
 const ABSENT_FRAGMENT = "qqzzxx";
 
 const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
+/** The Text Files band — this test seeds no text files, so it is the empty
+ *  section whose filter must be inert. */
+const EMPTY_SECTION = '.lens-section[data-lens-section="text-files"]';
+const EMPTY_FILTER_INPUT = `${EMPTY_SECTION} [data-testid="lens-section-filter"] input`;
 const FILTER_INPUT = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] input`;
 const FILTER_CLEAR = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] button`;
 const ROW = ".lens-snippets-list .snippet-row-content[data-snippet-id]";
@@ -185,6 +192,15 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
               })()`,
             ),
           ).toBe(true);
+          // …and still LIVE. Emptiness disables a filter field, but only the
+          // section's own emptiness — a field that disabled itself the moment
+          // its query matched nothing would lock the user out of the state it
+          // just created.
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(FILTER_INPUT)}).disabled`,
+            ),
+          ).toBe(false);
 
           // (C) Escape clears the filter in place: rows come back, the section
           // stays expanded, and the Lens stays open.
@@ -260,6 +276,23 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             `document.querySelector(${JSON.stringify(FILTER_INPUT)}).getBoundingClientRect().width`,
           );
           expect(fieldWidth).toBeGreaterThan(60);
+
+          // (F) A section with no items at all — this run seeds no text files —
+          // disables its filter and drops it from the keyboard walk. The
+          // focusable attribute is the walk's own record: no attribute, no
+          // stop, so Tab passes the whole empty band by.
+          const emptyField = await app.evalJS<{
+            disabled: boolean;
+            registered: boolean;
+          }>(`(function(){
+            var el = document.querySelector(${JSON.stringify(EMPTY_FILTER_INPUT)});
+            if (el === null) throw new Error("text-files filter input not found");
+            return {
+              disabled: el.disabled,
+              registered: el.hasAttribute("data-tug-focusable"),
+            };
+          })()`);
+          expect(emptyField).toEqual({ disabled: true, registered: false });
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {

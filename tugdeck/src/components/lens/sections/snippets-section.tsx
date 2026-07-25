@@ -77,7 +77,7 @@ import {
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
-import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import { setSectionContent } from "@/components/lens/lens-section-content";
 import {
   getFilterQuery,
   getFilterVersion,
@@ -720,13 +720,24 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // a focus stop and drops out of the ⌘L seed, exactly like an empty one. The
   // band's filter field registers independently, so it stays reachable.
   const hasContent = dataSource.numberOfItems() > 0;
+  // …and what it holds BEFORE the filter, the separate question the band's
+  // filter field turns on: a section filtered to zero still has items.
+  const hasItems = dataSource.unfilteredCount() > 0;
 
-  // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
-  // when it is empty (an empty list is not a focus stop).
+  // Publish both: `navigable` so the Lens skips this band for the Cmd-L seed /
+  // Tab walk when the list shows nothing, `populated` so the band knows
+  // whether there is anything to filter at all.
   useLayoutEffect(() => {
-    setSectionHasContent(host.focusGroup, hasContent);
-    return () => setSectionHasContent(host.focusGroup, false);
-  }, [host.focusGroup, hasContent]);
+    setSectionContent(host.focusGroup, {
+      navigable: hasContent,
+      populated: hasItems,
+    });
+    return () =>
+      setSectionContent(host.focusGroup, {
+        navigable: false,
+        populated: false,
+      });
+  }, [host.focusGroup, hasContent, hasItems]);
 
   const listRef = useRef<TugListViewHandle>(null);
   const listWrapRef = useRef<HTMLDivElement | null>(null);

@@ -38,7 +38,7 @@ import { GitBranch } from "lucide-react";
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
-import { setSectionHasContent } from "@/components/lens/lens-section-content";
+import { setSectionContent } from "@/components/lens/lens-section-content";
 import {
   getFilterQuery,
   getFilterVersion,
@@ -346,6 +346,9 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
   // stop, exactly like an empty one. The band's field registers separately, so
   // it stays reachable and clearable.
   const hasContent = count > 0;
+  // …and what it holds BEFORE the filter, which is the separate question the
+  // band's filter field turns on: a section filtered to zero still has items.
+  const hasItems = dataSource.unfilteredCount() > 0;
 
   // Reorder by grip: commit on drop ([Q02]). Rows match by their stable
   // `data-session-id`; the FLIP animates the row content, the store commit
@@ -377,12 +380,20 @@ function SessionsSectionBody({ host }: { host: LensSectionHost }): React.ReactEl
     [onGripPointerDown],
   );
 
-  // Publish content so the Lens skips this band for the Cmd-L seed / Tab walk
-  // when it is empty (an empty list is not a focus stop).
+  // Publish what this band holds: `navigable` so the Lens skips it for the
+  // Cmd-L seed / Tab walk when the list shows nothing, `populated` so the band
+  // knows whether there is anything to filter at all.
   useLayoutEffect(() => {
-    setSectionHasContent(host.focusGroup, hasContent);
-    return () => setSectionHasContent(host.focusGroup, false);
-  }, [host.focusGroup, hasContent]);
+    setSectionContent(host.focusGroup, {
+      navigable: hasContent,
+      populated: hasItems,
+    });
+    return () =>
+      setSectionContent(host.focusGroup, {
+        navigable: false,
+        populated: false,
+      });
+  }, [host.focusGroup, hasContent, hasItems]);
 
   const initialSelectedIndex = useMemo(() => {
     if (lastSelectedSessionId === null) return undefined;

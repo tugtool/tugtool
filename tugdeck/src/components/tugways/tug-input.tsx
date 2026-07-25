@@ -215,13 +215,18 @@ export const TugInput = React.forwardRef<HTMLInputElement, TugInputProps>(
     // transiently says so through `focusBehavior`. The focusable ref composes
     // with the responder's `composedRef` (internal + forwarded + responder-id)
     // so one element carries both `data-responder-id` and `data-tug-focusable`.
+    //
+    // A DISABLED field registers nothing. The DOM refuses focus on a disabled
+    // input, so a registration would leave the walk with a stop it can land on
+    // in the registry and not in the browser — the ring goes nowhere and Tab
+    // reads as broken. Same rule TugColorWell and TugValueInput follow.
     const focusableId = useId();
     const { focusableRef } = useFocusable({
       id: focusableId,
       group: focusGroup ?? "",
       order: focusOrder,
       policy: focusPolicy,
-      register: focusGroup !== undefined,
+      register: !effectiveDisabled && focusGroup !== undefined,
       behavior: focusBehavior,
     });
     const setRefs = useCallback(

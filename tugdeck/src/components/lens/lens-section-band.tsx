@@ -16,7 +16,11 @@
  *
  * A `filterable` section carries a `TugFilterField` in its band's actions
  * cluster while expanded (`lens-filter-store` is the seam to the body's list —
- * see that module's docstring for why a store and not a delegate).
+ * see that module's docstring for why a store and not a delegate). The field is
+ * live only while the section holds items: an empty section's filter is
+ * disabled and out of the keyboard walk, read off the `populated` fact in
+ * `lens-section-content` — never off the filtered count, which would disable
+ * the field the moment a query narrowed to nothing.
  *
  * Clicking the band (anywhere except its buttons / the grip / the filter field)
  * focuses the section's list: it expands a collapsed section and lands the key
@@ -44,6 +48,11 @@ import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-
 import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import { useFocusManager } from "@/components/tugways/use-focusable";
 import { getFilterQuery, setFilterQuery } from "./lens-filter-store";
+import {
+  getSectionContentVersion,
+  sectionIsPopulated,
+  subscribeSectionContent,
+} from "./lens-section-content";
 import { sectionFocusGroup } from "./lens-section-registry";
 import type {
   LensSectionDefinition,
@@ -112,6 +121,20 @@ export function LensSection({
   // reads, and hand the key view down to the list on ArrowDown — the same
   // placement a band click makes. Escape is the field's own while it holds a
   // query; an empty field's Escape falls through to the Lens's own ladder.
+  // Whether this section holds ANY item, filter or no filter — the fact the
+  // field's enablement turns on. Read live from the section-content store
+  // ([L02]); the body publishes it.
+  React.useSyncExternalStore(subscribeSectionContent, getSectionContentVersion);
+  const populated = sectionIsPopulated(host.focusGroup);
+
+  // An empty section has nothing to filter, so it holds no query either. The
+  // field is remounted across the flip (keyed below) and seeds from the store,
+  // so clearing here is what keeps the disabled field's text and the list's
+  // actual filter from drifting apart while items are away.
+  React.useEffect(() => {
+    if (!populated) setFilterQuery(def.kind, "");
+  }, [populated, def.kind]);
+
   const filterDelegate = React.useMemo(
     () => ({
       filterFieldDidChangeQuery: (query: string) => {
@@ -175,15 +198,25 @@ export function LensSection({
                 it just before that section's list: filter → list → next
                 section's filter → next list. It is still never the ⌘L seed
                 target, which addresses `<group>:0` by key — the list.
-                Registration is deliberately NOT gated on the section having
-                content — filtering to zero must never strand the field that is
-                the only way back ([R02]). The field remounts per expand seeded
-                from the store, so the query survives a collapse. */}
+
+                A section with NO items disables its field: nothing to filter,
+                so no caret and no Tab stop (`TugInput` declines to register a
+                disabled stop, so the walk passes the whole band by). The gate
+                is the UNFILTERED count and only ever that — a query that
+                narrows to zero leaves the field live, because there it is the
+                only way back ([R02]).
+
+                The field is keyed on that flip so it remounts and re-seeds from
+                the store, which the effect above clears while the section is
+                empty; within a state it stays mounted, and it remounts per
+                expand seeded the same way, so a query survives a collapse. */}
             {collapsed || def.filterable !== true ? null : (
               <TugFilterField
+                key={populated ? "live" : "inert"}
                 delegate={filterDelegate}
                 placeholder={`Filter ${def.title}`}
                 defaultValue={getFilterQuery(def.kind)}
+                disabled={!populated}
                 data-testid="lens-section-filter"
                 focusGroup={host.focusGroup}
                 focusOrder={-1}
