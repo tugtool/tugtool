@@ -882,6 +882,28 @@ function extractInterrupted(structuredResult: unknown): boolean {
 }
 
 /**
+ * The block factory a call actually renders through — the routing half of
+ * {@link dispatchToolCallState}, without composing props.
+ *
+ * Not the same question as {@link resolveToolBlock}, which answers "what is
+ * this tool's wrapper?" from the name alone. This answers "what will the
+ * transcript mount for THIS call?", so it accounts for drift: an unknown
+ * tool, or a registered wrapper whose `structured_result` failed its shape
+ * schema, renders `DefaultToolBlock` no matter what the registry holds.
+ *
+ * The search index projects a call's header and body through this, so the
+ * text it counts is the text the DOM will show ([P04] of find-foundations —
+ * index and paint must stay symmetric).
+ */
+export function renderedToolBlock(toolCall: ToolUseMessage): ToolBlockFactory {
+  const lower = toolCall.toolName.toLowerCase();
+  const canonical = TOOL_ALIASES.get(lower) ?? lower;
+  if (HIDDEN_TOOL_NAMES.has(canonical)) return NullToolBlock;
+  if (detectToolCallDrift(toolCall) !== null) return DefaultToolBlock;
+  return TOOL_BLOCK_REGISTRY.get(canonical) ?? DefaultToolBlock;
+}
+
+/**
  * Tool-call dispatch — looks up the tool name in the registry, with
  * alias resolution. A call that `detectToolCallDrift` flags (unknown
  * tool name, or a registered wrapper whose `structured_result` fails

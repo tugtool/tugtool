@@ -167,7 +167,7 @@ export const WebFetchToolBlock: React.FC<ToolBlockProps> = ({
   const argsSummary =
     url !== undefined ? (
       <span className="web-fetch-tool-block-args">
-        <MiddleEllipsisPath path={url} />
+        <MiddleEllipsisPath path={url} findable />
         {cached ? (
           <TugBadge
             data-slot="web-fetch-tool-block-cached"

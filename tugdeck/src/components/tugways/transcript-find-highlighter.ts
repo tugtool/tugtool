@@ -22,12 +22,13 @@
  * search unit per container, in DOM order. Within a marked container,
  * `.tugx-katex` (math renders the LaTeX source as hidden text) and
  * `.tug-atom-chip-host` (atom chips render their label inside an SVG)
- * subtrees are excluded; a marked container under a
- * `[data-block-collapsed="true"]` ancestor is skipped entirely (the block's
- * body is unmounted but its header — which may carry marked content — stays,
- * while the index projects nothing for a collapsed block). Unmarked text —
- * tool-block chrome, headers, badges, timing — can never paint, so a future
- * body kind is unsearchable until it is deliberately marked AND projected.
+ * subtrees are excluded, as is anything under `data-tugx-find-hidden`
+ * (mounted but not visible). A collapsed tool block needs no guard: its
+ * body is unmounted, so the only marked containers left in it are its
+ * header's name and target — exactly what the index projects for it.
+ * Unmarked text — badges, result summaries, the live timing clock — can
+ * never paint, so a future body kind is unsearchable until it is
+ * deliberately marked AND projected.
  * **Adding a searchable kind is a two-sided checklist:** stamp the marker on
  * the content container, project the same text (same order) in
  * `transcript-search-index.ts`, and extend the fidelity fixture.
@@ -59,6 +60,16 @@ import { placeFindFlash, type FindFlashHandle } from "@/components/tugways/find-
 
 /** The opt-in searchable-content marker attribute (present/absent, no value). */
 export const FINDABLE_ATTR = "data-tugx-findable";
+
+/**
+ * The "mounted but not visible" marker. A marked container under an
+ * element carrying it is skipped entirely — the same way a collapsed tool
+ * block's unmounted body contributes nothing. It exists for the surfaces
+ * that keep hidden content in the DOM: the thinking block's clipped body
+ * while collapsed, and its one-line preview while expanded. Find must
+ * never count or paint text the reader cannot see.
+ */
+export const FIND_HIDDEN_ATTR = "data-tugx-find-hidden";
 
 const MATCH_HIGHLIGHT = "transcript-find-match";
 const ACTIVE_HIGHLIGHT = "transcript-find-active";
@@ -111,10 +122,10 @@ function isInExcludedSubtree(node: Node): boolean {
 
 /**
  * The row's searchable containers — its OUTERMOST `data-tugx-findable`
- * elements, in DOM order, excluding any under a collapsed block
- * (`[data-block-collapsed="true"]`). Each is one search unit, mirroring one
- * projected part on the index side. Nested marked containers are folded into
- * their outermost ancestor so no text is walked twice.
+ * elements, in DOM order, minus anything hidden (`data-tugx-find-hidden`
+ * on the element or an ancestor). Each is one search unit, mirroring one
+ * projected part on the index side. Nested marked containers are folded
+ * into their outermost ancestor so no text is walked twice.
  */
 function collectFindableUnits(rowEl: HTMLElement): HTMLElement[] {
   const marked = rowEl.querySelectorAll<HTMLElement>(`[${FINDABLE_ATTR}]`);
@@ -122,7 +133,7 @@ function collectFindableUnits(rowEl: HTMLElement): HTMLElement[] {
   for (const el of marked) {
     const parent = el.parentElement;
     if (parent !== null && parent.closest(`[${FINDABLE_ATTR}]`) !== null) continue;
-    if (el.closest('[data-block-collapsed="true"]') !== null) continue;
+    if (el.closest(`[${FIND_HIDDEN_ATTR}]`) !== null) continue;
     units.push(el);
   }
   return units;

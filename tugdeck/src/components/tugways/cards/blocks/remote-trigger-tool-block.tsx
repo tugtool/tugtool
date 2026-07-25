@@ -200,6 +200,7 @@ export const RemoteTriggerToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={argsLabel.label} side="bottom" truncated>
       <code
         data-slot="remote-trigger-tool-block-target"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {argsLabel.label}

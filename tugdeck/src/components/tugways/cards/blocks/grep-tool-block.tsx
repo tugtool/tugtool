@@ -388,6 +388,7 @@ export const GrepToolBlock: React.FC<ToolBlockProps> = ({
     pattern !== undefined ? (
       <code
         data-slot="grep-tool-block-pattern"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {pattern}

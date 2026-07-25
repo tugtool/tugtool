@@ -120,7 +120,7 @@ export interface ReadStructuredFile {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-function narrowInput(value: unknown): ReadToolInput {
+export function narrowReadInput(value: unknown): ReadToolInput {
   if (value === null || typeof value !== "object") return {};
   const v = value as Record<string, unknown>;
   return {
@@ -199,7 +199,7 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
   phase,
   caution,
 }) => {
-  const readInput = React.useMemo(() => narrowInput(input), [input]);
+  const readInput = React.useMemo(() => narrowReadInput(input), [input]);
   const structured = React.useMemo(
     () => narrowStructured(structuredResult),
     [structuredResult],

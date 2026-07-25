@@ -126,9 +126,9 @@ export function ShellExchangeBlock({
   // The command sits in the header (parity with `BashToolBlock`) — mono, no
   // `$` sigil (the `Shell` row identity already frames it as a shell command).
   // Clamps while the block is collapsed; a long command wraps when expanded.
-  // `data-tugx-findable` opts the command text into transcript Find; the
-  // painter's collapse guard skips it while the block is collapsed, matching
-  // the index's expansion gate.
+  // `data-tugx-findable` opts the command text into transcript Find. It
+  // rides the header, so it stays searchable while the exchange is
+  // collapsed — only the output, unmounted with the body, is gated.
   const command = (
     <code
       className="shell-exchange-command tool-call-header-clamp"

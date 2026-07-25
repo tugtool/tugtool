@@ -113,11 +113,11 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
     expect(rows[0]).toEqual(["ls -la", "total 0"]);
   });
 
-  test("a collapsed shell row projects nothing", () => {
+  test("a collapsed shell row keeps its header command, drops the output", () => {
     const expansion = new ToolBlockExpansionState();
     expansion.set("sh-1", true, false); // user collapsed the exchange
     const rows = buildRows([shellRow()], expansion);
-    expect(rows[0]).toEqual([]);
+    expect(rows[0]).toEqual(["ls -la"]);
   });
 
   test("shell output is ANSI-stripped and line-capped", () => {
@@ -169,14 +169,14 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
     return expansion;
   }
 
-  test("a collapsed tool_use projects no units (the default for history)", () => {
+  test("a collapsed tool_use projects its header — name + target — only", () => {
     const rows = buildRows([assistantRow([bashMessage()])]);
-    expect(rows[0]).toEqual([]);
+    expect(rows[0]).toEqual(["Bash", "echo hi"]);
   });
 
-  test("an expanded Bash call projects command + terminal output", () => {
+  test("an expanded Bash call projects header + terminal output", () => {
     const rows = buildRows([assistantRow([bashMessage()])], expandedTu1());
-    expect(rows[0]).toEqual(["echo hi", "hi out"]);
+    expect(rows[0]).toEqual(["Bash", "echo hi", "hi out"]);
   });
 
   test("expanded Bash with structured streams projects stdout then stderr", () => {
@@ -190,18 +190,18 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
       ],
       expandedTu1(),
     );
-    expect(rows[0]).toEqual(["echo hi", "out line\nerr line"]);
+    expect(rows[0]).toEqual(["Bash", "echo hi", "out line\nerr line"]);
   });
 
-  test("a streaming Bash call projects the command only (no body yet)", () => {
+  test("a streaming Bash call projects the header only (no body yet)", () => {
     const rows = buildRows(
       [assistantRow([bashMessage({ status: "pending", result: null })])],
       expandedTu1(),
     );
-    expect(rows[0]).toEqual(["echo hi"]);
+    expect(rows[0]).toEqual(["Bash", "echo hi"]);
   });
 
-  test("a diff-routed Bash body projects the command only", () => {
+  test("a diff-routed Bash body projects the header only", () => {
     const diff = [
       "diff --git a/f.txt b/f.txt",
       "index 000..111 100644",
@@ -219,10 +219,10 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
       ],
       expandedTu1(),
     );
-    expect(rows[0]).toEqual(["git diff"]);
+    expect(rows[0]).toEqual(["Bash", "git diff"]);
   });
 
-  test("a commit receipt projects nothing (the command row is replaced)", () => {
+  test("a commit receipt projects its composed name (the command row is replaced)", () => {
     const rows = buildRows(
       [
         assistantRow([
@@ -234,7 +234,7 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
       ],
       expandedTu1(),
     );
-    expect(rows[0]).toEqual([]);
+    expect(rows[0]).toEqual(["Git Commit"]);
   });
 
   test("an expanded Read call projects its file content as an editor segment", () => {
@@ -255,11 +255,14 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
       expandedTu1(),
     );
     expect(segments[0]).toEqual([
+      { kind: "dom", text: "Read" },
+      // The header identity is a `ToolFileRef`, which displays the basename.
+      { kind: "dom", text: "x.ts" },
       { kind: "editor", key: "tu1", text: "const x = 1;\nconst y = 2;" },
     ]);
   });
 
-  test("a Read call without structured file content projects nothing", () => {
+  test("a Read call without structured file content projects its header only", () => {
     const row = assistantRow([
       bashMessage({
         toolName: "Read",
@@ -274,7 +277,10 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
       emptyStore,
       expandedTu1(),
     );
-    expect(segments[0]).toEqual([]);
+    expect(segments[0]).toEqual([
+      { kind: "dom", text: "Read" },
+      { kind: "dom", text: "x.ts" },
+    ]);
   });
 
   test("keyed dom segments ride through to matches (terminal fold targets)", () => {
@@ -303,6 +309,31 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
     ]);
     const rows = buildRows([row]);
     expect(rows[0]).toEqual(["Compacted 12 turns"]);
+  });
+
+  // Thinking: the fold selects WHICH text is on screen, so the projection
+  // follows it. (The expanded branch renders markdown through a scratch DOM
+  // element, which this DOM-free file can't exercise — the app-test covers
+  // it; here the collapsed branch and the empty case are the pure logic.)
+  function thinkingRow(text: string): SessionRowDescriptor {
+    return assistantRow([
+      { kind: "assistant_thinking", messageKey: "m1", text },
+    ]);
+  }
+
+  test("a collapsed thinking block projects its label and visible preview", () => {
+    const expansion = new ToolBlockExpansionState();
+    expansion.set("thinking:turn.t1.message.m1.text", true, false);
+    const rows = buildRows(
+      [thinkingRow("Weighing the two designs.\nSecond line stays hidden.")],
+      expansion,
+    );
+    expect(rows[0]).toEqual(["Thinking", "Weighing the two designs."]);
+  });
+
+  test("an empty thinking block projects nothing — its chrome is display:none", () => {
+    const rows = buildRows([thinkingRow("")]);
+    expect(rows[0]).toEqual([]);
   });
 
   test("unrendered system notes (source: other) project nothing", () => {

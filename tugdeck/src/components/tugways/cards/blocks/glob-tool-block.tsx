@@ -184,6 +184,7 @@ export const GlobToolBlock: React.FC<ToolBlockProps> = ({
     pattern !== undefined ? (
       <code
         data-slot="glob-tool-block-pattern"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {pattern}

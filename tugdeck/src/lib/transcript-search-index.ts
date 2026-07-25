@@ -37,9 +37,20 @@
  * Scope: `user` bodies, `assistant_text`, `assistant_thinking`, rendered
  * `system_note`s (compact divider label, scheduled wake chip). A
  * `system_note` with `source: "other"` has no renderer, so it projects
- * nothing — the index never counts invisible text. Shell exchanges and
- * expanded tool content contribute expansion-gated `dom` segments;
- * embedded-editor content joins as `editor` segments in a later step.
+ * nothing — the index never counts invisible text. Every top-level tool
+ * call contributes its HEADER (`toolHeaderParts` — the name and the target)
+ * in both collapse states, because the header is on screen in both; a
+ * collapsed block's BODY is unmounted by `BlockChrome` and projects
+ * nothing. Shell exchanges follow the same split: the header command
+ * always, the output only while expanded. Embedded-editor content joins as
+ * `editor` segments.
+ *
+ * **Only what is on screen is counted.** A collapsed thinking block keeps
+ * its prose MOUNTED but clipped, so the rule cannot be "is it in the DOM?"
+ * — it projects its one-line preview while collapsed and its full prose
+ * while expanded, and the DOM marks whichever of the two is hidden with
+ * `data-tugx-find-hidden` so the painter skips it. Find never reports a
+ * match the reader cannot see.
  *
  * @module lib/transcript-search-index
  */
@@ -53,8 +64,14 @@ import { RETAINED_LINE_CAP } from "@/components/tugways/body-kinds/terminal-bloc
 import { parseGitCommit } from "@/components/tugways/body-kinds/commit-block";
 import {
   extractTextOutput,
-  resolveToolBlock,
+  renderedToolBlock,
 } from "@/components/tugways/cards/session-assistant-renderer-dispatch";
+import { toolHeaderParts } from "@/components/tugways/cards/blocks/tool-header-projection";
+import {
+  computePreview,
+  thinkingCollapseKey,
+  THINKING_LABEL,
+} from "@/components/tugways/chrome/session-thinking-block";
 import {
   BashToolBlock,
   composeTerminalData,
@@ -160,15 +177,15 @@ function terminalText(stdout: string, stderr: string): string {
 }
 
 /**
- * Search segments of one EXPANDED tool call, mirroring what its wrapper
- * marks `data-tugx-findable` (plus `editor` segments for embedded editors):
+ * Search segments of one EXPANDED tool call's BODY, mirroring what its
+ * wrapper marks `data-tugx-findable` below the header (plus `editor`
+ * segments for embedded editors). The header is projected separately by
+ * `toolHeaderParts` and is not gated on expansion.
  *
- *  - **Bash** (`BashToolBlock`): the header command, then — when the body is
- *    the terminal — its stdout-then-stderr text. The wrapper's smart-pick
- *    routing is mirrored via the SAME exported helpers it uses: a commit
- *    receipt replaces the command row entirely (nothing searchable), a
- *    streaming call and a diff-routed body keep only the command
- *    (`DiffBlock` content is out of scope).
+ *  - **Bash** (`BashToolBlock`): the terminal body's stdout-then-stderr
+ *    text. The wrapper's smart-pick routing is mirrored via the SAME
+ *    exported helpers it uses: a streaming call has no body and a
+ *    diff-routed body renders `DiffBlock`, which is out of scope.
  *  - **Default-routed tools** (`DefaultToolBlock`): the markdown text
  *    result (`pickOutputBody`'s `markdown` branch) on a `done` call. The
  *    JSON input tree is fold-dependent and stays unsearchable.
@@ -180,7 +197,10 @@ function toolUseSegments(
   toolUseId: string,
   streamingStore: PropertyStore,
 ): RowSegment[] {
-  const factory = resolveToolBlock(message.toolName);
+  // The factory the transcript will actually mount — drift routes a
+  // registered wrapper to `DefaultToolBlock`, so asking the registry by
+  // name alone would project a body the DOM never renders.
+  const factory = renderedToolBlock(message);
   if (factory === ReadToolBlock) {
     // The Read body is an embedded CodeMirror editor over
     // `structured_result.file.content` — the SAME bytes `composeFileData`
@@ -209,8 +229,7 @@ function toolUseSegments(
     const textOutput = extractTextOutput(message.result);
     const isError = message.status === "error";
     const terminal = composeTerminalData(structured, textOutput, isError);
-    // Commit receipt: the chrome swaps to the receipt identity — the raw
-    // command row is not rendered, and `CommitBlock` is unmarked.
+    // Commit receipt: the body is `CommitBlock`, which is unmarked.
     if (
       message.status === "done" &&
       command !== undefined &&
@@ -218,10 +237,6 @@ function toolUseSegments(
       parseGitCommit(command, terminal.stdout ?? "") !== null
     ) {
       return [];
-    }
-    const segments: RowSegment[] = [];
-    if (command !== undefined && command !== "") {
-      segments.push({ kind: "dom", text: command });
     }
     // Streaming has no body; a diff-routed body renders `DiffBlock`
     // (unmarked). Otherwise the body is the marked terminal — keyed so
@@ -231,9 +246,9 @@ function toolUseSegments(
       tryParseBashDiff(terminal.stdout) === null
     ) {
       const text = terminalText(terminal.stdout ?? "", terminal.stderr ?? "");
-      if (text !== "") segments.push({ kind: "dom", text, key: toolUseId });
+      if (text !== "") return [{ kind: "dom", text, key: toolUseId }];
     }
-    return segments;
+    return [];
   }
   if (factory === DefaultToolBlock && message.status === "done") {
     const output = pickOutputBody(
@@ -263,22 +278,51 @@ function messageSegments(
     case "user_message":
       // Rendered by the user row, not the assistant body — projected there.
       return [];
-    case "assistant_text":
-    case "assistant_thinking": {
-      // Both render through `TugMarkdownBlock` subscribed to the SAME
-      // streaming path the reducer writes, so this identity hits the
-      // renderer-warmed parse cache. Read the live store value first — the
-      // in-flight text can be ahead of the committed Message.
+    case "assistant_text": {
+      // Renders through `TugMarkdownBlock` subscribed to the SAME streaming
+      // path the reducer writes, so this identity hits the renderer-warmed
+      // parse cache. Read the live store value first — the in-flight text
+      // can be ahead of the committed Message.
       const path = `turn.${turnKey}.message.${message.messageKey}.text`;
       const live = streamingStore.get(path);
       const text = typeof live === "string" ? live : message.text;
       const projected = markdownToText(streamingStore, path, text);
       return projected === "" ? [] : [{ kind: "dom", text: projected }];
     }
+    case "assistant_thinking": {
+      // `SessionThinkingBlock` — the note variant. Its label is always on
+      // screen; its prose is not. Unlike a tool block the collapsed body
+      // stays MOUNTED (a height animation needs it) but clipped, so the
+      // fold decides WHICH text is visible rather than whether any is: the
+      // one-line preview while collapsed, the full prose while expanded.
+      // The DOM marks the other one `data-tugx-find-hidden`, so this
+      // projection and the painter agree.
+      const path = `turn.${turnKey}.message.${message.messageKey}.text`;
+      const live = streamingStore.get(path);
+      const text = typeof live === "string" ? live : message.text;
+      // An empty thinking block is `display: none` — no chrome, no label.
+      if (text === "") return [];
+      const segments: RowSegment[] = [{ kind: "dom", text: THINKING_LABEL }];
+      // The transcript always mounts thinking in streaming mode (it threads
+      // the streaming store for both live and replayed rows), so the
+      // default is expanded — the same value the component resolves with.
+      const collapsed = expansion.resolve(thinkingCollapseKey(path), false);
+      const visible = collapsed
+        ? computePreview(text)
+        : markdownToText(streamingStore, path, text);
+      if (visible !== "") segments.push({ kind: "dom", text: visible });
+      return segments;
+    }
     case "system_note": {
       if (message.source === "compact") {
-        // The compaction divider renders the text verbatim in a label span.
-        return message.text === "" ? [] : [{ kind: "dom", text: message.text }];
+        // `SessionCompactionEntry` splits the note on " · ": the label rides
+        // the block header's (marked) name span, the token count rides the
+        // trailing result summary, which is not searchable. The recap body
+        // is unmarked, so it projects nothing in either collapse state.
+        const [label] = message.text.split(" · ");
+        return label === undefined || label === ""
+          ? []
+          : [{ kind: "dom", text: label }];
       }
       if (message.source === "scheduled") {
         // The wake-trigger chip renders through `TugMarkdownBlock` in static
@@ -293,15 +337,21 @@ function messageSegments(
     }
     case "tool_use": {
       // Subagent children render inside their parent Agent block (out of
-      // scope); top-level calls contribute only while EXPANDED — the
-      // painter's collapse guard is the DOM-side mirror of this gate.
+      // scope). A top-level call's HEADER is on screen in both collapse
+      // states — it is the whole block when collapsed — so it projects
+      // unconditionally; only the body, which `BlockChrome` unmounts while
+      // collapsed, is expansion-gated.
       if (message.parentToolUseId !== undefined) return [];
+      const segments: RowSegment[] = domSegments(toolHeaderParts(message));
       const collapsed = expansion.resolve(
         message.toolUseId,
         collapseDefaultForMessage(message),
       );
-      if (collapsed) return [];
-      return toolUseSegments(message, message.toolUseId, streamingStore);
+      if (collapsed) return segments;
+      segments.push(
+        ...toolUseSegments(message, message.toolUseId, streamingStore),
+      );
+      return segments;
     }
     default:
       // shell_exchange never appears in an assistant slice.
@@ -330,10 +380,10 @@ function userBodyParts(
  * Project one shell exchange as its two search units — the header command,
  * then the ANSI-stripped output capped at `RETAINED_LINE_CAP` lines (the
  * DOM's `TerminalBlock` retains at most that many, so the projection never
- * counts text no amount of unfolding can reveal). An exchange collapsed via
- * the expansion state contributes nothing — matching the painter's collapse
- * guard (the header command stays visible but unpainted; the plan accepts
- * that gap to keep the gate binary). Shell rows default expanded.
+ * counts text no amount of unfolding can reveal). The command rides the
+ * header and stays on screen when the exchange is collapsed, so it projects
+ * either way; only the output — unmounted with the body — is gated. Shell
+ * rows default expanded.
  */
 function shellSegments(
   descriptor: SessionRowDescriptor,
@@ -341,11 +391,11 @@ function shellSegments(
 ): RowSegment[] {
   const message = descriptor.turn?.messages[0];
   if (message === undefined || message.kind !== "shell_exchange") return [];
-  if (expansion.resolve(message.exchangeId, false)) return [];
   const segments: RowSegment[] = [];
   if (message.command !== "") {
     segments.push({ kind: "dom", text: message.command });
   }
+  if (expansion.resolve(message.exchangeId, false)) return segments;
   if (message.output !== "") {
     const visible = stripAnsi(message.output)
       .split("\n")

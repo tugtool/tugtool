@@ -201,6 +201,7 @@ export const SkillToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={headerArgs.label} side="bottom" truncated>
       <code
         data-slot="skill-tool-block-name"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {headerArgs.label}

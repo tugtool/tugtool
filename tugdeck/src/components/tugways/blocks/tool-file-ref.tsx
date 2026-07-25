@@ -141,6 +141,12 @@ export function ToolFileRef({
         className={cn("tool-file-ref", "tool-file-ref--link", className)}
         title={path}
         data-slot={dataSlot}
+        // Opts the basename into transcript Find — header text, searchable in
+        // both collapse states. The icon span holds an SVG with no text
+        // nodes, so the unit's text is exactly the basename, which is what
+        // `tool-header-projection` projects. The full path is the tooltip
+        // only, and Find matches what is displayed.
+        data-tugx-findable=""
         data-tug-focus="refuse"
         // Opening a file activates the TARGET card's pane; this ref must
         // not also activate its OWN host pane. `pane-focus-controller`'s

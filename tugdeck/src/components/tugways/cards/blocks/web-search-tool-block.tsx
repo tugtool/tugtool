@@ -267,6 +267,7 @@ export const WebSearchToolBlock: React.FC<ToolBlockProps> = ({
         <TugTooltip content={query} side="bottom" truncated>
           <code
             data-slot="web-search-tool-block-query"
+            data-tugx-findable=""
             className="tool-call-header-clamp"
           >
             {query}

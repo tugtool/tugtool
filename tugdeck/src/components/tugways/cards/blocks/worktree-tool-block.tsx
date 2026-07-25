@@ -194,6 +194,7 @@ export const WorktreeToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={header.label} side="bottom" truncated>
       <code
         data-slot="worktree-tool-block-target"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {header.label}

@@ -300,6 +300,7 @@ export const TaskMgmtToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={argsLabel.label} side="bottom" truncated>
       <code
         data-slot="task-mgmt-tool-block-target"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {argsLabel.label}

@@ -124,7 +124,7 @@ export interface BashStructuredResult {
 // Helpers — narrow the wrapper-side `unknown` props to the Bash shapes.
 // ---------------------------------------------------------------------------
 
-function narrowInput(value: unknown): BashToolInput {
+export function narrowBashInput(value: unknown): BashToolInput {
   if (value === null || typeof value !== "object") return {};
   const v = value as Record<string, unknown>;
   return {
@@ -276,7 +276,7 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   caution,
   preview = false,
 }) => {
-  const bashInput = React.useMemo(() => narrowInput(input), [input]);
+  const bashInput = React.useMemo(() => narrowBashInput(input), [input]);
   const structured = React.useMemo(
     () => narrowStructured(structuredResult),
     [structuredResult],
@@ -295,10 +295,10 @@ export const BashToolBlock: React.FC<ToolBlockProps> = ({
   // shared `tool-call-header-clamp` class (a long heredoc would otherwise
   // fill the whole collapsed header); expanding shows the full command above
   // the output, so nothing is ever lost.
-  // `data-tugx-findable` opts the command text into transcript Find; the
-  // painter's collapse guard skips it while the block is collapsed, matching
-  // the index's expansion gate. (The commit-receipt variant replaces the
-  // command row entirely, and the index projects nothing for it.)
+  // `data-tugx-findable` opts the command text into transcript Find. It is
+  // header text, so it stays searchable while the block is collapsed;
+  // `tool-header-projection` projects it in both states. (The commit-receipt
+  // variant replaces the command row entirely, and projects only its name.)
   const command = bashInput.command !== undefined ? (
     <code
       data-slot="bash-tool-block-command"

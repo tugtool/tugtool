@@ -219,6 +219,7 @@ export const CronToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={argsLabel.label} side="bottom" truncated>
       <code
         data-slot="cron-tool-block-target"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {argsLabel.label}

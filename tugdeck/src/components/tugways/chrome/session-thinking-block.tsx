@@ -71,6 +71,19 @@ import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-
 
 import type { PropertyStore } from "@/components/tugways/property-store";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { ToolBlockExpansionContext } from "@/components/tugways/blocks/collapse-context";
+
+/**
+ * The card-scoped expansion key for the thinking block of one transcript
+ * message, derived from the streaming path the transcript already threads.
+ * A transcript-mounted block routes its collapse boolean through the
+ * card's `ToolBlockExpansionState` under this key, which is what lets the
+ * whole-transcript search index know — for an UNMOUNTED row — whether this
+ * block's prose is on screen or hidden behind the fold.
+ */
+export function thinkingCollapseKey(streamingPath: string): string {
+  return `thinking:${streamingPath}`;
+}
 
 /**
  * Maximum length of the collapsed-state preview line before truncation.
@@ -78,6 +91,13 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
  * 14-16 px label sizes. Exported for the test that asserts truncation.
  */
 export const PREVIEW_MAX_LENGTH = 80;
+
+/**
+ * The block's identity word — the note variant's analog of a tool header's
+ * name. Shared with the transcript search index, which projects it as this
+ * block's first search unit (it is on screen in both collapse states).
+ */
+export const THINKING_LABEL = "Thinking";
 
 /**
  * Compute a one-line preview from a multiline thinking string. Takes
@@ -138,6 +158,16 @@ export interface SessionThinkingBlockProps {
   streamingPath?: string;
 
   /**
+   * Card-scoped expansion key ({@link thinkingCollapseKey}). When set AND
+   * a `ToolBlockExpansionContext` is above, the collapse boolean lives in
+   * the card's `ToolBlockExpansionState` instead of local state: it then
+   * survives the row's windowed remount, and — the reason it matters for
+   * Find — the search index can read it for a row that isn't mounted at
+   * all. Omitted by standalone / gallery mounts, which keep local state.
+   */
+  collapseKey?: string;
+
+  /**
    * Forwarded class name. Cascade-scoped customization happens here —
    * consumers tune `--tugx-thinking-*` tokens via a wrapping selector
    * per [L20].
@@ -149,6 +179,7 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
   initialText,
   streamingStore,
   streamingPath,
+  collapseKey,
   className,
 }) => {
   const isStreaming = streamingStore !== undefined;
@@ -156,19 +187,34 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
   const previewRef = React.useRef<HTMLSpanElement | null>(null);
 
   // Collapse default per [D14]: streaming → expanded; static → collapsed.
-  // Tracks the user's most recent toggle for the cell's lifetime; a
-  // remount restores the default.
-  const [collapsed, setCollapsed] = React.useState(!isStreaming);
+  const defaultCollapsed = !isStreaming;
+  // The card's expansion overrides when a key is supplied — the same store
+  // tool blocks write through, so one instance holds every fold on the card
+  // and the search index resolves them without mounting anything.
+  const expansion = React.useContext(ToolBlockExpansionContext);
+  const shared = collapseKey !== undefined ? expansion : null;
+  const [collapsed, setCollapsed] = React.useState(() =>
+    shared !== null ? shared.resolve(collapseKey!, defaultCollapsed) : defaultCollapsed,
+  );
+
+  // One writer for both affordances (the label region toggles, the fold cue
+  // reports the next value) so the shared state and the local mirror can't
+  // drift apart.
+  const applyCollapsed = React.useCallback(
+    (next: boolean) => {
+      if (shared !== null && collapseKey !== undefined) {
+        shared.set(collapseKey, next, defaultCollapsed);
+      }
+      setCollapsed(next);
+    },
+    [shared, collapseKey, defaultCollapsed],
+  );
 
   const handleToggle = React.useCallback(() => {
-    setCollapsed((prev) => !prev);
-  }, []);
+    applyCollapsed(!collapsed);
+  }, [applyCollapsed, collapsed]);
 
-  // The shared fold cue reports the next collapsed value; route it straight
-  // to state. (The label region keeps its own no-arg toggle.)
-  const handleFold = React.useCallback((next: boolean) => {
-    setCollapsed(next);
-  }, []);
+  const handleFold = applyCollapsed;
 
   // Copy payload — the thinking text itself, read live from the streaming
   // store or the static prop, so the header's Copy matches the visible body
@@ -201,7 +247,15 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
       const r = rootRef.current;
       const p = previewRef.current;
       if (r === null || p === null) return;
-      r.dataset.empty = text.length === 0 ? "true" : "false";
+      const empty = text.length === 0;
+      r.dataset.empty = empty ? "true" : "false";
+      // An empty block is `display: none` — nothing in it is on screen, so
+      // nothing in it is findable (the index projects nothing for it either).
+      if (empty) {
+        r.dataset.tugxFindHidden = "true";
+      } else {
+        delete r.dataset.tugxFindHidden;
+      }
       p.textContent = computePreview(text);
     }
 
@@ -234,7 +288,13 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
     const preview = previewRef.current;
     if (root === null || preview === null) return;
     const text = initialText ?? "";
-    root.dataset.empty = text.length === 0 ? "true" : "false";
+    const empty = text.length === 0;
+    root.dataset.empty = empty ? "true" : "false";
+    if (empty) {
+      root.dataset.tugxFindHidden = "true";
+    } else {
+      delete root.dataset.tugxFindHidden;
+    }
     preview.textContent = computePreview(text);
     // Mount-once contract — initialText changes after mount are
     // ignored; consumers remount via a fresh React key when the
@@ -271,8 +331,21 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
           aria-controls="session-thinking-block-body"
           onClick={handleToggle}
         >
-          <span className="session-thinking-block-label">Thinking</span>
-          <span ref={previewRef} className="session-thinking-block-preview" />
+          {/* The label is this variant's identity — the note analog of a
+              tool header's name — visible in both states, so it is
+              searchable in both. The preview is visible ONLY while
+              collapsed (`visibility: hidden` otherwise), so it carries the
+              hidden marker when the body is showing: Find must never count
+              or paint the same prose twice. */}
+          <span className="session-thinking-block-label" data-tugx-findable="">
+            {THINKING_LABEL}
+          </span>
+          <span
+            ref={previewRef}
+            className="session-thinking-block-preview"
+            data-tugx-findable=""
+            data-tugx-find-hidden={collapsed ? undefined : "true"}
+          />
         </button>
         <span className="session-thinking-block-actions">
           <BlockCopyButton
@@ -302,6 +375,12 @@ export const SessionThinkingBlock: React.FC<SessionThinkingBlockProps> = ({
         // 0fr (collapsed) and 1fr (expanded). The inner content
         // overflow:hidden prevents the body from spilling out during
         // the height interpolation.
+        //
+        // Unlike a tool block, the collapsed body stays MOUNTED (the
+        // height animation needs it), so it is clipped rather than gone.
+        // The hidden marker keeps the find painter out of it, matching the
+        // index, which projects the preview instead while collapsed.
+        data-tugx-find-hidden={collapsed ? "true" : undefined}
       >
         <div className="session-thinking-block-viewport">
           <div className="session-thinking-block-content">

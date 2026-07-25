@@ -68,6 +68,14 @@ export interface BlockStripProps {
    */
   name?: React.ReactNode;
   /**
+   * Stamps `data-tugx-findable` on the name span, opting the verb into
+   * transcript Find. Set by {@link BlockHeader} for the tool-call header —
+   * whose name the search index projects for every block, collapsed or
+   * expanded. Off by default so a strip outside the transcript (a Lens
+   * section band, a changeset file row) contributes no unprojected unit.
+   */
+  nameFindable?: boolean;
+  /**
    * The detail column — the target (a chip, a command, a section's live
    * summary) and, when empty, the flexible spacer that pushes the trailing
    * cluster to the right edge. Always wrapped in the `tool-call-header-detail`
@@ -123,6 +131,7 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
       grip,
       leading,
       name,
+      nameFindable = false,
       detail,
       trailing,
       actions,
@@ -150,7 +159,12 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         {leading}
         {/* The bold identity — omitted for a verb-less row. */}
         {name !== undefined ? (
-          <span className="tool-call-header-name">{name}</span>
+          <span
+            className="tool-call-header-name"
+            data-tugx-findable={nameFindable ? "" : undefined}
+          >
+            {name}
+          </span>
         ) : null}
         {/* The detail column / flexible spacer — always present. */}
         <span className="tool-call-header-detail">{detail}</span>

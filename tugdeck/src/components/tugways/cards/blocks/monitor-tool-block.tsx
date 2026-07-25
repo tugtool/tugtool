@@ -227,6 +227,7 @@ export const MonitorToolBlock: React.FC<ToolBlockProps> = ({
     <TugTooltip content={header.label} side="bottom" truncated>
       <code
         data-slot="monitor-tool-block-target"
+        data-tugx-findable=""
         className="tool-call-header-clamp"
       >
         {header.label}

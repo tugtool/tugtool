@@ -60,6 +60,18 @@ export function pathTooltipSuppressed(trigger: Element): boolean {
 export interface MiddleEllipsisPathProps {
   /** The file path to render. */
   path: string;
+  /**
+   * Stamps `data-tugx-findable` on the path element, opting it into
+   * transcript Find. Set by the tool-call header that composes it (the
+   * fetched URL), whose text `tool-header-projection` projects. Off by
+   * default: the body kinds that also render paths (`path-list-block`,
+   * `commit-block`, `search-result-block`) are not projected, and an
+   * unprojected unit would desync the match count from the paint.
+   *
+   * The truncation is pure CSS — both halves of the path are real text —
+   * so the unit's text is the whole path however it is clipped.
+   */
+  findable?: boolean;
 }
 
 /**
@@ -67,6 +79,7 @@ export interface MiddleEllipsisPathProps {
  */
 export function MiddleEllipsisPath({
   path,
+  findable = false,
 }: MiddleEllipsisPathProps): React.ReactElement {
   const head =
     path.length > PATH_TAIL_LENGTH ? path.slice(0, -PATH_TAIL_LENGTH) : "";
@@ -78,7 +91,11 @@ export function MiddleEllipsisPath({
       side="bottom"
       suppressOpen={pathTooltipSuppressed}
     >
-      <code data-slot="tool-block-path" className="tool-block-path">
+      <code
+        data-slot="tool-block-path"
+        className="tool-block-path"
+        data-tugx-findable={findable ? "" : undefined}
+      >
         <span className="tool-block-path-head">{head}</span>
         <span className="tool-block-path-tail">{tail}</span>
       </code>

@@ -434,8 +434,11 @@ export const BlockHeader = React.forwardRef<
       className={cn("tool-call-header", className)}
       leading={leadingNode}
       // The verb — omitted for a verb-less row (a changeset file block), where
-      // the identity leads instead; the strip renders no name span.
+      // the identity leads instead; the strip renders no name span. The name
+      // is searchable in both collapse states: it is header text, always on
+      // screen, and `tool-header-projection` projects it for every block.
       name={toolName}
+      nameFindable
       // The detail column — the target (chip or wrapping command); the strip's
       // flexible spacer when empty.
       detail={target}
