@@ -107,9 +107,10 @@ body {
   justify-content: space-between;
 }
 
-.tug-devlog-text {
-  width: 100%;
-}
+/* The free-text filter is the house `TugFilterField` mounted `fill` — it sits
+ * alone on its own row of a narrow column, under a full-width source trigger,
+ * so it takes the row rather than stranding a short box against the panel
+ * edge. The component owns that geometry; nothing to add here. */
 
 /* ============================================================================
    Toolbar

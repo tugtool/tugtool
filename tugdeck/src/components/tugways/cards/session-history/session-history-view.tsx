@@ -107,11 +107,22 @@ const PREFETCH_MARGIN_PX = 500;
 
 /**
  * How many matching rows a live filter walks history for before it stops
- * paging on its own. Comfortably more than the shade shows at any height it
- * can be dragged to, so the reader gets a full screen of matches and the
- * scroll gesture takes over from there.
+ * paging on its own. Comfortably more than the shade shows at any height, so
+ * the reader gets a full screen of matches and the scroll gesture takes over
+ * from there.
  */
 const FILTERED_ROW_TARGET = 25;
+
+/**
+ * How deep a filter's own paging will go looking for those matches.
+ *
+ * Without a bound, a term matching nothing would walk the entire repository one
+ * page at a time — thousands of commits and a `git log` fork for each — for a
+ * query the reader may still be halfway through typing. This caps the automatic
+ * walk; the reader's scroll still pages past it without limit, and the foot
+ * SAYS how far the search reached rather than quietly stopping.
+ */
+const FILTER_AUTO_PAGE_DEPTH = 400;
 
 /** Read the shared Git History store reactively ([L02]). */
 function useGitLogSnapshot(): GitLogStoreSnapshot {
@@ -303,9 +314,19 @@ export function SessionHistoryView({
       filterQuery === ""
         ? root.scrollHeight - root.scrollTop - root.clientHeight <
           PREFETCH_MARGIN_PX
-        : filtered.length < FILTERED_ROW_TARGET;
+        : filtered.length < FILTERED_ROW_TARGET &&
+          payload.commits.length < FILTER_AUTO_PAGE_DEPTH;
     if (wantsMore) gitLogStore()?.loadMore();
   }, [active, payload, snapshot.loadingMore, filterQuery, filtered.length]);
+
+  // The automatic walk stopped short of history's end — say so, with the depth
+  // it reached. A cap the reader cannot see reads as "that's all there is".
+  const searchCapped =
+    filterQuery !== "" &&
+    payload !== null &&
+    payload.has_more &&
+    !snapshot.loadingMore &&
+    payload.commits.length >= FILTER_AUTO_PAGE_DEPTH;
 
   // Only a repo with commits gets a filter — but once it has one, keep it
   // through an empty result set, so a query that matches nothing still has a
@@ -340,7 +361,6 @@ export function SessionHistoryView({
           actions={
             filterable ? (
               <TugFilterField
-                className="session-history-filter"
                 delegate={filterDelegate}
                 placeholder="Filter commits"
                 aria-label="Filter commits"
@@ -427,14 +447,16 @@ export function SessionHistoryView({
     return shell(<div className="session-history-empty">No commits</div>);
   }
   if (filtered.length === 0) {
-    // Every commit loaded was walked and none matched; the walk is only
-    // finished, though, once `has_more` is off — say which, so a reader who
-    // sees nothing knows whether to wait.
+    // Every commit loaded was walked and none matched. What that MEANS depends
+    // on where the walk stands — still running, stopped at its own depth, or
+    // finished at the root commit — so say which rather than a bare "none".
     return shell(
       <div className="session-history-empty" data-testid="session-history-no-matches">
-        {payload.has_more
-          ? "Searching further back…"
-          : `No commits match “${filterQuery}”.`}
+        {searchCapped
+          ? `No commits match “${filterQuery}” in the newest ${payload.commits.length}. Scroll to search further back.`
+          : payload.has_more
+            ? "Searching further back…"
+            : `No commits match “${filterQuery}”.`}
       </div>,
     );
   }
@@ -453,6 +475,14 @@ export function SessionHistoryView({
       <div className="session-history-view-foot" ref={setSentinel}>
         {snapshot.loadingMore ? (
           <span data-testid="session-history-loading-more">Loading more…</span>
+        ) : searchCapped ? (
+          // The automatic search stopped at its own depth, not at history's
+          // end. Saying how far it reached is the difference between "that's
+          // every match" and "that's every match SO FAR".
+          <span data-testid="session-history-search-capped">
+            Searched the newest {payload.commits.length} commits — scroll to
+            search further back.
+          </span>
         ) : null}
       </div>
     </div>,

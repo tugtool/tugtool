@@ -927,13 +927,13 @@
 
 /* The Sessions filter field rides the far end of the label line — the label
    and the scan hint lead, `margin-inline-start: auto` pushes the field right.
-   A fixed width keeps the row's geometry stable whether or not the scan hint
-   is showing. The field is the tallest thing on the line, so it — not the
+   Its width is the component's own (`--tugx-filter-field-width`), which is
+   fixed, so the row's geometry stays stable whether or not the scan hint is
+   showing. The field is the tallest thing on the line, so it — not the
    reserved scan-bar box — sets the row height; that height is constant, which
    is what the no-shift rule is about. */
 .session-card-picker-filter {
   margin-inline-start: auto;
-  inline-size: 13rem;
   flex: 0 0 auto;
   /* The label's uppercase heading treatment must not leak into the field. */
   text-transform: none;

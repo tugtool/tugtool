@@ -178,7 +178,6 @@ export function LensSection({
                 from the store, so the query survives a collapse. */}
             {collapsed || def.filterable !== true ? null : (
               <TugFilterField
-                className="lens-section-filter"
                 delegate={filterDelegate}
                 placeholder={`Filter ${def.title}`}
                 defaultValue={getFilterQuery(def.kind)}

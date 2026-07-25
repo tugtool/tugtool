@@ -8,13 +8,9 @@
   padding: 8px 10px 12px;
 }
 
-/* The header's filter field. Sized like the Lens sections' — it shares the
-   band altitude and must not crowd the "History" title beside it. */
-.session-history-filter {
-  flex: 1 1 auto;
-  min-inline-size: 7rem;
-  max-inline-size: 12rem;
-}
+/* The header's filter field carries no geometry here — `TugFilterField` owns its
+   width, and inside a `tool-call-header` it adopts the band's line box and type
+   so it rides the "History" title's baseline. See tug-filter-field.css. */
 
 /* The foot of the walk: the paging sentinel, and the note that says the next
    page is coming. It keeps a height even while empty so the sentinel is a real

@@ -102,6 +102,15 @@ export interface TugFilterFieldProps {
   /** Initial text. The field is uncontrolled; reset it by `key` remount. */
   defaultValue?: string;
   /**
+   * Fill the row instead of taking the standard width
+   * (`--tugx-filter-field-width`). For a field that IS its row — a sheet's
+   * lead control, a narrow inspector column — where a short box would strand
+   * itself against the surface's edge. A field riding a section band never
+   * fills: it shares that line with a title and a chevron.
+   * @default false
+   */
+  fill?: boolean;
+  /**
    * Field size, forwarded to `TugInput`.
    * @default "sm"
    */
@@ -128,6 +137,7 @@ export function TugFilterField({
   delegate,
   placeholder,
   defaultValue,
+  fill = false,
   size = "sm",
   focusGroup,
   focusOrder,
@@ -262,6 +272,7 @@ export function TugFilterField({
       ref={setWrapperRef}
       data-slot="tug-filter-field"
       data-empty={defaultValue === undefined || defaultValue === "" ? "true" : "false"}
+      data-fill={fill ? "true" : undefined}
       data-testid={dataTestid}
       className={cn("tug-filter-field", className)}
     >

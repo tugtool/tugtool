@@ -58,7 +58,8 @@ import {
 } from "@/lib/tug-dev-log-store/filter";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
-import { TugInput } from "@/components/tugways/tug-input";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import type { TugFilterFieldDelegate } from "@/components/tugways/tug-filter-field";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugOptionGroup } from "@/components/tugways/tug-option-group";
 import type { TugOptionItem } from "@/components/tugways/tug-option-group";
@@ -260,10 +261,16 @@ export const LogInspector: React.FC = () => {
         : snapshot.filters.source;
 
   // ── Free-text filter ───────────────────────────────────────────────────
-  const handleTextChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      tugDevLogStore.setText(e.target.value);
-    },
+  // The house filter affordance on the module-store adapter: the delegate
+  // writes `tugDevLogStore`, the row list reads it back through the store
+  // subscription. The field is uncontrolled and seeds from the store, so the
+  // query survives a tab switch without a keystroke re-render.
+  const filterDelegate = useMemo<TugFilterFieldDelegate>(
+    () => ({
+      filterFieldDidChangeQuery: (query) => {
+        tugDevLogStore.setText(query);
+      },
+    }),
     [],
   );
 
@@ -391,11 +398,11 @@ export const LogInspector: React.FC = () => {
               onSelect={handleSelectSource}
             />
           </div>
-          <TugInput
-            size="sm"
-            placeholder="Filter text…"
-            value={snapshot.filters.text}
-            onChange={handleTextChange}
+          <TugFilterField
+            delegate={filterDelegate}
+            placeholder="Filter text"
+            defaultValue={snapshot.filters.text}
+            fill
             className="tug-devlog-text"
             aria-label="Free-text filter"
           />

@@ -203,6 +203,7 @@ function ResumeSheetBody({
       <TugFilterField
         delegate={filterDelegate}
         placeholder="Filter sessions"
+        fill
         data-testid="resume-filter-input"
         focusGroup={focusGroup}
         focusOrder={0}

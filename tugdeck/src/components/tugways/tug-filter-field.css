@@ -20,18 +20,96 @@
 .tug-filter-field {
   --tugx-filter-field-clear-inset: var(--tug-space-2xs);
   --tugx-filter-field-clear-width: 1.25rem;
+  /* THE width dial. It measures the TEXT lane in characters of the field's own
+     type — the ✕'s lane and the field's padding are added on below, so this
+     number means "how much query is visible", not "how wide is the box".
+     Every filter field in the app resolves through it; change it here. */
+  --tugx-filter-field-width: 20ch;
 
   position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
+  /* Content-sized off the input's width, but free to give when its row is
+     cramped — the surrounding band's grip, title, and chevron keep their room
+     before the field does. */
+  flex: 0 1 auto;
 }
 
-/* Reserve the ✕'s lane at all times so text never reflows when it appears. */
-.tug-filter-field .tug-filter-field-input {
+/* Reserve the ✕'s lane at all times so text never reflows when it appears, and
+   size the field off the width dial. Outranks `.tug-input`'s own `width: 100%`
+   and the per-size padding. */
+.tug-filter-field .tug-input.tug-filter-field-input {
   padding-inline-end: calc(
     var(--tugx-filter-field-clear-width) + var(--tugx-filter-field-clear-inset)
   );
+  inline-size: calc(
+    var(--tugx-filter-field-width) + var(--tugx-filter-field-clear-width) +
+      var(--tugx-filter-field-clear-inset)
+  );
+}
+
+/* A field that IS its row (`fill`) takes the row instead of the dial — a sheet's
+   lead control or a narrow inspector column, where the standard width would
+   strand a short box against the surface's edge. */
+.tug-filter-field[data-fill] {
+  flex: 1 1 auto;
+  inline-size: 100%;
+}
+
+.tug-filter-field[data-fill] .tug-input.tug-filter-field-input {
+  inline-size: 100%;
+}
+
+/* ---- Quiet bounds ----
+ *
+ * A filter field is a background affordance: it sits in a section band the eye
+ * is reading past, so it draws no border at rest. Its own field surface — a
+ * distinct tone from every band and sheet it mounts in — carries the bounds.
+ * The border box is still there, 1px of transparent, so claiming focus repaints
+ * it accent (`.tug-input:focus`) without moving a pixel of text.
+ *
+ * Hover keeps `TugInput`'s surface shift and drops only the border, so the
+ * field still answers the pointer. Specificity clears the hover rule's
+ * `:hover:not():not():not()` chain in tug-input.css, which loads after this
+ * file (the component imports its own CSS before `TugInput`'s).
+ */
+.tug-filter-field .tug-input.tug-filter-field-input:not(:focus) {
+  border-color: transparent;
+}
+
+/* ---- Band-mounted: on the header's own baseline ----
+ *
+ * A `tool-call-header` aligns its row by putting every item in a one-line box
+ * of `--tugx-toolheader-line` and centering its content there (see
+ * block-header.css). A filter field joins that contract by adopting the SAME
+ * box: the `sm` field's own 28px centers its text 2px below the section title's
+ * baseline. Nothing else about the field changes — it keeps its own `xs` type.
+ * A centered single-line box puts its baseline at the box centre plus half the
+ * font's ascent-over-descent, so `xs` text and the title's `sm` text centered in
+ * one box differ only by half the ascent delta between two sizes one step
+ * apart: under half a pixel, and measured to land on the same device row. It
+ * also stops a filterable band from standing taller than a plain one.
+ *
+ * `top: 1px` is the same optical nudge the header name carries — without it the
+ * field centres on the row while the title centres 1px lower.
+ */
+.tool-call-header .tug-filter-field {
+  position: relative;
+  top: 1px;
+  /* The band's ghost icon buttons are a 24px hit target around a 12px glyph, so
+     each carries 6px of invisible inset. Two of them side by side put 6 + gap +
+     6 between what the eye actually sees; the field's hard edge gets only
+     gap + 6, so it reads as crowding the first button. Lend it the inset the
+     button on its left would have had, and every visible gap along the actions
+     cluster matches. */
+  margin-inline-end: calc(
+    (var(--tug-button-xs-height) - var(--tug-button-xs-icon-size)) / 2
+  );
+}
+
+.tool-call-header .tug-filter-field .tug-input.tug-filter-field-input {
+  block-size: var(--tugx-toolheader-line);
 }
 
 .tug-filter-field-clear {
