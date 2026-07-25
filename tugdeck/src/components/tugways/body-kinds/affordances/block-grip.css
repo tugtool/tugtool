@@ -2,7 +2,7 @@
  * block-grip.css — the Block drag-handle affordance ([P04]).
  *
  * Layout + cursor only; the grip carries no color of its own beyond the
- * muted opacity, so it reads as a quiet handle at the strip's left edge. It
+ * muted opacity, so it reads as a quiet handle at the row's right edge. It
  * rides the strip's one-line box (`--tugx-toolheader-line`) so it centers on
  * row 1 with the dot / name / actions. `touch-action: none` so a touch-drag
  * grabs the handle instead of scrolling the pane. The grabbing cursor while a

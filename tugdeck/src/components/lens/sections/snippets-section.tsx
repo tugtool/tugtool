@@ -205,7 +205,7 @@ function SnippetDisplayRow({
       className="snippet-row-content"
       data-snippet-id={snippet.id}
       selected={selected}
-      leading={
+      grip={
         ctx !== null ? (
           <BlockGrip
             onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}
@@ -545,7 +545,7 @@ function SnippetEditorRow({
         className="snippet-editor-header"
         data-snippet-id={snippet.id}
         selected
-        leading={
+        grip={
           ctx !== null ? (
             <BlockGrip
               onPointerDown={(e) => ctx.onGripPointerDown(snippet.id, e)}

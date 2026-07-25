@@ -1,6 +1,6 @@
 /**
- * lens-section-band.tsx — one Lens section: a band (grip + glyph + title +
- * live collapsed-summary + fold chevron) over an internally-scrolling body.
+ * lens-section-band.tsx — one Lens section: a band (glyph + title + live
+ * collapsed-summary + fold chevron + grip) over an internally-scrolling body.
  *
  * The band is a {@link BlockStrip} at `altitude="section"` ([P02]): the same
  * header-shell primitive the transcript tool-call header wears, one altitude
@@ -140,7 +140,8 @@ export function LensSection({
         dataTestid="lens-section-band"
         dataCollapsed={collapsed}
         onClick={onBandClick}
-        // Drag grip — starts a reorder drag ([P04]/[P08]).
+        // Drag grip — the band's right edge, past the fold chevron; starts a
+        // reorder drag ([P04]/[P08]).
         grip={
           onGripPointerDown !== undefined ? (
             <BlockGrip

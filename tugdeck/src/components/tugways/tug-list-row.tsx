@@ -52,6 +52,10 @@
  *    movement cursor. `trailingReveal="claim"` does the same but
  *    reserves no width at rest — the accessory takes its space from the
  *    content column on engage.
+ *  - `grip` is the trailing-most slot, past `trailing`, for a
+ *    reorder handle (`BlockGrip`). It lives outside the trailing span
+ *    so a `trailingReveal` policy leaves it alone — the handle is the
+ *    row's standing affordance, at the right edge, at rest.
  *  - `selectedGlyph="check"` reserves a fixed-width leading checkmark
  *    column (UIKit's `.checkmark` accessory) — shown when `selected`,
  *    empty otherwise so titles align. It sits leading-most and coexists
@@ -136,6 +140,14 @@ export interface TugListRowProps
 
   /** Trailing accessory — a control or badge. */
   trailing?: React.ReactNode;
+
+  /**
+   * Trailing-most drag grip ({@link BlockGrip}) — rendered after
+   * `trailing`, at the row's right edge. It sits outside the trailing
+   * span so a `trailingReveal` policy never hides it: the handle is the
+   * row's standing reorder affordance, present at rest.
+   */
+  grip?: React.ReactNode;
 
   /**
    * Reveal policy for `trailing`. `"engaged"` keeps the accessory
@@ -385,6 +397,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
       density,
       leading,
       trailing,
+      grip,
       trailingReveal = "always",
       title,
       titleSize,
@@ -413,6 +426,7 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
 
     const hasLeading = isRenderable(leading);
     const hasTrailing = isRenderable(trailing);
+    const hasGrip = isRenderable(grip);
 
     return (
       <div
@@ -490,6 +504,11 @@ export const TugListRow = React.forwardRef<HTMLDivElement, TugListRowProps>(
             data-reveal={trailingReveal}
           >
             {trailing}
+          </span>
+        ) : null}
+        {hasGrip ? (
+          <span className="tug-list-row-grip" data-slot="tug-list-row-grip">
+            {grip}
           </span>
         ) : null}
       </div>

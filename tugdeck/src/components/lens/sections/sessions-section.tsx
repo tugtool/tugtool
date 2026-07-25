@@ -233,7 +233,8 @@ function RowSparkline({ tugSessionId }: { tugSessionId: string }): React.ReactEl
  *  hover, divider, and the movement-cursor caret come from the row + the
  *  enclosing `TugListView`). The phase dot leads; the name is the title, the
  *  latest pulse line the subtitle, and the activity sparkline the trailing
- *  accessory. The `TugListView` cell wrapper owns cursor / selection / click. */
+ *  accessory, with the reorder grip past it on the row's right edge. The
+ *  `TugListView` cell wrapper owns cursor / selection / click. */
 function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
   const ctx = React.useContext(SessionsCellContext);
   const filterQuery = useSessionsFilterQuery();
@@ -247,16 +248,7 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
     <TugListRow
       className="session-row-content"
       data-session-id={row.tugSessionId}
-      leading={
-        <span className="session-row-lead">
-          {ctx !== null ? (
-            <BlockGrip
-              onPointerDown={(e) => ctx.onGripPointerDown(row.tugSessionId, e)}
-            />
-          ) : null}
-          <RowPhaseDot cardId={row.cardId} />
-        </span>
-      }
+      leading={<RowPhaseDot cardId={row.cardId} />}
       title={renderFilterHighlight(displayName, filterQuery)}
       titleSize="sm"
       subtitle={
@@ -269,6 +261,13 @@ function SessionRowContent({ row }: { row: MonitorRow }): React.ReactElement {
         )
       }
       trailing={<RowSparkline tugSessionId={row.tugSessionId} />}
+      grip={
+        ctx !== null ? (
+          <BlockGrip
+            onPointerDown={(e) => ctx.onGripPointerDown(row.tugSessionId, e)}
+          />
+        ) : undefined
+      }
     />
   );
 }

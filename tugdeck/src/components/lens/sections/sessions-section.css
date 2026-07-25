@@ -69,13 +69,12 @@
   height: var(--tug-line-height-sm, 1.25rem);
 }
 
-/* The leading holds the reorder grip beside the phase dot; both center on the
-   title line. The grip carries its own layout/cursor from block-grip.css. */
-.session-row-lead {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 100%;
+/* The reorder grip rides the row's right edge, aligned to the TITLE line the
+   way the phase dot is — the two handles of the row read across from each
+   other. The grip carries its own layout/cursor from block-grip.css. */
+.lens-sessions-list .tug-list-row-grip {
+  align-self: flex-start;
+  height: var(--tug-line-height-sm, 1.25rem);
 }
 
 /* The wrap is the reorder container: the `BlockDropCaret` positions absolutely

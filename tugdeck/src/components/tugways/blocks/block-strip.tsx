@@ -6,7 +6,7 @@
  * `entry`), and the Lens section bands (`LensSection`, altitude
  * `section`). One calm row of slots:
  *
- *   [grip?] leading  name?  detail …  trailing…  | actions
+ *   leading  name?  detail …  trailing…  | actions  [grip?]
  *
  * The strip owns only the row STRUCTURE and the three span wrappers it is
  * the sole author of — the name span, the detail span, and the actions
@@ -48,9 +48,10 @@ export interface BlockStripProps {
    */
   altitude?: BlockAltitude;
   /**
-   * Leftmost slot — a drag grip ({@link BlockGrip}), rendered left of
-   * `leading`. Absent (the leaf/entry default) ⇒ nothing in the row, so
-   * the left edge aligns identically to a strip with no grip.
+   * Trailing-most slot — a drag grip ({@link BlockGrip}), rendered past
+   * the actions cluster at the strip's right edge. Absent (the
+   * leaf/entry default) ⇒ nothing in the row, so the right edge aligns
+   * identically to a strip with no grip.
    */
   grip?: React.ReactNode;
   /**
@@ -145,8 +146,6 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         className={className}
         onClick={onClick}
       >
-        {/* Leftmost drag grip ([P04]); absent at leaf/entry. */}
-        {grip}
         {/* The lifecycle dot or a caller-wrapped leading glyph. */}
         {leading}
         {/* The bold identity — omitted for a verb-less row. */}
@@ -161,6 +160,8 @@ export const BlockStrip = React.forwardRef<HTMLDivElement, BlockStripProps>(
         {/* Trailing actions cluster — the strip owns the span so the pipe
             rule + gap discipline is shared at every altitude. */}
         <span className="tool-call-header-actions">{actions}</span>
+        {/* Trailing-most drag grip ([P04]); absent at leaf/entry. */}
+        {grip}
       </div>
     );
   },
