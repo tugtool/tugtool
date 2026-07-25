@@ -199,6 +199,13 @@ export function GalleryTugProgressIndicator(): React.ReactElement {
           large-pulsing-dot — breathing dot, ring on the fall
         </TugLabel>
         <TugLabel size="2xs" emphasis="calm">
+          Read the row of states below as a size ladder first. Running owns the
+          whole glyph box; paused and aborted draw in to 0.7 of it; stopped and
+          completed recede to 0.5. The box never changes, so nothing reflows —
+          only the figure inside it does. That ordering is the point: a working
+          session must be the biggest mark in a column of them.
+        </TugLabel>
+        <TugLabel size="2xs" emphasis="calm">
           The inner dot eases between 0.35 and full size over a 2s cycle,
           traveling the whole swing every time. The ring is not on its own
           clock: it is lit a few degrees before top dead center — 47% of the

@@ -278,6 +278,13 @@ function SnippetDisplayRow({
  * into the CM6 caret. Escape ascends (engine) and the resulting blur commits;
  * ⌘Return (the substrate's `onSubmit`) commits + chains a new snippet.
  */
+/**
+ * One animator slot for the editor well's open AND close. Sharing the slot is
+ * what makes the two loops exclusive: whichever starts second cancels the first
+ * on the same element rather than compositing against it.
+ */
+const SNIPPET_WELL_MOTION_SLOT = "snippet-editor-well";
+
 function SnippetEditorRow({
   snippet,
   store,
@@ -324,10 +331,64 @@ function SnippetEditorRow({
       {
         duration: "--tug-motion-duration-moderate",
         easing: "cubic-bezier(0.2, 0, 0, 1)",
-        key: "snippet-editor-open",
+        key: SNIPPET_WELL_MOTION_SLOT,
       },
     ).finished.then(restore, restore);
   }, []);
+
+  // Slide the editor SHUT — the mirror of the open above, and the reason every
+  // close routes through here.
+  //
+  // There is no exit animation to run after the fact: closing clears the
+  // store's `editingId`, the cell swaps back to the display row, and React
+  // tears this subtree down inside that same commit. So the collapse has to run
+  // BEFORE the commit — play the well to zero, then commit, and the unmount
+  // lands on a well that is already closed, which is why the swap is invisible.
+  //
+  // Both loops share one motion slot with the open, so a close that catches an
+  // open still in flight cancels it (snap-to-end, which runs the open's own
+  // `restore` and releases its committed inline height) instead of racing it.
+  const closingRef = useRef(false);
+  const closeWithCollapse = useCallback((): void => {
+    // Re-entrancy: ✕ ascends, and the ascend's blur arrives right behind it.
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const el = wellRef.current;
+    const commit = (): void => {
+      if (store.getSnapshot().editingId === snippet.id) {
+        store.commitEdit();
+        return;
+      }
+      // Editing moved on without us (a second snippet opened mid-collapse) —
+      // this row is staying, so hand its well back its natural height.
+      if (el !== null) {
+        el.style.overflow = "";
+        el.style.height = "";
+        el.style.opacity = "";
+      }
+      closingRef.current = false;
+    };
+    if (el === null) {
+      commit();
+      return;
+    }
+    const from = el.getBoundingClientRect().height;
+    el.style.overflow = "hidden";
+    animate(
+      el,
+      [
+        { height: `${from}px`, opacity: 1 },
+        { height: "0px", opacity: 0 },
+      ],
+      {
+        duration: "--tug-motion-duration-moderate",
+        // Accelerating out, against the open's decelerating in: a card settles
+        // into place when it arrives and leaves briskly when dismissed.
+        easing: "cubic-bezier(0.4, 0, 1, 1)",
+        key: SNIPPET_WELL_MOTION_SLOT,
+      },
+    ).finished.then(commit, commit);
+  }, [store, snippet.id]);
   // Registers into the cell's per-row FocusModeContext, so `descendIntoRow`
   // finds this wrapper as the row's inner focusable. No key-view behavior:
   // a behavior-less leaf keeps Enter as a newline in the editor and leaves
@@ -453,13 +514,17 @@ function SnippetEditorRow({
         queueMicrotask(() => editorRef.current?.focus());
         return;
       }
-      if (store.getSnapshot().editingId === snippet.id) store.commitEdit();
+      closeWithCollapse();
     },
-    [store, snippet.id],
+    [closeWithCollapse],
   );
 
   // ⌘Return commits and chains a new snippet; the new row's editor opens via
-  // the store's `editingId` + the descend effect.
+  // the store's `editingId` + the descend effect. Deliberately NOT routed
+  // through `closeWithCollapse`: this is a typing gesture, and the caret has to
+  // land in the next snippet on the same beat the key is pressed — a collapse
+  // would hold it for the duration first. Closing is what animates; chaining is
+  // what stays instant.
   const onSubmit = useCallback((): void => {
     manager?.ascend();
     store.commitEdit();
@@ -506,9 +571,9 @@ function SnippetEditorRow({
     (e?: React.MouseEvent): void => {
       e?.stopPropagation();
       manager?.ascend();
-      store.commitEdit();
+      closeWithCollapse();
     },
-    [manager, store],
+    [manager, closeWithCollapse],
   );
 
   // The card header's title is the snippet's LIVE incipit — it re-renders with

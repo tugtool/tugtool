@@ -60,29 +60,32 @@
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
-/* The phase dot centers on the WHOLE two-line row, then rides UP by the rise
-   below. Geometric centering puts the dot between the two text lines, which
-   reads low next to a title that carries the row's identity; the rise pulls it
-   back toward the title without pinning it there (a hard pin to the title's
-   line box would clip the ring's travel, since the glyph is taller than one
-   line).
+/* The phase dot centers on the WHOLE two-line row, and at the current size it
+   stays there. A small dot centered between two lines reads low against a
+   title that carries the row's identity, which is what the rise below was for;
+   a 32px glyph spans both lines outright, so dead center IS the title-aware
+   position and the lift has nothing left to correct.
 
    `--tugx-lens-sessions-dot-rise` is the knob — the dot's SIZE is
    `ROW_PHASE_DOT_SIZE` in `sessions-section.tsx`. The lift is a transform, so
    it never touches layout: the row's height and the text baselines stay put no
-   matter what you set here. Positive rises, negative drops; 0 restores plain
-   centering. Full title alignment is around 9px (half the pulse line). */
+   matter what you set here. Positive rises, negative drops.
+
+   Headroom is the thing to watch: the two text lines total 38px, so a 32px box
+   centers with ~3px of slack per side. Past that the glyph climbs into the
+   row's block padding and starts crowding the divider above — so at this size
+   the useful range is roughly ±3px, not the ±9px a 20px dot had. */
 .lens-sessions-list .tug-list-row-leading {
-  --tugx-lens-sessions-dot-rise: 8px;
+  --tugx-lens-sessions-dot-rise: 9px;
 
   align-self: center;
   align-items: center;
   transform: translateY(calc(-1 * var(--tugx-lens-sessions-dot-rise)));
 }
 
-/* The reorder grip rides the row's right edge, aligned to the TITLE line the
-   way the phase dot is — the two handles of the row read across from each
-   other. The grip carries its own layout/cursor from block-grip.css. */
+/* The reorder grip pins to the row's TITLE line — the phase dot opposite it
+   centers on the whole row instead, since it is tall enough to span both
+   lines. The grip carries its own layout/cursor from block-grip.css. */
 .lens-sessions-list .tug-list-row-grip {
   align-self: flex-start;
   height: var(--tug-line-height-sm, 1.25rem);

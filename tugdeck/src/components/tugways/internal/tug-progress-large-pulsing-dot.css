@@ -16,6 +16,13 @@
  * lit) out to `1.0` (the box), so the glyph stays layout-safe: no part of the
  * motion overflows the square the caller reserved.
  *
+ * Presence: `--tugx-progress-large-pulsing-dot-presence` is the state's share
+ * of that box, set by the component from its ladder. `running` is 1 — the
+ * breath and the pulse own the box — and every settled state draws in from the
+ * edge, so a working session is the biggest figure in a column of them and a
+ * finished one is the smallest. The box is unchanged either way, so nothing
+ * reflows as a session moves through the ladder.
+ *
  * Motion: two `@keyframes` loops on ONE shared 2000ms period (scaled by
  * `--tug-timing`), started in the same frame — that is what welds the ring's
  * emission to the dot's breath, with no timer and no scripting.
@@ -26,7 +33,10 @@
  *
  *  - `tugx-progress-large-pulsing-dot-emit` — the ring. Hidden through the
  *    inhale; lit at 47%, a few degrees before the top of the breath; then
- *    expanding and fading, gone exactly at 100%. One pulse per cycle.
+ *    expanding and fading, gone exactly at 100%. One pulse per cycle. It rides
+ *    a heavier stroke than the settled ring — `--…-pulse-width`, which is where
+ *    the reason lives: expanding by `transform: scale` thins the border exactly
+ *    at ignition, the frame the pulse most needs to read.
  *
  *    **Ignition advance.** 50% is top dead center — the frame the dot turns.
  *    Firing there is defensible but reads a hair late, because the ring needs
@@ -75,6 +85,19 @@
     1px,
     calc(var(--tugx-progress-large-pulsing-dot-size) / 16)
   );
+  /* The PULSE carries a heavier stroke than the resting ring, and only while
+     it is animating — the settled ring keeps the base width above.
+
+     It needs the weight because two things thin it exactly where it must read.
+     The ring is born at 0.597 of the box, and it expands by `transform: scale`,
+     which scales its border along with its radius — so at ignition, the frame
+     it is most opaque and most worth seeing, it paints at ~60% of nominal, and
+     it only reaches full weight as it fades out. At this variant's sizes that
+     lands the visible stroke around a pixel and the pulse reads as a hairline
+     ghost rather than something the dot shed. */
+  --tugx-progress-large-pulsing-dot-pulse-width: calc(
+    var(--tugx-progress-large-pulsing-dot-ring-width) * 1.6
+  );
 
   position: relative;
   display: inline-block;
@@ -95,7 +118,8 @@
 }
 
 /* The emitted ring. Hidden by default: only the running state animates it,
-   and every other state shows the static `::after` ring instead. */
+   and every other state shows the static `::after` ring instead — which is why
+   the heavier pulse stroke lives here and nowhere else. */
 .tug-progress-large-pulsing-dot-ring {
   position: absolute;
   top: 50%;
@@ -103,7 +127,7 @@
   width: var(--tugx-progress-large-pulsing-dot-size);
   height: var(--tugx-progress-large-pulsing-dot-size);
   border-radius: 999px;
-  border: var(--tugx-progress-large-pulsing-dot-ring-width) solid
+  border: var(--tugx-progress-large-pulsing-dot-pulse-width) solid
     var(--tugx-progress-indicator-fill, currentColor);
   box-sizing: border-box;
   transform: translate(-50%, -50%) scale(1);
@@ -111,14 +135,25 @@
 }
 
 /* Static outer ring for the settled / held states — the running state's ring
-   is the emitted pulse, so the static one steps aside there. */
+   is the emitted pulse, so the static one steps aside there.
+
+   Its diameter is the box scaled by the state's PRESENCE (the ladder lives in
+   the component). Sized by width/height rather than a `transform: scale`
+   deliberately: a transform would thin the stroke along with the radius, and
+   a receding state should read as a smaller ring, not a fainter one. */
 .tug-progress-large-pulsing-dot::after {
   content: "";
   position: absolute;
   top: 50%;
   left: 50%;
-  width: var(--tugx-progress-large-pulsing-dot-size);
-  height: var(--tugx-progress-large-pulsing-dot-size);
+  width: calc(
+    var(--tugx-progress-large-pulsing-dot-size) *
+      var(--tugx-progress-large-pulsing-dot-presence, 1)
+  );
+  height: calc(
+    var(--tugx-progress-large-pulsing-dot-size) *
+      var(--tugx-progress-large-pulsing-dot-presence, 1)
+  );
   border-radius: 999px;
   border: var(--tugx-progress-large-pulsing-dot-ring-width) solid
     var(--tugx-progress-indicator-fill, currentColor);

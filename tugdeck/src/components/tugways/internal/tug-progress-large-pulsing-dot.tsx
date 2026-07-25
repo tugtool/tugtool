@@ -29,12 +29,14 @@
  * ring inside a single cycle — lit at 47%, gone by 100% — so the pulse
  * needs no wrap across the cycle boundary.
  *
- * State semantics mirror the small dot:
- *   running   — the dot breathes and emits rings.
- *   paused    — dot held at full size; static outer ring.
- *   stopped   — quiet (reduced) dot; static outer ring.
- *   completed — quiet dot; static outer ring, success tint from parent.
- *   aborted   — full-size dot; static outer ring, danger tint.
+ * State semantics mirror the small dot, each rung also carrying its own
+ * PRESENCE — its share of the reserved box ({@link SETTLED_PRESENCE}), so the
+ * glyph's SIZE reads the state before its color or motion does:
+ *   running   — the dot breathes and emits rings; owns the whole box.
+ *   paused    — dot held at full size; static outer ring, drawn in.
+ *   stopped   — quiet (reduced) dot; small static ring.
+ *   completed — quiet dot; small static ring, success tint from parent.
+ *   aborted   — full-size dot; static outer ring drawn in, danger tint.
  *
  * Laws: [L02] state arrives via props from the parent indicator;
  *       [L06] tone is a live CSS variable and the motion is gated on
@@ -102,6 +104,43 @@ function isQuiet(state: TugProgressIndicatorState): boolean {
 
 const IDLE_DOT_SCALE = 0.85;
 
+/**
+ * The PRESENCE ladder — how much of the reserved glyph box each state
+ * occupies.
+ *
+ * Size is this variant's whole argument: it exists to be read across a room.
+ * But "big" is only legible as a signal if it is *relative*, and the earlier
+ * cut had it backwards — every settled state painted a full-box static ring,
+ * so a finished session drew a bigger figure than a working one. A row of
+ * sessions read as loudest where nothing was happening.
+ *
+ * So presence became a property of the state, not a constant. `running` is
+ * absent from the ladder because it has no static pose to scale: its breath
+ * and its emitted ring are authored against the full box and own it outright
+ * (see {@link presenceScale}). Every other state is a pose the component seeds,
+ * and each one draws in from that edge by the amount below — a held or aborted
+ * session stays substantial because it still wants an answer; a stopped or
+ * completed one recedes to a quiet marker.
+ *
+ * The box itself never changes, so the ladder is pure appearance: rows do not
+ * reflow as a session moves through it, and a caller's `size` still means the
+ * space to reserve.
+ */
+const SETTLED_PRESENCE: Record<
+  Exclude<TugProgressIndicatorState, "running">,
+  number
+> = {
+  paused: 0.7,
+  aborted: 0.7,
+  stopped: 0.5,
+  completed: 0.5,
+};
+
+/** This state's share of the glyph box. See {@link SETTLED_PRESENCE}. */
+function presenceScale(state: TugProgressIndicatorState): number {
+  return state === "running" ? 1 : SETTLED_PRESENCE[state];
+}
+
 export interface TugProgressLargePulsingDotProps {
   /** Glyph box diameter in CSS px. @default 24 */
   size?: number;
@@ -123,15 +162,22 @@ export const TugProgressLargePulsingDot = React.forwardRef<
   // The dot's box is its full-scale diameter; the breath scales it down
   // from there, so the running glyph never grows past the box.
   const dotSizePx = size * DOT_RATIO;
+  // The state's share of the box ([SETTLED_PRESENCE]). Published as a variable
+  // so the static ring can size itself from it in CSS without a second source
+  // of truth — and so it sizes by WIDTH rather than a transform, which keeps
+  // the ring's stroke the same weight at every rung of the ladder.
+  const presence = presenceScale(state);
   const rootStyle: React.CSSProperties = {
     ["--tugx-progress-large-pulsing-dot-size" as string]: `${size}px`,
     ["--tugx-progress-large-pulsing-dot-dot-size" as string]: `${dotSizePx}px`,
+    ["--tugx-progress-large-pulsing-dot-presence" as string]: `${presence}`,
   };
 
   // Seed the static pose inline. It equals the breath's 0% keyframe, so a
   // running glyph starts from the same pose it rests at — no first-frame
-  // jump — and the non-running states simply hold it.
-  const staticScale = isQuiet(state) ? IDLE_DOT_SCALE : 1;
+  // jump — and the non-running states simply hold it, drawn in by the
+  // state's presence.
+  const staticScale = (isQuiet(state) ? IDLE_DOT_SCALE : 1) * presence;
 
   return (
     <span

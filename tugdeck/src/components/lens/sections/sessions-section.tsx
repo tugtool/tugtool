@@ -172,13 +172,22 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  *
  * This is the BOX, not the dot: the `large-pulsing-dot` sheds a ring that
  * travels out to the box edge, and the dot itself paints at 60% of the box at
- * the top of its breath (35% at the bottom). So the visible dot is
- * `0.6 × size` — at 20 that reads as a 12px dot inside a 20px ring.
+ * the top of its breath (35% at the bottom). So a running row reads as a
+ * `0.6 × size` dot throwing a ring the full width of the box — at 32, a 19px
+ * dot inside a 32px ring.
+ *
+ * A settled row is deliberately smaller, and by the variant's own doing: the
+ * component's presence ladder draws stopped / completed in to half the box and
+ * paused / aborted to 0.7 of it. At 32 that is a 16px quiet ring against the
+ * running row's 32px — which is the whole reason this size is legible from
+ * across the room without every idle session shouting along with it.
  *
  * Ceiling before the row grows: the two text lines total 38px (a 19px title
  * over a 19px pulse line), so any size up to ~38 leaves the row height alone.
+ * At 32 that leaves only ~3px of slack per side, which is why the rise knob
+ * next door sits near zero — see `sessions-section.css`.
  */
-const ROW_PHASE_DOT_SIZE = 20;
+const ROW_PHASE_DOT_SIZE = 28;
 
 /** The per-row phase dot — reads the bound card's `codeSessionStore`. */
 function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
