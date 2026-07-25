@@ -187,7 +187,7 @@ export function SessionHistoryView({
             value={metaFields as string[]}
             senderId={metaSenderId}
             size="xs"
-            emphasis="ghost"
+            emphasis="default"
             aria-label="Commit row metadata"
             data-testid="session-history-meta-options"
             items={[
